@@ -233,6 +233,57 @@ def test_on_start_resets_restart_latches(strategy_factory, monkeypatch) -> None:
     assert subscribed == [str(maker_id)]
 
 
+def test_on_start_runtime_param_refresh_failure_keeps_strategy_alive(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    maker_id = strategy_factory().config.maker_instrument_id
+    strategy = strategy_factory(reference_instrument_id=maker_id)
+
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_balances = lambda: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._prepare_runtime_params_for_startup = lambda: None
+
+    def _raise_refresh(*_args, **_kwargs) -> None:
+        raise ValueError("boom")
+
+    strategy._refresh_runtime_params = _raise_refresh
+
+    subscribed: list[str] = []
+    strategy.subscribe_order_book_deltas = lambda instrument_id, **_kwargs: subscribed.append(
+        str(instrument_id),
+    )
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    set_timer_calls: list[dict[str, object]] = []
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **kwargs: set_timer_calls.append(kwargs),
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    stopped: list[bool] = []
+    strategy.stop = lambda: stopped.append(True)
+
+    strategy.on_start()
+
+    assert stopped == []
+    assert strategy._runtime_params_failed is True
+    assert len(set_timer_calls) == 1
+    assert subscribed == [str(maker_id)]
+
+
 def test_on_start_allows_duplicate_instrument_ids_without_duplicate_subscriptions(
     strategy_factory,
     monkeypatch,
@@ -1370,6 +1421,43 @@ def test_timer_triggers_balances_publish_check(clocked_strategy_factory) -> None
     strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
 
     assert balance_checks == ["called"]
+
+
+def test_timer_runtime_param_refresh_failure_keeps_quote_cycle_running(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([500_000_000])
+
+    def _raise_refresh(**_kwargs) -> None:
+        raise ValueError("boom")
+
+    strategy._refresh_runtime_params = _raise_refresh
+    balance_checks: list[str] = []
+    inventory_publishes: list[str] = []
+    strategy._publish_balances_if_due = lambda: balance_checks.append("called")
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: inventory_publishes.append(
+        "called",
+    )
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **_kwargs: None
+    strategy._effective_bot_on = lambda: True
+    strategy._last_bot_on = True
+    strategy._enforce_stale_market_data = lambda **_kwargs: None
+    strategy._quote_failure_circuit_open = False
+    strategy.INTERNAL_REQUOTE_THROTTLE_MS = 100
+    strategy._last_requote_ns = 0
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 450_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 450_000_000
+
+    stopped: list[bool] = []
+    strategy.stop = lambda: stopped.append(True)
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._params_timer_name))
+
+    assert stopped == []
+    assert strategy._runtime_params_failed is True
+    assert balance_checks == ["called"]
+    assert inventory_publishes == ["called"]
 
 
 def test_timer_publishes_balances_when_due_after_startup_snapshot(clocked_strategy_factory) -> None:

@@ -99,10 +99,7 @@ def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type
     )
 
     assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
-        "MARGIN",
-        "PORTFOLIO_MARGIN",
-    }
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
 
 
@@ -137,14 +134,29 @@ def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
         ),
     )
 
-    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] in {
-        "MARGIN",
-        "PORTFOLIO_MARGIN",
-    }
+    assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
     assert strategy_config["strategy"]["force_bot_off_on_start"] is True
     assert strategy_config["strategy"]["bot_on"] is False
+
+
+def test_tokenmm_binance_perp_strategy_uses_portfolio_margin_private_api_family() -> None:
+    strategy_config = tomllib.load(
+        (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_perp_makerv3.toml").open(
+            "rb",
+        ),
+    )
+
+    perp_venue = strategy_config["node"]["venues"]["BINANCE_PERP"]
+    spot_venue = strategy_config["node"]["venues"]["BINANCE_SPOT"]
+
+    assert perp_venue["api_key_env"] == "BINANCE_API_KEY"
+    assert perp_venue["api_secret_env"] == "BINANCE_API_SECRET"
+    assert perp_venue["account_type"] == "USDT_FUTURES"
+    assert perp_venue["private_api_family"] == "PORTFOLIO_MARGIN"
+    assert spot_venue["api_key_env"] == "BINANCE_API_KEY"
+    assert spot_venue["api_secret_env"] == "BINANCE_API_SECRET"
 
 
 def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
@@ -360,6 +372,10 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
 
     assert "TOKENMM_TELEMETRY_DIR" in deploy_readme
     assert "tokenmm-jupyter.env.example" in deploy_readme
+    assert "bootstrap_tokenmm_telemetry_rds.sh" in deploy_readme
+    assert "run_tokenmm_telemetry_shipper.sh" in deploy_readme
+    assert "tokenmm_telemetry_cutover.py" in deploy_readme
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID" in deploy_readme
     assert "pnpm --dir fluxboard install --frozen-lockfile" in deploy_readme
     assert ".venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py" in deploy_readme
     assert "pnpm --dir fluxboard build" in deploy_readme
@@ -378,6 +394,9 @@ def test_tokenmm_docs_cover_telemetry_cutover_and_optional_jupyter_ops() -> None
     assert "telemetry" in telemetry_runbook
     assert "psql" in telemetry_runbook
     assert 'export POSTGRES_URL="postgresql://' in telemetry_runbook
+    assert "bootstrap_tokenmm_telemetry_rds.sh" in telemetry_runbook
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID" in telemetry_runbook
+    assert "tokenmm_telemetry_cutover.py" in telemetry_runbook
 
     assert "cutover" in design_doc
     assert "localhost-only JupyterLab" in design_doc
@@ -389,6 +408,7 @@ def test_tokenmm_live_config_enables_local_telemetry_persistence_paths() -> None
 
     assert "[telemetry_shipper]" in shared_config
     assert "enable_local_persistence = true" in shared_config
+    assert "prune_retention_hours = 48" in shared_config
     assert 'fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"' in shared_config
     assert 'orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"' in shared_config
     assert (
@@ -695,7 +715,13 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "tokenmm-api" in install_script
     assert "--strategy-id ${strategy_id}" in install_script
     assert "--all-strategies" not in install_script
+    assert "run_tokenmm_telemetry_shipper.sh" in install_script
+    assert "tokenmm-telemetry-rds.env.example" in install_script
+    assert "flux-tokenmm-telemetry-health.service" in install_script
+    assert "flux-tokenmm-telemetry-health.timer" in install_script
 
+    assert "TOKENMM_AWS_REGION=ap-southeast-1" in common_env
+    assert "NAUTILUS_TELEMETRY_PG_SECRET_ID=" in common_env
     assert "TOKENMM_REDIS_PASSWORD=" in common_env
     assert "BYBIT_API_KEY=" in common_env
     assert "BINANCE_API_KEY=" in common_env
@@ -1046,3 +1072,25 @@ def test_fluxboard_prod_docs_use_shared_static_build_base() -> None:
     assert "Production builds pin shared-static assets to `/static/fluxboard/*`" in env_example
     assert "FLUXBOARD_BASE_PATH=" not in runbook
     assert "Production builds pin Fluxboard assets to the shared `/static/fluxboard/*` prefix" in runbook
+
+
+def test_tokenmm_docs_define_base_first_operator_trade_quantity_contract() -> None:
+    repo_root = _repo_root()
+    rest_contract = _read(repo_root / "fluxboard/docs/tokenmm_contract.md")
+    socket_contract = _read(repo_root / "fluxboard/docs/tokenmm_socket_contract.md")
+
+    assert "For TokenMM-facing REST rows, `qty` is operator-facing base quantity." in rest_contract
+    assert "Shared producer bare `qty` remains venue/native size; `qty_base` and `qty_venue` carry the normalized pair." in rest_contract
+    assert "Older raw SQLite rows may not have `*_base` / `*_venue` columns." in rest_contract
+    assert "Rollout requires a TokenMM trade-stream cutover/reset before enabling base-first `qty` in production." in rest_contract
+    assert '"qty_base": 0.015' in rest_contract
+    assert '"qty_venue": 0.015' in rest_contract
+    assert '"qty_conversion_status": "identity"' in rest_contract
+    assert '"qty_conversion_source": "generic:multiplier=1"' in rest_contract
+
+    assert "For TokenMM `trade_update` payloads, `trade.qty` is operator-facing base quantity." in socket_contract
+    assert "Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields." in socket_contract
+    assert "Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection." in socket_contract
+    assert "GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted" in socket_contract
+    assert "GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available" in socket_contract
+    assert "Bare `qty` in trade payloads remains venue/native size unless a paired explicit base field is also present." not in socket_contract

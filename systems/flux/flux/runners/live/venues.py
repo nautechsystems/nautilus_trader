@@ -9,6 +9,7 @@ from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
@@ -181,6 +182,14 @@ def _coerce_binance_account_type(raw_value: Any, venue_name: str) -> Any:
     )
 
 
+def _coerce_binance_private_api_family(raw_value: Any, venue_name: str) -> Any:
+    return _enum_member(
+        BinancePrivateApiFamily,
+        raw_value,
+        field_name=f"node.venues.{venue_name}.private_api_family",
+    )
+
+
 def _default_binance_environment(mode: str) -> Any:
     if mode == "live":
         return None
@@ -309,6 +318,7 @@ SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
         field_aliases={},
         field_coercers={
             "account_type": _coerce_binance_account_type,
+            "private_api_family": _coerce_binance_private_api_family,
         },
         secret_fields=(("api_key", "api_key_env"), ("api_secret", "api_secret_env")),
         mode_defaults={"environment": _default_binance_environment},
@@ -542,6 +552,13 @@ def _resolve_strategy_venue_names(config: dict[str, Any]) -> tuple[str, str]:
     return execution_venue.upper(), reference_venue.upper()
 
 
+def _default_adapter_id(venue_name: str) -> str:
+    normalized = str(venue_name).strip().upper()
+    if normalized.startswith("BINANCE_"):
+        return "binance"
+    return normalized.lower()
+
+
 def resolve_strategy_venues(
     *,
     config: dict[str, Any],
@@ -570,7 +587,10 @@ def resolve_strategy_venues(
     venue_records: list[tuple[str, dict[str, Any], VenueAdapterSpec, InstrumentId, bool]] = []
 
     for venue_name, venue_cfg in venue_entries.items():
-        adapter_id = (_optional_text(venue_cfg.get("adapter")) or venue_name.lower()).lower()
+        adapter_id = (
+            _optional_text(venue_cfg.get("adapter"))
+            or _default_adapter_id(venue_name)
+        ).lower()
         spec = SUPPORTED_VENUE_ADAPTERS.get(adapter_id)
         if spec is None:
             raise ValueError(

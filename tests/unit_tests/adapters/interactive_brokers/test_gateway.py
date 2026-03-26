@@ -45,3 +45,24 @@ def test_get_cached_ib_client_skips_gateway_start_for_non_owner(monkeypatch) -> 
     assert client is not None
     gateway_instance.safe_start.assert_not_called()
     assert created_clients[0]["port"] == 4001
+
+
+def test_drop_cached_ib_client_removes_client_and_stops_it(monkeypatch) -> None:
+    stopped: list[str] = []
+
+    class _FakeClient:
+        def _stop(self) -> None:
+            stopped.append("stopped")
+
+    client = _FakeClient()
+    monkeypatch.setattr(factories, "IB_CLIENTS", {("127.0.0.1", 4001, 107): client})
+
+    dropped = factories.drop_cached_ib_client(
+        host="127.0.0.1",
+        port=4001,
+        client_id=107,
+    )
+
+    assert dropped is client
+    assert stopped == ["stopped"]
+    assert factories.IB_CLIENTS == {}

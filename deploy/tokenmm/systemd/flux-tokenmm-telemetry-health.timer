@@ -1,0 +1,10 @@
+[Unit]
+Description=Run TokenMM telemetry health guardrail every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=flux-tokenmm-telemetry-health.service
+
+[Install]
+WantedBy=timers.target

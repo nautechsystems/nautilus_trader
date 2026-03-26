@@ -3,8 +3,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenToken
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocketClient
 from nautilus_trader.common.component import LiveClock
 
@@ -94,3 +96,22 @@ async def test_margin_user_stream_renew_and_unsubscribe_use_current_subscription
         "userDataStream.unsubscribe",
         {"subscriptionId": "8"},
     )
+
+
+def test_portfolio_margin_futures_user_stream_uses_papi_listen_key_endpoint():
+    clock = LiveClock()
+    http_client = BinanceHttpClient(
+        clock=clock,
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
+        base_url="https://papi.binance.com/",
+    )
+
+    api = BinanceUserDataHttpAPI(
+        client=http_client,
+        account_type=BinanceAccountType.USDT_FUTURES,
+        private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+    )
+
+    assert api._endpoint_listenkey is not None
+    assert api._endpoint_listenkey.url_path == "/papi/v1/listenKey"

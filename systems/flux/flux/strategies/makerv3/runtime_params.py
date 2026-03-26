@@ -467,6 +467,7 @@ def refresh_runtime_params(
         raise RuntimeError("Configured params manager does not provide load()")
     control_revision = load_bot_on_control_revision(strategy, manager=manager)
     apply_runtime_param_updates(strategy, updates_fn())
+    strategy._runtime_params_failed = False
     startup_control_revision = str(getattr(strategy, "_startup_bot_off_control_revision", "") or "")
     if (
         bool(getattr(strategy, "_startup_bot_off_active", False))
@@ -478,7 +479,7 @@ def refresh_runtime_params(
 
 def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Exception) -> None:
     """
-    Emit diagnostics and stop the strategy after a runtime params failure.
+    Emit diagnostics for a runtime params failure while preserving last-known-good params.
     """
     if strategy._runtime_params_failed:
         return
@@ -523,5 +524,3 @@ def fail_fast_runtime_params(strategy: MakerV3Strategy, *, context: str, exc: Ex
             reason_code=ALERT_KEY_RUNTIME_PARAMS_FAILURE,
             cooldown_ms=ALERT_COOLDOWN_RUNTIME_PARAMS_FAILURE_MS,
         )
-
-    strategy.stop()

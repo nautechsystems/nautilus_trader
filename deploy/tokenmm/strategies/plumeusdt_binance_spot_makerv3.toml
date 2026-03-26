@@ -44,7 +44,7 @@ instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 execution = true
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
-account_type = "MARGIN"
+account_type = "PORTFOLIO_MARGIN"
 allow_cash_borrowing = true
 
 [strategy]

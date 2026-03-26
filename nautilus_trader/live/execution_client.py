@@ -124,6 +124,7 @@ class LiveExecutionClient(ExecutionClient):
         self._instrument_provider = instrument_provider
 
         self.reconciliation_active = False
+        self.supports_startup_historical_order_status_reports = True
 
     async def run_after_delay(
         self,

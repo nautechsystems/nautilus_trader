@@ -95,6 +95,28 @@ def _hyperliquid_identity_perpetual() -> CryptoPerpetual:
     )
 
 
+def _binance_equity_perpetual() -> CryptoPerpetual:
+    return CryptoPerpetual(
+        instrument_id=InstrumentId(
+            symbol=Symbol("PLTRUSDT-PERP"),
+            venue=Venue("BINANCE_PERP"),
+        ),
+        raw_symbol=Symbol("PLTRUSDT"),
+        base_currency=Currency.from_str("PLTR"),
+        quote_currency=USDT,
+        settlement_currency=USDT,
+        is_inverse=False,
+        price_precision=4,
+        size_precision=0,
+        price_increment=Price.from_str("0.0001"),
+        size_increment=Quantity.from_str("1"),
+        multiplier=Quantity.from_str("0.0625"),
+        lot_size=Quantity.from_str("1"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
 def test_exposure_from_venue_qty_identity_for_spot_instrument() -> None:
     instrument = TestInstrumentProvider.ethusdt_binance()
 
@@ -211,6 +233,17 @@ def test_exposure_from_venue_qty_honors_identity_metadata_without_core_quanto_ma
     assert exposure.base_qty == Decimal("1")
     assert exposure.qty_conversion_status == "identity"
     assert exposure.qty_conversion_source == "instrument.info:base_exposure_mode=identity"
+
+
+def test_exposure_from_venue_qty_binance_equity_perp_converts_contracts_to_canonical_stock_qty() -> None:
+    instrument = _binance_equity_perpetual()
+
+    exposure = exposure_from_venue_qty(instrument, Decimal("16"))
+
+    assert exposure.venue_qty == Decimal("16")
+    assert exposure.base_qty == Decimal("1.0000")
+    assert exposure.qty_conversion_status == "exact_multiplier"
+    assert exposure.qty_conversion_source == "generic:multiplier"
 
 
 def test_venue_qty_from_base_qty_round_trips_exact_multiplier_conversion() -> None:

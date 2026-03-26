@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tomllib
 import urllib.request as urllib_request
+import uuid
 from pathlib import Path
 from typing import Any
+from typing import Callable
 from typing import cast
 from urllib.error import HTTPError
 from urllib.error import URLError
@@ -23,6 +26,9 @@ from flask import request
 from flask import send_from_directory
 
 from flux.api import ContractCatalogEntry
+from flux.api import DEFAULT_PARAMS_DEFAULTS
+from flux.api import DEFAULT_PARAMS_SCHEMA
+from flux.api import FluxApiStore
 from flux.api import StrategyMetadata
 from flux.api import create_flux_api_app
 from flux.api.app import RedisClientProtocol
@@ -33,6 +39,9 @@ from flux.common.config import FluxIdentityConfig
 from flux.common.config import FluxRedisConfig
 from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
+from flux.api.payloads import build_envelope
+from flux.api.payloads import build_error
+from flux.api.payloads import now_ms
 from flux.pulse import PulseControlPlane
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
@@ -42,6 +51,8 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.shared.surface_proxy import SurfaceProxyDescriptor
 from flux.runners.shared.surface_proxy import resolve_surface_backends
 from flux.runners.shared.surface_proxy import resolve_surface_proxy_descriptor
+from flux.runners.tokenmm.readiness import evaluate_tokenmm_readiness
+from flux.runners.tokenmm.readiness import load_state_streams_by_strategy_id
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 
 
@@ -51,6 +62,7 @@ DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
 TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
+TOKENMM_READINESS_PATH = "/api/v1/readiness"
 FLUXBOARD_SPA_BASE_PATHS: tuple[tuple[str, str], ...] = (
     (DEFAULT_TOKENMM_BASE_PATH, "tokenmm"),
     ("/lp", "lp"),
@@ -363,6 +375,104 @@ def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) 
         return _proxy_request_to_backend(backend_url)
 
 
+def _enveloped_json_response(
+    *,
+    ok: bool,
+    data: Any,
+    error: dict[str, Any] | None,
+    status: int,
+) -> Response:
+    body = build_envelope(
+        ok=ok,
+        api_version=FLUX_SCHEMA_VERSION,
+        request_id=uuid.uuid4().hex,
+        timestamp_ms=now_ms(),
+        data=data,
+        error=error,
+    )
+    return Response(
+        json.dumps(body, separators=(",", ":"), sort_keys=False, allow_nan=False),
+        status=status,
+        mimetype="application/json",
+    )
+
+
+def _tokenmm_profile_name_for_request() -> str:
+    profile = (_optional_text(request.args.get("profile")) or TOKENMM_DESCRIPTOR.profile).lower()
+    if profile not in {TOKENMM_DESCRIPTOR.profile, *TOKENMM_DESCRIPTOR.aliases}:
+        raise ValueError(f"Unsupported TokenMM readiness profile: {profile}")
+    return TOKENMM_DESCRIPTOR.profile
+
+
+def _tokenmm_strategy_ids_for_request(
+    *,
+    profile_strategy_map: dict[str, list[str]],
+    profile_required_strategy_map: dict[str, list[str]],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    requested_strategy_id = _optional_text(request.args.get("strategy"))
+    if requested_strategy_id is not None:
+        strategy_id = validate_identifier_part(requested_strategy_id, "strategy")
+        return (strategy_id,), (strategy_id,)
+
+    profile_name = _tokenmm_profile_name_for_request()
+    strategy_ids = tuple(profile_strategy_map.get(profile_name, ()))
+    if not strategy_ids:
+        raise ValueError("TokenMM readiness requires at least one configured strategy id")
+    required_strategy_ids = tuple(profile_required_strategy_map.get(profile_name, strategy_ids))
+    return strategy_ids, required_strategy_ids
+
+
+def _load_tokenmm_readiness(
+    *,
+    flux_config: FluxConfig,
+    redis_client: RedisClientProtocol,
+    contract_catalog: tuple[ContractCatalogEntry, ...],
+    strategy_metadata: StrategyMetadata,
+    profile_strategy_map: dict[str, list[str]],
+    profile_required_strategy_map: dict[str, list[str]],
+) -> dict[str, Any]:
+    strategy_ids, required_strategy_ids = _tokenmm_strategy_ids_for_request(
+        profile_strategy_map=profile_strategy_map,
+        profile_required_strategy_map=profile_required_strategy_map,
+    )
+    store = FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        strategy_running_resolver=None,
+        strategy_alerts_resolver=None,
+        params_schema=DEFAULT_PARAMS_SCHEMA,
+        params_defaults=DEFAULT_PARAMS_DEFAULTS,
+    )
+    running_states = store.load_running_states(strategy_ids)
+    response_now_ms = now_ms()
+    signals_payload = {
+        "server_ts_ms": response_now_ms,
+        "strategies": [
+            store.load_signals_payload(
+                strategy_id,
+                strategy_metadata,
+                running=running_states.get(strategy_id),
+            )
+            for strategy_id in strategy_ids
+        ],
+    }
+    state_streams_by_strategy_id = load_state_streams_by_strategy_id(
+        redis_client=redis_client,
+        strategy_ids=strategy_ids,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+        environment=flux_config.mode,
+        now_ms_value=response_now_ms,
+    )
+    return evaluate_tokenmm_readiness(
+        required_strategy_ids=required_strategy_ids,
+        signals_payload=signals_payload,
+        state_streams_by_strategy_id=state_streams_by_strategy_id,
+        now_ms_value=response_now_ms,
+    ).as_dict()
+
+
 def _resolve_fluxboard_dist_path(args: argparse.Namespace, api_cfg: dict[str, Any]) -> Path:
     if args.fluxboard_dist is not None:
         return args.fluxboard_dist
@@ -425,18 +535,27 @@ def _register_fluxboard_spa_base_path(
     )
 
 
-def _attach_fluxboard_tokenmm_routes(app: Any, *, dist_dir: Path) -> None:
+def _attach_fluxboard_tokenmm_routes(
+    app: Any,
+    *,
+    dist_dir: Path,
+    surface_backends: dict[str, str] | None = None,
+) -> None:
     dist_root = dist_dir.resolve()
     index_path = dist_root / "index.html"
     if not index_path.is_file():
         raise FileNotFoundError(f"Fluxboard index not found at {index_path}")
+    resolved_surface_backends = surface_backends or {}
 
     def _serve_shared_static(subpath: str) -> Any:
         normalized = subpath.strip().lstrip("/")
         candidate = (dist_root / normalized).resolve()
-        if not candidate.is_file() or not _is_within(dist_root, candidate):
-            abort(404)
-        return send_from_directory(str(dist_root), normalized)
+        if candidate.is_file() and _is_within(dist_root, candidate):
+            return send_from_directory(str(dist_root), normalized)
+        equities_backend = resolved_surface_backends.get("equities")
+        if equities_backend:
+            return _proxy_request_to_backend(equities_backend)
+        abort(404)
 
     def _redirect_tokenm_alias(subpath: str | None = None) -> Any:
         target = DEFAULT_TOKENMM_BASE_PATH
@@ -500,6 +619,51 @@ def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
         if normalized.startswith("assets/"):
             abort(404)
         return _serve_index()
+
+
+def _attach_tokenmm_readiness_route(
+    app: Any,
+    *,
+    readiness_loader: Callable[[], dict[str, Any]],
+) -> None:
+    @app.get(TOKENMM_READINESS_PATH)
+    def _tokenmm_readiness() -> Response:
+        try:
+            payload = readiness_loader()
+        except ValueError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="invalid_readiness_request",
+                    message=str(exc),
+                ),
+                status=400,
+            )
+        except redis.RedisError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="store_unavailable",
+                    message="Data store unavailable.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=503,
+            )
+        except Exception as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="readiness_probe_failed",
+                    message="TokenMM readiness evaluation failed.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=500,
+            )
+
+        return _enveloped_json_response(ok=True, data=payload, error=None, status=200)
 
 
 def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
@@ -580,6 +744,17 @@ def main() -> None:
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
     )
+    _attach_tokenmm_readiness_route(
+        app,
+        readiness_loader=lambda: _load_tokenmm_readiness(
+            flux_config=flux_config,
+            redis_client=cast(RedisClientProtocol, redis_client),
+            contract_catalog=contracts,
+            strategy_metadata=metadata,
+            profile_strategy_map=profile_strategy_map,
+            profile_required_strategy_map=profile_required_strategy_map,
+        ),
+    )
     if _should_enable_pulse_routes(args, api_cfg):
         PulseControlPlane().register_routes(app)
     surface_backends = _resolve_surface_proxy_backends()
@@ -589,7 +764,11 @@ def main() -> None:
     serve_fluxboard = args.serve_fluxboard or _env_flag("FLUXBOARD_SERVE_DIST", default=False)
     if serve_fluxboard:
         dist_path = _resolve_fluxboard_dist_path(args, api_cfg)
-        _attach_fluxboard_tokenmm_routes(app, dist_dir=dist_path)
+        _attach_fluxboard_tokenmm_routes(
+            app,
+            dist_dir=dist_path,
+            surface_backends=surface_backends,
+        )
     if args.serve_pulse:
         dist_path = _resolve_pulse_dist_path(args, api_cfg)
         _attach_pulse_routes(app, dist_dir=dist_path)

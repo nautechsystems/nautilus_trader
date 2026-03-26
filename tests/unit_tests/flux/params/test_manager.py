@@ -104,6 +104,34 @@ def test_load_rejects_unknown_hash_fields(
         manager.load()
 
 
+def test_load_accepts_legacy_alias_hash_fields() -> None:
+    redis_client = _FakeRedis()
+    redis_client.hashes["flux:v1:params:maker_v4_01"] = {
+        "maker_taker_fee_bps": b"4.5",
+        "hl_maker_fee_bps": b"0.25",
+    }
+    manager = FluxParamsManager(
+        redis_client=redis_client,
+        strategy_id="maker_v4_01",
+        schema={
+            "maker_taker_fee_bps": {"type": "number", "aliases": [["hl_taker_fee_bps"]]},
+            "maker_maker_fee_bps": {"type": "number", "aliases": [["hl_maker_fee_bps"]]},
+        },
+        defaults={
+            "maker_taker_fee_bps": 4.0,
+            "maker_maker_fee_bps": 0.2,
+        },
+        param_set="makerv4",
+    )
+
+    loaded = manager.load()
+
+    assert loaded == {
+        "maker_taker_fee_bps": 4.5,
+        "maker_maker_fee_bps": 0.25,
+    }
+
+
 def test_update_writes_coerced_hset_mapping(
     schema: dict[str, dict[str, str]],
     defaults: dict[str, object],
@@ -129,6 +157,26 @@ def test_update_rejects_unknown_param_keys(
 
     with pytest.raises(ValueError, match="Unknown parameter"):
         manager.update({"unknown": 1})
+
+
+def test_update_accepts_legacy_alias_keys_and_writes_canonical_field() -> None:
+    redis_client = _FakeRedis()
+    manager = FluxParamsManager(
+        redis_client=redis_client,
+        strategy_id="maker_v4_01",
+        schema={
+            "maker_taker_fee_bps": {"type": "number", "aliases": ["hl_taker_fee_bps"]},
+        },
+        defaults={"maker_taker_fee_bps": 4.5},
+        param_set="makerv4",
+    )
+
+    applied = manager.update({"hl_taker_fee_bps": "6.25"})
+
+    assert applied == {"maker_taker_fee_bps": 6.25}
+    assert redis_client.hset_calls == [
+        ("flux:v1:params:maker_v4_01", {"maker_taker_fee_bps": "6.25"}),
+    ]
 
 
 def test_update_without_bot_on_does_not_write_control_revision(

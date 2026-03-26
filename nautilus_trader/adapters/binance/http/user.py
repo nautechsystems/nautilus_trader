@@ -1,6 +1,7 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenToken
@@ -158,6 +159,7 @@ class BinanceUserDataHttpAPI:
         self,
         client: BinanceHttpClient,
         account_type: BinanceAccountType,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
@@ -167,12 +169,21 @@ class BinanceUserDataHttpAPI:
         if account_type == BinanceAccountType.SPOT:
             listen_key_url = "/api/v3/userDataStream"
             self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            listen_key_url = "/papi/v1/listenKey"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         elif account_type == BinanceAccountType.MARGIN:
             self._endpoint_listenkey = None
             self._endpoint_listentoken = BinanceListenTokenHttp(client, "/sapi/v1/userListenToken")
         elif account_type == BinanceAccountType.ISOLATED_MARGIN:
             self._endpoint_listenkey = None
             self._endpoint_listentoken = BinanceListenTokenHttp(client, "/sapi/v1/userListenToken")
+        elif (
+            account_type == BinanceAccountType.USDT_FUTURES
+            and private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+        ):
+            listen_key_url = "/papi/v1/listenKey"
+            self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)
         elif account_type == BinanceAccountType.USDT_FUTURES:
             listen_key_url = "/fapi/v1/listenKey"
             self._endpoint_listenkey = BinanceListenKeyHttp(client, listen_key_url)

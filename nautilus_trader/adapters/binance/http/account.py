@@ -1,6 +1,7 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceNewOrderRespType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
@@ -521,6 +522,7 @@ class BinanceAccountHttpAPI:
         client: BinanceHttpClient,
         clock: LiveClock,
         account_type: BinanceAccountType,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
@@ -529,9 +531,18 @@ class BinanceAccountHttpAPI:
         if account_type.is_spot:
             self.base_endpoint = "/api/v3/"
             user_trades_url = self.base_endpoint + "myTrades"
+        elif account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            self.base_endpoint = "/papi/v1/margin/"
+            user_trades_url = self.base_endpoint + "myTrades"
         elif account_type == BinanceAccountType.MARGIN:
             self.base_endpoint = "/sapi/v1/margin/"
             user_trades_url = self.base_endpoint + "myTrades"
+        elif (
+            account_type == BinanceAccountType.USDT_FUTURES
+            and private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+        ):
+            self.base_endpoint = "/papi/v1/um/"
+            user_trades_url = self.base_endpoint + "userTrades"
         elif account_type == BinanceAccountType.USDT_FUTURES:
             self.base_endpoint = "/fapi/v1/"
             user_trades_url = self.base_endpoint + "userTrades"

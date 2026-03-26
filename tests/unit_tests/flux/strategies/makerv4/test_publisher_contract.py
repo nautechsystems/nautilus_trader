@@ -59,8 +59,8 @@ def test_makerv4_publisher_reuses_shared_quote_snapshot_contract() -> None:
         fee_assumptions={
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "hl_taker_fee_bps": 4.5,
-            "hl_maker_fee_bps": 0.25,
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
     )
@@ -82,8 +82,8 @@ def test_makerv4_publisher_reuses_shared_quote_snapshot_contract() -> None:
     assert payload["fee_assumptions"] == {
         "ibkr_fee_plan": "tiered",
         "ibkr_fee_min_usd": 0.35,
-        "hl_taker_fee_bps": 4.5,
-        "hl_maker_fee_bps": 0.25,
+        "maker_taker_fee_bps": 4.5,
+        "maker_maker_fee_bps": 0.25,
         "assumed_hedge_fee_bps": 1.0,
     }
     assert payload["hedge_leg"]["fee_assumptions"] == payload["fee_assumptions"]
@@ -174,13 +174,13 @@ def test_makerv4_strategy_quote_snapshot_uses_distinct_hedge_identity_and_fill_t
     assert payload["effective_spread_bps"] == pytest.approx(float(effective_spread_bps))
 
 
-def test_makerv4_real_maker_fill_path_uses_configured_hl_maker_fee_in_exported_telemetry() -> None:
+def test_makerv4_real_maker_fill_path_uses_configured_maker_maker_fee_in_exported_telemetry() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
     strategy._runtime_params.update(
         {
-            "hl_maker_fee_bps": 1.75,
+            "maker_maker_fee_bps": 1.75,
             "assumed_hedge_fee_bps": 1.0,
         }
     )
@@ -219,7 +219,7 @@ def test_makerv4_real_maker_fill_path_uses_configured_hl_maker_fee_in_exported_t
 
     assert strategy._last_pricing_debug["expected_maker_fee_bps"] == 1.75
     assert payload["expected_maker_fee_bps"] == 1.75
-    assert payload["fee_assumptions"]["hl_maker_fee_bps"] == 1.75
+    assert payload["fee_assumptions"]["maker_maker_fee_bps"] == 1.75
 
 
 def test_makerv4_strategy_does_not_assume_smart_route_without_explicit_route_metadata() -> None:
@@ -270,8 +270,8 @@ def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_q
         {
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "hl_taker_fee_bps": 4.5,
-            "hl_maker_fee_bps": 0.25,
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         }
     )
@@ -297,8 +297,8 @@ def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_q
     expected_fee_assumptions = {
         "ibkr_fee_plan": "tiered",
         "ibkr_fee_min_usd": 0.35,
-        "hl_taker_fee_bps": 4.5,
-        "hl_maker_fee_bps": 0.25,
+        "maker_taker_fee_bps": 4.5,
+        "maker_maker_fee_bps": 0.25,
         "assumed_hedge_fee_bps": 1.0,
     }
 
@@ -307,7 +307,7 @@ def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_q
     assert quote_snapshot["hedge_leg"]["fee_assumptions"] == expected_fee_assumptions
 
 
-def test_makerv4_quote_targets_move_when_hl_maker_fee_assumption_changes() -> None:
+def test_makerv4_quote_targets_move_when_maker_maker_fee_assumption_changes() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id
     ref_id = strategy.config.reference_instrument_id
@@ -319,7 +319,7 @@ def test_makerv4_quote_targets_move_when_hl_maker_fee_assumption_changes() -> No
             "n_orders3": 0,
             "bid_edge1": 5.0,
             "ask_edge1": 5.0,
-            "hl_maker_fee_bps": 0.25,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         }
     )
@@ -348,7 +348,7 @@ def test_makerv4_quote_targets_move_when_hl_maker_fee_assumption_changes() -> No
     base_targets = strategy._maker_quote_targets(now_ns=1_001_000_000)
     assert base_targets is not None
 
-    strategy._runtime_params["hl_maker_fee_bps"] = 2.25
+    strategy._runtime_params["maker_maker_fee_bps"] = 2.25
     wider_fee_targets = strategy._maker_quote_targets(now_ns=1_001_000_000)
 
     assert wider_fee_targets is not None
@@ -369,7 +369,7 @@ def test_makerv4_quote_targets_apply_ibkr_fee_plan_minimum_commission_floor() ->
             "qty": 1.0,
             "bid_edge1": 5.0,
             "ask_edge1": 5.0,
-            "hl_maker_fee_bps": 0.25,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.0,

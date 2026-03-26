@@ -1327,7 +1327,7 @@ def test_build_signals_payload_uses_injected_metadata_and_legs(contract_catalog)
     assert payload["balances_ok"] is True
     assert payload["risk_delta"] == 12.5
     assert payload["decision_edge_bps"] == 0.0
-    assert payload["spread_net_bps"] == 0.0
+    assert payload["spread_net_bps"] == pytest.approx(100.50251256281408)
     assert payload["required_edge_bps"] == 7.0
     assert payload["edge2_bps"] == -7.0
     assert payload["spread_net_best_case"] == "case2"
@@ -2187,6 +2187,58 @@ def test_build_signals_payload_marks_quote_blockers_as_not_tradeable(
     assert payload["state"]["quote_blockers"][0]["reason_code"] == "pending_cancel_stuck"
 
 
+def test_build_signals_payload_keeps_side_local_borrow_block_tradeable(
+    contract_catalog,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="PLUME",
+        quote_asset="USDT",
+    )
+    legs = build_legs_payload(
+        contracts=contract_catalog,
+        market_rows={
+            "venue_a:ABC/USDT": {"bid": 100.0, "ask": 101.0, "ts_ms": 1700000000000},
+            "venue_b:ABC/USDT": {"bid": 99.0, "ask": 100.0, "ts_ms": 1700000000100},
+        },
+        now_ms_value=1700000001000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 5,
+            "state": "running",
+            "ts_ms": 1700000000000,
+            "maker_quote_status": {
+                "bid_open": 5,
+                "ask_open": 0,
+                "bid_depth": 5,
+                "ask_depth": 5,
+                "bid_blocked": 0,
+                "ask_blocked": 5,
+            },
+            "quote_blockers": [
+                {
+                    "reason_code": "spot_borrow_cap",
+                    "blocked_side": "SELL",
+                    "exchange_code": "51006",
+                },
+            ],
+        },
+        fv_row={"fv": 100.5},
+        params={"qty": 1.0, "n_orders1": 5, "n_orders2": 0, "n_orders3": 0},
+        balances=[],
+        legs=legs,
+    )
+
+    assert payload["tradeable"] is True
+    assert payload["blocked"] is False
+
+
 def test_build_legs_payload_uses_contract_id_keys_for_same_exchange_contracts() -> None:
     contracts = (
         ContractCatalogEntry(exchange="venue_a", symbol="ABC/USDT"),
@@ -2289,6 +2341,7 @@ def test_build_trades_rows_enforces_row_contract_defaults() -> None:
         limit=10,
         since_ms=None,
         since_seq=None,
+        base_first_qty=True,
     )
 
     assert len(rows) == 3
@@ -2358,6 +2411,7 @@ def test_build_trades_rows_derives_canonical_naming_fields_for_plume_instruments
         limit=10,
         since_ms=None,
         since_seq=None,
+        base_first_qty=True,
     )
 
     by_id = {row["row_id"]: row for row in rows}
@@ -2373,6 +2427,63 @@ def test_build_trades_rows_derives_canonical_naming_fields_for_plume_instruments
     assert by_id["trade-binance-spot"]["contract_type"] == "spot"
     assert by_id["trade-okx-perp"]["quote_asset"] == "USDT"
     assert by_id["trade-okx-perp"]["display_name_long"] == "Okx PLUME Perp"
+
+
+def test_build_trades_rows_prefers_explicit_base_qty_for_operator_contract() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-okx-perp",
+                "ts_ms": 1700000000003,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+                "price": "0.012736",
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+        base_first_qty=True,
+    )
+
+    assert rows[0]["qty"] == "1000"
+    assert rows[0]["qty_base"] == "1000"
+    assert rows[0]["qty_venue"] == "100"
+    assert rows[0]["qty_conversion_status"] == "exact_multiplier"
+    assert rows[0]["row_id"] == "trade-okx-perp"
+
+
+def test_build_trades_rows_keeps_generic_qty_venue_native_without_base_first_projection() -> None:
+    rows = build_trades_rows(
+        rows=[
+            {
+                "strategy_id": "strategy_01",
+                "row_id": "trade-okx-perp",
+                "ts_ms": 1700000000003,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+            },
+        ],
+        strategy_id="strategy_01",
+        limit=10,
+        since_ms=None,
+        since_seq=None,
+        base_first_qty=False,
+    )
+
+    assert rows[0]["qty"] == "100"
+    assert rows[0]["qty_base"] == "1000"
+    assert rows[0]["qty_venue"] == "100"
 
 
 def test_enrich_balances_rows_adds_canonical_naming_fields() -> None:
@@ -3071,8 +3182,8 @@ def test_build_signals_payload_emits_makerv4_execution_mode_overnight_and_fee_op
                 "fee_assumptions": {
                     "ibkr_fee_plan": "tiered",
                     "ibkr_fee_min_usd": 0.35,
-                    "hl_taker_fee_bps": 4.5,
-                    "hl_maker_fee_bps": 0.25,
+                    "maker_taker_fee_bps": 4.5,
+                    "maker_maker_fee_bps": 0.25,
                     "assumed_hedge_fee_bps": 1.0,
                 },
                 "pending_hedge": {
@@ -3103,10 +3214,11 @@ def test_build_signals_payload_emits_makerv4_execution_mode_overnight_and_fee_op
         "fee_assumptions": {
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "hl_taker_fee_bps": 4.5,
-            "hl_maker_fee_bps": 0.25,
+            "maker_taker_fee_bps": 4.5,
+            "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
+        "hedge_backlog": None,
     }
 
 
@@ -3183,8 +3295,8 @@ def test_build_signals_payload_emits_complete_makerv4_steady_state_hedge_policy_
                 "fee_assumptions": {
                     "ibkr_fee_plan": "tiered",
                     "ibkr_fee_min_usd": 0.35,
-                    "hl_taker_fee_bps": 4.5,
-                    "hl_maker_fee_bps": 0.25,
+                    "maker_taker_fee_bps": 4.5,
+                    "maker_maker_fee_bps": 0.25,
                     "assumed_hedge_fee_bps": 1.0,
                 },
             },

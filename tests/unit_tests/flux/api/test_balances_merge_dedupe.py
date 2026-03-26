@@ -53,6 +53,56 @@ def test_merge_portfolio_balances_rows_deduplicates_identical_non_stable_cash_ac
     assert row["total"] == "-62391.95495260"
 
 
+def test_merge_portfolio_balances_rows_keeps_ibkr_cash_generic_across_product_scopes() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "aapl_tradexyz_makerv4": [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv4",
+                    "exchange": "ibkr",
+                    "account_id": "U10015777",
+                    "asset": "HKD",
+                    "free": "84214.62",
+                    "locked": "0",
+                    "total": "84214.62",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "aapl_tradexyz_makerv4:cash:0",
+                    "product_type": "perp",
+                },
+            ],
+            "aapl_binance_perp_makerv4": [
+                {
+                    "strategy_id": "aapl_binance_perp_makerv4",
+                    "exchange": "ibkr",
+                    "account_id": "U10015777",
+                    "asset": "HKD",
+                    "free": "84175.66",
+                    "locked": "0",
+                    "total": "84175.66",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "aapl_binance_perp_makerv4:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+        },
+        portfolio_id="equities",
+        preserve_product_scope_cash=True,
+    )
+
+    hkd_rows = [
+        row
+        for row in merged
+        if row.get("exchange") == "ibkr" and row.get("asset") == "HKD"
+    ]
+
+    assert len(hkd_rows) == 1
+    row = hkd_rows[0]
+    assert row["row_id"] == "equities:cash:ibkr:U10015777:HKD"
+    assert row["total"] == "84175.66"
+    assert row["display_name_short"] == "HKD"
+    assert row["display_name_long"] == "Ibkr HKD"
+
+
 def test_duplicate_spot_position_collapse_is_account_aware() -> None:
     collapsed = collapse_balance_display_rows(
         [

@@ -11,6 +11,8 @@ Use it with `deploy/tg_bots/README.md` and
 - Watch the combined Binance PM + spot `USDT` balance for Lan's account.
 - Send a Telegram baseline plus balance-change alerts with the source bot's
   cooldown, summary, and missing-asset behavior.
+- Accept Telegram `/reset` from the configured alert chat and optional topic,
+  then immediately re-baseline the persisted state from the live balance.
 - Expose the service in Pulse under the `TG Bots` group.
 
 ## Required secrets and config
@@ -91,16 +93,22 @@ Stop:
 sudo systemctl stop flux@tg-bot-lan-rogue-trader-alert.service
 ```
 
-Reset the baseline to the current balance:
+Reset the baseline to the current balance from Telegram:
+
+- Send `/reset` in the configured Telegram chat.
+- If `telegram_thread_id` is set, send the command in that exact topic.
+- The bot fetches the current combined PM + spot balance immediately, replaces
+  the persisted baseline, and confirms the reset in Telegram.
+
+Manual fallback reset:
 
 ```bash
 rm -f state/lan_rogue_trader_alert.json
 sudo systemctl restart flux@tg-bot-lan-rogue-trader-alert.service
 ```
 
-This bot does not expose a separate baseline-reset command. Removing the
-persisted state file forces the next successful poll to treat the current
-combined PM + spot balance as a new baseline.
+Removing the persisted state file still forces the next successful poll to
+treat the current combined PM + spot balance as a new baseline.
 
 Disable the whole group target:
 
@@ -127,6 +135,9 @@ Rollback is config-only:
 - Telegram sends to the wrong place:
   verify `telegram_chat_id`, `telegram_thread_id`, and `strict_thread` in the
   local INI.
+- `/reset` does nothing:
+  verify the command was sent from the configured `telegram_chat_id` and, when
+  set, the configured `telegram_thread_id`.
 - No baseline message:
   verify `send_baseline = true` in the INI and inspect the unit logs for
   Telegram API failures.

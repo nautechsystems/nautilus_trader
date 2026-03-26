@@ -15,6 +15,8 @@ execution_venue = "HYPERLIQUID"
 reference_venue = "IBKR"
 execution_symbol = "AAPL"
 reference_symbol = "AAPL/USD"
+# For Binance equity-perp routes, switch `execution_venue = "BINANCE_PERP"` and
+# use the venue symbol form, e.g. `execution_symbol = "AAPLUSDT"`.
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -49,6 +51,15 @@ vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
 dex = "xyz"
 testnet = false
 
+# For Binance USD-M equity-perp routes, replace the Hyperliquid block above with:
+# [node.venues.BINANCE_PERP]
+# instrument_id = "AAPLUSDT-PERP.BINANCE_PERP"
+# execution = true
+# api_key_env = "EQUITIES_BINANCE_API_KEY"
+# api_secret_env = "EQUITIES_BINANCE_API_SECRET"
+# account_type = "USDT_FUTURES"
+# private_api_family = "PORTFOLIO_MARGIN"  # Required for Binance PM accounts
+
 [node.venues.IBKR]
 adapter = "interactive_brokers"
 instrument_id = "AAPL.NASDAQ"
@@ -70,10 +81,15 @@ order_qty = "1"
 qty = "1"
 qty_unit = "base"
 bot_on = false
+execution_mode = "take_take"
 manage_stop = false
 outside_rth_hedge_enabled = true
 ibkr_primary_exchange = "NASDAQ"
-max_age_ms = 10000
+max_age_ms = 60000
+max_ibkr_quote_age_ms = 300000
+bid_edge_take_bps = 10.0
+ask_edge_take_bps = 10.0
+take_cooldown_ms = 15000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0

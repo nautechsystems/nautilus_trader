@@ -62,9 +62,11 @@ from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
 from nautilus_trader.live.reconciliation import is_external_reconciliation_artifact_position
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
 from nautilus_trader.model.book import py_should_handle_own_book_order
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
@@ -88,6 +90,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
@@ -193,7 +196,6 @@ class LiveExecutionEngine(ExecutionEngine):
     _EXECUTION_ALERT_BURST_THRESHOLD: Final[int] = 3
     _EXECUTION_ALERT_BURST_WINDOW_NS: Final[int] = 60_000_000_000
     _EXECUTION_ALERT_BURST_COOLDOWN_NS: Final[int] = 60_000_000_000
-
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -1815,12 +1817,28 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
-        return tuple(
+        exact_entries = tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
+
+        if account_id is None:
+            return exact_entries
+
+        exact_strategy_ids = {snapshot.strategy_id for snapshot in exact_entries}
+        unscoped_entries = tuple(
+            snapshot
+            for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
+            self._startup_reconciliation_snapshot.items()
+            if snapshot_instrument_id == instrument_id
+            and snapshot_account_id is None
+            and not snapshot.has_open_positions
+            and snapshot.strategy_id not in exact_strategy_ids
+        )
+
+        return (*exact_entries, *unscoped_entries)
 
     def _startup_snapshot_for_instrument(
         self,
@@ -1837,10 +1855,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         client: ExecutionClient,
         instrument_id: InstrumentId,
-    ) -> list[OrderStatusReport]:
+    ) -> tuple[list[OrderStatusReport], list[GenerateOrderStatusReport]]:
         snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
         if not snapshot.open_order_refs:
-            return []
+            return [], []
 
         seen_refs: set[tuple[ClientOrderId, VenueOrderId | None]] = set()
         commands: list[GenerateOrderStatusReport] = []
@@ -1865,6 +1883,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         reports: list[OrderStatusReport] = []
+        missing_commands: list[GenerateOrderStatusReport] = []
         for command, result in zip(commands, results, strict=True):
             if isinstance(result, BaseException):
                 self._log.warning(
@@ -1874,8 +1893,15 @@ class LiveExecutionEngine(ExecutionEngine):
                 continue
             if result is not None:
                 reports.append(result)
+                continue
 
-        return reports
+            cached_order = self._cache.order(command.client_order_id)
+            if cached_order is None or not cached_order.is_open:
+                continue
+
+            missing_commands.append(command)
+
+        return reports, missing_commands
 
     @staticmethod
     def _merge_startup_order_status_reports(
@@ -1972,22 +1998,58 @@ class LiveExecutionEngine(ExecutionEngine):
                     client.generate_fill_reports(fill_reports_command),
                     client.generate_position_status_reports(position_status_command),
                 )
-                targeted_order_reports = (
+                bulk_order_reports = cast("list[OrderStatusReport]", reports[0])
+                targeted_order_reports, targeted_missing_commands = (
                     await self._generate_startup_targeted_order_status_reports(
                         client=client,
                         instrument_id=instrument_id,
                     )
                     if use_open_orders_only
-                    else []
+                    else ([], [])
                 )
-                position_reports = self._normalize_netting_position_reports(
+                bulk_reported_client_order_ids = {
+                    report.client_order_id
+                    for report in bulk_order_reports
+                    if report.client_order_id is not None
+                }
+                bulk_reported_venue_order_ids = {
+                    report.venue_order_id
+                    for report in bulk_order_reports
+                    if report.venue_order_id is not None
+                }
+                for command in targeted_missing_commands:
+                    if (
+                        command.client_order_id in bulk_reported_client_order_ids
+                        or command.venue_order_id in bulk_reported_venue_order_ids
+                    ):
+                        continue
+
+                    cached_order = self._cache.order(command.client_order_id)
+                    if cached_order is None or not cached_order.is_open:
+                        continue
+
+                    self._log.info(
+                        f"Startup targeted order-status query returned no report and "
+                        f"the bulk open-order sweep omitted {command.client_order_id!r}; "
+                        "marking cached order as missing at venue",
+                        LogColor.BLUE,
+                    )
+                    self._resolve_cached_order_missing_at_venue(
+                        cached_order,
+                        ts_now=command.ts_init,
+                        reason="ORDER_NOT_FOUND_AT_VENUE",
+                    )
+                position_reports = self._normalize_startup_position_reports_for_instrument(
+                    client=client,
+                    instrument_id=instrument_id,
                     reports=cast("list[PositionStatusReport]", reports[2]),
                     log_prefix="Startup position report normalization",
+                    ts_ns=self._clock.timestamp_ns(),
                 )
 
                 mass_status.add_order_reports(
                     reports=self._merge_startup_order_status_reports(
-                        bulk_reports=cast("list[OrderStatusReport]", reports[0]),
+                        bulk_reports=bulk_order_reports,
                         targeted_reports=targeted_order_reports,
                     ),
                 )
@@ -2004,6 +2066,15 @@ class LiveExecutionEngine(ExecutionEngine):
         client: ExecutionClient,
         instrument_id: InstrumentId,
     ) -> bool:
+        if not getattr(client, "supports_startup_historical_order_status_reports", True):
+            self._log.info(
+                f"Startup reconciliation client {client.id} disables closed order-history "
+                f"queries for {instrument_id}; requesting only open venue orders and using "
+                "fills/positions for historical reconstruction",
+                LogColor.BLUE,
+            )
+            return True
+
         snapshot = self._startup_snapshot_for_instrument(client.account_id, instrument_id)
         if snapshot.has_open_positions:
             self._log.info(
@@ -2041,6 +2112,69 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.BLUE,
             )
         return collapsed_reports
+
+    def _startup_synthetic_flat_position_report(
+        self,
+        *,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+        ts_ns: int,
+        log_prefix: str,
+    ) -> PositionStatusReport | None:
+        if client.oms_type != OmsType.NETTING:
+            return None
+
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            instrument_provider = getattr(client, "_instrument_provider", None)
+            if instrument_provider is not None:
+                instrument = instrument_provider.find(instrument_id)
+
+        if instrument is None:
+            self._log.warning(
+                f"{log_prefix}: position query returned no reports for {instrument_id}, "
+                "but the instrument is unavailable so a synthetic flat report cannot be created",
+            )
+            return None
+
+        self._log.info(
+            f"{log_prefix}: position query returned no reports for {instrument_id}; "
+            "synthesizing FLAT PositionStatusReport for NETTING reconciliation",
+            LogColor.BLUE,
+        )
+        return PositionStatusReport(
+            account_id=client.account_id,
+            instrument_id=instrument_id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(instrument.size_precision),
+            report_id=UUID4(),
+            ts_last=ts_ns,
+            ts_init=ts_ns,
+        )
+
+    def _normalize_startup_position_reports_for_instrument(
+        self,
+        *,
+        client: ExecutionClient,
+        instrument_id: InstrumentId,
+        reports: list[PositionStatusReport],
+        log_prefix: str,
+        ts_ns: int,
+    ) -> list[PositionStatusReport]:
+        normalized_reports = self._normalize_netting_position_reports(
+            reports=reports,
+            log_prefix=log_prefix,
+        )
+        if normalized_reports:
+            return normalized_reports
+
+        synthetic_report = self._startup_synthetic_flat_position_report(
+            client=client,
+            instrument_id=instrument_id,
+            ts_ns=ts_ns,
+            log_prefix=log_prefix,
+        )
+        return [synthetic_report] if synthetic_report is not None else []
 
     async def reconcile_execution_state(
         self,
@@ -2137,7 +2271,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 client = self._clients[client_id]
 
                 # Check internal and external position reconciliation
-                report_tasks: list[asyncio.Task] = []
+                pending_position_commands: dict[InstrumentId, GeneratePositionStatusReports] = {}
 
                 # For routing brokers, venue may differ from instrument venue (e.g., IB client venue
                 # vs NYSE instrument venue), so filter by account_id instead of venue
@@ -2157,17 +2291,28 @@ class LiveExecutionEngine(ExecutionEngine):
                         )
                         continue  # Already reconciled
 
+                    if instrument_id in pending_position_commands:
+                        self._log.debug(
+                            f"Position {instrument_id} for {client_id} already queued for "
+                            "startup follow-up reconciliation",
+                        )
+                        continue
+
                     self._log.info(f"{position} pending reconciliation")
-                    position_status_command = GeneratePositionStatusReports(
+                    pending_position_commands[instrument_id] = GeneratePositionStatusReports(
                         instrument_id=instrument_id,
                         start=None,
                         end=None,
                         command_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )
-                    report_tasks.append(
+                report_tasks = [
+                    (
+                        instrument_id,
                         client.generate_position_status_reports(position_status_command),
                     )
+                    for instrument_id, position_status_command in pending_position_commands.items()
+                ]
 
                 if report_tasks:
                     # Reconcile specific internal open positions
@@ -2183,7 +2328,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     try:
                         position_report_results = await asyncio.wait_for(
                             asyncio.gather(
-                                *report_tasks,
+                                *(task for _, task in report_tasks),
                                 return_exceptions=True,
                             ),
                             timeout=position_reports_timeout,
@@ -2194,7 +2339,11 @@ class LiveExecutionEngine(ExecutionEngine):
                         )
                         return False
 
-                    for task_result_or_exception in position_report_results:
+                    for (instrument_id, _), task_result_or_exception in zip(
+                        report_tasks,
+                        position_report_results,
+                        strict=False,
+                    ):
                         if isinstance(task_result_or_exception, Exception):
                             self._log.error(
                                 f"Failed to generate position status reports: {task_result_or_exception}",
@@ -2203,6 +2352,13 @@ class LiveExecutionEngine(ExecutionEngine):
                             continue
 
                         task_result = cast("list[PositionStatusReport]", task_result_or_exception)
+                        task_result = self._normalize_startup_position_reports_for_instrument(
+                            client=client,
+                            instrument_id=instrument_id,
+                            reports=task_result,
+                            log_prefix="Startup follow-up position query",
+                            ts_ns=self._clock.timestamp_ns(),
+                        )
                         for report in task_result:
                             position_result = self._reconcile_position_report(
                                 report,
@@ -2413,6 +2569,9 @@ class LiveExecutionEngine(ExecutionEngine):
             mass_status,
             allow_startup_external_cleanup=allow_startup_external_cleanup,
         )
+
+        if allow_startup_external_cleanup:
+            self._restore_startup_orphan_position_lineage(mass_status)
 
         # Deduplicate orders in mass status
         self._deduplicate_mass_status_orders(mass_status)
@@ -2689,6 +2848,161 @@ class LiveExecutionEngine(ExecutionEngine):
                 f"Removed {len(orders_to_remove)} duplicate/skipped order(s) from reconciliation "
                 f"({len(duplicate_venue_order_ids)} duplicates, {len(orders_to_skip)} already in cache)",
                 LogColor.YELLOW,
+            )
+
+    def _restore_startup_orphan_position_lineage(self, mass_status: ExecutionMassStatus) -> None:
+        """
+        Restore missing cached netting position exposure from closed filled order lineage.
+
+        Startup reconciliation can see cached FILLED orders whose position record was lost while the
+        venue still reports that quantity as part of the live net position. Restoring that residual
+        exposure into the one canonical NETTING position keeps startup reconciliation consistent
+        without reintroducing orphan position IDs into the cache.
+        """
+        restored_fragment_ids: list[str] = []
+
+        for instrument_id, position_reports in mass_status.position_reports.items():
+            if any(report.venue_position_id is not None for report in position_reports):
+                continue
+
+            account_id = position_reports[0].account_id if position_reports else None
+            venue_signed_qty = sum(
+                (report.signed_decimal_qty for report in position_reports),
+                start=Decimal("0"),
+            )
+            if venue_signed_qty == 0:
+                continue
+
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                continue
+
+            positions_open = self._cache.positions_open(
+                venue=None,
+                instrument_id=instrument_id,
+                account_id=account_id,
+            )
+            if len(positions_open) != 1:
+                continue
+
+            target_position = positions_open[0]
+            current_signed_qty = target_position.signed_decimal_qty()
+            if current_signed_qty == 0 or (venue_signed_qty > 0 and current_signed_qty < 0) or (
+                venue_signed_qty < 0 and current_signed_qty > 0
+            ):
+                continue
+
+            diff_signed_qty = venue_signed_qty - current_signed_qty
+            if diff_signed_qty == 0:
+                continue
+
+            orphan_fills_by_position_id: dict[PositionId, list[OrderFilled]] = {}
+            for cached_order in self._cache.orders(instrument_id=instrument_id):
+                if cached_order.is_open:
+                    continue
+
+                if cached_order.strategy_id != target_position.strategy_id:
+                    continue
+
+                position_id = cached_order.position_id
+                if position_id is None or self._cache.position(position_id) is not None:
+                    continue
+
+                if cached_order.filled_qty.as_decimal() == 0:
+                    continue
+
+                fills = [
+                    event
+                    for event in cached_order.events
+                    if isinstance(event, OrderFilled)
+                    and (account_id is None or event.account_id == account_id)
+                ]
+                if not fills:
+                    continue
+
+                orphan_fills_by_position_id.setdefault(position_id, []).extend(fills)
+
+            exact_match: Position | None = None
+            ambiguous_exact_match = False
+            for fills in orphan_fills_by_position_id.values():
+                fills.sort(key=lambda fill: (fill.ts_event, fill.ts_init, fill.trade_id.value))
+                restored_position = Position(instrument=instrument, fill=fills[0])
+                for fill in fills[1:]:
+                    restored_position.apply(fill)
+
+                restored_signed_qty = restored_position.signed_decimal_qty()
+                if restored_signed_qty == 0:
+                    continue
+                if (diff_signed_qty > 0 and restored_signed_qty <= 0) or (
+                    diff_signed_qty < 0 and restored_signed_qty >= 0
+                ):
+                    continue
+                if restored_signed_qty != diff_signed_qty:
+                    continue
+
+                if exact_match is not None:
+                    ambiguous_exact_match = True
+                    break
+
+                exact_match = restored_position
+
+            if ambiguous_exact_match or exact_match is None:
+                continue
+
+            now_ns = self._clock.timestamp_ns()
+            restored_signed_qty = exact_match.signed_decimal_qty()
+            synthetic_fill = FillReport(
+                account_id=target_position.account_id,
+                instrument_id=instrument_id,
+                venue_order_id=VenueOrderId(UUID4().value),
+                venue_position_id=target_position.id,
+                trade_id=TradeId(UUID4().value),
+                order_side=OrderSide.BUY if restored_signed_qty > 0 else OrderSide.SELL,
+                last_qty=exact_match.quantity,
+                last_px=instrument.make_price(exact_match.avg_px_open),
+                commission=Money(0, instrument.quote_currency),
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                report_id=UUID4(),
+                ts_event=now_ns,
+                ts_init=now_ns,
+                client_order_id=exact_match.opening_order_id,
+            )
+            target_position.apply(
+                OrderFilled(
+                    trader_id=target_position.trader_id,
+                    strategy_id=target_position.strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=synthetic_fill.client_order_id,
+                    venue_order_id=synthetic_fill.venue_order_id,
+                    account_id=target_position.account_id,
+                    trade_id=synthetic_fill.trade_id,
+                    position_id=target_position.id,
+                    order_side=synthetic_fill.order_side,
+                    order_type=OrderType.MARKET,
+                    last_qty=synthetic_fill.last_qty,
+                    last_px=synthetic_fill.last_px,
+                    currency=instrument.quote_currency,
+                    commission=synthetic_fill.commission,
+                    liquidity_side=synthetic_fill.liquidity_side,
+                    event_id=UUID4(),
+                    ts_event=synthetic_fill.ts_event,
+                    ts_init=synthetic_fill.ts_init,
+                    reconciliation=True,
+                ),
+            )
+            self._cache.update_position(target_position)
+            restored_fragment_ids.append(exact_match.id.value)
+            self._log.warning(
+                f"Restoring startup orphan cached position lineage for {instrument_id}: "
+                f"merged_position_id={exact_match.id!r} into canonical_position_id={target_position.id!r}, "
+                f"restored_signed_qty={restored_signed_qty}, diff_signed_qty={diff_signed_qty}",
+            )
+
+        if restored_fragment_ids:
+            self._log.info(
+                f"Restored {len(restored_fragment_ids)} startup orphan cached position fragment(s): "
+                f"{restored_fragment_ids}",
+                LogColor.BLUE,
             )
 
     def _validate_reconciliation_state(
@@ -3130,24 +3444,36 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         return effective_positions, external_positions, effective_qty, raw_qty
 
-    def _cleanup_stale_external_reconciliation_positions(
+    def _cleanup_stale_startup_netting_positions(
         self,
         report: PositionStatusReport,
         instrument: Instrument,
-        artifact_positions: list[Position],
+        stale_positions: list[Position],
         raw_qty: Decimal,
         effective_qty: Decimal,
+        log_message: str,
+        startup_alert_message: str | None = None,
     ) -> bool:
-        stale_position_ids = [position.id.value for position in artifact_positions]
+        stale_position_ids = [position.id.value for position in stale_positions]
         self._log.info(
-            f"Closing stale EXTERNAL reconciliation positions for {report.instrument_id}: "
+            f"{log_message} for {report.instrument_id}: "
             f"raw_qty={raw_qty}, effective_qty={effective_qty}, "
-            f"stale_qty={self._sum_position_signed_decimal_qty(artifact_positions)}, "
+            f"stale_qty={self._sum_position_signed_decimal_qty(stale_positions)}, "
             f"position_ids={stale_position_ids}",
             LogColor.BLUE,
         )
 
-        for position in artifact_positions:
+        if startup_alert_message is not None:
+            self._publish_startup_position_reconciliation_alert(
+                report=report,
+                message=startup_alert_message,
+                cached_qty=raw_qty,
+                venue_qty=report.signed_decimal_qty,
+                position_ids=stale_position_ids,
+                effective_qty=effective_qty,
+            )
+
+        for position in stale_positions:
             position_qty = position.signed_decimal_qty()
             diff_quantity = Quantity(abs(position_qty), instrument.size_precision)
             if diff_quantity == 0:
@@ -3174,9 +3500,106 @@ class LiveExecutionEngine(ExecutionEngine):
             if diff_report is None:
                 continue
 
-            if not self._reconcile_order_report(diff_report, trades=[], is_external=False):
+            fill_price = diff_report.price
+            if fill_price is None and diff_report.avg_px is not None:
+                fill_price = instrument.make_price(diff_report.avg_px)
+            if fill_price is None and current_avg_px is not None:
+                fill_price = instrument.make_price(current_avg_px)
+            if fill_price is None:
+                fill_price = instrument.make_price(0)
+
+            cleanup_fill_report = FillReport(
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                venue_order_id=diff_report.venue_order_id,
+                trade_id=TradeId(UUID4().value),
+                order_side=diff_report.order_side,
+                last_qty=diff_quantity,
+                last_px=fill_price,
+                commission=Money(0, instrument.quote_currency),
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                report_id=UUID4(),
+                ts_event=diff_report.ts_last,
+                ts_init=diff_report.ts_init,
+                client_order_id=diff_report.client_order_id,
+                venue_position_id=position.id,
+            )
+
+            if not self._reconcile_order_report(
+                diff_report,
+                trades=[cleanup_fill_report],
+                is_external=False,
+                position_id_override=position.id,
+            ):
                 return False
 
+        return True
+
+    def _cleanup_stale_external_reconciliation_positions(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        artifact_positions: list[Position],
+        raw_qty: Decimal,
+        effective_qty: Decimal,
+        publish_startup_alert: bool = False,
+    ) -> bool:
+        return self._cleanup_stale_startup_netting_positions(
+            report=report,
+            instrument=instrument,
+            stale_positions=artifact_positions,
+            raw_qty=raw_qty,
+            effective_qty=effective_qty,
+            log_message="Closing stale EXTERNAL reconciliation positions",
+            startup_alert_message=(
+                f"Startup reconciliation removed stale EXTERNAL cached positions for "
+                f"{report.instrument_id}"
+                if publish_startup_alert
+                else None
+            ),
+        )
+
+    def _should_cleanup_stale_startup_netting_positions(
+        self,
+        positions_open: list[Position],
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+        venue_qty: Decimal,
+    ) -> bool:
+        if venue_qty != 0 or not positions_open:
+            return False
+
+        snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
+        current_startup_open_orders = [
+            order
+            for ref in snapshot.open_order_refs
+            if (
+                order := self._cache.order(ref.client_order_id)
+            ) is not None
+            and order.is_open
+        ]
+        if current_startup_open_orders:
+            return False
+
+        startup_position_ids = {
+            position_id
+            for strategy_snapshot in snapshot.strategy_snapshots
+            for position_id in strategy_snapshot.open_position_ids
+        }
+        if not startup_position_ids:
+            return False
+
+        current_position_ids = {position.id for position in positions_open}
+        if not current_position_ids.issubset(startup_position_ids):
+            return False
+
+        self._log.info(
+            f"Treating startup netting positions as stale cached positions for "
+            f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
+            f"snapshot_open_orders={snapshot.total_open_order_count}, "
+            f"current_startup_open_orders={len(current_startup_open_orders)}",
+            LogColor.BLUE,
+        )
         return True
 
     def _reconcile_position_report_netting(
@@ -3232,12 +3655,45 @@ class LiveExecutionEngine(ExecutionEngine):
                 artifact_positions=artifact_positions,
                 raw_qty=raw_position_signed_decimal_qty,
                 effective_qty=position_signed_decimal_qty,
+                publish_startup_alert=allow_startup_external_cleanup,
+            )
+
+        if (
+            allow_startup_external_cleanup
+            and self._should_cleanup_stale_startup_netting_positions(
+                positions_open=positions_open,
+                account_id=report.account_id,
+                instrument_id=report.instrument_id,
+                venue_qty=report.signed_decimal_qty,
+            )
+        ):
+            return self._cleanup_stale_startup_netting_positions(
+                report=report,
+                instrument=instrument,
+                stale_positions=positions_open,
+                raw_qty=raw_position_signed_decimal_qty,
+                effective_qty=Decimal("0"),
+                log_message="Closing stale startup cached positions",
+                startup_alert_message=(
+                    f"Startup reconciliation removed stale cached positions for "
+                    f"{report.instrument_id}"
+                ),
             )
 
         # Check if quantities match
         quantities_match = position_signed_decimal_qty == report.signed_decimal_qty
 
         if not quantities_match:
+            if allow_startup_external_cleanup and raw_position_signed_decimal_qty != 0:
+                self._publish_startup_position_reconciliation_alert(
+                    report=report,
+                    message=(
+                        f"Startup reconciliation detected stale cached position for "
+                        f"{report.instrument_id}"
+                    ),
+                    cached_qty=raw_position_signed_decimal_qty,
+                    venue_qty=report.signed_decimal_qty,
+                )
             if not self.generate_missing_orders:
                 self._log.error(
                     f"Cannot reconcile {report.instrument_id}: "
@@ -3311,6 +3767,51 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
 
         return True  # Reconciled
+
+    def _publish_startup_position_reconciliation_alert(
+        self,
+        *,
+        report: PositionStatusReport,
+        message: str,
+        cached_qty: Decimal,
+        venue_qty: Decimal,
+        position_ids: list[str] | None = None,
+        raw_qty: Decimal | None = None,
+        effective_qty: Decimal | None = None,
+    ) -> None:
+        snapshot = self._startup_snapshot_for_instrument(report.account_id, report.instrument_id)
+        strategy_ids = [
+            snapshot_entry.strategy_id
+            for snapshot_entry in snapshot.strategy_snapshots
+            if snapshot_entry.strategy_id.value != "EXTERNAL"
+        ] or [StrategyId("EXTERNAL")]
+
+        ts_event = int(report.ts_last or report.ts_init or self._clock.timestamp_ns())
+        for strategy_id in strategy_ids:
+            payload: dict[str, Any] = {
+                "strategy_id": strategy_id.value,
+                "level": "error",
+                "message": message,
+                "alert_key": "startup_position_reconciliation",
+                "actionable": True,
+                "source": "execution",
+                "event_type": "StartupPositionReconciliation",
+                "venue": report.instrument_id.venue.value,
+                "instrument_id": report.instrument_id.value,
+                "ts_event": ts_event,
+                "ts_ms": ts_event // 1_000_000,
+                "cached_qty": str(cached_qty),
+                "venue_qty": str(venue_qty),
+            }
+            if report.account_id is not None:
+                payload["account_id"] = report.account_id.value
+            if position_ids:
+                payload["position_ids"] = position_ids
+            if raw_qty is not None:
+                payload["raw_qty"] = str(raw_qty)
+            if effective_qty is not None:
+                payload["effective_qty"] = str(effective_qty)
+            self._publish_execution_alert(payload)
 
     def _reconcile_cross_zero_position(
         self,
@@ -3656,6 +4157,7 @@ class LiveExecutionEngine(ExecutionEngine):
         report: OrderStatusReport,
         trades: list[FillReport],
         is_external: bool = True,
+        position_id_override: PositionId | None = None,
     ) -> bool:
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
@@ -3684,7 +4186,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 return True  # No further reconciliation
 
             # Add to cache without determining any position ID initially
-            self._cache.add_order(order)
+            self._cache.add_order(order, position_id=position_id_override)
 
             # Explicitly index venue_order_id for external orders to ensure they can be found
             # by venue_order_id in subsequent reconciliation passes
@@ -4146,7 +4648,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         # Only venue-originated external orders should be claimed by strategies.
-        # Synthetic reconciliation orders must remain EXTERNAL so they don't
+        # Synthetic reconciliation orders remain EXTERNAL by default so they don't
         # pollute strategy-owned state when cache is reloaded on restart.
         strategy_id = self.get_external_order_claim(report.instrument_id) if is_external else None
 

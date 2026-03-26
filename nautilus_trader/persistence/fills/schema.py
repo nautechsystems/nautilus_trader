@@ -58,6 +58,10 @@ EXECUTION_FILL_COLUMN_NAMES = (
     "ts_open_order_recv_ns",
     "ts_order_status_recv_ns",
     "ts_exec_details_recv_ns",
+    "last_qty_base",
+    "last_qty_venue",
+    "qty_conversion_status",
+    "qty_conversion_source",
     "created_at",
 )
 
@@ -109,6 +113,10 @@ CREATE TABLE IF NOT EXISTS execution_fill (
   ts_open_order_recv_ns INTEGER,
   ts_order_status_recv_ns INTEGER,
   ts_exec_details_recv_ns INTEGER,
+  last_qty_base TEXT,
+  last_qty_venue TEXT,
+  qty_conversion_status TEXT,
+  qty_conversion_source TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   PRIMARY KEY (trader_id, event_id)
 );
@@ -189,9 +197,13 @@ INSERT INTO execution_fill (
   ts_cancel_gateway_send_ns,
   ts_open_order_recv_ns,
   ts_order_status_recv_ns,
-  ts_exec_details_recv_ns
+  ts_exec_details_recv_ns,
+  last_qty_base,
+  last_qty_venue,
+  qty_conversion_status,
+  qty_conversion_source
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(trader_id, event_id) DO NOTHING
 """

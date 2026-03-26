@@ -68,11 +68,21 @@ send_baseline = false
             self.get_calls.append(
                 {"url": url, "params": list(params), "headers": dict(headers), "timeout": timeout}
             )
+            if url.endswith("/papi/v1/balance"):
+                return FakeResponse(
+                    200,
+                    {
+                        "asset": "USDT",
+                        "totalWalletBalance": "123.45",
+                    },
+                )
             return FakeResponse(
                 200,
                 {
-                    "asset": "USDT",
-                    "totalWalletBalance": "123.45",
+                    "accountType": "SPOT",
+                    "balances": [
+                        {"asset": "USDT", "free": "0.00", "locked": "0.00"},
+                    ],
                 },
             )
 
@@ -96,6 +106,6 @@ send_baseline = false
     exit_code = runner.main(["--config", str(config_path), "--once"])
 
     assert exit_code == 0
-    assert len(session.get_calls) == 1
+    assert len(session.get_calls) == 2
     state_payload = json.loads((tmp_path / "state" / "lan_rogue_trader_alert.json").read_text())
     assert state_payload["last_balance"] == "123.45"

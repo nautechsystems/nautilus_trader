@@ -3,9 +3,12 @@ from __future__ import annotations
 import sys
 from contextlib import suppress
 from decimal import Decimal
+import re
 from typing import Any
 from typing import Callable
 from typing import Mapping
+
+from flux.common.quantity_units import exposure_from_venue_qty
 
 if __name__ == "flux.strategies.shared.trades":
     sys.modules.setdefault(
@@ -124,11 +127,10 @@ def _commission_payload(
     commission: Any,
     instrument: Any | None,
 ) -> dict[str, str]:
-    amount = _decimal_or_none(commission)
+    amount, currency_code = _parse_commission_value(commission)
     if amount is None:
         return {}
     amount_text = str(amount)
-    currency_code = _currency_code(getattr(commission, "currency", None))
     payload = {
         "fee": amount_text,
         "fee_amount_raw": amount_text,
@@ -137,6 +139,70 @@ def _commission_payload(
         payload["fee_asset_raw"] = currency_code
         if currency_code in _quote_currency_codes(instrument):
             payload["fee_quote"] = amount_text
+    return payload
+
+
+_COMMISSION_TEXT_RE = re.compile(
+    r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\s+([A-Za-z0-9:_-]+))?\s*$",
+)
+
+
+def _parse_commission_value(commission: Any) -> tuple[Decimal | None, str]:
+    amount = _decimal_or_none(commission)
+    currency_code = _currency_code(getattr(commission, "currency", None))
+    if amount is not None:
+        return amount, currency_code
+
+    text = _text(commission)
+    if not text:
+        return None, currency_code
+
+    match = _COMMISSION_TEXT_RE.match(text)
+    if match is None:
+        return None, currency_code
+
+    try:
+        amount = Decimal(match.group(1))
+    except Exception:
+        return None, currency_code
+
+
+    parsed_currency = _currency_code(match.group(2))
+    return amount, currency_code or parsed_currency
+
+
+def _quantity_payload(
+    *,
+    instrument: Any | None,
+    qty: Decimal | None,
+    last_px: Any,
+    instrument_lookup: Callable[[Any], Any] | None,
+) -> dict[str, str]:
+    qty_text = str(qty) if qty is not None else ""
+    payload = {
+        "qty": qty_text,
+        "qty_venue": qty_text,
+        "qty_base": "",
+        "qty_conversion_status": "",
+        "qty_conversion_source": "",
+    }
+    if qty is None:
+        return payload
+
+    if instrument is None:
+        payload["qty_conversion_status"] = "missing_metadata"
+        payload["qty_conversion_source"] = (
+            "trade_payload:instrument lookup miss"
+            if callable(instrument_lookup)
+            else "trade_payload:instrument lookup unavailable"
+        )
+        return payload
+
+    exposure = exposure_from_venue_qty(instrument, qty, last_px=last_px)
+    payload["qty_venue"] = str(exposure.venue_qty) if exposure.venue_qty is not None else qty_text
+    payload["qty_base"] = str(exposure.base_qty) if exposure.base_qty is not None else ""
+    payload["qty_conversion_status"] = exposure.qty_conversion_status
+    payload["qty_conversion_source"] = exposure.qty_conversion_source
     return payload
 
 
@@ -162,6 +228,12 @@ def build_trade_payload(
     quote_asset = _currency_code(getattr(instrument, "quote_currency", None))
     exchange = instrument_id_text.split(".")[-1].strip().lower() if "." in instrument_id_text else ""
     row_key = trade_id or client_order_id or str(_timestamp_ms(ts_event))
+    quantity_payload = _quantity_payload(
+        instrument=instrument,
+        qty=qty,
+        last_px=getattr(event, "last_px", None),
+        instrument_lookup=instrument_lookup,
+    )
 
     payload: dict[str, Any] = {
         "strategy_id": _text(strategy_id),
@@ -170,12 +242,12 @@ def build_trade_payload(
         "client_order_id": client_order_id,
         "trade_id": trade_id,
         "side": _enum_text(getattr(event, "order_side", None) or getattr(event, "side", None)),
-        "qty": str(qty) if qty is not None else "",
         "price": str(price) if price is not None else "",
         "ts_event": ts_event,
         "ts_ms": _timestamp_ms(ts_event),
         "row_id": f"{_text(strategy_id)}:{trade_role or 'trade'}:{instrument_id_text}:{row_key}",
     }
+    payload.update(quantity_payload)
     if trade_role:
         payload["trade_role"] = trade_role
     if symbol:

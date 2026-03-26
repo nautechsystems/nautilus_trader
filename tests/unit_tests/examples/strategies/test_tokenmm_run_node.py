@@ -1673,19 +1673,42 @@ def test_build_telemetry_actor_configs_includes_markouts_actor() -> None:
                 "orders_db_path": "/tmp/orders.sqlite",
                 "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
                 "markouts_db_path": "/tmp/markouts.sqlite",
-                "markout_horizons_s": [30, 60, 120],
+                "markout_horizons_s": [0, 30, 60, 120],
+                "markout_benchmarks": [
+                    {
+                        "benchmark_name": "fv_market_mid",
+                        "benchmark_field": "fv",
+                    },
+                    {
+                        "benchmark_name": "local_mkt_mid",
+                        "benchmark_field": "maker_mid",
+                    },
+                ],
             },
         },
     )
 
-    markout_actor = next(
+    markout_actors = [
         actor
         for actor in actors
         if actor.actor_path.endswith("markouts.actor:ExecutionMarkoutPersistenceActor")
-    )
+    ]
 
-    assert markout_actor.config["db_path"] == "/tmp/markouts.sqlite"
-    assert markout_actor.config["horizons_s"] == [30, 60, 120]
+    assert len(markout_actors) == 2
+    assert [actor.config["benchmark_name"] for actor in markout_actors] == [
+        "fv_market_mid",
+        "local_mkt_mid",
+    ]
+    assert [actor.config["benchmark_field"] for actor in markout_actors] == [
+        "fv",
+        "maker_mid",
+    ]
+    assert [actor.config["component_id"] for actor in markout_actors] == [
+        "MARKOUT-DB-FV-MARKET-MID",
+        "MARKOUT-DB-LOCAL-MKT-MID",
+    ]
+    assert all(actor.config["db_path"] == "/tmp/markouts.sqlite" for actor in markout_actors)
+    assert all(actor.config["horizons_s"] == [0, 30, 60, 120] for actor in markout_actors)
 
 
 def test_prepare_telemetry_paths_creates_markouts_parent_dir_when_enabled(tmp_path: Path) -> None:
@@ -1708,7 +1731,11 @@ def test_tokenmm_live_config_pins_markout_telemetry_defaults() -> None:
     )
 
     assert 'markouts_db_path = "/var/lib/nautilus/telemetry/tokenmm/markouts.sqlite"' in shared_config
-    assert "markout_horizons_s = [30, 60, 120]" in shared_config
+    assert "markout_horizons_s = [0, 30, 60, 120]" in shared_config
+    assert 'benchmark_name = "fv_market_mid"' in shared_config
+    assert 'benchmark_field = "fv"' in shared_config
+    assert 'benchmark_name = "local_mkt_mid"' in shared_config
+    assert 'benchmark_field = "maker_mid"' in shared_config
 
 
 def test_strategy_startup_lock_prevents_duplicate_flux_strategy_ids(tmp_path: Path) -> None:

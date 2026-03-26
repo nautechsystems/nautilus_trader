@@ -2,6 +2,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -302,6 +303,60 @@ class TestBinanceFactories:
 
         assert isinstance(data_client, BinanceFuturesDataClient)
 
+    def test_create_binance_live_futures_data_client_preserves_custom_http_base_url_for_public_market_traffic(
+        self,
+        binance_http_client,
+    ):
+        data_client = BinanceLiveDataClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceDataClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.USDT_FUTURES,
+                base_url_http="https://proxy.internal.example",
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(data_client, BinanceFuturesDataClient)
+        assert data_client._http_client.base_url == "https://proxy.internal.example"
+        assert data_client._instrument_provider._http_market.client.base_url == (
+            "https://proxy.internal.example"
+        )
+
+    def test_create_binance_portfolio_margin_futures_data_client_uses_split_public_private_routing(
+        self,
+        binance_http_client,
+    ):
+        data_client = BinanceLiveDataClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceDataClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.USDT_FUTURES,
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(data_client, BinanceFuturesDataClient)
+        assert data_client._http_client.base_url == "https://fapi.binance.com"
+        assert data_client._instrument_provider._http_market.client.base_url == "https://fapi.binance.com"
+        assert (
+            data_client._instrument_provider._http_account._endpoint_futures_account.url_path
+            == "/papi/v1/um/account"
+        )
+        assert (
+            data_client._instrument_provider._http_wallet._endpoint_futures_commission_rate.url_path
+            == "/papi/v1/um/commissionRate"
+        )
+
     def test_create_binance_spot_exec_client(self, binance_http_client):
         # Arrange, Act
         exec_client = BinanceLiveExecClientFactory.create(
@@ -335,3 +390,83 @@ class TestBinanceFactories:
         )
 
         assert isinstance(exec_client, BinanceFuturesExecutionClient)
+
+    def test_create_binance_futures_exec_client_preserves_custom_http_base_url_for_public_market_traffic(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.USDT_FUTURES,
+                base_url_http="https://proxy.internal.example",
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceFuturesExecutionClient)
+        assert exec_client._http_client.base_url == "https://proxy.internal.example"
+        assert exec_client._http_market.client.base_url == "https://proxy.internal.example"
+        assert exec_client._instrument_provider._http_market.client.base_url == (
+            "https://proxy.internal.example"
+        )
+
+    def test_create_binance_portfolio_margin_futures_exec_client_uses_split_public_private_routing(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.USDT_FUTURES,
+                private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceFuturesExecutionClient)
+        assert exec_client._http_client.base_url == "https://papi.binance.com"
+        assert exec_client._http_market.client.base_url == "https://fapi.binance.com"
+        assert exec_client._ws_client._stream_base_url == "wss://fstream.binance.com/pm"
+        assert exec_client._instrument_provider._http_market.client.base_url == "https://fapi.binance.com"
+        assert (
+            exec_client._instrument_provider._http_account._endpoint_futures_account.url_path
+            == "/papi/v1/um/account"
+        )
+        assert (
+            exec_client._instrument_provider._http_wallet._endpoint_futures_commission_rate.url_path
+            == "/papi/v1/um/commissionRate"
+        )
+
+    def test_create_binance_portfolio_margin_spot_exec_client_uses_split_public_private_routing(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="SOME_BINANCE_API_SECRET",
+                account_type=BinanceAccountType.PORTFOLIO_MARGIN,
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceSpotExecutionClient)
+        assert exec_client._http_client.base_url == "https://papi.binance.com"
+        assert exec_client._http_market.client.base_url == "https://api.binance.com"
+        assert exec_client._ws_client._stream_base_url == "wss://fstream.binance.com/pm"
+        assert exec_client._instrument_provider._http_market.client.base_url == "https://api.binance.com"

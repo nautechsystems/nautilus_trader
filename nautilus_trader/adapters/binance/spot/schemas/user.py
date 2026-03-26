@@ -34,7 +34,7 @@ class BinanceSpotUserMsgData(msgspec.Struct, frozen=True):
     Inner struct for execution WebSocket messages from Binance.
     """
 
-    e: BinanceSpotEventType
+    e: str
 
 
 class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
@@ -116,12 +116,12 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     q: str  # Original Quantity
     p: str  # Original Price
     P: str  # Stop price
-    F: str  # Iceberg quantity
+    F: str | None = None  # Iceberg quantity
     g: int  # Order list ID
-    C: str  # Original client order ID; This is the ID of the order being canceled
+    C: str | None = None  # Original client order ID; This is the ID of the order being canceled
     x: BinanceExecutionType
     X: BinanceOrderStatus
-    r: str  # Order reject reason; will be an error code
+    r: str | None = None  # Order reject reason; will be an error code
     i: int  # Order ID
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity
@@ -133,11 +133,11 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     I: int  # Ignore
     w: bool  # Is the order on the book?
     m: bool  # Is trade the maker side
-    M: bool  # Ignore
+    M: bool | None = None  # Ignore
     O: int  # Order creation time
     Z: str  # Cumulative quote asset transacted quantity
     Y: str  # Last quote asset transacted quantity (i.e. lastPrice * lastQty)
-    Q: str  # Quote Order Qty
+    Q: str | None = None  # Quote Order Qty
     W: int | None = None  # Working Time (when order was added to the book)
     V: str | None = None  # Self-Trade Prevention Mode
 
@@ -155,7 +155,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         trigger_price = Price.from_str(self.P) if Decimal(self.P) != 0 else None
         order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
         post_only = self.f == BinanceTimeInForce.GTX
-        iceberg_qty = Decimal(self.F)
+        iceberg_qty = Decimal(self.F or "0")
         display_qty = (
             Quantity.from_str(str(Decimal(self.q) - iceberg_qty)) if iceberg_qty != 0 else None
         )

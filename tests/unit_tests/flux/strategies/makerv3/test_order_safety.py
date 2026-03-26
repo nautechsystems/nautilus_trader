@@ -625,6 +625,114 @@ def test_order_rejected_terminal_reason_flips_bot_off_and_skips_burst_alert(
     assert all(alert["alert_key"] != "order_rejected_burst" for alert in alerts)
 
 
+def test_order_rejected_binance_borrow_cap_blocks_asks_only(strategy_factory) -> None:
+    strategy = strategy_factory(
+        maker_instrument_id=InstrumentId(Symbol("PLUMEUSDT"), Venue("BINANCE_SPOT")),
+    )
+    strategy._runtime_params["order_reject_alert_after_count"] = 1
+    strategy._runtime_params["order_reject_alert_after_s"] = Decimal(10)
+    strategy._managed_orders = lambda: [
+        _fake_order(client_order_id="ASK-1", price="101", side=OrderSide.SELL),
+        _fake_order(client_order_id="BID-1", price="99", side=OrderSide.BUY),
+    ]
+
+    canceled_batches: list[list[str]] = []
+    alerts: list[dict[str, object]] = []
+    states: list[str] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    strategy._cancel_managed_quotes = (
+        lambda _reason, force=False, managed_orders=None, **_kwargs: canceled_batches.append(
+            [str(getattr(order, "client_order_id", "")) for order in (managed_orders or [])],
+        )
+    )
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_event = lambda name, **payload: events.append((name, payload))
+    strategy._publish_current_state_snapshot = lambda: None
+
+    strategy.on_order_rejected(
+        _order_rejected_event(
+            client_order_id="ASK-1",
+            reason=(
+                "binance_http_error: status=400 code=51006 "
+                "msg=Exceeds maximum borrowable amount."
+            ),
+        ),
+    )
+
+    assert strategy._effective_bot_on() is True
+    assert strategy._terminal_order_denial_circuit_open is False
+    assert canceled_batches == [["ASK-1"]]
+    assert states[-1] == "running"
+    assert alerts == []
+    assert any(name == "spot_borrow_blocked" for name, _payload in events)
+
+
+def test_place_missing_levels_skips_side_while_borrow_blocked_and_clears_after_inventory_recovery(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory(maker_instrument_id=InstrumentId(Symbol("PLUMEUSDT"), Venue("BINANCE_SPOT")))
+    strategy._order_qty = SimpleNamespace(as_decimal=lambda: Decimal("1000"))
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            make_qty=lambda value: value,
+            make_price=lambda value: value,
+            calculate_base_exposure_qty=lambda qty, _price=None: qty.as_decimal(),
+        ),
+    }
+    strategy._maker_local_spot_qty = lambda _currency_code: Decimal("250")
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason=(
+            "binance_http_error: status=400 code=51006 "
+            "msg=Exceeds maximum borrowable amount."
+        ),
+        now_ns=1,
+    )
+
+    placed: list[str] = []
+    fake_factory = SimpleNamespace(
+        limit=lambda **kwargs: SimpleNamespace(
+            client_order_id="ASK-NEW",
+            price=kwargs["price"],
+            side=kwargs["order_side"],
+        ),
+    )
+    monkeypatch.setattr(type(strategy), "order_factory", property(lambda _self: fake_factory))
+    strategy.submit_order = lambda order, **_kwargs: placed.append(str(order.client_order_id))
+    strategy._register_managed_order = lambda _order: None
+
+    place_count_blocked = strategy._place_missing_levels(
+        side=OrderSide.SELL,
+        active_orders=[],
+        desired_levels=[(Decimal("101"), Decimal("101"), Decimal("0"))],
+        best_bid_px=Decimal("100"),
+        best_ask_px=Decimal("102"),
+        now_ns=2,
+    )
+
+    assert place_count_blocked == 0
+    assert placed == []
+
+    strategy._maker_local_spot_qty = lambda _currency_code: Decimal("1000")
+    place_count_recovered = strategy._place_missing_levels(
+        side=OrderSide.SELL,
+        active_orders=[],
+        desired_levels=[(Decimal("101"), Decimal("101"), Decimal("0"))],
+        best_bid_px=Decimal("100"),
+        best_ask_px=Decimal("102"),
+        now_ns=3,
+    )
+
+    assert place_count_recovered == 1
+    assert placed == ["ASK-NEW"]
+
+
 def test_runtime_bot_on_reenable_clears_terminal_order_denial_circuit(strategy_factory) -> None:
     strategy = strategy_factory(bot_on=False)
     strategy._terminal_order_denial_circuit_open = True

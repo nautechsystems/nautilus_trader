@@ -38,13 +38,21 @@ describe("pulse api helpers", () => {
   it("calculates top-bar stats from process jobs", () => {
     const jobs: Job[] = [
       { id: "a", name: "a", status: "active", errors: { count: 0, last_seen: null, preview: null } },
+      {
+        id: "degraded",
+        name: "degraded",
+        status: "degraded",
+        systemd_status: "active",
+        errors: { count: 0, last_seen: null, preview: null },
+      },
       { id: "b", name: "b", status: "failed", errors: { count: 2, last_seen: null, preview: "boom" } },
       { id: "c", name: "c", status: "inactive", errors: { count: 1, last_seen: null, preview: "oops" } },
     ];
 
     expect(calculateStats(jobs)).toEqual({
-      total: 3,
+      total: 4,
       active: 1,
+      degraded: 1,
       failed: 1,
       totalErrors: 3,
     });

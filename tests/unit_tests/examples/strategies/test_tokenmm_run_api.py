@@ -11,6 +11,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
 from flux.runners.tokenmm.run_api import _attach_profile_router_proxy
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
+from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _load_config
@@ -217,6 +218,41 @@ def test_attach_fluxboard_routes_keep_spa_paths_from_serving_dist_root_files(tmp
     assert response.get_data(as_text=True) == "<html>fluxboard</html>"
 
 
+def test_attach_fluxboard_routes_proxy_missing_shared_assets_to_equities_backend(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    (dist_dir / "index.html").write_text("<html>fluxboard</html>", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _fake_proxy_request_to_backend(backend_url: str):
+        captured["backend_url"] = backend_url
+        from flask import Response
+
+        return Response("console.log('equities')", status=200, content_type="text/javascript")
+
+    monkeypatch.setattr(
+        "flux.runners.tokenmm.run_api._proxy_request_to_backend",
+        _fake_proxy_request_to_backend,
+    )
+
+    app = Flask(__name__)
+    _attach_fluxboard_tokenmm_routes(
+        app,
+        dist_dir=dist_dir,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/static/fluxboard/assets/index-equities.js")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "console.log('equities')"
+    assert captured["backend_url"] == "http://127.0.0.1:5024"
+
+
 def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     assets_dir = dist_dir / "assets"
@@ -239,6 +275,39 @@ def test_attach_pulse_routes_serves_index_assets_and_spa_fallback(tmp_path: Path
     response = client.get("/pulse/jobs/tokenmm-api")
     assert response.status_code == 200
     assert "pulse" in response.get_data(as_text=True)
+
+
+def test_attach_tokenmm_readiness_route_returns_enveloped_readiness_payload() -> None:
+    captured: dict[str, bool] = {}
+
+    def _fake_readiness_loader() -> dict[str, object]:
+        captured["called"] = True
+        return {
+            "ok": False,
+            "summary": {
+                "failed_checks": ["state_stream_freshness"],
+                "stale_state_stream_strategy_ids": ["strategy_a"],
+            },
+            "checks": {
+                "state_stream_freshness": {
+                    "ok": False,
+                    "summary": "1 strategy has a stale state stream.",
+                },
+            },
+        }
+
+    app = Flask(__name__)
+    _attach_tokenmm_readiness_route(app, readiness_loader=_fake_readiness_loader)
+    client = app.test_client()
+
+    response = client.get("/api/v1/readiness?profile=tokenmm")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["data"]["ok"] is False
+    assert payload["data"]["summary"]["stale_state_stream_strategy_ids"] == ["strategy_a"]
+    assert captured["called"] is True
 
 
 def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch) -> None:

@@ -42,29 +42,47 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
 
     asset: str  # asset name
-    walletBalance: str  # wallet balance
-    unrealizedProfit: str  # unrealized profit
-    marginBalance: str  # margin balance
-    maintMargin: str  # maintenance margin required
-    initialMargin: str  # total initial margin required with current mark price
-    positionInitialMargin: str  # initial margin required for positions with current mark price
-    openOrderInitialMargin: str  # initial margin required for open orders with current mark price
-    crossWalletBalance: str  # crossed wallet balance
-    crossUnPnl: str  # unrealized profit of crossed positions
-    availableBalance: str  # available balance
-    maxWithdrawAmount: str  # maximum amount for transfer out
+    maintMargin: str | None = None  # maintenance margin required
+    initialMargin: str | None = None  # total initial margin required with current mark price
+    positionInitialMargin: str | None = None  # initial margin required for positions with current mark price
+    openOrderInitialMargin: str | None = None  # initial margin required for open orders with current mark price
+    crossWalletBalance: str | None = None  # crossed wallet balance
+    crossUnPnl: str | None = None  # unrealized profit of crossed positions
+    maxWithdrawAmount: str | None = None  # maximum amount for transfer out
+    marginBalance: str | None = None  # margin balance
+    unrealizedProfit: str | None = None  # unrealized profit
+    walletBalance: str | None = None  # wallet balance
+    availableBalance: str | None = None  # available balance
     # whether the asset can be used as margin in Multi - Assets mode
     marginAvailable: bool | None = None
     updateTime: int | None = None  # last update time
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.asset)
+        total_raw = (
+            self.walletBalance
+            if self.walletBalance is not None
+            else self.marginBalance
+            if self.marginBalance is not None
+            else self.crossWalletBalance
+            if self.crossWalletBalance is not None
+            else self.availableBalance
+            if self.availableBalance is not None
+            else "0"
+        )
+        free_raw = (
+            self.availableBalance
+            if self.availableBalance is not None
+            else self.crossWalletBalance
+            if self.crossWalletBalance is not None
+            else total_raw
+        )
         # This calculation is currently mixing wallet cash balance and the available balance after
         # considering margin collateral. As a temporary measure we're taking the `min` to
         # disregard free amounts above the cash balance, but still considering where not all
         # balance is available (so locked in some way, i.e. allocated as collateral).
-        total = Money(Decimal(self.walletBalance), currency)
-        free = Money(min(Decimal(self.availableBalance), Decimal(self.walletBalance)), currency)
+        total = Money(Decimal(total_raw), currency)
+        free = Money(min(Decimal(free_raw), Decimal(total_raw)), currency)
         locked = total - free
         return AccountBalance(
             total=total,
@@ -75,8 +93,8 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     def parse_to_margin_balance(self) -> MarginBalance:
         currency: Currency = Currency.from_str(self.asset)
         return MarginBalance(
-            initial=Money(Decimal(self.initialMargin), currency),
-            maintenance=Money(Decimal(self.maintMargin), currency),
+            initial=Money(Decimal(self.initialMargin or "0"), currency),
+            maintenance=Money(Decimal(self.maintMargin or "0"), currency),
         )
 
 
@@ -85,11 +103,11 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
     HTTP response from Binance Futures GET /fapi/v2/account (HMAC SHA256).
     """
 
-    feeTier: int  # account commission tier
-    canTrade: bool  # if can trade
-    canDeposit: bool  # if can transfer in asset
-    canWithdraw: bool  # if can transfer out asset
-    updateTime: int
+    feeTier: int | None = None  # account commission tier
+    canTrade: bool | None = None  # if can trade
+    canDeposit: bool | None = None  # if can transfer in asset
+    canWithdraw: bool | None = None  # if can transfer out asset
+    updateTime: int | None = None
     totalInitialMargin: str | None = (
         None  # total initial margin required with current mark price (useless with isolated positions), only for USDT
     )
@@ -135,7 +153,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     markPrice: str
     unRealizedProfit: str
     liquidationPrice: str
-    isolatedMargin: str
+    isolatedMargin: str | None = None
     updateTime: int
 
     # v2 fields (may not be present in v3)

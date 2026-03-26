@@ -31,12 +31,17 @@ function formatTimestamp(timestamp: string | null | undefined): string {
   }).format(parsed);
 }
 
+function livenessStatus(job: Job): string {
+  return job.systemd_status || job.status || job.state || "inactive";
+}
+
 export function JobRow({ job, busy, onAction, onViewLogs, onViewError }: JobRowProps) {
   const jobId = job.id || job.name;
   const status = job.status || job.state || "inactive";
-  const canStart = status === "inactive" || status === "failed";
-  const canStop = status === "active";
-  const canRestart = status === "active";
+  const systemdStatus = livenessStatus(job);
+  const canStart = systemdStatus === "inactive" || systemdStatus === "failed";
+  const canStop = systemdStatus === "active";
+  const canRestart = systemdStatus === "active";
 
   return (
     <tr className="job-row">

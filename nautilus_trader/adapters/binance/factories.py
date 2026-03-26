@@ -8,7 +8,10 @@ from nautilus_trader.adapters.binance.common.credentials import is_ed25519_priva
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_user_stream_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -49,6 +52,37 @@ def _resolve_environment(
         return BinanceEnvironment.TESTNET
 
     return environment or BinanceEnvironment.LIVE
+
+
+def _http_quota_config(
+    account_type: BinanceAccountType,
+    base_url: str,
+) -> tuple[list[tuple[str, Quota]], Quota]:
+    if account_type.is_portfolio_margin and "papi.binance." in base_url:
+        global_quota = Quota.rate_per_minute(6000)
+        return [
+            ("binance:papi:global", global_quota),
+            ("binance:papi/v1/margin/order", Quota.rate_per_minute(3000)),
+            ("binance:papi/v1/margin/allOrders", Quota.rate_per_minute(int(3000 / 20))),
+        ], global_quota
+
+    if account_type.is_spot_or_margin:
+        global_quota = Quota.rate_per_minute(6000)
+        return [
+            ("binance:global", global_quota),
+            ("binance:api/v3/order", Quota.rate_per_minute(3000)),
+            ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
+            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
+        ], global_quota
+
+    global_quota = Quota.rate_per_minute(2400)
+    return [
+        ("binance:global", global_quota),
+        ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
+        ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
+        ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),
+        ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
+    ], global_quota
 
 
 @lru_cache(1)
@@ -107,30 +141,11 @@ def get_cached_binance_http_client(
     elif key_type == BinanceKeyType.ED25519 or (api_secret and is_ed25519_private_key(api_secret)):
         ed25519_private_key = api_secret
 
-    # Set up rate limit quotas
-    global_key = "binance:global"
-
-    if account_type.is_spot:
-        # Spot
-        global_quota = Quota.rate_per_minute(6000)
-        ratelimiter_default_quota = global_quota
-        ratelimiter_quotas: list[tuple[str, Quota]] = [
-            (global_key, global_quota),
-            ("binance:api/v3/order", Quota.rate_per_minute(3000)),
-            ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
-            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
-        ]
-    else:
-        # Futures
-        global_quota = Quota.rate_per_minute(2400)
-        ratelimiter_default_quota = global_quota
-        ratelimiter_quotas = [
-            (global_key, global_quota),
-            ("binance:fapi/v1/order", Quota.rate_per_minute(1200)),
-            ("binance:fapi/v1/allOrders", Quota.rate_per_minute(int(1200 / 20))),
-            ("binance:fapi/v1/commissionRate", Quota.rate_per_minute(int(2400 / 20))),
-            ("binance:fapi/v1/klines", Quota.rate_per_minute(600)),
-        ]
+    resolved_base_url = base_url or default_http_base_url
+    ratelimiter_quotas, ratelimiter_default_quota = _http_quota_config(
+        account_type,
+        resolved_base_url,
+    )
 
     return BinanceHttpClient(
         clock=clock,
@@ -138,7 +153,7 @@ def get_cached_binance_http_client(
         api_secret=api_secret,
         rsa_private_key=rsa_private_key,
         ed25519_private_key=ed25519_private_key,
-        base_url=base_url or default_http_base_url,
+        base_url=resolved_base_url,
         ratelimiter_quotas=ratelimiter_quotas,
         ratelimiter_default_quota=ratelimiter_default_quota,
         proxy_url=proxy_url,
@@ -192,8 +207,10 @@ def get_cached_binance_spot_instrument_provider(
 @lru_cache(1)
 def get_cached_binance_futures_instrument_provider(
     client: BinanceHttpClient,
+    market_client: BinanceHttpClient | None,
     clock: LiveClock,
     account_type: BinanceAccountType,
+    private_api_family: BinancePrivateApiFamily,
     config: InstrumentProviderConfig | BinanceInstrumentProviderConfig,
     venue: Venue,
 ) -> BinanceFuturesInstrumentProvider:
@@ -222,8 +239,10 @@ def get_cached_binance_futures_instrument_provider(
     """
     return BinanceFuturesInstrumentProvider(
         client=client,
+        market_client=market_client,
         clock=clock,
         account_type=account_type,
+        private_api_family=private_api_family,
         config=config,
         venue=venue,
     )
@@ -273,8 +292,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         """
         environment = _resolve_environment(config.environment, config.testnet)
 
-        # Get HTTP client singleton
-        client: BinanceHttpClient = get_cached_binance_http_client(
+        public_client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
             api_key=config.api_key,
@@ -285,6 +303,25 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
             proxy_url=config.proxy_url,
         )
+        private_client: BinanceHttpClient = public_client
+        if config.account_type.is_futures or config.account_type.is_portfolio_margin:
+            private_base_url = config.base_url_http or get_private_http_base_url(
+                config.account_type,
+                private_api_family=config.private_api_family,
+                environment=environment,
+                is_us=config.us,
+            )
+            private_client = get_cached_binance_http_client(
+                clock=clock,
+                account_type=config.account_type,
+                api_key=config.api_key,
+                api_secret=config.api_secret,
+                key_type=config.key_type,
+                base_url=private_base_url,
+                environment=environment,
+                is_us=config.us,
+                proxy_url=config.proxy_url,
+            )
 
         default_base_url_ws: str = get_ws_base_url(
             account_type=config.account_type,
@@ -296,7 +333,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
-                client=client,
+                client=public_client,
                 clock=clock,
                 account_type=config.account_type,
                 environment=environment,
@@ -306,7 +343,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
             return BinanceSpotDataClient(
                 loop=loop,
-                client=client,
+                client=public_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
@@ -319,16 +356,18 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
-                client=client,
+                client=private_client,
+                market_client=public_client,
                 clock=clock,
                 account_type=config.account_type,
+                private_api_family=config.private_api_family,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
 
             return BinanceFuturesDataClient(
                 loop=loop,
-                client=client,
+                client=public_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
@@ -393,8 +432,8 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         api_key = config.api_key or get_api_key(config.account_type, environment)
         api_secret = config.api_secret or get_api_secret(config.account_type, environment)
 
-        # Get HTTP client singleton
-        client: BinanceHttpClient = get_cached_binance_http_client(
+        # Public market-data client singleton
+        public_client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
             api_key=api_key,
@@ -406,17 +445,38 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             proxy_url=config.proxy_url,
         )
 
-        default_base_url_ws: str = get_ws_base_url(
+        private_client: BinanceHttpClient = public_client
+        if config.account_type.is_futures or config.account_type.is_portfolio_margin:
+            private_base_url = config.base_url_http or get_private_http_base_url(
+                config.account_type,
+                private_api_family=config.private_api_family,
+                environment=environment,
+                is_us=config.us,
+            )
+            private_client = get_cached_binance_http_client(
+                clock=clock,
+                account_type=config.account_type,
+                api_key=api_key,
+                api_secret=api_secret,
+                key_type=config.key_type,
+                base_url=private_base_url,
+                environment=environment,
+                is_us=config.us,
+                proxy_url=config.proxy_url,
+            )
+
+        default_stream_base_url: str = get_user_stream_base_url(
             account_type=config.account_type,
             environment=environment,
             is_us=config.us,
+            private_api_family=config.private_api_family,
         )
 
         provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
-                client=client,
+                client=public_client,
                 clock=clock,
                 account_type=config.account_type,
                 environment=environment,
@@ -426,15 +486,16 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 
             return BinanceSpotExecutionClient(
                 loop=loop,
-                client=client,
+                client=private_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
                 instrument_provider=provider,
-                base_url_ws=config.base_url_ws or default_base_url_ws,
+                base_url_ws=config.base_url_ws or default_stream_base_url,
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                market_client=public_client,
                 environment=environment,
                 api_key=api_key,
                 api_secret=api_secret,
@@ -442,24 +503,27 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         else:
             # Get instrument provider singleton
             provider = get_cached_binance_futures_instrument_provider(
-                client=client,
+                client=private_client,
+                market_client=public_client,
                 clock=clock,
                 account_type=config.account_type,
+                private_api_family=config.private_api_family,
                 config=config.instrument_provider,
                 venue=config.venue,
             )
 
             return BinanceFuturesExecutionClient(
                 loop=loop,
-                client=client,
+                client=private_client,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,
                 instrument_provider=provider,
-                base_url_ws=config.base_url_ws or default_base_url_ws,
+                base_url_ws=config.base_url_ws or default_stream_base_url,
                 account_type=config.account_type,
                 name=name,
                 config=config,
+                market_client=public_client,
                 environment=environment,
                 api_key=api_key,
                 api_secret=api_secret,

@@ -15,6 +15,7 @@ This directory is the production deployment root for Telegram bots enrolled in F
 - The Lan bot uses dedicated env var names so it does not inherit unrelated shared Binance credentials from `/etc/flux/common.env`.
 - The Lan bot watches the combined Binance PM + spot balance for the configured asset using the same Binance API key/secret for both requests.
 - A missing spot asset row is treated as zero spot balance; HTTP or payload errors still fail the poll.
+- The bot also listens for Telegram `/reset` commands from the configured chat and optional topic, then immediately re-baselines the persisted state from the live combined balance.
 
 Dedicated Lan bot environment variables:
 

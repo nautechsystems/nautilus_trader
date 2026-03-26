@@ -7,24 +7,30 @@ Task 1 defines the canonical shared contract for the dedicated equities profile 
 ## Goals
 
 - Keep `/equities`, `profile=equities`, and `portfolio=equities` stable.
-- Make `deploy/equities/equities.live.toml` the single source of truth for canonical stock identity.
+- Make `deploy/equities/equities.live.toml` the single source of truth for canonical stock identity and route-level maker metadata.
 - Separate strategy-local identity from shared-account provenance before later portfolio and API work lands.
+- Allow multiple maker venues to contribute to one stock-netted portfolio bucket.
 
 ## Canonical Strategy Contract
 
-Each enrolled equities strategy now has one `[[strategy_contracts]]` entry in the shared deploy manifest.
+Each equities strategy route now has one `[[strategy_contracts]]` entry in the shared deploy manifest. A single stock may therefore have multiple route rows that share the same `portfolio_asset_id`.
 
 Required fields:
 
 - `strategy_id`: strategy-local process identity.
 - `portfolio_asset_id`: canonical stock identity used by the shared equities portfolio.
-- `maker_instrument_id`: Hyperliquid execution instrument identity.
+- `maker_venue`: explicit maker venue identity such as `HYPERLIQUID` or `BINANCE_PERP`.
+- `maker_symbol`: venue-native maker symbol such as `PLTR` or `PLTRUSDT`.
+- `market_type`: explicit product type such as `perp`.
+- `maker_instrument_id`: maker execution instrument identity.
 - `reference_instrument_id`: IBKR listing-venue instrument identity.
-- `execution_account_scope_id`: stable scope id for the shared Hyperliquid execution account.
+- `execution_account_scope_id`: stable scope id for the shared maker execution account.
 - `reference_account_scope_id`: stable scope id for the shared IBKR reference account.
 - `hedge_account_scope_id`: optional stable scope id reserved for future hedge-account projection.
 
-`strategy_id` is not the shared-account identity. It names one strategy node. Shared balances and shared portfolio rows must use the canonical asset and scope fields above instead of inferring ownership from venue strings or strategy ids.
+All route-metadata fields above are mandatory for every equities route row. Older manifests that only carried maker/reference instrument ids are no longer valid under this contract.
+
+`strategy_id` is not the shared-account identity. It names one strategy node. Shared balances and shared portfolio rows must use the canonical asset and scope fields above instead of inferring ownership from venue strings or strategy ids. Duplicate `portfolio_asset_id` values across different `strategy_id` rows are valid and represent multiple venue routes contributing to one canonical stock bucket.
 
 ## Shared-Account Provenance
 

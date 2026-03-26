@@ -19,6 +19,7 @@ class ExecutionMarkoutPersistenceActorConfig(ActorConfig, frozen=True):
     action_intent_topic: str | None = "flux.makerv3.order_intent"
     horizons_s: tuple[int, ...] = (30, 60, 120)
     benchmark_name: str = "fv_market_mid"
+    benchmark_field: str = "fv"
     max_pending_ms: PositiveInt = 180_000
     flush_interval_ms: PositiveInt = 250
     max_batch_size: PositiveInt = 1000

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from fnmatch import fnmatch
 import json
 from typing import Any
 
@@ -66,9 +67,13 @@ class FakeRedis:
         self.publish_calls: list[tuple[str, str]] = []
         self.direct_get_calls: list[str] = []
         self.direct_xrevrange_calls: list[tuple[str, int | None]] = []
+        self.keys_calls: list[str] = []
+        self.scan_iter_calls: list[str | None] = []
         self.pipeline_exec_count = 0
         self.pipeline_batches: list[list[tuple[str, str, int | None]]] = []
         self.pipeline_execute_error: Exception | None = None
+        self.keys_error: Exception | None = None
+        self.scan_iter_error: Exception | None = None
 
     def set_json(self, key: str, value: Any) -> None:
         self.strings[key] = json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -154,6 +159,21 @@ class FakeRedis:
     def publish(self, channel: str, message: str) -> int:
         self.publish_calls.append((channel, message))
         return 1
+
+    def keys(self, pattern: str) -> list[bytes]:
+        self.keys_calls.append(pattern)
+        if self.keys_error is not None:
+            raise self.keys_error
+        matched = [key for key in self.strings if fnmatch(key, pattern)]
+        return [key.encode("utf-8") for key in sorted(matched)]
+
+    def scan_iter(self, match: str | None = None):
+        self.scan_iter_calls.append(match)
+        if self.scan_iter_error is not None:
+            raise self.scan_iter_error
+        for key in sorted(self.strings):
+            if match is None or fnmatch(key, match):
+                yield key.encode("utf-8")
 
     def pipeline(self, transaction: bool = False) -> FakeRedisPipeline:
         _ = transaction

@@ -18,7 +18,7 @@ def _normalize_side(side: str) -> str:
     return normalized
 
 
-def round_hyperliquid_price(price: Decimal, *, tick_size: Decimal, side: str) -> Decimal:
+def round_maker_price(price: Decimal, *, tick_size: Decimal, side: str) -> Decimal:
     tick = _normalize_tick(tick_size, field_name="tick_size")
     normalized_side = _normalize_side(side)
     rounding = ROUND_FLOOR if normalized_side == "BUY" else ROUND_CEILING
@@ -34,7 +34,12 @@ def round_ibkr_limit_price(price: Decimal, *, tick_size: Decimal, side: str) -> 
     return steps * tick
 
 
+def round_hyperliquid_price(price: Decimal, *, tick_size: Decimal, side: str) -> Decimal:
+    return round_maker_price(price, tick_size=tick_size, side=side)
+
+
 __all__ = [
+    "round_maker_price",
     "round_hyperliquid_price",
     "round_ibkr_limit_price",
 ]

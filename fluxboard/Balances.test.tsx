@@ -139,6 +139,8 @@ describe('Balances component', () => {
       generatedAt: undefined,
       loading: false,
       lastUpdate: undefined,
+      degraded: false,
+      scopeStatus: [],
     });
     mockedApi.getBalances.mockResolvedValue(buildPayload());
     mockUsePolling.mockImplementation((fn, _interval, enabled = true) => {
@@ -185,6 +187,45 @@ describe('Balances component', () => {
     expect(screen.getByText('Account Equity')).toBeInTheDocument();
     expect(screen.getByText('Withdrawable')).toBeInTheDocument();
     expect(screen.getAllByText('$7478.39')).toHaveLength(2);
+  });
+
+  it('renders degraded shared-account scope status from balances payload', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      degraded: true,
+      scope_status: [
+        {
+          account_scope_id: 'ibkr.reference.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: false,
+            last_success_ts_ms: 1704067200000,
+            last_attempt_ts_ms: 1704067216000,
+            last_error_type: 'TimeoutError',
+            last_error_message: '',
+            stale_after_ms: 15000,
+          },
+        },
+        {
+          account_scope_id: 'binance.futures.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: true,
+            last_success_ts_ms: 1704067216000,
+            last_attempt_ts_ms: 1704067216000,
+            last_error_type: null,
+            last_error_message: null,
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await screen.findByText('Degraded reconciliation');
+    expect(screen.getByText(/ibkr\.reference\.main stale · TimeoutError/i)).toBeInTheDocument();
+    expect(screen.getByText(/binance\.futures\.main healthy/i)).toBeInTheDocument();
   });
 
   it('keeps non-zero quantity rows visible when market value is temporarily unavailable', async () => {
@@ -241,6 +282,54 @@ describe('Balances component', () => {
     });
 
     expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
+  });
+
+  it('formats balance MV cells with thousands separators from raw values', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      rows: [
+        {
+          ...buildPayload().rows[0],
+          id: 'AAPL_LOGICAL',
+          coin: 'AAPL_LOGICAL',
+          canonical: 'AAPL',
+          qty_display: '10',
+          qty_raw: 10,
+          mv_display: '$2550.00',
+          mv_raw: 2550,
+          mark_display: '255',
+          mark_raw: 255,
+          raw: { qty: 10, mv_usd: 2550, mark: 255 },
+          children: [
+            {
+              ...buildPayload().rows[0].children[0],
+              id: 'AAPL_LOGICAL:AAPL:ibkr',
+              parent_id: 'AAPL_LOGICAL',
+              coin: 'AAPL',
+              display_name_short: 'AAPL Spot',
+              display_name_long: 'IBKR AAPL Spot',
+              venue: 'ibkr',
+              wallet: 'shared',
+              qty_display: '10',
+              qty_raw: 10,
+              mv_display: '$2550.00',
+              mv_raw: 2550,
+              mark_display: '255',
+              mark_raw: 255,
+            },
+          ],
+        },
+      ],
+      totals: { mv_raw: 2550, mv_display: '$2550.00' },
+    } as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText('$2,550.00')).toHaveLength(2);
   });
 
   it('prefers authoritative totals.mv_display when net_mv_display is missing', async () => {

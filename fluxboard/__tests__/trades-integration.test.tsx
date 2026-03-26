@@ -36,12 +36,17 @@ const { socketHandlers, socketMock, getTrades, getTradesDelta } = vi.hoisted(() 
 
 vi.mock('../sockets', () => ({ socket: socketMock }));
 
-vi.mock('../api', () => ({
-  api: {
-    getTrades,
-    getTradesDelta,
-  },
-}));
+vi.mock('../api', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    api: {
+      ...mod.api,
+      getTrades,
+      getTradesDelta,
+    },
+  };
+});
 
 const baseRows = [
   {
@@ -167,4 +172,48 @@ describe('Trades integration flows', () => {
       expect(top.mv).toBeCloseTo(9.974, 6);
     });
   });
+
+  it('uses qty_base as the top-row quantity and preserves qty_venue for nested tokenmm trade updates', async () => {
+    (window.location as any).pathname = '/tokenmm/trades';
+    render(<Trades />);
+    await waitFor(() => expect(mockTable).toHaveBeenCalled());
+
+    const handler = socketHandlers['trade_update'];
+    expect(handler).toBeDefined();
+
+    act(() => {
+      handler?.({
+        op: 'upsert',
+        row_id: 'live-okx',
+        seq: 100,
+        version: 1,
+        strategy_id: 'plumeusdt_okx_perp_makerv3',
+        server_ts_ms: 1772700209799,
+        trade: {
+          row_id: 'live-okx',
+          version: 1,
+          seq: 1772700209804,
+          ts_ms: 1772700209799,
+          instrument_id: 'PLUME-USDT-SWAP.OKX',
+          side: '1',
+          price: '0.012736',
+          qty: '100',
+          qty_base: '1000',
+          qty_venue: '100',
+          qty_conversion_status: 'exact_multiplier',
+          client_order_id: 'O-OKX-1',
+          trade_id: 'live-okx',
+          strategy_id: 'plumeusdt_okx_perp_makerv3',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const top = useTradesStore.getState().rows[0] as any;
+      expect(top.row_id).toBe('live-okx');
+      expect(top.qty).toBe(1000);
+      expect(top.qty_venue).toBe('100');
+    });
+  });
+
 });

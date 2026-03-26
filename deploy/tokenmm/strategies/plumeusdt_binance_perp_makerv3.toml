@@ -45,6 +45,7 @@ execution = true
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "USDT_FUTURES"
+private_api_family = "PORTFOLIO_MARGIN"
 
 [node.venues.BINANCE_SPOT]
 adapter = "binance"

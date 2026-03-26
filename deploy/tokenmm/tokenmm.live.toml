@@ -144,13 +144,21 @@ fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
 orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"
 quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"
 markouts_db_path = "/var/lib/nautilus/telemetry/tokenmm/markouts.sqlite"
-markout_horizons_s = [30, 60, 120]
+markout_horizons_s = [0, 30, 60, 120]
+[[telemetry_shipper.markout_benchmarks]]
+benchmark_name = "fv_market_mid"
+benchmark_field = "fv"
+
+[[telemetry_shipper.markout_benchmarks]]
+benchmark_name = "local_mkt_mid"
+benchmark_field = "maker_mid"
+
 balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
 portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
 state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
 poll_interval_ms = 1000
 max_batch_size = 500
-prune_retention_hours = 168
+prune_retention_hours = 48
 
 [portfolio]
 portfolio_id = "tokenmm"

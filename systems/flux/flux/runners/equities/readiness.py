@@ -44,7 +44,7 @@ DEFAULT_REQUEST_TIMEOUT_SECS = 5.0
 DEFAULT_PROJECTION_MAX_AGE_MS = 120_000
 DEFAULT_REQUIRED_BALANCE_SOURCE = "portfolio_snapshot_v2"
 DEFAULT_SIGNAL_MAX_AGE_MS = 10_000
-PROJECTION_PROVIDERS = frozenset({"ibkr"})
+PROJECTION_PROVIDERS = frozenset({"binance", "ibkr"})
 UNSPECIFIED_BIND_HOSTS = frozenset({"0.0.0.0", "::"})  # noqa: S104
 US_EQUITIES_REGULAR_TZ = "America/New_York"
 US_EQUITIES_REGULAR_START = dt_time(hour=9, minute=30)
@@ -481,11 +481,16 @@ def _build_signal_health_snapshot(
         contract = contracts_by_strategy_id.get(strategy_id)
         max_age_ms = _signal_max_age_ms(signal_row)
         legs = _mapping(signal_row.get("legs"))
+        maker_exchange = (
+            _optional_text(contract.maker_venue)
+            if contract is not None
+            else None
+        ) or "hyperliquid"
         maker_leg_id, maker_leg = _resolve_signal_leg(
             payload=signal_row,
             legs=legs,
             role="maker_leg",
-            fallback_exchange="hyperliquid",
+            fallback_exchange=maker_exchange,
             fallback_instrument_id=contract.maker_instrument_id if contract is not None else None,
         )
         reference_leg_id, reference_leg = _resolve_signal_leg(
@@ -528,7 +533,7 @@ def _build_signal_health_snapshot(
                 maker_leg_id,
                 maker_feed_state,
                 maker_quote_state,
-                "hyperliquid",
+                maker_exchange,
                 contract.maker_instrument_id if contract is not None else None,
             ),
             (

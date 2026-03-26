@@ -74,6 +74,12 @@ class _ResolvedMarkout:
     level_index: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class _BenchmarkSnapshot:
+    benchmark_px: Decimal
+    ts_ms: int
+
+
 class ExecutionMarkoutPersistenceActor(
     _AsyncSQLitePersistenceActor[_ResolvedMarkout, ExecutionMarkoutRow],
 ):
@@ -107,6 +113,7 @@ class ExecutionMarkoutPersistenceActor(
         )
         self._horizons_s = self._validate_horizons(config.horizons_s)
         self._pending_by_strategy: dict[str, dict[str, list[_PendingMarkout]]] = {}
+        self._latest_benchmark_by_strategy: dict[str, _BenchmarkSnapshot] = {}
         self._action_intent_cache = ActionIntentCache(
             max_entries=config.action_intent_max_entries,
             ttl_ns=config.action_intent_ttl_ms * 1_000_000,
@@ -115,6 +122,7 @@ class ExecutionMarkoutPersistenceActor(
 
     def on_start(self) -> None:
         self._pending_by_strategy.clear()
+        self._latest_benchmark_by_strategy.clear()
         self._action_intent_cache.clear()
         super().on_start()
         if self.clock is not None:
@@ -146,6 +154,7 @@ class ExecutionMarkoutPersistenceActor(
                     handler=self._on_action_intent_message,
                 )
         self._pending_by_strategy.clear()
+        self._latest_benchmark_by_strategy.clear()
         self._action_intent_cache.clear()
         super().on_stop()
 
@@ -206,10 +215,42 @@ class ExecutionMarkoutPersistenceActor(
             now_ns=now_ns,
         )
         base_fill_ts_ms = fill.ts_event // 1_000_000
-        strategy_pending_rows = self._pending_by_strategy.setdefault(strategy_id, {})
-        pending_rows = strategy_pending_rows.setdefault(client_order_id, [])
+        latest_benchmark = self._latest_benchmark_snapshot(strategy_id)
+        pending_rows: list[_PendingMarkout] = []
         for horizon_s in self._horizons_s:
             target_ts_ms = base_fill_ts_ms + (horizon_s * 1_000)
+            if (
+                horizon_s == 0
+                and latest_benchmark is not None
+                and latest_benchmark.ts_ms <= base_fill_ts_ms
+            ):
+                self._enqueue_payload(
+                    self._resolved_markout(
+                        event_id=fill.id.value,
+                        trade_id=fill.trade_id.value,
+                        strategy_id=strategy_id,
+                        instrument_id=fill.instrument_id.value,
+                        client_order_id=client_order_id,
+                        order_side=order_side_to_str(fill.order_side),
+                        fill_px=fill_px,
+                        fill_qty=fill_qty,
+                        benchmark_name=self.config.benchmark_name,
+                        horizon_s=horizon_s,
+                        target_ts_ms=target_ts_ms,
+                        benchmark_ts_ms=latest_benchmark.ts_ms,
+                        benchmark_px=latest_benchmark.benchmark_px,
+                        resolution_status="resolved",
+                        run_id=action_intent.run_id if action_intent is not None else None,
+                        quote_cycle_id=action_intent.quote_cycle_id
+                        if action_intent is not None
+                        else None,
+                        reason_code=action_intent.reason_code
+                        if action_intent is not None
+                        else None,
+                        level_index=action_intent.level_index if action_intent is not None else None,
+                    ),
+                )
+                continue
             pending_rows.append(
                 _PendingMarkout(
                     event_id=fill.id.value,
@@ -232,15 +273,26 @@ class ExecutionMarkoutPersistenceActor(
                     level_index=action_intent.level_index if action_intent is not None else None,
                 ),
             )
+        if pending_rows:
+            strategy_pending_rows = self._pending_by_strategy.setdefault(strategy_id, {})
+            strategy_pending_rows[client_order_id] = pending_rows
 
     def _on_fv_message(self, msg: object) -> None:
         for payload in iter_json_payload_mappings(msg):
             strategy_id = to_optional_text(payload.get("strategy_id"))
-            fv = to_decimal(payload.get("fv"))
+            benchmark_px = to_decimal(payload.get(self.config.benchmark_field))
             ts_ms = to_optional_int(payload.get("ts_ms"))
-            if strategy_id is None or fv is None or ts_ms is None:
+            if strategy_id is None or benchmark_px is None or ts_ms is None:
                 continue
-            self._resolve_pending_for_strategy(strategy_id=strategy_id, fv=fv, ts_ms=ts_ms)
+            self._latest_benchmark_by_strategy[strategy_id] = _BenchmarkSnapshot(
+                benchmark_px=benchmark_px,
+                ts_ms=ts_ms,
+            )
+            self._resolve_pending_for_strategy(
+                strategy_id=strategy_id,
+                benchmark_px=benchmark_px,
+                ts_ms=ts_ms,
+            )
 
     def _on_action_intent_message(self, msg: object) -> None:
         now_ns = current_ts_ns(self.clock)
@@ -269,7 +321,13 @@ class ExecutionMarkoutPersistenceActor(
             for row in pending_rows
         ]
 
-    def _resolve_pending_for_strategy(self, *, strategy_id: str, fv: Decimal, ts_ms: int) -> None:
+    def _resolve_pending_for_strategy(
+        self,
+        *,
+        strategy_id: str,
+        benchmark_px: Decimal,
+        ts_ms: int,
+    ) -> None:
         pending_strategy_ids = self._matching_pending_strategy_ids(strategy_id)
         if not pending_strategy_ids:
             return
@@ -286,9 +344,8 @@ class ExecutionMarkoutPersistenceActor(
                     if row.target_ts_ms > ts_ms:
                         remaining_rows.append(row)
                         continue
-                    markout_abs = signed_markout(row.order_side, row.fill_px, fv)
                     self._enqueue_payload(
-                        _ResolvedMarkout(
+                        self._resolved_markout(
                             event_id=row.event_id,
                             trade_id=row.trade_id,
                             strategy_id=row.strategy_id,
@@ -301,9 +358,7 @@ class ExecutionMarkoutPersistenceActor(
                             horizon_s=row.horizon_s,
                             target_ts_ms=row.target_ts_ms,
                             benchmark_ts_ms=ts_ms,
-                            benchmark_px=fv,
-                            markout_abs=markout_abs,
-                            markout_bps=markout_bps(markout_abs, row.fill_px),
+                            benchmark_px=benchmark_px,
                             resolution_status="resolved",
                             run_id=row.run_id,
                             quote_cycle_id=row.quote_cycle_id,
@@ -318,11 +373,82 @@ class ExecutionMarkoutPersistenceActor(
             else:
                 self._pending_by_strategy.pop(pending_strategy_id, None)
 
+    def _latest_benchmark_snapshot(self, strategy_id: str) -> _BenchmarkSnapshot | None:
+        matching_strategy_ids = self._matching_strategy_ids(
+            available_strategy_ids=self._latest_benchmark_by_strategy.keys(),
+            strategy_id=strategy_id,
+        )
+        for matching_strategy_id in matching_strategy_ids:
+            snapshot = self._latest_benchmark_by_strategy.get(matching_strategy_id)
+            if snapshot is not None:
+                return snapshot
+        return None
+
+    def _resolved_markout(
+        self,
+        *,
+        event_id: str,
+        trade_id: str,
+        strategy_id: str,
+        instrument_id: str,
+        client_order_id: str,
+        order_side: str,
+        fill_px: Decimal,
+        fill_qty: Decimal,
+        benchmark_name: str,
+        horizon_s: int,
+        target_ts_ms: int,
+        benchmark_ts_ms: int,
+        benchmark_px: Decimal,
+        resolution_status: str,
+        run_id: str | None,
+        quote_cycle_id: str | None,
+        reason_code: str | None,
+        level_index: int | None,
+    ) -> _ResolvedMarkout:
+        markout_abs = signed_markout(order_side, fill_px, benchmark_px)
+        return _ResolvedMarkout(
+            event_id=event_id,
+            trade_id=trade_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_side=order_side,
+            fill_px=fill_px,
+            fill_qty=fill_qty,
+            benchmark_name=benchmark_name,
+            horizon_s=horizon_s,
+            target_ts_ms=target_ts_ms,
+            benchmark_ts_ms=benchmark_ts_ms,
+            benchmark_px=benchmark_px,
+            markout_abs=markout_abs,
+            markout_bps=markout_bps(markout_abs, fill_px),
+            resolution_status=resolution_status,
+            run_id=run_id,
+            quote_cycle_id=quote_cycle_id,
+            reason_code=reason_code,
+            level_index=level_index,
+        )
+
     def _matching_pending_strategy_ids(self, strategy_id: str) -> tuple[str, ...]:
+        return self._matching_strategy_ids(
+            available_strategy_ids=self._pending_by_strategy.keys(),
+            strategy_id=strategy_id,
+        )
+
+    @staticmethod
+    def _matching_strategy_ids(
+        *,
+        available_strategy_ids: Any,
+        strategy_id: str,
+    ) -> tuple[str, ...]:
         return tuple(
-            pending_strategy_id
-            for pending_strategy_id in self._pending_by_strategy
-            if self._strategy_ids_match(pending_strategy_id, strategy_id)
+            candidate_strategy_id
+            for candidate_strategy_id in available_strategy_ids
+            if ExecutionMarkoutPersistenceActor._strategy_ids_match(
+                candidate_strategy_id,
+                strategy_id,
+            )
         )
 
     @staticmethod
@@ -431,10 +557,10 @@ class ExecutionMarkoutPersistenceActor(
         horizons: list[int] = []
         for raw_horizon in raw_horizons:
             horizon_s = int(raw_horizon)
-            if horizon_s <= 0 or horizon_s in seen:
+            if horizon_s < 0 or horizon_s in seen:
                 continue
             seen.add(horizon_s)
             horizons.append(horizon_s)
         if not horizons:
-            raise ValueError("`horizons_s` must include at least one positive horizon")
+            raise ValueError("`horizons_s` must include at least one non-negative horizon")
         return tuple(horizons)

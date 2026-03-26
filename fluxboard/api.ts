@@ -14,6 +14,7 @@ import type {
   FxPair,
   SignalStrategy,
   BalancesPayload,
+  BalanceScopeStatus,
   BalancesResponse,
   BalanceParentRow,
   BalanceChildRow,
@@ -116,6 +117,10 @@ function routePrefersKeyLabel(profile: PathProfile): boolean {
   return profile === 'tokenmm' || profile === 'equities';
 }
 
+function routeUsesBaseFirstTradeQty(profile: PathProfile): boolean {
+  return profile === 'tokenmm';
+}
+
 // Create enhanced API client instance with timeout, retry, and deduplication
 const apiClient = new APIClient(base);
 
@@ -140,6 +145,39 @@ function unwrapFluxEnvelope<T>(payload: T | FluxEnvelope<T>): T {
     return payload.data;
   }
   return payload as T;
+}
+
+function extractFluxErrorMessage(payload: unknown): string | null {
+  if (typeof payload === 'string') {
+    const message = payload.trim();
+    return message || null;
+  }
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const data = payload as Record<string, unknown>;
+  const directMessage = typeof data.message === 'string' ? data.message.trim() : '';
+  if (directMessage) return directMessage;
+
+  const directError = typeof data.error === 'string' ? data.error.trim() : '';
+  if (directError) return directError;
+
+  const nestedError = extractFluxErrorMessage(data.error);
+  if (nestedError) return nestedError;
+
+  const errors = extractBulkUpdateFailures(data);
+  if (errors.length > 0) {
+    return errors
+      .map((entry) => (entry.strategy_id ? `${entry.strategy_id}: ${entry.message}` : entry.message))
+      .join('; ');
+  }
+
+  const nestedData = extractFluxErrorMessage(data.data);
+  if (nestedData) return nestedData;
+
+  const code = typeof data.code === 'string' ? data.code.trim() : '';
+  return code || null;
 }
 
 function toFiniteNumber(value: unknown, fallback = 0): number {
@@ -354,6 +392,31 @@ function normalizeRiskGroups(groups: unknown): BalancesPayload['risk_groups'] {
             }))
         : [],
     }));
+}
+
+function normalizeBalanceScopeStatus(scopeStatus: unknown): BalanceScopeStatus[] {
+  if (!Array.isArray(scopeStatus)) return [];
+  return scopeStatus
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => {
+      const rawProjectionStatus = entry.projection_status;
+      const projection_status = rawProjectionStatus && typeof rawProjectionStatus === 'object'
+        ? {
+            healthy: typeof rawProjectionStatus.healthy === 'boolean' ? rawProjectionStatus.healthy : undefined,
+            last_success_ts_ms: coerceTimestampMs((rawProjectionStatus as Record<string, unknown>).last_success_ts_ms),
+            last_attempt_ts_ms: coerceTimestampMs((rawProjectionStatus as Record<string, unknown>).last_attempt_ts_ms),
+            last_error_type: coerceOptionalText((rawProjectionStatus as Record<string, unknown>).last_error_type) ?? null,
+            last_error_message: coerceOptionalText((rawProjectionStatus as Record<string, unknown>).last_error_message) ?? null,
+            stale_after_ms: toFiniteOptionalNumber((rawProjectionStatus as Record<string, unknown>).stale_after_ms) ?? null,
+          }
+        : null;
+      return {
+        account_scope_id: String(entry.account_scope_id ?? '').trim(),
+        source_scope: coerceOptionalText(entry.source_scope) ?? null,
+        projection_status,
+      };
+    })
+    .filter((entry) => entry.account_scope_id);
 }
 
 function toFiniteOptionalNumber(value: unknown): number | undefined {
@@ -842,6 +905,22 @@ function normalizeTradeSide(value: unknown): string {
   return text;
 }
 
+function projectTradeQuantityPayload(row: Record<string, unknown>): {
+  qty: number | undefined;
+  qtyBaseText: string | undefined;
+  qtyVenueText: string | undefined;
+} {
+  const qtyBaseText = String(row.qty_base ?? '').trim() || undefined;
+  const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim() || undefined;
+  const baseFirstCandidate = toFiniteOptionalNumber(qtyBaseText);
+  const qty = toFiniteOptionalNumber(
+    routeUsesBaseFirstTradeQty(getActivePathProfile())
+      ? (baseFirstCandidate ?? row.qty)
+      : row.qty,
+  );
+  return { qty, qtyBaseText, qtyVenueText };
+}
+
 function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed: number): TradeEvent | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const row = candidate as Record<string, unknown>;
@@ -857,7 +936,7 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
   const price = toFiniteOptionalNumber(row.price);
-  const qty = toFiniteOptionalNumber(row.qty);
+  const { qty, qtyBaseText, qtyVenueText } = projectTradeQuantityPayload(row);
   const derivedNotional = (price !== undefined && qty !== undefined) ? price * qty : undefined;
   const reportedNotional = toFiniteOptionalNumber(
     row.mv ??
@@ -913,6 +992,11 @@ function normalizeTradeEventCandidate(candidate: unknown, index: number, seqSeed
       typeof row.time === 'string' && row.time
         ? row.time
         : (tsMs ? new Date(tsMs).toISOString() : ''),
+    qty,
+    qty_base: qtyBaseText,
+    qty_venue: qtyVenueText,
+    qty_conversion_status: String(row.qty_conversion_status ?? '').trim() || undefined,
+    qty_conversion_source: String(row.qty_conversion_source ?? '').trim() || undefined,
     mv: notional,
   } as TradeEvent;
 }
@@ -926,7 +1010,7 @@ function extractBulkUpdateFailures(payload: unknown): Array<{ strategy_id: strin
       if (!entry || typeof entry !== 'object') return null;
       const row = entry as Record<string, unknown>;
       const strategyId = String(row.strategy_id ?? '').trim();
-      const message = String(row.error ?? row.message ?? row.code ?? 'update_failed').trim();
+      const message = extractFluxErrorMessage(row.error ?? row.message ?? row.code) ?? 'update_failed';
       return { strategy_id: strategyId, message };
     })
     .filter((entry): entry is { strategy_id: string; message: string } => Boolean(entry && entry.message));
@@ -1161,6 +1245,24 @@ async function signedJsonHeaders(payload: any, context?: SignedHeaderContext): P
 async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     return await apiClient.fetchJSON<T>(path, init);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(msg);
+  }
+}
+
+async function fetchParamsJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    const response = await fetch(`${base}${path}`, init);
+    let payload: unknown = null;
+    if (typeof response.json === 'function') {
+      payload = await response.json();
+    }
+    if (!response.ok) {
+      const detail = extractFluxErrorMessage(payload);
+      throw new Error(detail || `${response.status} ${response.statusText}`);
+    }
+    return payload as T;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(msg);
@@ -1657,6 +1759,8 @@ export const api = {
       limit: number;
       offset: number;
       last_seq?: number;
+      reset_required?: boolean;
+      compatibility_mode?: boolean;
       page?: number;
       page_size?: number;
       total_records?: number;
@@ -1710,6 +1814,8 @@ export const api = {
       next_offset: nextOffset,
       next_cursor: nextCursorValue,
       sort: typeof data.sort === 'string' ? data.sort : (params.sort as string | undefined),
+      reset_required: typeof data.reset_required === 'boolean' ? data.reset_required : false,
+      compatibility_mode: typeof data.compatibility_mode === 'boolean' ? data.compatibility_mode : false,
     };
   },
 
@@ -1717,7 +1823,12 @@ export const api = {
     cursor: TradesDeltaCursor,
     limit = 2000,
     init?: RequestInit
-  ): Promise<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }> => {
+  ): Promise<{
+    rows: TradeEvent[];
+    last_seq?: number;
+    reset_required?: boolean;
+    compatibility_mode?: boolean;
+  }> => {
     const resolvedCursor =
       typeof cursor === 'number'
         ? { sinceSeq: cursor }
@@ -1749,7 +1860,12 @@ export const api = {
       qs.set('since_seq', String(sinceSeq));
     }
     appendProfileQuery(qs);
-    const r = await fetchJSON<FluxEnvelope<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
+    const r = await fetchJSON<FluxEnvelope<{
+      rows: TradeEvent[];
+      last_seq?: number;
+      reset_required?: boolean;
+      compatibility_mode?: boolean;
+    }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
     const data = unwrapFluxEnvelope(r);
     const rows = (data.rows || [])
       .map((row, index) => normalizeTradeEventCandidate(row, index, sinceSeq + index + 1))
@@ -1759,6 +1875,7 @@ export const api = {
       rows,
       last_seq: typeof data.last_seq === 'number' ? data.last_seq : (maxSeq > 0 ? maxSeq : sinceSeq),
       reset_required: data.reset_required,
+      compatibility_mode: typeof data.compatibility_mode === 'boolean' ? data.compatibility_mode : false,
     };
   },
 
@@ -1796,6 +1913,8 @@ export const api = {
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
       risk_groups: normalizeRiskGroups(payload.risk_groups),
+      degraded: Boolean((payload as Record<string, unknown>).degraded),
+      scope_status: normalizeBalanceScopeStatus((payload as Record<string, unknown>).scope_status),
     };
   },
 
@@ -1855,7 +1974,7 @@ export const api = {
         method: 'PATCH',
         path,
       });
-      const result = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+      const result = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...extra },
         body: JSON.stringify(payload)
@@ -1878,7 +1997,7 @@ export const api = {
       method: 'PATCH',
       path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1895,7 +2014,7 @@ export const api = {
       method: 'PATCH',
       path,
     });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)
@@ -1972,7 +2091,7 @@ export const api = {
     const payload = { updates, source };
     const path = buildProfileScopedPath(BULK_PARAMS_PATH);
     const extra = await signedJsonHeaders(payload, { method: 'PATCH', path });
-    const response = await fetchJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
+    const response = await fetchParamsJSON<FluxEnvelope<import('./types').BulkUpdateResult>>(path, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...extra },
       body: JSON.stringify(payload)

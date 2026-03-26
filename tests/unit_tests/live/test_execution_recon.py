@@ -5496,6 +5496,679 @@ class TestHedgeModeReconciliation:
         ]
         assert cleanup_orders
 
+    def test_reconcile_execution_mass_status_startup_restores_orphan_position_lineage(
+        self,
+    ):
+        """
+        Startup mass-status reconciliation should restore missing cached position lineage when a
+        closed filled order still contributes to the venue net position.
+        """
+        self.exec_engine.generate_missing_orders = False
+
+        current_position = None
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        for idx in range(4):
+            client_order_id = ClientOrderId(f"BINANCE-OWNED-{idx}")
+            venue_order_id = VenueOrderId(f"V-BINANCE-{idx}")
+            order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                client_order_id=client_order_id,
+            )
+            order.apply(TestEventStubs.order_submitted(order))
+            order.apply(
+                TestEventStubs.order_accepted(
+                    order,
+                    account_id=self.client.account_id,
+                    venue_order_id=venue_order_id,
+                ),
+            )
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                account_id=self.client.account_id,
+                venue_order_id=venue_order_id,
+                trade_id=TradeId(f"BINANCE-OWNED-FILL-{idx}"),
+                position_id=current_position_id,
+                last_qty=Quantity.from_int(1_000),
+                last_px=Price.from_str("1.00000"),
+            )
+            order.apply(fill)
+            if current_position is None:
+                current_position = Position(instrument=AUDUSD_SIM, fill=fill)
+                current_position_id = current_position.id
+            else:
+                current_position.apply(fill)
+            self.cache.add_order(order, position_id=current_position_id)
+
+        assert current_position is not None
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        orphan_position_id = PositionId("AUDUSD.SIM-EXTERNAL")
+        orphan_venue_order_id = VenueOrderId("V-BINANCE-ORPHAN")
+        orphan_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-ORPHAN-4"),
+        )
+        orphan_order.apply(TestEventStubs.order_submitted(orphan_order))
+        orphan_order.apply(
+            TestEventStubs.order_accepted(
+                orphan_order,
+                account_id=self.client.account_id,
+                venue_order_id=orphan_venue_order_id,
+            ),
+        )
+        orphan_fill = TestEventStubs.order_filled(
+            orphan_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=orphan_venue_order_id,
+            trade_id=TradeId("BINANCE-ORPHAN-FILL-4"),
+            position_id=orphan_position_id,
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        orphan_order.apply(orphan_fill)
+        self.cache.add_order(orphan_order, position_id=orphan_position_id)
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+
+        for idx in range(4):
+            client_order_id = ClientOrderId(f"BINANCE-OWNED-{idx}")
+            venue_order_id = VenueOrderId(f"V-BINANCE-{idx}")
+            mass_status.add_order_reports(
+                [
+                    OrderStatusReport(
+                        instrument_id=AUDUSD_SIM.id,
+                        account_id=self.client.account_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        order_side=OrderSide.BUY,
+                        order_type=OrderType.LIMIT,
+                        time_in_force=TimeInForce.GTC,
+                        order_status=OrderStatus.FILLED,
+                        price=Price.from_str("1.00000"),
+                        quantity=Quantity.from_int(1_000),
+                        filled_qty=Quantity.from_int(1_000),
+                        avg_px=Price.from_str("1.00000"),
+                        report_id=UUID4(),
+                        ts_accepted=idx,
+                        ts_last=idx,
+                        ts_init=idx,
+                    ),
+                ],
+            )
+            mass_status.add_fill_reports(
+                [
+                    FillReport(
+                        account_id=self.client.account_id,
+                        instrument_id=AUDUSD_SIM.id,
+                        venue_order_id=venue_order_id,
+                        trade_id=TradeId(f"BINANCE-OWNED-FILL-{idx}"),
+                        order_side=OrderSide.BUY,
+                        last_qty=Quantity.from_int(1_000),
+                        last_px=Price.from_str("1.00000"),
+                        commission=Money(0, USD),
+                        liquidity_side=LiquiditySide.TAKER,
+                        report_id=UUID4(),
+                        ts_event=idx,
+                        ts_init=idx,
+                        client_order_id=client_order_id,
+                    ),
+                ],
+            )
+
+        mass_status.add_order_reports(
+            [
+                OrderStatusReport(
+                    instrument_id=AUDUSD_SIM.id,
+                    account_id=self.client.account_id,
+                    client_order_id=orphan_order.client_order_id,
+                    venue_order_id=orphan_venue_order_id,
+                    order_side=OrderSide.BUY,
+                    order_type=OrderType.LIMIT,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=Price.from_str("1.00000"),
+                    quantity=Quantity.from_int(1_000),
+                    filled_qty=Quantity.from_int(1_000),
+                    avg_px=Price.from_str("1.00000"),
+                    report_id=UUID4(),
+                    ts_accepted=10,
+                    ts_last=10,
+                    ts_init=10,
+                ),
+            ],
+        )
+        mass_status.add_fill_reports(
+            [
+                FillReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    venue_order_id=orphan_venue_order_id,
+                    trade_id=TradeId("BINANCE-ORPHAN-FILL-4"),
+                    order_side=OrderSide.BUY,
+                    last_qty=Quantity.from_int(1_000),
+                    last_px=Price.from_str("1.00000"),
+                    commission=Money(0, USD),
+                    liquidity_side=LiquiditySide.TAKER,
+                    report_id=UUID4(),
+                    ts_event=10,
+                    ts_init=10,
+                    client_order_id=orphan_order.client_order_id,
+                ),
+            ],
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(5_000),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is True
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].id == current_position.id
+        assert positions_open[0].signed_decimal_qty() == Decimal("5000")
+        assert self.cache.position(orphan_position_id) is None
+
+    def test_reconcile_execution_mass_status_startup_restores_grouped_orphan_lineage_exactly(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        current_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-CURRENT"),
+        )
+        current_order.apply(TestEventStubs.order_submitted(current_order))
+        current_order.apply(
+            TestEventStubs.order_accepted(
+                current_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            ),
+        )
+        current_fill = TestEventStubs.order_filled(
+            current_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            trade_id=TradeId("BINANCE-CURRENT-FILL"),
+            position_id=current_position_id,
+            last_qty=Quantity.from_int(4_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        current_order.apply(current_fill)
+        current_position = Position(instrument=AUDUSD_SIM, fill=current_fill)
+        self.cache.add_order(current_order, position_id=current_position_id)
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        orphan_position_id = PositionId("AUDUSD.SIM-EXTERNAL")
+        for client_order_id, venue_order_id, side, qty, px, trade_id in (
+            ("ORPHAN-OPEN", "V-ORPHAN-OPEN", OrderSide.BUY, 1_000, "1.00000", "ORPHAN-OPEN"),
+            ("ORPHAN-CLOSE", "V-ORPHAN-CLOSE", OrderSide.SELL, 500, "1.10000", "ORPHAN-CLOSE"),
+        ):
+            order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                client_order_id=ClientOrderId(client_order_id),
+            )
+            order.apply(TestEventStubs.order_submitted(order))
+            order.apply(
+                TestEventStubs.order_accepted(
+                    order,
+                    account_id=self.client.account_id,
+                    venue_order_id=VenueOrderId(venue_order_id),
+                ),
+            )
+            fill = TestEventStubs.order_filled(
+                order,
+                instrument=AUDUSD_SIM,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId(venue_order_id),
+                trade_id=TradeId(trade_id),
+                position_id=orphan_position_id,
+                last_qty=Quantity.from_int(qty),
+                last_px=Price.from_str(px),
+                side=side,
+            )
+            order.apply(fill)
+            self.cache.add_order(order, position_id=orphan_position_id)
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(4_500),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is True
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].signed_decimal_qty() == Decimal("4500")
+
+    def test_reconcile_execution_mass_status_startup_does_not_combine_multiple_orphan_positions(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        current_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-CURRENT"),
+        )
+        current_order.apply(TestEventStubs.order_submitted(current_order))
+        current_order.apply(
+            TestEventStubs.order_accepted(
+                current_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            ),
+        )
+        current_fill = TestEventStubs.order_filled(
+            current_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            trade_id=TradeId("BINANCE-CURRENT-FILL"),
+            position_id=current_position_id,
+            last_qty=Quantity.from_int(4_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        current_order.apply(current_fill)
+        current_position = Position(instrument=AUDUSD_SIM, fill=current_fill)
+        self.cache.add_order(current_order, position_id=current_position_id)
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        for position_id_value, client_order_id_value, venue_order_id_value, trade_id_value, qty in (
+            ("AUDUSD.SIM-ORPHAN-300", "BINANCE-ORPHAN-300", "V-BINANCE-ORPHAN-300", "BINANCE-ORPHAN-FILL-300", 300),
+            ("AUDUSD.SIM-ORPHAN-200", "BINANCE-ORPHAN-200", "V-BINANCE-ORPHAN-200", "BINANCE-ORPHAN-FILL-200", 200),
+        ):
+            orphan_position_id = PositionId(position_id_value)
+            orphan_order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                client_order_id=ClientOrderId(client_order_id_value),
+            )
+            orphan_order.apply(TestEventStubs.order_submitted(orphan_order))
+            orphan_order.apply(
+                TestEventStubs.order_accepted(
+                    orphan_order,
+                    account_id=self.client.account_id,
+                    venue_order_id=VenueOrderId(venue_order_id_value),
+                ),
+            )
+            orphan_fill = TestEventStubs.order_filled(
+                orphan_order,
+                instrument=AUDUSD_SIM,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId(venue_order_id_value),
+                trade_id=TradeId(trade_id_value),
+                position_id=orphan_position_id,
+                last_qty=Quantity.from_int(qty),
+                last_px=Price.from_str("1.00000"),
+            )
+            orphan_order.apply(orphan_fill)
+            self.cache.add_order(orphan_order, position_id=orphan_position_id)
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(4_500),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is False
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].signed_decimal_qty() == Decimal("4000")
+
+    def test_reconcile_execution_mass_status_startup_does_not_restore_other_account_lineage(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        current_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-CURRENT"),
+        )
+        current_order.apply(TestEventStubs.order_submitted(current_order))
+        current_order.apply(
+            TestEventStubs.order_accepted(
+                current_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            ),
+        )
+        current_fill = TestEventStubs.order_filled(
+            current_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            trade_id=TradeId("BINANCE-CURRENT-FILL"),
+            position_id=current_position_id,
+            last_qty=Quantity.from_int(4_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        current_order.apply(current_fill)
+        current_position = Position(instrument=AUDUSD_SIM, fill=current_fill)
+        self.cache.add_order(current_order, position_id=current_position_id)
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        other_account_id = AccountId("SIM-002")
+        orphan_position_id = PositionId("AUDUSD.SIM-OTHER-ACCOUNT")
+        orphan_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-OTHER-ACCOUNT"),
+        )
+        orphan_order.apply(TestEventStubs.order_submitted(orphan_order))
+        orphan_order.apply(
+            TestEventStubs.order_accepted(
+                orphan_order,
+                account_id=other_account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-OTHER"),
+            ),
+        )
+        orphan_fill = TestEventStubs.order_filled(
+            orphan_order,
+            instrument=AUDUSD_SIM,
+            account_id=other_account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-OTHER"),
+            trade_id=TradeId("BINANCE-OTHER-FILL"),
+            position_id=orphan_position_id,
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        orphan_order.apply(orphan_fill)
+        self.cache.add_order(orphan_order, position_id=orphan_position_id)
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(5_000),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is False
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].signed_decimal_qty() == Decimal("4000")
+
+    def test_reconcile_execution_mass_status_startup_does_not_restore_other_strategy_lineage(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        current_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-CURRENT"),
+        )
+        current_order.apply(TestEventStubs.order_submitted(current_order))
+        current_order.apply(
+            TestEventStubs.order_accepted(
+                current_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            ),
+        )
+        current_fill = TestEventStubs.order_filled(
+            current_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            trade_id=TradeId("BINANCE-CURRENT-FILL"),
+            position_id=current_position_id,
+            last_qty=Quantity.from_int(4_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        current_order.apply(current_fill)
+        current_position = Position(instrument=AUDUSD_SIM, fill=current_fill)
+        self.cache.add_order(current_order, position_id=current_position_id)
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        orphan_position_id = PositionId("AUDUSD.SIM-OTHER-STRATEGY")
+        orphan_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-002"),
+            client_order_id=ClientOrderId("BINANCE-OTHER-STRATEGY"),
+        )
+        orphan_order.apply(TestEventStubs.order_submitted(orphan_order))
+        orphan_order.apply(
+            TestEventStubs.order_accepted(
+                orphan_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-OTHER-STRATEGY"),
+            ),
+        )
+        orphan_fill = TestEventStubs.order_filled(
+            orphan_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-OTHER-STRATEGY"),
+            trade_id=TradeId("BINANCE-OTHER-STRATEGY-FILL"),
+            position_id=orphan_position_id,
+            last_qty=Quantity.from_int(1_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        orphan_order.apply(orphan_fill)
+        self.cache.add_order(orphan_order, position_id=orphan_position_id)
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(5_000),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is False
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].id == current_position.id
+        assert positions_open[0].signed_decimal_qty() == Decimal("4000")
+
+    def test_reconcile_execution_mass_status_startup_restores_single_matching_orphan_lineage_even_with_many_other_candidates(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+
+        current_position_id = PositionId("AUDUSD.SIM-BOTH")
+        current_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("BINANCE-CURRENT"),
+        )
+        current_order.apply(TestEventStubs.order_submitted(current_order))
+        current_order.apply(
+            TestEventStubs.order_accepted(
+                current_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            ),
+        )
+        current_fill = TestEventStubs.order_filled(
+            current_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            venue_order_id=VenueOrderId("V-BINANCE-CURRENT"),
+            trade_id=TradeId("BINANCE-CURRENT-FILL"),
+            position_id=current_position_id,
+            last_qty=Quantity.from_int(4_000),
+            last_px=Price.from_str("1.00000"),
+        )
+        current_order.apply(current_fill)
+        current_position = Position(instrument=AUDUSD_SIM, fill=current_fill)
+        self.cache.add_order(current_order, position_id=current_position_id)
+        self.cache.add_position(current_position, OmsType.NETTING)
+
+        for idx in range(25):
+            orphan_order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                client_order_id=ClientOrderId(f"BINANCE-ORPHAN-{idx}"),
+            )
+            orphan_order.apply(TestEventStubs.order_submitted(orphan_order))
+            orphan_order.apply(
+                TestEventStubs.order_accepted(
+                    orphan_order,
+                    account_id=self.client.account_id,
+                    venue_order_id=VenueOrderId(f"V-BINANCE-ORPHAN-{idx}"),
+                ),
+            )
+            orphan_fill = TestEventStubs.order_filled(
+                orphan_order,
+                instrument=AUDUSD_SIM,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId(f"V-BINANCE-ORPHAN-{idx}"),
+                trade_id=TradeId(f"BINANCE-ORPHAN-FILL-{idx}"),
+                position_id=PositionId(f"AUDUSD.SIM-ORPHAN-{idx}"),
+                last_qty=Quantity.from_int(1_000 if idx == 0 else 1),
+                last_px=Price.from_str("1.00000"),
+            )
+            orphan_order.apply(orphan_fill)
+            self.cache.add_order(orphan_order, position_id=PositionId(f"AUDUSD.SIM-ORPHAN-{idx}"))
+
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=SIM,
+            account_id=self.client.account_id,
+            report_id=UUID4(),
+            ts_init=0,
+        )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=self.client.account_id,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.LONG,
+                    quantity=Quantity.from_int(5_000),
+                    avg_px_open=Decimal("1.00000"),
+                    report_id=UUID4(),
+                    ts_last=11,
+                    ts_init=11,
+                ),
+            ],
+        )
+
+        result = self.exec_engine._reconcile_execution_mass_status(
+            mass_status,
+            allow_startup_external_cleanup=True,
+        )
+
+        assert result is True
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(positions_open) == 1
+        assert positions_open[0].signed_decimal_qty() == Decimal("5000")
+
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_closes_stale_external_position_with_cached_venue_order_lineage_bybit_shape(
         self,
@@ -6049,6 +6722,202 @@ class TestHedgeModeReconciliation:
         assert len(remaining_positions) == 1
         assert remaining_positions[0].id == owned_position.id
         assert remaining_positions[0].signed_decimal_qty() == Decimal("3256")
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_cleans_stale_startup_position_after_missing_targeted_open_order_query(
+        self,
+    ):
+        """
+        Regression for the March 23, 2026 restart-recovery incident.
+
+        A stale cached netting position can survive restart when the venue returns no
+        open-order report for the cached open order and no position report for the
+        instrument. Startup already synthesizes a flat report in that case, so the
+        recovery path must reject the stale cached order and then purge the stale
+        cached position instead of blocking restart behind manual Redis cleanup.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        stale_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-STALE-STARTUP-001"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("STALE-STARTUP-FILL-001"),
+        )
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        stale_open_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("STALE-OPEN-ORDER-001"),
+        )
+        stale_open_order.apply(
+            TestEventStubs.order_submitted(
+                stale_open_order,
+                account_id=startup_account_id,
+            ),
+        )
+        stale_open_order.apply(
+            TestEventStubs.order_accepted(
+                stale_open_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("STALE-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(stale_open_order)
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == []
+        cached_open_order = self.cache.order(stale_open_order.client_order_id)
+        assert cached_open_order is not None
+        assert cached_open_order.status == OrderStatus.REJECTED
+
+        cleanup_orders = [
+            order
+            for order in self.cache.orders()
+            if order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(1_500)
+        ]
+        assert cleanup_orders
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_does_not_cleanup_startup_position_when_targeted_query_returns_none_but_bulk_open_order_report_exists(
+        self,
+    ):
+        """
+        Startup cleanup must not treat a targeted-query `None` as venue truth when the
+        bulk open-order sweep still reports the order.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        cached_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        cached_position_fill = TestEventStubs.order_filled(
+            cached_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-STARTUP-GUARD-001"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("STARTUP-GUARD-FILL-001"),
+        )
+        cached_position = Position(instrument=AUDUSD_SIM, fill=cached_position_fill)
+        self.cache.add_position(cached_position, OmsType.NETTING)
+
+        cached_open_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("STARTUP-GUARD-ORDER-001"),
+        )
+        cached_open_order.apply(
+            TestEventStubs.order_submitted(
+                cached_open_order,
+                account_id=startup_account_id,
+            ),
+        )
+        cached_open_order.apply(
+            TestEventStubs.order_accepted(
+                cached_open_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("STARTUP-GUARD-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(cached_open_order)
+
+        self.client.add_order_status_report(
+            OrderStatusReport(
+                account_id=startup_account_id,
+                instrument_id=AUDUSD_SIM.id,
+                client_order_id=cached_open_order.client_order_id,
+                venue_order_id=cached_open_order.venue_order_id,
+                order_side=OrderSide.BUY,
+                order_type=OrderType.LIMIT,
+                time_in_force=TimeInForce.GTC,
+                order_status=OrderStatus.ACCEPTED,
+                price=Price.from_str("1.00000"),
+                quantity=Quantity.from_int(1_500),
+                filled_qty=Quantity.zero(),
+                report_id=UUID4(),
+                ts_accepted=0,
+                ts_last=0,
+                ts_init=0,
+            ),
+        )
+
+        async def targeted_query_returns_none(_command):
+            return None
+
+        self.client.generate_order_status_report = targeted_query_returns_none
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is False
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == cached_position.id
+        guarded_order = self.cache.order(cached_open_order.client_order_id)
+        assert guarded_order is not None
+        assert guarded_order.status == OrderStatus.ACCEPTED
+        assert not [
+            order
+            for order in self.cache.orders()
+            if order.tags == ["RECONCILIATION"]
+            and order.side == OrderSide.SELL
+            and order.quantity == Quantity.from_int(1_500)
+        ]
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_uses_open_only_with_targeted_open_order_queries_when_startup_positions_exist(

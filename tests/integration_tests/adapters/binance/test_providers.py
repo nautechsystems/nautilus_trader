@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.config import BinanceInstrumentProviderConfig
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
@@ -20,6 +21,30 @@ class TestBinanceInstrumentProvider:
     def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
+
+    def test_portfolio_margin_futures_provider_routes_signed_helpers_to_papi_um(self):
+        client = BinanceHttpClient(
+            clock=self.clock,
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
+            base_url="https://papi.binance.com/",
+        )
+
+        provider = BinanceFuturesInstrumentProvider(
+            client=client,
+            clock=self.clock,
+            account_type=BinanceAccountType.USDT_FUTURES,
+            private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+        )
+
+        assert provider._http_account._endpoint_futures_account.url_path == "/papi/v1/um/account"
+        assert (
+            provider._http_account._endpoint_futures_position_risk.url_path
+            == "/papi/v1/um/positionRisk"
+        )
+        assert provider._http_wallet._endpoint_futures_commission_rate.url_path == (
+            "/papi/v1/um/commissionRate"
+        )
 
     @pytest.mark.asyncio
     async def test_load_all_async_for_futures_markets(
@@ -95,6 +120,67 @@ class TestBinanceInstrumentProvider:
         assert "BTC" in self.provider.currencies()
         assert "ETH" in self.provider.currencies()
         assert "USDT" in self.provider.currencies()
+
+    @pytest.mark.asyncio
+    async def test_load_all_async_for_portfolio_margin_falls_back_when_fee_tier_missing(
+        self,
+        binance_http_client,
+        live_logger,
+        monkeypatch,
+    ):
+        exchange_info_response = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_futures_market_exchange_info.json",
+        )
+
+        account_info = BinanceFuturesAccountInfo(
+            feeTier=None,
+            canTrade=True,
+            canDeposit=True,
+            canWithdraw=True,
+            updateTime=1234567890000,
+            assets=[],
+        )
+
+        responses = [exchange_info_response]
+
+        async def mock_send_request(
+            self,
+            http_method: str,
+            url_path: str,
+            payload: dict[str, str],
+            ratelimiter_keys: list[str] | None = None,
+        ) -> bytes:
+            return responses.pop()
+
+        async def mock_query_account_info(recv_window: str | None = None):
+            return account_info
+
+        monkeypatch.setattr(
+            target=BinanceHttpClient,
+            name="send_request",
+            value=mock_send_request,
+        )
+
+        self.provider = BinanceFuturesInstrumentProvider(
+            client=binance_http_client,
+            clock=self.clock,
+            account_type=BinanceAccountType.USDT_FUTURES,
+            private_api_family=BinancePrivateApiFamily.PORTFOLIO_MARGIN,
+        )
+
+        monkeypatch.setattr(
+            self.provider._http_account,
+            "query_futures_account_info",
+            mock_query_account_info,
+        )
+
+        await self.provider.load_all_async()
+
+        btc_perp = self.provider.find(InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE")))
+        assert btc_perp is not None
+        assert btc_perp.maker_fee == Decimal("0.000200")
+        assert btc_perp.taker_fee == Decimal("0.000500")
 
     @pytest.mark.asyncio
     async def test_futures_instrument_info_dict_is_json_serializable(

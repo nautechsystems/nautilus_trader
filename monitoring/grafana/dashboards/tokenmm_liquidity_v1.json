@@ -27,7 +27,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Rows are symbol@venue with uptime and depth quality over the selected window.",
+      "description": "Rows are strategy ids with uptime and depth quality over the selected window.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -49,6 +49,18 @@
           }
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Strategy"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 360
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -113,7 +125,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(100 * avg by (token,symbol,venue) (avg_over_time(tokenmm_quote_up{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window])), \"symbol_venue\", \"@\", \"symbol\", \"venue\")",
+          "expr": "100 * avg by (strategy_id,token,symbol,venue) (avg_over_time(tokenmm_quote_up{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window]))",
           "format": "table",
           "instant": true,
           "legendFormat": "Uptime %",
@@ -124,7 +136,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (token,symbol,venue) (avg_over_time(tokenmm_quote_depth_usd_100bps{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window])), \"symbol_venue\", \"@\", \"symbol\", \"venue\")",
+          "expr": "avg by (strategy_id,token,symbol,venue) (avg_over_time(tokenmm_quote_depth_usd_100bps{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window]))",
           "format": "table",
           "instant": true,
           "legendFormat": "Our Quote Depth 100bps (USD)",
@@ -135,7 +147,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "label_join(avg by (token,symbol,venue) (avg_over_time(tokenmm_quote_depth_usd_200bps{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window])), \"symbol_venue\", \"@\", \"symbol\", \"venue\")",
+          "expr": "avg by (strategy_id,token,symbol,venue) (avg_over_time(tokenmm_quote_depth_usd_200bps{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}[$window]))",
           "format": "table",
           "instant": true,
           "legendFormat": "Our Quote Depth 200bps (USD)",
@@ -147,7 +159,7 @@
         {
           "id": "joinByField",
           "options": {
-            "byField": "symbol_venue",
+            "byField": "strategy_id",
             "mode": "outer"
           }
         },
@@ -158,6 +170,8 @@
               "Time": true,
               "__name__": true,
               "env": true,
+              "strategy_id 1": true,
+              "strategy_id 2": true,
               "symbol": true,
               "symbol 1": true,
               "symbol 2": true,
@@ -173,7 +187,7 @@
               "Value #A": "Uptime %",
               "Value #B": "Our Quote Depth 100bps (USD)",
               "Value #C": "Our Quote Depth 200bps (USD)",
-              "symbol_venue": "Symbol@Market"
+              "strategy_id": "Strategy"
             }
           }
         }
@@ -235,8 +249,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * tokenmm_quote_up{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
-          "legendFormat": "Uptime {{symbol}}@{{venue}}",
+          "expr": "100 * tokenmm_quote_up{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
+          "legendFormat": "Uptime {{strategy_id}}",
           "refId": "A"
         }
       ],
@@ -298,8 +312,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "tokenmm_quote_depth_usd_100bps{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
-          "legendFormat": "Our Quote Depth 100bps {{symbol}}@{{venue}}",
+          "expr": "tokenmm_quote_depth_usd_100bps{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
+          "legendFormat": "Our Quote Depth 100bps {{strategy_id}}",
           "refId": "A"
         },
         {
@@ -307,8 +321,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "tokenmm_quote_depth_usd_200bps{env=~\"$env\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
-          "legendFormat": "Our Quote Depth 200bps {{symbol}}@{{venue}}",
+          "expr": "tokenmm_quote_depth_usd_200bps{env=~\"$env\",strategy_id=~\"$strategy_id\",token=~\"$token\",venue=~\"$venue\",symbol=~\"$symbol\"}",
+          "legendFormat": "Our Quote Depth 200bps {{strategy_id}}",
           "refId": "B"
         }
       ],
@@ -343,6 +357,26 @@
           }
         ],
         "query": "prod",
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "strategy_id",
+        "name": "strategy_id",
+        "options": [
+          {
+            "selected": true,
+            "text": ".*",
+            "value": ".*"
+          }
+        ],
+        "query": ".*",
         "type": "custom"
       },
       {

@@ -4,14 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import logging
 import re
 import signal
+import sqlite3
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from prometheus_client import CollectorRegistry
 from prometheus_client import Gauge
 from prometheus_client import start_http_server
@@ -38,7 +41,19 @@ LABEL_NAMES = (
     "order_side",
     "horizon_s",
     "benchmark_name",
+    "analysis_window",
 )
+ANALYSIS_WINDOWS = (
+    ("15m", 0.25),
+    ("1h", 1.0),
+    ("2h", 2.0),
+    ("4h", 4.0),
+    ("1d", 24.0),
+    ("2d", 48.0),
+    ("3d", 72.0),
+    ("1w", 168.0),
+)
+MAX_ANALYSIS_WINDOW_HOURS = max(hours for _label, hours in ANALYSIS_WINDOWS)
 DEFAULT_TELEMETRY_ROOT = Path("/var/lib/nautilus/telemetry")
 DEFAULT_BENCHMARK_NAME = "fv_market_mid"
 PROFILE_NORMALIZER = re.compile(r"[^a-z0-9]+")
@@ -54,7 +69,7 @@ MARKOUT_QUERY_COLUMNS = (
     "fill_qty",
     "resolution_status",
 )
-FILL_QUERY_COLUMNS = (
+LEGACY_FILL_QUERY_COLUMNS = (
     "trader_id",
     "event_id",
     "strategy_id",
@@ -64,11 +79,65 @@ FILL_QUERY_COLUMNS = (
     "fill_qty",
     "fill_ts_ms",
 )
+LIVE_FILL_QUERY_COLUMNS = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "order_side",
+    "instrument_id",
+    "last_px AS fill_px",
+    "last_qty AS fill_qty",
+    "CAST(ts_event / 1000000 AS INTEGER) AS fill_ts_ms",
+)
+LIVE_NORMALIZED_FILL_QUERY_COLUMNS = (
+    "trader_id",
+    "event_id",
+    "strategy_id",
+    "order_side",
+    "instrument_id",
+    "last_px AS fill_px",
+    "COALESCE(last_qty_base, last_qty) AS fill_qty",
+    "last_qty_base AS fill_qty_base",
+    "COALESCE(last_qty_venue, last_qty) AS fill_qty_venue",
+    "CAST(ts_event / 1000000 AS INTEGER) AS fill_ts_ms",
+)
+FILL_QUERY_COLUMNS = LEGACY_FILL_QUERY_COLUMNS
 
 
 def normalize_profile(profile: str) -> str:
     text = PROFILE_NORMALIZER.sub("_", str(profile or "").strip().lower()).strip("_")
     return text or "tokenmm"
+
+
+def normalize_benchmark_names(raw_value: Any) -> tuple[str, ...]:
+    if isinstance(raw_value, str):
+        raw_items = raw_value.split(",")
+    elif isinstance(raw_value, (list, tuple, set)):
+        raw_items = list(raw_value)
+    elif raw_value is None:
+        raw_items = [DEFAULT_BENCHMARK_NAME]
+    else:
+        raw_items = [raw_value]
+
+    benchmark_names: list[str] = []
+    seen: set[str] = set()
+    for raw_item in raw_items:
+        benchmark_name = str(raw_item).strip()
+        if not benchmark_name or benchmark_name in seen:
+            continue
+        seen.add(benchmark_name)
+        benchmark_names.append(benchmark_name)
+    return tuple(benchmark_names or [DEFAULT_BENCHMARK_NAME])
+
+
+def analysis_window_hours_arg(raw_value: str) -> float:
+    value = positive_float_arg(raw_value)
+    if value < MAX_ANALYSIS_WINDOW_HOURS:
+        raise argparse.ArgumentTypeError(
+            "must be >= the largest supported analysis window "
+            f"({MAX_ANALYSIS_WINDOW_HOURS:g}h)",
+        )
+    return value
 
 def default_db_paths(
     *,
@@ -91,11 +160,24 @@ def _sql_literal(value: Any) -> str:
 
 def _build_markouts_query(
     *,
-    benchmark_name: str,
+    benchmark_name: str | None = None,
+    benchmark_names: tuple[str, ...] | None = None,
     window_hours: float,
     now_ms: int,
 ) -> str:
-    filters = [f"benchmark_name = {_sql_literal(benchmark_name)}"]
+    normalized_benchmark_names = (
+        benchmark_names
+        if benchmark_names is not None
+        else normalize_benchmark_names(benchmark_name)
+    )
+    if len(normalized_benchmark_names) == 1:
+        filters = [f"benchmark_name = {_sql_literal(normalized_benchmark_names[0])}"]
+    else:
+        filters = [
+            "benchmark_name IN ({values})".format(
+                values=", ".join(_sql_literal(value) for value in normalized_benchmark_names),
+            ),
+        ]
     if window_hours > 0:
         window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)
         filters.append(f"target_ts_ms BETWEEN {window_start_ms} AND {now_ms}")
@@ -108,7 +190,66 @@ def _build_markouts_query(
     )
 
 
-def _build_fills_query(markouts: list[dict[str, Any]]) -> str | None:
+@functools.lru_cache(maxsize=8)
+def _table_columns(db_path: str, table: str) -> tuple[str, ...]:
+    path = Path(db_path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return tuple(str(row[1]) for row in rows if len(row) >= 2)
+
+
+def _fill_query_columns_for_path(fills_path: Path) -> tuple[str, ...]:
+    try:
+        columns = set(_table_columns(str(Path(fills_path)), "execution_fill"))
+    except FileNotFoundError:
+        return LEGACY_FILL_QUERY_COLUMNS
+    if {
+        "trader_id",
+        "event_id",
+        "strategy_id",
+        "order_side",
+        "instrument_id",
+        "fill_px",
+        "fill_qty",
+        "fill_ts_ms",
+    }.issubset(columns):
+        return LEGACY_FILL_QUERY_COLUMNS
+    if {
+        "trader_id",
+        "event_id",
+        "strategy_id",
+        "order_side",
+        "instrument_id",
+        "last_px",
+        "last_qty",
+        "last_qty_base",
+        "last_qty_venue",
+        "ts_event",
+    }.issubset(columns):
+        return LIVE_NORMALIZED_FILL_QUERY_COLUMNS
+    if {
+        "trader_id",
+        "event_id",
+        "strategy_id",
+        "order_side",
+        "instrument_id",
+        "last_px",
+        "last_qty",
+        "ts_event",
+    }.issubset(columns):
+        return LIVE_FILL_QUERY_COLUMNS
+    raise ValueError(
+        f"execution_fill schema missing compatible columns in {fills_path}",
+    )
+
+
+def _build_fills_query(
+    markouts: list[dict[str, Any]],
+    *,
+    select_columns: tuple[str, ...] = FILL_QUERY_COLUMNS,
+) -> str | None:
     fill_keys: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for row in markouts:
@@ -124,7 +265,7 @@ def _build_fills_query(markouts: list[dict[str, Any]]) -> str | None:
     if not fill_keys:
         return None
 
-    select_cols = ", ".join(FILL_QUERY_COLUMNS)
+    select_cols = ", ".join(select_columns)
     row_values = ", ".join(
         "({trader_id}, {event_id})".format(
             trader_id=_sql_literal(trader_id),
@@ -143,9 +284,34 @@ def load_markout_snapshot(
     fills_path: Path,
     markouts_path: Path,
     benchmark_name: str = DEFAULT_BENCHMARK_NAME,
+    benchmark_names: tuple[str, ...] | None = None,
     window_hours: float = 24.0,
     now_ms: int | None = None,
 ) -> list[dict[str, Any]]:
+    merged = _load_merged_markout_dataset(
+        fills_path=fills_path,
+        markouts_path=markouts_path,
+        benchmark_name=benchmark_name,
+        benchmark_names=benchmark_names,
+        window_hours=window_hours,
+        now_ms=now_ms,
+    )
+    return _build_markout_snapshot_rows(
+        merged=merged,
+        window_hours=window_hours,
+        now_ms=now_ms,
+    )
+
+
+def _load_merged_markout_dataset(
+    *,
+    fills_path: Path,
+    markouts_path: Path,
+    benchmark_name: str = DEFAULT_BENCHMARK_NAME,
+    benchmark_names: tuple[str, ...] | None = None,
+    window_hours: float = 24.0,
+    now_ms: int | None = None,
+) -> pd.DataFrame:
     if float(window_hours) <= 0:
         raise ValueError("window_hours must be > 0 for bounded polling")
     if now_ms is None:
@@ -153,38 +319,67 @@ def load_markout_snapshot(
 
     markouts_query = _build_markouts_query(
         benchmark_name=benchmark_name,
+        benchmark_names=benchmark_names,
         window_hours=window_hours,
         now_ms=now_ms,
     )
     markouts = load_sqlite_query(markouts_path, markouts_query)
     if markouts.empty:
-        return []
+        return pd.DataFrame()
 
-    fills_query = _build_fills_query(markouts.to_dict("records"))
+    fills_query = _build_fills_query(
+        markouts.to_dict("records"),
+        select_columns=_fill_query_columns_for_path(fills_path),
+    )
     if not fills_query:
-        return []
+        return pd.DataFrame()
     fills = load_sqlite_query(fills_path, fills_query)
     merged = merge_fills_and_markouts(fills=fills, markouts=markouts)
-    if window_hours > 0 and "target_ts_ms" in merged.columns:
-        target_ts_ms = numeric(merged["target_ts_ms"])
-        window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)
-        merged = merged.loc[target_ts_ms.between(window_start_ms, now_ms, inclusive="both")].copy()
     if merged.empty:
-        return []
+        return pd.DataFrame()
 
     merged["venue"] = merged["venue"].fillna("unknown").astype(str)
     merged["symbol"] = merged["symbol"].fillna("UNKNOWN").astype(str)
     merged["order_side"] = merged["order_side"].fillna("UNKNOWN").astype(str).str.upper()
-    merged["benchmark_name"] = merged["benchmark_name"].fillna(benchmark_name).astype(str)
+    normalized_benchmark_names = (
+        benchmark_names
+        if benchmark_names is not None
+        else normalize_benchmark_names(benchmark_name)
+    )
+    merged["benchmark_name"] = (
+        merged["benchmark_name"].fillna(normalized_benchmark_names[0]).astype(str)
+    )
     merged["resolution_status"] = merged["resolution_status"].fillna("unknown").astype(str)
     merged["horizon_s"] = numeric(merged["horizon_s"]).astype("Int64")
     merged["markout_bps_num"] = numeric(merged["markout_bps_num"])
     merged["fill_notional_num"] = numeric(merged["fill_notional"]).fillna(0.0)
     merged["target_ts_ms_num"] = numeric(merged["target_ts_ms"])
+    return merged
 
+
+def _build_markout_snapshot_rows(
+    *,
+    merged: pd.DataFrame,
+    window_hours: float = 24.0,
+    now_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    if float(window_hours) <= 0:
+        raise ValueError("window_hours must be > 0 for bounded polling")
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    if merged.empty:
+        return []
+    scoped = merged
+    if "target_ts_ms_num" in merged.columns:
+        window_start_ms = now_ms - int(window_hours * 60 * 60 * 1000)
+        scoped = merged.loc[
+            merged["target_ts_ms_num"].between(window_start_ms, now_ms, inclusive="both")
+        ].copy()
+    if scoped.empty:
+        return []
     rows: list[dict[str, Any]] = []
     group_cols = ["strategy_id", "venue", "symbol", "order_side", "horizon_s", "benchmark_name"]
-    for group_key, group in merged.groupby(group_cols, dropna=False, sort=True):
+    for group_key, group in scoped.groupby(group_cols, dropna=False, sort=True):
         if not isinstance(group_key, tuple):
             group_key = (group_key,)
         strategy_id, venue, symbol, order_side, horizon_s, benchmark_name_value = group_key
@@ -232,7 +427,7 @@ class TokenMMMarkoutsExporter:
         markouts_path: Path,
         env: str,
         profile: str,
-        window_hours: float = 24.0,
+        window_hours: float = MAX_ANALYSIS_WINDOW_HOURS,
         benchmark_name: str = DEFAULT_BENCHMARK_NAME,
         registry: CollectorRegistry | None = None,
     ) -> None:
@@ -243,7 +438,13 @@ class TokenMMMarkoutsExporter:
         self.env = str(env or "prod")
         self.profile = normalize_profile(profile)
         self.window_hours = float(window_hours)
-        self.benchmark_name = str(benchmark_name or DEFAULT_BENCHMARK_NAME)
+        self.benchmark_names = normalize_benchmark_names(benchmark_name)
+        if self.window_hours < MAX_ANALYSIS_WINDOW_HOURS:
+            raise ValueError(
+                "window_hours must be >= the maximum supported analysis window "
+                f"({MAX_ANALYSIS_WINDOW_HOURS:g}h)",
+            )
+        self.analysis_windows = ANALYSIS_WINDOWS
         self.registry = registry or CollectorRegistry(auto_describe=True)
         self.g_avg_bps = Gauge(
             "tokenmm_markout_avg_bps",
@@ -290,7 +491,7 @@ class TokenMMMarkoutsExporter:
             "last_target_ts_seconds": set(),
         }
 
-    def _labels(self, row: dict[str, Any]) -> dict[str, str]:
+    def _labels(self, row: dict[str, Any], *, analysis_window: str) -> dict[str, str]:
         return {
             "env": self.env,
             "profile": self.profile,
@@ -300,6 +501,7 @@ class TokenMMMarkoutsExporter:
             "order_side": str(row["order_side"]),
             "horizon_s": str(row["horizon_s"]),
             "benchmark_name": str(row["benchmark_name"]),
+            "analysis_window": str(analysis_window),
         }
 
     def _label_values(self, labels: dict[str, str]) -> tuple[str, ...]:
@@ -320,33 +522,39 @@ class TokenMMMarkoutsExporter:
         self._active_labels[metric_key] = set(values)
 
     def poll_once(self, *, now_ms: int | None = None) -> None:
-        snapshot = load_markout_snapshot(
-            fills_path=self.fills_path,
-            markouts_path=self.markouts_path,
-            benchmark_name=self.benchmark_name,
-            window_hours=self.window_hours,
-            now_ms=now_ms,
-        )
-
         avg_values: dict[tuple[str, ...], float] = {}
         nw_values: dict[tuple[str, ...], float] = {}
         resolved_values: dict[tuple[str, ...], float] = {}
         fill_values: dict[tuple[str, ...], float] = {}
         resolution_values: dict[tuple[str, ...], float] = {}
         last_target_values: dict[tuple[str, ...], float] = {}
+        merged = _load_merged_markout_dataset(
+            fills_path=self.fills_path,
+            markouts_path=self.markouts_path,
+            benchmark_name=self.benchmark_names[0],
+            benchmark_names=self.benchmark_names,
+            window_hours=self.window_hours,
+            now_ms=now_ms,
+        )
 
-        for row in snapshot:
-            labels = self._labels(row)
-            label_values = self._label_values(labels)
-            if row["avg_bps"] is not None:
-                avg_values[label_values] = float(row["avg_bps"])
-            if row["nw_bps"] is not None:
-                nw_values[label_values] = float(row["nw_bps"])
-            resolved_values[label_values] = float(row["resolved_rows"])
-            fill_values[label_values] = float(row["fill_count"])
-            resolution_values[label_values] = float(row["resolution_rate"])
-            if row["last_target_ts_seconds"] is not None:
-                last_target_values[label_values] = float(row["last_target_ts_seconds"])
+        for analysis_window, window_hours in self.analysis_windows:
+            snapshot = _build_markout_snapshot_rows(
+                merged=merged,
+                window_hours=window_hours,
+                now_ms=now_ms,
+            )
+            for row in snapshot:
+                labels = self._labels(row, analysis_window=analysis_window)
+                label_values = self._label_values(labels)
+                if row["avg_bps"] is not None:
+                    avg_values[label_values] = float(row["avg_bps"])
+                if row["nw_bps"] is not None:
+                    nw_values[label_values] = float(row["nw_bps"])
+                resolved_values[label_values] = float(row["resolved_rows"])
+                fill_values[label_values] = float(row["fill_count"])
+                resolution_values[label_values] = float(row["resolution_rate"])
+                if row["last_target_ts_seconds"] is not None:
+                    last_target_values[label_values] = float(row["last_target_ts_seconds"])
 
         self._sync_metric(gauge=self.g_avg_bps, metric_key="avg_bps", values=avg_values)
         self._sync_metric(gauge=self.g_nw_bps, metric_key="nw_bps", values=nw_values)
@@ -394,13 +602,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark-name",
         default=DEFAULT_BENCHMARK_NAME,
-        help="Benchmark name to export, defaults to fv_market_mid.",
+        help="Benchmark name or comma-separated benchmark names to export.",
     )
     parser.add_argument(
         "--window-hours",
-        type=positive_float_arg,
-        default=24.0,
-        help="Trailing target timestamp window used for bounded polling reads.",
+        type=analysis_window_hours_arg,
+        default=MAX_ANALYSIS_WINDOW_HOURS,
+        help=(
+            "Trailing target timestamp window used for bounded polling reads. "
+            "Must cover the largest supported analysis window (currently 168h / 1w)."
+        ),
     )
     parser.add_argument(
         "--port",
