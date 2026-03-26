@@ -5,6 +5,35 @@
 Use native skill discovery from `~/.agents/skills` / installed skills.
 For this repo, the superpowers workflow skills are vendored under `vendor/superpowers/skills` and should be treated as the repo-local source of truth.
 
+## Deploy Lanes
+
+The shared-host deploy contract is:
+
+- `dev`: mutable canonical repo plus approved worktrees
+- `pilot`: pinned release lane for live validation
+- `prod`: pinned release lane for approved live trading
+
+Canonical paths for now:
+
+- dev repo: `~/nautilus-trader`
+- worktrees: `~/nautilus-trader/.worktrees`
+- pilot releases: `~/releases/pilot/<stack>/...`
+- prod releases: `~/releases/prod/<stack>/...`
+
+Hard rules:
+
+- never point live services at `~/nautilus-trader`
+- never point live services at `.worktrees/*`
+- never hot-edit active pilot or prod release roots
+
+Agent command meanings:
+
+- `deploy <stack> to pilot`: create a new pinned pilot release, repoint only pilot, restart only pilot
+- `bounce <stack> pilot`: restart only pilot services
+- `promote <stack> pilot to prod`: promote the exact tested pilot release into prod and repoint only prod
+
+If live deploy instructions are ambiguous, follow `docs/runbooks/deploy-lanes.md`.
+
 ## Skills
 
 A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.

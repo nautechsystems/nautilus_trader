@@ -15,6 +15,7 @@ If a change does not clearly belong to one of these domains, stop and document t
 
 ## Namespace standards
 
+- Use `flux` for product, repo, deploy-lane, and operator-facing naming.
 - Keep engine runtime imports under `nautilus_trader.*`.
 - Keep Flux runtime imports under `flux.*`.
 - Do not add new implementation modules under `nautilus_trader.flux.*`.

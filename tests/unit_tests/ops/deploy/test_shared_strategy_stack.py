@@ -68,3 +68,62 @@ def test_strategy_stack_discover_strategy_ids_rejects_invalid_strategy_id(tmp_pa
 
     assert result.returncode != 0
     assert "invalid strategy ID" in result.stderr
+
+
+def test_strategy_stack_require_immutable_release_root_rejects_git_checkout(tmp_path: Path) -> None:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    subprocess.run(  # noqa: S603 - controlled test setup
+        ["git", "init", str(release_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    repo_root = _repo_root()
+    script_path = repo_root / "ops/scripts/deploy/shared_strategy_stack.sh"
+    result = subprocess.run(  # noqa: S603 - controlled test invocation of repo shell helper
+        [
+            "/usr/bin/bash",
+            "-lc",
+            f'source "{script_path}"\nstrategy_stack_require_immutable_release_root "{release_root}"\n',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env=os.environ,
+    )
+
+    assert result.returncode != 0
+    assert "must not be a git checkout" in result.stderr
+
+
+def test_strategy_stack_require_immutable_release_root_accepts_metadata_backed_dir(
+    tmp_path: Path,
+) -> None:
+    release_root = tmp_path / "release"
+    release_root.mkdir()
+    metadata_dir = release_root / ".flux-release"
+    metadata_dir.mkdir()
+    (metadata_dir / "release.env").write_text(
+        "DEPLOY_LANE=prod\nSTACK_NAME=equities\nRELEASE_ID=test123\n",
+        encoding="utf-8",
+    )
+
+    repo_root = _repo_root()
+    script_path = repo_root / "ops/scripts/deploy/shared_strategy_stack.sh"
+    result = subprocess.run(  # noqa: S603 - controlled test invocation of repo shell helper
+        [
+            "/usr/bin/bash",
+            "-lc",
+            f'source "{script_path}"\nstrategy_stack_require_immutable_release_root "{release_root}"\n',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env=os.environ,
+    )
+
+    assert result.returncode == 0

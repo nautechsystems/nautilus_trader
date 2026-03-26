@@ -36,7 +36,10 @@ vars in `/etc/flux/tg-bot-lan-rogue-trader-alert.env`.
 ## Production control plane
 
 ```bash
-sudo ops/scripts/deploy/install_tg_bots_systemd.sh
+export TG_BOTS_DEPLOY_ROOT=/home/ubuntu/releases/prod/tg_bots/current
+cd "${TG_BOTS_DEPLOY_ROOT}"
+uv sync --all-groups --all-extras
+sudo TG_BOTS_DEPLOY_ROOT="${TG_BOTS_DEPLOY_ROOT}" ops/scripts/deploy/install_tg_bots_systemd.sh
 sudoedit /etc/flux/tg-bot-lan-rogue-trader-alert.env
 sudoedit /etc/flux/tg-bot-lan-rogue-trader-alert.ini
 sudo systemctl daemon-reload
@@ -71,6 +74,10 @@ Runtime registration is explicit:
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
 - The installer seeds `/etc/flux/tg-bot-lan-rogue-trader-alert.ini` from the sanitized template if it does not already exist.
 - The installer preserves any existing `LAN_ROGUE_TRADER_BOT_*` secret values on rerun instead of blanking them.
+- The installer pins the bot command to the selected release-local `.venv/bin/python`.
+- The installer writes release-root `WORKDIR=` / `PYTHONPATH=` overrides into `/etc/flux/tg-bot-lan-rogue-trader-alert.env`.
+- The installer resolves the deploy root from `TG_BOTS_DEPLOY_ROOT`, then the existing bot env, then `/etc/flux/common.env`.
+- The installer rejects mutable git checkouts and worktrees as live deploy roots.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
 - The TG bot group renders under `TG Bots` at `http://<host>:5022/pulse`.
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+strategy_stack_release_metadata_relpath=".flux-release/release.env"
+
 strategy_stack_install_base_units() {
   local root_dir="$1"
   local systemd_dir="$2"
@@ -12,6 +14,60 @@ strategy_stack_install_base_units() {
   if [[ ! -f "${common_env_path}" ]]; then
     install -m 0640 "${common_env_source}" "${common_env_path}"
   fi
+}
+
+strategy_stack_require_lane() {
+  strategy_stack_require_identifier "$1" "lane"
+}
+
+strategy_stack_release_metadata_path() {
+  local release_root="$1"
+  printf '%s\n' "${release_root}/${strategy_stack_release_metadata_relpath}"
+}
+
+strategy_stack_write_release_metadata() {
+  local release_root="$1"
+  local lane="$2"
+  local stack="$3"
+  local release_id="$4"
+  local source_root="$5"
+  local source_ref="$6"
+  local metadata_path=""
+
+  strategy_stack_require_lane "${lane}" || return 1
+  strategy_stack_require_identifier "${stack}" "stack" || return 1
+  strategy_stack_require_identifier "${release_id}" "release ID" || return 1
+
+  metadata_path="$(strategy_stack_release_metadata_path "${release_root}")"
+  install -d "$(dirname "${metadata_path}")"
+  cat > "${metadata_path}" <<EOF
+DEPLOY_LANE=${lane}
+STACK_NAME=${stack}
+RELEASE_ID=${release_id}
+SOURCE_ROOT=${source_root}
+SOURCE_REF=${source_ref}
+EOF
+}
+
+strategy_stack_require_immutable_release_root() {
+  local release_root="$1"
+  local metadata_path=""
+
+  [[ -d "${release_root}" ]] || {
+    echo "[strategy-stack] release root missing or not a directory: ${release_root}" >&2
+    return 1
+  }
+
+  if git -C "${release_root}" rev-parse --show-toplevel > /dev/null 2>&1; then
+    echo "[strategy-stack] release root must not be a git checkout: ${release_root}" >&2
+    return 1
+  fi
+
+  metadata_path="$(strategy_stack_release_metadata_path "${release_root}")"
+  [[ -f "${metadata_path}" ]] || {
+    echo "[strategy-stack] release root missing metadata: ${metadata_path}" >&2
+    return 1
+  }
 }
 
 strategy_stack_render_target() {

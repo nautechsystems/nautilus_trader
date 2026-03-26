@@ -48,7 +48,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `makerv4` / `maker_v4` is now a legacy compatibility surface only. Keep it disabled on the checked-in production contract, validate live split-family trading first, and do not re-enroll `makerv4` for new production rollout work.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
-- The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
+- The live host drift to watch for is `/etc/flux/equities*.env` pointing at any mutable checkout or `.worktrees/*`, or rendering `--mode paper` instead of the intended immutable release root and live flags.
 
 ## March 13, 2026 Prod Hardening Universe Policy
 
@@ -136,24 +136,33 @@ This directory is the deploy root for the dedicated `equities` stack.
 Install the systemd units and seeded env files:
 
 ```bash
+export EQUITIES_DEPLOY_ROOT=/home/ubuntu/releases/prod/equities/current
+cd "${EQUITIES_DEPLOY_ROOT}"
 uv sync --all-groups --all-extras
-sudo ops/scripts/deploy/install_equities_systemd.sh
+sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" \
+  EQUITIES_DEPLOY_LANE=prod \
+  ops/scripts/deploy/install_equities_systemd.sh
 sudoedit /etc/flux/common.env
 sudo systemctl daemon-reload
 sudo systemctl start flux-equities.target
 ```
 
-Run `uv sync --all-groups --all-extras` in the selected checkout first so the installer can pin the checkout-local `.venv/bin/python` into every generated equities env file.
+Run `uv sync --all-groups --all-extras` in the selected immutable release root first so the installer can pin the release-local `.venv/bin/python` into every generated equities env file. The installer rejects git checkouts and worktrees as deploy roots.
 
 Installer behavior:
 
 - installs `flux@.service`
 - installs `/etc/flux/common.env` from `deploy/equities/systemd/common.env.example` if it does not already exist
 - installs `/etc/sudoers.d/flux-pulse` for the equities Pulse-managed service set
+- resolves the deploy root from `EQUITIES_DEPLOY_ROOT`, then the existing lane API env, then `/etc/flux/common.env`
+- rejects mutable git checkouts and requires a metadata-backed release root
 - writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
 - writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
 - rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls every discovered equities node service
+- when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
+- the pilot lane uses the loopback API port `127.0.0.1:5124`
+- when pilot and prod run concurrently on the same Redis host, keep the pilot lane on its own Redis DB (the default is `EQUITIES_REDIS_DB=1`) unless you are intentionally testing a shared-state scenario
 
 Runtime registration is explicit:
 
@@ -184,24 +193,26 @@ Required host sanity checks after install or repoint:
 
 Expected results:
 
-- the generated envs point at the intended live checkout, not `/.worktrees/makerv3-mono-pr`
-- the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout so the service-level provenance stays explicit even if `/etc/flux/common.env` still reflects an older host default
-- the generated env commands use the checkout-local `.venv/bin/python` instead of a floating system `python3`
+- the generated envs point at the intended immutable release root, not `/.worktrees/makerv3-mono-pr`
+- the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected release root so the service-level provenance stays explicit even if `/etc/flux/common.env` still reflects an older host default
+- the generated env commands use the release-local `.venv/bin/python` instead of a floating system `python3`
 - equities API and node commands use `--mode live --confirm-live` for the production path
-- every generated `equities-node-*.env` is rewritten from the intended checkout and live-mode flags, not just the active canary example
-- print and review every rendered `equities-node-*.env` contents before restart so stale checkout paths or paper-mode commands cannot hide behind a filename-only listing
+- every generated `equities-node-*.env` is rewritten from the intended release root and live-mode flags, not just the active canary example
+- print and review every rendered `equities-node-*.env` contents before restart so stale release roots or paper-mode commands cannot hide behind a filename-only listing
 - on the shared `tokenmm-api` host, public `/equities` should emit `/static/fluxboard/assets/*`
 - `/tokenmm/assets/*` on the shared public `/equities` route is a failure
 - `/equities/assets/*` on the shared public `/equities` route is also a failure for the current shared-host contract
-- Do not restart services until those env files match the intended checkout and live flags.
+- Do not restart services until those env files match the intended release root and live flags.
+- Repointing `/etc/flux/equities*.env` to a new immutable release root does not restart the live services by itself;
+  restart the equities units only during an explicit cutover window.
 
 Shared-host recovery order after a repoint:
 
-1. Run `uv sync --all-groups --all-extras` in the selected checkout.
-2. Run `sudo ops/scripts/deploy/install_equities_systemd.sh`.
+1. Run `uv sync --all-groups --all-extras` in the selected immutable release root.
+2. Run `sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" EQUITIES_DEPLOY_LANE=prod ops/scripts/deploy/install_equities_systemd.sh`.
 3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
 4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-node-<strategy_id>.service`, and finally `flux@equities-api.service`.
-5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected checkout `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that checkout and restart the node.
+5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
 
 Primary operator surfaces:
 
@@ -215,7 +226,7 @@ Primary operator surfaces:
 
 Read-only live readiness gate:
 
-- Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected checkout before any live canary enablement.
+- Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected immutable release root before any live canary enablement.
 - The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
 - Safe defaults are fail-closed: `missing_required` must stay empty, balances must not be degraded, every configured strategy contract must have its canonical component key, the required IBKR shared projections must be present and fresh, and stale/unhealthy signal counts must stay at zero.
 - The host wrapper is session-aware by default for IBKR reference freshness: outside the regular US session (`09:30-16:00 America/New_York`), `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION=1` suppresses off-session reference-age failures while keeping balances, component keys, shared-account projections, and maker-leg freshness fail-closed.

@@ -1,20 +1,130 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ROOT_DIR="${ROOT_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 source "${ROOT_DIR}/ops/scripts/deploy/shared_strategy_stack.sh"
-SYSTEMD_DIR="/etc/systemd/system"
-ENV_DIR="/etc/flux"
-COMMON_ENV_PATH="${ENV_DIR}/common.env"
-TARGET_PATH="${SYSTEMD_DIR}/flux-equities.target"
-SHARED_CONFIG="${ROOT_DIR}/deploy/equities/equities.live.toml"
-STRATEGIES_DIR="${ROOT_DIR}/deploy/equities/strategies"
-EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
+SYSTEMD_DIR="${SYSTEMD_DIR:-${FLUX_SYSTEMD_DIR:-/etc/systemd/system}}"
+ENV_DIR="${ENV_DIR:-${FLUX_ENV_DIR:-/etc/flux}}"
+COMMON_ENV_PATH="${COMMON_ENV_PATH:-${FLUX_COMMON_ENV_PATH:-${ENV_DIR}/common.env}}"
+DEPLOY_ROOT_OVERRIDE="${EQUITIES_DEPLOY_ROOT:-}"
+DEPLOY_LANE="${EQUITIES_DEPLOY_LANE:-prod}"
+TEST_MODE="${FLUX_DEPLOY_TEST_MODE:-0}"
 ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"
+EQUITIES_API_PORT_OVERRIDE="${EQUITIES_API_PORT:-}"
+EQUITIES_LANE_REDIS_DB_OVERRIDE="${EQUITIES_LANE_REDIS_DB:-}"
 
 declare -a NODE_STRATEGIES=()
 
+STACK_SERVICE_PREFIX=""
+PULSE_GROUP_KEY=""
+PULSE_GROUP_LABEL=""
+PULSE_GROUP_ORDER=""
+EQUITIES_API_PORT=""
+EQUITIES_REDIS_DB=""
+TARGET_PATH=""
+DEPLOY_ROOT=""
+SHARED_CONFIG=""
+STRATEGIES_DIR=""
+EQUITIES_PYTHON_BIN=""
+
+build_stack_service_prefix() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf 'equities\n'
+  else
+    printf 'equities-%s\n' "${DEPLOY_LANE}"
+  fi
+}
+
+build_group_label() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf 'Equities\n'
+  else
+    printf 'Equities %s\n' "${DEPLOY_LANE^}"
+  fi
+}
+
+default_group_order() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf '20\n'
+  else
+    printf '21\n'
+  fi
+}
+
+default_api_port() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf '5024\n'
+  else
+    printf '5124\n'
+  fi
+}
+
+default_redis_db() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf '\n'
+  else
+    printf '1\n'
+  fi
+}
+
+default_lane_release_root() {
+  local releases_root="${RELEASES_ROOT:-${HOME}/releases}"
+  printf '%s/%s/equities/current\n' "${releases_root}" "${DEPLOY_LANE}"
+}
+
+lane_api_env_path() {
+  local stack_service_prefix="${STACK_SERVICE_PREFIX:-$(build_stack_service_prefix)}"
+  printf '%s/%s-api.env\n' "${ENV_DIR}" "${stack_service_prefix}"
+}
+
+resolve_deploy_root() {
+  local deploy_root=""
+  local existing_api_env=""
+
+  existing_api_env="$(lane_api_env_path)"
+  if [[ -n "${DEPLOY_ROOT_OVERRIDE}" ]]; then
+    deploy_root="${DEPLOY_ROOT_OVERRIDE}"
+  elif [[ -f "${existing_api_env}" ]]; then
+    deploy_root="$(strategy_stack_read_env_value "${existing_api_env}" "WORKDIR" || true)"
+    if [[ -z "${deploy_root}" ]]; then
+      deploy_root="$(strategy_stack_read_env_value "${existing_api_env}" "PYTHONPATH" || true)"
+    fi
+  elif [[ "${DEPLOY_LANE}" != "prod" ]]; then
+    deploy_root="$(default_lane_release_root)"
+  elif [[ -f "${COMMON_ENV_PATH}" ]]; then
+    deploy_root="$(strategy_stack_read_env_value "${COMMON_ENV_PATH}" "WORKDIR" || true)"
+    if [[ -z "${deploy_root}" ]]; then
+      deploy_root="$(strategy_stack_read_env_value "${COMMON_ENV_PATH}" "PYTHONPATH" || true)"
+    fi
+  fi
+
+  if [[ -z "${deploy_root}" ]]; then
+    deploy_root="${ROOT_DIR}"
+  fi
+
+  printf '%s\n' "${deploy_root}"
+}
+
+initialize_stack_context() {
+  strategy_stack_require_lane "${DEPLOY_LANE}"
+  STACK_SERVICE_PREFIX="$(build_stack_service_prefix)"
+  PULSE_GROUP_KEY="${STACK_SERVICE_PREFIX}"
+  PULSE_GROUP_LABEL="$(build_group_label)"
+  PULSE_GROUP_ORDER="$(default_group_order)"
+  EQUITIES_API_PORT="${EQUITIES_API_PORT_OVERRIDE:-$(default_api_port)}"
+  EQUITIES_REDIS_DB="${EQUITIES_LANE_REDIS_DB_OVERRIDE:-$(default_redis_db)}"
+  TARGET_PATH="${SYSTEMD_DIR}/flux-${STACK_SERVICE_PREFIX}.target"
+  DEPLOY_ROOT="$(resolve_deploy_root)"
+  strategy_stack_require_immutable_release_root "${DEPLOY_ROOT}"
+  SHARED_CONFIG="${DEPLOY_ROOT}/deploy/equities/equities.live.toml"
+  STRATEGIES_DIR="${DEPLOY_ROOT}/deploy/equities/strategies"
+  EQUITIES_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"
+}
+
 require_sudo() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   if [[ "${EUID}" -ne 0 ]]; then
     echo "[equities-systemd] run with sudo" >&2
     exit 1
@@ -23,7 +133,7 @@ require_sudo() {
 
 require_project_python() {
   if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then
-    echo "[equities-systemd] missing project python at ${EQUITIES_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` first" >&2
+    echo "[equities-systemd] missing project python at ${EQUITIES_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` in ${DEPLOY_ROOT} first" >&2
     exit 1
   fi
 }
@@ -43,99 +153,94 @@ build_target_service_ids() {
   local -n out_service_ids="$1"
   # shellcheck disable=SC2034
   out_service_ids=(
-    "equities-api"
-    "equities-portfolio"
-    "equities-bridge"
+    "${STACK_SERVICE_PREFIX}-api"
+    "${STACK_SERVICE_PREFIX}-portfolio"
+    "${STACK_SERVICE_PREFIX}-bridge"
   )
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    out_service_ids+=("equities-node-${strategy_id}")
-  done
-}
-
-build_pulse_service_ids() {
-  # shellcheck disable=SC2178
-  local -n out_service_ids="$1"
-  # shellcheck disable=SC2034,SC2178
-  out_service_ids=(
-    "equities-portfolio"
-    "equities-bridge"
-  )
-  local strategy_id
-  for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    out_service_ids+=("equities-node-${strategy_id}")
+    out_service_ids+=("${STACK_SERVICE_PREFIX}-node-${strategy_id}")
   done
 }
 
 install_units() {
   strategy_stack_install_base_units \
-    "${ROOT_DIR}" \
+    "${DEPLOY_ROOT}" \
     "${SYSTEMD_DIR}" \
     "${ENV_DIR}" \
-    "${ROOT_DIR}/deploy/equities/systemd/common.env.example" \
+    "${DEPLOY_ROOT}/deploy/equities/systemd/common.env.example" \
     "${COMMON_ENV_PATH}"
 }
 
-append_checkout_env_overrides() {
+append_deploy_root_env_overrides() {
   local env_path="$1"
 
-  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${ROOT_DIR}" "${ROOT_DIR}" >> "${env_path}"
+  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}" >> "${env_path}"
+  if [[ -n "${EQUITIES_REDIS_DB}" ]]; then
+    printf 'EQUITIES_REDIS_DB=%s\n' "${EQUITIES_REDIS_DB}" >> "${env_path}"
+  fi
 }
 
 cleanup_obsolete_envs() {
-  rm -f "${ENV_DIR}/equities-api.env"
-  rm -f "${ENV_DIR}/equities-portfolio.env"
-  rm -f "${ENV_DIR}/equities-bridge.env"
-  find "${ENV_DIR}" -maxdepth 1 -type f -name 'equities-node-*.env' -delete
+  rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-api.env"
+  rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env"
+  rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env"
+  find "${ENV_DIR}" -maxdepth 1 -type f -name "${STACK_SERVICE_PREFIX}-node-*.env" -delete
 }
 
 render_target() {
   local service_ids=()
   build_target_service_ids service_ids
-  strategy_stack_render_target "${TARGET_PATH}" "Flux Equities Stack" "${service_ids[@]}"
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    strategy_stack_render_target "${TARGET_PATH}" "Flux Equities Stack" "${service_ids[@]}"
+  else
+    strategy_stack_render_target "${TARGET_PATH}" "Flux Equities ${DEPLOY_LANE^} Stack" "${service_ids[@]}"
+  fi
 }
 
 render_api_env() {
+  local api_service_id="${STACK_SERVICE_PREFIX}-api"
+
   # Shared-host equities keeps /equities as the SPA entry route; Fluxboard assets load from /static/fluxboard/*.
   strategy_stack_write_env \
-    "${ENV_DIR}/equities-api.env" \
+    "${ENV_DIR}/${api_service_id}.env" \
     "Equities API backend" \
-    "equities" \
-    "Equities" \
-    "20" \
-    "env FLUXBOARD_SERVE_DIST=1 ${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port 5024 --serve-fluxboard" \
-    "5024" \
-    "" \
+    "${PULSE_GROUP_KEY}" \
+    "${PULSE_GROUP_LABEL}" \
+    "${PULSE_GROUP_ORDER}" \
+    "env FLUXBOARD_SERVE_DIST=1 ${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api --config ${SHARED_CONFIG} --mode live --confirm-live --host 127.0.0.1 --port ${EQUITIES_API_PORT} --serve-fluxboard" \
+    "${EQUITIES_API_PORT}" \
+    "${api_service_id}" \
     "0"
-  append_checkout_env_overrides "${ENV_DIR}/equities-api.env"
+  append_deploy_root_env_overrides "${ENV_DIR}/${api_service_id}.env"
 }
 
 render_portfolio_env() {
   strategy_stack_write_env \
-    "${ENV_DIR}/equities-portfolio.env" \
+    "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env" \
     "Equities portfolio aggregator" \
-    "equities" \
-    "Equities" \
-    "20" \
+    "${PULSE_GROUP_KEY}" \
+    "${PULSE_GROUP_LABEL}" \
+    "${PULSE_GROUP_ORDER}" \
     "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_portfolio --config ${SHARED_CONFIG} --mode live --confirm-live"
-  append_checkout_env_overrides "${ENV_DIR}/equities-portfolio.env"
+  append_deploy_root_env_overrides "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env"
 }
 
 render_bridge_env() {
   strategy_stack_write_env \
-    "${ENV_DIR}/equities-bridge.env" \
+    "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env" \
     "Equities bridge consumer" \
-    "equities" \
-    "Equities" \
-    "20" \
+    "${PULSE_GROUP_KEY}" \
+    "${PULSE_GROUP_LABEL}" \
+    "${PULSE_GROUP_ORDER}" \
     "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_bridge --config ${SHARED_CONFIG} --mode live --confirm-live"
-  append_checkout_env_overrides "${ENV_DIR}/equities-bridge.env"
+  append_deploy_root_env_overrides "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env"
 }
 
 render_node_envs() {
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    local service_id="equities-node-${strategy_id}"
+    local service_id="${STACK_SERVICE_PREFIX}-node-${strategy_id}"
     local cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live"
     if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
       cmd+=" --enable-execution"
@@ -143,24 +248,28 @@ render_node_envs() {
     strategy_stack_write_env \
       "${ENV_DIR}/${service_id}.env" \
       "Equities node ${strategy_id}" \
-      "equities" \
-      "Equities" \
-      "20" \
+      "${PULSE_GROUP_KEY}" \
+      "${PULSE_GROUP_LABEL}" \
+      "${PULSE_GROUP_ORDER}" \
       "${cmd}"
-    append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"
+    append_deploy_root_env_overrides "${ENV_DIR}/${service_id}.env"
   done
 }
 
 rebuild_pulse_sudoers() {
-  "${ROOT_DIR}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
+  "${DEPLOY_ROOT}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
 }
 
 enable_stack() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   systemctl daemon-reload
-  systemctl enable flux-equities.target
+  systemctl enable "flux-${STACK_SERVICE_PREFIX}.target"
 }
 
 main() {
+  initialize_stack_context
   require_sudo
   require_project_python
   discover_node_strategies
@@ -173,7 +282,9 @@ main() {
   render_node_envs
   rebuild_pulse_sudoers
   enable_stack
-  echo "[equities-systemd] installed units under /etc/systemd/system, env files under /etc/flux, and sudoers at /etc/sudoers.d/flux-pulse"
+  echo "[equities-systemd] installed units under ${SYSTEMD_DIR}, env files under ${ENV_DIR}, and sudoers at /etc/sudoers.d/flux-pulse"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

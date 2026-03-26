@@ -43,6 +43,15 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Tech Stack:** [Key technologies/libraries]
 
+**Context Docs:**
+- Design: `docs/plans/...-design.md` or `none`
+- PRD: `docs/prd/...md` or `none`
+- Relevant specs/runbooks: `path/to/doc.md`, `none`
+
+**Decision Summary:**
+- [Key architectural decision]
+- [Assumption or non-goal]
+
 ## Progress Tracker
 
 **Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
@@ -155,6 +164,9 @@ After each task section, add a short tracker reminder:
 - Complete code in plan (not "add validation")
 - Exact commands with expected output
 - Reference relevant skills with @ syntax
+- Include `Context Docs` with the approved design/PRD when they exist
+- If no separate design/PRD exists, state that explicitly and why it is unnecessary
+- Include a short `Decision Summary` so execution agents know the important architectural choices without re-reading the full plan
 - DRY, YAGNI, TDD, frequent commits
 - Build the tracker table before Task 1 so execution starts with a real source of truth
 - Make task names in the tracker exactly match task headings

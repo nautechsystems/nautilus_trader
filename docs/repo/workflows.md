@@ -16,9 +16,10 @@ Use this for reusable runtime, model, adapter, core, and binding changes.
 Use this for strategy/runtime systems such as Flux.
 
 1. Implement the change under `systems/<system>/`.
-2. Use the system namespace directly, for example `flux.*`.
-3. If a legacy import path exists, update the compatibility layer instead of adding new implementation code under the legacy tree.
-4. Update the system README and system-specific docs when structure or runtime contracts change.
+2. Use the system namespace directly, for example `flux.*`, and keep product/deploy naming aligned with the same system name.
+3. Keep the naming split explicit: product/deploy surfaces use `flux`, while engine imports remain `nautilus_trader.*`.
+4. If a legacy import path exists, update the compatibility layer instead of adding new implementation code under the legacy tree.
+5. Update the system README and system-specific docs when structure or runtime contracts change.
 
 ## App change workflow
 
@@ -37,6 +38,8 @@ Use this for deployment and live-run concerns.
 2. Keep operational defaults and environment-specific wiring out of `engine/`.
 3. Reference canonical system entrypoints rather than duplicating runtime logic in shell scripts.
 4. Update runbooks whenever service names, env contracts, or launch sequences change.
+5. Treat deploy lanes as first-class architecture: `dev` is mutable, while `pilot` and `prod` must run from pinned release roots only.
+6. Do not let live services resolve to repo checkouts or worktrees; lane env files must point only at immutable release roots.
 
 ## Tooling change workflow
 

@@ -15,6 +15,10 @@ SERVICE_ENV_OWNER="${SERVICE_ENV_OWNER-root:ubuntu}"
 SERVICE_ENV_MODE="${SERVICE_ENV_MODE-0640}"
 BINANCE_SECRET_ID="${LAN_ROGUE_TRADER_BOT_BINANCE_SECRET_ID:-/nautilus/tg-bots/lan_rogue_trader_bot/binance}"
 TELEGRAM_SECRET_ID="${LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID:-/nautilus/tg-bots/lan_rogue_trader_bot/telegram_bot}"
+DEPLOY_ROOT_OVERRIDE="${TG_BOTS_DEPLOY_ROOT:-}"
+TEST_MODE="${FLUX_DEPLOY_TEST_MODE:-0}"
+DEPLOY_ROOT=""
+TG_BOTS_PYTHON_BIN=""
 
 declare -a MANAGED_SERVICE_ENV_KEYS=(
   "PULSE_ENABLED"
@@ -32,6 +36,9 @@ declare -a MANAGED_SERVICE_ENV_KEYS=(
 
 
 require_sudo() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   if [[ "${EUID}" -ne 0 ]]; then
     echo "[tg-bots-systemd] run with sudo" >&2
     exit 1
@@ -39,16 +46,56 @@ require_sudo() {
 }
 
 
+resolve_deploy_root() {
+  local deploy_root=""
+
+  if [[ -n "${DEPLOY_ROOT_OVERRIDE}" ]]; then
+    deploy_root="${DEPLOY_ROOT_OVERRIDE}"
+  elif [[ -f "${SERVICE_ENV_PATH}" ]]; then
+    deploy_root="$(strategy_stack_read_env_value "${SERVICE_ENV_PATH}" "WORKDIR" || true)"
+    if [[ -z "${deploy_root}" ]]; then
+      deploy_root="$(strategy_stack_read_env_value "${SERVICE_ENV_PATH}" "PYTHONPATH" || true)"
+    fi
+  elif [[ -f "${COMMON_ENV_PATH}" ]]; then
+    deploy_root="$(strategy_stack_read_env_value "${COMMON_ENV_PATH}" "WORKDIR" || true)"
+    if [[ -z "${deploy_root}" ]]; then
+      deploy_root="$(strategy_stack_read_env_value "${COMMON_ENV_PATH}" "PYTHONPATH" || true)"
+    fi
+  fi
+
+  if [[ -z "${deploy_root}" ]]; then
+    deploy_root="${ROOT_DIR}"
+  fi
+
+  printf '%s\n' "${deploy_root}"
+}
+
+
+initialize_stack_context() {
+  DEPLOY_ROOT="$(resolve_deploy_root)"
+  strategy_stack_require_immutable_release_root "${DEPLOY_ROOT}"
+  TG_BOTS_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"
+}
+
+
+require_project_python() {
+  if [[ ! -x "${TG_BOTS_PYTHON_BIN}" ]]; then
+    echo "[tg-bots-systemd] missing project python at ${TG_BOTS_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` in ${DEPLOY_ROOT} first" >&2
+    exit 1
+  fi
+}
+
+
 install_units() {
   strategy_stack_install_base_units \
-    "${ROOT_DIR}" \
+    "${DEPLOY_ROOT}" \
     "${SYSTEMD_DIR}" \
     "${ENV_DIR}" \
-    "${ROOT_DIR}/deploy/tg_bots/systemd/common.env.example" \
+    "${DEPLOY_ROOT}/deploy/tg_bots/systemd/common.env.example" \
     "${COMMON_ENV_PATH}"
-  install -m 0644 "${ROOT_DIR}/deploy/tg_bots/systemd/flux-tg-bots.target" "${TARGET_PATH}"
+  install -m 0644 "${DEPLOY_ROOT}/deploy/tg_bots/systemd/flux-tg-bots.target" "${TARGET_PATH}"
   if [[ ! -f "${LOCAL_CONFIG_PATH}" ]]; then
-    install -m 0644 "${ROOT_DIR}/deploy/tg_bots/lan_rogue_trader_alert.ini" "${LOCAL_CONFIG_PATH}"
+    install -m 0644 "${DEPLOY_ROOT}/deploy/tg_bots/lan_rogue_trader_alert.ini" "${LOCAL_CONFIG_PATH}"
   fi
 }
 
@@ -116,6 +163,11 @@ append_unmanaged_service_env_lines() {
 }
 
 
+append_deploy_root_env_overrides() {
+  printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}" >> "${SERVICE_ENV_PATH}"
+}
+
+
 render_service_env() {
   local existing_env_path=""
   local binance_api_key=""
@@ -135,7 +187,7 @@ render_service_env() {
     "tg-bots" \
     "TG Bots" \
     "60" \
-    "python3 -m nautilus_trader.flux.runners.tg_bots.run_lan_rogue_trader_alert --config ${LOCAL_CONFIG_PATH}"
+    "${TG_BOTS_PYTHON_BIN} -m nautilus_trader.flux.runners.tg_bots.run_lan_rogue_trader_alert --config ${LOCAL_CONFIG_PATH}"
 
   binance_api_key="$(preserve_existing_service_env_value "${existing_env_path}" "LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY" "${LAN_ROGUE_TRADER_BOT_BINANCE_API_KEY:-}")"
   binance_api_secret="$(preserve_existing_service_env_value "${existing_env_path}" "LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET" "${LAN_ROGUE_TRADER_BOT_BINANCE_API_SECRET:-}")"
@@ -152,6 +204,7 @@ render_service_env() {
     echo "LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID=${telegram_secret_id}"
   } >> "${SERVICE_ENV_PATH}"
   append_unmanaged_service_env_lines "${existing_env_path}"
+  append_deploy_root_env_overrides
   rm -f "${existing_env_path}"
   if [[ -n "${SERVICE_ENV_OWNER}" ]]; then
     chown "${SERVICE_ENV_OWNER}" "${SERVICE_ENV_PATH}"
@@ -161,18 +214,23 @@ render_service_env() {
 
 
 rebuild_pulse_sudoers() {
-  "${ROOT_DIR}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
+  "${DEPLOY_ROOT}/ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
 }
 
 
 enable_stack() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   systemctl daemon-reload
   systemctl enable flux-tg-bots.target
 }
 
 
 main() {
+  initialize_stack_context
   require_sudo
+  require_project_python
   install_units
   render_service_env
   rebuild_pulse_sudoers
