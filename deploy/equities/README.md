@@ -136,7 +136,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 Install the systemd units and seeded env files:
 
 ```bash
-export EQUITIES_DEPLOY_ROOT=/home/ubuntu/nautilus/releases/prod/equities/current
+export EQUITIES_DEPLOY_ROOT=/home/ubuntu/releases/prod/equities/current
 cd "${EQUITIES_DEPLOY_ROOT}"
 uv sync --all-groups --all-extras
 sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" \
@@ -201,6 +201,8 @@ Expected results:
 - `/tokenmm/assets/*` on the shared public `/equities` route is a failure
 - `/equities/assets/*` on the shared public `/equities` route is also a failure for the current shared-host contract
 - Do not restart services until those env files match the intended release root and live flags.
+- Repointing `/etc/flux/equities*.env` to a new immutable release root does not restart the live services by itself;
+  restart the equities units only during an explicit cutover window.
 
 Shared-host recovery order after a repoint:
 

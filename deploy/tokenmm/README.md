@@ -197,7 +197,7 @@ consume the portfolio snapshot owned by `run_portfolio`.
 ## Production control plane
 
 ```bash
-export TOKENMM_DEPLOY_ROOT=/path/to/deploy-root
+export TOKENMM_DEPLOY_ROOT=/home/ubuntu/releases/prod/tokenmm/current
 cd "${TOKENMM_DEPLOY_ROOT}"
 make build
 pnpm --dir fluxboard install --frozen-lockfile
@@ -220,9 +220,11 @@ Runtime registration is explicit:
 - `flux@.service` reads `/etc/flux/common.env` plus `/etc/flux/<service>.env`.
 - `install_tokenmm_systemd.sh` pins each TokenMM env file to the resolved deploy root.
 - `install_tokenmm_systemd.sh` writes the resolved `WORKDIR` and `PYTHONPATH` into `/etc/flux/tokenmm*.env`
-  so reruns keep the live host anchored to the intended checkout.
+  so reruns keep the live host anchored to the intended immutable release root.
 - Re-running the installer from a worktree does not change the live deploy root when `/etc/flux/common.env`
   already points at a stable checkout, and the installer refuses worktree roots for fresh bootstrap/cutover.
+- Repointing `/etc/flux/tokenmm*.env` to a new immutable release root does not restart the live services by itself;
+  restart the TokenMM units only during an explicit cutover window.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
