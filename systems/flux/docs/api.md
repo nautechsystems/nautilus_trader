@@ -285,12 +285,14 @@ Standard live envelope invariants:
 3. Supported `kind` values are:
    - `delta_batch`
    - `heartbeat`
+   - `invalidate`
    - `recovery_required`
 4. `delta_batch` carries machine-readable `payload` content:
    - `signal` surface: `payload.signals[]`, `payload.alerts`, `payload.strategies.changed`
    - `trades` surface: `payload.trades[]`
-5. `heartbeat` may carry an empty payload and does not advance that surface's `last_seq`.
-6. `recovery_required` includes machine-readable `reason` and advances only the affected surface's cursor.
+5. `heartbeat` may carry an empty payload and advances the surface cursor for liveness accounting.
+6. `invalidate` tells the client to resnapshot the affected surface and may include summary payload fields (for example alert counts).
+7. `recovery_required` includes machine-readable `reason` and advances only the affected surface's cursor.
 
 Standard rejection and recovery reasons:
 

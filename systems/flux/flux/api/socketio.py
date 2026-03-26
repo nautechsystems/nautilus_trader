@@ -1199,65 +1199,77 @@ class FluxSocketEmitter:
 
         self.unsubscribe_standard(sid, surface=normalized_surface)
         self.acquire_profile(normalized_profile)
-        self._prime_profile_state(normalized_profile)
-        refreshed, refreshed_reason = self.resolve_standard_subscription_descriptor(
-            contract_version=int(contract_version),
-            surface=normalized_surface,
-            profile=normalized_profile,
-        )
-        if refreshed is None:
-            reason = refreshed_reason or "unsupported_profile"
-            self.release_profile(normalized_profile)
-            self._record_metric("standard_subscribe_counts", reason)
+        profile_acquired = True
+        subscription_registered = False
+        try:
+            self._prime_profile_state(normalized_profile)
+            refreshed, refreshed_reason = self.resolve_standard_subscription_descriptor(
+                contract_version=int(contract_version),
+                surface=normalized_surface,
+                profile=normalized_profile,
+            )
+            if refreshed is None:
+                reason = refreshed_reason or "unsupported_profile"
+                self.release_profile(normalized_profile)
+                profile_acquired = False
+                self._record_metric("standard_subscribe_counts", reason)
+                return {
+                    "accepted": False,
+                    "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
+                    "surface": normalized_surface,
+                    "profile": normalized_profile,
+                    "reason": reason,
+                }
+
+            subscription = FluxStandardSubscription(
+                sid=sid,
+                surface=normalized_surface,
+                profile=normalized_profile,
+                surface_query_key=refreshed["surface_query_key"],
+                stream_id=refreshed["stream_id"],
+                snapshot_revision=int(refreshed["snapshot_revision"]),
+                capabilities=dict(refreshed["capabilities"]),
+            )
+            with self._lock:
+                surface_map = self._standard_subscriptions_by_sid.setdefault(sid, {})
+                surface_map[normalized_surface] = subscription
+            subscription_registered = True
+            profile_acquired = False
+            if normalized_surface == "balances":
+                strategy_ids = self._resolve_profile_strategy_ids(normalized_profile)
+                if strategy_ids:
+                    balances_signature = self._load_canonical_balances_signature(
+                        normalized_profile,
+                        strategy_ids=strategy_ids,
+                    )
+                    with self._lock:
+                        if (
+                            self._profile_refcounts.get(normalized_profile, 0) > 0
+                            and self._balances_by_profile.get(normalized_profile) is None
+                        ):
+                            self._balances_by_profile[normalized_profile] = balances_signature
+            self._refresh_active_standard_metrics()
+            self._record_metric("standard_subscribe_counts", "accepted")
+            accepted_start_seq = int(refreshed["last_seq"])
             return {
-                "accepted": False,
+                "accepted": True,
                 "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
                 "surface": normalized_surface,
                 "profile": normalized_profile,
-                "reason": reason,
+                "surface_query_key": refreshed["surface_query_key"],
+                "stream_id": refreshed["stream_id"],
+                "snapshot_revision": int(refreshed["snapshot_revision"]),
+                "accepted_start_seq": accepted_start_seq,
+                "last_seq": int(refreshed["last_seq"]),
+                "capabilities": dict(refreshed["capabilities"]),
+                "requested_resume_from_seq": safe_int(resume_from_seq) or 0,
             }
-
-        subscription = FluxStandardSubscription(
-            sid=sid,
-            surface=normalized_surface,
-            profile=normalized_profile,
-            surface_query_key=refreshed["surface_query_key"],
-            stream_id=refreshed["stream_id"],
-            snapshot_revision=int(refreshed["snapshot_revision"]),
-            capabilities=dict(refreshed["capabilities"]),
-        )
-        with self._lock:
-            surface_map = self._standard_subscriptions_by_sid.setdefault(sid, {})
-            surface_map[normalized_surface] = subscription
-        if normalized_surface == "balances":
-            strategy_ids = self._resolve_profile_strategy_ids(normalized_profile)
-            if strategy_ids:
-                balances_signature = self._load_canonical_balances_signature(
-                    normalized_profile,
-                    strategy_ids=strategy_ids,
-                )
-                with self._lock:
-                    if (
-                        self._profile_refcounts.get(normalized_profile, 0) > 0
-                        and self._balances_by_profile.get(normalized_profile) is None
-                    ):
-                        self._balances_by_profile[normalized_profile] = balances_signature
-        self._refresh_active_standard_metrics()
-        self._record_metric("standard_subscribe_counts", "accepted")
-        accepted_start_seq = int(refreshed["last_seq"])
-        return {
-            "accepted": True,
-            "contract_version": REALTIME_STANDARD_CONTRACT_VERSION,
-            "surface": normalized_surface,
-            "profile": normalized_profile,
-            "surface_query_key": refreshed["surface_query_key"],
-            "stream_id": refreshed["stream_id"],
-            "snapshot_revision": int(refreshed["snapshot_revision"]),
-            "accepted_start_seq": accepted_start_seq,
-            "last_seq": int(refreshed["last_seq"]),
-            "capabilities": dict(refreshed["capabilities"]),
-            "requested_resume_from_seq": safe_int(resume_from_seq) or 0,
-        }
+        except Exception:
+            if subscription_registered:
+                self.unsubscribe_standard(sid, surface=normalized_surface)
+            elif profile_acquired:
+                self.release_profile(normalized_profile)
+            raise
 
     def _standard_subscriptions_for_profile(self, profile: str) -> list[FluxStandardSubscription]:
         normalized_profile = normalize_profile(profile)
@@ -1942,6 +1954,7 @@ def create_flux_socket_server(  # noqa: C901
                 "profile": next_profile,
                 "room": profile_room(next_profile) if next_profile else None,
             }
+        emitter.unsubscribe_standard(request.sid)
         with sid_lock:
             previous_profile = sid_profiles.pop(request.sid, "")
         if previous_profile:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from flux.api import socketio as socketio_module
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.common.keys import FluxRedisKeys
@@ -1473,6 +1475,105 @@ def test_standard_subscribe_rejects_missing_snapshot_lineage_before_any_data_is_
         assert _take_realtime_packets(client) == []
 
     client.disconnect()
+
+
+def test_set_profile_switch_cleans_up_standard_subscriptions_for_previous_profile(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={
+            "tokenmm": [flux_config.identity.strategy_id],
+            "equities": [flux_config.identity.strategy_id],
+        },
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _signals_snapshot(app, profile="tokenmm")
+    client = socketio.test_client(app)
+
+    subscribe_ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(snapshot, surface="signal"),
+    )
+
+    assert subscribe_ack["accepted"] is True
+    assert len(emitter._standard_subscriptions_for_profile("tokenmm")) == 1
+
+    switch_ack = _set_legacy_profile_without_background_emitter(
+        client,
+        emitter,
+        profile="equities",
+    )
+
+    assert switch_ack["ok"] is True
+    assert switch_ack["profile"] == "equities"
+    assert emitter._standard_subscriptions_for_profile("tokenmm") == []
+    assert emitter._profile_refcounts.get("tokenmm", 0) == 0
+    assert emitter._legacy_profile_refcounts.get("tokenmm", 0) == 0
+
+    emitter.emit_once(profile="tokenmm")
+    assert _take_realtime_packets(client) == []
+    client.disconnect()
+
+
+def test_standard_subscribe_priming_failure_releases_profile_and_subscription_state(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    emitter = app.extensions["flux_socket_emitter"]
+    snapshot = _signals_snapshot(app)
+    payload = _standard_subscribe_payload(snapshot, surface="signal")
+
+    original_prime = emitter._prime_profile_state
+    emitter._prime_profile_state = lambda profile: (_ for _ in ()).throw(RuntimeError(f"boom:{profile}"))  # type: ignore[method-assign]
+    try:
+        with pytest.raises(RuntimeError, match="boom:tokenmm"):
+            emitter.subscribe_standard(
+                "sid-priming-failure",
+                contract_version=int(payload["contract_version"]),
+                surface=payload["surface"],
+                profile=payload["profile"],
+                surface_query_key=payload["surface_query_key"],
+                stream_id=payload["stream_id"],
+                snapshot_revision=payload["snapshot_revision"],
+                resume_from_seq=payload["resume_from_seq"],
+            )
+    finally:
+        emitter._prime_profile_state = original_prime  # type: ignore[method-assign]
+
+    assert emitter._standard_subscriptions_for_profile("tokenmm") == []
+    assert emitter._standard_subscriptions_by_sid == {}
+    assert emitter._profile_refcounts.get("tokenmm", 0) == 0
+    assert emitter._legacy_profile_refcounts.get("tokenmm", 0) == 0
+    assert emitter._active_profiles() == []
 
 
 def test_backend_hard_kill_switch_and_canary_controls_fail_closed_for_standard_only(
