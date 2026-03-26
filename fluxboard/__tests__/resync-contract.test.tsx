@@ -5,16 +5,20 @@ import Trades from '../Trades';
 import { api } from '../api';
 import { markGlobalResyncApplied, useResyncStore, useTradesStore } from '../stores';
 
-const { socketMock, getTrades, getTradesDelta } = vi.hoisted(() => {
+const { socketMock, getTrades, getTradesDelta, realtimeFlags } = vi.hoisted(() => {
   const socketMock = {
     on: vi.fn(),
     off: vi.fn(),
+    emit: vi.fn(),
     connected: true,
   };
   return {
     socketMock,
     getTrades: vi.fn(),
     getTradesDelta: vi.fn(),
+    realtimeFlags: {
+      trades: false,
+    },
   };
 });
 
@@ -30,7 +34,20 @@ vi.mock('../api', async (importOriginal) => {
   };
 });
 
-vi.mock('../sockets', () => ({ socket: socketMock }));
+vi.mock('../sockets', () => ({
+  socket: socketMock,
+  standardSocketClient: {
+    subscribe: vi.fn(() => () => undefined),
+  },
+}));
+
+vi.mock('../config/featureFlags', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    isRealtimeStandardEnabled: (surface: string) => surface === 'trades' && realtimeFlags.trades,
+  };
+});
 
 vi.mock('../utils/sound', () => ({
   playTradeClick: vi.fn(),
@@ -76,6 +93,16 @@ const defaultApplyDeltaResult = {
   staleRejected: 0,
   accepted: true,
   applied: false,
+};
+
+const standardRealtimeLineage = {
+  contract_version: 2,
+  surface: 'trades',
+  profile: 'tokenmm',
+  surface_query_key: 'tokenmm.trades',
+  stream_id: 'trades-main',
+  snapshot_revision: 'snap-1',
+  last_seq: 0,
 };
 
 const setupMockStores = (config: MockStoresConfig = {}) => {
@@ -127,9 +154,11 @@ describe('Trades resync apply contract', () => {
     socketMock.connected = true;
     vi.mocked(socketMock.on).mockClear();
     vi.mocked(socketMock.off).mockClear();
+    vi.mocked(socketMock.emit).mockClear();
     vi.mocked(markGlobalResyncApplied).mockReset();
     (useTradesStore as unknown as { mockReset: () => void }).mockReset();
     (useResyncStore as unknown as { mockReset: () => void }).mockReset();
+    realtimeFlags.trades = false;
     getTrades.mockResolvedValue({
       rows: [],
       total: 0,
@@ -249,6 +278,7 @@ describe('Trades resync apply contract', () => {
   });
 
   it('does not mark resync applied for no-op poll deltas', async () => {
+    realtimeFlags.trades = true;
     setupMockStores({
       setSnapshotResult: { accepted: true, applied: false },
       applyDeltaResult: {
@@ -260,6 +290,16 @@ describe('Trades resync apply contract', () => {
         accepted: true,
         applied: false,
       },
+    });
+    getTrades.mockResolvedValueOnce({
+      rows: [],
+      total: 0,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      has_more: false,
+      next_cursor: null,
+      realtime: standardRealtimeLineage,
     });
     getTradesDelta.mockResolvedValueOnce({
       rows: [{ op: 'upsert', row_id: 'poll-noop', version: 1, seq: 4, exchange: 'bybit' }],
@@ -280,6 +320,7 @@ describe('Trades resync apply contract', () => {
   });
 
   it('does not mark resync applied for no-op poll deltas while disconnected', async () => {
+    realtimeFlags.trades = true;
     socketMock.connected = false;
     setupMockStores({
       setSnapshotResult: { accepted: true, applied: true },
@@ -292,6 +333,16 @@ describe('Trades resync apply contract', () => {
         accepted: true,
         applied: false,
       },
+    });
+    getTrades.mockResolvedValueOnce({
+      rows: [],
+      total: 0,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      has_more: false,
+      next_cursor: null,
+      realtime: standardRealtimeLineage,
     });
     getTradesDelta.mockResolvedValueOnce({
       rows: [{ op: 'upsert', row_id: 'poll-disconnected-noop', version: 1, seq: 4, exchange: 'bybit' }],
