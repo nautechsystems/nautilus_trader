@@ -16,9 +16,10 @@ Use this for reusable runtime, model, adapter, core, and binding changes.
 Use this for strategy/runtime systems such as Flux.
 
 1. Implement the change under `systems/<system>/`.
-2. Use the system namespace directly, for example `flux.*`.
-3. If a legacy import path exists, update the compatibility layer instead of adding new implementation code under the legacy tree.
-4. Update the system README and system-specific docs when structure or runtime contracts change.
+2. Use the system namespace directly, for example `flux.*`, and keep product/deploy naming aligned with the same system name.
+3. Keep the naming split explicit: product/deploy surfaces use `flux`, while engine imports remain `nautilus_trader.*`.
+4. If a legacy import path exists, update the compatibility layer instead of adding new implementation code under the legacy tree.
+5. Update the system README and system-specific docs when structure or runtime contracts change.
 
 ## App change workflow
 

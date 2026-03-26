@@ -2,6 +2,14 @@
 
 This repository is the working monorepo for the trading stack.
 
+At the product and deploy layer, the system is referred to as `flux`. At the engine layer, the runtime namespace remains `nautilus_trader`.
+
+Use this naming split consistently:
+
+- `flux`: product, repo, deploy lanes, Pulse groups, and operator-facing surfaces
+- `flux.*`: Flux system/runtime implementation under `systems/flux/`
+- `nautilus_trader.*`: engine/runtime imports and core platform identity
+
 ## Layout
 
 - `engine/`: reusable runtime, Rust crates, Python bindings, schema, and engine tests.

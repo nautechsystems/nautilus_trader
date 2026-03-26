@@ -28,9 +28,11 @@ or wiring automation, and treat the repo-root app paths as mirrored worktrees.
 
 ## Namespace split
 
+- Product, repo, and deploy surfaces use the `flux` name.
 - Engine code uses `nautilus_trader.*`.
 - Flux code uses `flux.*`.
 - `nautilus_trader.flux.*` exists only as a compatibility bridge during migration.
+- `systems/flux/` is the current canonical system boundary; do not infer that the repo has already completed a flag-day directory or import rename beyond that boundary.
 
 ## Placement rules
 
