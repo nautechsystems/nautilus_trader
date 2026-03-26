@@ -167,6 +167,13 @@ class StartupInstrumentCacheSnapshot:
             start=Decimal("0"),
         )
 
+    @property
+    def startup_position_qty(self) -> Decimal:
+        return sum(
+            (snapshot.open_position_qty for snapshot in self.strategy_snapshots),
+            start=Decimal("0"),
+        )
+
 
 class LiveExecutionEngine(ExecutionEngine):
     """
@@ -230,6 +237,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._startup_reconciliation_snapshot: dict[
             tuple[AccountId | None, InstrumentId, StrategyId],
             StartupStrategyCacheSnapshot,
+        ] = {}
+        self._startup_unmatched_fill_reports: dict[
+            tuple[AccountId | None, InstrumentId],
+            list[FillReport],
         ] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
@@ -1753,6 +1764,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _clear_startup_reconciliation_snapshot(self) -> None:
         self._startup_reconciliation_snapshot.clear()
+        self._startup_unmatched_fill_reports.clear()
 
     def _capture_startup_reconciliation_snapshot(self) -> None:
         snapshot_data: dict[tuple[AccountId | None, InstrumentId, StrategyId], dict[str, Any]] = {}
@@ -1850,6 +1862,35 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=instrument_id,
             strategy_snapshots=self._startup_snapshot_strategy_entries(account_id, instrument_id),
         )
+
+    @staticmethod
+    def _signed_decimal_qty_for_fill_report(fill_report: FillReport) -> Decimal:
+        signed_qty = fill_report.last_qty.as_decimal()
+        return signed_qty if fill_report.order_side == OrderSide.BUY else -signed_qty
+
+    def _record_startup_unmatched_fill_reports(
+        self,
+        mass_status: ExecutionMassStatus,
+    ) -> None:
+        reported_venue_order_ids = set(mass_status.order_reports.keys())
+        self._startup_unmatched_fill_reports = {}
+
+        for fill_reports in mass_status.fill_reports.values():
+            for fill_report in fill_reports:
+                if fill_report.venue_order_id in reported_venue_order_ids:
+                    continue
+                if not self._consider_for_reconciliation(fill_report.instrument_id):
+                    continue
+
+                key = (fill_report.account_id, fill_report.instrument_id)
+                self._startup_unmatched_fill_reports.setdefault(key, []).append(fill_report)
+
+    def _startup_unmatched_fills_for_instrument(
+        self,
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+    ) -> list[FillReport]:
+        return list(self._startup_unmatched_fill_reports.get((account_id, instrument_id), []))
 
     async def _generate_startup_targeted_order_status_reports(
         self,
@@ -2576,6 +2617,9 @@ class LiveExecutionEngine(ExecutionEngine):
         # Deduplicate orders in mass status
         self._deduplicate_mass_status_orders(mass_status)
 
+        if allow_startup_external_cleanup:
+            self._record_startup_unmatched_fill_reports(mass_status)
+
         results: list[bool] = []
         reconciled_orders: set[ClientOrderId] = set()
         reconciled_trades: set[TradeId] = set()
@@ -2697,13 +2741,26 @@ class LiveExecutionEngine(ExecutionEngine):
                 instrument_id,
             )
             if allow_startup_external_cleanup and startup_snapshot.has_open_positions:
+                venue_signed_decimal_qty = sum(
+                    (report.signed_decimal_qty for report in position_reports),
+                    start=Decimal("0"),
+                )
+                if venue_signed_decimal_qty == startup_snapshot.startup_position_qty:
+                    self._log.info(
+                        f"Skipping fill adjustment for {instrument_id}: startup snapshot "
+                        f"restored qty {startup_snapshot.startup_position_qty} already matches "
+                        f"venue qty {venue_signed_decimal_qty}, so replaying partial-window "
+                        "lifecycle history would double-apply fills",
+                        LogColor.BLUE,
+                    )
+                    continue
+
                 self._log.info(
-                    f"Skipping fill adjustment for {instrument_id}: startup snapshot already "
-                    "contains restored open positions, so replaying partial-window lifecycle "
-                    "history would double-apply fills",
+                    f"Allowing fill adjustment for {instrument_id}: startup snapshot restored "
+                    f"qty {startup_snapshot.startup_position_qty}, but venue qty is "
+                    f"{venue_signed_decimal_qty}",
                     LogColor.BLUE,
                 )
-                continue
 
             reconciliation_instruments.append(instrument)
 
@@ -3453,6 +3510,8 @@ class LiveExecutionEngine(ExecutionEngine):
         effective_qty: Decimal,
         log_message: str,
         startup_alert_message: str | None = None,
+        startup_alert_cause: str | None = None,
+        startup_alert_action: str | None = None,
     ) -> bool:
         stale_position_ids = [position.id.value for position in stale_positions]
         self._log.info(
@@ -3471,6 +3530,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 venue_qty=report.signed_decimal_qty,
                 position_ids=stale_position_ids,
                 effective_qty=effective_qty,
+                cause=startup_alert_cause,
+                action=startup_alert_action,
             )
 
         for position in stale_positions:
@@ -3557,6 +3618,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 if publish_startup_alert
                 else None
             ),
+            startup_alert_cause="stale_external_positions" if publish_startup_alert else None,
+            startup_alert_action="close_positions" if publish_startup_alert else None,
         )
 
     def _should_cleanup_stale_startup_netting_positions(
@@ -3601,6 +3664,85 @@ class LiveExecutionEngine(ExecutionEngine):
             LogColor.BLUE,
         )
         return True
+
+    def _try_repair_startup_netting_position_with_unmatched_fills(
+        self,
+        report: PositionStatusReport,
+        instrument: Instrument,
+        positions_open: list[Position],
+        effective_positions: list[Position],
+        position_signed_decimal_qty: Decimal,
+    ) -> bool | None:
+        if report.signed_decimal_qty != 0 or position_signed_decimal_qty == 0:
+            return None
+
+        if len(effective_positions) != 1:
+            return None
+
+        snapshot = self._startup_snapshot_for_instrument(report.account_id, report.instrument_id)
+        if position_signed_decimal_qty != snapshot.startup_position_qty:
+            return None
+
+        startup_position_ids = {
+            position_id
+            for strategy_snapshot in snapshot.strategy_snapshots
+            for position_id in strategy_snapshot.open_position_ids
+        }
+        current_position_ids = {position.id for position in positions_open}
+        if not current_position_ids.issubset(startup_position_ids):
+            return None
+
+        unmatched_fills = self._startup_unmatched_fills_for_instrument(
+            report.account_id,
+            report.instrument_id,
+        )
+        if not unmatched_fills:
+            return None
+
+        cached_orders = self._cache.orders(instrument_id=report.instrument_id)
+        candidate_fills: list[FillReport] = []
+        for fill_report in unmatched_fills:
+            if any(
+                fill_report.trade_id in order.trade_ids
+                or get_existing_fill_for_trade_id(order, fill_report.trade_id) is not None
+                for order in cached_orders
+            ):
+                continue
+            candidate_fills.append(fill_report)
+
+        if not candidate_fills:
+            return None
+
+        candidate_fills.sort(key=lambda fill: (fill.ts_event, fill.ts_init, fill.trade_id.value))
+        candidate_signed_decimal_qty = sum(
+            (self._signed_decimal_qty_for_fill_report(fill) for fill in candidate_fills),
+            start=Decimal("0"),
+        )
+        if candidate_signed_decimal_qty != -position_signed_decimal_qty:
+            return None
+
+        self._log.info(
+            f"Applying startup unmatched-fill stale-position repair for {report.instrument_id}: "
+            f"startup_qty={position_signed_decimal_qty}, venue_qty={report.signed_decimal_qty}, "
+            f"fills={len(candidate_fills)}",
+            LogColor.BLUE,
+        )
+
+        self._startup_unmatched_fill_reports[(report.account_id, report.instrument_id)] = []
+        return self._cleanup_stale_startup_netting_positions(
+            report=report,
+            instrument=instrument,
+            stale_positions=effective_positions,
+            raw_qty=position_signed_decimal_qty,
+            effective_qty=Decimal("0"),
+            log_message="Closing startup cached positions proven stale by unmatched fill reports",
+            startup_alert_message=(
+                f"Startup reconciliation removed stale cached positions for "
+                f"{report.instrument_id} after unmatched fill repair"
+            ),
+            startup_alert_cause="startup_fill_missing_locally",
+            startup_alert_action="close_positions",
+        )
 
     def _reconcile_position_report_netting(
         self,
@@ -3678,7 +3820,20 @@ class LiveExecutionEngine(ExecutionEngine):
                     f"Startup reconciliation removed stale cached positions for "
                     f"{report.instrument_id}"
                 ),
+                startup_alert_cause="stale_cached_positions",
+                startup_alert_action="close_positions",
             )
+
+        if allow_startup_external_cleanup:
+            startup_fill_repair_result = self._try_repair_startup_netting_position_with_unmatched_fills(
+                report=report,
+                instrument=instrument,
+                positions_open=positions_open,
+                effective_positions=effective_positions,
+                position_signed_decimal_qty=position_signed_decimal_qty,
+            )
+            if startup_fill_repair_result is not None:
+                return startup_fill_repair_result
 
         # Check if quantities match
         quantities_match = position_signed_decimal_qty == report.signed_decimal_qty
@@ -3693,6 +3848,10 @@ class LiveExecutionEngine(ExecutionEngine):
                     ),
                     cached_qty=raw_position_signed_decimal_qty,
                     venue_qty=report.signed_decimal_qty,
+                    cause="ambiguous_startup_mismatch",
+                    action=(
+                        "fail_closed" if not self.generate_missing_orders else "reconcile_position_diff"
+                    ),
                 )
             if not self.generate_missing_orders:
                 self._log.error(
@@ -3778,6 +3937,8 @@ class LiveExecutionEngine(ExecutionEngine):
         position_ids: list[str] | None = None,
         raw_qty: Decimal | None = None,
         effective_qty: Decimal | None = None,
+        cause: str | None = None,
+        action: str | None = None,
     ) -> None:
         snapshot = self._startup_snapshot_for_instrument(report.account_id, report.instrument_id)
         strategy_ids = [
@@ -3811,6 +3972,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 payload["raw_qty"] = str(raw_qty)
             if effective_qty is not None:
                 payload["effective_qty"] = str(effective_qty)
+            if cause is not None:
+                payload["cause"] = cause
+            if action is not None:
+                payload["action"] = action
             self._publish_execution_alert(payload)
 
     def _reconcile_cross_zero_position(

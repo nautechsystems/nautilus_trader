@@ -6724,6 +6724,119 @@ class TestHedgeModeReconciliation:
         assert remaining_positions[0].signed_decimal_qty() == Decimal("3256")
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_auto_repairs_stale_startup_position_with_open_order_and_recent_closing_fill_binance_spot_shape(
+        self,
+    ):
+        """
+        Regression for the March 26, 2026 Binance spot startup failure.
+
+        Startup restored one stale cached short position plus one still-open cached
+        buy order. Venue truth was already flat, and startup fills contained the
+        recent closing buy, but the current open-only startup path skipped fill
+        reconstruction and then refused stale-position cleanup because one startup
+        open order still remained open.
+        """
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=startup_account_id),
+        )
+
+        stale_short_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            order_side=OrderSide.SELL,
+        )
+        stale_short_fill = TestEventStubs.order_filled(
+            stale_short_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-BINANCE-SPOT-STALE-001"),
+            last_qty=Quantity.from_int(3_256),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BINANCE-SPOT-CACHED-SHORT-001"),
+        )
+        stale_short_position = Position(instrument=AUDUSD_SIM, fill=stale_short_fill)
+        self.cache.add_position(stale_short_position, OmsType.NETTING)
+
+        open_cached_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            order_side=OrderSide.BUY,
+            client_order_id=ClientOrderId("BINANCE-SPOT-OPEN-ORDER-001"),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_submitted(
+                open_cached_order,
+                account_id=startup_account_id,
+            ),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_accepted(
+                open_cached_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("BINANCE-SPOT-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(open_cached_order)
+
+        open_order_report = OrderStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=open_cached_order.client_order_id,
+            venue_order_id=open_cached_order.venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=open_cached_order.quantity,
+            filled_qty=Quantity.zero(),
+            avg_px=None,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        closing_fill_report = FillReport(
+            client_order_id=ClientOrderId("BINANCE-SPOT-CLOSE-ORDER-001"),
+            venue_order_id=VenueOrderId("BINANCE-SPOT-CLOSE-VENUE-001"),
+            trade_id=TradeId("BINANCE-SPOT-CLOSE-FILL-001"),
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(3_256),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.TAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+        position_report = PositionStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(),
+            report_id=UUID4(),
+            ts_last=2,
+            ts_init=2,
+        )
+
+        self.client.add_order_status_report(open_order_report)
+        self.client.add_fill_reports(closing_fill_report.venue_order_id, [closing_fill_report])
+        self.client.add_position_status_report(position_report)
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == []
+        remaining_open_order = self.cache.order(open_cached_order.client_order_id)
+        assert remaining_open_order is not None
+        assert remaining_open_order.status == OrderStatus.ACCEPTED
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_cleans_stale_startup_position_after_missing_targeted_open_order_query(
         self,
     ):

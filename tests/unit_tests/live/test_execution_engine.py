@@ -1961,6 +1961,75 @@ class TestLiveExecutionEngine:
         assert payload["instrument_id"] == AUDUSD_SIM.id.value
         assert payload["cached_qty"] == "100"
         assert payload["venue_qty"] == "0"
+        assert payload["cause"] == "ambiguous_startup_mismatch"
+        assert payload["action"] == "reconcile_position_diff"
+
+    def test_reconcile_position_report_netting_startup_fail_closed_alert_includes_classification(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+        )
+
+        class StubPosition:
+            id = PositionId("P-STARTUP-MISMATCH")
+            avg_px_open = "1.00000"
+
+            @staticmethod
+            def signed_decimal_qty() -> Decimal:
+                return Decimal("100")
+
+        position = StubPosition()
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine._startup_reconciliation_snapshot = {
+            (
+                self.client.account_id,
+                AUDUSD_SIM.id,
+                order.strategy_id,
+            ): StartupStrategyCacheSnapshot(
+                account_id=self.client.account_id,
+                instrument_id=AUDUSD_SIM.id,
+                strategy_id=order.strategy_id,
+                open_position_ids=(position.id,),
+                open_position_qty=Decimal("100"),
+                open_order_refs=(),
+                cached_order_count=0,
+            ),
+        }
+        report = PositionStatusReport(
+            account_id=self.client.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(50),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        with patch.object(
+            self.exec_engine,
+            "_startup_effective_netting_positions_for_venue_qty",
+            return_value=([position], [], Decimal("100"), Decimal("100")),
+        ):
+            result = self.exec_engine._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=True,
+            )
+
+        assert result is False
+        assert len(published) == 1
+        payload = json.loads(published[0].payload)
+        assert payload["alert_key"] == "startup_position_reconciliation"
+        assert payload["cached_qty"] == "100"
+        assert payload["venue_qty"] == "50"
+        assert payload["cause"] == "ambiguous_startup_mismatch"
+        assert payload["action"] == "fail_closed"
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_preserves_client_generate_mass_status_overrides(
@@ -2353,6 +2422,8 @@ class TestLiveExecutionEngine:
         assert payload["instrument_id"] == AUDUSD_SIM.id.value
         assert payload["cached_qty"] == "100"
         assert payload["venue_qty"] == "0"
+        assert payload["cause"] == "stale_cached_positions"
+        assert payload["action"] == "close_positions"
 
     @pytest.mark.asyncio
     async def test_generate_startup_mass_status_keeps_nonzero_netting_report_when_newer_flat_duplicate_exists(
