@@ -73,3 +73,19 @@ def test_tokenmm_telemetry_runtime_contract_uses_wrapper_and_guardrails() -> Non
     assert "--wait-for-catchup" in cutover
     assert "--delete-local-after-cutover" in cutover
     assert "tokenmm-telemetry-shipper" in cutover
+
+
+def test_tokenmm_lean_autopilot_contract_is_documented() -> None:
+    repo_root = _repo_root()
+    design_doc = _read(repo_root / "docs/plans/2026-03-26-aws-managed-prod-boxes-design.md")
+    implementation_plan = _read(repo_root / "docs/plans/2026-03-26-aws-managed-prod-boxes.md")
+
+    assert "The supported operator workflow is:" in design_doc
+    assert "manual AWS console clicking" in design_doc
+    assert "CloudWatch Logs: `7 days` default" in design_doc
+    assert "S3 raw archive: `7 days` by default" in design_doc
+    assert "RDS should be added later, not now" in design_doc
+
+    assert "durable history exported to `S3` and queryable through `Athena`" in implementation_plan
+    assert "short default retention for logs and raw quote-cycle history" in implementation_plan
+    assert "`RDS` to be optional and deferred" in implementation_plan

@@ -97,6 +97,20 @@ def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
     )
 
 
+def test_tokenmm_managed_prod_box_design_prefers_lean_s3_first_architecture() -> None:
+    design_doc = _read(_repo_root() / "docs/plans/2026-03-26-aws-managed-prod-boxes-design.md")
+    implementation_plan = _read(_repo_root() / "docs/plans/2026-03-26-aws-managed-prod-boxes.md")
+
+    assert "No manual AWS console steps." in design_doc
+    assert "`Amazon S3`" in design_doc
+    assert "`Amazon Athena`" in design_doc
+    assert "explicitly **deferred**" in design_doc
+    assert "CloudWatch Logs: `7 days` default" in design_doc
+    assert "raw quote-cycle history" in design_doc
+    assert "S3 and Athena first" in implementation_plan
+    assert "RDS is not part of the current required rollout" in implementation_plan
+
+
 def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
