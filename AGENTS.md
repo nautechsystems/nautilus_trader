@@ -15,14 +15,14 @@ The shared-host deploy contract is:
 
 Canonical paths for now:
 
-- dev repo: `~/nautilus_trader`
-- worktrees: `~/nautilus_trader/.worktrees`
+- dev repo: `~/nautilus-trader`
+- worktrees: `~/nautilus-trader/.worktrees`
 - pilot releases: `~/releases/pilot/<stack>/...`
 - prod releases: `~/releases/prod/<stack>/...`
 
 Hard rules:
 
-- never point live services at `~/nautilus_trader`
+- never point live services at `~/nautilus-trader`
 - never point live services at `.worktrees/*`
 - never hot-edit active pilot or prod release roots
 

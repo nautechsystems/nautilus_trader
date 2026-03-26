@@ -55,8 +55,8 @@ Every live lane must resolve to a pinned release root rather than a mutable repo
 Recommended host layout:
 
 ```text
-~/nautilus_trader                         # canonical mutable dev repo for now
-~/nautilus_trader/.worktrees             # canonical worktree location
+~/nautilus-trader                        # canonical mutable dev repo for now
+~/nautilus-trader/.worktrees            # canonical worktree location
 
 ~/releases/pilot/equities/releases/<timestamp>-<sha>
 ~/releases/pilot/equities/current

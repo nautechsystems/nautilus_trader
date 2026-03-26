@@ -87,6 +87,32 @@ def test_resolve_deploy_root_preserves_existing_service_root_on_rerun(tmp_path: 
     assert result.stdout.strip() == str(stable_root)
 
 
+def test_resolve_deploy_root_prefers_lane_root_for_first_pilot_rollout(tmp_path: Path) -> None:
+    prod_root = tmp_path / "releases/prod/equities/current"
+    pilot_root = tmp_path / "releases/pilot/equities/current"
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    common_env_path = env_dir / "common.env"
+    _make_release_root(prod_root)
+    _make_release_root(pilot_root)
+    _write(common_env_path, f"WORKDIR={prod_root}\n")
+
+    result = _run_installer_snippet(
+        "resolve_deploy_root\n",
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "EQUITIES_DEPLOY_LANE": "pilot",
+            "RELEASES_ROOT": str(tmp_path / "releases"),
+        },
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(pilot_root)
+
+
 def test_require_deploy_root_rejects_git_checkout(tmp_path: Path) -> None:
     repo_root = _repo_root()
     env_dir = tmp_path / "etc" / "flux"

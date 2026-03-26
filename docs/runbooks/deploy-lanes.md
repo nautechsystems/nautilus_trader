@@ -14,7 +14,7 @@ This runbook defines the production lane model for the shared Flux host.
 
 ## Hard Rules
 
-- No live service may point at `~/nautilus_trader`.
+- No live service may point at `~/nautilus-trader`.
 - No live service may point at `.worktrees/*`.
 - No live service may point at any mutable checkout under `~`.
 - Active pilot and prod release roots are immutable once deployed.
@@ -22,9 +22,8 @@ This runbook defines the production lane model for the shared Flux host.
 
 ## Canonical Host Paths
 
-- Canonical dev repo: `~/nautilus_trader`
-- Compatibility symlink: `~/nautilus-trader -> ~/nautilus_trader`
-- Canonical worktree root: `~/nautilus_trader/.worktrees`
+- Canonical dev repo: `~/nautilus-trader`
+- Canonical worktree root: `~/nautilus-trader/.worktrees`
 - Pilot releases: `~/releases/pilot/<stack>/releases/<timestamp>-<sha>` and `~/releases/pilot/<stack>/current`
 - Prod releases: `~/releases/prod/<stack>/releases/<timestamp>-<sha>` and `~/releases/prod/<stack>/current`
 - Preserved retired clones and host-layout backups: `~/archive/*`
@@ -85,19 +84,20 @@ Each lane must also have distinct:
 
 Agents must follow these rules:
 
-- use `~/nautilus_trader` as the canonical mutable repo unless docs say otherwise
-- create new development worktrees only under `~/nautilus_trader/.worktrees`
+- use `~/nautilus-trader` as the canonical mutable repo unless docs say otherwise
+- create new development worktrees only under `~/nautilus-trader/.worktrees`
 - treat `~/releases/pilot/*` and `~/releases/prod/*` as immutable deploy roots
-- never point live units at `~/nautilus_trader` or `.worktrees/*`
+- never point live units at `~/nautilus-trader` or `.worktrees/*`
 - never hot-edit active pilot or prod release roots
 - update docs and runbooks whenever lane names, env contracts, or rollout steps change
 
 ## Repo And Worktree Hygiene
 
 - keep one canonical dev repo
-- keep `~/nautilus-trader` only as a compatibility symlink, not as a second mutable clone
+- keep one canonical dev repo at `~/nautilus-trader`
+- retire `~/nautilus_trader` and other legacy aliases after reviewing uncommitted work
 - retire extra top-level clones after reviewing uncommitted work and archive them under `~/archive/`
-- keep one approved worktree location under `~/nautilus_trader/.worktrees`
+- keep one approved worktree location under `~/nautilus-trader/.worktrees`
 - remove stale worktrees when they are no longer needed
 - treat worktree sprawl as an operational problem on shared hosts, not just a developer convenience issue
 

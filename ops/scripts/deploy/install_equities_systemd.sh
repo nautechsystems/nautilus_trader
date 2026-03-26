@@ -67,6 +67,11 @@ default_redis_db() {
   fi
 }
 
+default_lane_release_root() {
+  local releases_root="${RELEASES_ROOT:-${HOME}/releases}"
+  printf '%s/%s/equities/current\n' "${releases_root}" "${DEPLOY_LANE}"
+}
+
 lane_api_env_path() {
   local stack_service_prefix="${STACK_SERVICE_PREFIX:-$(build_stack_service_prefix)}"
   printf '%s/%s-api.env\n' "${ENV_DIR}" "${stack_service_prefix}"
@@ -84,6 +89,8 @@ resolve_deploy_root() {
     if [[ -z "${deploy_root}" ]]; then
       deploy_root="$(strategy_stack_read_env_value "${existing_api_env}" "PYTHONPATH" || true)"
     fi
+  elif [[ "${DEPLOY_LANE}" != "prod" ]]; then
+    deploy_root="$(default_lane_release_root)"
   elif [[ -f "${COMMON_ENV_PATH}" ]]; then
     deploy_root="$(strategy_stack_read_env_value "${COMMON_ENV_PATH}" "WORKDIR" || true)"
     if [[ -z "${deploy_root}" ]]; then
