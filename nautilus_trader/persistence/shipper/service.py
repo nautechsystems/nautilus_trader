@@ -99,6 +99,17 @@ class SQLiteToPostgresTelemetryShipper:
     def configured_table_names(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(spec.name for spec in self._table_specs()))
 
+    def durable_table_names(self) -> tuple[str, ...]:
+        return tuple(spec.name for spec in self._durable_table_specs())
+
+    def raw_quote_cycle_table_names(self) -> tuple[str, ...]:
+        return tuple(spec.name for spec in self._raw_quote_cycle_table_specs())
+
+    def local_retention_hours_for_table(self, table_name: str) -> int:
+        if table_name == "quote_cycle":
+            return int(self._config.raw_quote_cycle_local_hours)
+        return int(self._config.prune_retention_hours)
+
     def ship_once(self) -> dict[str, TableShipResult]:
         results: dict[str, TableShipResult] = {}
         for spec in self._table_specs():
@@ -144,6 +155,9 @@ class SQLiteToPostgresTelemetryShipper:
             time.sleep(self._config.poll_interval_ms / 1000.0)
 
     def _table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
+        return tuple([*self._durable_table_specs(), *self._raw_quote_cycle_table_specs()])
+
+    def _durable_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
         specs: list[_TelemetryTableSpec] = []
         if self._config.balance_snapshots_db_path:
             for db_path in self._resolve_balance_snapshot_db_paths(self._config.balance_snapshots_db_path):
@@ -183,16 +197,6 @@ class SQLiteToPostgresTelemetryShipper:
                     columns=ORDER_ACTION_COLUMN_NAMES,
                     db_path=self._config.orders_db_path,
                     cursor_key=self._cursor_key("order_action", self._config.orders_db_path),
-                ),
-            )
-        if self._config.quote_cycles_db_path:
-            specs.append(
-                _TelemetryTableSpec(
-                    name="quote_cycle",
-                    source_table_name="quote_cycle",
-                    columns=QUOTE_CYCLE_COLUMN_NAMES,
-                    db_path=self._config.quote_cycles_db_path,
-                    cursor_key=self._cursor_key("quote_cycle", self._config.quote_cycles_db_path),
                 ),
             )
         if self._config.portfolio_inventory_db_path:
@@ -238,6 +242,19 @@ class SQLiteToPostgresTelemetryShipper:
             if Path(spec.db_path).expanduser() != Path(configured_path).expanduser():
                 return None
         return spec.name
+
+    def _raw_quote_cycle_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
+        if not self._config.raw_quote_cycles_enabled or not self._config.quote_cycles_db_path:
+            return ()
+        return (
+            _TelemetryTableSpec(
+                name="quote_cycle",
+                source_table_name="quote_cycle",
+                columns=QUOTE_CYCLE_COLUMN_NAMES,
+                db_path=self._config.quote_cycles_db_path,
+                cursor_key=self._cursor_key("quote_cycle", self._config.quote_cycles_db_path),
+            ),
+        )
 
     def _load_rows_with_cursor_reset(
         self,
@@ -346,7 +363,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return 0
 
-        cutoff = _utc_now_minus(hours=self._config.prune_retention_hours)
+        cutoff = _utc_now_minus(hours=self.local_retention_hours_for_table(spec.name))
         conn = self._connect_source_db(db_path)
         try:
             with conn:

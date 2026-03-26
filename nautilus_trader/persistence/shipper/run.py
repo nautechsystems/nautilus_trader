@@ -35,6 +35,12 @@ def _bootstrap_runtime(
     config = _load_shipper_config(args.config)
     if not config.enabled:
         raise RuntimeError("Telemetry shipper is disabled in config")
+    if config.durable_sink != "postgres":
+        raise RuntimeError(
+            f"Telemetry shipper runtime does not yet support durable sink `{config.durable_sink}`",
+        )
+    if config.postgres is None:
+        raise RuntimeError("Telemetry shipper runtime requires postgres configuration")
 
     sink = TelemetryPostgresSink(config.postgres)
     try:

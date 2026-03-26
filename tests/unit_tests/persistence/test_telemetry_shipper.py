@@ -18,6 +18,7 @@ from nautilus_trader.persistence.orders.sqlite import ensure_schema as ensure_or
 from nautilus_trader.persistence.orders.sqlite import insert_many
 from nautilus_trader.persistence.shipper.config import TelemetryPostgresConfig
 from nautilus_trader.persistence.shipper.config import TelemetryShipperConfig
+from nautilus_trader.persistence.shipper.config import build_telemetry_shipper_config
 from nautilus_trader.persistence.shipper.postgres import TelemetryPostgresSink
 from nautilus_trader.persistence.shipper.postgres import TABLE_CREATE_SQL
 from nautilus_trader.persistence.shipper.postgres import TABLE_PRIMARY_KEYS
@@ -1328,6 +1329,84 @@ def test_shipper_resets_cursor_when_source_rowids_restart_after_full_prune(tmp_p
     assert result["quote_cycle"].shipped == 1
     assert sink.insert_calls[-1][0] == "quote_cycle"
     assert sink.insert_calls[-1][1][0]["quote_cycle_id"] == "run-2:1"
+
+
+def test_shipper_classifies_durable_tables_separately_from_quote_cycles(tmp_path: Path) -> None:
+    orders_db = tmp_path / "orders.sqlite"
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_order_action_source(orders_db)
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        durable_sink="postgres",
+        raw_quote_cycles_enabled=True,
+        raw_quote_cycle_local_hours=48,
+        raw_quote_cycle_s3_days=7,
+        core_history_s3_days=365,
+        structured_local_cap_gb=8,
+        quote_cycle_local_cap_gb=12,
+        balance_snapshots_db_path=None,
+        fills_db_path=None,
+        orders_db_path=str(orders_db),
+        quote_cycles_db_path=str(quote_cycles_db),
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1_000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    shipper = SQLiteToPostgresTelemetryShipper(
+        config=config,
+        sink=_RecordingSink(),
+        source_host="host-a",
+    )
+
+    assert shipper.durable_table_names() == ("order_action",)
+    assert shipper.raw_quote_cycle_table_names() == ("quote_cycle",)
+    assert shipper.local_retention_hours_for_table("order_action") == 168
+    assert shipper.local_retention_hours_for_table("quote_cycle") == 48
+
+
+def test_build_shipper_config_accepts_s3_athena_sink_without_postgres_env() -> None:
+    config = build_telemetry_shipper_config(
+        {
+            "enabled": True,
+            "enable_local_persistence": True,
+            "source_profile": "tokenmm",
+            "durable_sink": "s3_athena",
+            "archive_s3_bucket": "unit-test-telemetry",
+            "archive_s3_prefix": "nautilus/telemetry/tokenmm",
+            "athena_database": "nautilus_telemetry",
+            "athena_workgroup": "primary",
+            "raw_quote_cycles_enabled": True,
+            "raw_quote_cycle_local_hours": 48,
+            "raw_quote_cycle_s3_days": 7,
+            "core_history_s3_days": 365,
+            "structured_local_cap_gb": 8,
+            "quote_cycle_local_cap_gb": 12,
+            "orders_db_path": "/tmp/orders.sqlite",
+            "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
+            "state_db_path": "/tmp/shipper_state.sqlite",
+        },
+        env={},
+    )
+
+    assert config.durable_sink == "s3_athena"
+    assert config.archive_s3_bucket == "unit-test-telemetry"
+    assert config.postgres is None
 
 
 def test_shipper_run_exits_78_on_missing_postgres_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
