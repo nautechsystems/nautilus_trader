@@ -36,6 +36,7 @@ import { colors, spacing, typography, STALE_THRESHOLDS, borderRadius } from './l
 import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
 import { exportCSV, generateTimestampFilename } from './utils/export';
 import { isRealtimeStandardEnabled, isTradesDecisionDetailsEnabled } from './config/featureFlags';
+import { resolvePathnameProfile } from './config/uiProfiles';
 import { computeTradesRollups } from './components/trades/rollups';
 import { RealtimeSurfaceState, type RealtimeSnapshotRevision } from './lib/realtime/types';
 
@@ -238,6 +239,7 @@ const filterTradeRowsAfterReplayCursor = (
 const normalizeTradeEventLike = (candidate: any): any => {
   if (!candidate || typeof candidate !== 'object') return candidate;
   const row = candidate as Record<string, unknown>;
+  const baseFirstQty = typeof window !== 'undefined' && resolvePathnameProfile(window.location?.pathname) === 'tokenmm';
 
   const instrumentId = String(row.instrument_id ?? '').trim();
   const symbol = String(row.symbol ?? instrumentId.split('.')[0] ?? '').trim();
@@ -289,6 +291,21 @@ const normalizeTradeEventLike = (candidate: any): any => {
   const timeText = String(row.time ?? '').trim();
   if (!timeText && tsMs !== undefined) {
     row.time = new Date(tsMs).toISOString();
+  }
+
+  const qtyBaseText = String(row.qty_base ?? '').trim();
+  const qtyVenueText = String(row.qty_venue ?? row.qty ?? '').trim();
+  if (qtyVenueText) {
+    row.qty_venue = qtyVenueText;
+  }
+  if (qtyBaseText) {
+    row.qty_base = qtyBaseText;
+    if (baseFirstQty) {
+      const qtyBaseNumber = coerceFiniteNumber(qtyBaseText);
+      if (qtyBaseNumber !== undefined) {
+        row.qty = qtyBaseNumber;
+      }
+    }
   }
 
   if (row.mv == null && row.notional == null) {
@@ -610,6 +627,7 @@ export default function Trades({
   const [sort, setSort] = useState<'ts_desc' | 'ts_asc'>('ts_desc');
   const [soundMuted, setSoundMutedState] = useState(() => getSoundMuted());
   const [unread, setUnread] = useState(0);
+  const [compatibilityMode, setCompatibilityMode] = useState(false);
   const [pollDelay, setPollDelay] = useState(POLL_BASE_MS);
   const [socketConnected, setSocketConnected] = useState(true);
   const [isViewingLatest, setIsViewingLatest] = useState(true);
@@ -1037,8 +1055,13 @@ export default function Trades({
           return;
         }
 
+        const snapshotRows = (response.rows || []).map((row: any) => normalizeTradeEventLike({
+          op: row?.op ?? 'upsert',
+          ...row,
+        }));
+
         // Snapshot for the current page slice
-        const snapshotResult = setSnapshot(response.rows || [], pageSizeRef.current, requestResyncId);
+        const snapshotResult = setSnapshot(snapshotRows, pageSizeRef.current, requestResyncId);
         if (snapshotResult?.applied) {
           applyControllerSnapshot(response.rows);
         }
@@ -1049,6 +1072,7 @@ export default function Trades({
         recomputeIsViewingLatest();
 
         const totalCount = response.total ?? response.total_records ?? 0;
+        setCompatibilityMode(Boolean(response.compatibility_mode));
         setTotal(totalCount);
         setHasMore(typeof response.has_more === 'boolean' ? response.has_more : null);
         setHasMorePage(requestPage);
@@ -1057,8 +1081,8 @@ export default function Trades({
           setUnread(0);
         }
 
-        advanceTradeReplayCursor(response.rows);
-        const snapshotRowsMaxSeq = (response.rows || []).reduce(
+        advanceTradeReplayCursor(snapshotRows);
+        const snapshotRowsMaxSeq = snapshotRows.reduce(
           (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
           0,
         );
@@ -1414,6 +1438,7 @@ export default function Trades({
           snapshotRevision: requestCursor.snapshotRevision,
         };
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
+        setCompatibilityMode(Boolean(delta.compatibility_mode));
 
         if (!isActiveRef.current) {
           return;
@@ -2401,6 +2426,21 @@ export default function Trades({
           </div>
         );
       })()}
+
+      {compatibilityMode ? (
+        <div
+          className="w-full"
+          style={{
+            backgroundColor: colors.semantic.warning.bg,
+            color: colors.text.secondary,
+            padding: `${spacing.gap.xs} ${spacing.gap.md}`,
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          Legacy TokenMM trade rows are being shown in compatibility mode. Quantity semantics may be venue-native until the trade stream is fully cut over.
+        </div>
+      ) : null}
 
       {/* When embedded in dashboard (showHeader=false), render actions as toolbar */}
       {!showHeader && !panelHeaderSlots && (

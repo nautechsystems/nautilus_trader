@@ -1,4 +1,5 @@
 import asyncio
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -21,6 +22,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
@@ -208,6 +210,52 @@ class TestBinanceSpotExecutionClient:
         # Assert
         assert exec_client._ws_client._use_margin_listen_token is True
 
+    @pytest.mark.asyncio
+    async def test_generate_order_status_reports_caps_spot_all_orders_limit(self, mocker):
+        mock_open_orders = [
+            mocker.Mock(symbol="ETHUSDT"),
+            mocker.Mock(symbol="BTCUSDT"),
+        ]
+        mocker.patch.object(
+            self.exec_client._http_account,
+            "query_open_orders",
+            return_value=mock_open_orders,
+        )
+        query_all_orders = mocker.patch.object(
+            self.exec_client._http_account,
+            "query_all_orders",
+            return_value=[],
+        )
+        mocker.patch.object(
+            self.exec_client,
+            "_get_binance_active_position_symbols",
+            return_value=set(),
+        )
+        mocker.patch.object(
+            self.exec_client,
+            "_get_cache_active_symbols",
+            return_value=set(),
+        )
+        mocker.patch.object(
+            self.exec_client,
+            "_parse_order_status_reports",
+            return_value=[],
+        )
+
+        command = GenerateOrderStatusReports(
+            instrument_id=None,
+            start=None,
+            end=None,
+            open_only=False,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        await self.exec_client.generate_order_status_reports(command)
+
+        assert query_all_orders.await_count == 2
+        assert all(call.kwargs["limit"] == 500 for call in query_all_orders.await_args_list)
+
     def test_margin_outbound_account_position_refreshes_full_account_state(self, mocker):
         # Arrange
         http_client = BinanceHttpClient(
@@ -255,6 +303,93 @@ class TestBinanceSpotExecutionClient:
         scheduled_coro.close()
         generate_account_state.assert_not_called()
 
+    def test_portfolio_margin_spot_user_stream_ignores_futures_events(self):
+        self.exec_client._handle_user_ws_message(b'{"e":"ORDER_TRADE_UPDATE"}')
+
+    def test_portfolio_margin_spot_execution_report_decodes_without_iceberg_quantity(self):
+        raw = json.dumps(
+            {
+                "e": "executionReport",
+                "E": 1700000000000,
+                "s": "ETHUSDT",
+                "c": "client-1",
+                "S": "BUY",
+                "o": "LIMIT",
+                "f": "GTC",
+                "q": "1.00000000",
+                "p": "2000.00000000",
+                "P": "0.00000000",
+                "g": -1,
+                "C": "",
+                "x": "NEW",
+                "X": "NEW",
+                "r": "NONE",
+                "i": 123456,
+                "l": "0.00000000",
+                "z": "0.00000000",
+                "L": "0.00000000",
+                "T": 1700000000000,
+                "t": -1,
+                "I": 1,
+                "w": True,
+                "m": False,
+                "M": False,
+                "O": 1700000000000,
+                "Z": "0.00000000",
+                "Y": "0.00000000",
+                "Q": "0.00000000",
+                "W": 1700000000000,
+                "V": "NONE",
+            },
+        ).encode()
+
+        decoded = self.exec_client._decoder_spot_order_update.decode(raw)
+
+        assert decoded.c == "client-1"
+        assert decoded.F is None
+
+    def test_portfolio_margin_spot_execution_report_decodes_live_pm_new_order_shape(self):
+        raw = json.dumps(
+            {
+                "e": "executionReport",
+                "E": 1774348588522,
+                "s": "PLUMEUSDT",
+                "c": "O-20260324-103628-SPOT-000-1",
+                "S": "BUY",
+                "o": "LIMIT_MAKER",
+                "f": "GTC",
+                "q": "1000.00000000",
+                "p": "0.01054000",
+                "P": "0.00000000",
+                "g": -1,
+                "x": "NEW",
+                "X": "NEW",
+                "i": 256305429,
+                "l": "0.00000000",
+                "z": "0.00000000",
+                "L": "0.00000000",
+                "n": "0",
+                "T": 1774348588522,
+                "t": -1,
+                "w": True,
+                "m": False,
+                "O": 1774348588522,
+                "Z": "0.00000000",
+                "Y": "0.00000000",
+                "j": 299587532,
+                "J": 230000,
+                "V": "EXPIRE_MAKER",
+                "I": 2524891758153,
+            },
+        ).encode()
+
+        decoded = self.exec_client._decoder_spot_order_update.decode(raw)
+
+        assert decoded.C is None
+        assert decoded.r is None
+        assert decoded.M is None
+        assert decoded.Q is None
+
     def test_isolated_margin_account_http_api_is_rejected_explicitly(self):
         with pytest.raises(RuntimeError, match="ISOLATED_MARGIN"):
             BinanceSpotAccountHttpAPI(
@@ -267,7 +402,7 @@ class TestBinanceSpotExecutionClient:
         # Base64-encoded 32 zero bytes for Ed25519 private key (test only)
         dummy_api_secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-        with pytest.raises(ValueError, match="SPOT or cross MARGIN"):
+        with pytest.raises(ValueError, match="SPOT, cross MARGIN, or PORTFOLIO_MARGIN"):
             BinanceSpotExecutionClient(
                 loop=self.loop,
                 client=self.http_client,

@@ -61,6 +61,7 @@ Error:
 | `/` | `GET` | Service metadata (`service`, `schema_prefix`) |
 | `/api/v1/healthz` | `GET` | Redis availability and readiness snapshot |
 | `/api/v1/readyz` | `GET` | Strict readiness gate (all required keys present) |
+| `/api/v1/readiness` | `GET` | TokenMM runtime readiness from signal stale-state plus inbound state-stream freshness |
 | `/api/v1/param-schema` | `GET` | Ordered runtime-parameter schema |
 | `/api/v1/params` | `GET` | Strategy parameter snapshot array |
 | `/api/v1/params` | `POST`, `PATCH` | Bulk/legacy strategy parameter update |
@@ -104,6 +105,7 @@ Pulse payload notes:
 1. `/api/pulse/jobs` surfaces `errors.count`, `errors.last_seen`, and `errors.preview` from the current job summary window.
 2. `errors.last_seen` is best-effort and populated only when the summary log format exposes a parseable timestamp.
 3. `/api/pulse/jobs/{job_id}/logs` remains a raw text response; Pulse UI severity filters are applied client-side on top of that text, not via a separate structured logs API.
+4. Active TokenMM API jobs also include `readiness`, which mirrors `/api/v1/readiness` so Pulse does not equate `systemd active` with healthy publish-path state.
 
 Pulse jobs/logs invariants:
 
@@ -326,6 +328,16 @@ Default required keys:
 4. `flux:v1:fv:stream:{strategy_id}`
 
 `/api/v1/readyz` returns `503 service_not_ready` until all required keys exist.
+
+TokenMM runtime readiness:
+
+1. `/api/v1/readiness` is separate from `/api/v1/readyz`; it answers whether TokenMM is operationally safe, not just whether Flux schema keys exist.
+2. The response uses the normal API envelope, with runtime readiness stored in `data.ok`, `data.summary`, and `data.checks`.
+3. TokenMM readiness is computed from one health model:
+   - required strategy IDs
+   - `/api/v1/signals` stale-state semantics
+   - inbound `flux.makerv3.state` stream freshness for each required strategy
+4. A TokenMM node can therefore be `systemd active` and still be unready when state publishing stalls or signals go stale.
 
 ## Error policy
 

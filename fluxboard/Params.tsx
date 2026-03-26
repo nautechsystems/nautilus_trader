@@ -2153,8 +2153,8 @@ export default function Params({
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[params] Save failed for ${strategyId}:`, msg);
-      toast.error(`Failed to save ${strategyId}: ${msg}`);
-      throw e;
+      const detail = msg.startsWith(`${strategyId}: `) ? msg.slice(strategyId.length + 2) : msg;
+      toast.error(`Rejected ${strategyId}: ${detail}`);
     } finally {
       setSaving(prev => {
         const newSet = new Set(prev);
@@ -2274,9 +2274,17 @@ export default function Params({
 
         if (failedIds.size > 0) {
           const errorSummary = (result.errors || [])
-            .map((entry) => `${entry.strategy_id}: ${entry.error}`)
+            .map((entry) => {
+              const message =
+                typeof entry.error === 'string'
+                  ? entry.error
+                  : typeof (entry as { message?: unknown }).message === 'string'
+                    ? String((entry as { message?: unknown }).message)
+                    : String(entry.error ?? (entry as { message?: unknown }).message ?? 'update_failed');
+              return `${entry.strategy_id}: ${message}`;
+            })
             .join('; ');
-          toast.error(`Failed to save ${failedIds.size} strategies: ${errorSummary}`);
+          toast.error(`Rejected ${failedIds.size} strategies: ${errorSummary}`);
         }
 
         if (failedIds.size === 0) {
@@ -2289,7 +2297,7 @@ export default function Params({
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('[save-all] Bulk save failed:', msg);
-        toast.error(`Failed to save strategies: ${msg}`);
+        toast.error(`Rejected strategies: ${msg}`);
         return { allSuccessful: false };
       } finally {
         setSaveAllProgress(null);

@@ -482,6 +482,10 @@ def _cash_quantity_signature(row: Mapping[str, Any]) -> tuple[str, str, str]:
     )
 
 
+def _exchange_supports_product_scope_cash(exchange: str) -> bool:
+    return exchange not in {"ibkr"}
+
+
 def _cash_row_key(
     row: Mapping[str, Any],
     *,
@@ -495,11 +499,16 @@ def _cash_row_key(
     merge_scope = ""
     if (
         preserve_product_scope_cash
+        and _exchange_supports_product_scope_cash(exchange)
         and product_type in {"spot", "perp"}
         and asset not in _STABLE_BALANCE_ASSETS
     ):
         merge_scope = product_type
-    elif product_type == "perp" and asset not in _STABLE_BALANCE_ASSETS:
+    elif (
+        _exchange_supports_product_scope_cash(exchange)
+        and product_type == "perp"
+        and asset not in _STABLE_BALANCE_ASSETS
+    ):
         merge_scope = product_type
     return (exchange, account, asset, merge_scope)
 

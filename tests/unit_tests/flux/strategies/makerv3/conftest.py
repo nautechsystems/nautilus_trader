@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
+import sys
+from types import ModuleType
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+
+if "nautilus_trader.adapters.interactive_brokers.common" not in sys.modules:
+    @dataclass(frozen=True)
+    class _IBOrderTagsStub:
+        value: str = "stub"
+
+    ib_common_stub = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+    ib_common_stub.IBOrderTags = _IBOrderTagsStub
+    ib_common_stub.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+    sys.modules["nautilus_trader.adapters.interactive_brokers.common"] = ib_common_stub
 
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig

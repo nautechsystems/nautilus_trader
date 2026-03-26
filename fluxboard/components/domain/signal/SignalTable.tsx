@@ -1430,12 +1430,6 @@ function resolveDisplayedLegMid(leg: SignalLeg | null | undefined): number | nul
 function resolveVisibleStrategyMarketMid(row: SignalStrategy): number | null {
   const quoteSnapshot = resolveQuoteSnapshot(row) as any;
   if (quoteSnapshot) {
-    const quotedMid = midpointFromValues(
-      quoteSnapshot.place_bid,
-      quoteSnapshot.place_ask,
-    );
-    if (quotedMid != null) return quotedMid;
-
     const snapshotMid = midpointFromValues(
       quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid,
       quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask,
@@ -1460,8 +1454,8 @@ function resolveVisibleStrategyFvMid(row: SignalStrategy): number | null {
 }
 
 function spreadMarketVsFvBps(row: SignalStrategy): number | null {
-  // Operator-facing spread should use the same maker quote snapshot truth that
-  // powers the visible "Our" / "Ref" rows, not a mixed live-leg view.
+  // Operator-facing spread should represent raw maker market mid versus
+  // reference/FV mid, not our translated quoted mid.
   const marketMid = resolveVisibleStrategyMarketMid(row);
   const fvMid = resolveVisibleStrategyFvMid(row);
   if (marketMid == null || fvMid == null || !Number.isFinite(fvMid) || fvMid === 0) return null;
@@ -2905,14 +2899,17 @@ export default function SignalTable({
           const marketMid = resolveVisibleStrategyMarketMid(row.original);
           const fvMid = resolveVisibleStrategyFvMid(row.original);
           const snapshotMarketMid = quoteSnapshot
-            ? midpointFromValues(quoteSnapshot.place_bid, quoteSnapshot.place_ask)
+            ? midpointFromValues(
+                quoteSnapshot.maker_top_bid ?? quoteSnapshot.bid,
+                quoteSnapshot.maker_top_ask ?? quoteSnapshot.ask,
+              )
             : null;
           const displayedFvMid = resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'B'));
           const snapshotFvMid = quoteSnapshot
             ? midpointFromValues(quoteSnapshot.ref_bid, quoteSnapshot.ref_ask)
             : null;
           const marketSource = snapshotMarketMid != null
-            ? 'quote snapshot place'
+            ? 'quote snapshot maker top'
             : resolveDisplayedLegMid(resolveDisplayedLeg(row.original, 'A')) != null
               ? 'visible maker market'
               : '—';

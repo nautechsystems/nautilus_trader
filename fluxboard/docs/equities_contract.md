@@ -21,14 +21,14 @@ Required routes:
 
 The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"`.
 The reference venue for FV inputs is `IBKR`.
-The enrolled stock universe is now served through MakerV4 semantics on the shared equities control plane and currently includes `AAPL`, `AMD`, `AMZN`, `BABA`, `COIN`, `CRCL`, `CRWV`, `GOOGL`, `HOOD`, `HYUNDAI`, `INTC`, `META`, `MSTR`, `MSFT`, `MU`, `NFLX`, `NVDA`, `ORCL`, `PLTR`, `RIVN`, `SNDK`, `TSM`, `TSLA`, and `USAR`.
-Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `AAPL.NASDAQ`, `005380.KRX`, and `USAR.NASDAQ`.
+The enrolled stock universe is now served through MakerV4 semantics on the shared equities control plane and currently includes `AAPL`, `AMD`, `AMZN`, `BABA`, `COIN`, `CRCL`, `CRWV`, `EWY`, `GOOGL`, `HOOD`, `INTC`, `META`, `MSTR`, `MSFT`, `MU`, `NFLX`, `NVDA`, `ORCL`, `PLTR`, `RIVN`, `SNDK`, `TSM`, `TSLA`, and `USAR`.
+Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `AAPL.NASDAQ`, `EWYUSDT-PERP.BINANCE_PERP`, and `USAR.NASDAQ`.
 
 ## Frozen Deploy Identity
 
 1. The intended active equities deploy contract is MakerV4 via the enrolled stock allowlist in `api.equities_strategy_ids`.
-2. The enrolled Tier 1 strategy ids and service names now use the `*_makerv4` suffix.
-3. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback material, not the active contract.
+2. The enrolled strategy ids and service names use the `*_makerv4` suffix.
+3. Dead MakerV3 equities configs have been removed from the checked-in deploy surface.
 4. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
 5. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
 6. Task 2 of the March 11 live review locked that build/static-serving contract to the shared `/static/fluxboard/` base.
@@ -52,15 +52,17 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 
 ## Strategy and Deploy Identity
 
-1. One stock uses one strategy file and one node process.
+1. One strategy route uses one strategy file and one node process.
 2. The live allowlist is `api.equities_strategy_ids`.
 3. Required portfolio readiness is `api.equities_required_strategy_ids`.
-4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per enrolled stock as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, venue instrument ids, and shared account scopes.
+4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per strategy route as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, `maker_venue`, `maker_symbol`, `market_type`, venue instrument ids, and shared account scopes.
 5. `portfolio_asset_id` is the canonical equities inventory identity. Do not infer portfolio identity from venue-specific base strings such as `XYZ:AAPL`.
-6. Shared account scopes are explicit: `execution_account_scope_id`, `reference_account_scope_id`, and optional `hedge_account_scope_id`.
-7. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
-8. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
-9. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
+6. `maker_venue`, `maker_symbol`, and `market_type` are mandatory per-route keys in the shared manifest.
+7. Shared account scopes are explicit: `execution_account_scope_id`, `reference_account_scope_id`, and optional `hedge_account_scope_id`.
+8. Multiple strategy routes may share the same `portfolio_asset_id` when one stock trades on multiple maker venues. Shared portfolio and future risk net at the stock bucket, while local maker inventory stays route-local.
+9. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
+10. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
+11. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
 
 ## Response Expectations
 

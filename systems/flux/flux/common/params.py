@@ -94,6 +94,7 @@ class RuntimeParamSpec:
     maximum: int | float | None = None
     options: tuple[tuple[str, str], ...] | None = None
     advanced: bool = False
+    aliases: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:  # noqa: C901
         if not isinstance(self.name, str) or not self.name:
@@ -109,6 +110,22 @@ class RuntimeParamSpec:
         maximum = self.maximum
         default = self.default
         options = self.options
+        aliases = self.aliases
+
+        if aliases is not None:
+            normalized_aliases: list[str] = []
+            seen_aliases: set[str] = set()
+            for alias in aliases:
+                alias_text = str(alias).strip()
+                if not alias_text:
+                    raise ValueError(f"Aliases must be non-empty for {self.name!r}")
+                if alias_text == self.name:
+                    raise ValueError(f"Alias cannot match canonical name for {self.name!r}")
+                if alias_text in seen_aliases:
+                    raise ValueError(f"Duplicate alias {alias_text!r} for {self.name!r}")
+                seen_aliases.add(alias_text)
+                normalized_aliases.append(alias_text)
+            object.__setattr__(self, "aliases", tuple(normalized_aliases))
 
         if self.schema_type == "boolean":
             if not isinstance(default, bool):
@@ -193,6 +210,8 @@ class RuntimeParamSpec:
         }
         if self.advanced:
             schema["advanced"] = True
+        if self.aliases:
+            schema["aliases"] = list(self.aliases)
         if self.options is not None:
             schema["options"] = [[value, label] for value, label in self.options]
         if self.minimum is not None:

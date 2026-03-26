@@ -1665,6 +1665,56 @@ class TestLiveExecutionEngine:
         assert [command.open_only for command in order_commands] == [False]
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_uses_open_only_order_history_when_client_disables_startup_full_history(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        cached_order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=AUDUSD_SIM.make_qty(100_000),
+            price=AUDUSD_SIM.make_price("1.00000"),
+        )
+        self.cache.add_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_submitted(
+                cached_order,
+                account_id=self.client.account_id,
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
+        cached_order.apply(
+            TestEventStubs.order_accepted(
+                cached_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-CACHED-ORDER"),
+                ts_event=0,
+            ),
+        )
+        self.cache.update_order(cached_order)
+
+        order_commands = []
+
+        original_generate_order_status_reports = self.client.generate_order_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        self.client.generate_order_status_reports = capture_generate_order_status_reports
+        self.client.supports_startup_historical_order_status_reports = False
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [True]
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_uses_open_only_order_history_when_startup_cache_has_restored_open_positions_but_no_open_orders(
         self,
     ):
@@ -2211,6 +2261,98 @@ class TestLiveExecutionEngine:
         assert position_reports[0].instrument_id == AUDUSD_SIM.id
         assert position_reports[0].position_side == PositionSide.FLAT
         assert position_reports[0].signed_decimal_qty == Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_closes_stale_startup_netting_positions_when_venue_is_flat_and_no_open_orders(
+        self,
+    ):
+        published: list[object] = []
+        self.msgbus.subscribe(topic=TOPIC_EXECUTION_ALERT, handler=published.append)
+
+        netting_client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=self.instrument_provider,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=netting_client.account_id),
+        )
+
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+        )
+        self.cache.add_order(order)
+        order.apply(
+            TestEventStubs.order_accepted(
+                order,
+                account_id=netting_client.account_id,
+                venue_order_id=VenueOrderId("V-STALE-001"),
+                ts_event=0,
+            ),
+        )
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            account_id=netting_client.account_id,
+            position_id=PositionId("P-STALE-STARTUP"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("T-STALE-STARTUP"),
+            ts_event=1,
+        )
+        order.apply(fill)
+        self.cache.update_order(order)
+        stale_position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        async def _unexpected_generate_mass_status(_lookback_mins):
+            raise AssertionError("full generate_mass_status should not be used for scoped recon")
+
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        original_clients = dict(self.exec_engine._clients)
+
+        netting_client.generate_mass_status = _unexpected_generate_mass_status
+        netting_client.generate_order_status_reports = AsyncMock(return_value=[])
+        netting_client.generate_fill_reports = AsyncMock(return_value=[])
+        netting_client.generate_position_status_reports = AsyncMock(return_value=[])
+        self.exec_engine._clients.clear()
+        self.exec_engine._clients[netting_client.id] = netting_client
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        try:
+            result = await self.exec_engine.reconcile_execution_state(timeout_secs=0.1)
+        finally:
+            self.exec_engine._clients.clear()
+            self.exec_engine._clients.update(original_clients)
+
+        assert result is True
+        assert self.cache.is_position_open(stale_position.id) is False
+
+        cleanup_orders = [
+            cached_order
+            for cached_order in self.cache.orders()
+            if cached_order.strategy_id.value == "EXTERNAL"
+            and cached_order.tags == ["RECONCILIATION"]
+            and cached_order.side == OrderSide.SELL
+            and cached_order.quantity == Quantity.from_int(100)
+        ]
+        assert cleanup_orders
+
+        assert len(published) == 1
+        payload = json.loads(published[0].payload)
+        assert payload["alert_key"] == "startup_position_reconciliation"
+        assert payload["instrument_id"] == AUDUSD_SIM.id.value
+        assert payload["cached_qty"] == "100"
+        assert payload["venue_qty"] == "0"
 
     @pytest.mark.asyncio
     async def test_generate_startup_mass_status_keeps_nonzero_netting_report_when_newer_flat_duplicate_exists(

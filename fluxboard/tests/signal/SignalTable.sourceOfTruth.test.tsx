@@ -74,7 +74,7 @@ describe('SignalTable source-of-truth contract', () => {
     initSignalState({ rows: [] });
   });
 
-  it('renders maker spread from the same maker quote snapshot that powers the Our/Ref rows', async () => {
+  it('renders maker spread from raw maker market versus reference mid', async () => {
     const strategy: SignalStrategy = {
       id: 'maker_truth_contract',
       params: { bot_on: '0' } as any,
@@ -132,8 +132,8 @@ describe('SignalTable source-of-truth contract', () => {
     await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
 
     const spreadCell = container.querySelector('tbody tr td:nth-child(9)');
-    expect(spreadCell?.textContent).toContain('-288.5 bps');
-    expect(spreadCell?.textContent).not.toContain('0.0 bps');
+    expect(spreadCell?.textContent).toContain('0.0 bps');
+    expect(spreadCell?.textContent).not.toContain('-288.5 bps');
   });
 
   it('prefers backend skew_bps_signed over edge-delta reconstruction when both are present', async () => {

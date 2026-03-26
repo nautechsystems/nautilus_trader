@@ -4,6 +4,8 @@ export function statusTone(status: string | undefined): "success" | "danger" | "
   switch (status) {
     case "active":
       return "success";
+    case "degraded":
+      return "warning";
     case "failed":
       return "danger";
     case "restarting":

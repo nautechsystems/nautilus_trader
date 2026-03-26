@@ -116,6 +116,62 @@ class BinanceMarginAccountInfo(msgspec.Struct, frozen=True):
         return [balance.parse_to_account_balance() for balance in self.userAssets]
 
 
+class BinancePortfolioMarginBalanceInfo(msgspec.Struct, frozen=True):
+    """
+    HTTP response inner struct from Binance Portfolio Margin `GET /papi/v1/balance`.
+    """
+
+    asset: str
+    totalWalletBalance: str
+    crossMarginAsset: str | None = None
+    crossMarginBorrowed: str | None = None
+    crossMarginFree: str | None = None
+    crossMarginInterest: str | None = None
+    crossMarginLocked: str | None = None
+    updateTime: int | None = None
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.asset)
+        gross_total_value = Decimal(
+            self.crossMarginAsset
+            if self.crossMarginAsset is not None
+            else self.totalWalletBalance
+        )
+        borrowed_value = Decimal(self.crossMarginBorrowed or "0")
+        interest_value = Decimal(self.crossMarginInterest or "0")
+        total_value = gross_total_value - borrowed_value - interest_value
+        locked_value = Decimal(self.crossMarginLocked or "0")
+        free_value = total_value - locked_value
+        total = Money(total_value, currency)
+        locked = Money(locked_value, currency)
+        return AccountBalance(
+            total=total,
+            locked=locked,
+            free=Money(free_value, currency),
+        )
+
+
+class BinancePortfolioMarginAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
+    """
+    Minimal Portfolio Margin account snapshot assembled from `GET /papi/v1/balance`.
+    """
+
+    balances: list[BinancePortfolioMarginBalanceInfo]
+    canTrade: bool = True
+    updateTime: int | None = None
+
+    @property
+    def can_trade(self) -> bool:
+        return self.canTrade
+
+    @property
+    def event_time_ms(self) -> int | None:
+        return self.updateTime
+
+    def parse_to_account_balances(self) -> list[AccountBalance]:
+        return [balance.parse_to_account_balance() for balance in self.balances]
+
+
 class BinanceSpotOrderOco(msgspec.Struct, frozen=True):
     """
     HTTP response from Binance Spot/Margin GET /api/v3/orderList (HMAC SHA256).

@@ -14,6 +14,8 @@ from nautilus_trader.adapters.binance.http.account import BinanceOpenOrdersHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceMarginAccountInfo
+from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginAccountInfo
+from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginBalanceInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotOrderOco
 from nautilus_trader.common.component import LiveClock
@@ -461,6 +463,37 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
         return self._resp_decoder.decode(raw)
 
 
+class BinancePortfolioMarginBalanceHttp(BinanceHttpEndpoint):
+    """
+    Endpoint for current Binance Portfolio Margin balance information.
+
+    `GET /papi/v1/balance`
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+    ):
+        methods = {
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
+        }
+        super().__init__(
+            client,
+            methods,
+            "/papi/v1/balance",
+        )
+        self._resp_decoder = msgspec.json.Decoder(list[BinancePortfolioMarginBalanceInfo])
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        timestamp: str
+        recvWindow: str | None = None
+
+    async def get(self, params: GetParameters) -> list[BinancePortfolioMarginBalanceInfo]:
+        method_type = HttpMethod.GET
+        raw = await self._method(method_type, params)
+        return self._resp_decoder.decode(raw)
+
+
 class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
     """
     Endpoint of current SPOT/MARGIN order count usage for all intervals.
@@ -543,10 +576,15 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             clock=clock,
             account_type=account_type,
         )
+        self._account_type = account_type
 
-        if account_type not in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN):
+        if account_type not in (
+            BinanceAccountType.SPOT,
+            BinanceAccountType.MARGIN,
+            BinanceAccountType.PORTFOLIO_MARGIN,
+        ):
             raise RuntimeError(  # pragma: no cover (design-time error)
-                f"`BinanceAccountType` not SPOT or MARGIN, was {account_type}",  # pragma: no cover
+                f"`BinanceAccountType` not SPOT, MARGIN, or PORTFOLIO_MARGIN, was {account_type}",  # pragma: no cover
             )
 
         # Create endpoints
@@ -558,11 +596,14 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             client,
             self.base_endpoint,
         )
-        self._endpoint_spot_account = BinanceSpotAccountHttp(
-            client,
-            self.base_endpoint,
-            account_type=account_type,
-        )
+        if account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            self._endpoint_spot_account = BinancePortfolioMarginBalanceHttp(client)
+        else:
+            self._endpoint_spot_account = BinanceSpotAccountHttp(
+                client,
+                self.base_endpoint,
+                account_type=account_type,
+            )
         self._endpoint_spot_order_rate_limit = BinanceSpotOrderRateLimitHttp(
             client,
             self.base_endpoint,
@@ -737,16 +778,28 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     async def query_spot_account_info(
         self,
         recv_window: str | None = None,
-    ) -> BinanceSpotAccountInfo | BinanceMarginAccountInfo:
+    ) -> BinanceSpotAccountInfo | BinanceMarginAccountInfo | BinancePortfolioMarginAccountInfo:
         """
         Check SPOT/MARGIN Binance account information.
         """
-        return await self._endpoint_spot_account.get(
+        response = await self._endpoint_spot_account.get(
             params=self._endpoint_spot_account.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
         )
+        if self._account_type == BinanceAccountType.PORTFOLIO_MARGIN:
+            balances = response
+            update_time = max(
+                (balance.updateTime for balance in balances if balance.updateTime is not None),
+                default=None,
+            )
+            return BinancePortfolioMarginAccountInfo(
+                balances=balances,
+                canTrade=True,
+                updateTime=update_time,
+            )
+        return response
 
     async def query_spot_order_rate_limit(
         self,

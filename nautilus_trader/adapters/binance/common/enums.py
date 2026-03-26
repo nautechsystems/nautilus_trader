@@ -157,6 +157,7 @@ class BinanceAccountType(Enum):
     SPOT = "SPOT"
     MARGIN = "MARGIN"
     ISOLATED_MARGIN = "ISOLATED_MARGIN"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
     USDT_FUTURES = "USDT_FUTURES"
     COIN_FUTURES = "COIN_FUTURES"
 
@@ -169,6 +170,7 @@ class BinanceAccountType(Enum):
         return self in (
             BinanceAccountType.MARGIN,
             BinanceAccountType.ISOLATED_MARGIN,
+            BinanceAccountType.PORTFOLIO_MARGIN,
         )
 
     @property
@@ -177,7 +179,12 @@ class BinanceAccountType(Enum):
             BinanceAccountType.SPOT,
             BinanceAccountType.MARGIN,
             BinanceAccountType.ISOLATED_MARGIN,
+            BinanceAccountType.PORTFOLIO_MARGIN,
         )
+
+    @property
+    def is_portfolio_margin(self) -> bool:
+        return self == BinanceAccountType.PORTFOLIO_MARGIN
 
     @property
     def is_futures(self) -> bool:
@@ -185,6 +192,17 @@ class BinanceAccountType(Enum):
             BinanceAccountType.USDT_FUTURES,
             BinanceAccountType.COIN_FUTURES,
         )
+
+
+@unique
+class BinancePrivateApiFamily(Enum):
+    """
+    Represents which private/authenticated Binance API family to use.
+    """
+
+    AUTO = "AUTO"
+    STANDARD_FUTURES = "STANDARD_FUTURES"
+    PORTFOLIO_MARGIN = "PORTFOLIO_MARGIN"
 
 
 @unique

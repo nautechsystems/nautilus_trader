@@ -52,6 +52,10 @@ const MSGBUS_STREAM: &str = "msgbus-stream";
 const MSGBUS_HEARTBEAT: &str = "msgbus-heartbeat";
 const HEARTBEAT_TOPIC: &str = "health:heartbeat";
 const TRIM_BUFFER_SECS: u64 = 60;
+const PUBLISH_RETRY_MAX_ATTEMPTS: usize = 10;
+const PUBLISH_RETRY_MAX_DELAY_SECS: u64 = 5;
+const PUBLISH_RETRY_MAX_FACTOR_MS: u64 = 100;
+const PUBLISH_RETRY_MAX_EXPONENT_BASE: u64 = 2;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 
@@ -253,7 +257,8 @@ pub async fn publish_messages(
         .database
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, db_config.clone()).await?;
+    let publish_db_config = publish_retry_config(db_config);
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, publish_db_config).await?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
 
     // Auto-trimming
@@ -288,7 +293,8 @@ pub async fn publish_messages(
                                 autotrim_duration,
                                 &mut last_trim_index,
                                 &mut buffer,
-                            ).await?;
+                            )
+                            .await?;
                         }
                         break;
                     }
@@ -304,7 +310,8 @@ pub async fn publish_messages(
                             autotrim_duration,
                             &mut last_trim_index,
                             &mut buffer,
-                        ).await?;
+                        )
+                        .await?;
                     }
                 } else {
                     log::debug!("Channel hung up");
@@ -322,7 +329,8 @@ pub async fn publish_messages(
                         autotrim_duration,
                         &mut last_trim_index,
                         &mut buffer,
-                    ).await?;
+                    )
+                    .await?;
                 }
 
                 // Schedule the next tick
@@ -348,6 +356,28 @@ pub async fn publish_messages(
     Ok(())
 }
 
+fn publish_retry_config(config: &DatabaseConfig) -> DatabaseConfig {
+    let mut publish_config = config.clone();
+    publish_config.number_of_retries = publish_config
+        .number_of_retries
+        .min(PUBLISH_RETRY_MAX_ATTEMPTS);
+    publish_config.exponent_base = publish_config
+        .exponent_base
+        .clamp(1, PUBLISH_RETRY_MAX_EXPONENT_BASE);
+    publish_config.max_delay = publish_config.max_delay.min(PUBLISH_RETRY_MAX_DELAY_SECS);
+    publish_config.factor = publish_config.factor.clamp(1, PUBLISH_RETRY_MAX_FACTOR_MS);
+    publish_config
+}
+
+#[cfg(test)]
+fn publish_retry_delay(config: &DatabaseConfig, attempt: usize) -> Duration {
+    let exponent = config.exponent_base.saturating_pow(attempt as u32);
+    let delay_ms = config.factor.saturating_mul(exponent);
+    let max_delay_ms = config.max_delay.saturating_mul(1_000);
+
+    Duration::from_millis(delay_ms.min(max_delay_ms).max(1))
+}
+
 async fn drain_buffer(
     conn: &mut redis::aio::ConnectionManager,
     stream_key: &str,
@@ -356,10 +386,16 @@ async fn drain_buffer(
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
 ) -> anyhow::Result<()> {
+    let staged: Vec<BusMessage> = buffer.iter().cloned().collect();
+    if staged.is_empty() {
+        return Ok(());
+    }
+
     let mut pipe = redis::pipe();
     pipe.atomic();
+    let mut staged_stream_keys = Vec::with_capacity(staged.len());
 
-    for msg in buffer.drain(..) {
+    for msg in &staged {
         let items: Vec<(&str, &[u8])> = vec![
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
@@ -369,37 +405,52 @@ async fn drain_buffer(
         } else {
             stream_key.to_string()
         };
+        staged_stream_keys.push(stream_key.clone());
         pipe.xadd(&stream_key, "*", &items);
-
-        if autotrim_duration.is_none() {
-            continue; // Nothing else to do
-        }
-
-        // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(stream_key.clone()).or_insert(0); // Remove clone
-        let unix_duration_now = duration_since_unix_epoch();
-        let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
-
-        // Improve efficiency of this by batching
-        if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {
-            let min_timestamp_ms =
-                (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
-            let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
-                .arg(stream_key.clone())
-                .arg(REDIS_MINID)
-                .arg(min_timestamp_ms)
-                .query_async(conn)
-                .await;
-
-            if let Err(e) = result {
-                log::error!("Error trimming stream '{stream_key}': {e}");
-            } else {
-                last_trim_index.insert(stream_key.clone(), unix_duration_now.as_millis() as usize);
-            }
-        }
     }
 
-    pipe.query_async(conn).await.map_err(anyhow::Error::from)
+    let result: Result<(), redis::RedisError> = pipe.query_async(conn).await;
+    result.map_err(anyhow::Error::from)?;
+
+    for stream_key in staged_stream_keys {
+        maybe_trim_stream(conn, &stream_key, autotrim_duration, last_trim_index).await;
+    }
+
+    buffer.drain(..staged.len());
+    Ok(())
+}
+
+async fn maybe_trim_stream(
+    conn: &mut redis::aio::ConnectionManager,
+    stream_key: &str,
+    autotrim_duration: Option<Duration>,
+    last_trim_index: &mut HashMap<String, usize>,
+) {
+    let Some(autotrim_duration) = autotrim_duration else {
+        return;
+    };
+
+    let last_trim_ms = last_trim_index.entry(stream_key.to_string()).or_insert(0);
+    let unix_duration_now = duration_since_unix_epoch();
+    let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
+
+    if *last_trim_ms >= (unix_duration_now - trim_buffer).as_millis() as usize {
+        return;
+    }
+
+    let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
+    let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
+        .arg(stream_key)
+        .arg(REDIS_MINID)
+        .arg(min_timestamp_ms)
+        .query_async(conn)
+        .await;
+
+    if let Err(e) = result {
+        log::error!("Error trimming stream '{stream_key}': {e}");
+    } else {
+        last_trim_index.insert(stream_key.to_string(), unix_duration_now.as_millis() as usize);
+    }
 }
 
 /// Streams messages from Redis streams and sends them over the provided `tx` channel.
@@ -658,12 +709,24 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
+    use std::sync::{Arc, OnceLock};
+
     use nautilus_common::testing::wait_until_async;
     use redis::aio::ConnectionManager;
     use rstest::*;
 
     use super::*;
     use crate::redis::flush_redis;
+
+    async fn acquire_redis_test_lock() -> tokio::sync::OwnedMutexGuard<()> {
+        static REDIS_TEST_LOCK: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+
+        REDIS_TEST_LOCK
+            .get_or_init(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+            .lock_owned()
+            .await
+    }
 
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
@@ -678,6 +741,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_terminate_signal(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -719,6 +783,7 @@ mod serial_tests {
     async fn test_stream_messages_when_receiver_closed(
         #[future] redis_connection: ConnectionManager,
     ) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -772,6 +837,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -829,6 +895,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -885,9 +952,181 @@ mod serial_tests {
         flush_redis(&mut con).await.unwrap();
     }
 
+    // Tradeable node state must never silently stop publishing while the process keeps running.
+    #[rstest]
+    fn test_publish_retry_budget_is_bounded_for_msgbus_publishers() {
+        let config = publish_retry_config(&DatabaseConfig::default());
+        let total_retry_delay: Duration = (0..config.number_of_retries)
+            .map(|attempt| publish_retry_delay(&config, attempt))
+            .sum();
+
+        assert!(
+            total_retry_delay <= Duration::from_secs(30),
+            "msgbus publish retry budget should fail closed quickly, got {total_retry_delay:?}",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_drain_buffer_preserves_messages_when_pipeline_write_fails(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let stream_key = "test:msgbus:wrongtype";
+        let _: () = con.set(stream_key, "blocked").await.unwrap();
+
+        let mut last_trim_index = HashMap::new();
+        let mut buffer = VecDeque::from([BusMessage::with_str_topic(
+            "retry_topic",
+            Bytes::from_static(b"retry_payload"),
+        )]);
+
+        let _result = drain_buffer(
+            &mut con,
+            stream_key,
+            false,
+            None,
+            &mut last_trim_index,
+            &mut buffer,
+        )
+        .await;
+        let remaining = buffer.clone();
+        let key_type: String = redis::cmd("TYPE")
+            .arg(stream_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+
+        flush_redis(&mut con).await.unwrap();
+
+        assert_eq!(key_type, "string");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "write failures must not consume buffered messages",
+        );
+        let msg = remaining.front().unwrap();
+        assert_eq!(msg.topic, "retry_topic");
+        assert_eq!(msg.payload, Bytes::from_static(b"retry_payload"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_fail_closed_instead_of_replaying_buffer_after_write_failure(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig {
+                number_of_retries: 6,
+                factor: 50,
+                max_delay: 1,
+                ..Default::default()
+            }),
+            stream_per_topic: false,
+            use_instance_id: true,
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let _: () = con.set(&stream_key, "blocked").await.unwrap();
+
+        let handle = tokio::spawn(async move {
+            publish_messages(rx, trader_id, instance_id, config).await
+        });
+
+        tx.send(BusMessage::with_str_topic(
+            "retry_topic",
+            Bytes::from_static(b"retry_payload"),
+        ))
+        .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let _: () = con.del(&stream_key).await.unwrap();
+
+        let task_result = tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("publish task should fail closed quickly")
+            .unwrap();
+        let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
+
+        flush_redis(&mut con).await.unwrap();
+
+        assert!(
+            task_result.is_err(),
+            "write failure should terminate publishing instead of replaying buffered messages",
+        );
+        assert!(
+            messages.is_empty(),
+            "failed flush should not replay the buffered batch after the error condition is cleared",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_task_exposes_terminal_failure_state(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig {
+                number_of_retries: 1,
+                factor: 10,
+                max_delay: 1,
+                ..Default::default()
+            }),
+            stream_per_topic: false,
+            use_instance_id: true,
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let _: () = con.set(&stream_key, "blocked").await.unwrap();
+
+        let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
+        db.publish(
+            Ustr::from("terminal_topic"),
+            Bytes::from_static(b"terminal_payload"),
+        );
+
+        let terminal_failure_exposed =
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if db.is_closed() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .is_ok();
+        let key_type: String = redis::cmd("TYPE")
+            .arg(&stream_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+
+        db.close();
+        flush_redis(&mut con).await.unwrap();
+
+        assert_eq!(key_type, "string");
+        assert!(
+            terminal_failure_exposed,
+            "terminal publish failure remained unobservable to the rest of the process",
+        );
+    }
+
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_multiple_streams(#[future] redis_connection: ConnectionManager) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -959,6 +1198,7 @@ mod serial_tests {
     async fn test_stream_messages_interleaved_at_different_rates(
         #[future] redis_connection: ConnectionManager,
     ) {
+        let _lock = acquire_redis_test_lock().await;
         let mut con = redis_connection.await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
@@ -1045,6 +1285,7 @@ mod serial_tests {
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_close() {
+        let _lock = acquire_redis_test_lock().await;
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
         let config = MessageBusConfig {

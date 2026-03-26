@@ -13,6 +13,7 @@ from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccoun
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceMarginAccountInfo
+from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotAccountUpdateMsg
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderUpdateData
@@ -76,6 +77,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         instrument_provider: BinanceSpotInstrumentProvider,
         base_url_ws: str,
         config: BinanceExecClientConfig,
+        market_client: BinanceHttpClient | None = None,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         name: str | None = None,
         *,
@@ -84,13 +86,17 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         api_secret: str,
     ) -> None:
         PyCondition.is_true(
-            account_type in (BinanceAccountType.SPOT, BinanceAccountType.MARGIN),
-            "account_type was not SPOT or cross MARGIN",
+            account_type in (
+                BinanceAccountType.SPOT,
+                BinanceAccountType.MARGIN,
+                BinanceAccountType.PORTFOLIO_MARGIN,
+            ),
+            "account_type was not SPOT, cross MARGIN, or PORTFOLIO_MARGIN",
         )
 
         # Spot HTTP API
         self._spot_http_account = BinanceSpotAccountHttpAPI(client, clock, account_type)
-        self._spot_http_market = BinanceSpotMarketHttpAPI(client, account_type)
+        self._spot_http_market = BinanceSpotMarketHttpAPI(market_client or client, account_type)
 
         # Spot enum parser
         self._spot_enum_parser = BinanceSpotEnumParser()
@@ -117,11 +123,11 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
         # Register spot websocket user data event handlers
         self._spot_user_ws_handlers = {
-            BinanceSpotEventType.outboundAccountPosition: self._handle_account_update,
-            BinanceSpotEventType.executionReport: self._handle_execution_report,
-            BinanceSpotEventType.listStatus: self._handle_list_status,
-            BinanceSpotEventType.balanceUpdate: self._handle_balance_update,
-            BinanceSpotEventType.listenKeyExpired: self._handle_listen_key_expired,
+            BinanceSpotEventType.outboundAccountPosition.value: self._handle_account_update,
+            BinanceSpotEventType.executionReport.value: self._handle_execution_report,
+            BinanceSpotEventType.listStatus.value: self._handle_list_status,
+            BinanceSpotEventType.balanceUpdate.value: self._handle_balance_update,
+            BinanceSpotEventType.listenKeyExpired.value: self._handle_listen_key_expired,
         }
 
         self._decoder_spot_user_msg = msgspec.json.Decoder(BinanceSpotUserMsgData)
@@ -129,7 +135,11 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         self._decoder_spot_account_update = msgspec.json.Decoder(BinanceSpotAccountUpdateMsg)
 
     async def _update_account_state(self) -> None:
-        account_info: BinanceSpotAccountInfo | BinanceMarginAccountInfo = (
+        account_info: (
+            BinanceSpotAccountInfo
+            | BinanceMarginAccountInfo
+            | BinancePortfolioMarginAccountInfo
+        ) = (
             await self._spot_http_account.query_spot_account_info(
                 recv_window=str(5000),
             )
@@ -226,7 +236,13 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     def _handle_user_ws_message(self, raw: bytes) -> None:
         try:
             msg = self._decoder_spot_user_msg.decode(raw)
-            self._spot_user_ws_handlers[msg.e](raw)
+            handler = self._spot_user_ws_handlers.get(msg.e)
+            if handler is None:
+                self._log.debug(
+                    f"Ignoring unsupported Binance spot user stream event {msg.e!r}",
+                )
+                return
+            handler(raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
 

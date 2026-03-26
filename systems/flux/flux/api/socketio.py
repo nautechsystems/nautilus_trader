@@ -79,6 +79,7 @@ class FluxSocketStoreProtocol(Protocol):
         since_ms: int | None,
         since_seq: int | None = None,
         scan_limit: int | None = None,
+        base_first_qty: bool = False,
     ) -> list[dict[str, Any]]: ...
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]: ...
@@ -319,6 +320,13 @@ def _normalize_trade_row(row: Mapping[str, Any], *, row_id: str, version: int) -
     out["row_id"] = row_id
     out["version"] = version
     return out
+
+
+def _metadata_is_tokenmm(metadata: Any) -> bool:
+    groups = decode_text(getattr(metadata, "strategy_groups", "")).strip().lower()
+    if not groups:
+        return False
+    return "tokenmm" in {part.strip() for part in groups.split(",") if part.strip()}
 
 
 def build_stable_signal_view(signal_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -731,6 +739,7 @@ class FluxSocketEmitter:
             "standard_event_counts": {},
             "legacy_event_counts": {},
         }
+        self._tokenmm_clean_trade_stream_signatures: dict[str, tuple[int, str]] = {}
         self._trade_poll_limit = SOCKETIO_TRADE_POLL_LIMIT
         self._trade_scan_limit = SOCKETIO_TRADE_SCAN_LIMIT
         self._alerts_preview_limit = SOCKETIO_ALERTS_PREVIEW_LIMIT
@@ -977,6 +986,31 @@ class FluxSocketEmitter:
             seq = self._standard_seq_by_profile_surface.get(key, 0) + 1
             self._standard_seq_by_profile_surface[key] = seq
             return seq
+
+    def _tokenmm_trade_stream_requires_reset(self, strategy_id: str, metadata: Any) -> bool:
+        if not _metadata_is_tokenmm(metadata):
+            return False
+        stream_reset_resolver = getattr(self._store, "tokenmm_trade_stream_requires_reset", None)
+        signature_resolver = getattr(self._store, "tokenmm_trade_stream_signature", None)
+        signature: tuple[int, str] | None = None
+        if callable(signature_resolver):
+            raw_signature = signature_resolver(strategy_id)
+            if isinstance(raw_signature, Sequence) and not isinstance(raw_signature, str | bytes) and len(raw_signature) == 2:
+                signature = (
+                    safe_int(raw_signature[0]) or 0,
+                    decode_text(raw_signature[1]).strip(),
+                )
+        if signature is not None and self._tokenmm_clean_trade_stream_signatures.get(strategy_id) == signature:
+            return False
+        if not callable(stream_reset_resolver):
+            return False
+        requires_reset = bool(stream_reset_resolver(strategy_id))
+        if requires_reset:
+            self._tokenmm_clean_trade_stream_signatures.pop(strategy_id, None)
+            return True
+        if signature is not None:
+            self._tokenmm_clean_trade_stream_signatures[strategy_id] = signature
+        return False
 
     def _resolve_profile_strategy_ids(self, profile: str) -> list[str]:
         ids: list[str] = []
@@ -1353,15 +1387,29 @@ class FluxSocketEmitter:
         for current_strategy_id in strategy_ids:
             next_trade_cursors[current_strategy_id] = int(next_trade_cursors.get(current_strategy_id, 0))
 
+        load_trades_parameters = inspect.signature(self._store.load_trades_rows).parameters
+        supports_base_first_qty = "base_first_qty" in load_trades_parameters
         scanned_trade_entries: list[tuple[int, dict[str, Any]]] = []
         trade_gap = False
         for current_strategy_id in strategy_ids:
+            current_metadata = self._metadata_resolver(current_strategy_id)
+            if self._tokenmm_trade_stream_requires_reset(current_strategy_id, current_metadata):
+                _LOG.warning(
+                    "Flux socket emitter detected TokenMM legacy trade rows without normalized qty fields profile=%s strategy_id=%s",
+                    profile,
+                    current_strategy_id,
+                )
+            load_trades_kwargs: dict[str, Any] = {
+                "limit": self._trade_scan_limit,
+                "since_ms": None,
+                "since_seq": None,
+                "scan_limit": self._trade_scan_limit,
+            }
+            if supports_base_first_qty:
+                load_trades_kwargs["base_first_qty"] = _metadata_is_tokenmm(current_metadata)
             strategy_rows = self._store.load_trades_rows(
                 current_strategy_id,
-                limit=self._trade_scan_limit,
-                since_ms=None,
-                since_seq=None,
-                scan_limit=self._trade_scan_limit,
+                **load_trades_kwargs,
             )
             current_cursor = int(next_trade_cursors.get(current_strategy_id, 0))
             seq_values = [safe_int(row.get("seq")) for row in strategy_rows if isinstance(row, Mapping)]

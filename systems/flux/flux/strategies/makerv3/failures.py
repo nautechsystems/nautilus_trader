@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import suppress
 from decimal import Decimal
+import re
 from typing import TYPE_CHECKING
 
 from flux.strategies.makerv3.constants import (
@@ -35,6 +36,39 @@ def is_terminal_order_denial_reason(reason: object) -> bool:
     if not normalized:
         return False
     return normalized.startswith("unsupported_account_mode")
+
+
+_EXPLICIT_EXCHANGE_CODE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])['\"]?exchange_code['\"]?(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
+_EXCHANGE_ERROR_CODE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])['\"]?code['\"]?(?![A-Za-z0-9_])\s*(?:=|:)\s*['\"]?(?P<code>[A-Za-z0-9_-]+)",
+    re.IGNORECASE,
+)
+
+
+def extract_exchange_error_code(reason: object) -> str | None:
+    normalized = normalize_reason_text(reason)
+    if not normalized:
+        return None
+    match = _EXPLICIT_EXCHANGE_CODE_RE.search(normalized)
+    if match is None:
+        match = _EXCHANGE_ERROR_CODE_RE.search(normalized)
+    if match is None:
+        return None
+    return match.group("code")
+
+
+def is_spot_borrow_block_reason(reason: object) -> bool:
+    normalized = normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return (
+        "code=51006" in normalized
+        or "maximum borrowable amount" in normalized
+        or "maximum borrowable" in normalized
+    )
 
 def handle_quote_failure(
     strategy: MakerV3Strategy,
@@ -217,8 +251,10 @@ def handle_venue_protection(
 
 
 __all__ = [
+    "extract_exchange_error_code",
     "handle_quote_failure",
     "handle_venue_protection",
+    "is_spot_borrow_block_reason",
     "is_venue_protection_reason",
     "normalize_reason_text",
 ]

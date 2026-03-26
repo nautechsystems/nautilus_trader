@@ -12,6 +12,7 @@ from typing import Any
 
 from flux.api._payloads_balances import build_balances_rows
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.factories import drop_cached_ib_client
 from nautilus_trader.adapters.interactive_brokers.factories import get_cached_ib_client
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
@@ -61,6 +62,7 @@ class IbkrReferenceBalanceSnapshotProvider:
         self._attachments = 0
         self._standalone_runtime: _StandaloneIbkrRuntime | None = None
         self._last_refresh_monotonic = 0.0
+        self._cached_client_key: tuple[str, int | None, int] | None = None
 
     def start(self, *, strategy: Any) -> None:
         self._attachments += 1
@@ -97,18 +99,33 @@ class IbkrReferenceBalanceSnapshotProvider:
         runtime = self._standalone_runtime
         if runtime is None:
             runtime = self._ensure_standalone_runtime()
+        attempt_ts_ms = int(time.time() * 1000)
         try:
             future = asyncio.run_coroutine_threadsafe(
                 self._fetch_snapshot(runtime),
                 runtime.loop,
             )
-            self._latest_snapshot = future.result(
+            snapshot = future.result(
                 timeout=self._config.connection_timeout + self._config.request_timeout_secs,
+            )
+            self._latest_snapshot = self._annotate_refresh_success(
+                snapshot,
+                attempt_ts_ms=attempt_ts_ms,
             )
             self._last_refresh_monotonic = time.monotonic()
         except Exception as exc:
+            self._latest_snapshot = self._annotate_refresh_failure(
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+            )
             with suppress(Exception):
-                runtime.log.warning(f"IBKR reference balance refresh failed: {exc}")
+                runtime.log.warning(
+                    "IBKR reference balance refresh failed (%s): %s",
+                    type(exc).__name__,
+                    exc,
+                )
+            if self._is_recoverable_refresh_failure(exc):
+                self._reset_standalone_client_runtime()
         return self.snapshot()
 
     def _ensure_standalone_runtime(self) -> _StandaloneIbkrRuntime:
@@ -167,23 +184,47 @@ class IbkrReferenceBalanceSnapshotProvider:
         if runtime is None:
             return
         self._standalone_runtime = None
-        if not runtime.loop.is_closed():
-            runtime.loop.call_soon_threadsafe(runtime.loop.stop)
-        if runtime.thread.is_alive():
-            runtime.thread.join(timeout=5)
+        loop = getattr(runtime, "loop", None)
+        loop_is_closed = getattr(loop, "is_closed", None)
+        loop_closed = bool(loop_is_closed()) if callable(loop_is_closed) else False
+        loop_stop = getattr(loop, "stop", None)
+        loop_call_soon_threadsafe = getattr(loop, "call_soon_threadsafe", None)
+        if (
+            not loop_closed
+            and callable(loop_stop)
+            and callable(loop_call_soon_threadsafe)
+        ):
+            loop_call_soon_threadsafe(loop_stop)
+        thread = getattr(runtime, "thread", None)
+        thread_is_alive = getattr(thread, "is_alive", None)
+        if callable(thread_is_alive) and thread_is_alive():
+            thread.join(timeout=5)
 
     async def _run(self, strategy: Any) -> None:
         try:
             while True:
+                attempt_ts_ms = int(strategy.clock.timestamp_ns() // 1_000_000)
                 try:
-                    self._latest_snapshot = await self._fetch_snapshot(strategy)
+                    snapshot = await self._fetch_snapshot(strategy)
+                    self._latest_snapshot = self._annotate_refresh_success(
+                        snapshot,
+                        attempt_ts_ms=attempt_ts_ms,
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    self._latest_snapshot = self._annotate_refresh_failure(
+                        exc,
+                        attempt_ts_ms=attempt_ts_ms,
+                    )
                     log = getattr(strategy, "log", None)
                     if log is not None:
                         with suppress(Exception):
-                            log.warning(f"IBKR reference balance refresh failed: {exc}")
+                            log.warning(
+                                "IBKR reference balance refresh failed (%s): %s",
+                                type(exc).__name__,
+                                exc,
+                            )
                 await asyncio.sleep(self._config.refresh_interval_secs)
         except asyncio.CancelledError:
             return
@@ -201,6 +242,10 @@ class IbkrReferenceBalanceSnapshotProvider:
             dockerized_gateway=self._config.dockerized_gateway,
             request_timeout_secs=self._config.request_timeout_secs,
         )
+        client_host = str(getattr(client, "_host", self._config.ibg_host))
+        client_port = getattr(client, "_port", self._config.ibg_port)
+        client_id = int(getattr(client, "_client_id", self._config.ibg_client_id))
+        self._cached_client_key = (client_host, client_port, client_id)
         await client.wait_until_ready(self._config.connection_timeout)
         account_id = self._resolve_account_id(client)
         ts_ms = int(strategy.clock.timestamp_ns() // 1_000_000)
@@ -219,6 +264,110 @@ class IbkrReferenceBalanceSnapshotProvider:
             strategy_id="shared_account",
         )
         return payload
+
+    def _projection_stale_after_ms(self) -> int:
+        return max(1_000, int(self._config.refresh_interval_secs * 1_000))
+
+    def _last_success_ts_ms(self) -> int | None:
+        snapshot = self._latest_snapshot
+        if not isinstance(snapshot, dict):
+            return None
+        projection_status = snapshot.get("projection_status")
+        if isinstance(projection_status, dict):
+            value = projection_status.get("last_success_ts_ms")
+            if isinstance(value, int):
+                return value
+        rows = snapshot.get("rows")
+        if not isinstance(rows, list):
+            return None
+        row_ts_values = [
+            int(ts_ms)
+            for row in rows
+            if isinstance(row, dict)
+            for ts_ms in [row.get("ts_ms")]
+            if isinstance(ts_ms, int)
+        ]
+        return max(row_ts_values) if row_ts_values else None
+
+    def _annotate_refresh_success(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        attempt_ts_ms: int,
+    ) -> dict[str, Any]:
+        payload = copy.deepcopy(snapshot)
+        rows = payload.get("rows")
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict):
+                    row.setdefault("stale", False)
+                    row.setdefault("include_in_reconciliation", True)
+        payload.setdefault("source_scope", "shared_account")
+        payload["projection_status"] = {
+            "healthy": True,
+            "last_success_ts_ms": attempt_ts_ms,
+            "last_attempt_ts_ms": attempt_ts_ms,
+            "last_error_type": None,
+            "last_error_message": None,
+            "stale_after_ms": self._projection_stale_after_ms(),
+        }
+        return payload
+
+    def _annotate_refresh_failure(
+        self,
+        exc: Exception,
+        *,
+        attempt_ts_ms: int,
+    ) -> dict[str, Any]:
+        previous = copy.deepcopy(self._latest_snapshot) if isinstance(self._latest_snapshot, dict) else {}
+        rows = previous.get("rows")
+        if not isinstance(rows, list):
+            rows = []
+        stale_after_ms = self._projection_stale_after_ms()
+        last_success_ts_ms = self._last_success_ts_ms()
+        scope_stale = (
+            last_success_ts_ms is None
+            or (attempt_ts_ms - last_success_ts_ms) > stale_after_ms
+        )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if scope_stale:
+                row["stale"] = True
+                row["include_in_reconciliation"] = False
+            else:
+                row.setdefault("stale", False)
+                row.setdefault("include_in_reconciliation", True)
+        previous["rows"] = rows
+        previous.setdefault("source_scope", "shared_account")
+        previous["projection_status"] = {
+            "healthy": False,
+            "last_success_ts_ms": last_success_ts_ms,
+            "last_attempt_ts_ms": attempt_ts_ms,
+            "last_error_type": type(exc).__name__,
+            "last_error_message": str(exc),
+            "stale_after_ms": stale_after_ms,
+        }
+        return previous
+
+    def _is_recoverable_refresh_failure(self, exc: Exception) -> bool:
+        if isinstance(exc, (TimeoutError, ConnectionError)):
+            return True
+        if isinstance(exc, RuntimeError):
+            return "loop" in str(exc).lower()
+        return False
+
+    def _reset_standalone_client_runtime(self) -> None:
+        client_key = self._cached_client_key
+        self._cached_client_key = None
+        if client_key is not None:
+            with suppress(Exception):
+                drop_cached_ib_client(
+                    host=client_key[0],
+                    port=client_key[1],
+                    client_id=client_key[2],
+                )
+        self._stop_standalone_runtime()
 
     def _resolve_account_id(self, client: Any) -> str:
         if self._account_id:

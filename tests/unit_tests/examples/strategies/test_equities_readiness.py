@@ -21,6 +21,9 @@ def _strategy_contracts() -> tuple[StrategyContractEntry, ...]:
         StrategyContractEntry(
             strategy_id="aapl_tradexyz_makerv4",
             portfolio_asset_id="AAPL",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="AAPL",
+            market_type="perp",
             maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             reference_instrument_id="AAPL.NASDAQ",
             execution_account_scope_id="hyperliquid.xyz.main",
@@ -30,6 +33,9 @@ def _strategy_contracts() -> tuple[StrategyContractEntry, ...]:
         StrategyContractEntry(
             strategy_id="msft_tradexyz_makerv4",
             portfolio_asset_id="MSFT",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="MSFT",
+            market_type="perp",
             maker_instrument_id="xyz:MSFT-USD-PERP.HYPERLIQUID",
             reference_instrument_id="MSFT.NASDAQ",
             execution_account_scope_id="hyperliquid.xyz.main",
@@ -186,6 +192,556 @@ def test_evaluate_equities_readiness_passes_when_contract_surfaces_are_healthy()
     assert result.checks["profile_account_projections"].ok is True
     assert result.checks["signals"].ok is True
     assert result.checks["ibkr_auth"].ok is True
+
+
+def test_evaluate_equities_readiness_allows_multiple_routes_for_same_portfolio_asset() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    strategy_contracts = (
+        StrategyContractEntry(
+            strategy_id="pltr_tradexyz_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="PLTR",
+            market_type="perp",
+            maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="hyperliquid.xyz.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+        StrategyContractEntry(
+            strategy_id="pltr_binance_perp_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="BINANCE_PERP",
+            maker_symbol="PLTRUSDT",
+            market_type="perp",
+            maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="binance.futures.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+    )
+    account_scopes = (
+        AccountScopeConfig(
+            scope_id="hyperliquid.xyz.main",
+            provider="hyperliquid",
+            venue="HYPERLIQUID",
+        ),
+        AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.reference.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.hedge.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+    )
+    signals_payload = {
+        "server_ts_ms": 1_700_000_000_500,
+        "strategies": [
+            {
+                "id": "pltr_tradexyz_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "hyperliquid:XYZ:PLTR-USD-PERP.HYPERLIQUID",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "hyperliquid:XYZ:PLTR-USD-PERP.HYPERLIQUID",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 50},
+                    "hyperliquid:xyz:PLTR-USD-PERP.HYPERLIQUID": {"age_ms": 25},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+            {
+                "id": "pltr_binance_perp_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 55},
+                    "binance_perp:PLTRUSDT-PERP.BINANCE_PERP": {"age_ms": 20},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+        ],
+    }
+    component_payloads = {
+        "pltr_tradexyz_makerv4": {
+            "strategy_id": "pltr_tradexyz_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "10",
+            "ts_ms": 1_700_000_000_000,
+        },
+        "pltr_binance_perp_makerv4": {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "12.5",
+            "ts_ms": 1_700_000_000_000,
+        },
+    }
+    projection_payloads = _healthy_projection_payloads() | {
+        "binance.futures.main": {
+            "account_scope_ids": ["binance.futures.main"],
+            "rows": [{"exchange": "binance_perp", "asset": "USDT", "total": "750"}],
+            "server_ts_ms": 1_700_000_000_050,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=projection_payloads,
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is True
+    assert result.summary["expected_projection_scope_ids"] == [
+        "binance.futures.main",
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
+    assert result.summary["healthy_strategy_count"] == 2
+    assert result.checks["component_keys"].details["missing_strategy_ids"] == []
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
+
+
+def test_evaluate_equities_readiness_requires_binance_projection_for_binance_routes() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    strategy_contracts = (
+        StrategyContractEntry(
+            strategy_id="pltr_binance_perp_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="BINANCE_PERP",
+            maker_symbol="PLTRUSDT",
+            market_type="perp",
+            maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="binance.futures.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+    )
+    account_scopes = (
+        AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.reference.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.hedge.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+    )
+    signals_payload = {
+        "server_ts_ms": 1_700_000_000_500,
+        "strategies": [
+            {
+                "id": "pltr_binance_perp_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 55},
+                    "binance_perp:PLTRUSDT-PERP.BINANCE_PERP": {"age_ms": 20},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+        ],
+    }
+    component_payloads = {
+        "pltr_binance_perp_makerv4": {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "12.5",
+            "ts_ms": 1_700_000_000_000,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=("pltr_binance_perp_makerv4",),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.summary["expected_projection_scope_ids"] == [
+        "binance.futures.main",
+        "ibkr.hedge.main",
+        "ibkr.reference.main",
+    ]
+    assert result.checks["profile_account_projections"].details["missing_scope_ids"] == [
+        "binance.futures.main",
+    ]
+
+
+def test_evaluate_equities_readiness_tracks_signal_health_per_route_inside_stock_netted_portfolio() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    strategy_contracts = (
+        StrategyContractEntry(
+            strategy_id="pltr_tradexyz_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="PLTR",
+            market_type="perp",
+            maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="hyperliquid.xyz.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+        StrategyContractEntry(
+            strategy_id="pltr_binance_perp_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="BINANCE_PERP",
+            maker_symbol="PLTRUSDT",
+            market_type="perp",
+            maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="binance.futures.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+    )
+    account_scopes = (
+        AccountScopeConfig(
+            scope_id="hyperliquid.xyz.main",
+            provider="hyperliquid",
+            venue="HYPERLIQUID",
+        ),
+        AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.reference.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.hedge.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+    )
+    signals_payload = {
+        "server_ts_ms": 1_700_000_000_500,
+        "strategies": [
+            {
+                "id": "pltr_tradexyz_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "hyperliquid:XYZ:PLTR-USD-PERP.HYPERLIQUID",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "hyperliquid:XYZ:PLTR-USD-PERP.HYPERLIQUID",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 50},
+                    "hyperliquid:xyz:PLTR-USD-PERP.HYPERLIQUID": {"age_ms": 25},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+            {
+                "id": "pltr_binance_perp_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {
+                    "state": "bot_off",
+                    "maker_role_map": {
+                        "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                        "ref_leg": "nasdaq:PLTR.NASDAQ",
+                    },
+                },
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 55},
+                    "binance_perp:PLTRUSDT-PERP.BINANCE_PERP": {"age_ms": 20_001},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": [],
+                        "state_stale": False,
+                    },
+                },
+            },
+        ],
+    }
+    component_payloads = {
+        "pltr_tradexyz_makerv4": {
+            "strategy_id": "pltr_tradexyz_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "10",
+            "ts_ms": 1_700_000_000_000,
+        },
+        "pltr_binance_perp_makerv4": {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "5",
+            "ts_ms": 1_700_000_000_000,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["balances"].ok is True
+    assert result.checks["component_keys"].ok is True
+    assert result.checks["signals"].ok is False
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == ["pltr_binance_perp_makerv4"]
+    assert result.checks["ibkr_auth"].ok is True
+    assert result.summary["healthy_strategy_count"] == 1
+
+
+def test_evaluate_equities_readiness_reports_same_stock_routes_per_strategy() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    strategy_contracts = (
+        StrategyContractEntry(
+            strategy_id="pltr_tradexyz_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="PLTR",
+            market_type="perp",
+            maker_instrument_id="xyz:PLTR-USD-PERP.HYPERLIQUID",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="hyperliquid.xyz.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+        StrategyContractEntry(
+            strategy_id="pltr_binance_perp_makerv4",
+            portfolio_asset_id="PLTR",
+            maker_venue="BINANCE_PERP",
+            maker_symbol="PLTRUSDT",
+            market_type="perp",
+            maker_instrument_id="PLTRUSDT-PERP.BINANCE_PERP",
+            reference_instrument_id="PLTR.NASDAQ",
+            execution_account_scope_id="binance.futures.main",
+            reference_account_scope_id="ibkr.reference.main",
+            hedge_account_scope_id="ibkr.hedge.main",
+        ),
+    )
+    account_scopes = (
+        AccountScopeConfig(
+            scope_id="hyperliquid.xyz.main",
+            provider="hyperliquid",
+            venue="HYPERLIQUID",
+        ),
+        AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.reference.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+        AccountScopeConfig(
+            scope_id="ibkr.hedge.main",
+            provider="ibkr",
+            venue="IBKR",
+        ),
+    )
+    signals_payload = {
+        "server_ts_ms": 1_700_000_000_500,
+        "strategies": [
+            {
+                "id": "pltr_tradexyz_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "hyperliquid:XYZ:PLTR-USD-PERP.HYPERLIQUID",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {"state": "bot_off"},
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 50},
+                    "hyperliquid:xyz:PLTR-USD-PERP.HYPERLIQUID": {"age_ms": 25},
+                },
+                "debug": {"md_health": {"stale_legs": [], "state_stale": False}},
+            },
+            {
+                "id": "pltr_binance_perp_makerv4",
+                "params": {"max_age_ms": "10000"},
+                "maker_role_map": {
+                    "maker_leg": "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+                    "ref_leg": "ibkr:PLTR.NASDAQ",
+                },
+                "state": {"state": "bot_off"},
+                "legs": {
+                    "ibkr:PLTR.NASDAQ": {"age_ms": 55},
+                    "binance_perp:PLTRUSDT-PERP.BINANCE_PERP": {"age_ms": 20},
+                },
+                "debug": {
+                    "md_health": {
+                        "stale_legs": ["binance_perp:PLTRUSDT-PERP.BINANCE_PERP"],
+                        "state_stale": False,
+                    },
+                },
+            },
+        ],
+    }
+    component_payloads = {
+        "pltr_tradexyz_makerv4": {
+            "strategy_id": "pltr_tradexyz_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "10",
+            "ts_ms": 1_700_000_000_000,
+        },
+        "pltr_binance_perp_makerv4": {
+            "strategy_id": "pltr_binance_perp_makerv4",
+            "portfolio_id": "equities",
+            "base_currency": "PLTR",
+            "local_qty_base": "-4",
+            "ts_ms": 1_700_000_000_000,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=("pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.summary["healthy_strategy_count"] == 1
+    assert result.checks["balances"].ok is True
+    assert result.checks["component_keys"].ok is True
+    assert result.checks["signals"].details["required_strategy_ids"] == [
+        "pltr_tradexyz_makerv4",
+        "pltr_binance_perp_makerv4",
+    ]
+    assert result.checks["signals"].details["stale_signal_legs"] == [
+        "binance_perp:PLTRUSDT-PERP.BINANCE_PERP",
+    ]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "pltr_binance_perp_makerv4",
+    ]
+    assert result.checks["ibkr_auth"].ok is True
+    assert result.checks["ibkr_auth"].details["unhealthy_strategy_ids"] == []
 
 
 def test_evaluate_equities_readiness_fails_closed_for_live_blockers() -> None:
@@ -731,6 +1287,9 @@ def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None
         StrategyContractEntry(
             strategy_id="aapl_tradexyz_makerv4",
             portfolio_asset_id="AAPL",
+            maker_venue="HYPERLIQUID",
+            maker_symbol="AAPL",
+            market_type="perp",
             maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             reference_instrument_id="AAPL.SMART",
             execution_account_scope_id="hyperliquid.xyz.main",
@@ -782,3 +1341,17 @@ def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -
     assert "/api/v1/signals?profile=equities" in readme
     assert "/api/v1/balances?profile=equities" in readme
     assert "regular US session" in readme
+
+
+def test_equities_binance_perp_runbook_documents_multivenue_canary_sequence() -> None:
+    runbook = _read(_repo_root() / "docs/runbooks/equities-binance-perp-market-making.md")
+
+    assert "overlap-name canary" in runbook
+    assert ("PLTR" in runbook) or ("TSLA" in runbook)
+    assert "same-stock multi-venue netting" in runbook
+    assert "inventory_by_asset" in runbook
+    assert "source_strategy_ids" in runbook
+    assert "Binance-only name canary" in runbook
+    assert "MSTR" in runbook
+    assert "newly discovered Binance-only routes" in runbook
+    assert "/api/v1/balances?profile=equities" in runbook

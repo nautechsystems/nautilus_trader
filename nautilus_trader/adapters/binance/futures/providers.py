@@ -7,6 +7,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.enums import BinanceSymbolFilterType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
@@ -85,6 +86,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         client: BinanceHttpClient,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES,
+        private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO,
+        market_client: BinanceHttpClient | None = None,
         config: InstrumentProviderConfig | BinanceInstrumentProviderConfig | None = None,
         venue: Venue = BINANCE_VENUE,
     ) -> None:
@@ -99,13 +102,18 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             self._client,
             clock=self._clock,
             account_type=account_type,
+            private_api_family=private_api_family,
         )
         self._http_wallet = BinanceFuturesWalletHttpAPI(
             self._client,
             clock=self._clock,
             account_type=account_type,
+            private_api_family=private_api_family,
         )
-        self._http_market = BinanceFuturesMarketHttpAPI(self._client, account_type=account_type)
+        self._http_market = BinanceFuturesMarketHttpAPI(
+            market_client or self._client,
+            account_type=account_type,
+        )
 
         self._log_warnings = config.log_warnings if config else True
 
@@ -132,6 +140,13 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000170"),
         }
 
+    def _resolve_fee_rates(self, fee_tier: int | None) -> BinanceFuturesFeeRates:
+        if fee_tier is None:
+            self._log.info("Binance account response omitted feeTier; falling back to tier 0")
+            return self._fee_rates[0]
+
+        return self._fee_rates[fee_tier]
+
     async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
@@ -147,7 +162,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             fee_rates = self._fee_rates[0]
         else:
             account_info = await self._http_account.query_futures_account_info()
-            fee_rates = self._fee_rates[account_info.feeTier]
+            fee_rates = self._resolve_fee_rates(account_info.feeTier)
 
         if (
             isinstance(self._config, BinanceInstrumentProviderConfig)
@@ -222,7 +237,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             position_risk = {}
         else:
             account_info = await self._http_account.query_futures_account_info()
-            fee_rates = self._fee_rates[account_info.feeTier]
+            fee_rates = self._resolve_fee_rates(account_info.feeTier)
             position_risk_resp = await self._http_account.query_futures_position_risk()
             position_risk = {risk.symbol: risk for risk in position_risk_resp}
 
@@ -290,7 +305,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             fee_rates = self._fee_rates[0]
         else:
             account_info = await self._http_account.query_futures_account_info()
-            fee_rates = self._fee_rates[account_info.feeTier]
+            fee_rates = self._resolve_fee_rates(account_info.feeTier)
 
         if (
             isinstance(self._config, BinanceInstrumentProviderConfig)

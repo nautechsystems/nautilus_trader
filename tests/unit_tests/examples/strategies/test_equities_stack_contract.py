@@ -6,7 +6,8 @@ from pathlib import Path
 
 ACTIVE_STRATEGY_CLASS = "maker_v4"
 ACTIVE_PARAM_SET = "makerv4"
-ROLLBACK_STRATEGY_ID = "aapl_tradexyz_makerv3"
+EQUITIES_MAKER_MAX_QUOTE_AGE_MS = 60_000
+EQUITIES_IBKR_MAX_QUOTE_AGE_MS = 300_000
 ACTIVE_STRATEGIES = (
     {
         "symbol": "AAPL",
@@ -28,25 +29,25 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "BABA",
-        "strategy_id": "baba_tradexyz_makerv3",
+        "strategy_id": "baba_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:BABA-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "BABA.NYSE",
     },
     {
         "symbol": "COIN",
-        "strategy_id": "coin_tradexyz_makerv3",
+        "strategy_id": "coin_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "COIN.NASDAQ",
     },
     {
         "symbol": "CRCL",
-        "strategy_id": "crcl_tradexyz_makerv3",
+        "strategy_id": "crcl_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:CRCL-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "CRCL.NYSE",
     },
     {
         "symbol": "CRWV",
-        "strategy_id": "crwv_tradexyz_makerv3",
+        "strategy_id": "crwv_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:CRWV-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "CRWV.NASDAQ",
     },
@@ -58,13 +59,13 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "HOOD",
-        "strategy_id": "hood_tradexyz_makerv3",
+        "strategy_id": "hood_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:HOOD-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "HOOD.NASDAQ",
     },
     {
         "symbol": "INTC",
-        "strategy_id": "intc_tradexyz_makerv3",
+        "strategy_id": "intc_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:INTC-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "INTC.NASDAQ",
     },
@@ -76,7 +77,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "MSTR",
-        "strategy_id": "mstr_tradexyz_makerv3",
+        "strategy_id": "mstr_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:MSTR-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "MSTR.NASDAQ",
     },
@@ -88,13 +89,13 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "MU",
-        "strategy_id": "mu_tradexyz_makerv3",
+        "strategy_id": "mu_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:MU-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "MU.NASDAQ",
     },
     {
         "symbol": "NFLX",
-        "strategy_id": "nflx_tradexyz_makerv3",
+        "strategy_id": "nflx_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:NFLX-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "NFLX.NASDAQ",
     },
@@ -118,19 +119,19 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "RIVN",
-        "strategy_id": "rivn_tradexyz_makerv3",
+        "strategy_id": "rivn_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:RIVN-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "RIVN.NASDAQ",
     },
     {
         "symbol": "SNDK",
-        "strategy_id": "sndk_tradexyz_makerv3",
+        "strategy_id": "sndk_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:SNDK-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "SNDK.NASDAQ",
     },
     {
         "symbol": "TSM",
-        "strategy_id": "tsm_tradexyz_makerv3",
+        "strategy_id": "tsm_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:TSM-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "TSM.NYSE",
     },
@@ -142,7 +143,7 @@ ACTIVE_STRATEGIES = (
     },
     {
         "symbol": "USAR",
-        "strategy_id": "usar_tradexyz_makerv3",
+        "strategy_id": "usar_tradexyz_makerv4",
         "hyperliquid_instrument_id": "xyz:USAR-USD-PERP.HYPERLIQUID",
         "ibkr_instrument_id": "USAR.NASDAQ",
     },
@@ -160,37 +161,88 @@ CORE_PROD_STRATEGY_IDS = (
     "aapl_tradexyz_makerv4",
     "amd_tradexyz_makerv4",
     "amzn_tradexyz_makerv4",
+    "baba_tradexyz_makerv4",
+    "coin_tradexyz_makerv4",
+    "crcl_tradexyz_makerv4",
+    "crwv_tradexyz_makerv4",
     "googl_tradexyz_makerv4",
+    "hood_tradexyz_makerv4",
+    "intc_tradexyz_makerv4",
     "meta_tradexyz_makerv4",
     "msft_tradexyz_makerv4",
+    "mstr_tradexyz_makerv4",
+    "mu_tradexyz_makerv4",
+    "nflx_tradexyz_makerv4",
     "nvda_tradexyz_makerv4",
     "orcl_tradexyz_makerv4",
     "pltr_tradexyz_makerv4",
+    "rivn_tradexyz_makerv4",
+    "sndk_tradexyz_makerv4",
     "tsla_tradexyz_makerv4",
+    "tsm_tradexyz_makerv4",
+    "usar_tradexyz_makerv4",
 )
-SECOND_WAVE_DISABLED_STRATEGY_IDS = (
+DEPLOYED_MULTIVENUE_ROUTE_IDS = (
+    "amzn_binance_perp_makerv4",
+    "coin_binance_perp_makerv4",
+    "crcl_binance_perp_makerv4",
+    "ewy_binance_perp_makerv4",
+    "hood_binance_perp_makerv4",
+    "intc_binance_perp_makerv4",
+    "mstr_binance_perp_makerv4",
+    "pltr_binance_perp_makerv4",
+    "tsla_binance_perp_makerv4",
+)
+LIVE_ENROLLED_STRATEGY_IDS = (
+    "aapl_tradexyz_makerv4",
+    "amd_tradexyz_makerv4",
+    "amzn_binance_perp_makerv4",
+    "amzn_tradexyz_makerv4",
+    "baba_tradexyz_makerv4",
+    "coin_binance_perp_makerv4",
+    "coin_tradexyz_makerv4",
+    "crcl_binance_perp_makerv4",
+    "crcl_tradexyz_makerv4",
+    "crwv_tradexyz_makerv4",
+    "ewy_binance_perp_makerv4",
+    "googl_tradexyz_makerv4",
+    "hood_binance_perp_makerv4",
+    "hood_tradexyz_makerv4",
+    "intc_binance_perp_makerv4",
+    "intc_tradexyz_makerv4",
+    "meta_tradexyz_makerv4",
+    "msft_tradexyz_makerv4",
+    "mstr_binance_perp_makerv4",
+    "mstr_tradexyz_makerv4",
+    "mu_tradexyz_makerv4",
+    "nflx_tradexyz_makerv4",
+    "nvda_tradexyz_makerv4",
+    "orcl_tradexyz_makerv4",
+    "pltr_binance_perp_makerv4",
+    "pltr_tradexyz_makerv4",
+    "rivn_tradexyz_makerv4",
+    "sndk_tradexyz_makerv4",
+    "tsla_binance_perp_makerv4",
+    "tsla_tradexyz_makerv4",
+    "tsm_tradexyz_makerv4",
+    "usar_tradexyz_makerv4",
+)
+REMOVED_MAKERV3_STRATEGY_IDS = (
+    "aapl_tradexyz_makerv3",
+    "baba_tradexyz_makerv3",
     "coin_tradexyz_makerv3",
+    "crcl_tradexyz_makerv3",
+    "crwv_tradexyz_makerv3",
     "hood_tradexyz_makerv3",
+    "hyundai_tradexyz_makerv3",
     "intc_tradexyz_makerv3",
+    "mstr_tradexyz_makerv3",
     "mu_tradexyz_makerv3",
     "nflx_tradexyz_makerv3",
     "rivn_tradexyz_makerv3",
-)
-DECOMMISSIONED_STRATEGY_IDS = (
-    "baba_tradexyz_makerv3",
-    "crcl_tradexyz_makerv3",
-    "crwv_tradexyz_makerv3",
-    "mstr_tradexyz_makerv3",
     "sndk_tradexyz_makerv3",
     "tsm_tradexyz_makerv3",
     "usar_tradexyz_makerv3",
-)
-NON_CORE_STRATEGY_IDS = SECOND_WAVE_DISABLED_STRATEGY_IDS + DECOMMISSIONED_STRATEGY_IDS
-ADMISSION_POLICY_LINES = (
-    "US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.",
-    "Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.",
-    "The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.",
-    "The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.",
 )
 CORE_PROD_STRATEGIES = tuple(
     entry for entry in ACTIVE_STRATEGIES if entry["strategy_id"] in CORE_PROD_STRATEGY_IDS
@@ -202,6 +254,92 @@ CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS = {
 CORE_PROD_IBKR_INSTRUMENT_IDS = {
     entry["ibkr_instrument_id"]
     for entry in CORE_PROD_STRATEGIES
+}
+DECLARED_MULTIVENUE_ROUTE_CONTRACTS = {
+    "amzn_binance_perp_makerv4": (
+        "AMZN",
+        "BINANCE_PERP",
+        "AMZNUSDT",
+        "perp",
+        "AMZNUSDT-PERP.BINANCE_PERP",
+        "AMZN.NASDAQ",
+    ),
+    "coin_binance_perp_makerv4": (
+        "COIN",
+        "BINANCE_PERP",
+        "COINUSDT",
+        "perp",
+        "COINUSDT-PERP.BINANCE_PERP",
+        "COIN.NASDAQ",
+    ),
+    "crcl_binance_perp_makerv4": (
+        "CRCL",
+        "BINANCE_PERP",
+        "CRCLUSDT",
+        "perp",
+        "CRCLUSDT-PERP.BINANCE_PERP",
+        "CRCL.NYSE",
+    ),
+    "ewy_binance_perp_makerv4": (
+        "EWY",
+        "BINANCE_PERP",
+        "EWYUSDT",
+        "perp",
+        "EWYUSDT-PERP.BINANCE_PERP",
+        "EWY.NYSE",
+    ),
+    "hood_binance_perp_makerv4": (
+        "HOOD",
+        "BINANCE_PERP",
+        "HOODUSDT",
+        "perp",
+        "HOODUSDT-PERP.BINANCE_PERP",
+        "HOOD.NASDAQ",
+    ),
+    "intc_binance_perp_makerv4": (
+        "INTC",
+        "BINANCE_PERP",
+        "INTCUSDT",
+        "perp",
+        "INTCUSDT-PERP.BINANCE_PERP",
+        "INTC.NASDAQ",
+    ),
+    "mstr_binance_perp_makerv4": (
+        "MSTR",
+        "BINANCE_PERP",
+        "MSTRUSDT",
+        "perp",
+        "MSTRUSDT-PERP.BINANCE_PERP",
+        "MSTR.NASDAQ",
+    ),
+    "pltr_binance_perp_makerv4": (
+        "PLTR",
+        "BINANCE_PERP",
+        "PLTRUSDT",
+        "perp",
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "PLTR.NASDAQ",
+    ),
+    "tsla_binance_perp_makerv4": (
+        "TSLA",
+        "BINANCE_PERP",
+        "TSLAUSDT",
+        "perp",
+        "TSLAUSDT-PERP.BINANCE_PERP",
+        "TSLA.NASDAQ",
+    ),
+}
+DECLARED_EXTRA_SHARED_CONTRACTS = {
+    ("binance_perp", "AMZNUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "COINUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "CRCLUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "EWYUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "HOODUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "INTCUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "MSTRUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "PLTRUSDT-PERP.BINANCE_PERP"),
+    ("binance_perp", "TSLAUSDT-PERP.BINANCE_PERP"),
+    ("ibkr", "EWY.NYSE"),
 }
 
 
@@ -266,8 +404,8 @@ def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
-    assert config["api"]["equities_required_strategy_ids"] == list(CORE_PROD_STRATEGY_IDS)
+    assert config["api"]["equities_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
+    assert config["api"]["equities_required_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS)
 
 
 def test_equities_live_config_decommissions_hyundai() -> None:
@@ -289,8 +427,8 @@ def test_equities_live_config_decommissions_hyundai() -> None:
         row["instrument_id"] for row in config["contracts"] if row["exchange"] == "ibkr"
     }
     assert not (repo_root / "deploy/equities/strategies/hyundai_tradexyz_makerv3.toml").exists()
-    assert (repo_root / "deploy/equities/strategies/hyundai_tradexyz_makerv3.toml.disabled").exists()
-    assert "hyundai" not in readme.lower()
+    assert not (repo_root / "deploy/equities/strategies/hyundai_tradexyz_makerv3.toml.disabled").exists()
+    assert "hyundai_tradexyz_makerv3" in readme
     assert "hyundai_tradexyz_makerv3" not in target
     assert "hyundai_tradexyz_makerv3" not in sudoers
 
@@ -338,6 +476,17 @@ def test_equities_strategy_template_uses_hyperliquid_xyz_and_equities_group() ->
     assert strategy["n_orders1"] == 3
 
 
+def test_equities_strategy_template_documents_binance_perp_credentials() -> None:
+    template = _read(_repo_root() / "deploy/equities/strategies/equities.strategy.template.toml")
+
+    assert 'execution_venue = "BINANCE_PERP"' in template
+    assert '[node.venues.BINANCE_PERP]' in template
+    assert 'instrument_id = "AAPLUSDT-PERP.BINANCE_PERP"' in template
+    assert 'api_key_env = "EQUITIES_BINANCE_API_KEY"' in template
+    assert 'api_secret_env = "EQUITIES_BINANCE_API_SECRET"' in template
+    assert 'account_type = "USDT_FUTURES"' in template
+
+
 def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     live_config_path = _repo_root() / "deploy/equities/equities.live.toml"
     live_config = _read(live_config_path)
@@ -360,12 +509,14 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     assert "[strategy]" not in live_config
     assert "[[strategy_contracts]]" in live_config
     assert 'exchange = "hyperliquid"' in live_config
+    assert 'exchange = "binance_perp"' in live_config
     assert 'exchange = "ibkr"' in live_config
     assert contracts == {
         *{
             ("hyperliquid", instrument_id)
             for instrument_id in CORE_PROD_HYPERLIQUID_INSTRUMENT_IDS
         },
+        *DECLARED_EXTRA_SHARED_CONTRACTS,
         *{
             ("ibkr", instrument_id)
             for instrument_id in CORE_PROD_IBKR_INSTRUMENT_IDS
@@ -375,10 +526,6 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
 
 def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_ids() -> None:
     repo_root = _repo_root()
-    disabled_rollback_path = repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml.disabled"
-
-    assert not (repo_root / f"deploy/equities/strategies/{ROLLBACK_STRATEGY_ID}.toml").exists()
-    assert disabled_rollback_path.exists()
     for entry in CORE_PROD_STRATEGIES:
         active_path = repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml"
         assert active_path.exists()
@@ -391,6 +538,8 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         assert config["strategy"]["manage_stop"] is False
         assert config["strategy"]["force_bot_off_on_start"] is True
         assert config["strategy"]["outside_rth_hedge_enabled"] is True
+        assert config["strategy"]["max_age_ms"] == EQUITIES_MAKER_MAX_QUOTE_AGE_MS
+        assert config["strategy"]["max_ibkr_quote_age_ms"] == EQUITIES_IBKR_MAX_QUOTE_AGE_MS
         expected_primary_exchange = entry["ibkr_instrument_id"].rsplit(".", 1)[1]
         assert config["strategy"]["ibkr_primary_exchange"] == expected_primary_exchange
         assert config["node"]["enable_execution"] is False
@@ -406,9 +555,12 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
             == "TRADE_XYZ_VAULT_ADDRESS"
         )
         assert "twofa_timeout_action" not in config["node"]["venues"]["IBKR"]["dockerized_gateway"]
+    for strategy_id in REMOVED_MAKERV3_STRATEGY_IDS:
+        assert not (repo_root / f"deploy/equities/strategies/{strategy_id}.toml").exists()
+        assert not (repo_root / f"deploy/equities/strategies/{strategy_id}.toml.disabled").exists()
 
 
-def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> None:
+def test_equities_discovery_matches_live_enrolled_makerv4_routes() -> None:
     repo_root = _repo_root()
     strategies_dir = repo_root / "deploy/equities/strategies"
     active_strategy_ids = sorted(
@@ -417,10 +569,10 @@ def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> Non
         if path.name != "equities.strategy.template.toml"
     )
 
-    assert active_strategy_ids == list(CORE_PROD_STRATEGY_IDS)
-    for strategy_id in NON_CORE_STRATEGY_IDS:
+    assert active_strategy_ids == sorted(LIVE_ENROLLED_STRATEGY_IDS)
+    for strategy_id in REMOVED_MAKERV3_STRATEGY_IDS:
         assert not (strategies_dir / f"{strategy_id}.toml").exists()
-        assert (strategies_dir / f"{strategy_id}.toml.disabled").exists()
+        assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
 
 
 def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() -> None:
@@ -436,6 +588,8 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
 
     assert active_config["node"]["enable_execution"] is False
     assert template_config["node"]["enable_execution"] is False
+    assert template_config["strategy"]["max_age_ms"] == EQUITIES_MAKER_MAX_QUOTE_AGE_MS
+    assert template_config["strategy"]["max_ibkr_quote_age_ms"] == EQUITIES_IBKR_MAX_QUOTE_AGE_MS
     assert (
         "# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution"
         in active_text
@@ -476,6 +630,7 @@ def test_equities_shared_contract_catalog_matches_core_prod_strategy_routes() ->
             "ibkr",
             active_config["node"]["venues"]["IBKR"]["instrument_id"],
         ) in shared_contracts
+    assert ("binance_perp", "PLTRUSDT-PERP.BINANCE_PERP") in shared_contracts
 
 
 def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_ids() -> None:
@@ -484,11 +639,23 @@ def test_equities_live_config_declares_strategy_contracts_with_portfolio_asset_i
     aapl = next(item for item in contracts if item["strategy_id"] == "aapl_tradexyz_makerv4")
 
     assert aapl["portfolio_asset_id"] == "AAPL"
+    assert aapl["maker_venue"] == "HYPERLIQUID"
+    assert aapl["maker_symbol"] == "AAPL"
+    assert aapl["market_type"] == "perp"
     assert aapl["maker_instrument_id"] == "xyz:AAPL-USD-PERP.HYPERLIQUID"
     assert aapl["reference_instrument_id"] == "AAPL.NASDAQ"
     assert aapl["execution_account_scope_id"] == "hyperliquid.xyz.main"
     assert aapl["reference_account_scope_id"] == "ibkr.reference.main"
     assert aapl["hedge_account_scope_id"] == "ibkr.hedge.main"
+
+
+def test_equities_live_config_allows_multiple_routes_for_same_portfolio_asset() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    rows = config["strategy_contracts"]
+    pltr_rows = [row for row in rows if row["portfolio_asset_id"] == "PLTR"]
+
+    assert {row["maker_venue"] for row in pltr_rows} == {"HYPERLIQUID", "BINANCE_PERP"}
+    assert len({row["strategy_id"] for row in pltr_rows}) == len(pltr_rows)
 
 
 def test_equities_live_config_declares_shared_account_scopes() -> None:
@@ -499,6 +666,12 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
 
     assert scopes["hyperliquid.xyz.main"]["provider"] == "hyperliquid"
     assert scopes["hyperliquid.xyz.main"]["venue"] == "HYPERLIQUID"
+    assert scopes["binance.futures.main"]["provider"] == "binance"
+    assert scopes["binance.futures.main"]["venue"] == "BINANCE_PERP"
+    assert scopes["binance.futures.main"]["api_key_env"] == "EQUITIES_BINANCE_API_KEY"
+    assert scopes["binance.futures.main"]["api_secret_env"] == "EQUITIES_BINANCE_API_SECRET"
+    assert scopes["binance.futures.main"]["account_type"] == "USDT_FUTURES"
+    assert scopes["binance.futures.main"]["private_api_family"] == "PORTFOLIO_MARGIN"
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
@@ -514,42 +687,48 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert "twofa_timeout_action" not in hedge_gateway
 
 
-def test_equities_live_config_strategy_contracts_cover_core_prod_routes_only() -> None:
+def test_equities_live_config_strategy_contracts_cover_core_prod_routes_and_deployed_multivenue_rows(
+) -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     rows = config["strategy_contracts"]
     strategy_ids = [entry["strategy_id"] for entry in rows]
-    portfolio_asset_ids = [entry["portfolio_asset_id"] for entry in rows]
 
-    assert len(rows) == len(CORE_PROD_STRATEGIES)
+    assert len(rows) == len(CORE_PROD_STRATEGIES) + len(DEPLOYED_MULTIVENUE_ROUTE_IDS)
     assert len(strategy_ids) == len(set(strategy_ids))
-    assert len(portfolio_asset_ids) == len(set(portfolio_asset_ids))
 
     contracts = {
         entry["strategy_id"]: (
             entry["portfolio_asset_id"],
+            entry["maker_venue"],
+            entry["maker_symbol"],
+            entry["market_type"],
             entry["maker_instrument_id"],
             entry["reference_instrument_id"],
         )
         for entry in rows
     }
 
-    assert set(contracts) == set(CORE_PROD_STRATEGY_IDS)
+    assert set(CORE_PROD_STRATEGY_IDS).issubset(contracts)
+    assert set(DEPLOYED_MULTIVENUE_ROUTE_IDS).issubset(contracts)
     for entry in CORE_PROD_STRATEGIES:
         assert contracts[entry["strategy_id"]] == (
             entry["symbol"],
+            "HYPERLIQUID",
+            entry["symbol"],
+            "perp",
             entry["hyperliquid_instrument_id"],
             entry["ibkr_instrument_id"],
         )
+    for strategy_id, expected in DECLARED_MULTIVENUE_ROUTE_CONTRACTS.items():
+        assert contracts[strategy_id] == expected
 
 
 def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
     repo_root = _repo_root()
     client_ids: list[int] = []
 
-    for entry in CORE_PROD_STRATEGIES:
-        active_config = _load_toml(
-            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
-        )
+    for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
+        active_config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
         client_ids.append(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert len(client_ids) == len(set(client_ids))
@@ -565,10 +744,8 @@ def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_id
     }
     strategy_client_ids: set[int] = set()
 
-    for entry in CORE_PROD_STRATEGIES:
-        active_config = _load_toml(
-            repo_root / f"deploy/equities/strategies/{entry['strategy_id']}.toml",
-        )
+    for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
+        active_config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
         strategy_client_ids.add(active_config["node"]["venues"]["IBKR"]["ibg_client_id"])
 
     assert shared_client_ids.isdisjoint(strategy_client_ids)
@@ -597,8 +774,26 @@ def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -
     assert "TRADE_XYZ_AGENT_PK=" in env_example
     assert "TRADE_XYZ_ACCOUNT_ADDRESS=" in env_example
     assert "TRADE_XYZ_VAULT_ADDRESS=" in env_example
+    assert "EQUITIES_BINANCE_API_KEY=" in env_example
+    assert "EQUITIES_BINANCE_API_SECRET=" in env_example
     assert "TWS_USERNAME=" in env_example
     assert "TWS_PASSWORD=" in env_example
+
+
+def test_equities_binance_discovery_and_env_contract_are_documented() -> None:
+    repo_root = _repo_root()
+    template = _read(repo_root / "deploy/equities/strategies/equities.strategy.template.toml")
+    env_example = _read(repo_root / "deploy/equities/equities_stack.env.example")
+    common_env = _read(repo_root / "deploy/equities/systemd/common.env.example")
+    readme = _read(repo_root / "deploy/equities/README.md")
+
+    assert "BINANCE_PERP" in template
+    assert "EQUITIES_BINANCE_API_KEY=" in env_example
+    assert "EQUITIES_BINANCE_API_SECRET=" in env_example
+    assert "EQUITIES_BINANCE_API_KEY=" in common_env
+    assert "EQUITIES_BINANCE_API_SECRET=" in common_env
+    assert "binance_equities_universe.py" in readme
+    assert "Checked-in `.toml` strategy files are the enrolled set." in readme
 
 
 def test_equities_stack_honors_enable_execution_flag_for_nodes() -> None:
@@ -651,7 +846,9 @@ def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
     assert 'Wants=flux@equities-bridge.service' in target
     for strategy_id in CORE_PROD_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' in target
-    for strategy_id in NON_CORE_STRATEGY_IDS:
+    for strategy_id in DEPLOYED_MULTIVENUE_ROUTE_IDS:
+        assert f'Wants=flux@equities-node-{strategy_id}.service' in target
+    for strategy_id in REMOVED_MAKERV3_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' not in target
     assert 'deploy/equities/equities.live.toml' in install_script
     assert 'flux-equities.target' in install_script
@@ -678,11 +875,15 @@ def test_equities_systemd_assets_use_core_prod_service_names_only() -> None:
     assert 'TRADE_XYZ_AGENT_PK=' in common_env
     assert 'TRADE_XYZ_ACCOUNT_ADDRESS=' in common_env
     assert 'TRADE_XYZ_VAULT_ADDRESS=' in common_env
+    assert 'EQUITIES_BINANCE_API_KEY=' in common_env
+    assert 'EQUITIES_BINANCE_API_SECRET=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
     for strategy_id in CORE_PROD_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
-    for strategy_id in NON_CORE_STRATEGY_IDS:
+    for strategy_id in DEPLOYED_MULTIVENUE_ROUTE_IDS:
+        assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
+    for strategy_id in REMOVED_MAKERV3_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" not in sudoers
     assert "flux@*" not in sudoers
 
@@ -756,59 +957,38 @@ def test_equities_deploy_docs_keep_equities_routes_spa_only() -> None:
     )
 
 
-def test_equities_prod_admission_policy_baskets_are_exhaustive_and_disjoint() -> None:
-    tier1 = set(CORE_PROD_STRATEGY_IDS)
-    second_wave = set(SECOND_WAVE_DISABLED_STRATEGY_IDS)
-    decommissioned = set(DECOMMISSIONED_STRATEGY_IDS)
-
-    assert tier1.isdisjoint(second_wave)
-    assert tier1.isdisjoint(decommissioned)
-    assert second_wave.isdisjoint(decommissioned)
-    assert tier1 | second_wave | decommissioned == set(ACTIVE_STRATEGY_IDS)
+def test_equities_removed_makerv3_strategy_ids_are_disjoint_from_live_enrollment() -> None:
+    assert set(LIVE_ENROLLED_STRATEGY_IDS).isdisjoint(REMOVED_MAKERV3_STRATEGY_IDS)
+    assert set(CORE_PROD_STRATEGY_IDS).issubset(LIVE_ENROLLED_STRATEGY_IDS)
+    assert set(DEPLOYED_MULTIVENUE_ROUTE_IDS).issubset(LIVE_ENROLLED_STRATEGY_IDS)
 
 
-def test_equities_deploy_readme_freezes_prod_baskets_and_readd_policy() -> None:
+def test_equities_deploy_readme_freezes_enrolled_makerv4_routes() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
 
-    assert "current checked-in live config still carries the broad 23-name equities basket" in readme
-    assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
+    assert "The checked-in Pulse-managed equities universe is now the full `maker_v4` route set below." in readme
+    assert _extract_markdown_code_bullets(readme, "Enrolled Hyperliquid Routes", level=3) == CORE_PROD_STRATEGY_IDS
     assert (
-        _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
-        == SECOND_WAVE_DISABLED_STRATEGY_IDS
+        _extract_markdown_code_bullets(readme, "Enrolled Binance Routes", level=3)
+        == DEPLOYED_MULTIVENUE_ROUTE_IDS
     )
     assert (
-        _extract_markdown_code_bullets(
-            readme,
-            "Immediate Decommission / Out-of-Scope Basket",
-            level=3,
-        )
-        == DECOMMISSIONED_STRATEGY_IDS
-    )
-    assert (
-        _extract_markdown_numbered_list(
-            readme,
-            "Admission Policy for Any Future Re-Add",
-            level=3,
-        )
-        == ADMISSION_POLICY_LINES
+        _extract_markdown_code_bullets(readme, "Removed MakerV3 Files", level=3)
+        == REMOVED_MAKERV3_STRATEGY_IDS
     )
 
 
-def test_equities_strategy_readme_freezes_prod_baskets() -> None:
+def test_equities_strategy_readme_freezes_enrolled_makerv4_routes() -> None:
     readme = _read(_repo_root() / "deploy/equities/strategies/README.md")
 
-    assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
+    assert _extract_markdown_code_bullets(readme, "Enrolled Hyperliquid Routes", level=3) == CORE_PROD_STRATEGY_IDS
     assert (
-        _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
-        == SECOND_WAVE_DISABLED_STRATEGY_IDS
+        _extract_markdown_code_bullets(readme, "Enrolled Binance Routes", level=3)
+        == DEPLOYED_MULTIVENUE_ROUTE_IDS
     )
     assert (
-        _extract_markdown_code_bullets(
-            readme,
-            "Immediate Decommission / Out-of-Scope Basket",
-            level=3,
-        )
-        == DECOMMISSIONED_STRATEGY_IDS
+        _extract_markdown_code_bullets(readme, "Removed MakerV3 Files", level=3)
+        == REMOVED_MAKERV3_STRATEGY_IDS
     )
 
 
@@ -912,22 +1092,27 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "`[[account_scopes]]`" in readme
     assert "ibkr.reference.main" in readme
     assert "hyperliquid.xyz.main" in readme
+    assert "maker_venue" in readme
+    assert "portfolio_asset_id" in readme
+    assert "binance.futures.main" in readme
+    assert "older manifests must be upgraded" in readme
     assert "AAPL.NASDAQ" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
-    assert "shared IBKR contract entry must mirror the active canary route" in readme
+    assert "Shared IBKR contract entry must mirror the active enrolled route set before restart" in readme
     assert "vault_address_env" in readme
     assert 'use_regular_trading_hours = false' in readme
     assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
     assert 'twofa_timeout_action = "exit"' in readme
 
     assert "<stock>_tradexyz_makerv4.toml" in strategies_readme
-    assert "aapl_tradexyz_makerv3.toml.disabled" in strategies_readme
+    assert "dead `maker_v3` files have been removed from discovery" in strategies_readme
     assert "AAPL.NASDAQ" in strategies_readme
     assert "use_regular_trading_hours = false" in strategies_readme
     assert "manage_container = false" in strategies_readme
     assert "TRADE_XYZ_VAULT_ADDRESS" in strategies_readme
+    assert "multiple strategy routes can share one canonical stock bucket" in strategies_readme.lower()
     assert (
-        "Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument"
+        "Keep the shared `[[contracts]]` IBKR entry aligned with the active enrolled reference instrument set before restart."
         in strategies_readme
     )
     assert "TWS_USERNAME" in strategies_readme
@@ -950,11 +1135,15 @@ def test_equities_docs_reference_profile_and_portfolio_contracts() -> None:
     assert "[[account_scopes]]" in live_config
     assert 'scope_id = "ibkr.reference.main"' in live_config
     assert 'scope_id = "hyperliquid.xyz.main"' in live_config
+    assert 'scope_id = "binance.futures.main"' in live_config
+    assert 'strategy_id = "pltr_binance_perp_makerv4"' in live_config
+    assert 'maker_venue = "BINANCE_PERP"' in live_config
+    assert 'instrument_id = "PLTRUSDT-PERP.BINANCE_PERP"' in live_config
     assert "equities_strategy_ids" in live_config
     assert f'strategy_class = "{ACTIVE_STRATEGY_CLASS}"' in live_config
-    for strategy_id in CORE_PROD_STRATEGY_IDS:
+    for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
         assert strategy_id in live_config
-    for strategy_id in SECOND_WAVE_DISABLED_STRATEGY_IDS + DECOMMISSIONED_STRATEGY_IDS:
+    for strategy_id in REMOVED_MAKERV3_STRATEGY_IDS:
         assert strategy_id not in live_config
 
     assert "/equities" in contract

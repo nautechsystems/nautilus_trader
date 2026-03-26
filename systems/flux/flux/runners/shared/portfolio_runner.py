@@ -236,9 +236,10 @@ class StrategySetPortfolioAggregator:
         self,
         *,
         now_ms_value: int,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         published_rows: list[dict[str, Any]] = []
         published_totals: dict[str, Any] = {}
+        published_scope_status: list[dict[str, Any]] = []
         for binding in getattr(self, "_profile_account_bindings", ()):
             provider = binding.provider
             if provider is None:
@@ -261,7 +262,22 @@ class StrategySetPortfolioAggregator:
             snapshot_totals = snapshot.get("totals")
             if isinstance(snapshot_totals, Mapping):
                 published_totals = _merge_account_totals(published_totals, snapshot_totals)
-            if not snapshot["rows"] and not snapshot_totals:
+            snapshot_scope_status = snapshot.get("scope_status")
+            if isinstance(snapshot_scope_status, list):
+                published_scope_status.extend(
+                    dict(scope)
+                    for scope in snapshot_scope_status
+                    if isinstance(scope, Mapping)
+                )
+            key = self._profile_account_projection_key(account_scope_id=binding.account_scope_id)
+            if (
+                not snapshot["rows"]
+                and not snapshot_totals
+                and not snapshot_scope_status
+            ):
+                delete = getattr(self._redis, "delete", None)
+                if callable(delete):
+                    delete(key)
                 continue
             published_rows.extend(
                 dict(row)
@@ -269,7 +285,6 @@ class StrategySetPortfolioAggregator:
                 if isinstance(row, Mapping)
             )
             encoded = encode_profile_account_snapshot(snapshot)
-            key = self._profile_account_projection_key(account_scope_id=binding.account_scope_id)
             previous = self._redis.get(key)
             self._redis.set(key, encoded)
             if previous != encoded.encode():
@@ -277,11 +292,11 @@ class StrategySetPortfolioAggregator:
                     self._profile_account_projection_channel(account_scope_id=binding.account_scope_id),
                     encoded,
                 )
-        return published_rows, published_totals
+        return published_rows, published_totals, published_scope_status
 
     def recompute_once(self) -> None:
         now_ms_value = int(time.time() * 1000)
-        account_rows, account_totals = self._publish_profile_account_projections(
+        account_rows, account_totals, account_scope_status = self._publish_profile_account_projections(
             now_ms_value=now_ms_value,
         )
         balances_pipeline = self._redis.pipeline(transaction=False)
@@ -341,6 +356,7 @@ class StrategySetPortfolioAggregator:
             inventory_by_asset=inventory_by_asset,
             balance_rows=merged_balance_rows,
             account_rows=account_rows,
+            account_scope_status=account_scope_status,
             account_totals=account_totals,
             now_ms_value=now_ms_value,
         )

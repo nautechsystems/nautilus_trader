@@ -727,7 +727,13 @@ def _derive_quote_snapshot_v4(
         if isinstance(raw_quote_snapshot, Mapping):
             quote_snapshot = dict(raw_quote_snapshot)
 
+    ibkr_max_quote_age_ms = (
+        safe_int(quote_snapshot.get("max_ibkr_quote_age_ms"))
+        or safe_int(params.get("max_ibkr_quote_age_ms"))
+        or 1_000
+    )
     quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
+    quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
             quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
@@ -742,7 +748,7 @@ def _derive_quote_snapshot_v4(
             hedge_leg,
         ),
         leg_role="hedge",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     quote_snapshot["ref_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
@@ -750,7 +756,7 @@ def _derive_quote_snapshot_v4(
             ref_leg,
         ),
         leg_role="reference",
-        max_quote_age_ms=safe_int(params.get("max_ibkr_quote_age_ms")) or 1_000,
+        max_quote_age_ms=ibkr_max_quote_age_ms,
     )
     hedge_leg_id_text = decode_text(hedge_leg_id).strip()
     if hedge_leg_id_text:
@@ -875,11 +881,15 @@ def _derive_makerv4_operator_payload(
                 fee_assumptions_map.get("ibkr_fee_min_usd"),
                 quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
             ),
-            "hl_taker_fee_bps": _first_valid_float(
+            "maker_taker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_taker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_taker_fee_bps"),
                 fee_assumptions_map.get("hl_taker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_taker_fee_bps"),
             ),
-            "hl_maker_fee_bps": _first_valid_float(
+            "maker_maker_fee_bps": _first_valid_float(
+                fee_assumptions_map.get("maker_maker_fee_bps"),
+                quote_fee_assumptions_map.get("maker_maker_fee_bps"),
                 fee_assumptions_map.get("hl_maker_fee_bps"),
                 quote_fee_assumptions_map.get("hl_maker_fee_bps"),
             ),
@@ -931,6 +941,30 @@ def _maker_v4_quote_health_blocks_new_risk(
     if _first_valid_bool(hedge_leg_map.get("hedge_usable")) is False:
         return True
     return False
+
+
+def _maker_v4_can_render_from_quote_snapshot_while_paused(
+    *,
+    state: Mapping[str, Any],
+    quote_snapshot: Mapping[str, Any] | None,
+    bot_on: bool,
+    maker_leg: Mapping[str, Any] | None,
+    ref_leg: Mapping[str, Any] | None,
+) -> bool:
+    if bot_on:
+        return False
+    if not isinstance(quote_snapshot, Mapping):
+        return False
+    live_maker_ts_ms = coerce_ts_ms(maker_leg.get("ts_ms")) if isinstance(maker_leg, Mapping) else None
+    live_ref_ts_ms = coerce_ts_ms(ref_leg.get("ts_ms")) if isinstance(ref_leg, Mapping) else None
+    if live_maker_ts_ms is None:
+        return False
+    if live_ref_ts_ms is None:
+        return False
+    return not _maker_v4_quote_health_blocks_new_risk(
+        state=state,
+        quote_snapshot=quote_snapshot,
+    )
 
 
 def _derive_quote_snapshot(
@@ -1071,7 +1105,34 @@ def _derive_quote_snapshot(
     return quote_snapshot
 
 
-def _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+def _quote_snapshot_raw_market_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
+    if not isinstance(quote_snapshot, Mapping):
+        return None
+    maker_bid = _first_valid_float(
+        quote_snapshot.get("maker_top_bid"),
+        quote_snapshot.get("bid"),
+    )
+    maker_ask = _first_valid_float(
+        quote_snapshot.get("maker_top_ask"),
+        quote_snapshot.get("ask"),
+    )
+    ref_bid = _first_valid_float(quote_snapshot.get("ref_bid"))
+    ref_ask = _first_valid_float(quote_snapshot.get("ref_ask"))
+    if (
+        maker_bid is None
+        or maker_ask is None
+        or ref_bid is None
+        or ref_ask is None
+    ):
+        return None
+    ref_mid = (ref_bid + ref_ask) / 2.0
+    if not ref_mid:
+        return None
+    market_mid = (maker_bid + maker_ask) / 2.0
+    return ((market_mid - ref_mid) / ref_mid) * 10_000.0
+
+
+def _quote_snapshot_quoted_mid_vs_ref_mid_bps(quote_snapshot: Mapping[str, Any] | None) -> float | None:
     if not isinstance(quote_snapshot, Mapping):
         return None
     place_bid = _first_valid_float(quote_snapshot.get("place_bid"))
@@ -1297,13 +1358,14 @@ def build_signals_payload_impl(
     )
 
     if strategy_family == "maker_v3":
-        quote_spread_bps = _quote_snapshot_market_vs_ref_mid_bps(quote_snapshot)
-        if quote_spread_bps is not None:
-            spread_net_bps = quote_spread_bps
-            if explicit_decision_edge_bps is None:
-                decision_edge_bps = quote_spread_bps
-                if explicit_edge2_bps is None and required_edge_bps is not None:
-                    edge2_bps = decision_edge_bps - required_edge_bps
+        raw_spread_bps = _quote_snapshot_raw_market_vs_ref_mid_bps(quote_snapshot)
+        if raw_spread_bps is not None:
+            spread_net_bps = raw_spread_bps
+        quote_spread_bps = _quote_snapshot_quoted_mid_vs_ref_mid_bps(quote_snapshot)
+        if quote_spread_bps is not None and explicit_decision_edge_bps is None:
+            decision_edge_bps = quote_spread_bps
+            if explicit_edge2_bps is None and required_edge_bps is not None:
+                edge2_bps = decision_edge_bps - required_edge_bps
 
     state_quote_status = state.get("maker_quote_status")
     maker_quote_status = (
@@ -1327,10 +1389,23 @@ def build_signals_payload_impl(
     tradeable = bot_on and not state_blocked
     near_tradeable = False
     blocked = (not bot_on) or state_blocked
+    def _is_side_local_quote_blocker(blocker: Mapping[str, Any]) -> bool:
+        blocked_side = decode_text(blocker.get("blocked_side")).strip().upper()
+        if blocked_side not in {"BUY", "SELL"}:
+            return False
+        if maker_quote_status is None:
+            return False
+        opposite_prefix = "ask" if blocked_side == "BUY" else "bid"
+        opposite_open = safe_int(maker_quote_status.get(f"{opposite_prefix}_open")) or 0
+        opposite_depth = safe_int(maker_quote_status.get(f"{opposite_prefix}_depth")) or 0
+        opposite_blocked = safe_int(maker_quote_status.get(f"{opposite_prefix}_blocked")) or 0
+        return max(opposite_open, opposite_depth - opposite_blocked) > 0
+
     blocking_quote_blockers = [
         row
         for row in quote_blockers
         if decode_text(row.get("reason_code")).strip().lower() not in {"", "pending_cancel_in_flight"}
+        and not _is_side_local_quote_blocker(row)
     ]
     if blocking_quote_blockers:
         tradeable = False
@@ -1386,7 +1461,18 @@ def build_signals_payload_impl(
     elif top_level_ts_ms is None and has_partial_strategy_state:
         state_stale = True
 
-    if state_stale:
+    suppress_state_stale_block = (
+        strategy_family == "maker_v4"
+        and _maker_v4_can_render_from_quote_snapshot_while_paused(
+            state=state,
+            quote_snapshot=quote_snapshot,
+            bot_on=bot_on,
+            maker_leg=maker_leg,
+            ref_leg=ref_leg,
+        )
+    )
+
+    if state_stale and not suppress_state_stale_block:
         managed = 0
         tradeable = False
         blocked = True
@@ -1400,7 +1486,7 @@ def build_signals_payload_impl(
         }
     md_health["state_stale"] = state_stale
 
-    if state_stale:
+    if state_stale and not suppress_state_stale_block:
         top_level_mode = "STALE"
         top_level_reason = "stale_state"
         top_level_skew_bps = None
@@ -1409,10 +1495,13 @@ def build_signals_payload_impl(
             quote_snapshot=quote_snapshot,
             bot_on=bot_on,
         )
-        top_level_reason = _top_level_signal_reason(
-            state=state,
-            quote_snapshot=quote_snapshot,
-        )
+        if suppress_state_stale_block and not bot_on:
+            top_level_reason = "bot_off"
+        else:
+            top_level_reason = _top_level_signal_reason(
+                state=state,
+                quote_snapshot=quote_snapshot,
+            )
         top_level_skew_bps = _top_level_signal_signed_skew_bps(
             pricing_adjustments=pricing_adjustments,
             quote_snapshot=quote_snapshot,

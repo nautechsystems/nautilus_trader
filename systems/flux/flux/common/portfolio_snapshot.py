@@ -116,6 +116,7 @@ def build_portfolio_snapshot_v2(
     inventory_by_asset: Mapping[str, Mapping[str, Any]],
     balance_rows: Sequence[Mapping[str, Any]],
     account_rows: Sequence[Mapping[str, Any]],
+    account_scope_status: Sequence[Mapping[str, Any]] | None = None,
     account_totals: Mapping[str, Any] | None = None,
     now_ms_value: int,
 ) -> dict[str, Any]:
@@ -134,6 +135,12 @@ def build_portfolio_snapshot_v2(
         },
         "server_ts_ms": int(now_ms_value),
     }
+    if account_scope_status:
+        payload["accounts"]["scope_status"] = [
+            dict(scope)
+            for scope in account_scope_status
+            if isinstance(scope, Mapping)
+        ]
     if isinstance(account_totals, Mapping) and account_totals:
         payload["accounts"]["totals"] = dict(account_totals)
     _apply_single_asset_legacy_aliases(
@@ -173,6 +180,7 @@ def build_portfolio_snapshot(
         inventory_by_asset={base_currency.upper(): inventory},
         balance_rows=balance_rows,
         account_rows=[],
+        account_scope_status=None,
         account_totals=None,
         now_ms_value=now_ms_value,
     )

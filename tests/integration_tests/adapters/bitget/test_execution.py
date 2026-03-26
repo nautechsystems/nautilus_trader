@@ -797,6 +797,44 @@ def test_handle_account_channel_uta_prefers_coin_balance_for_total_and_reserved_
     assert generated[0]["ts_event"] == millis_to_nanos(1708883201888)
 
 
+def test_handle_account_channel_uta_derives_free_when_available_breaks_total_invariant() -> None:
+    generated: list[dict] = []
+    payload = {
+        "action": "snapshot",
+        "arg": {"instType": "UTA", "topic": "account"},
+        "data": [
+            {
+                "coin": [
+                    {
+                        "coin": "USDT",
+                        "available": "-277.12521842",
+                        "balance": "-325.56326481",
+                        "locked": "9.95000000",
+                        "uTime": "1708883201888",
+                    },
+                ],
+            },
+        ],
+        "ts": 1708883201888,
+    }
+    dummy = SimpleNamespace(
+        generate_account_state=lambda **kwargs: generated.append(kwargs),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    BitgetExecutionClient._handle_account_channel(dummy, payload)  # type: ignore[arg-type]
+
+    assert len(generated) == 1
+    balance = generated[0]["balances"][0]
+    assert str(balance.free) == "-335.51326481 USDT"
+    assert str(balance.locked) == "9.95000000 USDT"
+    assert str(balance.total) == "-325.56326481 USDT"
+    assert generated[0]["reported"] is True
+    assert generated[0]["ts_event"] == millis_to_nanos(1708883201888)
+
+
 def test_handle_orders_channel_generates_order_accepted() -> None:
     accepted: list[dict] = []
     warnings: list[str] = []
@@ -1460,6 +1498,77 @@ def test_handle_positions_channel_uta_preserves_base_coin_position_quantity() ->
     assert report.quantity == Quantity.from_str("250030")
     assert report.avg_px_open == Decimal("0.01192")
     assert report.venue_position_id == PositionId("p-uta-plume-1")
+
+
+def test_handle_positions_channel_uta_falls_back_to_provider_when_cache_symbol_lookup_is_cold() -> None:
+    reports: list[object] = []
+    warnings: list[str] = []
+
+    def _make_qty(value, round_down=True):
+        del round_down
+        return Quantity.from_str(str(value))
+
+    futures_instrument = SimpleNamespace(
+        id="PLUMEUSDT-PERP.BITGET",
+        raw_symbol=SimpleNamespace(value="PLUMEUSDT"),
+        size_precision=4,
+        multiplier=Decimal("1"),
+        size_increment=Quantity.from_str("10"),
+        base_currency="PLUME",
+        quote_currency="USDT",
+        settlement_currency="USDT",
+        is_inverse=False,
+        make_qty=_make_qty,
+    )
+    provider_lookups: list[object] = []
+    dummy = SimpleNamespace(
+        account_id="ACC-001",
+        _cache=SimpleNamespace(
+            instrument_ids=lambda venue=None: [],
+            instrument=lambda _instrument_id: None,
+        ),
+        _instrument_provider=SimpleNamespace(
+            find=lambda instrument_id: provider_lookups.append(instrument_id) or futures_instrument,
+        ),
+        _config=SimpleNamespace(account_mode="UTA"),
+        _clock=SimpleNamespace(timestamp_ns=lambda: 0),
+        _send_position_status_report=lambda report: reports.append(report),
+        _log=SimpleNamespace(
+            debug=lambda *_args, **_kwargs: None,
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda message, *_args, **_kwargs: warnings.append(message),
+        ),
+    )
+
+    BitgetExecutionClient._handle_positions_channel(  # type: ignore[arg-type]
+        dummy,
+        {
+            "action": "snapshot",
+            "arg": {"instType": "UTA", "topic": "position"},
+            "data": [
+                {
+                    "symbol": "PLUMEUSDT",
+                    "instId": "",
+                    "posId": "p-uta-plume-cold-cache",
+                    "posSide": "short",
+                    "available": "64820",
+                    "avgPrice": "0.010877270077",
+                    "marginMode": "crossed",
+                    "uTime": "1708883200123",
+                },
+            ],
+        },
+    )
+
+    assert warnings == []
+    assert provider_lookups
+    assert len(reports) == 1
+    report = reports[0]
+    assert report.instrument_id == "PLUMEUSDT-PERP.BITGET"
+    assert report.position_side == PositionSide.SHORT
+    assert report.quantity == Quantity.from_str("64820")
+    assert report.avg_px_open == Decimal("0.010877270077")
+    assert report.venue_position_id == PositionId("p-uta-plume-cold-cache")
 
 
 def test_handle_positions_channel_uta_uses_size_field_for_quantity() -> None:

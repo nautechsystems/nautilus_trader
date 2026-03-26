@@ -9,6 +9,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -29,12 +30,14 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from flux.common.keys import FluxRedisKeys
 from ops.scripts.exporters.common import poll_interval_seconds_arg
 
 LOGGER = logging.getLogger("tokenmm_metrics_exporter")
 
-LABEL_NAMES = ("env", "token", "venue", "symbol", "strategy_family")
+LABEL_NAMES = ("env", "strategy_id", "token", "venue", "symbol", "strategy_family")
+FLUX_DEFAULT_NAMESPACE = "flux"
+FLUX_SCHEMA_VERSION = "v1"
+_IDENTIFIER_SAFE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DEFAULT_STRATEGY_IDS = (
     "plumeusdt_bybit_perp_makerv3",
     "plumeusdt_bybit_spot_makerv3",
@@ -95,6 +98,47 @@ apply_inventory_skew_to_edges = _load_pricing_helper("apply_inventory_skew_to_ed
 build_ladder_place_cancel_levels_from_bps = _load_pricing_helper(
     "build_ladder_place_cancel_levels_from_bps",
 )
+
+
+def _validate_identifier_part(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"`{field_name}` must be a non-empty string")
+    if _IDENTIFIER_SAFE_PATTERN.fullmatch(value) is None:
+        raise ValueError(
+            f"`{field_name}` was not identifier-safe: {value!r}. "
+            "Allowed characters are letters, digits, '.', '_' and '-'.",
+        )
+    return value
+
+
+def _validate_schema_version(value: str, field_name: str = "schema_version") -> str:
+    _validate_identifier_part(value, field_name)
+    if value != FLUX_SCHEMA_VERSION:
+        raise ValueError(
+            f"`{field_name}` was unsupported: {value!r}. "
+            f"Supported schema version is {FLUX_SCHEMA_VERSION!r}.",
+        )
+    return value
+
+
+def _flux_key_prefix(
+    *,
+    namespace: str = FLUX_DEFAULT_NAMESPACE,
+    schema_version: str = FLUX_SCHEMA_VERSION,
+) -> str:
+    safe_namespace = _validate_identifier_part(namespace, "namespace")
+    safe_schema_version = _validate_schema_version(schema_version, "schema_version")
+    return f"{safe_namespace}:{safe_schema_version}"
+
+
+def _flux_state_key(strategy_id: str) -> str:
+    safe_strategy_id = _validate_identifier_part(strategy_id, "strategy_id")
+    return f"{_flux_key_prefix()}:state:{safe_strategy_id}"
+
+
+def _flux_params_hash_key(strategy_id: str) -> str:
+    safe_strategy_id = _validate_identifier_part(strategy_id, "strategy_id")
+    return f"{_flux_key_prefix()}:params:{safe_strategy_id}"
 
 
 def _env(name: str, default: str) -> str:
@@ -412,6 +456,7 @@ class StrategyContext:
     def labels(self, env: str) -> dict[str, str]:
         return {
             "env": env,
+            "strategy_id": self.strategy_id,
             "token": self.token,
             "venue": self.venue,
             "symbol": self.symbol,
@@ -699,10 +744,10 @@ class TokenMMMetricsExporter:
             context.token = _symbol_base(symbol)
 
     def _state_key(self, strategy_id: str) -> str:
-        return FluxRedisKeys(strategy_id=strategy_id).state()
+        return _flux_state_key(strategy_id)
 
     def _params_key(self, strategy_id: str) -> str:
-        return FluxRedisKeys(strategy_id=strategy_id).params_hash_key()
+        return _flux_params_hash_key(strategy_id)
 
     def _load_state(self, strategy_id: str) -> dict[str, Any]:
         primary_raw = self.redis.get(self._state_key(strategy_id))

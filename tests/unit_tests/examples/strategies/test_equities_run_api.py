@@ -9,6 +9,7 @@ from flask import Flask
 
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
+from flux.runners.equities.run_api import _build_strategy_alerts_resolver
 from flux.runners.equities.run_api import _build_contract_catalog
 from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
 from flux.runners.equities.run_api import _build_profile_strategy_maps
@@ -20,20 +21,6 @@ from flux.runners.equities.run_api import _resolve_runtime_params_payloads
 from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
-
-CORE_PROD_STRATEGY_IDS = (
-    "aapl_tradexyz_makerv4",
-    "amd_tradexyz_makerv4",
-    "amzn_tradexyz_makerv4",
-    "googl_tradexyz_makerv4",
-    "meta_tradexyz_makerv4",
-    "msft_tradexyz_makerv4",
-    "nvda_tradexyz_makerv4",
-    "orcl_tradexyz_makerv4",
-    "pltr_tradexyz_makerv4",
-    "tsla_tradexyz_makerv4",
-)
-
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -59,11 +46,13 @@ def test_build_profile_strategy_maps_reads_equities_allowlist_and_required_subse
 
 def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    expected_strategy_ids = list(config["api"]["equities_strategy_ids"])
+    expected_required_strategy_ids = list(config["api"]["equities_required_strategy_ids"])
 
     strategy_map, required_map = _build_profile_strategy_maps(config["api"])
 
-    assert strategy_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
-    assert required_map == {"equities": list(CORE_PROD_STRATEGY_IDS)}
+    assert strategy_map == {"equities": expected_strategy_ids}
+    assert required_map == {"equities": expected_required_strategy_ids}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:
@@ -121,6 +110,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv3",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -129,6 +121,9 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
                 {
                     "strategy_id": "aapl_tradexyz_makerv4",
                     "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
                     "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "reference_instrument_id": "AAPL.NASDAQ",
                     "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -143,6 +138,46 @@ def test_equities_run_api_can_publish_per_strategy_family_metadata() -> None:
     assert metadata["aapl_tradexyz_makerv3"].strategy_family == "maker_v3"
     assert metadata["aapl_tradexyz_makerv4"].base_asset == "AAPL"
     assert metadata["aapl_tradexyz_makerv4"].strategy_family == "maker_v4"
+
+
+def test_equities_run_api_keeps_same_stock_multivenue_routes_distinct_in_metadata() -> None:
+    metadata = build_equities_strategy_metadata_map(
+        {
+            "strategy_groups": "equities",
+            "quote_asset": "USD",
+            "strategy_contracts": [
+                {
+                    "strategy_id": "pltr_tradexyz_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "PLTR",
+                    "market_type": "perp",
+                    "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+                {
+                    "strategy_id": "pltr_binance_perp_makerv4",
+                    "portfolio_asset_id": "PLTR",
+                    "maker_venue": "BINANCE_PERP",
+                    "maker_symbol": "PLTRUSDT",
+                    "market_type": "perp",
+                    "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                    "reference_instrument_id": "PLTR.NASDAQ",
+                    "execution_account_scope_id": "binance.futures.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                },
+            ],
+        },
+        strategy_ids=["pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"],
+    )
+
+    assert set(metadata) == {"pltr_tradexyz_makerv4", "pltr_binance_perp_makerv4"}
+    assert metadata["pltr_tradexyz_makerv4"].base_asset == "PLTR"
+    assert metadata["pltr_binance_perp_makerv4"].base_asset == "PLTR"
+    assert metadata["pltr_tradexyz_makerv4"].strategy_family == "maker_v4"
+    assert metadata["pltr_binance_perp_makerv4"].strategy_family == "maker_v4"
 
 
 def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
@@ -175,6 +210,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "aapl_tradexyz_makerv4",
                 "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AAPL.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -183,6 +221,9 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
             {
                 "strategy_id": "amd_tradexyz_makerv4",
                 "portfolio_asset_id": "AMD",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AMD",
+                "market_type": "perp",
                 "maker_instrument_id": "xyz:AMD-USD-PERP.HYPERLIQUID",
                 "reference_instrument_id": "AMD.NASDAQ",
                 "execution_account_scope_id": "hyperliquid.xyz.main",
@@ -204,6 +245,71 @@ def test_equities_run_api_builds_per_strategy_contract_catalog() -> None:
     assert [entry.instrument_id for entry in contracts_by_strategy["amd_tradexyz_makerv4"]] == [
         "XYZ:AMD-USD-PERP.HYPERLIQUID",
         "AMD.NASDAQ",
+    ]
+
+
+def test_equities_run_api_keeps_multivenue_routes_separate_in_contract_catalog() -> None:
+    config = {
+        "contracts": [
+            {
+                "exchange": "hyperliquid",
+                "symbol": "PLTR/USD",
+                "instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+            },
+            {
+                "exchange": "binance_perp",
+                "symbol": "PLTR/USDT",
+                "instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+            },
+            {
+                "exchange": "ibkr",
+                "symbol": "PLTR/USD",
+                "instrument_id": "PLTR.NASDAQ",
+            },
+        ],
+    }
+    api_cfg = {
+        "strategy_contracts": [
+            {
+                "strategy_id": "pltr_tradexyz_makerv4",
+                "portfolio_asset_id": "PLTR",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "PLTR",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:PLTR-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "PLTR.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "pltr_binance_perp_makerv4",
+                "portfolio_asset_id": "PLTR",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "PLTRUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "PLTRUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLTR.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+    }
+
+    contracts = _build_contract_catalog(config)
+    contracts_by_strategy = _build_contract_catalog_by_strategy(
+        api_cfg,
+        contract_catalog=contracts,
+    )
+
+    assert [entry.instrument_id for entry in contracts_by_strategy["pltr_tradexyz_makerv4"]] == [
+        "XYZ:PLTR-USD-PERP.HYPERLIQUID",
+        "PLTR.NASDAQ",
+    ]
+    assert [
+        entry.instrument_id for entry in contracts_by_strategy["pltr_binance_perp_makerv4"]
+    ] == [
+        "PLTRUSDT-PERP.BINANCE_PERP",
+        "PLTR.NASDAQ",
     ]
 
 
@@ -238,6 +344,91 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_
     assert pulse.calls == [
         "equities-node-aapl_tradexyz_makerv4",
         "equities-node-meta_tradexyz_makerv4",
+    ]
+
+
+def test_build_strategy_alerts_resolver_surfaces_pulse_failures_but_ignores_active_error_logs() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_snapshot(self, job_id: str) -> dict[str, object] | None:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz_makerv4": {
+                    "id": job_id,
+                    "status": "failed",
+                    "errors": {
+                        "count": 2,
+                        "last_seen": "2026-03-19T11:43:02Z",
+                        "preview": "Invalid API-key, IP, or permissions for action",
+                    },
+                },
+                "equities-node-meta_tradexyz_makerv4": {
+                    "id": job_id,
+                    "status": "active",
+                    "errors": {
+                        "count": 1,
+                        "last_seen": "2026-03-19T11:43:10Z",
+                        "preview": "Binance API key does not have trading permissions",
+                    },
+                },
+            }.get(job_id)
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_alerts_resolver(
+        pulse_control=pulse,
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_763_289_790_000,
+    )
+
+    rows_by_strategy = resolver(
+        [
+            "aapl_tradexyz_makerv4",
+            "meta_tradexyz_makerv4",
+            "missing_tradexyz_makerv4",
+        ],
+    )
+
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz_makerv4",
+        "equities-node-meta_tradexyz_makerv4",
+        "equities-node-missing_tradexyz_makerv4",
+    ]
+    assert rows_by_strategy["aapl_tradexyz_makerv4"] == [
+        {
+            "strategy_id": "aapl_tradexyz_makerv4",
+            "row_id": "pulse:aapl_tradexyz_makerv4:pulse_job_failed:1773920582000",
+            "id": "pulse:aapl_tradexyz_makerv4:pulse_job_failed:1773920582000",
+            "level": "CRITICAL",
+            "message": "Pulse runner failed: Invalid API-key, IP, or permissions for action",
+            "alert_key": "pulse_job_failed",
+            "ts_ms": 1_773_920_582_000,
+            "source": "pulse",
+            "job_id": "equities-node-aapl_tradexyz_makerv4",
+            "status": "failed",
+            "error_preview": "Invalid API-key, IP, or permissions for action",
+            "error_count": 2,
+            "last_seen": "2026-03-19T11:43:02Z",
+        },
+    ]
+    assert rows_by_strategy["meta_tradexyz_makerv4"] == []
+    assert rows_by_strategy["missing_tradexyz_makerv4"] == [
+        {
+            "strategy_id": "missing_tradexyz_makerv4",
+            "row_id": "pulse:missing_tradexyz_makerv4:pulse_job_unknown:1763289790000",
+            "id": "pulse:missing_tradexyz_makerv4:pulse_job_unknown:1763289790000",
+            "level": "ERROR",
+            "message": "Pulse runner is not registered",
+            "alert_key": "pulse_job_unknown",
+            "ts_ms": 1_763_289_790_000,
+            "source": "pulse",
+            "job_id": "equities-node-missing_tradexyz_makerv4",
+            "status": "unknown",
+            "error_preview": None,
+            "error_count": 0,
+            "last_seen": None,
+        },
     ]
 
 

@@ -2,7 +2,10 @@ import asyncio
 from decimal import Decimal
 from functools import partial
 
+import ibapi.client as ib_client_module
 import pytest
+from ibapi.contract import Contract
+from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
 
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
@@ -116,6 +119,28 @@ def on_cancel_order_setup(exec_client, client, status, order_id, manual_cancel_o
             remaining=Decimal(100),
             venue_order_id=venue_order_id,
         )
+
+
+def test_create_place_order_request_proto_accepts_stock_primary_exchange():
+    contract = Contract()
+    contract.symbol = "AAPL"
+    contract.secType = "STK"
+    contract.exchange = "SMART"
+    contract.primaryExchange = "NASDAQ"
+    contract.currency = "USD"
+    contract.localSymbol = "AAPL"
+
+    order = IBOrder()
+    order.action = "BUY"
+    order.totalQuantity = 1
+    order.orderType = "LMT"
+    order.lmtPrice = 100.0
+    order.account = "DU123456"
+    order.orderRef = "test-order"
+
+    request = ib_client_module.createPlaceOrderRequestProto(1, contract, order)
+
+    assert request.contract.primaryExch == "NASDAQ"
 
 
 @pytest.mark.asyncio

@@ -29,17 +29,17 @@ def resolve_fee_rules(
     maker_fee_bps: Any | None,
     fee_snapshot_age_s: Any | None = None,
 ) -> MakerV4FeeRules:
-    maker_fee_source = str(runtime_params.get("maker_fee_source", "hyperliquid_api")).strip()
+    maker_fee_source = str(runtime_params.get("maker_fee_source", "config")).strip()
     hedge_fee_source = str(runtime_params.get("hedge_fee_source", "config")).strip()
     hedge_fee_plan = str(runtime_params.get("hedge_fee_plan", "ibkr_pro_tiered")).strip()
-    if maker_fee_source != "hyperliquid_api":
+    if maker_fee_source not in {"config", "hyperliquid_api"}:
         raise ValueError(f"Unsupported maker fee source: {maker_fee_source!r}")
     if hedge_fee_source != "config":
         raise ValueError(f"Unsupported hedge fee source: {hedge_fee_source!r}")
     if hedge_fee_plan != "ibkr_pro_tiered":
         raise ValueError(f"Unsupported hedge fee plan: {hedge_fee_plan!r}")
     if maker_fee_bps is None:
-        raise ValueError("`maker_fee_bps` is required when maker_fee_source=hyperliquid_api")
+        raise ValueError("`maker_fee_bps` is required when maker_fee_source uses configured fees")
 
     hedge_fee_bps = _to_decimal(
         runtime_params.get("assumed_hedge_fee_bps", "0"),

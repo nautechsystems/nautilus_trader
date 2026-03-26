@@ -87,6 +87,10 @@ def _seed_socket_rows(redis_client, flux_config, contract_catalog) -> None:
                 "side": "BUY",
                 "price": 100.0,
                 "qty": 1.5,
+                "qty_base": 1.5,
+                "qty_venue": 1.5,
+                "qty_conversion_status": "identity",
+                "qty_conversion_source": "generic:multiplier=1",
             },
         ],
     )
@@ -114,7 +118,6 @@ def _room_size(socket_server, room: str) -> int:
 def _take_socket_packets(client) -> list[dict]:
     return [packet for packet in client.get_received() if packet.get("name") in SOCKET_EVENT_NAMES]
 
-
 def _set_profile_without_background_emitter(
     client,
     emitter: FluxSocketEmitter,
@@ -127,6 +130,13 @@ def _set_profile_without_background_emitter(
         return client.emit("set_profile", {"profile": profile}, callback=True)
     finally:
         emitter.start = original_start
+
+def _prepare_profile_for_manual_emit(client, emitter, *, profile: str = "tokenmm") -> None:
+    _ = client.emit("set_profile", {"profile": profile}, callback=True)
+    emitter.stop()
+    _ = _take_socket_packets(client)
+    with emitter._lock:
+        emitter._cleanup_profile_state_locked(profile)
 
 
 class _TestSocketIO:
@@ -385,6 +395,10 @@ def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
                 "side": "BUY",
                 "price": 100.0,
                 "qty": 1.0,
+                "qty_base": 1.0,
+                "qty_venue": 1.0,
+                "qty_conversion_status": "identity",
+                "qty_conversion_source": "generic:multiplier=1",
             },
         ],
     )
@@ -413,6 +427,237 @@ def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
     assert trade_payload["op"] == "upsert"
     assert isinstance(trade_payload["trade"], dict)
     assert trade_payload["trade"]["seq"] == 1700000000200
+    client.disconnect()
+
+
+def test_socket_emitter_trade_update_projects_base_qty_when_explicit_fields_are_present(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-okx-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_base": "1000",
+                "qty_venue": "100",
+                "qty_conversion_status": "exact_multiplier",
+                "qty_conversion_source": "generic:multiplier",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    assert len(trade_packets) == 1
+    packet_payload = trade_packets[0]["args"][0]
+    trade_payload = packet_payload["trade"]
+    assert packet_payload["row_id"] == "trade-okx-001"
+    assert trade_payload["qty"] == "1000"
+    assert trade_payload["qty_base"] == "1000"
+    assert trade_payload["qty_venue"] == "100"
+    assert trade_payload["qty_conversion_status"] == "exact_multiplier"
+    assert trade_payload["row_id"] == "trade-okx-001"
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_requires_recovery_when_trade_rows_lack_normalized_qty(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-legacy-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+
+    assert trade_packets == []
+    assert len(market_packets) == 1
+    assert market_packets[0]["args"][0]["recovery"] == {"required": True, "reason": "trade_gap"}
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_requires_recovery_when_legacy_rows_fall_outside_scan_window(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-legacy-001",
+                "seq": 1,
+                "version": 1,
+                "ts_ms": 1_700_000_000_000,
+                "qty": "1",
+            },
+            *[
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": f"trade-{seq:04d}",
+                    "seq": seq,
+                    "version": 1,
+                    "ts_ms": 1_700_000_000_000 + seq,
+                    "qty": "1",
+                    "qty_base": "1",
+                    "qty_venue": "1",
+                }
+                for seq in range(2, 2_002)
+            ],
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+
+    assert trade_packets == []
+    assert len(market_packets) == 1
+    assert market_packets[0]["args"][0]["recovery"] == {"required": True, "reason": "trade_gap"}
+    client.disconnect()
+
+
+def test_socket_emitter_tokenmm_revalidates_stream_when_new_legacy_rows_arrive_after_clean_tick(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    _seed_socket_rows(redis_client, flux_config, contract_catalog)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+    _ = _take_socket_packets(client)
+
+    redis_client.streams[keys.trades_stream()].append(
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "row_id": "trade-legacy-after-clean",
+            "seq": 2,
+            "version": 1,
+            "ts_ms": 1_700_000_000_400,
+            "instrument_id": "PLUME-USDT-SWAP.OKX",
+            "exchange": "okx",
+            "side": "BUY",
+            "price": "0.012736",
+            "qty": "100",
+        },
+    )
+
+    emitter.emit_once(profile="tokenmm")
+
+    received = _take_socket_packets(client)
+    trade_packets = [packet for packet in received if packet["name"] == "trade_update"]
+    market_packets = [packet for packet in received if packet["name"] == "market_update"]
+
+    assert trade_packets == []
+    assert len(market_packets) == 1
+    assert market_packets[0]["args"][0]["recovery"] == {"required": True, "reason": "trade_gap"}
     client.disconnect()
 
 
@@ -446,6 +691,10 @@ def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signal
                 "side": "SELL",
                 "price": 100.5,
                 "qty": 1.0,
+                "qty_base": 1.0,
+                "qty_venue": 1.0,
+                "qty_conversion_status": "identity",
+                "qty_conversion_source": "generic:multiplier=1",
             },
         ],
     )
@@ -606,6 +855,10 @@ def test_socket_emitter_tokenmm_trade_fanout_keeps_same_seq_and_ts_across_strate
                 "side": "SELL",
                 "price": 100.5,
                 "qty": 1.0,
+                "qty_base": 1.0,
+                "qty_venue": 1.0,
+                "qty_conversion_status": "identity",
+                "qty_conversion_source": "generic:multiplier=1",
             },
         ],
     )

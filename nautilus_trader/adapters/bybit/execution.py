@@ -148,6 +148,9 @@ class BybitExecutionClient(LiveExecutionClient):
         self._position_mode = config.position_mode
         self._use_spot_position_reports = config.use_spot_position_reports
         self._ignore_uncached_instrument_executions = config.ignore_uncached_instrument_executions
+        # Instrument-scoped startup reconciliation should avoid Bybit closed-order
+        # history queries and rely on open orders plus fills/positions instead.
+        self.supports_startup_historical_order_status_reports = False
 
         self._log.info(f"Account type: {self._account_type.name}", LogColor.BLUE)
         self._log.info(f"Product types: {[str(p) for p in self._product_types]}", LogColor.BLUE)
