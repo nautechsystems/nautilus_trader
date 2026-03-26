@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchJSONMock = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./apiClient', () => {
   class MockAPIClient {
@@ -16,6 +17,22 @@ import { api, deriveCanonicalNaming } from './api';
 function setPathname(pathname: string) {
   (window.location as unknown as { pathname?: string }).pathname = pathname;
 }
+
+function mockFetchJsonResponse(payload: unknown, options: { ok?: boolean; status?: number; statusText?: string } = {}) {
+  const ok = options.ok ?? true;
+  const status = options.status ?? (ok ? 200 : 500);
+  const statusText = options.statusText ?? (ok ? 'OK' : 'Server Error');
+  return {
+    ok,
+    status,
+    statusText,
+    json: vi.fn().mockResolvedValue(payload),
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('api.getTrades', () => {
   beforeEach(() => {
@@ -437,11 +454,13 @@ describe('api.getTrades', () => {
 describe('api.patchStrategyParams', () => {
   beforeEach(() => {
     fetchJSONMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
     setPathname('/tokenmm/params');
   });
 
   it('treats HTTP 200 responses with data.errors as save failure', async () => {
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [],
@@ -454,25 +473,25 @@ describe('api.patchStrategyParams', () => {
           },
         ],
       },
-    });
+    }));
 
     await expect(api.patchStrategyParams('makerv3', { qty: '-1' })).rejects.toThrow(/qty must be >= 0/i);
   });
 
   it('appends profile to params writes on equities routes', async () => {
     setPathname('/equities/params');
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
         failed: [],
         errors: [],
       },
-    });
+    }));
 
     await api.patchStrategyParams('aapl_tradexyz_makerv4', { qty: '1' });
 
-    const [path] = fetchJSONMock.mock.calls[0];
+    const [path] = fetchMock.mock.calls[0];
     expect(path).toContain('/api/v1/params?');
     expect(path).toContain('profile=equities');
   });
@@ -481,24 +500,26 @@ describe('api.patchStrategyParams', () => {
 describe('api.updateParams', () => {
   beforeEach(() => {
     fetchJSONMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
     setPathname('/equities/params');
   });
 
   it('appends profile to bulk params writes on equities routes', async () => {
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
         failed: [],
         errors: [],
       },
-    });
+    }));
 
     await api.updateParams([
       { strategy_id: 'aapl_tradexyz_makerv4', params: { qty: '1' } },
     ]);
 
-    const [path] = fetchJSONMock.mock.calls[0];
+    const [path] = fetchMock.mock.calls[0];
     expect(path).toContain('/api/v1/params?');
     expect(path).toContain('profile=equities');
   });
