@@ -548,9 +548,6 @@ class FluxSocketEmitter:
                     profile,
                     current_strategy_id,
                 )
-                trade_gap = True
-                next_trade_cursors[current_strategy_id] = 0
-                continue
             load_trades_kwargs: dict[str, Any] = {
                 "limit": self._trade_scan_limit,
                 "since_ms": None,

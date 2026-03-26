@@ -458,6 +458,7 @@ export default function Trades({
   const [sort, setSort] = useState<'ts_desc' | 'ts_asc'>('ts_desc');
   const [soundMuted, setSoundMutedState] = useState(() => getSoundMuted());
   const [unread, setUnread] = useState(0);
+  const [compatibilityMode, setCompatibilityMode] = useState(false);
   const [pollDelay, setPollDelay] = useState(POLL_BASE_MS);
   const [socketConnected, setSocketConnected] = useState(true);
   const [isViewingLatest, setIsViewingLatest] = useState(true);
@@ -654,6 +655,7 @@ export default function Trades({
         const nowViewingLatest = recomputeIsViewingLatest();
 
         const totalCount = response.total ?? response.total_records ?? 0;
+        setCompatibilityMode(Boolean(response.compatibility_mode));
         setTotal(totalCount);
         setHasMore(typeof response.has_more === 'boolean' ? response.has_more : null);
         setHasMorePage(requestPage);
@@ -911,6 +913,7 @@ export default function Trades({
             }
           : requestedSinceSeq;
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
+        setCompatibilityMode(Boolean(delta.compatibility_mode));
 
         if (!isActiveRef.current) {
           return;
@@ -1532,6 +1535,21 @@ export default function Trades({
           </div>
         );
       })()}
+
+      {compatibilityMode ? (
+        <div
+          className="w-full"
+          style={{
+            backgroundColor: colors.semantic.warning.bg,
+            color: colors.text.secondary,
+            padding: `${spacing.gap.xs} ${spacing.gap.md}`,
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          Legacy TokenMM trade rows are being shown in compatibility mode. Quantity semantics may be venue-native until the trade stream is fully cut over.
+        </div>
+      ) : null}
 
       {/* When embedded in dashboard (showHeader=false), render actions as toolbar */}
       {!showHeader && !panelHeaderSlots && (

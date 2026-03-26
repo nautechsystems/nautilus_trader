@@ -180,6 +180,20 @@ describe('Trades pagination and snapshot loading', () => {
     expect(lastTradesTableProps?.trades.map((r: TradeRow) => r.row_id)).toEqual(['newer', 'older']);
   });
 
+  it('shows a compatibility warning when the snapshot includes legacy quantity rows', async () => {
+    await renderTrades({
+      apiResponse: {
+        rows: [makeTradeRow()],
+        total: 1,
+        compatibility_mode: true as any,
+      } as any,
+    });
+
+    expect(
+      screen.getByText(/legacy tokenmm trade rows are being shown in compatibility mode/i),
+    ).toBeInTheDocument();
+  });
+
   it('enables Next when there are more pages and calls API with the next page', async () => {
     await renderTrades({ apiResponse: { total: 250, page: 1, page_size: 100, has_more: true } });
 
