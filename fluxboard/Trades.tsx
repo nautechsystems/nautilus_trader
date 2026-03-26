@@ -810,17 +810,21 @@ export default function Trades({
   }, [clearGapRecoveryState]);
 
   const syncSurfaceState = useCallback(() => {
+    const requiresRealtimeLineage = tradesStandardEnabled && tradesStandardActiveView;
+    const missingRealtimeLineage =
+      !streamCursorRef.current.streamId
+      || streamCursorRef.current.snapshotRevision == null;
+    const isRealtimeRecoveryState = catchingUpRef.current
+      || (requiresRealtimeLineage && (
+        isResyncingRef.current
+        || missingRealtimeLineage
+      ));
     let nextState: RealtimeSurfaceState;
     if (manualRefreshRequiredRef.current) {
       nextState = RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
     } else if (loadingRef.current && tradesControllerRef.current.getSnapshot().rows.length === 0) {
       nextState = RealtimeSurfaceState.SYNCING;
-    } else if (
-      catchingUpRef.current
-      || isResyncingRef.current
-      || !streamCursorRef.current.streamId
-      || streamCursorRef.current.snapshotRevision == null
-    ) {
+    } else if (isRealtimeRecoveryState) {
       nextState = RealtimeSurfaceState.RECOVERING;
     } else {
       const ageMs = Date.now() - lastUpdateRef.current;
@@ -836,7 +840,7 @@ export default function Trades({
     surfaceStateRef.current = nextState;
     setSurfaceState((current) => (current === nextState ? current : nextState));
     return nextState;
-  }, []);
+  }, [tradesStandardActiveView, tradesStandardEnabled]);
 
   const clearManualRefreshRequired = useCallback(() => {
     manualRefreshRequiredRef.current = false;
