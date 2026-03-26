@@ -2602,6 +2602,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             intent_type: str,
             client_order_id: str,
+            quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None,
             reason_code: str,
             side: OrderSide | str | None,
@@ -2614,6 +2615,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             ts_cancel_request_local_ns: int | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             payload: dict[str, Any] = {
                 "strategy_id": self.runtime_strategy_id,
                 "external_strategy_id": self._external_strategy_id,
@@ -2627,6 +2630,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "target_px": None if target_px is None else str(target_px),
                 "cancel_px": None if cancel_px is None else str(cancel_px),
                 "match_tol": None if match_tol is None else str(match_tol),
+                "ts_market_data_event_ns": (
+                    None if quote_cycle is None else quote_cycle.trigger_md_ts_event_ns
+                ),
+                "ts_market_data_recv_ns": (
+                    None if quote_cycle is None else quote_cycle.trigger_md_ts_init_ns
+                ),
                 "ts_decision_ns": int(ts_decision_ns),
                 "ts_submit_local_ns": ts_submit_local_ns,
                 "ts_cancel_request_local_ns": ts_cancel_request_local_ns,
@@ -2800,6 +2809,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="CANCEL",
                     client_order_id=str(getattr(order, "client_order_id", "")),
+                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
                     reason_code=cancel_action.reason_code,
                     side=side,
@@ -2809,7 +2819,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     match_tol=match_tol,
                     ts_decision_ns=now_ns,
                     ts_cancel_request_local_ns=now_ns,
-                    decision_context_json=decision_context_json,
+                    decision_context_json=None,
                 )
                 self.cancel_order(order)
                 self._track_pending_cancel(getattr(order, "client_order_id", None), now_ns=now_ns)
@@ -2918,6 +2928,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="PLACE",
                     client_order_id=str(getattr(order, "client_order_id", "")),
+                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
                     reason_code=REASON_PLACE_MISSING_LEVEL,
                     side=side,
@@ -2927,7 +2938,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     match_tol=match_tol,
                     ts_decision_ns=now_ns,
                     ts_submit_local_ns=now_ns,
-                    decision_context_json=decision_context_json,
+                    decision_context_json=None,
                 )
                 places += 1
                 active_orders.append(order)
@@ -3005,6 +3016,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     self._publish_order_intent(
                         intent_type="CANCEL",
                         client_order_id=str(getattr(order, "client_order_id", "")),
+                        quote_cycle=quote_cycle,
                         quote_cycle_id=quote_cycle_id,
                         reason_code=cancel_reason_code,
                         side=getattr(order, "side", None),
@@ -3014,7 +3026,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                         match_tol=None,
                         ts_decision_ns=cancel_request_ns,
                         ts_cancel_request_local_ns=cancel_request_ns,
-                        decision_context_json=decision_context_json,
+                        decision_context_json=None,
                     )
 
             def _cancel_order(order: Order) -> None:

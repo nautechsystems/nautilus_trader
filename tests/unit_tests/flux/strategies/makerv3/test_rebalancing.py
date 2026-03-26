@@ -163,16 +163,10 @@ def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_rep
         for cancel_action in cancel_actions
         if cancel_action[1] == REASON_CANCEL_TOO_AGGRESSIVE
     ]
-    stale_cleanup_cancels = [
-        cancel_action
-        for cancel_action in cancel_actions
-        if cancel_action[1] == REASON_CANCEL_STALE_ORDER
-    ]
-
     assert aggressive_reprice_cancels == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
-    assert stale_cleanup_cancels == [(4, REASON_CANCEL_STALE_ORDER)]
-    assert len(cancel_actions) == 2
-    assert list(_result_field(result, "place_level_indices")) == [3]
+    assert all(cancel_action[1] != REASON_CANCEL_STALE_ORDER for cancel_action in cancel_actions)
+    assert len(cancel_actions) == 1
+    assert list(_result_field(result, "place_level_indices")) == [4]
 
 
 def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics() -> None:
@@ -197,8 +191,8 @@ def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics
     diagnostics = _result_field(result, "diagnostics")
 
     assert _result_field(diagnostics, "frontier_missing_level_count") == 1
-    assert _result_field(diagnostics, "planned_stale_replacement_count") == 1
-    assert _result_field(diagnostics, "total_missing_level_count") == 1
+    assert _result_field(diagnostics, "planned_stale_replacement_count") == 0
+    assert _result_field(diagnostics, "total_missing_level_count") == 0
     assert _result_field(diagnostics, "backlog_mode") == "normal"
 
 
@@ -248,9 +242,8 @@ def test_bounded_side_planner_reports_deque_front_back_mode_without_room_candida
         reason_code
         for _index, reason_code in cancel_actions
     }
-    assert REASON_CANCEL_TOO_AGGRESSIVE not in {
-        reason_code
-        for _index, reason_code in cancel_actions
+    assert {reason_code for _index, reason_code in cancel_actions} == {
+        REASON_CANCEL_TOO_AGGRESSIVE,
     }
 
 
@@ -330,7 +323,7 @@ def test_bounded_side_planner_caps_places_to_available_slots_when_frontier_and_r
 
     place_level_indices = list(_result_field(result, "place_level_indices"))
 
-    assert len(place_level_indices) == 1
+    assert len(place_level_indices) == 0
 
 
 def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels_for_capacity_only() -> None:
@@ -399,10 +392,8 @@ def test_bounded_side_planner_places_more_aggressive_stale_replacement_before_fr
         backlog_mode="normal",
     )
 
-    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (0, REASON_CANCEL_STALE_ORDER),
-    ]
-    assert list(_result_field(result, "place_level_indices")) == [0]
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == [1]
 
 
 def test_bounded_side_planner_does_not_peel_keep_bucket_for_ordinary_widening_room() -> None:

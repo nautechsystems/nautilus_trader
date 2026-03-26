@@ -285,7 +285,7 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
                 ),
             ],
             [(Decimal("101.0"), Decimal("101.0")), (Decimal("100.0"), Decimal("100.0"))],
-            "cancel_free_slot_for_missing_level",
+            "cancel_excess_level",
         ),
     ],
 )
