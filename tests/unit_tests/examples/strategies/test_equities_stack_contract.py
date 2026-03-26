@@ -1204,7 +1204,7 @@ def test_equities_deploy_readme_uses_split_family_overnight_hedge_language() -> 
     assert "MakerV4 take-take hedges remain immediate outside regular US equity hours" not in readme
     assert "Taker hedges remain immediate outside regular US equity hours" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
-    assert "shared IBKR contract entry must mirror the active canary route" in readme
+    assert "shared IBKR contract entry must mirror an active enrolled route" in readme
     assert "vault_address_env" in readme
     assert 'use_regular_trading_hours = false' in readme
     assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
