@@ -98,6 +98,46 @@ describe('featureFlags', () => {
       expect(isRealtimeSurfaceKillSwitched('signal')).toBe(true);
       expect(isRealtimeStandardEnabled('signal')).toBe(false);
     });
+
+    it('defaults equities signal, balances, and trades realtime standard on for the /equities surface', async () => {
+      Object.defineProperty(window, 'location', {
+        value: new URL('http://localhost/equities'),
+        configurable: true,
+      });
+
+      const {
+        featureFlags,
+        isRealtimeStandardEnabled,
+      } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.realtimeStandard.global).toBe(true);
+      expect(featureFlags.realtimeStandard.signal).toBe(true);
+      expect(featureFlags.realtimeStandard.balances).toBe(true);
+      expect(featureFlags.realtimeStandard.trades).toBe(true);
+      expect(isRealtimeStandardEnabled('signal')).toBe(true);
+      expect(isRealtimeStandardEnabled('balances')).toBe(true);
+      expect(isRealtimeStandardEnabled('trades')).toBe(true);
+    });
+
+    it('keeps non-equities surfaces disabled by default without an explicit rollout override', async () => {
+      Object.defineProperty(window, 'location', {
+        value: new URL('http://localhost/tokenmm'),
+        configurable: true,
+      });
+
+      const {
+        featureFlags,
+        isRealtimeStandardEnabled,
+      } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.realtimeStandard.global).toBe(false);
+      expect(featureFlags.realtimeStandard.signal).toBe(false);
+      expect(featureFlags.realtimeStandard.balances).toBe(false);
+      expect(featureFlags.realtimeStandard.trades).toBe(false);
+      expect(isRealtimeStandardEnabled('signal')).toBe(false);
+      expect(isRealtimeStandardEnabled('balances')).toBe(false);
+      expect(isRealtimeStandardEnabled('trades')).toBe(false);
+    });
   });
 
   describe('featureFlags object structure', () => {
