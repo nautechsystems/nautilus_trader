@@ -9,6 +9,9 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 
+from nautilus_trader.persistence.shipper.quote_cycle_archive import archive_rotated_quote_cycle_db
+from nautilus_trader.persistence.shipper.s3_archive import archive_rotated_sqlite_database
+
 
 DEFAULT_TELEMETRY_DIR = Path("/var/lib/nautilus/telemetry/tokenmm")
 SOURCE_FILES = (
@@ -28,6 +31,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--state-db-path", type=Path, default=DEFAULT_TELEMETRY_DIR / "shipper_state.sqlite")
     parser.add_argument("--wait-for-catchup", action="store_true")
     parser.add_argument("--delete-local-after-cutover", action="store_true")
+    parser.add_argument("--archive-staging-dir", type=Path, default=DEFAULT_TELEMETRY_DIR / "archive-staging")
+    parser.add_argument("--archive-s3-bucket", default="")
+    parser.add_argument("--archive-s3-prefix", default="nautilus/telemetry/tokenmm")
+    parser.add_argument("--athena-database", default="nautilus_telemetry")
+    parser.add_argument("--athena-workgroup", default="primary")
+    parser.add_argument("--source-profile", default="tokenmm")
+    parser.add_argument("--archive-quote-cycles", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-wait-seconds", type=int, default=900)
     parser.add_argument("--poll-seconds", type=int, default=15)
@@ -96,18 +106,93 @@ def _wait_for_catchup(args: argparse.Namespace) -> None:
         time.sleep(args.poll_seconds)
 
 
-def _rotate_or_delete(db_path: Path, *, delete_local_after_cutover: bool, dry_run: bool) -> None:
-    if delete_local_after_cutover:
-        print(f"delete {db_path}")
-        if not dry_run:
-            db_path.unlink(missing_ok=True)
-        return
-
+def _rotate_for_cutover(db_path: Path, *, dry_run: bool) -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     rotated = db_path.with_suffix(db_path.suffix + f".cutover-{timestamp}")
     print(f"move {db_path} -> {rotated}")
     if not dry_run:
         shutil.move(str(db_path), str(rotated))
+    return rotated
+
+
+def _delete_rotated_db(rotated_path: Path, *, dry_run: bool) -> None:
+    print(f"delete {rotated_path}")
+    if not dry_run:
+        rotated_path.unlink(missing_ok=True)
+
+
+def _archive_rotated_db(rotated_path: Path, args: argparse.Namespace) -> None:
+    if rotated_path.name.startswith("quote_cycles.sqlite"):
+        if not args.archive_quote_cycles:
+            return
+        result = archive_rotated_quote_cycle_db(
+            db_path=rotated_path,
+            staging_root=args.archive_staging_dir,
+            source_profile=args.source_profile,
+            bucket=args.archive_s3_bucket or "dry-run-bucket",
+            prefix=args.archive_s3_prefix,
+            athena_database=args.athena_database,
+        )
+        results = tuple([result] if result is not None else [])
+    else:
+        results = archive_rotated_sqlite_database(
+            db_path=rotated_path,
+            staging_root=args.archive_staging_dir,
+            source_profile=args.source_profile,
+            bucket=args.archive_s3_bucket or "dry-run-bucket",
+            prefix=args.archive_s3_prefix,
+            athena_database=args.athena_database,
+        )
+
+    for result in results:
+        print(f"staged parquet {result.parquet_path} -> s3://{args.archive_s3_bucket}/{result.s3_key}")
+        if not args.archive_s3_bucket:
+            print("archive_s3_bucket not configured; staged locally only")
+            continue
+        _run(
+            [
+                "aws",
+                "s3",
+                "cp",
+                str(result.parquet_path),
+                f"s3://{args.archive_s3_bucket}/{result.s3_key}",
+            ],
+            dry_run=args.dry_run,
+        )
+        _run(
+            [
+                "aws",
+                "athena",
+                "start-query-execution",
+                "--work-group",
+                args.athena_workgroup,
+                "--query-string",
+                result.athena_ddl,
+                "--result-configuration",
+                (
+                    "OutputLocation="
+                    f"s3://{args.archive_s3_bucket}/{args.archive_s3_prefix.rstrip('/')}/athena-query-results/"
+                ),
+            ],
+            dry_run=args.dry_run,
+        )
+        _run(
+            [
+                "aws",
+                "athena",
+                "start-query-execution",
+                "--work-group",
+                args.athena_workgroup,
+                "--query-string",
+                result.athena_partition_sql,
+                "--result-configuration",
+                (
+                    "OutputLocation="
+                    f"s3://{args.archive_s3_bucket}/{args.archive_s3_prefix.rstrip('/')}/athena-query-results/"
+                ),
+            ],
+            dry_run=args.dry_run,
+        )
 
 
 def main() -> int:
@@ -120,11 +205,11 @@ def main() -> int:
     _run(["sudo", "systemctl", "stop", "flux@tokenmm-telemetry-shipper.service"], dry_run=args.dry_run)
 
     for db_path in _source_db_paths(args.telemetry_dir):
-        _rotate_or_delete(
-            db_path,
-            delete_local_after_cutover=args.delete_local_after_cutover,
-            dry_run=args.dry_run,
-        )
+        rotated = _rotate_for_cutover(db_path, dry_run=args.dry_run)
+        if db_path.name != "shipper_state.sqlite":
+            _archive_rotated_db(rotated, args)
+        if args.delete_local_after_cutover:
+            _delete_rotated_db(rotated, dry_run=args.dry_run)
 
     _run(["sudo", "systemctl", "start", "flux-tokenmm.target"], dry_run=args.dry_run)
     _run(["sudo", "systemctl", "start", "flux@tokenmm-telemetry-shipper.service"], dry_run=args.dry_run)

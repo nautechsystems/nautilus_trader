@@ -266,6 +266,7 @@ Primary operator surfaces:
 
 - Run the rollout preflight before changing systemd envs:
   - `.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py`
+- The lean default archive target is `S3 + Athena`, not always-on RDS.
 - Bootstrap or refresh the managed sink and write the host env automatically:
   - `sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/bootstrap_tokenmm_telemetry_rds.sh --apply-host-env`
 - The host bootstrap writes `TOKENMM_AWS_REGION`, `NAUTILUS_TELEMETRY_PG_SECRET_ID`, and the current endpoint metadata
@@ -277,15 +278,24 @@ Primary operator surfaces:
   - `sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm`
 - The live shipper keeps local SQLite as a short spool only:
   - `deploy/tokenmm/tokenmm.live.toml` sets `prune_retention_hours = 48`
+- Raw quote-cycle history is short-lived by default:
+  - `raw_quote_cycle_local_hours = 48`
+  - `raw_quote_cycle_s3_days = 7`
+- Durable history is archived to Parquet and queried through Athena:
+  - `orders`
+  - `fills`
+  - `balance snapshots`
+  - `portfolio inventory`
+  - quote-cycle summaries and short-window raw quote cycles
 - Guardrail health runs every 15 minutes through `flux-tokenmm-telemetry-health.timer` and checks disk usage,
   telemetry directory size, and shipper lag.
 - Production cutover helper:
-  - `sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py --wait-for-catchup --delete-local-after-cutover`
+  - `sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py --wait-for-catchup --archive-quote-cycles --archive-s3-bucket <bucket>`
 - Local SQLite verification:
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite 'SELECT COUNT(*) FROM order_action;'`
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite 'SELECT COUNT(*) FROM execution_fill;'`
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite 'SELECT COUNT(*) FROM quote_cycle;'`
-- For shipped Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
+- For shipped archives and optional Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
 
 ## Local smoke only
 

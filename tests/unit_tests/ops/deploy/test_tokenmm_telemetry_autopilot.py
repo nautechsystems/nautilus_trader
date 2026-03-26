@@ -89,3 +89,27 @@ def test_tokenmm_lean_autopilot_contract_is_documented() -> None:
     assert "durable history exported to `S3` and queryable through `Athena`" in implementation_plan
     assert "short default retention for logs and raw quote-cycle history" in implementation_plan
     assert "`RDS` to be optional and deferred" in implementation_plan
+
+
+def test_tokenmm_cutover_contract_supports_archive_staging_and_athena() -> None:
+    repo_root = _repo_root()
+    cutover = _read(repo_root / "ops/scripts/deploy/tokenmm_telemetry_cutover.py")
+    readme = _read(repo_root / "deploy/tokenmm/README.md")
+    telemetry_runbook = _read(repo_root / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
+
+    assert "--archive-staging-dir" in cutover
+    assert "--archive-s3-bucket" in cutover
+    assert "--archive-s3-prefix" in cutover
+    assert "--athena-database" in cutover
+    assert "--athena-workgroup" in cutover
+    assert "--archive-quote-cycles" in cutover
+    assert "archive_rotated_quote_cycle_db" in cutover
+    assert "archive_rotated_sqlite_database" in cutover
+    assert '"athena"' in cutover
+    assert '"start-query-execution"' in cutover
+    assert "athena_partition_sql" in cutover
+
+    assert "lean default archive target is `S3 + Athena`" in readme
+    assert "--archive-quote-cycles" in readme
+    assert "Verify in Athena" in telemetry_runbook
+    assert "S3 + Athena" in telemetry_runbook
