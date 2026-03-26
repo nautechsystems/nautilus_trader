@@ -188,7 +188,13 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
 
 def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
     """
-    Write validated TP/SL fields onto a ``BybitWsPlaceOrderParams`` object.
+    Write extra TP/SL fields onto a ``BybitWsPlaceOrderParams`` object.
+
+    ``take_profit`` and ``stop_loss`` are passed directly to
+    ``build_place_order_params`` as ``Price`` objects so that the Rust layer
+    can set ``tpsl_mode`` and the default trigger types automatically.  This
+    helper applies only the remaining override fields that are not accepted by
+    ``build_place_order_params``.
 
     All relevant fields on ``BybitWsPlaceOrderParams`` are exposed with
     ``#[pyo3(get, set)]`` and can therefore be set directly from Python
@@ -196,8 +202,6 @@ def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
 
     """
     for attr in (
-        "take_profit",
-        "stop_loss",
         "tp_trigger_by",
         "sl_trigger_by",
         "tp_order_type",
@@ -1079,8 +1083,20 @@ class BybitExecutionClient(LiveExecutionClient):
                     is_leverage=is_leverage,
                 )
             elif tp_sl.get("take_profit") or tp_sl.get("stop_loss"):
-                # Native TP/SL: build params object then set all TP/SL fields directly
-                # on the mutable BybitWsPlaceOrderParams object via _apply_tp_sl_fields.
+                # Native TP/SL: pass take_profit/stop_loss as Price objects so the Rust
+                # layer sets tpsl_mode="Full" and default trigger types automatically.
+                # _apply_tp_sl_fields then applies any override fields (trigger type,
+                # order type, limit prices, etc.).
+                pyo3_take_profit = (
+                    nautilus_pyo3.Price.from_str(tp_sl["take_profit"])
+                    if tp_sl.get("take_profit")
+                    else None
+                )
+                pyo3_stop_loss = (
+                    nautilus_pyo3.Price.from_str(tp_sl["stop_loss"])
+                    if tp_sl.get("stop_loss")
+                    else None
+                )
                 order_params = self._ws_trade_client.build_place_order_params(
                     product_type=product_type,
                     instrument_id=pyo3_instrument_id,
@@ -1095,6 +1111,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     post_only=order.is_post_only,
                     reduce_only=order.is_reduce_only,
                     is_leverage=is_leverage,
+                    take_profit=pyo3_take_profit,
+                    stop_loss=pyo3_stop_loss,
                 )
                 _apply_tp_sl_fields(order_params, tp_sl)
                 await self._ws_trade_client.batch_place_orders(
@@ -1287,6 +1305,14 @@ class BybitExecutionClient(LiveExecutionClient):
                 order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
             )
 
+            pyo3_take_profit = (
+                nautilus_pyo3.Price.from_str(tp_sl["take_profit"])
+                if tp_sl.get("take_profit")
+                else None
+            )
+            pyo3_stop_loss = (
+                nautilus_pyo3.Price.from_str(tp_sl["stop_loss"]) if tp_sl.get("stop_loss") else None
+            )
             ws_params = self._ws_trade_client.build_place_order_params(
                 product_type=product_type,
                 instrument_id=pyo3_instrument_id,
@@ -1301,6 +1327,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
                 is_leverage=is_leverage,
+                take_profit=pyo3_take_profit,
+                stop_loss=pyo3_stop_loss,
             )
             _apply_tp_sl_fields(ws_params, tp_sl)
             order_params.append(ws_params)

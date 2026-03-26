@@ -503,9 +503,9 @@ async def test_submit_limit_order_with_take_profit_stop_loss(
         await client._submit_order(command)
 
         ws_trade_client.build_place_order_params.assert_called_once()
-        order_params = ws_trade_client.build_place_order_params.return_value
-        assert order_params.take_profit == "55000.00"
-        assert order_params.stop_loss == "47000.00"
+        call_kwargs = ws_trade_client.build_place_order_params.call_args.kwargs
+        assert call_kwargs["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
+        assert call_kwargs["stop_loss"] == nautilus_pyo3.Price.from_str("47000.00")
         ws_trade_client.batch_place_orders.assert_awaited_once()
     finally:
         await client._disconnect()
@@ -557,9 +557,9 @@ async def test_submit_market_order_with_take_profit_only(
         await client._submit_order(command)
 
         ws_trade_client.build_place_order_params.assert_called_once()
-        order_params = ws_trade_client.build_place_order_params.return_value
-        assert order_params.take_profit == "55000.00"
-        # stop_loss not in params → _apply_tp_sl_fields never sets it (correct behavior)
+        call_kwargs = ws_trade_client.build_place_order_params.call_args.kwargs
+        assert call_kwargs["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
+        assert call_kwargs.get("stop_loss") is None
         ws_trade_client.batch_place_orders.assert_awaited_once()
     finally:
         await client._disconnect()

@@ -7092,6 +7092,8 @@ class BybitWebSocketClient:
         post_only: bool | None = None,
         reduce_only: bool | None = None,
         is_leverage: bool = False,
+        take_profit: Price | None = None,
+        stop_loss: Price | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def build_amend_order_params(
         self,
