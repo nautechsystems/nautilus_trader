@@ -160,8 +160,9 @@ describe('SignalTable audit coverage', () => {
       missing: [],
     });
 
-    expect(tooltip).toContain('Methodology: Coverage = available / required');
-    expect(tooltip).toContain('Sizing basis: qty 25 × multiplier 3');
+    expect(tooltip).toContain('Coverage = available / required');
+    expect(tooltip).toContain('Qty basis: qty 25 × multiplier 3');
+    expect(tooltip).not.toContain('Methodology:');
     expect(tooltip).not.toContain('10× qty buffer');
   });
 
@@ -177,7 +178,9 @@ describe('SignalTable audit coverage', () => {
       },
     } as any);
 
-    expect(tooltip).toContain('Edge thresholds (minimum edge to trade):');
+    expect(tooltip).toContain('Key params:');
+    expect(tooltip).toContain('Quote/trade edges:');
+    expect(tooltip).toContain('slippage cap: 2 bps');
     expect(tooltip).toContain('qty: 25');
     expect(tooltip).not.toContain('Decision prices (generic)');
     expect(tooltip).not.toContain('Maker quote snapshot row');
@@ -229,6 +232,51 @@ describe('SignalTable audit coverage', () => {
     const localQty = container.querySelector('tbody tr td:nth-child(4) span');
     expect(globalQty?.className).not.toContain('cursor-help');
     expect(localQty?.className).not.toContain('cursor-help');
+  });
+
+  it('renders the FvAdj header label in the live table', async () => {
+    const strategy: SignalStrategy = {
+      id: 'fvadj_strategy',
+      params: { bot_on: '1' } as any,
+      running: true,
+      state: { state: 'running', ts_ms: Date.now(), bot_on: true } as any,
+      pricing_adjustments: [
+        {
+          type: 'inventory_skew',
+          skew_bps_signed: -2,
+        } as any,
+      ],
+      strategy_family: 'maker_v3',
+      meta: {
+        class: 'maker_v3',
+        strategy_groups: 'tokenmm',
+      } as any,
+      legs: {
+        A: {
+          exchange: 'bybit_linear',
+          coin: 'PLUME',
+          decision_bid: 1,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          decision_bid: 1.02,
+          decision_ask: 1.03,
+          update_time: '2025-01-15 12:00:01',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({ rows: [strategy] });
+    renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
+
+    expect(screen.getByText('FvAdj')).toBeInTheDocument();
+    expect(screen.queryByText('Adj/Skew')).not.toBeInTheDocument();
   });
 
   it('derives signed skew from edge deltas using quote-direction semantics when canonical signed skew is absent', async () => {
@@ -321,9 +369,12 @@ describe('SignalTable audit coverage', () => {
       }
     );
 
+    expect(tooltip).toContain('FvAdj (MakerV3)');
     expect(tooltip).toContain('quoted FV shift');
-    expect(tooltip).toContain('linear + global + local = total');
-    expect(tooltip).toContain('actual bid edge / ask edge');
+    expect(tooltip).toContain('linear + global + local');
+    expect(tooltip).toContain('Global bucket:');
+    expect(tooltip).toContain('Local bucket:');
+    expect(tooltip).toContain('Actual maker edges:');
     expect(tooltip).not.toContain('eff bid/ask');
   });
 });
