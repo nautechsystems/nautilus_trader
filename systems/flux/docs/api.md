@@ -290,7 +290,7 @@ Standard live envelope invariants:
 4. `delta_batch` carries machine-readable `payload` content:
    - `signal` surface: `payload.signals[]`, `payload.alerts`, `payload.strategies.changed`
    - `trades` surface: `payload.trades[]`
-5. `heartbeat` may carry an empty payload and advances the surface cursor for liveness accounting.
+5. `heartbeat` may carry an empty payload and reuses the current surface cursor value for liveness accounting (it does not advance `last_seq`).
 6. `invalidate` tells the client to resnapshot the affected surface and may include summary payload fields (for example alert counts).
 7. `recovery_required` includes machine-readable `reason` and advances only the affected surface's cursor.
 
