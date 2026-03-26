@@ -56,6 +56,10 @@ def _seed_socket_rows(redis_client, flux_config, contract_catalog) -> None:
                 "side": "BUY",
                 "price": 100.0,
                 "qty": 1.5,
+                "qty_base": 1.5,
+                "qty_venue": 1.5,
+                "qty_conversion_status": "identity",
+                "qty_conversion_source": "generic:multiplier=1",
             },
         ],
     )
