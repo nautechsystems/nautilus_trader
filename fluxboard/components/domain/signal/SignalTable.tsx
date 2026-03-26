@@ -907,18 +907,18 @@ export function buildInventorySkewTooltip(
   const actualBidEdge = coerceFiniteNumber(adj.eff_bid_edge_bps ?? adj.base_bid_edge_bps);
   const actualAskEdge = coerceFiniteNumber(adj.eff_ask_edge_bps ?? adj.base_ask_edge_bps);
   const lines: string[] = [
-    'Inventory skew (MakerV3):',
+    'FvAdj (MakerV3)',
     `quoted FV shift: ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'} bps`,
-    `linear + global + local = total: ${formatSignedBps(linearSkew)} + ${formatSignedBps(globalSkew)} + ${formatSignedBps(localSkew)} = ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'}`,
+    `linear + global + local: ${formatSignedBps(linearSkew)} + ${formatSignedBps(globalSkew)} + ${formatSignedBps(localSkew)} = ${skewBps !== undefined ? formatSignedBps(skewBps) : '—'}`,
     `inventory ratio: ${formatSignedRatio(adj.inv_ratio)} (clamped to [-1, +1])`,
     '',
-    'Global inventory:',
-    `qty / max / max_skew_bps: ${desQtyGlobal ?? '—'} / ${maxQtyGlobal ?? '—'} / ${maxSkewGlobal ?? '—'}`,
-    `inv_ratio / inv_skew: ${formatSignedRatio(globalRatio)} / ${formatSignedBps(globalSkew)} bps`,
+    'Global bucket:',
+    `target / cap / max shift: ${desQtyGlobal ?? '—'} / ${maxQtyGlobal ?? '—'} / ${maxSkewGlobal ?? '—'}`,
+    `ratio / shift: ${formatSignedRatio(globalRatio)} / ${formatSignedBps(globalSkew)} bps`,
     '',
-    'Local inventory:',
-    `qty / max / max_skew_bps: ${desQtyLocal ?? '—'} / ${maxQtyLocal ?? '—'} / ${maxSkewLocal ?? '—'}`,
-    `inv_ratio / inv_skew: ${formatSignedRatio(localRatio)} / ${formatSignedBps(localSkew)} bps`,
+    'Local bucket:',
+    `target / cap / max shift: ${desQtyLocal ?? '—'} / ${maxQtyLocal ?? '—'} / ${maxSkewLocal ?? '—'}`,
+    `ratio / shift: ${formatSignedRatio(localRatio)} / ${formatSignedBps(localSkew)} bps`,
   ];
 
   if (localQty !== undefined || !!localQtyKey) {
@@ -931,20 +931,20 @@ export function buildInventorySkewTooltip(
     const base = localQtyKey && typeof localQtyKey === 'object'
       ? String(localQtyKey.base ?? '').trim() || '—'
       : '—';
-    lines.push(`local_qty / key: ${localQty ?? '—'} / ${venueRoot}/${instrumentType}/${base}`);
+    lines.push(`local qty / bucket: ${localQty ?? '—'} / ${venueRoot}/${instrumentType}/${base}`);
   }
   if (localMatchedRows !== undefined || localMissingSnapshot !== undefined) {
     const matched = localMatchedRows !== undefined ? String(Math.trunc(localMatchedRows)) : '—';
     const missing = localMissingSnapshot !== undefined ? String(Math.trunc(localMissingSnapshot)) : '—';
-    lines.push(`matched_rows / missing_snapshot: ${matched} / ${missing}`);
+    lines.push(`snapshot rows matched / missing: ${matched} / ${missing}`);
   }
 
   lines.push(
     '',
-    'Actual maker edges (bps):',
-    `actual bid edge / ask edge: ${formatBps(actualBidEdge)} / ${formatBps(actualAskEdge)}`,
+    'Actual maker edges:',
+    `bid / ask: ${formatBps(actualBidEdge)} / ${formatBps(actualAskEdge)} bps`,
     '',
-    'Local skew changes maker quotes only; hedge remains global-only.',
+    'Applies to maker quotes only.',
   );
   return lines.join('\n');
 }
@@ -999,10 +999,9 @@ export function buildBalanceTooltip(readiness?: SignalStrategy['balance_readines
     });
   }
 
-  // Keep methodology factual to the payload instead of hardcoding backend policy.
   lines.push('');
-  lines.push('Methodology: Coverage = available / required');
-  lines.push(`Sizing basis: qty ${qty} × multiplier ${multiplier}`);
+  lines.push('Coverage = available / required');
+  lines.push(`Qty basis: qty ${qty} × multiplier ${multiplier}`);
 
   return lines.join('\n');
 }
@@ -1011,14 +1010,16 @@ export function buildStrategyParamTooltip(
   row: Pick<SignalStrategy, 'params'>,
 ): string {
   return [
-    'Edge thresholds (minimum edge to trade):',
-    `  cex_bid_edge: ${row.params?.cex_bid_edge ?? 'N/A'} bps`,
-    `  cex_ask_edge: ${row.params?.cex_ask_edge ?? 'N/A'} bps`,
-    `  pool_edge: ${row.params?.pool_edge ?? 'N/A'} bps`,
+    'Key params:',
     '',
-    'Trading params:',
+    'Quote/trade edges:',
+    `  bid edge: ${row.params?.cex_bid_edge ?? 'N/A'} bps`,
+    `  ask edge: ${row.params?.cex_ask_edge ?? 'N/A'} bps`,
+    `  pool edge: ${row.params?.pool_edge ?? 'N/A'} bps`,
+    '',
+    'Order sizing:',
     `  qty: ${row.params?.qty ?? 'N/A'}`,
-    `  slippage: ${row.params?.slippage_bps ?? 'N/A'} bps`,
+    `  slippage cap: ${row.params?.slippage_bps ?? 'N/A'} bps`,
   ].join('\n');
 }
 
@@ -1112,7 +1113,7 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
     const rows: Array<{ label: string; value: React.ReactNode }> = [];
     if (marketBid != null && marketAsk != null) {
       rows.push({
-        label: 'Market (raw)',
+        label: 'Raw market',
         value: `${fmtPriceTooltip(marketBid)} / ${fmtPriceTooltip(marketMid)} / ${fmtPriceTooltip(marketAsk)}`,
       });
     }
@@ -1125,7 +1126,7 @@ const LegCell: FC<LegCellProps> = memo(({ leg, showQuoted, tooltipBehavior = 'ce
     }
 
     rows.push({
-      label: 'Decision (fees-in)',
+      label: 'After fees',
       value: `${fmtPriceTooltip(decisionBid)} / ${fmtPriceTooltip(decisionMid)} / ${fmtPriceTooltip(decisionAsk)}`,
     });
 
@@ -1556,7 +1557,7 @@ function buildMakerTruthTooltip(row: EnrichedRow, quoteSnapshot: MakerV2QuoteSna
 
   return (
     <div className="max-w-[360px] flex flex-col gap-2 font-mono text-[11px] leading-4 tabular-nums">
-      <div className="text-text-muted font-semibold">Maker (Row 2 is quoting truth)</div>
+      <div className="text-text-muted font-semibold">Actual quoting snapshot</div>
 
       <div className="flex flex-col gap-1">
         <div className="text-text-muted font-semibold">State</div>
@@ -1589,11 +1590,11 @@ function buildMakerTruthTooltip(row: EnrichedRow, quoteSnapshot: MakerV2QuoteSna
         <div className="text-text-muted font-semibold">Outputs</div>
         <KvGrid
           rows={[
-            { label: 'Place (L1)', value: `${fmtPriceTooltip(placeBid)} .. ${fmtPriceTooltip(placeAsk)}` },
+            { label: 'Placed L1', value: `${fmtPriceTooltip(placeBid)} .. ${fmtPriceTooltip(placeAsk)}` },
             ...(cancelBid != null || cancelAsk != null
               ? [{ label: 'Cancel', value: `${fmtPriceTooltip(cancelBid)} .. ${fmtPriceTooltip(cancelAsk)}` }]
               : []),
-            { label: 'Edges (eff)', value: `bid ${formatBps(effBid)} bps   ask ${formatBps(effAsk)} bps` },
+            { label: 'Live edges', value: `bid ${formatBps(effBid)} bps   ask ${formatBps(effAsk)} bps` },
             { label: 'Fees', value: feesText },
             { label: 'Place edge', value: `${formatBps(placeEdge)} bps` },
           ]}
@@ -1766,13 +1767,13 @@ const MakerAwareLegCell: FC<{ row: EnrichedRow; legKey: LegKey; showQuoted: bool
 
   return (
     <div className="flex flex-col">
-      <LegCell
-        leg={leg}
-        showQuoted={showQuoted}
-        tooltipBehavior="icon"
-        contextHint="Maker: quoting truth = Row 2 (Our / Ref used)"
-        sourceLabel={sourceLabel}
-      />
+        <LegCell
+          leg={leg}
+          showQuoted={showQuoted}
+          tooltipBehavior="icon"
+          contextHint="Maker: Row 2 shows the actual maker snapshot (Our / Ref)"
+          sourceLabel={sourceLabel}
+        />
       {quoteSnapshot ? (
         <MakerTruthRow row={row} legKey={legKey} quoteSnapshot={quoteSnapshot} nowMs={nowMs} />
       ) : null}
@@ -2648,18 +2649,18 @@ export default function SignalTable({
       const makerSummary = maker ? `B ${maker.bidOpen}/${maker.bidDepth} · A ${maker.askOpen}/${maker.askDepth}` : '—';
 
       const lines = [
-        'Maker quoting status (best-effort).',
+        'Maker quotes',
         `Source: ${counts.source}`,
         '',
       ];
       if (maker) {
-        lines.push(`Maker Bid: ${maker.bidOpen}/${maker.bidDepth} (blocked ${maker.bidBlocked})`);
-        lines.push(`Maker Ask: ${maker.askOpen}/${maker.askDepth} (blocked ${maker.askBlocked})`);
+        lines.push(`Bid: ${maker.bidOpen}/${maker.bidDepth} (blocked ${maker.bidBlocked})`);
+        lines.push(`Ask: ${maker.askOpen}/${maker.askDepth} (blocked ${maker.askBlocked})`);
       }
       lines.push('');
-      lines.push('open = active orders');
-      lines.push('depth = unique price levels');
-      lines.push('blocked = target levels not currently open');
+      lines.push('open = working maker orders');
+      lines.push('depth = target quote levels');
+      lines.push('blocked = target levels not currently working');
 
       return {
         summaryLines: [makerSummary],
@@ -2674,8 +2675,8 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Strategy"
             tooltip={[
-              'Strategy id (from configs/strategies.ini).',
-              'Hover the id cell to see key params + pricing semantics.',
+              'Strategy id.',
+              'Hover the row to see key params and quote semantics.',
             ].join('\n')}
           />
         ),
@@ -2695,11 +2696,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Trading"
             tooltip={[
-              'Trading gate derived from bot_on intent plus live tradeability.',
-              'Separate from runner liveness.',
-              'Enabled = bot_on=1 and strategy is tradeable.',
-              'Paused = bot_on=0 (runner may still be on).',
-              'Pending = bot_on=1, but runner is not ready or trading is blocked.',
+              'Can this strategy quote right now?',
+              'Combines bot_on intent with live tradeability.',
+              'Enabled = quoting allowed. Paused = bot off. Pending = waiting on runner or unblock.',
             ].join('\n')}
           />
         ),
@@ -2710,18 +2709,17 @@ export default function SignalTable({
           const raw = resolveTradingValue(row.original as any);
           const rawStr = raw === undefined || raw === null ? 'undefined' : String(raw);
           const tooltip = [
-            'Trading gate status:',
-            `- State: ${descriptor.label}`,
-            `- Runner: ${descriptor.subLabel}`,
-            `- Resolved: ${rawStr} (params.bot_on | state.bot_on | tradeable)`,
-            `- Blocked: ${resolveTradingBlocked(row.original as any) ? 'yes' : 'no'}`,
+            'Trading status',
+            `State: ${descriptor.label}`,
+            `Runner: ${descriptor.subLabel}`,
+            `Blocked: ${resolveTradingBlocked(row.original as any) ? 'yes' : 'no'}`,
+            `Resolved from: ${rawStr} (params.bot_on | state.bot_on | tradeable)`,
             '',
-            'Semantics:',
-            '  Enabled: bot_on=1 and strategy tradeable',
-            '  Paused: bot_on=0 (new orders blocked)',
-            '  Pending: gate enabled but runner not confirmed or strategy blocked',
+            'Enabled = quoting allowed',
+            'Paused = bot off',
+            'Pending = bot on, but not ready to quote',
             '',
-            'Change in Params → bot_on'
+            'Change Params → bot_on to control this'
           ].join('\n');
           return (
             <StatusPill
@@ -2743,9 +2741,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Global Qty"
             tooltip={[
-              'Global inventory quantity used for MakerV3 global skew.',
-              'Typically account-level/base inventory for the strategy asset.',
-              'Hover for timestamp and fallback source details.',
+              'Global inventory used for the global FV adjustment.',
+              'Positive = long. Negative = short.',
+              'Usually the shared account/base position for this asset.',
             ].join('\n')}
           />
         ),
@@ -2763,9 +2761,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Local Qty"
             tooltip={[
-              'Local inventory quantity used for MakerV3 local skew.',
-              'Scoped to the strategy local bucket (venue/instrument/base key).',
-              'Hover for the bucket key and snapshot match details.',
+              'Local inventory used for the local FV adjustment.',
+              'Positive = long. Negative = short.',
+              'Scoped to this strategy local bucket.',
             ].join('\n')}
           />
         ),
@@ -2782,9 +2780,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Quotes"
             tooltip={[
-              'Maker quoting status (best-effort).',
-              'Shows open quotes vs depth (unique price levels) per side.',
-              'Supports maker_quote_status and quote_stacks payloads.',
+              'Open maker quotes vs target depth.',
+              'Format: B open/depth · A open/depth.',
+              'Hover for blocked levels and source.',
             ].join('\n')}
           />
         ),
@@ -2811,12 +2809,11 @@ export default function SignalTable({
         id: 'adj_skew',
         header: () => (
           <ColumnHeaderWithTooltip
-            label="Adj/Skew"
+            label="FvAdj"
             tooltip={[
-              'MakerV3 quoted-FV adjustments.',
-              'Inventory skew combines global inventory and local inventory.',
-              'Positive means we quote as if FV is higher; negative means we quote as if FV is lower.',
-              'Hover for linear + global + local breakdown and actual bid/ask edges.',
+              'Quoted FV shift used for maker quotes.',
+              'Built from linear + global + local adjustments.',
+              'Positive = quotes shift up. Negative = quotes shift down.',
             ].join('\n')}
           />
         ),
@@ -2846,11 +2843,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Strategy market"
             tooltip={[
-              'Venue prices for market A (as defined in configs/relations.ini).',
-              'For maker rows: this is typically the market we quote (maker leg).',
-              'Top row = decision prices (or quoted bid/ask when "Show quoted prices" is on).',
-              'Maker quote snapshot rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
-              'Hover the info icon in the cell for raw market -> decision breakdown.',
+              'Strategy-side market.',
+              'Top row = visible market/decision prices.',
+              'Row 2 = actual maker snapshot (`Our`).',
             ].join('\n')}
           />
         ),
@@ -2865,11 +2860,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="FV market"
             tooltip={[
-              'Venue prices for market B (as defined in configs/relations.ini).',
-              'For maker rows: this is typically the reference market used for fair value (ref leg).',
-              'Top row = decision prices (or quoted bid/ask when "Show quoted prices" is on).',
-              'Maker quote snapshot rows include Row 2: Our quotes (maker leg) or Ref used (ref leg).',
-              'Hover the info icon in the cell for raw market -> decision breakdown.',
+              'Reference/FV market.',
+              'Top row = visible market/decision prices.',
+              'Row 2 = actual reference snapshot (`Ref`).',
             ].join('\n')}
           />
         ),
@@ -2885,10 +2878,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Spread"
             tooltip={[
-              'Signed midpoint spread: strategy market mid vs FV mid.',
-              'Formula: (strategy_market_mid - fv_mid) / fv_mid * 10000.',
+              'Strategy market mid vs FV/reference mid.',
               'Positive = rich to FV. Negative = cheap to FV.',
-              'Not the same as required edge or edge2.',
+              'Hover for the input mids and edge context.',
             ].join('\n')}
           />
         ),
@@ -2926,7 +2918,7 @@ export default function SignalTable({
           const requiredEdge = coerceFiniteNumber(row.original.required_edge_bps);
           const spreadText = spreadBps != null && Number.isFinite(spreadBps) ? `${formatBps(spreadBps)} bps` : '—';
           const tooltip = [
-            'Market vs FV midpoint spread',
+            'Strategy market vs FV',
             `Strategy mid: ${resolvedMarketMid != null ? fmtPriceTooltip(resolvedMarketMid) : '—'} (${marketSource})`,
             `FV mid: ${resolvedFvMid != null ? fmtPriceTooltip(resolvedFvMid) : '—'} (${fvSource})`,
             `Spread: ${spreadText}`,
@@ -2953,9 +2945,9 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Age"
             tooltip={[
-              'Age = worst freshness (oldest leg).',
-              'Uses the best available timestamp per leg (md_ts_ms, md_age_ms, update_ts_ms, or update_time).',
-              'Colors: >10s red, >3s yellow.',
+              'Oldest visible leg age.',
+              'Shows the stalest leg in the row.',
+              'Red >10s, yellow >3s.',
             ].join('\n')}
           />
         ),
@@ -2975,8 +2967,8 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Last Updated"
             tooltip={[
-              'Timestamp of the newest best-available leg update.',
-              'Suffix shows recency for that newest leg (min age).',
+              'Newest visible leg timestamp.',
+              'Suffix shows how long ago that newest update arrived.',
             ].join('\n')}
           />
         ),
@@ -2995,8 +2987,8 @@ export default function SignalTable({
           <ColumnHeaderWithTooltip
             label="Last Trade"
             tooltip={[
-              'Most recent trade executed for this strategy (from trades.blotter).',
-              'Shows notional and realized bps (historical).',
+              'Most recent trade for this strategy.',
+              'Shows notional and realized bps.',
             ].join('\n')}
           />
         ),
@@ -3254,7 +3246,7 @@ const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvi
         </div>
       </div>
       <div className="flex items-center justify-between text-xs text-neutral-400">
-        <span className="text-[10px] uppercase text-neutral-500">Adj/Skew</span>
+        <span className="text-[10px] uppercase text-neutral-500">FvAdj</span>
         {skewTooltip ? (
           <SimpleTooltip
             content={<pre className="whitespace-pre-wrap">{skewTooltip}</pre>}
