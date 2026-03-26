@@ -731,6 +731,7 @@ class FluxSocketEmitter:
         self._balances_by_profile: dict[str, tuple[int, int | None, str]] = {}
         self._failure_streak_by_profile: dict[str, int] = {}
         self._backoff_until_by_profile: dict[str, float] = {}
+        self._legacy_recovery_signature_by_profile: dict[str, tuple[str, ...]] = {}
         self._standard_subscriptions_by_sid: dict[str, dict[str, FluxStandardSubscription]] = {}
         self.metrics: dict[str, Any] = {
             "active_standard_subscribers": {},
@@ -946,6 +947,7 @@ class FluxSocketEmitter:
         self._trade_cursor_by_profile.pop(profile, None)
         self._alerts_by_profile.pop(profile, None)
         self._balances_by_profile.pop(profile, None)
+        self._legacy_recovery_signature_by_profile.pop(profile, None)
         self._failure_streak_by_profile.pop(profile, None)
         self._backoff_until_by_profile.pop(profile, None)
 
@@ -1393,7 +1395,13 @@ class FluxSocketEmitter:
             previous_signals = self._signal_by_profile.get(profile, {})
             previous_alerts_signature = self._alerts_by_profile.get(profile)
             previous_balances_signature = self._balances_by_profile.get(profile)
+            previous_legacy_recovery_signature = self._legacy_recovery_signature_by_profile.get(profile)
             legacy_profile_active = self._legacy_profile_refcounts.get(profile, 0) > 0
+            standard_profile_active = any(
+                subscription.profile == profile
+                for surface_map in self._standard_subscriptions_by_sid.values()
+                for subscription in surface_map.values()
+            )
 
         next_trade_cursors = dict(trade_cursors)
         for current_strategy_id in strategy_ids:
@@ -1403,6 +1411,7 @@ class FluxSocketEmitter:
         supports_base_first_qty = "base_first_qty" in load_trades_parameters
         scanned_trade_entries: list[tuple[int, dict[str, Any]]] = []
         trade_gap = False
+        trade_gap_reasons: set[str] = set()
         for current_strategy_id in strategy_ids:
             current_metadata = self._metadata_resolver(current_strategy_id)
             if self._tokenmm_trade_stream_requires_reset(current_strategy_id, current_metadata):
@@ -1412,6 +1421,7 @@ class FluxSocketEmitter:
                     current_strategy_id,
                 )
                 trade_gap = True
+                trade_gap_reasons.add(f"{current_strategy_id}:legacy_qty_reset")
                 continue
             load_trades_kwargs: dict[str, Any] = {
                 "limit": self._trade_scan_limit,
@@ -1442,6 +1452,9 @@ class FluxSocketEmitter:
                         self._trade_scan_limit,
                     )
                     trade_gap = True
+                    trade_gap_reasons.add(
+                        f"{current_strategy_id}:cursor_underflow:{current_cursor}:{min_seq}:{max_seq}",
+                    )
                     next_trade_cursors[current_strategy_id] = max(0, min_seq - 1)
                     continue
                 if current_cursor > max_seq:
@@ -1454,6 +1467,9 @@ class FluxSocketEmitter:
                         self._trade_scan_limit,
                     )
                     trade_gap = True
+                    trade_gap_reasons.add(
+                        f"{current_strategy_id}:cursor_overrun:{current_cursor}:{max_seq}",
+                    )
                     next_trade_cursors[current_strategy_id] = int(max_seq)
                     continue
             for row in strategy_rows:
@@ -1623,24 +1639,38 @@ class FluxSocketEmitter:
                 previous_balances_signature is not None
                 and previous_balances_signature != balances_signature
             )
+        trade_gap_signature = tuple(sorted(trade_gap_reasons)) if trade_gap_reasons else ()
+        repeated_legacy_trade_gap = (
+            emit_legacy
+            and trade_gap
+            and trade_gap_signature
+            and trade_gap_signature == previous_legacy_recovery_signature
+        )
         if emit_legacy and (trade_gap or strategy_changed or alerts_changed or balances_changed):
-            market_payload = {
-                "profile": profile,
-                "seq": self._next_seq(profile),
-                "server_ts_ms": now_ms(),
-                "server_time": datetime.now(tz=UTC)
-                .isoformat(timespec="milliseconds")
-                .replace("+00:00", "Z"),
-                "strategies": {"changed": signal_changed_ids},
-                "alerts": {
-                    "count": alerts_signature[0],
-                    "latest_ts_ms": alerts_signature[1],
-                },
-            }
-            if trade_gap:
-                market_payload["recovery"] = {"required": True, "reason": "trade_gap"}
-            self._record_metric("legacy_event_counts", "market_update")
-            self._socketio.emit("market_update", market_payload, to=room)
+            should_emit_trade_gap_market_update = (
+                not repeated_legacy_trade_gap
+                or strategy_changed
+                or alerts_changed
+                or balances_changed
+            )
+            if should_emit_trade_gap_market_update:
+                market_payload = {
+                    "profile": profile,
+                    "seq": self._next_seq(profile),
+                    "server_ts_ms": now_ms(),
+                    "server_time": datetime.now(tz=UTC)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                    "strategies": {"changed": signal_changed_ids},
+                    "alerts": {
+                        "count": alerts_signature[0],
+                        "latest_ts_ms": alerts_signature[1],
+                    },
+                }
+                if trade_gap:
+                    market_payload["recovery"] = {"required": True, "reason": "trade_gap"}
+                self._record_metric("legacy_event_counts", "market_update")
+                self._socketio.emit("market_update", market_payload, to=room)
 
         if emit_standard:
             subscriptions = self._standard_subscriptions_for_profile(profile)
@@ -1809,6 +1839,14 @@ class FluxSocketEmitter:
                 self._balances_by_profile.pop(profile, None)
             else:
                 self._balances_by_profile[profile] = balances_signature
+            if (
+                emit_legacy
+                and trade_gap_signature
+                and (legacy_profile_active or not standard_profile_active)
+            ):
+                self._legacy_recovery_signature_by_profile[profile] = trade_gap_signature
+            else:
+                self._legacy_recovery_signature_by_profile.pop(profile, None)
 
 
 @dataclass(frozen=True)

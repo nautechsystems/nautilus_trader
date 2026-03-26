@@ -71,6 +71,13 @@ const DELTA_LIMIT = 500;
 const MAX_EMPTY_POLLS = 3; // Log warning if this many consecutive polls return 0 trades
 const RECONNECT_CATCHUP_MIN_MS = 3000;
 const TRADE_HEALTH_STALE_MS = STALE_THRESHOLDS.REALTIME * 2;
+type TradesRecoveryReason =
+  | 'lineage_mismatch'
+  | 'seq_gap'
+  | 'snapshot_refresh'
+  | 'socket_reconnect'
+  | 'trade_gap'
+  | null;
 
 const coerceFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -639,6 +646,7 @@ export default function Trades({
   const [isViewingLatest, setIsViewingLatest] = useState(true);
   const [perfHarnessActive, setPerfHarnessActive] = useState(false);
   const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
+  const [recoveryReason, setRecoveryReasonState] = useState<TradesRecoveryReason>(null);
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
   const [standardLineageGeneration, setStandardLineageGeneration] = useState<number | null>(null);
   const [standardSubscriptionEpoch, setStandardSubscriptionEpoch] = useState(0);
@@ -693,6 +701,7 @@ export default function Trades({
   const loadingRef = useRef<boolean>(loading);
   const isResyncingRef = useRef<boolean>(isResyncing);
   const surfaceStateRef = useRef<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
+  const recoveryReasonRef = useRef<TradesRecoveryReason>(null);
   const manualRefreshRequiredRef = useRef<boolean>(false);
   const manualRefreshGenerationRef = useRef(0);
   const standardLineageRef = useRef<RealtimeSnapshotLineage | null>(null);
@@ -809,6 +818,11 @@ export default function Trades({
     return { acknowledgedSeq, targetSeq: target };
   }, [clearGapRecoveryState]);
 
+  const setRecoveryReason = useCallback((reason: TradesRecoveryReason) => {
+    recoveryReasonRef.current = reason;
+    setRecoveryReasonState((current) => (current === reason ? current : reason));
+  }, []);
+
   const syncSurfaceState = useCallback(() => {
     const requiresRealtimeLineage = tradesStandardEnabled && tradesStandardActiveView;
     const missingRealtimeLineage =
@@ -836,6 +850,13 @@ export default function Trades({
         nextState = RealtimeSurfaceState.LIVE;
       }
     }
+    const nextRecoveryReason = nextState === RealtimeSurfaceState.RECOVERING
+      ? recoveryReasonRef.current
+      : null;
+    recoveryReasonRef.current = nextRecoveryReason;
+    setRecoveryReasonState((current) => (
+      current === nextRecoveryReason ? current : nextRecoveryReason
+    ));
 
     surfaceStateRef.current = nextState;
     setSurfaceState((current) => (current === nextState ? current : nextState));
@@ -1227,13 +1248,14 @@ export default function Trades({
     fetchPage();
   }, [fetchPage, recomputeIsViewingLatest]);
 
-  const recoverStandardSnapshot = useCallback(() => {
+  const recoverStandardSnapshot = useCallback((reason: TradesRecoveryReason = 'snapshot_refresh') => {
     if (manualRefreshRequiredRef.current || standardSnapshotRecoveryInFlightRef.current) {
       return;
     }
     standardSnapshotRecoveryInFlightRef.current = true;
     setStandardSubscriptionEpoch((epoch) => epoch + 1);
     catchingUpRef.current = true;
+    setRecoveryReason(reason);
     setStandardLineage(null);
     syncSurfaceState();
     const recoveryResyncId = useResyncStore.getState().resyncId;
@@ -1246,7 +1268,7 @@ export default function Trades({
       standardSnapshotRecoveryInFlightRef.current = false;
       syncSurfaceState();
     });
-  }, [fetchPage, syncSurfaceState]);
+  }, [fetchPage, setRecoveryReason, syncSurfaceState]);
 
   const handleScrollStateChange = useCallback(
     ({ atTop, isScrolling, scrollElement }: TradesTableScrollState) => {
@@ -1498,6 +1520,7 @@ export default function Trades({
           !responseMatchesLatestEpoch
           && (latestStreamCursor.streamId != null || latestStreamCursor.snapshotRevision != null);
         if (hasStreamMismatch) {
+          setRecoveryReason('snapshot_refresh');
           catchingUpRef.current = true;
           await fetchPage({
             keepUnread: !isViewingLatestRef.current,
@@ -1554,6 +1577,7 @@ export default function Trades({
           if (sinceLast >= 10_000) {
             console.log('[trades] Delta poll requires full reset, fetching snapshot');
             lastResetAtRef.current = now;
+            setRecoveryReason('snapshot_refresh');
             catchingUpRef.current = true;
             await fetchPage({
               keepUnread: !isViewingLatestRef.current,
@@ -1692,7 +1716,7 @@ export default function Trades({
         schedulePoll();
       }
     }, delay);
-  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, syncSurfaceState, reconcileGapRecoveryTarget]);
+  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, setRecoveryReason, syncSurfaceState, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     schedulePoll();
@@ -1832,6 +1856,7 @@ export default function Trades({
         && (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
         && !matchesTradeStreamEpoch(currentStreamCursor, eventStreamId, eventSnapshotRevision);
       if (hasStreamMismatch) {
+        setRecoveryReason('snapshot_refresh');
         catchingUpRef.current = true;
         queueSnapshotRefreshRef.current?.(true);
         syncSurfaceState();
@@ -1851,6 +1876,7 @@ export default function Trades({
         && hasExactCurrentEpoch
         && surfaceSeq > currentStreamCursor.lastSeq + 1;
       if (hasSeqGap) {
+        setRecoveryReason('seq_gap');
         beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
         catchingUpRef.current = true;
         syncSurfaceState();
@@ -1864,6 +1890,7 @@ export default function Trades({
         && hasCompatibleRecoveryEpoch
         && surfaceSeq > currentStreamCursor.lastSeq;
       if (shouldDeferEventDuringRecovery) {
+        setRecoveryReason('seq_gap');
         beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
         catchingUpRef.current = true;
         syncSurfaceState();
@@ -1936,7 +1963,7 @@ export default function Trades({
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery, setRecoveryReason]);
 
   useEffect(() => {
     const pending: any[] = [];
@@ -2017,11 +2044,11 @@ export default function Trades({
 
   const handleStandardRealtimeFailure = useCallback((failure: StandardSocketFailure) => {
     if (failure.type === 'recovery_required' && failure.reason === 'trade_gap') {
-      recoverStandardSnapshot();
+      recoverStandardSnapshot('trade_gap');
       return;
     }
     if (failure.type === 'lineage_mismatch') {
-      recoverStandardSnapshot();
+      recoverStandardSnapshot('lineage_mismatch');
       return;
     }
     requireManualRefresh();
@@ -2048,6 +2075,7 @@ export default function Trades({
 
     if (event.kind === 'heartbeat') {
       if (hasEnvelopeSeqGap) {
+        setRecoveryReason('seq_gap');
         beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
         catchingUpRef.current = true;
         syncSurfaceState();
@@ -2064,7 +2092,7 @@ export default function Trades({
     }
 
     if (event.kind === 'invalidate') {
-      recoverStandardSnapshot();
+      recoverStandardSnapshot('snapshot_refresh');
       return;
     }
 
@@ -2074,6 +2102,7 @@ export default function Trades({
 
     const trades = Array.isArray(event.payload?.trades) ? event.payload.trades : [];
     if (!trades.length && hasEnvelopeSeqGap) {
+      setRecoveryReason('seq_gap');
       beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
       catchingUpRef.current = true;
       syncSurfaceState();
@@ -2095,7 +2124,7 @@ export default function Trades({
       });
     }
     syncSurfaceState();
-  }, [beginGapRecovery, recoverStandardSnapshot, schedulePoll, syncSurfaceState]);
+  }, [beginGapRecovery, recoverStandardSnapshot, schedulePoll, setRecoveryReason, syncSurfaceState]);
 
   useStandardWebSocketSubscription({
     enabled:
@@ -2146,6 +2175,10 @@ export default function Trades({
         return;
       }
 
+      if (standardSnapshotRecoveryInFlightRef.current) {
+        return;
+      }
+
       if (tradesStandardActiveView && standardLineage) {
         return;
       }
@@ -2159,6 +2192,7 @@ export default function Trades({
       }
       lastReconnectCatchupAtRef.current = now;
       reconnectCatchupInFlightRef.current = true;
+      setRecoveryReason('socket_reconnect');
       catchingUpRef.current = true;
 
       const reconnectResyncId = useResyncStore.getState().resyncId;
@@ -2195,7 +2229,7 @@ export default function Trades({
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, [fetchPage, standardLineage, syncSurfaceState, tradesStandardActiveView]);
+  }, [fetchPage, setRecoveryReason, standardLineage, syncSurfaceState, tradesStandardActiveView]);
 
   useEffect(() => {
     isActiveRef.current = true;
@@ -2257,6 +2291,17 @@ export default function Trades({
   }, [clearUnreadAndRefresh, unread]);
 
   const surfaceStatusMeta = useMemo(() => {
+    const recoveringBannerLabel = !socketConnected
+      ? 'OFFLINE - Reconnecting…'
+      : recoveryReason === 'socket_reconnect'
+        ? 'RECOVERING - Reconnecting…'
+        : recoveryReason === 'trade_gap'
+          || recoveryReason === 'lineage_mismatch'
+          || recoveryReason === 'snapshot_refresh'
+          ? 'RECOVERING - Refreshing snapshot…'
+          : recoveryReason === 'seq_gap'
+            ? 'RECOVERING - Replaying missed trades…'
+            : 'RECOVERING - Replaying…';
     switch (surfaceState) {
       case RealtimeSurfaceState.LIVE:
         return {
@@ -2285,9 +2330,13 @@ export default function Trades({
       case RealtimeSurfaceState.RECOVERING:
         return {
           color: colors.semantic.warning.DEFAULT,
-          title: socketConnected ? 'Recovering' : 'Offline',
+          title: !socketConnected
+            ? 'Offline'
+            : recoveryReason === 'socket_reconnect'
+              ? 'Reconnecting'
+              : 'Recovering',
           label: socketConnected ? 'RECOVERING' : 'OFFLINE',
-          bannerLabel: socketConnected ? 'RECOVERING - Replaying…' : 'OFFLINE - Reconnecting…',
+          bannerLabel: recoveringBannerLabel,
           bannerBg: socketConnected ? colors.semantic.warning.bg : colors.semantic.danger.bg,
         };
       case RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED:
@@ -2307,7 +2356,7 @@ export default function Trades({
           bannerBg: undefined,
         };
     }
-  }, [socketConnected, surfaceState]);
+  }, [recoveryReason, socketConnected, surfaceState]);
 
   const headerActions = useMemo(
     () => {

@@ -724,6 +724,62 @@ def test_socket_emitter_tokenmm_revalidates_stream_when_new_legacy_rows_arrive_a
     client.disconnect()
 
 
+def test_socket_emitter_tokenmm_emits_legacy_trade_gap_recovery_once_per_unchanged_condition(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-legacy-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1700000000200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    client = socketio.test_client(app)
+    _prepare_profile_for_manual_emit(client, emitter)
+
+    emitter.emit_once(profile="tokenmm")
+
+    first_received = _take_socket_packets(client)
+    first_market_packets = [packet for packet in first_received if packet["name"] == "market_update"]
+    assert len(first_market_packets) == 1
+    assert first_market_packets[0]["args"][0]["recovery"] == {"required": True, "reason": "trade_gap"}
+
+    emitter.emit_once(profile="tokenmm")
+
+    second_received = _take_socket_packets(client)
+    second_market_packets = [packet for packet in second_received if packet["name"] == "market_update"]
+    assert second_market_packets == []
+    client.disconnect()
+
+
 def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signals(
     flux_config,
     redis_client,
