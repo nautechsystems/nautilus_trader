@@ -56,6 +56,8 @@ const {
   };
 });
 
+const mockUsePolling = vi.hoisted(() => vi.fn());
+
 // Mock dependencies
 vi.mock('@/api', () => ({
   api: {
@@ -68,6 +70,14 @@ vi.mock('@/config/featureFlags', async () => {
   return {
     ...actual,
     isRealtimeStandardEnabled: (surface: string) => Boolean((realtimeFlags as Record<string, boolean>)[surface]),
+  };
+});
+
+vi.mock('@/hooks', async () => {
+  const actual = await vi.importActual<any>('@/hooks');
+  return {
+    ...actual,
+    usePolling: (...args: unknown[]) => mockUsePolling(...args),
   };
 });
 
@@ -231,6 +241,7 @@ vi.mock('@/hooks/useMobileLayout', () => ({
     width: 1280,
     height: 720,
   }),
+  MobileLayoutProvider: ({ children }: any) => children,
   useDensityMode: () => 'desktop',
 }));
 
@@ -328,6 +339,7 @@ describe('SignalTable Behavioral Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUsePolling.mockReset();
     realtimeFlags.signal = false;
     setNextSubscribeAck(null);
     Object.keys(socketHandlers).forEach((event) => delete socketHandlers[event]);
@@ -852,6 +864,68 @@ describe('SignalTable Behavioral Tests', () => {
       expect((standardSocketClient as any).subscribe).toHaveBeenCalledTimes(1);
       expect(socket.on).not.toHaveBeenCalledWith('market_update', expect.any(Function));
       expect(socket.on).not.toHaveBeenCalledWith('signal_delta', expect.any(Function));
+    });
+
+    it('keeps polling snapshots when standard signal transport is polling_only', async () => {
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: 1_700_000_000_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 7,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockResolvedValue({
+          strategies: [],
+          server_time: '2024-01-01 12:00:05',
+          server_ts_ms: 1_700_000_005_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 8,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        });
+
+      renderSignalTable();
+
+      await waitFor(() => {
+        expect((standardSocketClient as any).subscribe).toHaveBeenCalledTimes(1);
+        expect(mockUsePolling).toHaveBeenCalledWith(expect.any(Function), 5000, true);
+      });
+
+      const [pollFn] = mockUsePolling.mock.calls.at(-1)!;
+      await act(async () => {
+        await pollFn();
+      });
+
+      await waitFor(() => {
+        expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+      });
+      expect((api.getSignalStrategies as any).mock.calls[1]?.[0]).toEqual({ contractVersion: 2 });
     });
 
     it('tracks the latest standard signal cursor so reconnects resume from the newest seq', async () => {

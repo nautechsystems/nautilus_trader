@@ -34,6 +34,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { isEqual } from 'lodash-es';
 import { useLocation } from 'react-router-dom';
 import { api } from '@/api';
+import { usePolling } from '@/hooks';
 import { ChevronDown, Info } from 'lucide-react';
 import { useSignalStore, selectSignalRows } from '@/stores';
 import shallow from 'zustand/shallow';
@@ -1962,6 +1963,9 @@ export default function SignalTable({
     signalStandardEnabled ? RealtimeSurfaceState.SYNCING : RealtimeSurfaceState.LIVE
   ));
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const signalStandardPollingEnabled = signalStandardEnabled
+    && standardLineage?.capabilities?.transport_mode === 'polling_only'
+    && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
   const [showQuoted, setShowQuoted] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   // Track lastUpdate via ref to avoid resubscribing effects when checking staleness
@@ -2449,6 +2453,14 @@ export default function SignalTable({
       }
     },
   });
+
+  usePolling(
+    () => {
+      void fetchSnapshot();
+    },
+    5000,
+    signalStandardPollingEnabled,
+  );
 
   useEffect(() => {
     void fetchSnapshot();
