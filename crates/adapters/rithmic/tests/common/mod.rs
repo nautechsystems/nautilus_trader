@@ -24,13 +24,17 @@ use std::sync::{
 use futures_util::{SinkExt, StreamExt};
 use prost::Message as ProstMessage;
 use rithmic_rs::rti::{
-    BestBidOffer, LastTrade, MessageType, RequestLogin, RequestLogout, RequestMarketDataUpdate,
-    ResponseLogin, ResponseLogout, ResponseMarketDataUpdate,
+    AccountPnLPositionUpdate, BestBidOffer, InstrumentPnLPositionUpdate, LastTrade, MessageType,
+    RequestAccountList, RequestLogin, RequestLogout, RequestMarketDataUpdate,
+    RequestPnLPositionSnapshot, RequestPnLPositionUpdates, RequestSubscribeForOrderUpdates,
+    ResponseAccountList, ResponseLogin, ResponseLogout, ResponseMarketDataUpdate,
+    ResponsePnLPositionSnapshot, ResponsePnLPositionUpdates, ResponseSubscribeForOrderUpdates,
     best_bid_offer::PresenceBits,
     request_market_data_update::{Request as MarketDataRequest, UpdateBits},
+    request_pn_l_position_updates::Request as PnlPositionRequest,
 };
 use tokio::{net::TcpListener, task::JoinHandle};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
 
 use nautilus_rithmic::{
     GatewayConfig, RithmicDataClient, RithmicEnv, RithmicError, RithmicGateway,
@@ -61,7 +65,7 @@ pub fn test_data_client() -> RithmicDataClient {
     RithmicDataClient::new(test_gateway_arc())
 }
 
-pub fn test_ticker_only_gateway_config(url: &str) -> GatewayConfig {
+fn base_test_gateway_config(url: &str) -> GatewayConfig {
     GatewayConfig::new(
         RithmicEnv::Demo,
         "user",
@@ -72,10 +76,30 @@ pub fn test_ticker_only_gateway_config(url: &str) -> GatewayConfig {
         "account",
     )
     .with_url_override(url)
-    .with_ticker(true)
-    .with_order(false)
-    .with_pnl(false)
-    .with_history(false)
+}
+
+pub fn test_ticker_only_gateway_config(url: &str) -> GatewayConfig {
+    base_test_gateway_config(url)
+        .with_ticker(true)
+        .with_order(false)
+        .with_pnl(false)
+        .with_history(false)
+}
+
+pub fn test_order_only_gateway_config(url: &str) -> GatewayConfig {
+    base_test_gateway_config(url)
+        .with_ticker(false)
+        .with_order(true)
+        .with_pnl(false)
+        .with_history(false)
+}
+
+pub fn test_pnl_only_gateway_config(url: &str) -> GatewayConfig {
+    base_test_gateway_config(url)
+        .with_ticker(false)
+        .with_order(false)
+        .with_pnl(true)
+        .with_history(false)
 }
 
 pub fn assert_connection_error(err: RithmicError, expected: &str) {
@@ -113,23 +137,7 @@ impl MockTickerPlant {
                                 let request = RequestLogin::decode(payload).unwrap();
                                 let request_id = request.user_msg.first().cloned().unwrap();
 
-                                ws.send(Message::Binary(
-                                    encode_message(ResponseLogin {
-                                        template_id: 11,
-                                        template_version: Some("5.30".to_string()),
-                                        user_msg: vec![request_id],
-                                        rp_code: vec![],
-                                        fcm_id: Some("fcm".to_string()),
-                                        ib_id: Some("ib".to_string()),
-                                        country_code: None,
-                                        state_code: None,
-                                        unique_user_id: Some("mock-session".to_string()),
-                                        heartbeat_interval: Some(60.0),
-                                    })
-                                    .into(),
-                                ))
-                                .await
-                                .unwrap();
+                                send_protobuf(&mut ws, login_response(request_id)).await;
                             }
                             100 => {
                                 let request = RequestMarketDataUpdate::decode(payload).unwrap();
@@ -223,16 +231,7 @@ impl MockTickerPlant {
                                 let request = RequestLogout::decode(payload).unwrap();
                                 let request_id = request.user_msg.first().cloned().unwrap();
 
-                                ws.send(Message::Binary(
-                                    encode_message(ResponseLogout {
-                                        template_id: 13,
-                                        user_msg: vec![request_id],
-                                        rp_code: vec![],
-                                    })
-                                    .into(),
-                                ))
-                                .await
-                                .unwrap();
+                                send_protobuf(&mut ws, logout_response(request_id)).await;
                                 break;
                             }
                             18 => {}
@@ -262,6 +261,354 @@ impl MockTickerPlant {
     pub async fn wait(self) {
         self.handle.await.unwrap();
     }
+}
+
+pub struct MockOrderPlant {
+    pub url: String,
+    handle: JoinHandle<()>,
+}
+
+impl MockOrderPlant {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+
+            while let Some(message) = ws.next().await {
+                match message.unwrap() {
+                    Message::Binary(data) => {
+                        let payload = &data[4..];
+                        let message_type = MessageType::decode(payload).unwrap();
+
+                        match message_type.template_id {
+                            10 => {
+                                let request = RequestLogin::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, login_response(request_id)).await;
+                            }
+                            302 => {
+                                let request = RequestAccountList::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(request.fcm_id.as_deref(), Some("fcm"));
+                                assert_eq!(request.ib_id.as_deref(), Some("ib"));
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponseAccountList {
+                                        template_id: 303,
+                                        user_msg: vec![request_id.clone()],
+                                        rq_handler_rp_code: vec!["0".to_string()],
+                                        rp_code: vec![],
+                                        fcm_id: Some("fcm".to_string()),
+                                        ib_id: Some("ib".to_string()),
+                                        account_id: Some("account-1".to_string()),
+                                        account_name: Some("Primary".to_string()),
+                                        account_currency: Some("USD".to_string()),
+                                        account_auto_liquidate: None,
+                                        auto_liq_threshold_current_value: None,
+                                    },
+                                )
+                                .await;
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponseAccountList {
+                                        template_id: 303,
+                                        user_msg: vec![request_id],
+                                        rq_handler_rp_code: vec![],
+                                        rp_code: vec![],
+                                        fcm_id: Some("fcm".to_string()),
+                                        ib_id: Some("ib".to_string()),
+                                        account_id: Some("account-2".to_string()),
+                                        account_name: Some("Secondary".to_string()),
+                                        account_currency: Some("USD".to_string()),
+                                        account_auto_liquidate: None,
+                                        auto_liq_threshold_current_value: None,
+                                    },
+                                )
+                                .await;
+                            }
+                            308 => {
+                                let request =
+                                    RequestSubscribeForOrderUpdates::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(request.fcm_id.as_deref(), Some("fcm"));
+                                assert_eq!(request.ib_id.as_deref(), Some("ib"));
+                                assert_eq!(request.account_id.as_deref(), Some("account"));
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponseSubscribeForOrderUpdates {
+                                        template_id: 309,
+                                        user_msg: vec![request_id],
+                                        rp_code: vec![],
+                                    },
+                                )
+                                .await;
+                            }
+                            12 => {
+                                let request = RequestLogout::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, logout_response(request_id)).await;
+                                break;
+                            }
+                            18 => {}
+                            other => panic!("unexpected request template id {other}"),
+                        }
+                    }
+                    Message::Ping(payload) => {
+                        ws.send(Message::Pong(payload)).await.unwrap();
+                    }
+                    Message::Close(_) => break,
+                    Message::Text(_) | Message::Pong(_) | Message::Frame(_) => {}
+                }
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}"),
+            handle,
+        }
+    }
+
+    pub async fn wait(self) {
+        self.handle.await.unwrap();
+    }
+}
+
+pub struct MockPnlPlant {
+    pub url: String,
+    snapshot_requests: Arc<AtomicUsize>,
+    handle: JoinHandle<()>,
+}
+
+impl MockPnlPlant {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let snapshot_requests = Arc::new(AtomicUsize::new(0));
+        let snapshot_requests_task = Arc::clone(&snapshot_requests);
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+
+            while let Some(message) = ws.next().await {
+                match message.unwrap() {
+                    Message::Binary(data) => {
+                        let payload = &data[4..];
+                        let message_type = MessageType::decode(payload).unwrap();
+
+                        match message_type.template_id {
+                            10 => {
+                                let request = RequestLogin::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, login_response(request_id)).await;
+                            }
+                            400 => {
+                                let request = RequestPnLPositionUpdates::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(
+                                    request.request,
+                                    Some(PnlPositionRequest::Subscribe as i32)
+                                );
+                                assert_eq!(request.fcm_id.as_deref(), Some("fcm"));
+                                assert_eq!(request.ib_id.as_deref(), Some("ib"));
+                                assert_eq!(request.account_id.as_deref(), Some("account"));
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponsePnLPositionUpdates {
+                                        template_id: 401,
+                                        user_msg: vec![request_id],
+                                        rp_code: vec![],
+                                    },
+                                )
+                                .await;
+                            }
+                            402 => {
+                                let request = RequestPnLPositionSnapshot::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(request.fcm_id.as_deref(), Some("fcm"));
+                                assert_eq!(request.ib_id.as_deref(), Some("ib"));
+                                assert_eq!(request.account_id.as_deref(), Some("account"));
+                                snapshot_requests_task.fetch_add(1, Ordering::SeqCst);
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponsePnLPositionSnapshot {
+                                        template_id: 403,
+                                        user_msg: vec![request_id],
+                                        rp_code: vec![],
+                                    },
+                                )
+                                .await;
+
+                                send_protobuf(
+                                    &mut ws,
+                                    AccountPnLPositionUpdate {
+                                        template_id: 451,
+                                        is_snapshot: Some(true),
+                                        fcm_id: Some("fcm".to_string()),
+                                        ib_id: Some("ib".to_string()),
+                                        account_id: Some("account".to_string()),
+                                        fill_buy_qty: None,
+                                        fill_sell_qty: None,
+                                        order_buy_qty: None,
+                                        order_sell_qty: None,
+                                        buy_qty: Some(3),
+                                        sell_qty: Some(1),
+                                        open_long_options_value: None,
+                                        open_short_options_value: None,
+                                        closed_options_value: None,
+                                        option_cash_reserved: None,
+                                        rms_account_commission: None,
+                                        open_position_pnl: Some("1250.75".to_string()),
+                                        open_position_quantity: Some(2),
+                                        closed_position_pnl: Some("100.25".to_string()),
+                                        closed_position_quantity: Some(1),
+                                        net_quantity: Some(2),
+                                        excess_buy_margin: None,
+                                        margin_balance: Some("25000.25".to_string()),
+                                        min_margin_balance: None,
+                                        min_account_balance: None,
+                                        account_balance: Some("100000.50".to_string()),
+                                        cash_on_hand: Some("75000.25".to_string()),
+                                        option_closed_pnl: None,
+                                        percent_maximum_allowable_loss: None,
+                                        option_open_pnl: None,
+                                        mtm_account: None,
+                                        available_buying_power: None,
+                                        used_buying_power: None,
+                                        reserved_buying_power: None,
+                                        excess_sell_margin: None,
+                                        day_open_pnl: None,
+                                        day_closed_pnl: None,
+                                        day_pnl: None,
+                                        day_open_pnl_offset: None,
+                                        day_closed_pnl_offset: None,
+                                        ssboe: Some(1_700_000_001),
+                                        usecs: Some(456_789),
+                                    },
+                                )
+                                .await;
+
+                                send_protobuf(
+                                    &mut ws,
+                                    InstrumentPnLPositionUpdate {
+                                        template_id: 450,
+                                        is_snapshot: Some(true),
+                                        fcm_id: Some("fcm".to_string()),
+                                        ib_id: Some("ib".to_string()),
+                                        account_id: Some("account".to_string()),
+                                        symbol: Some("ESM6".to_string()),
+                                        exchange: Some("CME".to_string()),
+                                        product_code: Some("ES".to_string()),
+                                        instrument_type: Some("FUT".to_string()),
+                                        fill_buy_qty: None,
+                                        fill_sell_qty: None,
+                                        order_buy_qty: None,
+                                        order_sell_qty: None,
+                                        buy_qty: Some(3),
+                                        sell_qty: Some(1),
+                                        avg_open_fill_price: Some(4500.25),
+                                        day_open_pnl: Some(300.5),
+                                        day_closed_pnl: Some(25.25),
+                                        day_pnl: Some(325.75),
+                                        day_open_pnl_offset: None,
+                                        day_closed_pnl_offset: None,
+                                        mtm_security: None,
+                                        open_long_options_value: None,
+                                        open_short_options_value: None,
+                                        closed_options_value: None,
+                                        option_cash_reserved: None,
+                                        open_position_pnl: Some("300.50".to_string()),
+                                        open_position_quantity: Some(2),
+                                        closed_position_pnl: Some("25.25".to_string()),
+                                        closed_position_quantity: Some(1),
+                                        net_quantity: Some(2),
+                                        ssboe: Some(1_700_000_001),
+                                        usecs: Some(654_321),
+                                    },
+                                )
+                                .await;
+                            }
+                            12 => {
+                                let request = RequestLogout::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, logout_response(request_id)).await;
+                                break;
+                            }
+                            18 => {}
+                            other => panic!("unexpected request template id {other}"),
+                        }
+                    }
+                    Message::Ping(payload) => {
+                        ws.send(Message::Pong(payload)).await.unwrap();
+                    }
+                    Message::Close(_) => break,
+                    Message::Text(_) | Message::Pong(_) | Message::Frame(_) => {}
+                }
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}"),
+            snapshot_requests,
+            handle,
+        }
+    }
+
+    pub fn snapshot_requests(&self) -> usize {
+        self.snapshot_requests.load(Ordering::SeqCst)
+    }
+
+    pub async fn wait(self) {
+        self.handle.await.unwrap();
+    }
+}
+
+fn login_response(request_id: String) -> ResponseLogin {
+    ResponseLogin {
+        template_id: 11,
+        template_version: Some("5.30".to_string()),
+        user_msg: vec![request_id],
+        rp_code: vec![],
+        fcm_id: Some("fcm".to_string()),
+        ib_id: Some("ib".to_string()),
+        country_code: None,
+        state_code: None,
+        unique_user_id: Some("mock-session".to_string()),
+        heartbeat_interval: Some(60.0),
+    }
+}
+
+fn logout_response(request_id: String) -> ResponseLogout {
+    ResponseLogout {
+        template_id: 13,
+        user_msg: vec![request_id],
+        rp_code: vec![],
+    }
+}
+
+async fn send_protobuf(
+    ws: &mut WebSocketStream<tokio::net::TcpStream>,
+    message: impl ProstMessage,
+) {
+    ws.send(Message::Binary(encode_message(message).into()))
+        .await
+        .unwrap();
 }
 
 fn encode_message(message: impl ProstMessage) -> Vec<u8> {
