@@ -8,7 +8,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar, BarAggregation, BarType
 from nautilus_trader.model.data import QuoteTick as NautilusQuoteTick
 from nautilus_trader.model.data import TradeTick as NautilusTradeTick
-from nautilus_trader.model.identifiers import InstrumentId, TradeId, Venue
+from nautilus_trader.model.identifiers import ClientId, InstrumentId, TradeId, Venue
 from nautilus_trader.model.objects import Price, Quantity
 
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
@@ -53,6 +53,9 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         config: RithmicDataClientConfig,
     ) -> None:
         from nautilus_trader.adapters.rithmic.providers import RithmicInstrumentProvider
+
+        if not isinstance(client_id, ClientId):
+            client_id = ClientId(str(client_id))
 
         super().__init__(
             loop=loop,
