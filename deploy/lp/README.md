@@ -38,9 +38,12 @@ This directory is the deploy root for the dedicated LP hedger stack.
 Install the systemd units and seeded env files:
 
 ```bash
+export LP_DEPLOY_ROOT=/home/ubuntu/releases/prod/lp/current
+cd "${LP_DEPLOY_ROOT}"
+uv sync --all-groups --all-extras
 pnpm --dir fluxboard build
 pnpm --dir pulse-ui build
-sudo ops/scripts/deploy/install_lp_systemd.sh
+sudo LP_DEPLOY_ROOT="${LP_DEPLOY_ROOT}" ops/scripts/deploy/install_lp_systemd.sh
 sudoedit /etc/flux/common.env
 sudoedit /etc/flux/lp-system.ini
 sudo chown root:ubuntu /etc/flux/lp-system.ini
@@ -62,8 +65,12 @@ Installer behavior:
 - writes `/etc/flux/service-eth-plume-lp-hedger-band2.env`
 - writes `/etc/flux/service-hedger3.env`
 - writes `/etc/flux/service-hedger4.env`
+- writes release-root `WORKDIR=` / `PYTHONPATH=` overrides into every rendered LP env file
+- pins every LP command to the selected release-local `.venv/bin/python`
 - rewrites `/etc/systemd/system/flux-lp.target` so the target auto-starts `lp-api`, Band1, and Band2 only
 - installs `/etc/sudoers.d/flux-pulse` so Pulse can manage `lp-api`, Band1, Band2, `service-hedger3`, and `service-hedger4`
+- resolves the deploy root from `LP_DEPLOY_ROOT`, then existing `lp-api.env`, then `/etc/flux/common.env`
+- rejects mutable git checkouts and worktrees as live deploy roots
 
 Band1 and Band2 are the live auto-started production pair for this rollout. `hype_usdt_lp` and `plume_weth_lp` are staged checked-in configs: visible on `/lp`, editable through the shared Hedger surface, and enrolled in Pulse/systemd without joining `flux-lp.target`.
 
