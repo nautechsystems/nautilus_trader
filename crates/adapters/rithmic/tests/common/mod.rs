@@ -27,11 +27,13 @@ use rithmic_rs::rti::{
     AccountPnLPositionUpdate, BestBidOffer, InstrumentPnLPositionUpdate, LastTrade, MessageType,
     RequestAccountList, RequestLogin, RequestLogout, RequestMarketDataUpdate,
     RequestPnLPositionSnapshot, RequestPnLPositionUpdates, RequestSubscribeForOrderUpdates,
-    ResponseAccountList, ResponseLogin, ResponseLogout, ResponseMarketDataUpdate,
-    ResponsePnLPositionSnapshot, ResponsePnLPositionUpdates, ResponseSubscribeForOrderUpdates,
+    RequestTimeBarReplay, ResponseAccountList, ResponseLogin, ResponseLogout,
+    ResponseMarketDataUpdate, ResponsePnLPositionSnapshot, ResponsePnLPositionUpdates,
+    ResponseSubscribeForOrderUpdates, ResponseTimeBarReplay,
     best_bid_offer::PresenceBits,
     request_market_data_update::{Request as MarketDataRequest, UpdateBits},
     request_pn_l_position_updates::Request as PnlPositionRequest,
+    request_time_bar_replay::BarType as TimeBarReplayType,
 };
 use tokio::{net::TcpListener, task::JoinHandle};
 use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
@@ -100,6 +102,14 @@ pub fn test_pnl_only_gateway_config(url: &str) -> GatewayConfig {
         .with_order(false)
         .with_pnl(true)
         .with_history(false)
+}
+
+pub fn test_history_only_gateway_config(url: &str) -> GatewayConfig {
+    base_test_gateway_config(url)
+        .with_ticker(false)
+        .with_order(false)
+        .with_pnl(false)
+        .with_history(true)
 }
 
 pub fn assert_connection_error(err: RithmicError, expected: &str) {
@@ -572,6 +582,144 @@ impl MockPnlPlant {
 
     pub fn snapshot_requests(&self) -> usize {
         self.snapshot_requests.load(Ordering::SeqCst)
+    }
+
+    pub async fn wait(self) {
+        self.handle.await.unwrap();
+    }
+}
+
+pub struct MockHistoryPlant {
+    pub url: String,
+    bar_requests: Arc<AtomicUsize>,
+    handle: JoinHandle<()>,
+}
+
+impl MockHistoryPlant {
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let bar_requests = Arc::new(AtomicUsize::new(0));
+        let bar_requests_task = Arc::clone(&bar_requests);
+
+        let handle = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+
+            while let Some(message) = ws.next().await {
+                match message.unwrap() {
+                    Message::Binary(data) => {
+                        let payload = &data[4..];
+                        let message_type = MessageType::decode(payload).unwrap();
+
+                        match message_type.template_id {
+                            10 => {
+                                let request = RequestLogin::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, login_response(request_id)).await;
+                            }
+                            202 => {
+                                let request = RequestTimeBarReplay::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(request.symbol.as_deref(), Some("ESM6"));
+                                assert_eq!(request.exchange.as_deref(), Some("CME"));
+                                assert_eq!(
+                                    request.bar_type,
+                                    Some(TimeBarReplayType::MinuteBar as i32)
+                                );
+                                assert_eq!(request.bar_type_period, Some(1));
+                                assert_eq!(request.start_index, Some(1_700_000_000));
+                                assert_eq!(request.finish_index, Some(1_700_000_060));
+
+                                bar_requests_task.fetch_add(1, Ordering::SeqCst);
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponseTimeBarReplay {
+                                        template_id: 203,
+                                        request_key: Some("history-req".to_string()),
+                                        user_msg: vec![request_id.clone()],
+                                        rq_handler_rp_code: vec!["0".to_string()],
+                                        rp_code: vec![],
+                                        symbol: Some("ESM6".to_string()),
+                                        exchange: Some("CME".to_string()),
+                                        r#type: Some(TimeBarReplayType::MinuteBar as i32),
+                                        period: Some("1".to_string()),
+                                        marker: Some(1_700_000_000),
+                                        num_trades: Some(12),
+                                        volume: Some(100),
+                                        bid_volume: Some(45),
+                                        ask_volume: Some(55),
+                                        open_price: Some(4500.00),
+                                        close_price: Some(4500.25),
+                                        high_price: Some(4500.50),
+                                        low_price: Some(4499.75),
+                                        settlement_price: None,
+                                        has_settlement_price: Some(false),
+                                        must_clear_settlement_price: Some(false),
+                                    },
+                                )
+                                .await;
+
+                                send_protobuf(
+                                    &mut ws,
+                                    ResponseTimeBarReplay {
+                                        template_id: 203,
+                                        request_key: Some("history-req".to_string()),
+                                        user_msg: vec![request_id],
+                                        rq_handler_rp_code: vec![],
+                                        rp_code: vec![],
+                                        symbol: Some("ESM6".to_string()),
+                                        exchange: Some("CME".to_string()),
+                                        r#type: Some(TimeBarReplayType::MinuteBar as i32),
+                                        period: Some("1".to_string()),
+                                        marker: Some(1_700_000_060),
+                                        num_trades: Some(10),
+                                        volume: Some(80),
+                                        bid_volume: Some(30),
+                                        ask_volume: Some(50),
+                                        open_price: Some(4500.25),
+                                        close_price: Some(4500.75),
+                                        high_price: Some(4501.00),
+                                        low_price: Some(4500.00),
+                                        settlement_price: None,
+                                        has_settlement_price: Some(false),
+                                        must_clear_settlement_price: Some(false),
+                                    },
+                                )
+                                .await;
+                            }
+                            12 => {
+                                let request = RequestLogout::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                send_protobuf(&mut ws, logout_response(request_id)).await;
+                                break;
+                            }
+                            18 => {}
+                            other => panic!("unexpected request template id {other}"),
+                        }
+                    }
+                    Message::Ping(payload) => {
+                        ws.send(Message::Pong(payload)).await.unwrap();
+                    }
+                    Message::Close(_) => break,
+                    Message::Text(_) | Message::Pong(_) | Message::Frame(_) => {}
+                }
+            }
+        });
+
+        Self {
+            url: format!("ws://{address}"),
+            bar_requests,
+            handle,
+        }
+    }
+
+    pub fn bar_requests(&self) -> usize {
+        self.bar_requests.load(Ordering::SeqCst)
     }
 
     pub async fn wait(self) {

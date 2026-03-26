@@ -26,11 +26,12 @@ use nautilus_rithmic::{
     execution::ExecutionEvent,
     providers::{AccountEvent, PositionEvent},
 };
+use rithmic_rs::rti::messages::RithmicMessage;
 use tokio::time::{Duration, timeout};
 
 use crate::common::{
-    MockOrderPlant, MockPnlPlant, assert_connection_error, test_gateway,
-    test_order_only_gateway_config, test_pnl_only_gateway_config,
+    MockHistoryPlant, MockOrderPlant, MockPnlPlant, assert_connection_error, test_gateway,
+    test_history_only_gateway_config, test_order_only_gateway_config, test_pnl_only_gateway_config,
 };
 
 #[tokio::test]
@@ -155,6 +156,64 @@ async fn request_pnl_snapshot_connected_path_emits_balance_and_position_updates(
 
     assert!(balance_seen, "expected balance update");
     assert!(position_seen, "expected position update");
+
+    gateway.disconnect().await.unwrap();
+    server.wait().await;
+}
+
+#[tokio::test]
+async fn request_bars_connected_path_collects_multi_response_history_replay() {
+    let server = MockHistoryPlant::start().await;
+    let config = test_history_only_gateway_config(&server.url);
+    let mut gateway = nautilus_rithmic::RithmicGateway::new(config);
+
+    assert!(!gateway.has_history_plant());
+    gateway.connect().await.unwrap();
+    assert!(gateway.is_connected());
+    assert!(gateway.has_history_plant());
+
+    let responses = gateway
+        .request_bars(
+            "ESM6",
+            "CME",
+            TimeBarType::MinuteBar,
+            1,
+            1_700_000_000,
+            1_700_000_060,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(server.bar_requests(), 1);
+    assert_eq!(responses.len(), 2);
+
+    match &responses[0].message {
+        RithmicMessage::ResponseTimeBarReplay(first) => {
+            assert_eq!(first.request_key.as_deref(), Some("history-req"));
+            assert_eq!(first.symbol.as_deref(), Some("ESM6"));
+            assert_eq!(first.exchange.as_deref(), Some("CME"));
+            assert_eq!(first.period.as_deref(), Some("1"));
+            assert_eq!(first.marker, Some(1_700_000_000));
+            assert_eq!(first.open_price, Some(4500.00));
+            assert_eq!(first.close_price, Some(4500.25));
+            assert_eq!(first.volume, Some(100));
+        }
+        other => panic!("unexpected first history response {other:?}"),
+    }
+
+    match &responses[1].message {
+        RithmicMessage::ResponseTimeBarReplay(second) => {
+            assert_eq!(second.request_key.as_deref(), Some("history-req"));
+            assert_eq!(second.symbol.as_deref(), Some("ESM6"));
+            assert_eq!(second.exchange.as_deref(), Some("CME"));
+            assert_eq!(second.period.as_deref(), Some("1"));
+            assert_eq!(second.marker, Some(1_700_000_060));
+            assert_eq!(second.open_price, Some(4500.25));
+            assert_eq!(second.close_price, Some(4500.75));
+            assert_eq!(second.volume, Some(80));
+        }
+        other => panic!("unexpected second history response {other:?}"),
+    }
 
     gateway.disconnect().await.unwrap();
     server.wait().await;
