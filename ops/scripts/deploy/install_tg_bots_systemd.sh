@@ -16,6 +16,7 @@ SERVICE_ENV_MODE="${SERVICE_ENV_MODE-0640}"
 BINANCE_SECRET_ID="${LAN_ROGUE_TRADER_BOT_BINANCE_SECRET_ID:-/nautilus/tg-bots/lan_rogue_trader_bot/binance}"
 TELEGRAM_SECRET_ID="${LAN_ROGUE_TRADER_BOT_TELEGRAM_SECRET_ID:-/nautilus/tg-bots/lan_rogue_trader_bot/telegram_bot}"
 DEPLOY_ROOT_OVERRIDE="${TG_BOTS_DEPLOY_ROOT:-}"
+TEST_MODE="${FLUX_DEPLOY_TEST_MODE:-0}"
 DEPLOY_ROOT=""
 TG_BOTS_PYTHON_BIN=""
 
@@ -35,6 +36,9 @@ declare -a MANAGED_SERVICE_ENV_KEYS=(
 
 
 require_sudo() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   if [[ "${EUID}" -ne 0 ]]; then
     echo "[tg-bots-systemd] run with sudo" >&2
     exit 1
@@ -215,6 +219,9 @@ rebuild_pulse_sudoers() {
 
 
 enable_stack() {
+  if [[ "${TEST_MODE}" == "1" ]]; then
+    return 0
+  fi
   systemctl daemon-reload
   systemctl enable flux-tg-bots.target
 }
