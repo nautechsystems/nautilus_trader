@@ -23,9 +23,11 @@ This runbook defines the production lane model for the shared Flux host.
 ## Canonical Host Paths
 
 - Canonical dev repo: `~/nautilus_trader`
+- Compatibility symlink: `~/nautilus-trader -> ~/nautilus_trader`
 - Canonical worktree root: `~/nautilus_trader/.worktrees`
 - Pilot releases: `~/releases/pilot/<stack>/releases/<timestamp>-<sha>` and `~/releases/pilot/<stack>/current`
 - Prod releases: `~/releases/prod/<stack>/releases/<timestamp>-<sha>` and `~/releases/prod/<stack>/current`
+- Preserved retired clones and host-layout backups: `~/archive/*`
 
 The path prefix may change later, but the immutable release-root contract must not.
 
@@ -93,8 +95,9 @@ Agents must follow these rules:
 ## Repo And Worktree Hygiene
 
 - keep one canonical dev repo
-- retire extra top-level clones after reviewing uncommitted work
-- keep one approved worktree location
+- keep `~/nautilus-trader` only as a compatibility symlink, not as a second mutable clone
+- retire extra top-level clones after reviewing uncommitted work and archive them under `~/archive/`
+- keep one approved worktree location under `~/nautilus_trader/.worktrees`
 - remove stale worktrees when they are no longer needed
 - treat worktree sprawl as an operational problem on shared hosts, not just a developer convenience issue
 
