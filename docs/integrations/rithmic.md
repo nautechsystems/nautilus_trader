@@ -81,6 +81,10 @@ export RITHMIC_FCM_ID="Apex"
 export RITHMIC_IB_ID="Apex"
 ```
 
+Low-level Rust users can also override the primary and alternate WebSocket endpoints directly on
+`GatewayConfig` when targeting a non-standard route or a local test harness. Regular operator
+setups should continue to use the canonical `RITHMIC_*_URL` environment variables.
+
 ## Symbology
 
 Use native futures symbols together with the exchange in the Nautilus `InstrumentId` for

@@ -78,6 +78,10 @@ pub struct GatewayConfig {
     pub ib_id: String,
     /// Trading account ID.
     pub account_id: String,
+    /// Optional primary WebSocket URL override.
+    pub url_override: Option<String>,
+    /// Optional alternate WebSocket URL override.
+    pub beta_url_override: Option<String>,
     /// Whether to connect the ticker plant.
     pub enable_ticker: bool,
     /// Whether to connect the order plant.
@@ -109,6 +113,8 @@ impl GatewayConfig {
             fcm_id: fcm_id.into(),
             ib_id: ib_id.into(),
             account_id: account_id.into(),
+            url_override: None,
+            beta_url_override: None,
             enable_ticker: true,
             enable_order: true,
             enable_pnl: true,
@@ -152,6 +158,8 @@ impl GatewayConfig {
             fcm_id: optional_env_var("FCM_ID", profile)?.unwrap_or_default(),
             ib_id: optional_env_var("IB_ID", profile)?.unwrap_or_default(),
             account_id: required_env_var("ACCOUNT_ID", profile)?,
+            url_override: None,
+            beta_url_override: None,
             enable_ticker: true,
             enable_order: true,
             enable_pnl: true,
@@ -195,31 +203,51 @@ impl GatewayConfig {
         self
     }
 
+    /// Sets the primary WebSocket URL override.
+    pub fn with_url_override(mut self, url: impl Into<String>) -> Self {
+        self.url_override = Some(url.into());
+        self
+    }
+
+    /// Sets the alternate WebSocket URL override.
+    pub fn with_beta_url_override(mut self, beta_url: impl Into<String>) -> Self {
+        self.beta_url_override = Some(beta_url.into());
+        self
+    }
+
     /// Converts to rithmic-rs RithmicConfig.
     pub(crate) fn to_rithmic_config(&self) -> Result<RithmicConfig> {
         let env = self.environment;
 
         // Map environment to the required connection fields
-        let (url, beta_url, default_system_name) = match env {
+        let (url_var, beta_url_var, default_system_name) = match env {
             RithmicEnv::Demo => (
-                env::var("RITHMIC_DEMO_URL")
-                    .map_err(|_| RithmicError::Config("RITHMIC_DEMO_URL not set".to_string()))?,
-                env::var("RITHMIC_DEMO_ALT_URL").unwrap_or_else(|_| "".to_string()),
+                "RITHMIC_DEMO_URL",
+                "RITHMIC_DEMO_ALT_URL",
                 "Rithmic Paper Trading".to_string(),
             ),
             RithmicEnv::Live => (
-                env::var("RITHMIC_LIVE_URL")
-                    .map_err(|_| RithmicError::Config("RITHMIC_LIVE_URL not set".to_string()))?,
-                env::var("RITHMIC_LIVE_ALT_URL").unwrap_or_else(|_| "".to_string()),
+                "RITHMIC_LIVE_URL",
+                "RITHMIC_LIVE_ALT_URL",
                 "Rithmic 01".to_string(),
             ),
             RithmicEnv::Test => (
-                env::var("RITHMIC_TEST_URL")
-                    .map_err(|_| RithmicError::Config("RITHMIC_TEST_URL not set".to_string()))?,
-                env::var("RITHMIC_TEST_ALT_URL").unwrap_or_else(|_| "".to_string()),
+                "RITHMIC_TEST_URL",
+                "RITHMIC_TEST_ALT_URL",
                 "Rithmic Test".to_string(),
             ),
         };
+
+        let url = self
+            .url_override
+            .clone()
+            .or_else(|| env::var(url_var).ok())
+            .ok_or_else(|| RithmicError::Config(format!("{url_var} not set")))?;
+
+        let beta_url = self
+            .beta_url_override
+            .clone()
+            .unwrap_or_else(|| env::var(beta_url_var).unwrap_or_else(|_| "".to_string()));
 
         let mut builder = RithmicConfig::builder(env)
             .account_id(self.account_id.clone())
@@ -227,6 +255,8 @@ impl GatewayConfig {
             .ib_id(self.ib_id.clone())
             .user(self.username.clone())
             .password(self.password.clone())
+            .app_name(self.app_name.clone())
+            .app_version(self.app_version.clone())
             .url(url)
             .beta_url(beta_url);
 
@@ -1587,6 +1617,27 @@ mod tests {
         assert!(!config.enable_history);
         assert_eq!(config.app_name, "NautilusTrader");
         assert_eq!(config.app_version, "1.0");
+    }
+
+    #[test]
+    fn test_gateway_config_to_rithmic_config_uses_url_overrides() {
+        let config = GatewayConfig::new(
+            RithmicEnv::Demo,
+            "user",
+            "pass",
+            "system",
+            "fcm",
+            "ib",
+            "account",
+        )
+        .with_url_override("ws://127.0.0.1:12345")
+        .with_beta_url_override("ws://127.0.0.1:12346");
+
+        let rithmic = config.to_rithmic_config().unwrap();
+
+        assert_eq!(rithmic.url, "ws://127.0.0.1:12345");
+        assert_eq!(rithmic.beta_url, "ws://127.0.0.1:12346");
+        assert_eq!(rithmic.system_name, "system");
     }
 
     #[test]

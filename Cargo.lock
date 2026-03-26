@@ -6096,7 +6096,9 @@ dependencies = [
  "ahash 0.8.12",
  "arc-swap",
  "dashmap",
+ "futures-util",
  "parking_lot",
+ "prost 0.14.3",
  "pyo3",
  "pyo3-async-runtimes",
  "rithmic-rs",
@@ -6105,6 +6107,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+ "tokio-tungstenite 0.29.0",
  "tracing",
  "tracing-subscriber",
 ]

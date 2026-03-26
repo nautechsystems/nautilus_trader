@@ -43,5 +43,8 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 
 [dev-dependencies]
+futures-util = { workspace = true }
+prost = { version = "0.14.3", default-features = false, features = ["std"] }
+tokio-tungstenite = { workspace = true }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
