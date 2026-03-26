@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import inspect
 
 
 def _desired_levels(*prices: str) -> list[tuple[Decimal, Decimal, Decimal]]:
@@ -54,6 +55,64 @@ def test_plan_quote_stack_returns_no_op_for_matching_stable_stack() -> None:
     assert _action_tuples(result.actions) == []
 
 
+def test_plan_quote_stack_normalizes_best_to_worst_order_before_planning() -> None:
+    quote_stack_mod = _quote_stack_module()
+
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("98"), Decimal("100"), Decimal("99")],
+        desired_levels=[
+            quote_stack_mod.DesiredStackLevel(2, Decimal("98"), Decimal("98"), Decimal(0)),
+            quote_stack_mod.DesiredStackLevel(0, Decimal("100"), Decimal("100"), Decimal(0)),
+            quote_stack_mod.DesiredStackLevel(1, Decimal("99"), Decimal("99"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert _action_tuples(result.actions) == []
+
+
+def test_plan_quote_stack_normalizes_dataclass_numeric_inputs_before_planning() -> None:
+    quote_stack_mod = _quote_stack_module()
+
+    result = _plan(
+        side="buy",
+        active_prices=[
+            quote_stack_mod.ActiveStackLevel(0, "98"),
+            quote_stack_mod.ActiveStackLevel(1, "100"),
+            quote_stack_mod.ActiveStackLevel(2, "99"),
+        ],
+        desired_levels=[
+            quote_stack_mod.DesiredStackLevel(2, "98", "98", "0"),
+            quote_stack_mod.DesiredStackLevel(0, "100", "100", "0"),
+            quote_stack_mod.DesiredStackLevel(1, "99", "99", "0"),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert _action_tuples(result.actions) == []
+
+
+def test_plan_quote_stack_treats_exact_match_tolerance_boundary_as_a_match() -> None:
+    quote_stack_mod = _quote_stack_module()
+
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100.004")],
+        desired_levels=[
+            quote_stack_mod.DesiredStackLevel(
+                0,
+                Decimal("100"),
+                Decimal("100.010"),
+                Decimal("0.004"),
+            ),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert _action_tuples(result.actions) == []
+
+
 def test_plan_quote_stack_represents_inward_move_as_place_front_then_cancel_back() -> None:
     result = _plan(
         side="buy",
@@ -84,6 +143,63 @@ def test_plan_quote_stack_represents_outward_move_as_cancel_front_then_place_bac
         ("cancel_front", 0, None),
         ("place_back", None, 2),
     ]
+
+
+def test_plan_quote_stack_does_not_backfill_outward_when_post_cancel_depth_is_not_short() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("101"), Decimal("100"), Decimal("99"), Decimal("97")],
+        desired_levels=_desired_levels("100", "99", "98"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "cancel_front"
+    assert result.diagnostics.depth_after == 3
+    assert _action_tuples(result.actions) == [
+        ("cancel_front", 0, None),
+    ]
+
+
+def test_plan_quote_stack_cancels_back_when_depth_overflows_on_the_tail() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98"), Decimal("97")],
+        desired_levels=_desired_levels("100", "99", "98"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "cancel_back"
+    assert _action_tuples(result.actions) == [
+        ("cancel_back", 3, None),
+    ]
+
+
+def test_plan_quote_stack_uses_cancel_price_for_front_violation_not_match_tolerance() -> None:
+    quote_stack_mod = _quote_stack_module()
+
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100.007")],
+        desired_levels=[
+            quote_stack_mod.DesiredStackLevel(
+                0,
+                Decimal("100"),
+                Decimal("100.005"),
+                Decimal("0.004"),
+            ),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "cancel_front"
+    assert _action_tuples(result.actions) == [
+        ("cancel_front", 0, None),
+    ]
+
+
+def test_plan_quote_stack_alias_has_explicit_matching_signature() -> None:
+    quote_stack_mod = _quote_stack_module()
+
+    assert inspect.signature(quote_stack_mod.plan_quote_stack) == inspect.signature(
+        quote_stack_mod.plan_side_deque_actions,
+    )
 
 
 def test_plan_quote_stack_never_cancels_middle_levels_when_the_stack_is_otherwise_valid() -> None:
