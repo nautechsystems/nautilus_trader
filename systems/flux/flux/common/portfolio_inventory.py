@@ -162,14 +162,17 @@ def aggregate_components(
     now_ms_value: int,
     stale_after_ms: int = DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS,
     aggregation_mode: str = "strict",
+    shared_quantity_groups: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     total = Decimal(0)
     fresh_any = False
     usable_component_count = 0
     component_rows: list[dict[str, Any]] = []
+    component_states: dict[str, dict[str, Any]] = {}
     missing_required: list[str] = []
     stale_required: list[str] = []
     null_qty_required: list[str] = []
+    shared_quantity_conflict_strategy_ids: list[str] = []
     mode = str(aggregation_mode or "strict").strip().lower()
     if mode not in {"strict", "partial"}:
         mode = "strict"
@@ -192,7 +195,9 @@ def aggregate_components(
                 "ts_ms": 0,
             }
             if strategy_id in required_strategy_ids:
-                missing_required.append(strategy_id)
+                component_states[strategy_id] = {"kind": "missing", "local_qty_base": None}
+            else:
+                component_states[strategy_id] = {"kind": "missing", "local_qty_base": None}
             component_rows.append(row)
             continue
 
@@ -200,16 +205,11 @@ def aggregate_components(
         stale = not fresh
         local_qty_base = component.local_qty_base
         if fresh and local_qty_base is not None:
-            total += local_qty_base
-            fresh_any = True
-            usable_component_count += 1
-        elif strategy_id in required_strategy_ids:
-            if stale:
-                stale_required.append(strategy_id)
-            elif local_qty_base is None:
-                null_qty_required.append(strategy_id)
-            else:
-                missing_required.append(strategy_id)
+            component_states[strategy_id] = {"kind": "fresh_qty", "local_qty_base": local_qty_base}
+        elif stale:
+            component_states[strategy_id] = {"kind": "stale", "local_qty_base": local_qty_base}
+        else:
+            component_states[strategy_id] = {"kind": "fresh_null", "local_qty_base": local_qty_base}
 
         local_qty_base_text = _decimal_to_text(local_qty_base)
         component_rows.append(
@@ -232,14 +232,60 @@ def aggregate_components(
             },
         )
 
+    grouped_strategy_ids: dict[str, list[str]] = {}
+    for strategy_id in components:
+        raw_group_id = None if shared_quantity_groups is None else shared_quantity_groups.get(strategy_id)
+        group_id = _optional_text(raw_group_id) or strategy_id
+        grouped_strategy_ids.setdefault(group_id, []).append(strategy_id)
+
+    for strategy_ids in grouped_strategy_ids.values():
+        fresh_qty_strategy_ids = [
+            strategy_id
+            for strategy_id in strategy_ids
+            if component_states[strategy_id]["kind"] == "fresh_qty"
+        ]
+        if fresh_qty_strategy_ids:
+            quantities = {
+                component_states[strategy_id]["local_qty_base"]
+                for strategy_id in fresh_qty_strategy_ids
+            }
+            if len(quantities) == 1:
+                total += next(iter(quantities))
+                fresh_any = True
+                usable_component_count += 1
+            else:
+                shared_quantity_conflict_strategy_ids.extend(fresh_qty_strategy_ids)
+            continue
+
+        for strategy_id in strategy_ids:
+            if strategy_id not in required_strategy_ids:
+                continue
+            kind = component_states[strategy_id]["kind"]
+            if kind == "missing":
+                missing_required.append(strategy_id)
+            elif kind == "stale":
+                stale_required.append(strategy_id)
+            elif kind == "fresh_null":
+                null_qty_required.append(strategy_id)
+
     component_rows.sort(key=lambda item: str(item["strategy_id"]))
     missing_required = sorted(set(missing_required))
     stale_required = sorted(set(stale_required))
     null_qty_required = sorted(set(null_qty_required))
-    degraded = bool(missing_required or stale_required or null_qty_required)
+    shared_quantity_conflict_strategy_ids = sorted(set(shared_quantity_conflict_strategy_ids))
+    degraded = bool(
+        missing_required
+        or stale_required
+        or null_qty_required
+        or shared_quantity_conflict_strategy_ids
+    )
     global_qty_base: str | None
     if mode == "partial":
-        global_qty_base = _decimal_to_text(total) if fresh_any else None
+        global_qty_base = (
+            _decimal_to_text(total)
+            if fresh_any and not shared_quantity_conflict_strategy_ids
+            else None
+        )
     else:
         global_qty_base = _decimal_to_text(total) if fresh_any and not degraded else None
     payload: dict[str, Any] = {
@@ -256,6 +302,7 @@ def aggregate_components(
         "missing_required": missing_required,
         "stale_required": stale_required,
         "null_qty_required": null_qty_required,
+        "shared_quantity_conflict_strategy_ids": shared_quantity_conflict_strategy_ids,
         "usable_component_count": usable_component_count,
         "expected_component_count": len(component_rows),
         "degraded": degraded,

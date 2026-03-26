@@ -59,8 +59,8 @@ function initSignalState(state: any) {
 
 function buildMakerV4Strategy(): SignalStrategy {
   return {
-    id: 'aapl_tradexyz_makerv4',
-    strategy_family: 'maker_v4',
+    id: 'aapl_tradexyz_maker',
+    strategy_family: 'equities_maker',
     running: true,
     tradeable: false,
     blocked: true,
@@ -69,10 +69,10 @@ function buildMakerV4Strategy(): SignalStrategy {
     meta: {
       chain: 'equities',
       strategy_groups: 'equities',
-      strategy_family: 'maker_v4',
+      strategy_family: 'equities_maker',
       strategy_version: 'v4',
-      class: 'maker_v4',
-      param_set: 'makerv4',
+      class: 'equities_maker',
+      param_set: 'equities_maker',
       base_asset: 'AAPL',
       quote_asset: 'USD',
     },
@@ -99,10 +99,10 @@ function buildMakerV4Strategy(): SignalStrategy {
         update_ts_ms: 1_700_000_000_550,
       },
     },
-    maker_v4: {
+    equities_arb: {
       operator: {
-        execution_mode: 'take_take',
-        behavior: 'take_take',
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
         hedge_policy: {
           route: 'SMART',
           time_in_force: 'DAY',
@@ -113,8 +113,8 @@ function buildMakerV4Strategy(): SignalStrategy {
         fee_assumptions: {
           ibkr_fee_plan: 'tiered',
           ibkr_fee_min_usd: 0.35,
-          maker_taker_fee_bps: 4.5,
-          maker_maker_fee_bps: 0.25,
+          hl_taker_fee_bps: 4.5,
+          hl_maker_fee_bps: 0.25,
           assumed_hedge_fee_bps: 1.0,
         },
       },
@@ -152,6 +152,46 @@ function buildMakerV4Strategy(): SignalStrategy {
   };
 }
 
+function buildTakerStrategy(): SignalStrategy {
+  return {
+    ...buildMakerV4Strategy(),
+    id: 'aapl_tradexyz_taker',
+    strategy_family: 'equities_taker',
+    meta: {
+      ...buildMakerV4Strategy().meta,
+      strategy_family: 'equities_taker',
+      class: 'equities_taker',
+      param_set: 'equities_taker',
+    },
+    equities_arb: {
+      ...buildMakerV4Strategy().equities_arb,
+      operator: {
+        ...buildMakerV4Strategy().equities_arb?.operator,
+        execution_mode: 'take_take',
+        behavior: 'take_take',
+      },
+    },
+  };
+}
+
+function buildLegacyMakerV4EquitiesStrategy(): SignalStrategy {
+  const legacy = buildMakerV4Strategy();
+  return {
+    ...legacy,
+    id: 'aapl_tradexyz_makerv4',
+    strategy_family: 'maker_v4',
+    meta: {
+      ...legacy.meta,
+      strategy_family: 'maker_v4',
+      strategy_version: 'v4',
+      class: 'maker_v4',
+      param_set: 'makerv4',
+    },
+    maker_v4: legacy.equities_arb as any,
+    equities_arb: undefined,
+  };
+}
+
 function renderSignalTable(pathname: string) {
   return render(
     <MemoryRouter
@@ -166,27 +206,87 @@ function renderSignalTable(pathname: string) {
 describe('Signal family filter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    const strategy = buildMakerV4Strategy();
+    const strategies = [buildMakerV4Strategy(), buildTakerStrategy()];
     (api.getSignalStrategies as any).mockResolvedValue({
-      strategies: [strategy],
+      strategies,
       server_time: '2024-01-01 12:00:00',
       server_ts_ms: 1_700_000_001_500,
     });
     initSignalState({
-      rows: [strategy],
+      rows: strategies,
       setRows: vi.fn(),
       mergeStrategy: vi.fn(),
       mergeStrategies: vi.fn(),
     });
   });
 
-  it('locks equities signal to maker_v4 implicitly while keeping the strategy filter', async () => {
+  it('shows an equities maker/taker family control on equities signal while keeping the strategy filter', async () => {
     renderSignalTable('/equities/signal');
 
-    await screen.findByTestId('maker-v4-signal-table');
-    fireEvent.click(screen.getByText('Filters'));
+    await screen.findByTestId('equities-arb-signal-table');
 
-    expect(screen.queryByText('Family')).not.toBeInTheDocument();
+    const familyFilter = screen.getByLabelText('Signal family');
+    expect(familyFilter).toBeInTheDocument();
+    expect(familyFilter).toHaveValue('all');
+    expect(screen.getByRole('option', { name: 'Maker (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Filters'));
     expect(screen.getByPlaceholderText(/Strategy ID/i)).toBeInTheDocument();
+
+    fireEvent.change(familyFilter, { target: { value: 'equities_taker' } });
+    expect(screen.getByText('aapl_tradexyz_taker')).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_maker')).not.toBeInTheDocument();
+  });
+
+  it('ignores legacy maker_v4 equities rows on the shared family filter after the split cleanup', async () => {
+    const strategies = [buildLegacyMakerV4EquitiesStrategy(), buildTakerStrategy()];
+    (api.getSignalStrategies as any).mockResolvedValue({
+      strategies,
+      server_time: '2024-01-01 12:00:00',
+      server_ts_ms: 1_700_000_001_500,
+    });
+    initSignalState({
+      rows: strategies,
+      setRows: vi.fn(),
+      mergeStrategy: vi.fn(),
+      mergeStrategies: vi.fn(),
+    });
+
+    renderSignalTable('/equities/signal');
+
+    await screen.findByTestId('equities-arb-signal-table');
+
+    const familyFilter = screen.getByLabelText('Signal family');
+    expect(screen.getByRole('option', { name: 'Maker (0)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Taker (1)' })).toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
+
+    fireEvent.change(familyFilter, { target: { value: 'equities_maker' } });
+    expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
+    expect(screen.queryByText('aapl_tradexyz_taker')).not.toBeInTheDocument();
+  });
+
+  it('labels maker_v4 as a legacy family on the default signal route', async () => {
+    const strategies = [buildLegacyMakerV4EquitiesStrategy()];
+    (api.getSignalStrategies as any).mockResolvedValue({
+      strategies,
+      server_time: '2024-01-01 12:00:00',
+      server_ts_ms: 1_700_000_001_500,
+    });
+    initSignalState({
+      rows: strategies,
+      setRows: vi.fn(),
+      mergeStrategy: vi.fn(),
+      mergeStrategies: vi.fn(),
+    });
+
+    renderSignalTable('/signal');
+
+    await screen.findByText('aapl_tradexyz_makerv4');
+
+    expect(
+      screen.getByRole('option', { name: 'Maker V4 (legacy) (1)' }),
+    ).toBeInTheDocument();
   });
 });

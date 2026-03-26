@@ -1,0 +1,84 @@
+[flux]
+mode = "live"
+confirm_live = true
+namespace = "flux"
+schema_version = "v1"
+
+[identity]
+strategy_id = "tsla_tradexyz_taker"
+strategy_instance_id = "tsla_tradexyz_taker"
+trader_id = "EQUITIES-LIVE-TSLA-TRADEXYZ-TAKER"
+external_strategy_id = "tsla_tradexyz_taker"
+
+[venues]
+execution_venue = "HYPERLIQUID"
+reference_venue = "IBKR"
+execution_symbol = "TSLA"
+reference_symbol = "TSLA/USD"
+
+[node]
+# Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
+# is the only way to opt into live execution from the stack or systemd wrappers.
+enable_execution = false
+log_level = "INFO"
+timeout_connection = 60.0
+timeout_reconciliation = 90.0
+timeout_portfolio = 10.0
+timeout_disconnection = 10.0
+timeout_post_stop = 5.0
+exec_reconciliation = true
+exec_reconciliation_lookback_mins = 15
+exec_reconciliation_startup_delay_secs = 10.0
+filter_unclaimed_external_orders = true
+filter_position_reports = false
+purge_closed_orders_interval_mins = 10
+purge_closed_orders_buffer_mins = 60
+purge_closed_positions_interval_mins = 10
+purge_closed_positions_buffer_mins = 60
+purge_account_events_interval_mins = 10
+purge_account_events_lookback_mins = 60
+purge_from_database = true
+
+[node.venues.HYPERLIQUID]
+instrument_id = "xyz:TSLA-USD-PERP.HYPERLIQUID"
+execution = true
+private_key_env = "TRADE_XYZ_AGENT_PK"
+# Effective account identity precedence: vault_address_env -> account_address_env -> agent wallet master.
+account_address_env = "TRADE_XYZ_ACCOUNT_ADDRESS"
+vault_address_env = "TRADE_XYZ_VAULT_ADDRESS"
+dex = "xyz"
+testnet = false
+
+[node.venues.IBKR]
+adapter = "interactive_brokers"
+instrument_id = "TSLA.NASDAQ"
+ibg_client_id = 39
+execution = false
+use_regular_trading_hours = false
+
+[node.venues.IBKR.dockerized_gateway]
+trading_mode = "live"
+read_only_api = true
+manage_container = false
+
+[strategy]
+strategy_id = "tsla_tradexyz_taker"
+strategy_groups = "equities"
+param_set = "equities_taker"
+force_bot_off_on_start = true
+order_qty = "1"
+qty = "1"
+qty_unit = "base"
+bot_on = false
+manage_stop = false
+outside_rth_hedge_enabled = true
+ibkr_primary_exchange = "NASDAQ"
+max_age_ms = 10000
+des_qty_global = 0.0
+max_qty_global = 100.0
+max_skew_bps_global = 10.0
+quote_fail_critical_after_count = 3
+quote_fail_critical_after_s = 60.0
+bid_edge_take_bps = 5.0
+ask_edge_take_bps = 5.0
+take_cooldown_ms = 1000

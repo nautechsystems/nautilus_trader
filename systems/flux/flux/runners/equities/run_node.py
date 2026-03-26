@@ -18,7 +18,6 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
-from flux.common.account_scopes import decode_account_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
@@ -37,11 +36,20 @@ from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
-from flux.strategies.makerv3 import runtime_params as makerv3_runtime_params_mod
-from flux.strategies.makerv4 import runtime_params as makerv4_runtime_params_mod
-from flux.strategies.makerv4.instruments import hyperliquid_perp_to_ibkr_instrument_id
-from flux.strategies.makerv4.reference_balances import IbkrReferenceBalanceSnapshotProviderConfig
-from flux.strategies.makerv4.reference_balances import get_cached_ibkr_reference_balance_provider
+from flux.strategies import resolve_strategy_spec_for_strategy_id
+from flux.strategies.shared.equities_arb.core import (
+    effective_venue_resolution_config as shared_effective_venue_resolution_config,
+)
+from flux.strategies.shared.equities_arb.core import runtime_params_module_for_strategy
+from flux.strategies.shared.equities_arb.core import strategy_allowed_instrument_ids
+from flux.strategies.shared.equities_arb.core import strategy_supports_immediate_hedge
+from flux.strategies.shared.equities_arb.core import strategy_uses_profile_account_projection
+from flux.strategies.shared.equities_arb.reference_balances import (
+    IbkrReferenceBalanceSnapshotProviderConfig,
+)
+from flux.strategies.shared.equities_arb.reference_balances import (
+    get_cached_ibkr_reference_balance_provider,
+)
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
@@ -327,27 +335,28 @@ def _resolve_strategy_param_set(config: dict[str, Any]) -> str:
 
 
 def _resolve_strategy_spec(config: dict[str, Any]) -> FluxStrategySpec:
-    return get_strategy_spec(_resolve_strategy_param_set(config))
+    strategy_cfg = _table(config, "strategy")
+    explicit_param_set = _optional_text(strategy_cfg.get("param_set"))
+    if explicit_param_set is not None:
+        return get_strategy_spec(explicit_param_set)
+
+    identity_cfg = _table(config, "identity")
+    strategy_id = _optional_text(identity_cfg.get("external_strategy_id")) or _resolve_flux_strategy_id(
+        config,
+    )
+    return resolve_strategy_spec_for_strategy_id(strategy_id, default=_MAKERV3_SPEC)
 
 
 def _runtime_params_module(strategy_spec: FluxStrategySpec):
-    if strategy_spec.param_set == "makerv4":
-        return makerv4_runtime_params_mod
-    return makerv3_runtime_params_mod
+    return runtime_params_module_for_strategy(strategy_spec)
 
 
 def _supports_immediate_hedge(strategy_spec: FluxStrategySpec) -> bool:
-    capabilities = getattr(strategy_spec, "capabilities", None)
-    if capabilities is not None and hasattr(capabilities, "supports_immediate_hedge"):
-        return bool(capabilities.supports_immediate_hedge)
-    return getattr(strategy_spec, "param_set", "") == "makerv4"
+    return strategy_supports_immediate_hedge(strategy_spec)
 
 
 def _uses_profile_account_projection(strategy_spec: FluxStrategySpec) -> bool:
-    capabilities = getattr(strategy_spec, "capabilities", None)
-    if capabilities is not None and hasattr(capabilities, "uses_profile_account_projection"):
-        return bool(capabilities.uses_profile_account_projection)
-    return True
+    return strategy_uses_profile_account_projection(strategy_spec)
 
 
 def _strategy_allowed_instrument_ids(
@@ -356,53 +365,11 @@ def _strategy_allowed_instrument_ids(
     maker_instrument_id: InstrumentId,
     reference_instrument_id: InstrumentId,
 ) -> list[InstrumentId]:
-    if _supports_immediate_hedge(strategy_spec):
-        return [maker_instrument_id, reference_instrument_id]
-    return [maker_instrument_id]
-
-
-def _external_strategy_id(config: dict[str, Any]) -> str:
-    identity_cfg = config.get("identity")
-    return (
-        _optional_text(identity_cfg.get("external_strategy_id"))
-        if isinstance(identity_cfg, dict)
-        else None
-    ) or _resolve_flux_strategy_id(config)
-
-
-def _strategy_contract_for_strategy_id(config: dict[str, Any], *, strategy_id: str):
-    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
-        if contract.strategy_id == strategy_id:
-            return contract
-    return None
-
-
-def _ibkr_scope_overrides_for_contract(
-    *,
-    config: dict[str, Any],
-    contract: Any,
-    ibkr_cfg: dict[str, Any],
-) -> dict[str, Any]:
-    ibkr_scope_overrides: dict[str, Any] = {}
-    scope_configs = {
-        scope.scope_id: scope
-        for scope in decode_account_scopes(config.get("account_scopes") or [])
-    }
-    scope_id = contract.hedge_account_scope_id or contract.reference_account_scope_id
-    scope = scope_configs.get(scope_id)
-    if scope is None or scope.provider.lower() != "ibkr":
-        return ibkr_scope_overrides
-    if scope.ibg_host is not None:
-        ibkr_scope_overrides["ibg_host"] = scope.ibg_host
-    if scope.ibg_port is not None and scope.dockerized_gateway is None:
-        ibkr_scope_overrides["ibg_port"] = scope.ibg_port
-    if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
-        ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
-    if scope.account_id is not None:
-        ibkr_scope_overrides["account_id"] = scope.account_id
-    if scope.dockerized_gateway is not None:
-        ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
-    return ibkr_scope_overrides
+    return strategy_allowed_instrument_ids(
+        strategy_spec=strategy_spec,
+        maker_instrument_id=maker_instrument_id,
+        reference_instrument_id=reference_instrument_id,
+    )
 
 
 def _effective_venue_resolution_config(
@@ -410,122 +377,37 @@ def _effective_venue_resolution_config(
     config: dict[str, Any],
     strategy_spec: FluxStrategySpec,
 ) -> dict[str, Any]:
-    if not _supports_immediate_hedge(strategy_spec):
-        return config
-
-    node_cfg = config.get("node")
-    if not isinstance(node_cfg, dict):
-        return config
-
-    venue_entries = node_cfg.get("venues")
-    if not isinstance(venue_entries, dict):
-        return config
-
-    venues_cfg = config.get("venues")
-    effective_strategy_venues = dict(venues_cfg) if isinstance(venues_cfg, dict) else {}
-
-    ibkr_cfg = venue_entries.get("IBKR")
-    if not isinstance(ibkr_cfg, dict):
-        return config
-
-    external_strategy_id = _external_strategy_id(config)
-    contract = _strategy_contract_for_strategy_id(
-        config,
-        strategy_id=external_strategy_id,
+    return shared_effective_venue_resolution_config(
+        config=config,
+        strategy_spec=strategy_spec,
     )
 
-    maker_venue_name = "HYPERLIQUID"
-    maker_cfg = venue_entries.get(maker_venue_name)
-    desired_maker_instrument_id: str | None = None
-    desired_reference_instrument_id: str | None = None
-    ibkr_scope_overrides: dict[str, Any] = {}
-    if contract is not None:
-        maker_venue_name = contract.maker_venue.upper()
-        maker_cfg = venue_entries.get(maker_venue_name)
-        desired_maker_instrument_id = contract.maker_instrument_id
-        desired_reference_instrument_id = contract.reference_instrument_id
-        ibkr_scope_overrides = _ibkr_scope_overrides_for_contract(
-            config=config,
-            contract=contract,
-            ibkr_cfg=ibkr_cfg,
-        )
-    else:
-        if not isinstance(maker_cfg, dict):
-            return config
-        maker_instrument_id = _optional_text(maker_cfg.get("instrument_id"))
-        if maker_instrument_id is None:
-            return config
-        strategy_cfg = _table(config, "strategy")
-        desired_reference_instrument_id = hyperliquid_perp_to_ibkr_instrument_id(
-            maker_instrument_id,
-            primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
-        )
 
-    needs_reference_rewrite = (
-        _optional_text(ibkr_cfg.get("instrument_id")) != desired_reference_instrument_id
-    )
-    needs_execution_promotion = not bool(ibkr_cfg.get("execution", False))
-    needs_scope_overlay = bool(ibkr_scope_overrides)
-    needs_maker_rewrite = (
-        desired_maker_instrument_id is not None
-        and isinstance(maker_cfg, dict)
-        and _optional_text(maker_cfg.get("instrument_id")) != desired_maker_instrument_id
-    )
-    needs_contract_execution_rewrite = contract is not None and any(
-        bool(venue_cfg.get("execution", False)) != (venue_name == maker_venue_name)
-        for venue_name, venue_cfg in venue_entries.items()
-        if isinstance(venue_cfg, dict) and venue_name != "IBKR"
-    )
-    needs_execution_venue_rewrite = (
-        contract is not None
-        and _optional_text(effective_strategy_venues.get("execution_venue")) != maker_venue_name
-    )
-    if (
-        not needs_reference_rewrite
-        and not needs_execution_promotion
-        and not needs_scope_overlay
-        and not needs_maker_rewrite
-        and not needs_contract_execution_rewrite
-        and not needs_execution_venue_rewrite
-    ):
-        return config
+def _uses_shared_asset_split_contract(
+    *,
+    config: dict[str, Any],
+    external_strategy_id: str,
+    strategy_spec: FluxStrategySpec,
+) -> bool:
+    if strategy_spec.strategy_id not in {"equities_maker", "equities_taker"}:
+        return False
 
-    effective_node_cfg = dict(node_cfg)
-    effective_venue_entries = {
-        venue_name: dict(venue_cfg)
-        for venue_name, venue_cfg in venue_entries.items()
-    }
-    if contract is not None:
-        for venue_name, venue_cfg in effective_venue_entries.items():
-            venue_cfg["execution"] = venue_name == maker_venue_name
-    if isinstance(maker_cfg, dict):
-        effective_venue_entries[maker_venue_name] = {
-            **effective_venue_entries.get(maker_venue_name, {}),
-            **maker_cfg,
-            "execution": True,
-            **(
-                {"instrument_id": desired_maker_instrument_id}
-                if needs_maker_rewrite and desired_maker_instrument_id is not None
-                else {}
-            ),
-        }
-    effective_venue_entries["IBKR"] = {
-        **ibkr_cfg,
-        **ibkr_scope_overrides,
-        "instrument_id": desired_reference_instrument_id,
-        "execution": True,
-    }
-    effective_node_cfg["venues"] = effective_venue_entries
-    effective_config = {
-        **config,
-        "node": effective_node_cfg,
-    }
-    if needs_execution_venue_rewrite:
-        effective_config["venues"] = {
-            **effective_strategy_venues,
-            "execution_venue": maker_venue_name,
-        }
-    return effective_config
+    portfolio_asset_id: str | None = None
+    shared_strategy_count = 0
+
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id == external_strategy_id:
+            portfolio_asset_id = contract.portfolio_asset_id
+            break
+
+    if portfolio_asset_id is None:
+        return False
+
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.portfolio_asset_id == portfolio_asset_id:
+            shared_strategy_count += 1
+
+    return shared_strategy_count > 1
 
 
 def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:
@@ -559,6 +441,7 @@ def _optional_strategy_config_kwargs(
         ),
         "max_ibkr_quote_age_ms": int(strategy_cfg.get("max_ibkr_quote_age_ms", 1_000)),
         "max_ibkr_spread_bps": Decimal(str(strategy_cfg.get("max_ibkr_spread_bps", "25"))),
+        "ibkr_hedge_route": str(strategy_cfg.get("ibkr_hedge_route", "")),
         "ibkr_primary_exchange": str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
     }
     for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
@@ -567,6 +450,88 @@ def _optional_strategy_config_kwargs(
         candidates["portfolio_asset_id"] = contract.portfolio_asset_id
         candidates["execution_account_scope_id"] = contract.execution_account_scope_id
         break
+    return {
+        field_name: value
+        for field_name, value in candidates.items()
+        if _strategy_config_accepts(strategy_spec.config_cls, field_name)
+    }
+
+
+def _strategy_config_kwargs(
+    *,
+    config: dict[str, Any],
+    external_strategy_id: str,
+    strategy_spec: FluxStrategySpec,
+    strategy_cfg: dict[str, Any],
+    maker_instrument_id: InstrumentId,
+    reference_instrument_id: InstrumentId,
+    allowed_instrument_ids: list[InstrumentId],
+    order_qty: Decimal,
+    qty: Decimal | None,
+    qty_unit: str,
+    external_order_claims: list[InstrumentId],
+) -> dict[str, Any]:
+    candidates: dict[str, Any] = {
+        "strategy_id": str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
+        "maker_instrument_id": maker_instrument_id,
+        "reference_instrument_id": reference_instrument_id,
+        "external_strategy_id": external_strategy_id,
+        "allowed_submit_instrument_ids": allowed_instrument_ids,
+        "external_order_claims": external_order_claims,
+        "manage_stop": bool(strategy_cfg.get("manage_stop", False)),
+        "order_qty": order_qty,
+        "qty_unit": qty_unit,
+        "qty": qty,
+        "bot_on": bool(strategy_cfg.get("bot_on", False)),
+        "des_qty_global": float(strategy_cfg.get("des_qty_global", 0.0)),
+        "max_qty_global": float(strategy_cfg.get("max_qty_global", 40_000.0)),
+        "max_skew_bps_global": float(strategy_cfg.get("max_skew_bps_global", 20.0)),
+        "des_qty_local": float(strategy_cfg.get("des_qty_local", 0.0)),
+        "max_qty_local": float(strategy_cfg.get("max_qty_local", 0.0)),
+        "max_skew_bps_local": float(strategy_cfg.get("max_skew_bps_local", 0.0)),
+        "linear_offset_bps": float(strategy_cfg.get("linear_offset_bps", 0.0)),
+        "max_age_ms": int(strategy_cfg.get("max_age_ms", 10_000)),
+        "bid_edge_take_bps": float(strategy_cfg.get("bid_edge_take_bps", 5.0)),
+        "ask_edge_take_bps": float(strategy_cfg.get("ask_edge_take_bps", 5.0)),
+        "take_cooldown_ms": int(strategy_cfg.get("take_cooldown_ms", 1_000)),
+        "bid_edge1": float(strategy_cfg.get("bid_edge1", 10.0)),
+        "ask_edge1": float(strategy_cfg.get("ask_edge1", 10.0)),
+        "place_edge1": float(strategy_cfg.get("place_edge1", 2.0)),
+        "distance1": float(strategy_cfg.get("distance1", 2.0)),
+        "n_orders1": int(strategy_cfg.get("n_orders1", 5)),
+        "bid_edge2": float(strategy_cfg.get("bid_edge2", 25.0)),
+        "ask_edge2": float(strategy_cfg.get("ask_edge2", 25.0)),
+        "place_edge2": float(strategy_cfg.get("place_edge2", 2.0)),
+        "distance2": float(strategy_cfg.get("distance2", 5.0)),
+        "n_orders2": int(strategy_cfg.get("n_orders2", 0)),
+        "bid_edge3": float(strategy_cfg.get("bid_edge3", 50.0)),
+        "ask_edge3": float(strategy_cfg.get("ask_edge3", 50.0)),
+        "place_edge3": float(strategy_cfg.get("place_edge3", 2.0)),
+        "distance3": float(strategy_cfg.get("distance3", 5.0)),
+        "n_orders3": int(strategy_cfg.get("n_orders3", 0)),
+        "quote_fail_critical_after_count": int(
+            strategy_cfg.get("quote_fail_critical_after_count", 3),
+        ),
+        "quote_fail_critical_after_s": float(
+            strategy_cfg.get("quote_fail_critical_after_s", 60.0),
+        ),
+        "spot_cash_borrowing_policy": str(
+            strategy_cfg.get("spot_cash_borrowing_policy", "none"),
+        ),
+        "force_bot_off_on_start": bool(
+            strategy_cfg.get("force_bot_off_on_start", False),
+        ),
+        "cancel_all_instrument_orders": bool(
+            strategy_cfg.get("cancel_all_instrument_orders", False),
+        ),
+        **_optional_strategy_config_kwargs(
+            config=config,
+            external_strategy_id=external_strategy_id,
+            strategy_spec=strategy_spec,
+            strategy_cfg=strategy_cfg,
+        ),
+        **_client_order_id_config(maker_instrument_id),
+    }
     return {
         field_name: value
         for field_name, value in candidates.items()
@@ -642,6 +607,18 @@ def build_node(
         maker_instrument_id=maker_instrument_id,
         reference_instrument_id=reference_instrument_id,
     )
+    shared_asset_split_contract = _uses_shared_asset_split_contract(
+        config=config,
+        external_strategy_id=external_strategy_id,
+        strategy_spec=strategy_spec,
+    )
+    if shared_asset_split_contract:
+        filter_unclaimed_external_orders = True
+    exec_reconciliation = bool(node_cfg.get("exec_reconciliation", True))
+    reconciliation_instrument_ids = allowed_instrument_ids
+    # Same-asset split variants share venue/account scope, so they must reconcile
+    # only their cached orders and leave stray venue orders unclaimed.
+    external_order_claims = [] if shared_asset_split_contract else allowed_instrument_ids
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
@@ -656,9 +633,9 @@ def build_node(
             graceful_shutdown_on_exception=graceful_shutdown_on_exception,
         ),
         exec_engine=LiveExecEngineConfig(
-            reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
+            reconciliation=exec_reconciliation,
             reconciliation_lookback_mins=reconciliation_lookback_mins,
-            reconciliation_instrument_ids=allowed_instrument_ids,
+            reconciliation_instrument_ids=reconciliation_instrument_ids,
             reconciliation_startup_delay_secs=reconciliation_startup_delay_secs,
             filter_unclaimed_external_orders=filter_unclaimed_external_orders,
             filter_position_reports=filter_position_reports,
@@ -724,62 +701,19 @@ def build_node(
 
     strategy = strategy_spec.strategy_cls(
         config=strategy_spec.config_cls(
-            strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
-            maker_instrument_id=maker_instrument_id,
-            reference_instrument_id=reference_instrument_id,
-            external_strategy_id=external_strategy_id,
-            allowed_submit_instrument_ids=allowed_instrument_ids,
-            external_order_claims=allowed_instrument_ids,
-            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
-            order_qty=order_qty,
-            qty_unit=qty_unit,
-            qty=qty,
-            bot_on=bool(strategy_cfg.get("bot_on", False)),
-            des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
-            max_qty_global=float(strategy_cfg.get("max_qty_global", 40_000.0)),
-            max_skew_bps_global=float(strategy_cfg.get("max_skew_bps_global", 20.0)),
-            des_qty_local=float(strategy_cfg.get("des_qty_local", 0.0)),
-            max_qty_local=float(strategy_cfg.get("max_qty_local", 0.0)),
-            max_skew_bps_local=float(strategy_cfg.get("max_skew_bps_local", 0.0)),
-            linear_offset_bps=float(strategy_cfg.get("linear_offset_bps", 0.0)),
-            max_age_ms=int(strategy_cfg.get("max_age_ms", 10_000)),
-            bid_edge1=float(strategy_cfg.get("bid_edge1", 10.0)),
-            ask_edge1=float(strategy_cfg.get("ask_edge1", 10.0)),
-            place_edge1=float(strategy_cfg.get("place_edge1", 2.0)),
-            distance1=float(strategy_cfg.get("distance1", 2.0)),
-            n_orders1=int(strategy_cfg.get("n_orders1", 5)),
-            bid_edge2=float(strategy_cfg.get("bid_edge2", 25.0)),
-            ask_edge2=float(strategy_cfg.get("ask_edge2", 25.0)),
-            place_edge2=float(strategy_cfg.get("place_edge2", 2.0)),
-            distance2=float(strategy_cfg.get("distance2", 5.0)),
-            n_orders2=int(strategy_cfg.get("n_orders2", 0)),
-            bid_edge3=float(strategy_cfg.get("bid_edge3", 50.0)),
-            ask_edge3=float(strategy_cfg.get("ask_edge3", 50.0)),
-            place_edge3=float(strategy_cfg.get("place_edge3", 2.0)),
-            distance3=float(strategy_cfg.get("distance3", 5.0)),
-            n_orders3=int(strategy_cfg.get("n_orders3", 0)),
-            quote_fail_critical_after_count=int(
-                strategy_cfg.get("quote_fail_critical_after_count", 3),
-            ),
-            quote_fail_critical_after_s=float(
-                strategy_cfg.get("quote_fail_critical_after_s", 60.0),
-            ),
-            spot_cash_borrowing_policy=str(
-                strategy_cfg.get("spot_cash_borrowing_policy", "none"),
-            ),
-            force_bot_off_on_start=bool(
-                strategy_cfg.get("force_bot_off_on_start", False),
-            ),
-            cancel_all_instrument_orders=bool(
-                strategy_cfg.get("cancel_all_instrument_orders", False),
-            ),
-            **_optional_strategy_config_kwargs(
+            **_strategy_config_kwargs(
                 config=config,
                 external_strategy_id=external_strategy_id,
                 strategy_spec=strategy_spec,
                 strategy_cfg=strategy_cfg,
+                maker_instrument_id=maker_instrument_id,
+                reference_instrument_id=reference_instrument_id,
+                allowed_instrument_ids=allowed_instrument_ids,
+                order_qty=order_qty,
+                qty=qty,
+                qty_unit=qty_unit,
+                external_order_claims=external_order_claims,
             ),
-            **_client_order_id_config(maker_instrument_id),
         ),
     )
     _attach_runtime_params_manager(

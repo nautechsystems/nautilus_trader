@@ -34,85 +34,59 @@ read_count = 200
 start_id = "$"
 
 [api]
-# Stable equities API surface: keep `/equities` and `profile=equities`.
 host = "0.0.0.0"
 port = 5022
-strategy_class = "maker_v4"
-param_set = "makerv4"
+strategy_class = "equities_maker"
+param_set = "equities_maker"
 strategy_groups = "equities"
 base_asset = "STOCKS"
 quote_asset = "USD"
 equities_strategy_ids = [
-  "aapl_tradexyz_makerv4",
-  "amd_tradexyz_makerv4",
-  "amzn_binance_perp_makerv4",
-  "amzn_tradexyz_makerv4",
-  "baba_tradexyz_makerv4",
-  "coin_binance_perp_makerv4",
-  "coin_tradexyz_makerv4",
-  "crcl_binance_perp_makerv4",
-  "crcl_tradexyz_makerv4",
-  "crwv_tradexyz_makerv4",
-  "ewy_binance_perp_makerv4",
-  "googl_tradexyz_makerv4",
-  "hood_binance_perp_makerv4",
-  "hood_tradexyz_makerv4",
-  "intc_binance_perp_makerv4",
-  "intc_tradexyz_makerv4",
-  "meta_tradexyz_makerv4",
-  "msft_tradexyz_makerv4",
-  "mstr_binance_perp_makerv4",
-  "mstr_tradexyz_makerv4",
-  "mu_tradexyz_makerv4",
-  "nflx_tradexyz_makerv4",
-  "nvda_tradexyz_makerv4",
-  "orcl_tradexyz_makerv4",
-  "pltr_binance_perp_makerv4",
-  "pltr_tradexyz_makerv4",
-  "rivn_tradexyz_makerv4",
-  "sndk_tradexyz_makerv4",
-  "tsla_binance_perp_makerv4",
-  "tsla_tradexyz_makerv4",
-  "tsm_tradexyz_makerv4",
-  "usar_tradexyz_makerv4",
+  "aapl_tradexyz_maker",
+  "aapl_tradexyz_taker",
+  "amd_tradexyz_maker",
+  "amd_tradexyz_taker",
+  "amzn_tradexyz_maker",
+  "amzn_tradexyz_taker",
+  "googl_tradexyz_maker",
+  "googl_tradexyz_taker",
+  "meta_tradexyz_maker",
+  "meta_tradexyz_taker",
+  "msft_tradexyz_maker",
+  "msft_tradexyz_taker",
+  "nvda_tradexyz_maker",
+  "nvda_tradexyz_taker",
+  "orcl_tradexyz_maker",
+  "orcl_tradexyz_taker",
+  "pltr_tradexyz_maker",
+  "pltr_tradexyz_taker",
+  "tsla_tradexyz_maker",
+  "tsla_tradexyz_taker",
 ]
 equities_required_strategy_ids = [
-  "aapl_tradexyz_makerv4",
-  "amd_tradexyz_makerv4",
-  "amzn_binance_perp_makerv4",
-  "amzn_tradexyz_makerv4",
-  "baba_tradexyz_makerv4",
-  "coin_binance_perp_makerv4",
-  "coin_tradexyz_makerv4",
-  "crcl_binance_perp_makerv4",
-  "crcl_tradexyz_makerv4",
-  "crwv_tradexyz_makerv4",
-  "ewy_binance_perp_makerv4",
-  "googl_tradexyz_makerv4",
-  "hood_binance_perp_makerv4",
-  "hood_tradexyz_makerv4",
-  "intc_binance_perp_makerv4",
-  "intc_tradexyz_makerv4",
-  "meta_tradexyz_makerv4",
-  "msft_tradexyz_makerv4",
-  "mstr_binance_perp_makerv4",
-  "mstr_tradexyz_makerv4",
-  "mu_tradexyz_makerv4",
-  "nflx_tradexyz_makerv4",
-  "nvda_tradexyz_makerv4",
-  "orcl_tradexyz_makerv4",
-  "pltr_binance_perp_makerv4",
-  "pltr_tradexyz_makerv4",
-  "rivn_tradexyz_makerv4",
-  "sndk_tradexyz_makerv4",
-  "tsla_binance_perp_makerv4",
-  "tsla_tradexyz_makerv4",
-  "tsm_tradexyz_makerv4",
-  "usar_tradexyz_makerv4",
+  "aapl_tradexyz_maker",
+  "aapl_tradexyz_taker",
+  "amd_tradexyz_maker",
+  "amd_tradexyz_taker",
+  "amzn_tradexyz_maker",
+  "amzn_tradexyz_taker",
+  "googl_tradexyz_maker",
+  "googl_tradexyz_taker",
+  "meta_tradexyz_maker",
+  "meta_tradexyz_taker",
+  "msft_tradexyz_maker",
+  "msft_tradexyz_taker",
+  "nvda_tradexyz_maker",
+  "nvda_tradexyz_taker",
+  "orcl_tradexyz_maker",
+  "orcl_tradexyz_taker",
+  "pltr_tradexyz_maker",
+  "pltr_tradexyz_taker",
+  "tsla_tradexyz_maker",
+  "tsla_tradexyz_taker",
 ]
 
 [portfolio]
-# Stable portfolio identity for the equities rollout.
 portfolio_id = "equities"
 inventory_stale_after_ms = 3000
 
@@ -169,7 +143,7 @@ read_only_api = true
 manage_container = false
 
 [[strategy_contracts]]
-strategy_id = "aapl_tradexyz_makerv4"
+strategy_id = "aapl_tradexyz_maker"
 portfolio_asset_id = "AAPL"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "AAPL"
@@ -181,7 +155,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "amd_tradexyz_makerv4"
+strategy_id = "aapl_tradexyz_taker"
+portfolio_asset_id = "AAPL"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "AAPL"
+market_type = "perp"
+maker_instrument_id = "xyz:AAPL-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "AAPL.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+
+[[strategy_contracts]]
+strategy_id = "amd_tradexyz_maker"
 portfolio_asset_id = "AMD"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "AMD"
@@ -193,19 +179,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "amzn_binance_perp_makerv4"
-portfolio_asset_id = "AMZN"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "AMZNUSDT"
+strategy_id = "amd_tradexyz_taker"
+portfolio_asset_id = "AMD"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "AMD"
 market_type = "perp"
-maker_instrument_id = "AMZNUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "AMZN.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
+maker_instrument_id = "xyz:AMD-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "AMD.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "amzn_tradexyz_makerv4"
+strategy_id = "amzn_tradexyz_maker"
 portfolio_asset_id = "AMZN"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "AMZN"
@@ -217,91 +203,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "baba_tradexyz_makerv4"
-portfolio_asset_id = "BABA"
+strategy_id = "amzn_tradexyz_taker"
+portfolio_asset_id = "AMZN"
 maker_venue = "HYPERLIQUID"
-maker_symbol = "BABA"
+maker_symbol = "AMZN"
 market_type = "perp"
-maker_instrument_id = "xyz:BABA-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "BABA.NYSE"
+maker_instrument_id = "xyz:AMZN-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "AMZN.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "coin_binance_perp_makerv4"
-portfolio_asset_id = "COIN"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "COINUSDT"
-market_type = "perp"
-maker_instrument_id = "COINUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "COIN.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "coin_tradexyz_makerv4"
-portfolio_asset_id = "COIN"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "COIN"
-market_type = "perp"
-maker_instrument_id = "xyz:COIN-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "COIN.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "crcl_binance_perp_makerv4"
-portfolio_asset_id = "CRCL"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "CRCLUSDT"
-market_type = "perp"
-maker_instrument_id = "CRCLUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "CRCL.NYSE"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "crcl_tradexyz_makerv4"
-portfolio_asset_id = "CRCL"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "CRCL"
-market_type = "perp"
-maker_instrument_id = "xyz:CRCL-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "CRCL.NYSE"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "crwv_tradexyz_makerv4"
-portfolio_asset_id = "CRWV"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "CRWV"
-market_type = "perp"
-maker_instrument_id = "xyz:CRWV-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "CRWV.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "ewy_binance_perp_makerv4"
-portfolio_asset_id = "EWY"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "EWYUSDT"
-market_type = "perp"
-maker_instrument_id = "EWYUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "EWY.NYSE"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "googl_tradexyz_makerv4"
+strategy_id = "googl_tradexyz_maker"
 portfolio_asset_id = "GOOGL"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "GOOGL"
@@ -313,55 +227,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "hood_binance_perp_makerv4"
-portfolio_asset_id = "HOOD"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "HOODUSDT"
-market_type = "perp"
-maker_instrument_id = "HOODUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "HOOD.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "hood_tradexyz_makerv4"
-portfolio_asset_id = "HOOD"
+strategy_id = "googl_tradexyz_taker"
+portfolio_asset_id = "GOOGL"
 maker_venue = "HYPERLIQUID"
-maker_symbol = "HOOD"
+maker_symbol = "GOOGL"
 market_type = "perp"
-maker_instrument_id = "xyz:HOOD-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "HOOD.NASDAQ"
+maker_instrument_id = "xyz:GOOGL-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "GOOGL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "intc_binance_perp_makerv4"
-portfolio_asset_id = "INTC"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "INTCUSDT"
-market_type = "perp"
-maker_instrument_id = "INTCUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "INTC.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "intc_tradexyz_makerv4"
-portfolio_asset_id = "INTC"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "INTC"
-market_type = "perp"
-maker_instrument_id = "xyz:INTC-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "INTC.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "meta_tradexyz_makerv4"
+strategy_id = "meta_tradexyz_maker"
 portfolio_asset_id = "META"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "META"
@@ -373,7 +251,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "msft_tradexyz_makerv4"
+strategy_id = "meta_tradexyz_taker"
+portfolio_asset_id = "META"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "META"
+market_type = "perp"
+maker_instrument_id = "xyz:META-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "META.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+
+[[strategy_contracts]]
+strategy_id = "msft_tradexyz_maker"
 portfolio_asset_id = "MSFT"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "MSFT"
@@ -385,55 +275,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "mstr_binance_perp_makerv4"
-portfolio_asset_id = "MSTR"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "MSTRUSDT"
-market_type = "perp"
-maker_instrument_id = "MSTRUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "MSTR.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "mstr_tradexyz_makerv4"
-portfolio_asset_id = "MSTR"
+strategy_id = "msft_tradexyz_taker"
+portfolio_asset_id = "MSFT"
 maker_venue = "HYPERLIQUID"
-maker_symbol = "MSTR"
+maker_symbol = "MSFT"
 market_type = "perp"
-maker_instrument_id = "xyz:MSTR-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "MSTR.NASDAQ"
+maker_instrument_id = "xyz:MSFT-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "MSFT.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "mu_tradexyz_makerv4"
-portfolio_asset_id = "MU"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "MU"
-market_type = "perp"
-maker_instrument_id = "xyz:MU-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "MU.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "nflx_tradexyz_makerv4"
-portfolio_asset_id = "NFLX"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "NFLX"
-market_type = "perp"
-maker_instrument_id = "xyz:NFLX-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "NFLX.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "nvda_tradexyz_makerv4"
+strategy_id = "nvda_tradexyz_maker"
 portfolio_asset_id = "NVDA"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "NVDA"
@@ -445,7 +299,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "orcl_tradexyz_makerv4"
+strategy_id = "nvda_tradexyz_taker"
+portfolio_asset_id = "NVDA"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "NVDA"
+market_type = "perp"
+maker_instrument_id = "xyz:NVDA-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "NVDA.NASDAQ"
+execution_account_scope_id = "hyperliquid.xyz.main"
+reference_account_scope_id = "ibkr.reference.main"
+hedge_account_scope_id = "ibkr.hedge.main"
+
+[[strategy_contracts]]
+strategy_id = "orcl_tradexyz_maker"
 portfolio_asset_id = "ORCL"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "ORCL"
@@ -457,19 +323,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "pltr_binance_perp_makerv4"
-portfolio_asset_id = "PLTR"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "PLTRUSDT"
+strategy_id = "orcl_tradexyz_taker"
+portfolio_asset_id = "ORCL"
+maker_venue = "HYPERLIQUID"
+maker_symbol = "ORCL"
 market_type = "perp"
-maker_instrument_id = "PLTRUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "PLTR.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
+maker_instrument_id = "xyz:ORCL-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "ORCL.NYSE"
+execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "pltr_tradexyz_makerv4"
+strategy_id = "pltr_tradexyz_maker"
 portfolio_asset_id = "PLTR"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "PLTR"
@@ -481,43 +347,19 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "rivn_tradexyz_makerv4"
-portfolio_asset_id = "RIVN"
+strategy_id = "pltr_tradexyz_taker"
+portfolio_asset_id = "PLTR"
 maker_venue = "HYPERLIQUID"
-maker_symbol = "RIVN"
+maker_symbol = "PLTR"
 market_type = "perp"
-maker_instrument_id = "xyz:RIVN-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "RIVN.NASDAQ"
+maker_instrument_id = "xyz:PLTR-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "PLTR.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "sndk_tradexyz_makerv4"
-portfolio_asset_id = "SNDK"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "SNDK"
-market_type = "perp"
-maker_instrument_id = "xyz:SNDK-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "SNDK.NASDAQ"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "tsla_binance_perp_makerv4"
-portfolio_asset_id = "TSLA"
-maker_venue = "BINANCE_PERP"
-maker_symbol = "TSLAUSDT"
-market_type = "perp"
-maker_instrument_id = "TSLAUSDT-PERP.BINANCE_PERP"
-reference_instrument_id = "TSLA.NASDAQ"
-execution_account_scope_id = "binance.futures.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "tsla_tradexyz_makerv4"
+strategy_id = "tsla_tradexyz_maker"
 portfolio_asset_id = "TSLA"
 maker_venue = "HYPERLIQUID"
 maker_symbol = "TSLA"
@@ -529,25 +371,13 @@ reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
 
 [[strategy_contracts]]
-strategy_id = "tsm_tradexyz_makerv4"
-portfolio_asset_id = "TSM"
+strategy_id = "tsla_tradexyz_taker"
+portfolio_asset_id = "TSLA"
 maker_venue = "HYPERLIQUID"
-maker_symbol = "TSM"
+maker_symbol = "TSLA"
 market_type = "perp"
-maker_instrument_id = "xyz:TSM-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "TSM.NYSE"
-execution_account_scope_id = "hyperliquid.xyz.main"
-reference_account_scope_id = "ibkr.reference.main"
-hedge_account_scope_id = "ibkr.hedge.main"
-
-[[strategy_contracts]]
-strategy_id = "usar_tradexyz_makerv4"
-portfolio_asset_id = "USAR"
-maker_venue = "HYPERLIQUID"
-maker_symbol = "USAR"
-market_type = "perp"
-maker_instrument_id = "xyz:USAR-USD-PERP.HYPERLIQUID"
-reference_instrument_id = "USAR.NASDAQ"
+maker_instrument_id = "xyz:TSLA-USD-PERP.HYPERLIQUID"
+reference_instrument_id = "TSLA.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
@@ -573,11 +403,6 @@ symbol = "AMD/USD"
 instrument_id = "AMD.NASDAQ"
 
 [[contracts]]
-exchange = "binance_perp"
-symbol = "AMZN/USDT"
-instrument_id = "AMZNUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
 exchange = "ibkr"
 symbol = "AMZN/USD"
 instrument_id = "AMZN.NASDAQ"
@@ -589,66 +414,6 @@ instrument_id = "xyz:AMZN-USD-PERP.HYPERLIQUID"
 
 [[contracts]]
 exchange = "hyperliquid"
-symbol = "BABA/USD"
-instrument_id = "xyz:BABA-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "BABA/USD"
-instrument_id = "BABA.NYSE"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "COIN/USDT"
-instrument_id = "COINUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "COIN/USD"
-instrument_id = "COIN.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "COIN/USD"
-instrument_id = "xyz:COIN-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "CRCL/USDT"
-instrument_id = "CRCLUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "CRCL/USD"
-instrument_id = "CRCL.NYSE"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "CRCL/USD"
-instrument_id = "xyz:CRCL-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "CRWV/USD"
-instrument_id = "xyz:CRWV-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "CRWV/USD"
-instrument_id = "CRWV.NASDAQ"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "EWY/USDT"
-instrument_id = "EWYUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "EWY/USD"
-instrument_id = "EWY.NYSE"
-
-[[contracts]]
-exchange = "hyperliquid"
 symbol = "GOOGL/USD"
 instrument_id = "xyz:GOOGL-USD-PERP.HYPERLIQUID"
 
@@ -656,36 +421,6 @@ instrument_id = "xyz:GOOGL-USD-PERP.HYPERLIQUID"
 exchange = "ibkr"
 symbol = "GOOGL/USD"
 instrument_id = "GOOGL.NASDAQ"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "HOOD/USDT"
-instrument_id = "HOODUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "HOOD/USD"
-instrument_id = "HOOD.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "HOOD/USD"
-instrument_id = "xyz:HOOD-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "INTC/USDT"
-instrument_id = "INTCUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "INTC/USD"
-instrument_id = "INTC.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "INTC/USD"
-instrument_id = "xyz:INTC-USD-PERP.HYPERLIQUID"
 
 [[contracts]]
 exchange = "hyperliquid"
@@ -708,41 +443,6 @@ symbol = "MSFT/USD"
 instrument_id = "MSFT.NASDAQ"
 
 [[contracts]]
-exchange = "binance_perp"
-symbol = "MSTR/USDT"
-instrument_id = "MSTRUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "MSTR/USD"
-instrument_id = "MSTR.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "MSTR/USD"
-instrument_id = "xyz:MSTR-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "MU/USD"
-instrument_id = "xyz:MU-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "MU/USD"
-instrument_id = "MU.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "NFLX/USD"
-instrument_id = "xyz:NFLX-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "NFLX/USD"
-instrument_id = "NFLX.NASDAQ"
-
-[[contracts]]
 exchange = "hyperliquid"
 symbol = "NVDA/USD"
 instrument_id = "xyz:NVDA-USD-PERP.HYPERLIQUID"
@@ -763,11 +463,6 @@ symbol = "ORCL/USD"
 instrument_id = "ORCL.NYSE"
 
 [[contracts]]
-exchange = "binance_perp"
-symbol = "PLTR/USDT"
-instrument_id = "PLTRUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
 exchange = "ibkr"
 symbol = "PLTR/USD"
 instrument_id = "PLTR.NASDAQ"
@@ -778,31 +473,6 @@ symbol = "PLTR/USD"
 instrument_id = "xyz:PLTR-USD-PERP.HYPERLIQUID"
 
 [[contracts]]
-exchange = "hyperliquid"
-symbol = "RIVN/USD"
-instrument_id = "xyz:RIVN-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "RIVN/USD"
-instrument_id = "RIVN.NASDAQ"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "SNDK/USD"
-instrument_id = "xyz:SNDK-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "SNDK/USD"
-instrument_id = "SNDK.NASDAQ"
-
-[[contracts]]
-exchange = "binance_perp"
-symbol = "TSLA/USDT"
-instrument_id = "TSLAUSDT-PERP.BINANCE_PERP"
-
-[[contracts]]
 exchange = "ibkr"
 symbol = "TSLA/USD"
 instrument_id = "TSLA.NASDAQ"
@@ -811,23 +481,3 @@ instrument_id = "TSLA.NASDAQ"
 exchange = "hyperliquid"
 symbol = "TSLA/USD"
 instrument_id = "xyz:TSLA-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "TSM/USD"
-instrument_id = "xyz:TSM-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "TSM/USD"
-instrument_id = "TSM.NYSE"
-
-[[contracts]]
-exchange = "hyperliquid"
-symbol = "USAR/USD"
-instrument_id = "xyz:USAR-USD-PERP.HYPERLIQUID"
-
-[[contracts]]
-exchange = "ibkr"
-symbol = "USAR/USD"
-instrument_id = "USAR.NASDAQ"

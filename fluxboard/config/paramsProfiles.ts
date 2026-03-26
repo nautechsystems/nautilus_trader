@@ -1,6 +1,12 @@
 import type { ParamSchema } from '../types';
 
-export type ParamsProfileId = 'taker' | 'maker_v2' | 'maker_v3' | 'maker_v4';
+export type ParamsProfileId =
+  | 'taker'
+  | 'maker_v2'
+  | 'maker_v3'
+  | 'equities_maker'
+  | 'equities_taker'
+  | 'maker_v4';
 
 type StrategyProfileRow = {
   params?: Record<string, string>;
@@ -17,10 +23,19 @@ const PROFILE_LABELS: Record<ParamsProfileId, string> = {
   taker: 'Taker',
   maker_v2: 'Maker V2',
   maker_v3: 'Maker V3',
-  maker_v4: 'Maker V4',
+  equities_maker: 'Maker',
+  equities_taker: 'Taker',
+  maker_v4: 'Maker V4 (legacy)',
 };
 
-const PROFILE_ORDER: ParamsProfileId[] = ['taker', 'maker_v2', 'maker_v3', 'maker_v4'];
+const PROFILE_ORDER: ParamsProfileId[] = [
+  'taker',
+  'maker_v2',
+  'maker_v3',
+  'equities_maker',
+  'equities_taker',
+  'maker_v4',
+];
 
 const PROFILE_ALIASES: Record<string, ParamsProfileId> = {
   taker: 'taker',
@@ -36,6 +51,8 @@ const PROFILE_ALIASES: Record<string, ParamsProfileId> = {
   maker_v4: 'maker_v4',
   equity_perp_maker_v4: 'maker_v4',
   equity_perp_maker: 'maker_v2',
+  equities_maker: 'equities_maker',
+  equities_taker: 'equities_taker',
 };
 
 const MAKER_V3_SIGNATURE_KEYS = new Set<string>([
@@ -114,6 +131,56 @@ const MAKER_V4_UNUSED_RUNTIME_KEYS = new Set<string>([
   'quote_liveness_recover_after_ms',
   'quote_fail_critical_after_count',
   'quote_fail_critical_after_s',
+]);
+
+const LOCAL_OWNERSHIP_RUNTIME_KEYS = new Set<string>([
+  'des_qty_local',
+  'max_qty_local',
+  'max_skew_bps_local',
+]);
+
+const EQUITIES_SHARED_HIDDEN_KEYS = new Set<string>([
+  ...MAKER_V3_LEGACY_ALIAS_KEYS,
+  ...MAKER_V4_UNUSED_RUNTIME_KEYS,
+  ...LOCAL_OWNERSHIP_RUNTIME_KEYS,
+  'execution_mode',
+]);
+
+const EQUITIES_MAKER_HIDDEN_KEYS = new Set<string>([
+  ...EQUITIES_SHARED_HIDDEN_KEYS,
+  'strategy_take_enabled',
+  'bid_edge_take',
+  'ask_edge_take',
+  'take_qty',
+  'take_cooldown',
+  'bid_edge_take_bps',
+  'ask_edge_take_bps',
+  'take_cooldown_ms',
+]);
+
+const EQUITIES_TAKER_HIDDEN_KEYS = new Set<string>([
+  ...EQUITIES_SHARED_HIDDEN_KEYS,
+  'linear_offset_bps',
+  'bid_edge1',
+  'ask_edge1',
+  'place_edge1',
+  'distance1',
+  'n_orders1',
+  'bid_edge2',
+  'ask_edge2',
+  'place_edge2',
+  'distance2',
+  'n_orders2',
+  'bid_edge3',
+  'ask_edge3',
+  'place_edge3',
+  'distance3',
+  'n_orders3',
+  'instant_hedge_enabled',
+  'hedge_style',
+  'maker_fee_source',
+  'hedge_fee_source',
+  'hedge_fee_plan',
 ]);
 
 const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
@@ -198,6 +265,52 @@ const PROFILE_PARAM_PRIORITIES: Record<ParamsProfileId, string[]> = {
     'allow_cex_margin_sell',
     'max_cex_margin_sell_notional_usd',
   ],
+  equities_maker: [
+    'bot_on',
+    'max_age_ms',
+    'qty',
+    'des_qty_global',
+    'max_qty_global',
+    'max_skew_bps_global',
+    'instant_hedge_enabled',
+    'hedge_style',
+    'hedge_ioc_cross_mid_bps',
+    'hedge_ioc_max_cross_bps',
+    'ibkr_fee_plan',
+    'ibkr_fee_min_usd',
+    'hl_taker_fee_bps',
+    'hl_maker_fee_bps',
+    'assumed_hedge_fee_bps',
+    'maker_fee_source',
+    'hedge_fee_source',
+    'hedge_fee_plan',
+    'bid_edge1',
+    'ask_edge1',
+    'place_edge1',
+    'n_orders1',
+    'linear_offset_bps',
+    'bid_edge_take_bps',
+    'ask_edge_take_bps',
+    'take_cooldown_ms',
+  ],
+  equities_taker: [
+    'bot_on',
+    'max_age_ms',
+    'qty',
+    'des_qty_global',
+    'max_qty_global',
+    'max_skew_bps_global',
+    'bid_edge_take_bps',
+    'ask_edge_take_bps',
+    'take_cooldown_ms',
+    'hedge_ioc_cross_mid_bps',
+    'hedge_ioc_max_cross_bps',
+    'ibkr_fee_plan',
+    'ibkr_fee_min_usd',
+    'hl_taker_fee_bps',
+    'hl_maker_fee_bps',
+    'assumed_hedge_fee_bps',
+  ],
   maker_v4: [
     'bot_on',
     'max_age_ms',
@@ -236,6 +349,8 @@ export const PROFILE_TO_APPLIES_TO: Record<ParamsProfileId, string[]> = {
   taker: ['takerarbitragetask', 'taker_arbitrage_task', 'dex_cex_arb', 'equity_perp_arb'],
   maker_v2: ['maker_v2', 'crypto_spot_perp_maker', 'equity_perp_maker'],
   maker_v3: ['maker_v3', 'maker_v3_dual_cex', 'equity_perp_maker_v3'],
+  equities_maker: ['equities_maker'],
+  equities_taker: ['equities_taker'],
   maker_v4: ['maker_v4', 'makerv4', 'equity_perp_maker_v4'],
 };
 
@@ -264,6 +379,12 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
   if (paramSet === 'makerv2') {
     return 'maker_v2';
   }
+  if (paramSet === 'equities_maker') {
+    return 'equities_maker';
+  }
+  if (paramSet === 'equities_taker') {
+    return 'equities_taker';
+  }
   if (paramSet === 'taker') {
     return 'taker';
   }
@@ -274,6 +395,8 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
     explicitFamily === 'maker_v4' ||
     explicitFamily === 'maker_v3' ||
     explicitFamily === 'maker_v2' ||
+    explicitFamily === 'equities_maker' ||
+    explicitFamily === 'equities_taker' ||
     explicitFamily === 'taker'
   ) {
     return explicitFamily;
@@ -311,6 +434,8 @@ export function deriveStrategyProfile(row: StrategyProfileRow): ParamsProfileId 
 }
 
 export function getProfileHiddenKeys(profile: ParamsProfileId): string[] {
+  if (profile === 'equities_maker') return Array.from(EQUITIES_MAKER_HIDDEN_KEYS);
+  if (profile === 'equities_taker') return Array.from(EQUITIES_TAKER_HIDDEN_KEYS);
   if (profile === 'maker_v4') {
     return Array.from(
       new Set([...MAKER_V3_LEGACY_ALIAS_KEYS, ...MAKER_V4_UNUSED_RUNTIME_KEYS])
@@ -321,6 +446,8 @@ export function getProfileHiddenKeys(profile: ParamsProfileId): string[] {
 }
 
 export function isProfileHiddenKey(profile: ParamsProfileId, key: string): boolean {
+  if (profile === 'equities_maker') return EQUITIES_MAKER_HIDDEN_KEYS.has(key);
+  if (profile === 'equities_taker') return EQUITIES_TAKER_HIDDEN_KEYS.has(key);
   if (profile === 'maker_v4') {
     return MAKER_V3_LEGACY_ALIAS_KEYS.has(key) || MAKER_V4_UNUSED_RUNTIME_KEYS.has(key);
   }

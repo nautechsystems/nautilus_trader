@@ -166,6 +166,7 @@ class StrategySetPortfolioAggregator:
         self._profile_account_bindings = ()
         self.account_scope_ids: list[str] = []
         self._strategy_ids_by_asset: dict[str, tuple[str, ...]] = {}
+        self._shared_observation_group_by_strategy_id: dict[str, str] = {}
 
     def stop(self, *_args: Any) -> None:
         self._running = False
@@ -312,15 +313,22 @@ class StrategySetPortfolioAggregator:
                 ),
             ),
         )
+        strategy_ids_by_asset = getattr(self, "_strategy_ids_by_asset", {})
+        shared_observation_group_by_strategy_id = getattr(
+            self,
+            "_shared_observation_group_by_strategy_id",
+            {},
+        )
         merged_balance_rows = build_portfolio_balance_rows(
             portfolio_id=self._portfolio_id,
             balance_rows_by_strategy=balance_rows_by_strategy,
+            shared_position_groups_by_strategy=shared_observation_group_by_strategy_id,
         )
         inventory_by_asset: dict[str, dict[str, Any]] = {}
-        strategy_ids_by_asset = getattr(self, "_strategy_ids_by_asset", {})
         for base_currency in self._base_assets:
+            asset_id = base_currency.upper()
             asset_strategy_ids = list(
-                strategy_ids_by_asset.get(base_currency.upper(), tuple(self._strategy_ids)),
+                strategy_ids_by_asset.get(asset_id, tuple(self._strategy_ids)),
             )
             required_strategy_ids = self._required_strategy_ids.intersection(asset_strategy_ids)
             pipeline = self._redis.pipeline(transaction=False)
@@ -331,6 +339,11 @@ class StrategySetPortfolioAggregator:
                 strategy_id: decode_component(raw)
                 for strategy_id, raw in zip(asset_strategy_ids, raw_components, strict=True)
             }
+            shared_quantity_groups = {
+                strategy_id: shared_observation_group_by_strategy_id[strategy_id]
+                for strategy_id in asset_strategy_ids
+                if strategy_id in shared_observation_group_by_strategy_id
+            }
             payload = aggregate_components(
                 portfolio_id=self._portfolio_id,
                 base_currency=base_currency,
@@ -339,6 +352,7 @@ class StrategySetPortfolioAggregator:
                 now_ms_value=now_ms_value,
                 stale_after_ms=self._stale_after_ms,
                 aggregation_mode=getattr(self, "_aggregation_mode", "strict"),
+                shared_quantity_groups=shared_quantity_groups,
             )
             encoded = encode_portfolio_inventory(payload)
             key = self._aggregate_key(base_currency=base_currency)

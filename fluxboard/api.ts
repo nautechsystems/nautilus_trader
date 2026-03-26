@@ -2164,9 +2164,13 @@ export const api = {
   },
 
   // Get parameter schema with validation rules
-  getParamSchema: async (options?: { preferKeyLabel?: boolean }) => {
+  getParamSchema: async (options?: { preferKeyLabel?: boolean; strategyId?: string }) => {
     const qs = new URLSearchParams();
     appendProfileQuery(qs);
+    const strategyId = String(options?.strategyId ?? '').trim();
+    if (strategyId) {
+      qs.set('strategy', strategyId);
+    }
     const response = await fetchJSON<FluxEnvelope<ParamSchema>>(
       `/api/v1/param-schema${qs.toString() ? `?${qs.toString()}` : ''}`
     );

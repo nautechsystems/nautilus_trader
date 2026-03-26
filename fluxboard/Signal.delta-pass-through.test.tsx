@@ -69,7 +69,9 @@ describe('signal_delta field pass-through wiring', () => {
       },
       balances_ok: false,
       meta: {
-        class: 'maker_v3',
+        class: 'equities_maker',
+        param_set: 'equities_maker',
+        strategy_family: 'equities_maker',
       },
     } as any;
 
@@ -79,9 +81,9 @@ describe('signal_delta field pass-through wiring', () => {
     });
   });
 
-  it('passes through params, balance_readiness, balances_ok, and last_trade on signal_delta', async () => {
+  it('passes through shared equities-arb payload, params, balance_readiness, balances_ok, and last_trade on signal_delta', async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={['/equities/signal']}>
         <SignalTable />
       </MemoryRouter>,
     );
@@ -124,9 +126,25 @@ describe('signal_delta field pass-through wiring', () => {
           ],
         },
         balances_ok: true,
+        strategy_family: 'equities_maker',
+        equities_arb: {
+          operator: {
+            execution_mode: 'maker_hedge',
+            behavior: 'maker',
+            hedge_policy: {
+              route: 'SMART',
+              time_in_force: 'DAY',
+            },
+          },
+          quote_snapshot: {
+            ts_ms: 1736942400000,
+            effective_spread_bps: 6.5,
+            hedge_latency_ms: 45,
+          },
+        },
         meta: {
-          class: 'maker_v3',
-          external_strategy_id: 'maker_v3_external',
+          class: 'equities_maker',
+          external_strategy_id: 'equities_maker_external',
         },
         last_trade: {
           side: 'buy',
@@ -146,9 +164,20 @@ describe('signal_delta field pass-through wiring', () => {
       summary: 'Low inventory on one venue',
     });
     expect(merged?.balances_ok).toBe(true);
+    expect(merged?.strategy_family).toBe('equities_maker');
+    expect(merged?.equities_arb).toMatchObject({
+      operator: {
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
+      },
+      quote_snapshot: {
+        effective_spread_bps: 6.5,
+        hedge_latency_ms: 45,
+      },
+    });
     expect(merged?.meta).toMatchObject({
-      class: 'maker_v3',
-      external_strategy_id: 'maker_v3_external',
+      class: 'equities_maker',
+      external_strategy_id: 'equities_maker_external',
     });
     expect(merged?.last_trade).toMatchObject({
       side: 'buy',
@@ -161,6 +190,76 @@ describe('signal_delta field pass-through wiring', () => {
       contract_id: 'bybit_linear:PLUMEUSDT',
       exchange: 'bybit_linear',
       coin: 'PLUME',
+    });
+  });
+
+  it('passes through legacy maker_v4 payloads on equities signal_delta during mixed rollout', async () => {
+    currentSignalState.rows = [{
+      id: 'legacy_maker_strategy',
+      strategy_family: 'maker_v4',
+      params: { bot_on: '1', qty: '10' },
+      balances_ok: true,
+      meta: {
+        chain: 'equities',
+        strategy_groups: 'equities',
+        class: 'maker_v4',
+        param_set: 'makerv4',
+      },
+    }] as SignalStrategy[];
+
+    render(
+      <MemoryRouter initialEntries={['/equities/signal']}>
+        <SignalTable />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      const hasDeltaHandler = (socketsModule.socket.on as any).mock.calls.some(
+        (call: any[]) => call[0] === 'signal_delta',
+      );
+      expect(hasDeltaHandler).toBe(true);
+    });
+
+    const deltaHandler = (socketsModule.socket.on as any).mock.calls.find(
+      (call: any[]) => call[0] === 'signal_delta',
+    )?.[1];
+    expect(typeof deltaHandler).toBe('function');
+
+    act(() => {
+      deltaHandler({
+        id: 'legacy_maker_strategy',
+        strategy_family: 'maker_v4',
+        maker_v4: {
+          operator: {
+            execution_mode: 'maker_hedge',
+            behavior: 'maker',
+            hedge_policy: {
+              route: 'SMART',
+              time_in_force: 'DAY',
+            },
+          },
+          quote_snapshot: {
+            ts_ms: 1736942400000,
+            effective_spread_bps: 7.5,
+            hedge_latency_ms: 55,
+          },
+        },
+      });
+    });
+
+    expect(mockMergeStrategy).toHaveBeenCalled();
+    const merged = mockMergeStrategy.mock.calls.at(-1)?.[0];
+    expect(merged?.id).toBe('legacy_maker_strategy');
+    expect(merged?.strategy_family).toBe('maker_v4');
+    expect(merged?.maker_v4).toMatchObject({
+      operator: {
+        execution_mode: 'maker_hedge',
+        behavior: 'maker',
+      },
+      quote_snapshot: {
+        effective_spread_bps: 7.5,
+        hedge_latency_ms: 55,
+      },
     });
   });
 });

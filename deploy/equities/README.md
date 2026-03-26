@@ -6,7 +6,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 - `equities.live.toml`: shared Redis, portfolio, bridge, API, and contract metadata plus the canonical equities allowlist.
 - `equities_stack.env.example`: local paper/testnet smoke environment template for `ops/scripts/deploy/equities_stack.sh`.
-- `strategies/`: one complete node TOML per enrolled strategy route, named by exact strategy ID.
+- `strategies/`: one complete node TOML per enrolled strategy variant, named by exact strategy ID.
 - Runtime services:
   - `flux.runners.equities.run_node`
   - `flux.runners.equities.run_portfolio`
@@ -19,111 +19,102 @@ This directory is the deploy root for the dedicated `equities` stack.
 ## Intent
 
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
-- One enrolled strategy route uses one strategy file and one node process.
-- Multiple strategy routes may share one stock-level `portfolio_asset_id` when the same stock trades on multiple maker venues.
+- Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The checked-in equities universe is now fully `maker_v4`; every checked-in `deploy/equities/strategies/*.toml` route is intended to be enrolled into Pulse-managed live discovery.
+- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
+- `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
-- `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, `maker_venue`, `maker_symbol`, `market_type`, venue instrument mapping, and shared account scope ids.
-- `deploy/equities/equities.live.toml` also carries shared `[[account_scopes]]` rows as the canonical profile-owned venue account provider contract for `hyperliquid.xyz.main`, `binance.futures.main`, `ibkr.reference.main`, and `ibkr.hedge.main`.
+- `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
+- `deploy/equities/equities.live.toml` also carries shared `[[account_scopes]]` rows as the canonical profile-owned venue account provider contract for `hyperliquid.xyz.main`, `ibkr.reference.main`, and `ibkr.hedge.main`.
 - On the shared TokenMM host, Pulse is served by `tokenmm-api` at `/pulse` and manages the enrolled equities services from the same `/etc/flux` registry.
 - The shared host also runs an internal-only `equities-api` backend on loopback so `/equities` can read the dedicated equities Redis store without exposing a second public API port.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 - Flux runner stop handling is also opt-in: checked-in equities strategy TOMLs set `manage_stop = false`, so live defaults do not auto-flatten on runner stop unless a strategy explicitly enables that policy.
-- Equities MakerV4 routes use `max_age_ms = 60000` for maker venues and `max_ibkr_quote_age_ms = 300000` for IBKR so Signal blocks on genuinely stale or missing market data, not merely on a quiet book.
 
 ## Overnight IBKR Hedge Contract
 
-- MakerV4 take-take hedges remain immediate outside regular US equity hours; do not silently downgrade into a passive overnight stock hedge.
+- Taker hedges remain immediate outside regular US equity hours; do not silently downgrade into a passive overnight stock hedge.
 - Overnight-capable IBKR stock hedges still prefer `SMART`.
 - Set `includeOvernight=true` on the overnight-capable SMART stock route when outside RTH permissions are required.
 - Quote validation still gates submission outside RTH; stale or invalid IBKR quotes fail closed instead of falling back to a resting `DAY` order.
 - The production fee target for basis hedging is `IBKR Pro Tiered`, expressed as an explicit fee-plan assumption rather than an account-id-specific special case.
 - Residual hedge management remains out of scope for this wave; fail closed instead of trying to recover residuals automatically.
 
-## March 11, 2026 MakerV4 contract
+## March 19, 2026 Split deploy contract
 
-- MakerV4 is now the checked-in equities deploy contract. The checked-in repo keeps `deploy/equities/equities.live.toml` on `api.strategy_class = "maker_v4"` / `param_set = "makerv4"` and all enrolled strategy ids/service names use the `*_makerv4` suffix.
+- The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled Tier 1 strategy ids/service names are `*_maker` and `*_taker`.
+- `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` remains available as rollback material, but it is not part of normal installer discovery.
+- `makerv4` / `maker_v4` is now a legacy compatibility surface only. Keep it disabled on the checked-in production contract, validate live split-family trading first, and do not re-enroll `makerv4` for new production rollout work.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 - The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.
 
-## Enrolled MakerV4 Routes
+## March 13, 2026 Prod Hardening Universe Policy
 
-The checked-in Pulse-managed equities universe is now the full `maker_v4` route set below.
+- The checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket.
+- Second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
 
-### Enrolled Hyperliquid Routes
+### Tier 1 Core Basket
 
-- `aapl_tradexyz_makerv4`
-- `amd_tradexyz_makerv4`
-- `amzn_tradexyz_makerv4`
-- `baba_tradexyz_makerv4`
-- `coin_tradexyz_makerv4`
-- `crcl_tradexyz_makerv4`
-- `crwv_tradexyz_makerv4`
-- `googl_tradexyz_makerv4`
-- `hood_tradexyz_makerv4`
-- `intc_tradexyz_makerv4`
-- `meta_tradexyz_makerv4`
-- `msft_tradexyz_makerv4`
-- `mstr_tradexyz_makerv4`
-- `mu_tradexyz_makerv4`
-- `nflx_tradexyz_makerv4`
-- `nvda_tradexyz_makerv4`
-- `orcl_tradexyz_makerv4`
-- `pltr_tradexyz_makerv4`
-- `rivn_tradexyz_makerv4`
-- `sndk_tradexyz_makerv4`
-- `tsla_tradexyz_makerv4`
-- `tsm_tradexyz_makerv4`
-- `usar_tradexyz_makerv4`
+- `aapl_tradexyz_maker`
+- `aapl_tradexyz_taker`
+- `amd_tradexyz_maker`
+- `amd_tradexyz_taker`
+- `amzn_tradexyz_maker`
+- `amzn_tradexyz_taker`
+- `googl_tradexyz_maker`
+- `googl_tradexyz_taker`
+- `meta_tradexyz_maker`
+- `meta_tradexyz_taker`
+- `msft_tradexyz_maker`
+- `msft_tradexyz_taker`
+- `nvda_tradexyz_maker`
+- `nvda_tradexyz_taker`
+- `orcl_tradexyz_maker`
+- `orcl_tradexyz_taker`
+- `pltr_tradexyz_maker`
+- `pltr_tradexyz_taker`
+- `tsla_tradexyz_maker`
+- `tsla_tradexyz_taker`
 
-### Enrolled Binance Routes
+### Second-Wave Disabled Basket
 
-- `amzn_binance_perp_makerv4`
-- `coin_binance_perp_makerv4`
-- `crcl_binance_perp_makerv4`
-- `ewy_binance_perp_makerv4`
-- `hood_binance_perp_makerv4`
-- `intc_binance_perp_makerv4`
-- `mstr_binance_perp_makerv4`
-- `pltr_binance_perp_makerv4`
-- `tsla_binance_perp_makerv4`
+- These lists use the legacy `*_makerv3` rollback identifier as a short symbol label. On disk, the same symbols may also carry disabled split `*_maker`, `*_taker`, or `*_makerv4` artifacts.
 
-### Removed MakerV3 Files
-
-- `aapl_tradexyz_makerv3`
-- `baba_tradexyz_makerv3`
 - `coin_tradexyz_makerv3`
-- `crcl_tradexyz_makerv3`
-- `crwv_tradexyz_makerv3`
 - `hood_tradexyz_makerv3`
-- `hyundai_tradexyz_makerv3`
 - `intc_tradexyz_makerv3`
-- `mstr_tradexyz_makerv3`
 - `mu_tradexyz_makerv3`
 - `nflx_tradexyz_makerv3`
 - `rivn_tradexyz_makerv3`
+
+### Immediate Decommission / Out-of-Scope Basket
+
+- `baba_tradexyz_makerv3`
+- `crcl_tradexyz_makerv3`
+- `crwv_tradexyz_makerv3`
+- `mstr_tradexyz_makerv3`
 - `sndk_tradexyz_makerv3`
 - `tsm_tradexyz_makerv3`
 - `usar_tradexyz_makerv3`
 
-## MakerV4 deploy contract
+### Admission Policy for Any Future Re-Add
 
-- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "maker_v4"`, the equities allowlist points to the enrolled stock strategy set, and the shared contract metadata publishes the shared contract rows each enrolled route depends on.
-- Each `[[strategy_contracts]]` row binds one strategy-local route id to one canonical `portfolio_asset_id`, one explicit maker route contract (`maker_venue`, `maker_symbol`, `market_type`, `maker_instrument_id`), one explicit IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
-- For live route resolution, the shared `[[strategy_contracts]]` row is authoritative for maker venue selection and instrument rewrites; per-node `[venues].execution_venue` must not drift from that shared contract.
-- `maker_venue`, `maker_symbol`, and `market_type` are mandatory on every equities route row; older manifests must be upgraded before they can decode.
-- Duplicate `portfolio_asset_id` values are valid when distinct strategy routes share the same canonical stock bucket across venues such as Hyperliquid and Binance perps.
+1. US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.
+2. Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.
+3. The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.
+4. The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.
+
+## Split deploy contract
+
+- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "equities_maker"` provides the shared API bootstrap default, the equities allowlist points to the enrolled split strategy set, and the shared contract metadata publishes one Hyperliquid and one IBKR contract row per enrolled stock route.
+- Each `[[strategy_contracts]]` row binds one strategy-local id to one canonical `portfolio_asset_id`, one Hyperliquid maker leg, one IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
+- Split variants may repeat `portfolio_asset_id` so `aapl_tradexyz_maker` and `aapl_tradexyz_taker` can share `portfolio_asset_id = "AAPL"` while remaining distinct strategy processes.
 - Each `[[account_scopes]]` row defines the shared provider config for one profile-owned account scope so the portfolio runner can build shared Hyperliquid/IBKR account projections without scraping one arbitrary node TOML.
-- Binance shared-account scopes use `api_key_env`, `api_secret_env`, `account_type`, and optional `base_url_http` / `recv_window_ms`; the checked-in live contract expects `EQUITIES_BINANCE_API_KEY`, `EQUITIES_BINANCE_API_SECRET`, and `USDT_FUTURES`.
-- `ops/scripts/deploy/binance_equities_universe.py --config deploy/equities/equities.live.toml` fetches live Binance USD-M `exchangeInfo`, filters active equity `TRADIFI_PERPETUAL` contracts, and prints the discovery diff against the explicitly enrolled `BINANCE_PERP` routes.
-- Checked-in `.toml` strategy files are the enrolled set. Discovery is informational only until a matching `maker_v4` route is committed into both the shared manifest and `deploy/equities/strategies/`.
-- The discovery helper diffs against the enrolled equities allowlist from `api.equities_strategy_ids`, not every staged `[[strategy_contracts]]` row.
 - The shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, and `[[account_scopes]]`, so active node settings live in `deploy/equities/strategies/*.toml` while canonical asset/account contracts stay centralized in `deploy/equities/equities.live.toml`.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
-- Shared IBKR contract entry must mirror the active enrolled route set before restart so `/equities` surfaces the same catalog Pulse will manage.
+- The same safety invariant still applies to the split rollout: each shared IBKR contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
 - The checked-in equities nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ` and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false`. `ibkr.reference.main` is the only equities IBKR gateway owner; enrolled nodes keep a non-owning `[node.venues.IBKR.dockerized_gateway]` block with `manage_container = false` so they connect to the shared gateway without starting or restarting it.
 - Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
@@ -131,10 +122,9 @@ The checked-in Pulse-managed equities universe is now the full `maker_v4` route 
 
 ## Inventory and balances model
 
-- `Signal` is served as per-strategy MakerV4 state, which now matches the checked-in deploy contract.
+- `Signal` is served as per-strategy shared equities-arb state across the enrolled `maker` and `taker` variants.
 - `local_qty` remains per-stock strategy inventory.
 - `global_qty` is the shared `equities` portfolio aggregate owned by `flux.runners.equities.run_portfolio`.
-- Shared portfolio/risk nets by `portfolio_asset_id`, while local maker inventory remains route-local to each strategy id.
 - `GET /api/v1/balances?profile=equities` is the portfolio projection across the allowlisted stock strategies.
 - `GET /api/v1/balances?strategy=<id>` remains the per-strategy debug view.
 - The current live balances payload may still use the legacy shared-row marker `scope = "shared_account"`.
@@ -179,8 +169,6 @@ Runtime registration is explicit:
 - The production group is `cache.r7g.large`, `cluster mode disabled`, `Multi-AZ enabled`, `transit encryption required`, and `auth token enabled`.
 - Production hosts should inject that dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
-- `EQUITIES_BINANCE_API_KEY` and `EQUITIES_BINANCE_API_SECRET` also stay in `/etc/flux/common.env` for the shared `binance.futures.main` account scope; no Binance spot key is required for this equities-perp path.
-- Every checked-in `deploy/equities/strategies/*binance_perp_makerv4.toml` route must reference those env var names under `[node.venues.BINANCE_PERP]`; do not rely on generic `BINANCE_API_*` fallbacks.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.
 
@@ -189,7 +177,7 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-api.env`
 - `sed -n '1,120p' /etc/flux/equities-portfolio.env`
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
-- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_makerv4.env`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_maker.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
 - `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
 - `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
@@ -244,8 +232,6 @@ EQUITIES_CONFIRM_LIVE=0 \
 EQUITIES_ENABLE_EXECUTION=0 \
 TRADE_XYZ_AGENT_PK=... \
 TRADE_XYZ_ACCOUNT_ADDRESS=... \
-EQUITIES_BINANCE_API_KEY=... \
-EQUITIES_BINANCE_API_SECRET=... \
 TWS_USERNAME=... \
 TWS_PASSWORD=... \
 ops/scripts/deploy/equities_stack.sh start
@@ -294,6 +280,6 @@ Fluxboard contract reference:
 
 ## Rollback
 
-- Disable MakerV3 cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
-- Roll back the AAPL canary to MakerV3 only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the active MakerV4 file from discovery for that symbol, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
+- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
+- Roll back the AAPL canary to MakerV3 only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the active split family files from discovery for that symbol, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
 - `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry move with the file swap.

@@ -6,91 +6,84 @@ This directory holds one TOML file per equities node process enrolled into the P
 ## File naming
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
-- Recommended naming pattern for Hyperliquid routes is `<stock>_tradexyz_makerv4.toml`.
-- One strategy route uses one strategy file and one node process.
-- Multiple strategy routes can share one canonical stock bucket in shared config.
+- Recommended naming patterns for enrolled Tier 1 names are now `<stock>_tradexyz_maker.toml` and `<stock>_tradexyz_taker.toml`.
+- Each enrolled variant uses one strategy file and one node process; the same stock may run both variants concurrently.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
-- Treat `deploy/equities/equities.live.toml` as the route registry and `deploy/equities/strategies/*.toml` as the active node set.
-- The checked-in equities strategy set is fully `maker_v4`; dead `maker_v3` files have been removed from discovery.
+- Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
+- The intended active target after the March 13, 2026 admission freeze is the split `maker` plus `taker` rollout on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
+- `*_makerv4.toml.disabled` files are legacy compatibility artifacts only. Keep them out of new production enrollment and remove them in the later deletion wave after live split rollout is validated.
+- The rollback file is `aapl_tradexyz_makerv3.toml.disabled`.
+- Treat `aapl_tradexyz_makerv3.toml.disabled` as rollback material, not the active control-plane contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 
-## Enrolled MakerV4 Routes
+## March 13, 2026 Prod Hardening Universe Policy
 
-These are the checked-in node TOMLs that Pulse-managed discovery should enroll.
+- The checked-in active file set is pruned to the Tier 1 production basket below.
+- Treat the categories below as the source of truth for which symbol-level routes are active, disabled for second-wave validation, or decommissioned from the first-wave production set. Additional disabled `*.toml.disabled` files may remain in the directory as historical or rollback material until later cleanup removes them.
 
-### Enrolled Hyperliquid Routes
+### Tier 1 Core Basket
 
-- `aapl_tradexyz_makerv4`
-- `amd_tradexyz_makerv4`
-- `amzn_tradexyz_makerv4`
-- `baba_tradexyz_makerv4`
-- `coin_tradexyz_makerv4`
-- `crcl_tradexyz_makerv4`
-- `crwv_tradexyz_makerv4`
-- `googl_tradexyz_makerv4`
-- `hood_tradexyz_makerv4`
-- `intc_tradexyz_makerv4`
-- `meta_tradexyz_makerv4`
-- `msft_tradexyz_makerv4`
-- `mstr_tradexyz_makerv4`
-- `mu_tradexyz_makerv4`
-- `nflx_tradexyz_makerv4`
-- `nvda_tradexyz_makerv4`
-- `orcl_tradexyz_makerv4`
-- `pltr_tradexyz_makerv4`
-- `rivn_tradexyz_makerv4`
-- `sndk_tradexyz_makerv4`
-- `tsla_tradexyz_makerv4`
-- `tsm_tradexyz_makerv4`
-- `usar_tradexyz_makerv4`
+- `aapl_tradexyz_maker`
+- `aapl_tradexyz_taker`
+- `amd_tradexyz_maker`
+- `amd_tradexyz_taker`
+- `amzn_tradexyz_maker`
+- `amzn_tradexyz_taker`
+- `googl_tradexyz_maker`
+- `googl_tradexyz_taker`
+- `meta_tradexyz_maker`
+- `meta_tradexyz_taker`
+- `msft_tradexyz_maker`
+- `msft_tradexyz_taker`
+- `nvda_tradexyz_maker`
+- `nvda_tradexyz_taker`
+- `orcl_tradexyz_maker`
+- `orcl_tradexyz_taker`
+- `pltr_tradexyz_maker`
+- `pltr_tradexyz_taker`
+- `tsla_tradexyz_maker`
+- `tsla_tradexyz_taker`
 
-### Enrolled Binance Routes
+### Second-Wave Disabled Basket
 
-- `amzn_binance_perp_makerv4`
-- `coin_binance_perp_makerv4`
-- `crcl_binance_perp_makerv4`
-- `ewy_binance_perp_makerv4`
-- `hood_binance_perp_makerv4`
-- `intc_binance_perp_makerv4`
-- `mstr_binance_perp_makerv4`
-- `pltr_binance_perp_makerv4`
-- `tsla_binance_perp_makerv4`
+- These lists use the legacy `*_makerv3` rollback identifier as a short symbol label. On disk, the same symbols may also carry disabled split `*_maker`, `*_taker`, or `*_makerv4` files.
 
-### Removed MakerV3 Files
-
-- `aapl_tradexyz_makerv3`
-- `baba_tradexyz_makerv3`
 - `coin_tradexyz_makerv3`
-- `crcl_tradexyz_makerv3`
-- `crwv_tradexyz_makerv3`
 - `hood_tradexyz_makerv3`
-- `hyundai_tradexyz_makerv3`
 - `intc_tradexyz_makerv3`
-- `mstr_tradexyz_makerv3`
 - `mu_tradexyz_makerv3`
 - `nflx_tradexyz_makerv3`
 - `rivn_tradexyz_makerv3`
+
+### Immediate Decommission / Out-of-Scope Basket
+
+- `baba_tradexyz_makerv3`
+- `crcl_tradexyz_makerv3`
+- `crwv_tradexyz_makerv3`
+- `mstr_tradexyz_makerv3`
 - `sndk_tradexyz_makerv3`
 - `tsm_tradexyz_makerv3`
 - `usar_tradexyz_makerv3`
+
+### Admission Policy for Any Future Re-Add
+
+1. US-primary listed common stock only for Tier 1; no ADR / non-US-primary exposure in the first-wave prod basket.
+2. Liquidity must be measured, not guessed: require a documented 30-day median daily dollar-volume floor before re-admission.
+3. The name must have reliable reference data on IBKR and stable maker data on Hyperliquid for at least one full trading session in read-only mode.
+4. The name must be free of recent launch / corporate-action / special-situation churn that would distort a first-wave canary.
 
 ## Required TOML keys per file
 
 - `[identity].strategy_id` and `[identity].strategy_instance_id` stay aligned to the file name.
 - `[strategy].strategy_id` stays descriptive and unique across node processes.
 - `[strategy].strategy_groups` stays `equities`.
-- `[strategy].param_set = "makerv4"` stays explicit for the intended active equities rollout.
+- `[strategy].param_set = "equities_maker"` or `"equities_taker"` stays explicit for the intended active equities rollout.
 - `[strategy].manage_stop = false` stays explicit in the checked-in live equities configs; flatten-on-stop is opt-in only and must be set per strategy when explicitly desired.
-- `[strategy].max_age_ms = 60000` and `[strategy].max_ibkr_quote_age_ms = 300000` are the checked-in equities defaults so Signal treats quiet-but-valid maker and IBKR books as healthy while still failing closed on truly stale data.
-- `[venues].execution_venue` must match the maker route (`HYPERLIQUID` or `BINANCE_PERP`) and `[venues].reference_venue` stays `IBKR`.
-- `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument for Hyperliquid routes.
-- `[node.venues.BINANCE_PERP].instrument_id` defines the Binance USD-M equity-perp instrument for Binance routes.
-- `[node.venues.BINANCE_PERP].api_key_env` and `api_secret_env` must reference `EQUITIES_BINANCE_*` env vars, not inline secrets.
-- Portfolio Margin Binance accounts must set `[node.venues.BINANCE_PERP].private_api_family = "PORTFOLIO_MARGIN"` so private account/order/user-stream traffic routes to Binance `papi` while public market data remains on the normal futures market-data path.
-- Checked-in Binance route files must also set `[node.venues.BINANCE_PERP].api_key_env = "EQUITIES_BINANCE_API_KEY"` and `[node.venues.BINANCE_PERP].api_secret_env = "EQUITIES_BINANCE_API_SECRET"` so execution clients use the shared equities account scope rather than generic Binance env names.
+- `[venues].execution_venue` stays `HYPERLIQUID` and `[venues].reference_venue` stays `IBKR`.
+- `[node.venues.HYPERLIQUID].instrument_id` defines the trade[XYZ] builder-perp instrument.
 - `[node.venues.IBKR].instrument_id` defines the IBKR reference instrument, for example `AAPL.NASDAQ` or `USAR.NASDAQ`.
-- `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the MakerV4 contract.
+- `[node.venues.IBKR].use_regular_trading_hours = false` keeps IBKR reference data available outside RTH on the split maker/taker contract.
 - `[strategy].outside_rth_hedge_enabled = true` enables the session-aware overnight hedge policy.
 - `[strategy].ibkr_primary_exchange` must match the listing venue used for the enrolled IBKR reference instrument.
 - `[node.venues.IBKR.dockerized_gateway]` is now a non-owning client contract for enrolled nodes.
@@ -99,9 +92,8 @@ These are the checked-in node TOMLs that Pulse-managed discovery should enroll.
 - `[node.venues.HYPERLIQUID].dex = "xyz"` stays explicit.
 - `[node.venues.HYPERLIQUID].private_key_env` and `account_address_env` must reference env var names, not inline secrets.
 - Keep the shared `[[contracts]]` IBKR entries aligned with the enrolled reference instruments, because the `/equities` API contract catalog is built from `deploy/equities/equities.live.toml`.
-- Keep `[venues].execution_venue` aligned with the shared `[[strategy_contracts]].maker_venue`; the shared contract row is authoritative for effective live route resolution.
 - In practice, that means each enrolled strategy file must keep the shared IBKR contract entry set in sync.
-- Keep the shared `[[contracts]]` IBKR entry aligned with the active enrolled reference instrument set before restart.
+- Keep the shared `[[contracts]]` IBKR entry aligned with the active canary reference instrument before promoting that route into the enrolled stock set.
 - Hyperliquid effective account identity resolves in this order: `vault_address_env`, then funded `account_address_env`, then the agent wallet's `userRole`-resolved master account.
 - Do not duplicate `[redis]` in per-node deploy files; nodes inherit it from `deploy/equities/equities.live.toml`.
 - Do not duplicate `[portfolio]` in per-node deploy files; nodes inherit the shared portfolio inventory feed from `deploy/equities/equities.live.toml`.
@@ -112,7 +104,6 @@ These are the checked-in node TOMLs that Pulse-managed discovery should enroll.
 
 - `local_qty` is strategy-local inventory for that stock.
 - `global_qty` is the shared `equities` portfolio aggregate for the stock portfolio.
-- Shared portfolio/risk nets by canonical `portfolio_asset_id`, not by maker venue or strategy file name.
 - Each node publishes a strategy inventory component to Redis.
 - `flux.runners.equities.run_portfolio` aggregates those components into the shared portfolio inventory feed consumed by all equities strategies.
 

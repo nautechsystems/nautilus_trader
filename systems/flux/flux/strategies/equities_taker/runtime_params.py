@@ -1,0 +1,221 @@
+"""
+Expose the canonical equities-taker runtime param surface and defaults.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
+from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
+from flux.common.params import RuntimeParamRegistry
+from flux.common.params import RuntimeParamSpec
+from flux.params.manager import FluxParamsManager
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_PARAM_SET
+from flux.strategies.equities_taker.constants import EQUITIES_TAKER_PROFILE_KEY
+
+
+_REMOVED_BASE_PARAM_NAMES = frozenset(
+    {
+        "des_qty_local",
+        "max_qty_local",
+        "max_skew_bps_local",
+        "linear_offset_bps",
+        "bid_edge1",
+        "ask_edge1",
+        "place_edge1",
+        "distance1",
+        "n_orders1",
+        "bid_edge2",
+        "ask_edge2",
+        "place_edge2",
+        "distance2",
+        "n_orders2",
+        "bid_edge3",
+        "ask_edge3",
+        "place_edge3",
+        "distance3",
+        "n_orders3",
+    },
+)
+
+_EQUITIES_TAKER_DEFAULT_OVERRIDES: dict[str, bool | int | float] = {
+    "qty": 1.0,
+    "max_qty_global": 100.0,
+    "max_skew_bps_global": 10.0,
+}
+
+
+def _clone_makerv3_runtime_specs() -> list[RuntimeParamSpec]:
+    defaults = {
+        **MAKERV3_RUNTIME_PARAM_DEFAULTS,
+        **_EQUITIES_TAKER_DEFAULT_OVERRIDES,
+    }
+    schema = MAKERV3_RUNTIME_PARAM_REGISTRY.schema
+    specs: list[RuntimeParamSpec] = []
+    for name in MAKERV3_RUNTIME_PARAM_REGISTRY.names:
+        if name in _REMOVED_BASE_PARAM_NAMES:
+            continue
+        spec = schema[name]
+        specs.append(
+            RuntimeParamSpec(
+                name=name,
+                schema_type=str(spec["type"]),
+                default=defaults[name],  # type: ignore[arg-type]
+                description=str(spec["description"]),
+                minimum=spec.get("minimum"),
+                maximum=spec.get("maximum"),
+                advanced=bool(spec.get("advanced", False)),
+            ),
+        )
+    return specs
+
+
+def _clone_runtime_specs() -> tuple[RuntimeParamSpec, ...]:
+    base_specs = _clone_makerv3_runtime_specs()
+    base_specs.extend(
+        [
+            RuntimeParamSpec(
+                name="bid_edge_take_bps",
+                schema_type="number",
+                default=5.0,
+                description="Minimum fee-aware buy-side taker edge threshold in bps.",
+                minimum=0.0,
+                maximum=500.0,
+            ),
+            RuntimeParamSpec(
+                name="ask_edge_take_bps",
+                schema_type="number",
+                default=5.0,
+                description="Minimum fee-aware sell-side taker edge threshold in bps.",
+                minimum=0.0,
+                maximum=500.0,
+            ),
+            RuntimeParamSpec(
+                name="take_cooldown_ms",
+                schema_type="number",
+                default=1_000,
+                description="Cooldown between taker submissions in milliseconds.",
+                minimum=0.0,
+                maximum=120_000.0,
+            ),
+            RuntimeParamSpec(
+                name="hedge_ioc_cross_mid_bps",
+                schema_type="number",
+                default=2.0,
+                description="IOC hedge limit offset through the IBKR midpoint in bps.",
+                minimum=0.0,
+                maximum=100.0,
+            ),
+            RuntimeParamSpec(
+                name="hedge_ioc_max_cross_bps",
+                schema_type="number",
+                default=10.0,
+                description="Maximum IOC hedge crossing distance from the IBKR midpoint in bps.",
+                minimum=0.0,
+                maximum=500.0,
+            ),
+            RuntimeParamSpec(
+                name="ibkr_fee_plan",
+                schema_type="select",
+                default="tiered",
+                description="Configured IBKR fee-plan assumption for fee-aware pricing decisions.",
+                options=(("fixed", "Fixed"), ("tiered", "Tiered")),
+            ),
+            RuntimeParamSpec(
+                name="ibkr_fee_min_usd",
+                schema_type="number",
+                default=0.35,
+                description="Configured minimum IBKR commission assumption in USD.",
+                minimum=0.0,
+                maximum=100.0,
+            ),
+            RuntimeParamSpec(
+                name="hl_taker_fee_bps",
+                schema_type="number",
+                default=4.5,
+                description="Configured Hyperliquid taker-fee assumption in bps.",
+                minimum=0.0,
+                maximum=100.0,
+            ),
+            RuntimeParamSpec(
+                name="hl_maker_fee_bps",
+                schema_type="number",
+                default=0.25,
+                description="Configured Hyperliquid maker-fee assumption in bps.",
+                minimum=0.0,
+                maximum=100.0,
+            ),
+            RuntimeParamSpec(
+                name="assumed_hedge_fee_bps",
+                schema_type="number",
+                default=1.0,
+                description="Assumed IBKR hedge fee in bps used for hedge gross-up.",
+                minimum=0.0,
+                maximum=100.0,
+            ),
+        ],
+    )
+    return tuple(base_specs)
+
+
+EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY = RuntimeParamRegistry(
+    param_set=EQUITIES_TAKER_PARAM_SET,
+    specs=_clone_runtime_specs(),
+)
+EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA: dict[str, dict[str, Any]] = {
+    name: dict(spec) for name, spec in EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.schema.items()
+}
+EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS: dict[str, Any] = dict(
+    EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.defaults,
+)
+PARAM_SET = EQUITIES_TAKER_PARAM_SET
+RUNTIME_PARAM_SCHEMA = EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA
+RUNTIME_PARAM_DEFAULTS = EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS
+
+
+def profile_key() -> str:
+    return EQUITIES_TAKER_PROFILE_KEY
+
+
+def params_manager_factory(
+    *,
+    redis_client: Any,
+    namespace: str = "flux",
+    schema_version: str = "v1",
+    defaults: Mapping[str, Any] | None = None,
+):
+    runtime_defaults = dict(EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS)
+    if defaults:
+        runtime_defaults.update(defaults)
+
+    def _factory(strategy: Any) -> FluxParamsManager:
+        strategy_runtime_params = getattr(strategy, "_runtime_params", {})
+        resolved_defaults = {
+            name: strategy_runtime_params.get(name, runtime_defaults[name])
+            for name in EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.names
+        }
+        return FluxParamsManager(
+            redis_client=redis_client,
+            strategy_id=strategy.runtime_strategy_id,
+            namespace=namespace,
+            schema_version=schema_version,
+            schema=EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA,
+            defaults=resolved_defaults,
+            param_set=EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY.param_set,
+        )
+
+    return _factory
+
+
+__all__ = [
+    "EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS",
+    "EQUITIES_TAKER_RUNTIME_PARAM_REGISTRY",
+    "EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA",
+    "PARAM_SET",
+    "RUNTIME_PARAM_DEFAULTS",
+    "RUNTIME_PARAM_SCHEMA",
+    "params_manager_factory",
+    "profile_key",
+]

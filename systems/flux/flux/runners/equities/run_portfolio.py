@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.common.strategy_contracts import shared_observation_group_by_strategy_id
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import table as shared_table
@@ -96,6 +97,10 @@ class EquitiesPortfolioAggregator(StrategySetPortfolioAggregator):
             for binding in self._profile_account_bindings
         ]
         self._strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=self._strategy_ids)
+        self._shared_observation_group_by_strategy_id = shared_observation_group_by_strategy_id(
+            config.get("strategy_contracts") or [],
+            allowlist=self._strategy_ids,
+        )
 
 
 def main() -> None:

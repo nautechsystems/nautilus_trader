@@ -39,6 +39,18 @@ from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
 from flux.strategies import get_strategy_spec
+from flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+)
+from flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+)
+from flux.strategies.equities_taker.runtime_params import (
+    EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS,
+)
+from flux.strategies.equities_taker.runtime_params import (
+    EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA,
+)
 from flux.strategies.registry import FluxStrategySpec
 from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
 from flux.strategies.makerv4.runtime_params import MAKERV4_RUNTIME_PARAM_DEFAULTS
@@ -508,15 +520,21 @@ def _resolve_strategy_name(api_cfg: dict[str, Any]) -> str:
     strategy_class = (_optional_text(api_cfg.get("strategy_class")) or "").lower()
     if not strategy_class:
         raise ValueError("`api.strategy_class` must be set explicitly for equities")
-    if strategy_class in {"maker_v4", "makerv4"}:
-        strategy_name = "makerv4"
-    elif strategy_class in {"maker_v3", "makerv3"}:
-        strategy_name = DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id
-    else:
-        raise ValueError(
-            "`api.strategy_class` must be one of {'maker_v4', 'makerv4', 'maker_v3', 'makerv3'} "
-            f"for equities, got {strategy_class!r}",
-        )
+    strategy_name = {
+        "maker_v4": "makerv4",
+        "makerv4": "makerv4",
+        "maker_v3": DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id,
+        "makerv3": DEFAULT_EQUITIES_STRATEGY_SPEC.strategy_id,
+    }.get(strategy_class)
+    if strategy_name is None:
+        try:
+            strategy_name = get_strategy_spec(strategy_class).strategy_id
+        except ValueError as exc:
+            raise ValueError(
+                "`api.strategy_class` must be one of {'maker_v4', 'makerv4', "
+                "'maker_v3', 'makerv3', 'equities_maker', 'equities_taker'} "
+                f"for equities, got {strategy_class!r}",
+            ) from exc
 
     explicit_param_set = _optional_text(api_cfg.get("param_set"))
     expected_param_set = get_strategy_spec(strategy_name).param_set
@@ -548,6 +566,7 @@ def build_equities_strategy_metadata_map(
     api_cfg: dict[str, Any],
     *,
     strategy_ids: list[str],
+    strategy_contracts: Any = None,
 ) -> dict[str, StrategyMetadata]:
     configured_strategy_class = _optional_text(api_cfg.get("strategy_class"))
     default_strategy_spec = (
@@ -555,9 +574,12 @@ def build_equities_strategy_metadata_map(
         if configured_strategy_class
         else DEFAULT_EQUITIES_STRATEGY_SPEC
     )
+    raw_strategy_contracts = strategy_contracts
+    if raw_strategy_contracts is None:
+        raw_strategy_contracts = api_cfg.get("strategy_contracts")
     contracts_by_strategy_id = {
         contract.strategy_id: contract
-        for contract in decode_strategy_contracts(api_cfg.get("strategy_contracts") or [])
+        for contract in decode_strategy_contracts(raw_strategy_contracts or [])
     }
     metadata_by_strategy_id: dict[str, StrategyMetadata] = {}
     for strategy_id in strategy_ids:
@@ -583,6 +605,10 @@ def _resolve_runtime_params_payloads(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     if strategy_name == "makerv4":
         return MAKERV4_RUNTIME_PARAM_SCHEMA, MAKERV4_RUNTIME_PARAM_DEFAULTS
+    if strategy_name == "equities_maker":
+        return EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA, EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS
+    if strategy_name == "equities_taker":
+        return EQUITIES_TAKER_RUNTIME_PARAM_SCHEMA, EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS
     defaults = dict(MAKERV3_RUNTIME_PARAM_DEFAULTS)
     # Equities canaries use 1-share order sizing by default; keep the API fallback aligned with node runtime.
     defaults["qty"] = 1.0
@@ -787,6 +813,7 @@ def main() -> None:
     strategy_metadata_map = build_equities_strategy_metadata_map(
         api_cfg,
         strategy_ids=profile_strategy_map.get(EQUITIES_DESCRIPTOR.profile, []),
+        strategy_contracts=config.get("strategy_contracts"),
     )
     contract_catalog_by_strategy = _build_contract_catalog_by_strategy(
         config,
@@ -823,6 +850,7 @@ def main() -> None:
         strategy_metadata_resolver=strategy_metadata_map.__getitem__,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
+        strategy_contracts=config.get("strategy_contracts"),
         params_schema=params_schema,
         params_defaults=params_defaults,
         param_set=strategy_spec.param_set,

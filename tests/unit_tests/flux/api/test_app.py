@@ -15,6 +15,12 @@ from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from nautilus_trader.flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from nautilus_trader.flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+)
+from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
+    EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+)
 
 
 def _seed_required_schema_keys(redis_client, flux_config) -> None:
@@ -1030,59 +1036,6 @@ def test_params_ignore_stale_state_summary_when_augmenting_bot_on_fields(
     assert "state" not in row
 
 
-def test_params_ignore_stale_on_stop_state_summary_when_augmenting_bot_on_fields(
-    monkeypatch,
-    flux_config,
-    redis_client,
-    contract_catalog,
-    strategy_metadata,
-    params_schema,
-    params_defaults,
-) -> None:
-    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(
-        primary_keys.params_hash_key(),
-        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
-    )
-    redis_client.set_json(
-        primary_keys.state(),
-        {
-            "state": "on_stop",
-            "bot_on": True,
-            "effective_bot_on": True,
-            "persisted_bot_on": True,
-            "config_bot_on": True,
-            "bot_on_reason": "running",
-            "managed_orders": 0,
-            "ts_ms": 1_700_000_000_000,
-        },
-    )
-    app = create_flux_api_app(
-        flux_config,
-        redis_client,
-        contract_catalog=contract_catalog,
-        strategy_metadata=strategy_metadata,
-        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
-        params_schema=params_schema,
-        params_defaults=params_defaults,
-    )
-
-    with app.test_client() as client:
-        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
-        body = response.get_json()
-
-    assert response.status_code == 200
-    row = body["data"][0]
-    assert row["params"]["bot_on"] is False
-    assert row["persisted_bot_on"] is False
-    assert row["config_bot_on"] is False
-    assert row["effective_bot_on"] is False
-    assert row["bot_on_reason"] == "bot_off"
-    assert row["running"] is False
-    assert "state" not in row
-
-
 def test_store_update_params_records_bot_on_control_revision(
     flux_config,
     redis_client,
@@ -1811,63 +1764,6 @@ def test_trades_profile_tokenmm_keeps_same_ts_and_seq_rows_from_multiple_strateg
     assert [row["row_id"] for row in body["data"]["rows"]] == ["t-03-shared", "t-02-shared"]
     assert {row["strategy_id"] for row in body["data"]["rows"]} == {"strategy_02", "strategy_03"}
     assert body["data"]["last_seq"] == 0
-
-
-def test_trades_profile_tokenmm_projects_qty_as_base_when_explicit_fields_are_present(
-    flux_config,
-    redis_client,
-    contract_catalog,
-    strategy_metadata,
-    params_schema,
-    params_defaults,
-) -> None:
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.add_stream_rows(
-        primary_keys.trades_stream(),
-        [
-            {
-                "strategy_id": flux_config.identity.strategy_id,
-                "row_id": "t-okx",
-                "seq": 11,
-                "ts_ms": 3_000,
-                "instrument_id": "PLUME-USDT-SWAP.OKX",
-                "exchange": "okx",
-                "side": "buy",
-                "price": "0.012736",
-                "qty": "100",
-                "qty_base": "1000",
-                "qty_venue": "100",
-                "qty_conversion_status": "exact_multiplier",
-                "qty_conversion_source": "generic:multiplier",
-            },
-        ],
-    )
-    app = create_flux_api_app(
-        flux_config,
-        redis_client,
-        contract_catalog=contract_catalog,
-        strategy_metadata=strategy_metadata,
-        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
-        params_schema=params_schema,
-        params_defaults=params_defaults,
-    )
-
-    with app.test_client() as client:
-        response = client.get(
-            "/api/v1/trades",
-            query_string={"profile": "tokenmm", "limit": 10, "offset": 0},
-        )
-        body = response.get_json()
-
-    assert response.status_code == 200
-    row = body["data"]["rows"][0]
-    assert row["row_id"] == "t-okx"
-    assert row["qty"] == "1000"
-    assert row["qty_base"] == "1000"
-    assert row["qty_venue"] == "100"
-    assert row["qty_conversion_status"] == "exact_multiplier"
-    assert body["data"]["limit"] == 10
-    assert body["data"]["offset"] == 0
 
 
 def test_trades_with_strategy_query_keeps_per_strategy_debug_view_with_tokenmm_profile(
@@ -3693,7 +3589,7 @@ def test_balances_profile_equities_prefers_portfolio_snapshot_v2_hyperliquid_xyz
     assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(0.0)
 
 
-def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_account_projections(
+def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_account_projections_for_split_multivenue(
     monkeypatch,
     flux_config,
     redis_client,
@@ -3701,8 +3597,21 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_accoun
     params_defaults,
 ) -> None:
     monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    strategy_ids = [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+        "aapl_binance_perp_maker",
+        "aapl_binance_perp_taker",
+    ]
+
+    for strategy_id in strategy_ids:
+        keys = FluxRedisKeys(
+            strategy_id=strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        )
+        redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0"})
+
     redis_client.set_json(
         FluxRedisKeys.portfolio_snapshot(
             portfolio_id="equities",
@@ -3712,9 +3621,9 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_accoun
         {
             "portfolio_id": "equities",
             "inventory_by_asset": {
-                "NVDA": {
+                "AAPL": {
                     "portfolio_id": "equities",
-                    "base_currency": "NVDA",
+                    "base_currency": "AAPL",
                     "global_qty_base": "0",
                     "global_qty": "0",
                     "aggregation_mode": "partial",
@@ -3730,7 +3639,7 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_accoun
                 },
             },
             "balances": {"rows": []},
-            "accounts": {"rows": []},
+            "accounts": {"rows": [], "totals": {}},
             "server_ts_ms": 123_200,
         },
     )
@@ -3746,28 +3655,13 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_accoun
             "account_scope_ids": ["hyperliquid.xyz.main"],
             "rows": [
                 {
-                    "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
+                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "exchange": "hyperliquid",
                     "account": "HYPERLIQUID-master",
-                    "asset": "USDC",
-                    "free": "15980",
-                    "locked": "20",
-                    "total": "16000",
-                    "product_type": "spot",
-                    "contract_type": "cash",
-                    "ts_ms": 123_100,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "strategy_id": "equities",
-                },
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-master",
-                    "asset": "NVDA",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
                     "kind": "position",
-                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "signed_qty": "-9.111",
                     "quantity": "9.111",
                     "product_type": "perp",
@@ -3775,398 +3669,15 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlays_profile_accoun
                     "ts_ms": 123_110,
                     "source_scope": "shared_account",
                     "account_scope_id": "hyperliquid.xyz.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "source_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
                     "strategy_id": "equities",
                 },
             ],
             "totals": {
-                "account_equity_raw": 8314.466609,
+                "account_equity_raw": 8_314.466609,
                 "withdrawable_raw": 0.0,
             },
             "server_ts_ms": 123_140,
-        },
-    )
-    redis_client.set_json(
-        FluxRedisKeys.profile_account_projection(
-            profile_id="equities",
-            account_scope_id="hyperliquid.xyz.alt",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "profile_id": "equities",
-            "account_scope_ids": ["hyperliquid.xyz.alt"],
-            "rows": [
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:COIN-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-alt",
-                    "asset": "COIN",
-                    "kind": "position",
-                    "instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
-                    "signed_qty": "-22.715",
-                    "quantity": "22.715",
-                    "product_type": "perp",
-                    "contract_type": "perp",
-                    "ts_ms": 123_120,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.alt",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "strategy_id": "equities",
-                },
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:GOOGL-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-alt",
-                    "asset": "GOOGL",
-                    "kind": "position",
-                    "instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
-                    "signed_qty": "-6",
-                    "quantity": "6",
-                    "product_type": "perp",
-                    "contract_type": "perp",
-                    "ts_ms": 123_130,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.alt",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "strategy_id": "equities",
-                },
-            ],
-            "totals": {
-                "account_equity_raw": 4123.0,
-                "withdrawable_raw": 250.0,
-            },
-            "server_ts_ms": 123_150,
-        },
-    )
-
-    app = create_flux_api_app(
-        flux_config,
-        redis_client,
-        contract_catalog=(
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="AAPL/USD",
-                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="NVDA/USD",
-                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="COIN/USD",
-                instrument_id="xyz:COIN-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="GOOGL/USD",
-                instrument_id="xyz:GOOGL-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="ibkr",
-                symbol="AAPL/USD",
-                instrument_id="AAPL.NASDAQ",
-            ),
-        ),
-        strategy_metadata=app_module.StrategyMetadata(
-            strategy_class="maker_v3",
-            strategy_groups="equities",
-            base_asset="AAPL",
-            quote_asset="USD",
-            param_set="makerv3",
-            strategy_family="maker_v3",
-            strategy_version="v3",
-        ),
-        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
-        params_schema=params_schema,
-        params_defaults=params_defaults,
-        param_set="makerv3",
-    )
-
-    with app.test_client() as client:
-        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
-        body = response.get_json()
-
-    assert response.status_code == 200
-    assert body["data"]["source"] == "portfolio_snapshot_v2"
-    hyperliquid_position_rows = [
-        row
-        for row in body["data"]["rows"]
-        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
-    ]
-    assert {row["coin"] for row in hyperliquid_position_rows} >= {"NVDA", "COIN", "GOOGL"}
-    assert {row["account_scope_id"] for row in hyperliquid_position_rows} == {
-        "hyperliquid.xyz.alt",
-        "hyperliquid.xyz.main",
-    }
-    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(12_437.466609)
-    assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
-
-
-def test_balances_profile_equities_portfolio_snapshot_v2_marks_stale_shared_account_scope_status(
-    monkeypatch,
-    flux_config,
-    redis_client,
-    contract_catalog,
-    params_schema,
-    params_defaults,
-) -> None:
-    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
-    redis_client.set_json(
-        FluxRedisKeys.portfolio_snapshot(
-            portfolio_id="equities",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "portfolio_id": "equities",
-            "inventory_by_asset": {
-                "INTC": {
-                    "portfolio_id": "equities",
-                    "base_currency": "INTC",
-                    "global_qty_base": "0",
-                    "global_qty": "0",
-                    "aggregation_mode": "partial",
-                    "global_qty_base_complete": False,
-                    "global_qty_complete": False,
-                    "ts_ms": 123_000,
-                    "stale_after_ms": 3_000,
-                    "components": [],
-                    "missing_required": [],
-                    "stale_required": [],
-                    "null_qty_required": [],
-                    "degraded": False,
-                },
-            },
-            "balances": {"rows": []},
-            "accounts": {
-                "rows": [
-                    {
-                        "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:USD",
-                        "exchange": "ibkr",
-                        "account": "U1234567",
-                        "asset": "USD",
-                        "free": "1000",
-                        "total": "1000",
-                        "ts_ms": 123_010,
-                        "source_scope": "shared_account",
-                        "account_scope_id": "ibkr.reference.main",
-                        "source_strategy_ids": [flux_config.identity.strategy_id],
-                        "stale": True,
-                        "include_in_reconciliation": False,
-                    },
-                    {
-                        "row_id": "equities:shared:binance.futures.main:cash:binance_perp:BINANCE_PERP-master:USDT",
-                        "exchange": "binance_perp",
-                        "account": "BINANCE_PERP-master",
-                        "asset": "USDT",
-                        "free": "5000",
-                        "total": "5000",
-                        "ts_ms": 123_020,
-                        "source_scope": "shared_account",
-                        "account_scope_id": "binance.futures.main",
-                        "source_strategy_ids": [flux_config.identity.strategy_id],
-                        "stale": False,
-                        "include_in_reconciliation": True,
-                    },
-                ],
-                "scope_status": [
-                    {
-                        "account_scope_id": "ibkr.reference.main",
-                        "source_scope": "shared_account",
-                        "projection_status": {
-                            "healthy": False,
-                            "last_success_ts_ms": 100_000,
-                            "last_attempt_ts_ms": 123_000,
-                            "last_error_type": "TimeoutError",
-                            "last_error_message": "",
-                            "stale_after_ms": 15_000,
-                        },
-                    },
-                    {
-                        "account_scope_id": "binance.futures.main",
-                        "source_scope": "shared_account",
-                        "projection_status": {
-                            "healthy": True,
-                            "last_success_ts_ms": 123_020,
-                            "last_attempt_ts_ms": 123_020,
-                            "last_error_type": None,
-                            "last_error_message": None,
-                            "stale_after_ms": 15_000,
-                        },
-                    },
-                ],
-            },
-            "server_ts_ms": 123_200,
-        },
-    )
-
-    app = create_flux_api_app(
-        flux_config,
-        redis_client,
-        contract_catalog=contract_catalog,
-        strategy_metadata=StrategyMetadata(
-            strategy_class="maker_v4",
-            strategy_groups="equities",
-            base_asset="INTC",
-            quote_asset="USD",
-            param_set="makerv4",
-            strategy_family="maker_v4",
-            strategy_version="v4",
-        ),
-        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
-        params_schema=params_schema,
-        params_defaults=params_defaults,
-        param_set="makerv4",
-    )
-
-    with app.test_client() as client:
-        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
-        body = response.get_json()
-
-    assert response.status_code == 200
-    assert body["data"]["source"] == "portfolio_snapshot_v2"
-    assert body["data"]["degraded"] is True
-    assert body["data"]["totals"]["mv_raw"] == pytest.approx(5000.0)
-    assert len(body["data"]["scope_status"]) == 2
-    assert {
-        scope["account_scope_id"]
-        for scope in body["data"]["scope_status"]
-    } == {"ibkr.reference.main", "binance.futures.main"}
-    scope_status = {
-        scope["account_scope_id"]: scope
-        for scope in body["data"]["scope_status"]
-    }
-    assert scope_status == {
-        "ibkr.reference.main": {
-            "account_scope_id": "ibkr.reference.main",
-            "source_scope": "shared_account",
-            "projection_status": {
-                "healthy": False,
-                "last_success_ts_ms": 100_000,
-                "last_attempt_ts_ms": 123_000,
-                "last_error_type": "TimeoutError",
-                "last_error_message": "",
-                "stale_after_ms": 15_000,
-            },
-        },
-        "binance.futures.main": {
-            "account_scope_id": "binance.futures.main",
-            "source_scope": "shared_account",
-            "projection_status": {
-                "healthy": True,
-                "last_success_ts_ms": 123_020,
-                "last_attempt_ts_ms": 123_020,
-                "last_error_type": None,
-                "last_error_message": None,
-                "stale_after_ms": 15_000,
-            },
-        },
-    }
-    stale_row = next(
-        row
-        for row in body["data"]["rows"]
-        if row["account_scope_id"] == "ibkr.reference.main"
-    )
-    healthy_row = next(
-        row
-        for row in body["data"]["rows"]
-        if row["account_scope_id"] == "binance.futures.main"
-    )
-    assert stale_row["stale"] is True
-    assert stale_row["include_in_reconciliation"] is False
-    assert healthy_row["stale"] is False
-    assert healthy_row["include_in_reconciliation"] is True
-
-
-def test_balances_profile_equities_portfolio_snapshot_v2_overlay_preserves_scope_status_and_degraded(
-    monkeypatch,
-    flux_config,
-    redis_client,
-    contract_catalog,
-    params_schema,
-    params_defaults,
-) -> None:
-    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
-    redis_client.set_json(
-        FluxRedisKeys.portfolio_snapshot(
-            portfolio_id="equities",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "portfolio_id": "equities",
-            "inventory_by_asset": {
-                "INTC": {
-                    "portfolio_id": "equities",
-                    "base_currency": "INTC",
-                    "global_qty_base": "0",
-                    "global_qty": "0",
-                    "aggregation_mode": "partial",
-                    "global_qty_base_complete": False,
-                    "global_qty_complete": False,
-                    "ts_ms": 123_000,
-                    "stale_after_ms": 3_000,
-                    "components": [],
-                    "missing_required": [],
-                    "stale_required": [],
-                    "null_qty_required": [],
-                    "degraded": False,
-                },
-            },
-            "balances": {"rows": []},
-            "accounts": {"rows": []},
-            "server_ts_ms": 123_200,
-        },
-    )
-    redis_client.set_json(
-        FluxRedisKeys.profile_account_projection(
-            profile_id="equities",
-            account_scope_id="ibkr.reference.main",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "profile_id": "equities",
-            "account_scope_ids": ["ibkr.reference.main"],
-            "rows": [
-                {
-                    "row_id": "equities:shared:ibkr.reference.main:cash:ibkr:U1234567:USD",
-                    "exchange": "ibkr",
-                    "account": "U1234567",
-                    "asset": "USD",
-                    "free": "1000",
-                    "total": "1000",
-                    "ts_ms": 123_010,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "ibkr.reference.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "stale": True,
-                    "include_in_reconciliation": False,
-                },
-            ],
-            "totals": {"account_equity_raw": 1000.0},
-            "scope_status": [
-                {
-                    "account_scope_id": "ibkr.reference.main",
-                    "source_scope": "shared_account",
-                    "projection_status": {
-                        "healthy": False,
-                        "last_success_ts_ms": 100_000,
-                        "last_attempt_ts_ms": 123_000,
-                        "last_error_type": "TimeoutError",
-                        "last_error_message": "",
-                        "stale_after_ms": 15_000,
-                    },
-                },
-            ],
-            "server_ts_ms": 123_150,
         },
     )
     redis_client.set_json(
@@ -4181,249 +3692,59 @@ def test_balances_profile_equities_portfolio_snapshot_v2_overlay_preserves_scope
             "account_scope_ids": ["binance.futures.main"],
             "rows": [
                 {
-                    "row_id": "equities:shared:binance.futures.main:cash:binance_perp:BINANCE_PERP-master:USDT",
+                    "row_id": "equities:shared:binance.futures.main:cash:binance_perp:BINANCE-main:USDT",
                     "exchange": "binance_perp",
-                    "account": "BINANCE_PERP-master",
+                    "account": "BINANCE-main",
                     "asset": "USDT",
-                    "free": "5000",
-                    "total": "5000",
-                    "ts_ms": 123_020,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "binance.futures.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "stale": False,
-                    "include_in_reconciliation": True,
-                },
-            ],
-            "totals": {"account_equity_raw": 5000.0},
-            "scope_status": [
-                {
-                    "account_scope_id": "binance.futures.main",
-                    "source_scope": "shared_account",
-                    "projection_status": {
-                        "healthy": True,
-                        "last_success_ts_ms": 123_020,
-                        "last_attempt_ts_ms": 123_020,
-                        "last_error_type": None,
-                        "last_error_message": None,
-                        "stale_after_ms": 15_000,
-                    },
-                },
-            ],
-            "server_ts_ms": 123_160,
-        },
-    )
-
-    app = create_flux_api_app(
-        flux_config,
-        redis_client,
-        contract_catalog=contract_catalog,
-        strategy_metadata=StrategyMetadata(
-            strategy_class="maker_v4",
-            strategy_groups="equities",
-            base_asset="INTC",
-            quote_asset="USD",
-            param_set="makerv4",
-            strategy_family="maker_v4",
-            strategy_version="v4",
-        ),
-        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
-        params_schema=params_schema,
-        params_defaults=params_defaults,
-        param_set="makerv4",
-    )
-
-    with app.test_client() as client:
-        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
-        body = response.get_json()
-
-    assert response.status_code == 200
-    assert body["data"]["source"] == "portfolio_snapshot_v2"
-    assert body["data"]["degraded"] is True
-    assert body["data"]["totals"]["mv_raw"] == pytest.approx(5000.0)
-    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(5000.0)
-    assert sum((group.get("gross_mv") or 0.0) for group in body["data"]["risk_groups"]) == pytest.approx(5000.0)
-    assert len(body["data"]["scope_status"]) == 2
-    assert {
-        scope["account_scope_id"]
-        for scope in body["data"]["scope_status"]
-    } == {"ibkr.reference.main", "binance.futures.main"}
-    scope_status = {
-        scope["account_scope_id"]: scope
-        for scope in body["data"]["scope_status"]
-    }
-    assert scope_status == {
-        "ibkr.reference.main": {
-            "account_scope_id": "ibkr.reference.main",
-            "source_scope": "shared_account",
-            "projection_status": {
-                "healthy": False,
-                "last_success_ts_ms": 100_000,
-                "last_attempt_ts_ms": 123_000,
-                "last_error_type": "TimeoutError",
-                "last_error_message": "",
-                "stale_after_ms": 15_000,
-            },
-        },
-        "binance.futures.main": {
-            "account_scope_id": "binance.futures.main",
-            "source_scope": "shared_account",
-            "projection_status": {
-                "healthy": True,
-                "last_success_ts_ms": 123_020,
-                "last_attempt_ts_ms": 123_020,
-                "last_error_type": None,
-                "last_error_message": None,
-                "stale_after_ms": 15_000,
-            },
-        },
-    }
-    stale_row = next(
-        row
-        for row in body["data"]["rows"]
-        if row.get("account_scope_id") == "ibkr.reference.main"
-    )
-    healthy_row = next(
-        row
-        for row in body["data"]["rows"]
-        if row.get("account_scope_id") == "binance.futures.main"
-    )
-    assert stale_row["stale"] is True
-    assert stale_row["include_in_reconciliation"] is False
-    assert healthy_row["stale"] is False
-    assert healthy_row["include_in_reconciliation"] is True
-
-
-def test_balances_profile_equities_fallback_merges_profile_account_projection_rows(
-    monkeypatch,
-    flux_config,
-    redis_client,
-    params_schema,
-    params_defaults,
-) -> None:
-    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
-    redis_client.set_json(
-        primary_keys.balances_snapshot(),
-        [
-            {
-                "strategy_id": flux_config.identity.strategy_id,
-                "exchange": "ibkr",
-                "account": "U1234567",
-                "asset": "USD",
-                "free": "10",
-                "total": "10",
-                "mv_raw": 10.0,
-                "ts_ms": 123_000,
-            },
-        ],
-    )
-    redis_client.set_json(
-        FluxRedisKeys.profile_account_projection(
-            profile_id="equities",
-            account_scope_id="hyperliquid.xyz.main",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "profile_id": "equities",
-            "account_scope_ids": ["hyperliquid.xyz.main"],
-            "rows": [
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.main:cash:hyperliquid:HYPERLIQUID-master:USDC",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-master",
-                    "asset": "USDC",
                     "free": "15980",
                     "locked": "20",
                     "total": "16000",
                     "product_type": "spot",
                     "contract_type": "cash",
-                    "ts_ms": 123_100,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "strategy_id": "equities",
-                },
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-master",
-                    "asset": "NVDA",
-                    "kind": "position",
-                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
-                    "signed_qty": "-9.111",
-                    "quantity": "9.111",
-                    "product_type": "perp",
-                    "contract_type": "perp",
-                    "ts_ms": 123_110,
-                    "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
-                    "strategy_id": "equities",
-                },
-            ],
-            "totals": {
-                "account_equity_raw": 8314.466609,
-                "withdrawable_raw": 0.0,
-            },
-            "server_ts_ms": 123_140,
-        },
-    )
-    redis_client.set_json(
-        FluxRedisKeys.profile_account_projection(
-            profile_id="equities",
-            account_scope_id="hyperliquid.xyz.alt",
-            namespace=flux_config.identity.namespace,
-            schema_version=flux_config.identity.schema_version,
-        ),
-        {
-            "profile_id": "equities",
-            "account_scope_ids": ["hyperliquid.xyz.alt"],
-            "rows": [
-                {
-                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:COIN-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-alt",
-                    "asset": "COIN",
-                    "kind": "position",
-                    "instrument_id": "xyz:COIN-USD-PERP.HYPERLIQUID",
-                    "signed_qty": "-22.715",
-                    "quantity": "22.715",
-                    "product_type": "perp",
-                    "contract_type": "perp",
                     "ts_ms": 123_120,
                     "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.alt",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "account_scope_id": "binance.futures.main",
+                    "source_strategy_ids": ["aapl_binance_perp_maker", "aapl_binance_perp_taker"],
                     "strategy_id": "equities",
                 },
                 {
-                    "row_id": "equities:shared:hyperliquid.xyz.alt:pos:hyperliquid:HYPERLIQUID-alt:xyz:GOOGL-USD-PERP.HYPERLIQUID",
-                    "exchange": "hyperliquid",
-                    "account": "HYPERLIQUID-alt",
-                    "asset": "GOOGL",
+                    "row_id": "equities:shared:binance.futures.main:pos:binance_perp:BINANCE-main:AAPLUSDT-PERP.BINANCE_PERP",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE-main",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
                     "kind": "position",
-                    "instrument_id": "xyz:GOOGL-USD-PERP.HYPERLIQUID",
-                    "signed_qty": "-6",
-                    "quantity": "6",
+                    "instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                    "signed_qty": "-4",
+                    "quantity": "4",
                     "product_type": "perp",
                     "contract_type": "perp",
                     "ts_ms": 123_130,
                     "source_scope": "shared_account",
-                    "account_scope_id": "hyperliquid.xyz.alt",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "account_scope_id": "binance.futures.main",
+                    "source_strategy_ids": ["aapl_binance_perp_maker", "aapl_binance_perp_taker"],
                     "strategy_id": "equities",
                 },
             ],
             "totals": {
-                "account_equity_raw": 4123.0,
+                "account_equity_raw": 4_123.0,
                 "withdrawable_raw": 250.0,
             },
             "server_ts_ms": 123_150,
         },
     )
+
+    def _equities_multivenue_metadata(strategy_id: str) -> StrategyMetadata:
+        family = "equities_maker" if strategy_id.endswith("_maker") else "equities_taker"
+        return StrategyMetadata(
+            strategy_class=family,
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set=family,
+            strategy_family=family,
+            strategy_version="v1",
+        )
 
     app = create_flux_api_app(
         flux_config,
@@ -4435,19 +3756,9 @@ def test_balances_profile_equities_fallback_merges_profile_account_projection_ro
                 instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
             ),
             app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="NVDA/USD",
-                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="COIN/USD",
-                instrument_id="xyz:COIN-USD-PERP.HYPERLIQUID",
-            ),
-            app_module.ContractCatalogEntry(
-                exchange="hyperliquid",
-                symbol="GOOGL/USD",
-                instrument_id="xyz:GOOGL-USD-PERP.HYPERLIQUID",
+                exchange="binance_perp",
+                symbol="AAPL/USD",
+                instrument_id="AAPLUSDT-PERP.BINANCE_PERP",
             ),
             app_module.ContractCatalogEntry(
                 exchange="ibkr",
@@ -4455,19 +3766,57 @@ def test_balances_profile_equities_fallback_merges_profile_account_projection_ro
                 instrument_id="AAPL.NASDAQ",
             ),
         ),
-        strategy_metadata=app_module.StrategyMetadata(
-            strategy_class="maker_v3",
-            strategy_groups="equities",
-            base_asset="AAPL",
-            quote_asset="USD",
-            param_set="makerv3",
-            strategy_family="maker_v3",
-            strategy_version="v3",
-        ),
-        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        strategy_metadata=_equities_multivenue_metadata("aapl_tradexyz_maker"),
+        strategy_metadata_resolver=_equities_multivenue_metadata,
+        profile_strategy_map={"equities": strategy_ids},
+        strategy_contracts=[
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_binance_perp_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AAPLUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_binance_perp_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AAPLUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
         params_schema=params_schema,
         params_defaults=params_defaults,
-        param_set="makerv3",
     )
 
     with app.test_client() as client:
@@ -4475,26 +3824,25 @@ def test_balances_profile_equities_fallback_merges_profile_account_projection_ro
         body = response.get_json()
 
     assert response.status_code == 200
-    hyperliquid_position_rows = [
+    assert body["data"]["source"] == "portfolio_snapshot_v2"
+    position_rows = [
         row
         for row in body["data"]["rows"]
-        if row["exchange"] == "hyperliquid" and row.get("kind") == "position"
+        if row.get("kind") == "position" and row.get("asset") == "AAPL"
     ]
-    assert {row["coin"] for row in hyperliquid_position_rows} >= {"NVDA", "COIN", "GOOGL"}
-    assert {row["account_scope_id"] for row in hyperliquid_position_rows} == {
-        "hyperliquid.xyz.alt",
+    assert {row["instrument_id"] for row in position_rows} == {
+        "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+        "AAPLUSDT-PERP.BINANCE_PERP",
+    }
+    assert {row["account_scope_id"] for row in position_rows} == {
         "hyperliquid.xyz.main",
+        "binance.futures.main",
     }
-    assert {row["account"] for row in hyperliquid_position_rows} == {
-        "HYPERLIQUID-alt",
-        "HYPERLIQUID-master",
-    }
-    assert {row["source_scope"] for row in hyperliquid_position_rows} == {"shared_account"}
     assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(12_437.466609)
     assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
 
 
-def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection_discovery(
+def test_balances_profile_equities_fallback_deduplicates_shared_same_asset_positions(
     monkeypatch,
     flux_config,
     redis_client,
@@ -4502,13 +3850,151 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
     params_defaults,
 ) -> None:
     monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
-    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
-    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    maker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_maker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(maker_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_hash_json(taker_keys.params_hash_key(), {"qty": "1.0"})
     redis_client.set_json(
-        primary_keys.balances_snapshot(),
+        maker_keys.balances_snapshot(),
         [
             {
-                "strategy_id": flux_config.identity.strategy_id,
+                "strategy_id": "aapl_tradexyz_maker",
+                "kind": "position",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "asset": "AAPL",
+                "coin": "AAPL",
+                "signed_qty": "10",
+                "quantity": "10",
+                "product_type": "perp",
+                "contract_type": "perp",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        taker_keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "kind": "position",
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "instrument_id": "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "asset": "AAPL",
+                "coin": "AAPL",
+                "signed_qty": "10",
+                "quantity": "10",
+                "product_type": "perp",
+                "contract_type": "perp",
+                "source_scope": "shared_account",
+                "account_scope_id": "hyperliquid.xyz.main",
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="XYZ:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=_equities_strategy_metadata("aapl_tradexyz_maker"),
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        strategy_contracts=[
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    position_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("kind") == "position"
+        and row.get("exchange") == "hyperliquid"
+        and row.get("instrument_id") == "XYZ:AAPL-USD-PERP.HYPERLIQUID"
+    ]
+    assert len(position_rows) == 1
+    assert position_rows[0]["strategy_id"] == "equities"
+    assert position_rows[0]["signed_qty"] == "10"
+
+
+def test_balances_profile_equities_fallback_merges_profile_account_projection_rows_for_split_multivenue(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    strategy_ids = [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+        "aapl_binance_perp_maker",
+        "aapl_binance_perp_taker",
+    ]
+
+    for strategy_id in strategy_ids:
+        keys = FluxRedisKeys(
+            strategy_id=strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        )
+        redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0"})
+        redis_client.set_json(keys.balances_snapshot(), [])
+
+    redis_client.set_json(
+        FluxRedisKeys(
+            strategy_id="aapl_tradexyz_maker",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ).balances_snapshot(),
+        [
+            {
+                "strategy_id": "aapl_tradexyz_maker",
                 "exchange": "ibkr",
                 "account": "U1234567",
                 "asset": "USD",
@@ -4531,12 +4017,13 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
             "account_scope_ids": ["hyperliquid.xyz.main"],
             "rows": [
                 {
-                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "row_id": "equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "exchange": "hyperliquid",
                     "account": "HYPERLIQUID-master",
-                    "asset": "NVDA",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
                     "kind": "position",
-                    "instrument_id": "xyz:NVDA-USD-PERP.HYPERLIQUID",
+                    "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
                     "signed_qty": "-9.111",
                     "quantity": "9.111",
                     "product_type": "perp",
@@ -4544,18 +4031,82 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
                     "ts_ms": 123_110,
                     "source_scope": "shared_account",
                     "account_scope_id": "hyperliquid.xyz.main",
-                    "source_strategy_ids": [flux_config.identity.strategy_id],
+                    "source_strategy_ids": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
                     "strategy_id": "equities",
                 },
             ],
             "totals": {
-                "account_equity_raw": 8314.466609,
+                "account_equity_raw": 8_314.466609,
                 "withdrawable_raw": 0.0,
             },
             "server_ts_ms": 123_140,
         },
     )
-    redis_client.keys_error = AssertionError("keys() should not be used when scan_iter() is available")
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="equities",
+            account_scope_id="binance.futures.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "equities",
+            "account_scope_ids": ["binance.futures.main"],
+            "rows": [
+                {
+                    "row_id": "equities:shared:binance.futures.main:cash:binance_perp:BINANCE-main:USDT",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE-main",
+                    "asset": "USDT",
+                    "free": "15980",
+                    "locked": "20",
+                    "total": "16000",
+                    "product_type": "spot",
+                    "contract_type": "cash",
+                    "ts_ms": 123_120,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "binance.futures.main",
+                    "source_strategy_ids": ["aapl_binance_perp_maker", "aapl_binance_perp_taker"],
+                    "strategy_id": "equities",
+                },
+                {
+                    "row_id": "equities:shared:binance.futures.main:pos:binance_perp:BINANCE-main:AAPLUSDT-PERP.BINANCE_PERP",
+                    "exchange": "binance_perp",
+                    "account": "BINANCE-main",
+                    "asset": "AAPL",
+                    "coin": "AAPL",
+                    "kind": "position",
+                    "instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                    "signed_qty": "-4",
+                    "quantity": "4",
+                    "product_type": "perp",
+                    "contract_type": "perp",
+                    "ts_ms": 123_130,
+                    "source_scope": "shared_account",
+                    "account_scope_id": "binance.futures.main",
+                    "source_strategy_ids": ["aapl_binance_perp_maker", "aapl_binance_perp_taker"],
+                    "strategy_id": "equities",
+                },
+            ],
+            "totals": {
+                "account_equity_raw": 4_123.0,
+                "withdrawable_raw": 250.0,
+            },
+            "server_ts_ms": 123_150,
+        },
+    )
+
+    def _equities_multivenue_metadata(strategy_id: str) -> StrategyMetadata:
+        family = "equities_maker" if strategy_id.endswith("_maker") else "equities_taker"
+        return StrategyMetadata(
+            strategy_class=family,
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set=family,
+            strategy_family=family,
+            strategy_version="v1",
+        )
 
     app = create_flux_api_app(
         flux_config,
@@ -4563,8 +4114,13 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
         contract_catalog=(
             app_module.ContractCatalogEntry(
                 exchange="hyperliquid",
-                symbol="NVDA/USD",
-                instrument_id="xyz:NVDA-USD-PERP.HYPERLIQUID",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="binance_perp",
+                symbol="AAPL/USD",
+                instrument_id="AAPLUSDT-PERP.BINANCE_PERP",
             ),
             app_module.ContractCatalogEntry(
                 exchange="ibkr",
@@ -4572,19 +4128,57 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
                 instrument_id="AAPL.NASDAQ",
             ),
         ),
-        strategy_metadata=app_module.StrategyMetadata(
-            strategy_class="maker_v3",
-            strategy_groups="equities",
-            base_asset="AAPL",
-            quote_asset="USD",
-            param_set="makerv3",
-            strategy_family="maker_v3",
-            strategy_version="v3",
-        ),
-        profile_strategy_map={"equities": [flux_config.identity.strategy_id]},
+        strategy_metadata=_equities_multivenue_metadata("aapl_tradexyz_maker"),
+        strategy_metadata_resolver=_equities_multivenue_metadata,
+        profile_strategy_map={"equities": strategy_ids},
+        strategy_contracts=[
+            {
+                "strategy_id": "aapl_tradexyz_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "HYPERLIQUID",
+                "maker_symbol": "AAPL",
+                "market_type": "perp",
+                "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "hyperliquid.xyz.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_binance_perp_maker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AAPLUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+            {
+                "strategy_id": "aapl_binance_perp_taker",
+                "portfolio_asset_id": "AAPL",
+                "maker_venue": "BINANCE_PERP",
+                "maker_symbol": "AAPLUSDT",
+                "market_type": "perp",
+                "maker_instrument_id": "AAPLUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "AAPL.NASDAQ",
+                "execution_account_scope_id": "binance.futures.main",
+                "reference_account_scope_id": "ibkr.reference.main",
+            },
+        ],
         params_schema=params_schema,
         params_defaults=params_defaults,
-        param_set="makerv3",
     )
 
     with app.test_client() as client:
@@ -4592,9 +4186,26 @@ def test_balances_profile_equities_uses_scan_iter_for_profile_account_projection
         body = response.get_json()
 
     assert response.status_code == 200
-    assert body["data"]["rows"]
-    assert redis_client.scan_iter_calls
-    assert not redis_client.keys_calls
+    position_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("kind") == "position" and row.get("asset") == "AAPL"
+    ]
+    assert {row["instrument_id"] for row in position_rows} == {
+        "XYZ:AAPL-USD-PERP.HYPERLIQUID",
+        "AAPLUSDT-PERP.BINANCE_PERP",
+    }
+    assert {row["account_scope_id"] for row in position_rows} == {
+        "hyperliquid.xyz.main",
+        "binance.futures.main",
+    }
+    assert {row["account"] for row in position_rows} == {
+        "HYPERLIQUID-master",
+        "BINANCE-main",
+    }
+    assert {row["source_scope"] for row in position_rows} == {"shared_account"}
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(12_437.466609)
+    assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
 
 
 def test_balances_profile_tokenmm_emits_backend_risk_groups_and_row_annotations(
@@ -5793,3 +5404,256 @@ def test_alerts_delete_rejects_unallowlisted_tokenmm_strategy_query(
     assert response.status_code == 404
     assert body["ok"] is False
     assert body["error"]["code"] == "unknown_strategy_id"
+
+
+def _equities_strategy_metadata(strategy_id: str) -> StrategyMetadata:
+    if strategy_id == "aapl_tradexyz_maker":
+        return StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        )
+    if strategy_id == "aapl_tradexyz_taker":
+        return StrategyMetadata(
+            strategy_class="equities_taker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_taker",
+            strategy_family="equities_taker",
+            strategy_version="v1",
+        )
+    raise KeyError(strategy_id)
+
+
+def test_param_schema_endpoint_uses_strategy_specific_contract_for_equities_family(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/param-schema",
+            query_string={"strategy": "aapl_tradexyz_taker"},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert "bid_edge_take_bps" in body["data"]["params"]
+    assert "n_orders1" not in body["data"]["params"]
+
+
+def test_param_schema_endpoint_rejects_profile_scoped_mixed_family_equities_request_without_strategy(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/param-schema", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error"]["code"] == "ambiguous_strategy_target"
+
+
+def test_params_endpoint_loads_mixed_family_rows_with_strategy_specific_schema(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    maker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_maker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        maker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "n_orders1": "4",
+        },
+    )
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bid_edge_take_bps": "7.0",
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows_by_strategy = {row["strategy_id"]: row for row in body["data"]}
+    assert rows_by_strategy["aapl_tradexyz_maker"]["params"]["n_orders1"] == 4
+    assert "bid_edge_take_bps" not in rows_by_strategy["aapl_tradexyz_maker"]["schema"]
+    assert rows_by_strategy["aapl_tradexyz_taker"]["params"]["bid_edge_take_bps"] == 7.0
+    assert "bid_edge_take_bps" in rows_by_strategy["aapl_tradexyz_taker"]["schema"]
+    assert "n_orders1" not in rows_by_strategy["aapl_tradexyz_taker"]["schema"]
+
+
+def test_bulk_params_update_validates_mixed_family_updates_per_strategy_contract(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/params",
+            json={
+                "updates": [
+                    {
+                        "strategy_id": "aapl_tradexyz_maker",
+                        "params": {"n_orders1": 5},
+                    },
+                    {
+                        "strategy_id": "aapl_tradexyz_taker",
+                        "params": {"bid_edge_take_bps": 8.5},
+                    },
+                ],
+            },
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["failed"] == []
+    assert [row["strategy_id"] for row in body["data"]["success"]] == [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+    ]
+    assert body["data"]["success"][0]["updated"] == ["n_orders1"]
+    assert body["data"]["success"][1]["updated"] == ["bid_edge_take_bps"]
+
+
+def test_single_params_update_rejects_profile_scoped_mixed_family_equities_request_without_strategy(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        profile_strategy_map={"equities": ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.patch(
+            "/api/v1/params",
+            query_string={"profile": "equities"},
+            json={"params": {"qty": 2}},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["ok"] is False
+    assert body["error"]["code"] == "ambiguous_strategy_target"
+
+
+def test_strategy_parameters_endpoint_uses_selected_strategy_family_contract(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+) -> None:
+    taker_keys = FluxRedisKeys(
+        strategy_id="aapl_tradexyz_taker",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {
+            "qty": "1.0",
+            "bid_edge_take_bps": "6.0",
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_metadata_resolver=_equities_strategy_metadata,
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/strategies/aapl_tradexyz_taker/parameters")
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["params"]["bid_edge_take_bps"] == 6.0
+    assert "bid_edge_take_bps" in body["data"]["schema"]
+    assert "n_orders1" not in body["data"]["schema"]

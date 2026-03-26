@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROFILE_TO_APPLIES_TO,
   buildProfileDefaultColumnOrder,
   deriveStrategyProfile,
   getProfileLabel,
@@ -38,6 +39,28 @@ describe('paramsProfiles', () => {
         },
       })
     ).toBe('maker_v4');
+
+    expect(
+      deriveStrategyProfile({
+        meta: {
+          class: 'equities_maker',
+          param_set: 'equities_maker',
+          strategy_family: 'equities_maker',
+          strategy_version: 'v4',
+        },
+      }),
+    ).toBe('equities_maker');
+
+    expect(
+      deriveStrategyProfile({
+        meta: {
+          class: 'equities_taker',
+          param_set: 'equities_taker',
+          strategy_family: 'equities_taker',
+          strategy_version: 'v4',
+        },
+      }),
+    ).toBe('equities_taker');
   });
 
   it('falls back to key signatures when class is missing', () => {
@@ -91,11 +114,75 @@ describe('paramsProfiles', () => {
   });
 
   it('exports stable profile labels and ordering', () => {
-    expect(listParamsProfiles()).toEqual(['taker', 'maker_v2', 'maker_v3', 'maker_v4']);
+    expect(listParamsProfiles()).toEqual([
+      'taker',
+      'maker_v2',
+      'maker_v3',
+      'equities_maker',
+      'equities_taker',
+      'maker_v4',
+    ]);
     expect(getProfileLabel('taker')).toBe('Taker');
     expect(getProfileLabel('maker_v2')).toBe('Maker V2');
     expect(getProfileLabel('maker_v3')).toBe('Maker V3');
-    expect(getProfileLabel('maker_v4')).toBe('Maker V4');
+    expect(getProfileLabel('equities_maker')).toBe('Maker');
+    expect(getProfileLabel('equities_taker')).toBe('Taker');
+    expect(getProfileLabel('maker_v4')).toBe('Maker V4 (legacy)');
+  });
+
+  it('hides local-inventory ownership controls from the split equities profiles', () => {
+    expect(getProfileHiddenKeys('equities_maker')).toEqual(
+      expect.arrayContaining([
+        'des_qty_local',
+        'max_qty_local',
+        'max_skew_bps_local',
+        'execution_mode',
+        'bid_edge_take_bps',
+        'ask_edge_take_bps',
+        'take_cooldown_ms',
+      ]),
+    );
+    expect(getProfileHiddenKeys('equities_taker')).toEqual(
+      expect.arrayContaining([
+        'des_qty_local',
+        'max_qty_local',
+        'max_skew_bps_local',
+        'bid_edge1',
+        'ask_edge1',
+        'place_edge1',
+        'n_orders1',
+      ]),
+    );
+  });
+
+  it('orders split equities maker and taker params with shared controls first', () => {
+    const schema = {
+      params: {
+        bot_on: { key: 'bot_on' },
+        max_age_ms: { key: 'max_age_ms' },
+        qty: { key: 'qty' },
+        max_qty_global: { key: 'max_qty_global' },
+        max_skew_bps_global: { key: 'max_skew_bps_global' },
+        hedge_style: { key: 'hedge_style' },
+        bid_edge_take_bps: { key: 'bid_edge_take_bps' },
+        ask_edge_take_bps: { key: 'ask_edge_take_bps' },
+        take_cooldown_ms: { key: 'take_cooldown_ms' },
+      },
+      deprecated: {},
+    } as any;
+
+    const makerOrder = buildProfileDefaultColumnOrder(schema, 'equities_maker');
+    const takerOrder = buildProfileDefaultColumnOrder(schema, 'equities_taker');
+    const idx = (order: string[], key: string) => order.indexOf(key);
+
+    expect(idx(makerOrder, 'bot_on')).toBeLessThan(idx(makerOrder, 'qty'));
+    expect(idx(makerOrder, 'max_qty_global')).toBeLessThan(idx(makerOrder, 'hedge_style'));
+    expect(idx(takerOrder, 'bot_on')).toBeLessThan(idx(takerOrder, 'bid_edge_take_bps'));
+    expect(idx(takerOrder, 'max_skew_bps_global')).toBeLessThan(idx(takerOrder, 'take_cooldown_ms'));
+  });
+
+  it('keeps the split equities maker applies_to surface scoped to the split family only', () => {
+    expect(PROFILE_TO_APPLIES_TO.equities_maker).toEqual(['equities_maker']);
   });
 
   it('hides legacy maker_v3 alias keys', () => {

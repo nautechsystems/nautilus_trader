@@ -1,0 +1,845 @@
+# Equities MakerV4 Split Implementation Plan
+
+> **For the execution agent:** REQUIRED SUB-SKILL: Before implementing this plan, choose exactly one execution mode and use the matching skill: `superpowers:subagent-driven-development` for same-session execution or `superpowers:executing-plans` for a separate-session handoff.
+> **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
+
+**Goal:** Replace the current single `makerv4` equities arb family with two explicit live strategy families, `equities_maker` and `equities_taker`, that can run concurrently per symbol while sharing the same equities portfolio/book and Fluxboard surface.
+
+**Architecture:** Extract the current shared `MakerV4` hedge, fee, quote-health, and observability behavior into a reusable equities-arb shared core, then implement two family-specific strategies on top of it. `equities_maker` can stay relatively thin after extraction; `equities_taker` is likely a more substantial extraction because its current behavior is interleaved into the `makerv4` state machine. Keep the equities deploy topology on the current one-strategy-per-node model for now, but update the control plane so two strategy IDs can exist for the same `portfolio_asset_id` and still roll into the same shared equities portfolio and `/equities` UI.
+
+**Tech Stack:** Python 3, Nautilus Trader strategies/runners, Flux strategy registry and API payload builders, Redis-backed params, equities deploy TOMLs and readiness checks, Fluxboard React/TypeScript signal and params surfaces, pytest, vitest.
+
+## Progress Tracker
+
+**Source of truth:** Update this table whenever task state changes. Do not rely on memory, chat history, or TodoWrite alone.
+
+| Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Overall | completed | main | none | `systems/flux/flux/strategies`, `systems/flux/flux/api`, `systems/flux/flux/runners/equities`, `deploy/equities`, `ops/scripts/deploy`, `fluxboard`, `tests`, `docs/plans` | `shared` + `work/pr61-finish` | `shared` + `.worktrees/pr61-finish` | historical implementation: `29dc2906fd`, `b2b5a9ae67`, `e8e34737ea`, `e13854360c`, `6a6d2dd9e5`, `3943dd689a`, `1e04ff1f33`, `350d0d4fe5`, `e0a7512ddf`, `7ef3c94c30`, `765554b919`, `a1b1c7fa4b`, `18b8de664d`, `2a8b561620`, `a2b14fba64`, `69cc8b7c70`, `82f23eaf88`; refresh pass: `5d150967c3`, `79de2bab1d`, `173f300cf9`, `78b2ad1d6a`; retirement follow-up: `31da9a2587`; review follow-up: `0e0f43583b` | Historical Task 0, Task 2, Task 3, Task 4, and Task 5 verification bundles passed on the shared branch; Historical Task 6 exact Fluxboard verification passed on the shared branch after integration (`5` files / `65` tests and `3` files / `27` tests); Historical Task 7 verification reran clean on the shared branch after integration (`276` tests) plus `git diff --check`; Historical Task 8 final shared verification passed (`9` files / `98` tests in Fluxboard, `368` pytest tests, `git diff --check`). Final refresh-pass verification in `.worktrees/pr61-finish`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_runner_external_order_claims.py -q` pass (`103` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q` pass (`28` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/common/test_portfolio_snapshot.py -q -k 'projection_status or include_in_reconciliation or stale'` pass (`1` test, `21` deselected); retirement pass: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_payloads.py -q -k 'strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility'` pass (`1`/`72 deselected`), `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q -k 'signals_profile_equities_emits_makerv4_quote_snapshot'` pass (`1`/`40 deselected`), `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_api.py -q -k 'uses_makerv4_metadata_when_strategy_spec_is_makerv4 or can_publish_per_strategy_family_metadata'` pass (`2`/`19 deselected`), `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/pr61-finish/fluxboard exec vitest run __tests__/config/paramsProfiles.test.ts tests/signal/SignalFamilyFilter.test.tsx` pass (`2` files / `16` tests, pre-existing React `act(...)` warnings only), `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check` pass. Review follow-up verification: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py -q` pass (`8` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_runtime_params.py -q` pass (`11` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py -q` pass (`7` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py -q` skip (`69` skipped, deprecated runtime surface); `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check` pass | Historical Tasks 0-11 remain complete on the implementation lane, and the late in-PR retirement pass is now complete as well. Review follow-up fixes the live `equities_maker` config-seeding regression, restores green verification for the retained legacy fee/runtime helper slices, and narrows the deprecated `makerv4` support claim to stale-state control-plane shims rather than full strategy-runtime compatibility. PR `#80` marks `makerv4` explicitly deprecated/legacy on checked-in prod, API metadata, and Fluxboard operator surfaces, and links follow-up issue `#81` for full deletion after live split-family rollout validation. |
+| Post-Plan Refresh Reconciliation | completed | main | Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification | `docs/plans/2026-03-17-equities-makerv4-split.md`, `deploy/equities`, `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/strategies/makerv4` | `work/pr61-finish` | `.worktrees/pr61-finish` | `5d150967c3`, `79de2bab1d`, `173f300cf9`, `78b2ad1d6a` | `git rev-list --left-right --count origin/main...HEAD` -> `0 103`; refresh-pass pytest slices pass (`103`, `28`, `1`/`21 deselected`); `git diff --check` pass; `git status --short --branch` clean before publish | 2026-03-26 UTC reconciliation pass after refreshing the implementation onto current `origin/main` is complete. The finish-pass branch now carries the post-merge code fixes, deploy-prune inventory, reconciled docs, recorded verification, and a published mainline implementation PR (`#80`). |
+| Task 9: Reconcile Docs And Contract Notes With Refreshed Implementation | completed | main | Post-Plan Refresh Reconciliation | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | local finish-pass diff | `git diff --check` pass; stale-wording sweep clean | 2026-03-26 UTC fresh implementer handoffs stalled twice without a usable patch, so the controller reclaimed local execution in `.worktrees/pr61-finish`. Review loops surfaced six concrete doc issues and all were fixed locally: the legacy-compat contradiction in the design doc, the README overstatement about disabled artifact inventory, the last retired operator-label phrase in Task 0 history, the stale “Disable MakerV3 cleanly” rollback bullet, the lingering single-canary phrasing in the deploy contract note, and the late clarification that the disabled/decommissioned baskets are symbol-level shorthand rather than exhaustive per-file split inventories. After those fixes, `git diff --check` still passed and the scoped stale-wording sweep came back clean. No broader doc-quality issues remained after the final quality-review feedback was applied, so Task 9 is complete. |
+| Task 10: Commit Refreshed Mainline Finish Pass And Record Verification | completed | main | Task 9: Reconcile Docs And Contract Notes With Refreshed Implementation | `deploy/equities`, `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/strategies/makerv4`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | `5d150967c3`, `79de2bab1d`, `173f300cf9` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_runner_external_order_claims.py -q` pass (`103` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q` pass (`28` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/common/test_portfolio_snapshot.py -q -k 'projection_status or include_in_reconciliation or stale'` pass (`1` test, `21` deselected); `git diff --check` pass; `git status --short --branch` clean (`ahead 104`) | 2026-03-26 UTC Task 10 landed as three commits on the refreshed branch: the main refresh snapshot in `5d150967c3`, a doc-only follow-up in `79de2bab1d`, and the matching contract-test wording fix in `173f300cf9`. The final committed tree reran all three refresh-pass pytest slices successfully and remained clean afterward. |
+| Task 11: Publish Mainline Implementation PR Shape | completed | main | Task 10: Commit Refreshed Mainline Finish Pass And Record Verification | `GitHub PR metadata`, `branch topology` | `work/pr61-finish` | `.worktrees/pr61-finish` | PR `#80` (`codex/equities-maker-taker-mainline-20260326` -> `main`) | GitHub PR created and cross-linked to `#61` / `#64` | 2026-03-26 UTC Task 11 published the refreshed finish-pass branch to `origin/codex/equities-maker-taker-mainline-20260326` and opened PR `#80` against `main`. Comment threads on `#61` and `#64` now point reviewers to `#80` as the active implementation review surface. |
+| Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces | completed | main | Task 11: Publish Mainline Implementation PR Shape | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `systems/flux/flux/api/_payloads_common.py`, `systems/flux/flux/runners/equities/run_api.py`, `fluxboard/types.ts`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `fluxboard/__tests__/config/paramsProfiles.test.ts`, `fluxboard/tests/signal` | `work/pr61-finish` | `.worktrees/pr61-finish` | `31da9a2587` | Red phase: targeted pytest slices fail on missing `deprecated` / `replacement` metadata and targeted Fluxboard Vitest slice fails on plain `Maker V4` labels. Green phase: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_payloads.py -q -k 'strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility'` pass (`1`/`72 deselected`); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q -k 'signals_profile_equities_emits_makerv4_quote_snapshot'` pass (`1`/`40 deselected`); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_api.py -q -k 'uses_makerv4_metadata_when_strategy_spec_is_makerv4 or can_publish_per_strategy_family_metadata'` pass (`2`/`19 deselected`); `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/pr61-finish/fluxboard exec vitest run __tests__/config/paramsProfiles.test.ts tests/signal/SignalFamilyFilter.test.tsx` pass (`2` files / `16` tests, pre-existing React `act(...)` warnings only); `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check` pass | 2026-03-26 UTC PR `#80` now retires `makerv4` operationally without deleting the stale-state control-plane shims. The checked-in production docs mark it legacy-only, API metadata now emits explicit deprecation guidance for `maker_v4` compatibility rows, Fluxboard labels the family as legacy instead of a peer production family, and deprecated `makerv4` strategy-runtime behavior is no longer treated as a finish-pass compatibility guarantee. |
+| Task 13: Open Follow-Up Issue For Full MakerV4 Deletion | completed | main | Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces | `GitHub issue metadata`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | issue `#81` | `gh issue create --repo clickconfirm/nautilus-trader --title "Remove makerv4 after split-family rollout completes" --body-file /tmp/makerv4-removal-issue.md` pass (`https://github.com/clickconfirm/nautilus-trader/issues/81`) | 2026-03-26 UTC follow-up issue `#81` now tracks the true deletion wave after live split-family rollout validation: detach split strategies from `MakerV4Strategy`, remove registry/runtime/API/Fluxboard compatibility seams, remove disabled deploy artifacts, and retire the `makerv4` package. |
+| Task 0: Align Approved `equities_maker` / `equities_taker` Naming | completed | main | Task 1: Lock Split Contract In Docs And Execution Matrix | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `GitHub PR #64 title/body` | `shared` | `shared` | `9c27e7c708` | `git diff --check` pass | 2026-03-17 UTC docs/PR naming aligned in `9c27e7c708`; controller spec review and quality review passed after subagent timeouts |
+| Task 1: Lock Split Contract In Docs And Execution Matrix | completed | main | none | `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `shared` | `shared` | `929dad49a0` | `git diff --check` pass | Completed on planning branch before implementation bootstrap |
+| Task 2: Extract Shared Equities-Arb Core From MakerV4 | completed | main | Task 1: Lock Split Contract In Docs And Execution Matrix | `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/shared/ibkr_order_policy.py`, `systems/flux/flux/strategies/makerv4`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared`, `tests/unit_tests/flux/strategies/shared/test_ibkr_order_policy.py`, `tests/unit_tests/flux/strategies/makerv4`, `tests/unit_tests/examples/strategies` | `shared` | `shared` | `1a80ba3c6d`, `5bf8cdb7c2`, `16b0e1f956` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py -q` pass | 2026-03-17 UTC implementation landed in `1a80ba3c6d`, scope cleanup in `5bf8cdb7c2`, and quality-fix hardening in `16b0e1f956`; spec review passed with no findings, quality review findings were fixed, and quality re-review passed with no findings |
+| Task 3: Add `equities_maker` Strategy Family | completed | main | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_maker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_maker`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | `533e6b72a0` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q` pass | 2026-03-18 UTC red step confirmed on config omission and run_node local-field omission; Task 3 committed in `533e6b72a0`; spec review passed with no findings and quality review passed with no findings |
+| Task 4: Add `equities_taker` Strategy Family | completed | main | Task 2: Extract Shared Equities-Arb Core From MakerV4 | `systems/flux/flux/strategies/equities_taker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_taker`, `tests/unit_tests/examples/strategies/test_equities_run_node.py` | `shared` | `shared` | `500ad64669`, `d54aabd1d2`, `9f34bc6e47`, `ac749253ed` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q` pass | 2026-03-18 UTC fresh implementer lane returned without reaching red step; controller reclaimed Task 4 for local TDD execution, confirmed the red step on missing `equities_taker` package/root exports and runner import path, committed the green slice in `500ad64669`, failed spec review on family-owned taker dispatch and `ibkr_hedge_route` passthrough, reproduced both gaps with failing tests, fixed them in `d54aabd1d2`, passed spec re-review with no findings, failed quality review on runtime-param seeding from config and missing pricing-debug observability updates, fixed those in `9f34bc6e47`, fixed the remaining `order_qty` sizing-default gap in `ac749253ed`, and the quality re-review passed with no findings |
+| Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | completed | main | Task 3: Add `equities_maker` Strategy Family, Task 4: Add `equities_taker` Strategy Family | `systems/flux/flux/api`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py` | `shared` | `shared` | `4300856183` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/api/test_app.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q` pass | 2026-03-19 UTC Task 5 red baseline was reproduced first, then the green slice landed in `4300856183` with per-family params contracts, shared `equities_arb` signal payloads, readiness parsing on the shared contract, and `run_api.main()` metadata binding through root `strategy_contracts`; focused verification passed locally, spec review found no findings, and quality review found no findings |
+| Task 6: Update Fluxboard To A Shared Equities-Arb Surface | completed | main | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `fluxboard/api.ts`, `fluxboard/components/domain/signal`, `fluxboard/config`, `fluxboard/types.ts`, `fluxboard/Params.tsx`, `fluxboard/stores.ts`, `fluxboard/tests/signal`, `fluxboard/__tests__`, `fluxboard/api.flux.test.ts`, `fluxboard/Signal.delta-pass-through.test.tsx`, `fluxboard/vite.config.ts` | `lanes/task-6-fluxboard` | `.worktrees/task-6-fluxboard` | `e8e34737ea`, `e13854360c`, `6a6d2dd9e5`, `3943dd689a`, `1e04ff1f33`, `350d0d4fe5`, `e0a7512ddf`, `7ef3c94c30`, `765554b919` | `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/makerv4-split-dual-arb-impl-20260317/fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts` pass (`5` files, `65` tests); `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/makerv4-split-dual-arb-impl-20260317/fluxboard exec vitest run __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts` pass (`3` files, `27` tests) | 2026-03-19 UTC Task 6 lane opened on branch `lanes/task-6-fluxboard`; dedicated worktree provisioned. The fresh implementer confirmed the red phase with only Task 6 test-file edits in place, then stalled without starting production changes, so the controller reclaimed local TDD execution in the same lane worktree and landed the green slice in `7c6359b8fb`. Spec review then found three follow-up gaps: the shared table dropped required hedge-policy/fee/quote-health observability, `Trading` status semantics regressed, and default Vitest path excludes still hid `components/domain/signal/SignalTable.store.test.ts` plus `__tests__/components/ParamsProfileColumns.test.tsx`; the controller fixed those gaps in `fa1098fd16`, spec re-review then found one remaining `/equities/params` issue because the profile selector still exposed non-equities legacy options, the controller fixed that final gap in `a73e97978d`, and spec re-review passed with no findings. Quality review then found three follow-up risks: the shared equities table needed a mixed-rollout fallback from `maker_v4` to `equities_arb`, metadata-only taker rows needed the same family derivation as `SignalTable.tsx`, and split-family params schema selection needed deterministic row ordering; those were fixed and rerun in `f36630b37c`. Later quality loops found additional mixed-rollout gaps in legacy signal passthrough, params family recovery, schema selection, hidden-key filtering, legacy `applies_to` aliases, and top-level family authority; those were reproduced with focused red tests and fixed across `2c1a489885`, `91e11d0429`, `1b3f7ed9c9`, `9c7371c163`, and `a22dc967a9`. A fresh quality re-review on the full Task 6 diff from `f8fcda29d1..a22dc967a9` found no findings, the approved lane series was integrated onto the shared branch as commits `e8e34737ea` through `765554b919`, and the exact Task 6 verification bundles were rerun successfully in the shared worktree after integration |
+| Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | completed | main | Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts | `deploy/equities`, `deploy/equities/systemd`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `systems/flux/flux/api/app.py`, `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/makerv3/publisher.py`, `systems/flux/flux/strategies/equities_maker`, `systems/flux/flux/strategies/equities_taker`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py` | `lanes/task-7-deploy-readiness` | `.worktrees/task-7-deploy-readiness` | lane: `9b5919fd8f`, `d7fab0681b`, `9f8f43ef5f`, `8df51befee`; shared: `a1b1c7fa4b`, `18b8de664d`, `2a8b561620`, `a2b14fba64` | Red verified in lane after `uv sync --all-groups --all-extras`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_stack_contract.py::test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset -q` fail; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_stack_contract.py::test_equities_dual_variant_strategy_files_preserve_shared_session_contract -q` fail; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_readiness.py::test_evaluate_equities_readiness_requires_both_same_asset_strategy_ids -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_portfolio.py::test_strategy_ids_by_asset_groups_distinct_same_asset_variants -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py::test_resolve_strategy_name_accepts_split_equities_defaults tests/unit_tests/examples/strategies/test_equities_run_api.py::test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_config tests/unit_tests/examples/strategies/test_equities_run_api.py::test_main_binds_per_strategy_metadata_from_root_strategy_contracts -q` fail (`3` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py::test_build_node_keeps_shared_execution_claims_for_primary_same_asset_variant tests/unit_tests/examples/strategies/test_equities_run_node.py::test_build_node_disables_shared_execution_claims_for_secondary_same_asset_variant tests/unit_tests/examples/strategies/test_equities_run_portfolio.py::test_equities_portfolio_aggregator_deduplicates_secondary_same_asset_components_and_positions tests/unit_tests/flux/api/test_app.py::test_param_schema_endpoint_rejects_profile_scoped_mixed_family_equities_request_without_strategy tests/unit_tests/flux/api/test_app.py::test_single_params_update_rejects_profile_scoped_mixed_family_equities_request_without_strategy -q` fail (`4` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py::test_main_binds_per_strategy_metadata_from_root_strategy_contracts tests/unit_tests/flux/api/test_app.py::test_balances_profile_equities_fallback_deduplicates_shared_same_asset_positions -q` fail (`2` tests). Green verified in lane on `8df51befee`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_api.py::test_main_binds_per_strategy_metadata_from_root_strategy_contracts tests/unit_tests/flux/api/test_app.py::test_balances_profile_equities_fallback_deduplicates_shared_same_asset_positions -q` pass (`2` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/common/test_portfolio_inventory.py tests/unit_tests/flux/api/test_balances_merge_dedupe.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py -q` pass (`276` tests); `git diff --check` pass. Shared branch verification after integration on `a2b14fba64`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/common/test_portfolio_inventory.py tests/unit_tests/flux/api/test_balances_merge_dedupe.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py -q` pass (`276` tests); `git diff --check` pass | 2026-03-19 UTC Task 7 lane opened from shared head `b503f7f17f` on branch `lanes/task-7-deploy-readiness`. The initial fresh implementer stalled before the red-test phase, so the controller reclaimed local TDD execution in the same lane worktree. After seeding the lane env with `uv sync --all-groups --all-extras`, the controller reproduced the real contract gap: deploy config and strategy template still expose single-family `*_makerv4` / local-risk semantics, while the same-asset `run_portfolio.py` grouping and readiness expectation tests already pass unchanged. An additional controller-owned red slice pinned the high-risk `run_api.main()` seam. The green slice then landed in `9b5919fd8f`: split maker/taker live allowlists and `strategy_contracts`, generated per-variant strategy TOMLs and checked-in service manifests, updated deploy docs/contracts, promoted the shared API bootstrap default to `equities_maker`, and taught `run_api.py` to resolve split-family defaults plus runtime params. A fresh spec review on `b503f7f17f..9b5919fd8f` found no findings. A fresh quality review on the same diff then reopened Task 7 with three real gaps: secondary same-asset nodes still claim/reconcile shared venue orders, shared-position portfolio and balances paths still double-count duplicate maker+taker payloads for the same asset, and profile-scoped `/api/v1/param-schema` / single-target params updates still silently resolve to the first family in a mixed equities profile. The controller reproduced each gap with failing tests, fixed the ownership, aggregation, and mixed-family params contract seams in `d7fab0681b`, and reran the expanded Task 7 verification bundle successfully. A fresh spec re-review on `b503f7f17f..d7fab0681b` then found two blockers in that fix: the new primary-owner path drops secondary same-asset inventory from the shared portfolio instead of preserving shared asset-level exposure, and it reintroduces hidden cross-strategy ownership by disabling secondary external-order claims and reconciliation. The controller then removed the primary-owner model in `9f8f43ef5f`, restored shared same-asset claims and reconciliation, deduplicated shared same-asset portfolio and balance observations without hiding component rows, preserved the mixed-family params ambiguity guard, and reran the focused and expanded verification bundles successfully. Fresh spec review on `b503f7f17f..9f8f43ef5f` found one remaining blocker: the degraded `/api/v1/balances?profile=equities` fallback in `app.py` still merged same-symbol maker+taker balance rows without the shared-position dedupe map. The controller reproduced that gap with a focused red app/run_api slice, fixed it in `8df51befee` by threading the shared observation grouping contract into the fallback API path and real `run_api.main()` wiring, reran the focused and broader verification bundles successfully, then a fresh spec re-review on `b503f7f17f..8df51befee` found no findings, a fresh quality review on the same full diff found no findings, and the approved lane series was integrated onto the shared branch as commits `a1b1c7fa4b` through `a2b14fba64`. The broader Task 7 verification bundle was rerun successfully in the shared worktree after integration. |
+| Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification | completed | main | Task 6: Update Fluxboard To A Shared Equities-Arb Surface, Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset | `deploy/equities/README.md`, `fluxboard/Params.tsx`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`, `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`, `fluxboard/stores.ts`, `fluxboard/types.ts`, `tests`, `docs/plans` | `lanes/task-8-final-cleanup` | `.worktrees/task-8-final-cleanup` | lane: `6528dca706`, `390302774d`; shared: `69cc8b7c70`, `82f23eaf88` | Lane history: `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/task-8-final-cleanup/fluxboard exec vitest run tests/signal/SignalFamilyFilter.test.tsx tests/signal/EquitiesArbSignalTable.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/config/paramsProfiles.test.ts components/domain/signal/SignalTable.store.test.ts` fail (`5` files, `5` tests), then pass (`5` files, `43` tests); `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/task-8-final-cleanup/fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts` pass (`8` files, `93` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q` import error before execution (`ModuleNotFoundError: ibapi`); `uv sync --group test --extra ib` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest --import-mode=importlib tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q` fail (`1` test: `NameError: strategies_readme`), then pass (`368` tests); `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/task-8-final-cleanup/fluxboard exec vitest run tests/signal/MakerV4SignalTable.test.tsx tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts` pass (`9` files, `98` tests); `git -C /home/ubuntu/nautilus_trader/.worktrees/task-8-final-cleanup diff --check` pass. Shared final verification: `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/makerv4-split-dual-arb-impl-20260317/fluxboard exec vitest run tests/signal/MakerV4SignalTable.test.tsx tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts` pass (`9` files, `98` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest --import-mode=importlib tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q` pass (`368` tests); `git -C /home/ubuntu/nautilus_trader/.worktrees/makerv4-split-dual-arb-impl-20260317 diff --check` pass | 2026-03-19 UTC Task 8 lane opened from shared head `af34fd2c56`; controller pinned the remaining active equities `makerv4` cleanup seam to the shared `/equities` route compatibility shims plus `deploy/equities/README.md`. The initial fresh implementer did not return a handoff but left a test-only red slice; controller validated the red phase, then landed the green working-tree slice that hides legacy `maker_v4` rows from the shared `/equities` signal and params routes, requires `equities_arb` payloads on the shared signal table, migrates legacy `maker_v4` params UI state onto `equities_maker`, narrows the shared equities `applies_to` contract back to the split family, and updates the stale overnight hedge wording in `deploy/equities/README.md`. The full Task 8 Vitest bundle now passes in the lane worktree. The first full pytest attempt exposed a missing lane env dependency (`ibapi`), which the controller repaired with `uv sync --group test --extra ib`. The plan's combined pytest file set also collides on duplicate module basenames without `--import-mode=importlib`; after rerunning with importlib mode, the remaining red failure was the new README test's missing local fixture reads, which the controller fixed in lane commit `6528dca706`. Fresh spec review on `af34fd2c56..6528dca706` then reopened Task 8 with one remaining finding: the active `/equities` signal route still rendered through the dedicated `MakerV4SignalTable`. The controller fixed that in `390302774d` by moving the shared arb table implementation into `EquitiesArbSignalTable`, reducing `MakerV4SignalTable` to the legacy wrapper, and rerunning the affected Fluxboard signal/params bundle successfully. Fresh spec re-review on `af34fd2c56..390302774d` found no findings, fresh quality review on the same diff found no findings, the approved lane commits were integrated onto the shared branch as `69cc8b7c70` and `82f23eaf88`, and the final shared verification reran successfully. Task 8 is complete and the implementation branch is green. |
+
+---
+
+### Task 0: Align Approved `equities_maker` / `equities_taker` Naming
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- Modify: `GitHub PR #64 title/body`
+
+**Dependencies:** `Task 1: Lock Split Contract In Docs And Execution Matrix`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `GitHub PR #64 title/body`
+
+**Verification Commands:**
+- `git diff --check`
+
+**Step 1: Replace stale split-family naming in the execution source of truth**
+
+Update the implementation plan and design doc so the approved naming contract is used consistently:
+
+- `equities_make_take` -> `equities_maker`
+- `equities_take_take` -> `equities_taker`
+- `<symbol>_tradexyz_make_take` -> `<symbol>_tradexyz_maker`
+- `<symbol>_tradexyz_take_take` -> `<symbol>_tradexyz_taker`
+- operator labels use `Maker` / `Taker`
+- strategy family / param set / class examples align to the new names
+
+Preserve the already-approved product semantics exactly while making the naming contract current.
+
+**Step 2: Align downstream task text**
+
+Update later task titles, file paths, verification commands, fixture examples, and prose references so Tasks 3 through 8 consistently target `equities_maker` / `equities_taker` and the `maker` / `taker` strategy IDs.
+
+**Step 3: Update PR metadata**
+
+Update draft implementation PR 64 title/body so the implementation lane matches the approved naming contract without changing its stacked-PR semantics.
+
+**Step 4: Run doc hygiene**
+
+Run:
+
+```bash
+git diff --check
+```
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  docs/plans/2026-03-17-equities-makerv4-split.md
+git commit -m "docs: align maker taker naming"
+```
+
+**Step 6: Update the Progress Tracker**
+
+Mark Task 0 complete after the naming alignment, PR metadata update, and verification are recorded.
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 1: Lock Split Contract In Docs And Execution Matrix
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `deploy/equities/README.md`
+- Modify: `fluxboard/docs/equities_contract.md`
+- Modify: `deploy/equities/strategies/README.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+
+**Dependencies:** `none`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `fluxboard/docs/equities_contract.md`, `deploy/equities/strategies/README.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`
+
+**Verification Commands:**
+- `git diff --check`
+
+**Step 1: Freeze the contract in docs**
+
+Document all of the following explicitly:
+
+- `makerv4` is replaced, not preserved as the live equities family
+- `maker` and `taker` can both run for the same symbol
+- both share the same equities portfolio/book and asset-level risk view
+- the exact current RTH / outside-RTH hedge semantics are preserved in wave 1
+- local inventory/risk ownership knobs such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` do not survive into the split families
+- `/equities/params` uses separate params schemas for maker and taker selected from the strategy dropdown, not one blended contract
+- `taker` is defined as a taker-on-both-venues strategy family
+- no cross-strategy arbitration is part of this wave
+
+**Step 2: Lock the execution matrix instead of landing a red shared branch**
+
+Update this implementation plan so each later task owns the executable tests for its seam:
+
+- Task 2 owns shared-core plus runner/profile-account extraction tests
+- Tasks 3 and 4 own the registry and `run_node.py` launch-path coverage for the new families
+- Task 5 owns both equities-specific API tests and the generic `flux.api.app` params-endpoint coverage, including mixed-family reads/writes
+- Task 6 owns Fluxboard snapshot rendering plus websocket delta-merge coverage
+- Task 7 owns deploy/readiness contract tests and should only touch `run_portfolio.py` if those tests expose a real remaining gap
+- Task 8 owns the full end-to-end regression bundle and live-contract cleanup assertions
+
+Committed work should keep the shared lane green. Local fail-first testing inside each task is still encouraged, but the plan should not rely on checking in deliberately failing shared-branch tests before the owning implementation lands.
+
+**Step 3: Run doc hygiene**
+
+Run:
+
+```bash
+git diff --check
+```
+
+Expected: PASS.
+
+**Step 4: Commit the locked contract docs and execution matrix**
+
+```bash
+git add \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  deploy/equities/README.md \
+  fluxboard/docs/equities_contract.md \
+  deploy/equities/strategies/README.md \
+  docs/plans/2026-03-17-equities-makerv4-split.md
+git commit -m "docs: lock equities split contract"
+```
+
+**Step 5: Update the Progress Tracker**
+
+Mark Task 1 complete after the contract docs and execution-matrix updates are committed.
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 2: Extract Shared Equities-Arb Core From MakerV4
+
+**Files:**
+- Create: `systems/flux/flux/strategies/shared/equities_arb/__init__.py`
+- Create: `systems/flux/flux/strategies/shared/equities_arb/core.py`
+- Create: `systems/flux/flux/strategies/shared/equities_arb/instruments.py`
+- Create: `systems/flux/flux/strategies/shared/equities_arb/hedging.py`
+- Create: `systems/flux/flux/strategies/shared/equities_arb/observability.py`
+- Create: `systems/flux/flux/strategies/shared/equities_arb/reference_balances.py`
+- Modify: `systems/flux/flux/runners/equities/run_node.py`
+- Modify: `systems/flux/flux/runners/shared/profile_accounts.py`
+- Create: `tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py`
+- Modify: `systems/flux/flux/strategies/makerv4/fees.py`
+- Modify: `systems/flux/flux/strategies/makerv4/instruments.py`
+- Modify: `systems/flux/flux/strategies/makerv4/pricing.py`
+- Modify: `systems/flux/flux/strategies/makerv4/strategy.py`
+- Modify: `systems/flux/flux/strategies/makerv4/managed_orders.py`
+- Modify: `systems/flux/flux/strategies/makerv4/publisher.py`
+- Modify: `systems/flux/flux/strategies/makerv4/reference_balances.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`
+- Modify: `tests/unit_tests/flux/strategies/makerv4/test_instruments.py`
+- Modify: `tests/unit_tests/flux/strategies/makerv4/test_pricing.py`
+- Modify: `tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py`
+
+**Dependencies:** `Task 1: Lock Split Contract In Docs And Execution Matrix`
+
+**Write Scope:** `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py`, `systems/flux/flux/strategies/makerv4/fees.py`, `systems/flux/flux/strategies/makerv4/instruments.py`, `systems/flux/flux/strategies/makerv4/pricing.py`, `systems/flux/flux/strategies/makerv4/strategy.py`, `systems/flux/flux/strategies/makerv4/managed_orders.py`, `systems/flux/flux/strategies/makerv4/publisher.py`, `systems/flux/flux/strategies/makerv4/reference_balances.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/flux/strategies/makerv4/test_instruments.py`, `tests/unit_tests/flux/strategies/makerv4/test_pricing.py`, `tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py -q`
+
+**Step 1: Write failing shared-core tests**
+
+Add tests that pin reusable behavior for:
+
+- shared fee assumptions payload
+- shared fee-rule and fee-aware pricing helpers currently living in `makerv4.fees` and `makerv4.pricing`
+- shared hedge policy / pending hedge payload shape
+- shared backlog payload shape
+- shared quote snapshot assembly for equities arb legs
+- shared session-aware hedge policy behavior used by both families
+- runner-facing instrument/reference-balance helpers that must stop being `makerv4`-owned
+- runner capability seams that stop `run_node.py` from branching on `param_set == "makerv4"` for runtime params, immediate-hedge support, venue promotion, or allowed-instrument selection
+
+**Step 2: Run the new shared-core tests and confirm failure**
+
+Run:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest \
+  tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py -q
+```
+
+Expected: FAIL because the shared equities-arb module does not exist.
+
+**Step 3: Extract the minimal shared core**
+
+Move the reusable pieces out of `makerv4`:
+
+- hedge/backlog intent and payload assembly
+- fee assumptions payload helpers and fee-rule resolution
+- shared leg/quote snapshot assembly and quote/pricing helpers
+- session-aware hedge policy helpers
+- instrument mapping and reference-balance helpers used by the equities runner
+- runner-facing strategy capability helpers used by `run_node.py`
+- runner and shared-profile-account imports moved off `flux.strategies.makerv4.*` onto the shared equities-arb seam
+
+Do not rename the live family yet. This task is only about isolating the reusable seam.
+
+**Step 4: Re-run the shared-core and MakerV4 regression slice**
+
+Expected: PASS with no behavior drift.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  systems/flux/flux/strategies/shared/equities_arb \
+  systems/flux/flux/runners/equities/run_node.py \
+  systems/flux/flux/runners/shared/profile_accounts.py \
+  tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py \
+  systems/flux/flux/strategies/makerv4/fees.py \
+  systems/flux/flux/strategies/makerv4/instruments.py \
+  systems/flux/flux/strategies/makerv4/pricing.py \
+  systems/flux/flux/strategies/makerv4/strategy.py \
+  systems/flux/flux/strategies/makerv4/managed_orders.py \
+  systems/flux/flux/strategies/makerv4/publisher.py \
+  systems/flux/flux/strategies/makerv4/reference_balances.py \
+  tests/unit_tests/examples/strategies/test_equities_run_node.py \
+  tests/unit_tests/examples/strategies/test_equities_run_portfolio.py \
+  tests/unit_tests/flux/strategies/makerv4/test_instruments.py \
+  tests/unit_tests/flux/strategies/makerv4/test_pricing.py \
+  tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py
+git commit -m "refactor: extract shared equities arb core"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 3: Add `equities_maker` Strategy Family
+
+**Files:**
+- Create: `systems/flux/flux/strategies/equities_maker/__init__.py`
+- Create: `systems/flux/flux/strategies/equities_maker/constants.py`
+- Create: `systems/flux/flux/strategies/equities_maker/runtime_params.py`
+- Create: `systems/flux/flux/strategies/equities_maker/strategy.py`
+- Create: `tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py`
+- Create: `tests/unit_tests/flux/strategies/equities_maker/test_strategy.py`
+- Modify: `systems/flux/flux/strategies/registry.py`
+- Modify: `systems/flux/flux/strategies/__init__.py`
+- Modify: `systems/flux/flux/runners/equities/run_node.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+
+**Dependencies:** `Task 2: Extract Shared Equities-Arb Core From MakerV4`
+
+**Write Scope:** `systems/flux/flux/strategies/equities_maker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_maker/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q`
+
+**Step 1: Write the failing `maker` family tests**
+
+Pin:
+
+- registry identity
+- suffix-based strategy-id resolution for `<symbol>_tradexyz_maker`
+- runtime param surface without `taker`-only knobs or local inventory/risk ownership knobs
+- exact preservation of the current RTH / outside-RTH hedge semantics
+- maker quote lifecycle uses the shared equities-arb core
+- shared portfolio/book risk is still the only asset-level risk source
+- `run_node.py` resolves the `equities_maker` runtime params/config surface without falling back through `makerv4`-specific branches
+
+**Step 2: Run tests to verify failure**
+
+Expected: FAIL because `equities_maker` does not exist.
+
+**Step 3: Implement the relatively thin `maker` family**
+
+Create `EquitiesMakerStrategy` and config/runtime modules that:
+
+- consume the shared core
+- expose only the common plus maker-specific runtime params
+- keep the existing session-aware hedge contract unchanged
+- omit `des_qty_local`, `max_qty_local`, `max_skew_bps_local`, and equivalent local-inventory controls
+- preserve current maker-side quote behavior
+- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_maker` behavior
+
+**Step 4: Re-run the focused `maker` tests**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  systems/flux/flux/strategies/equities_maker \
+  systems/flux/flux/strategies/registry.py \
+  systems/flux/flux/strategies/__init__.py \
+  systems/flux/flux/runners/equities/run_node.py \
+  tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py \
+  tests/unit_tests/flux/strategies/equities_maker/test_strategy.py \
+  tests/unit_tests/examples/strategies/test_equities_run_node.py
+git commit -m "feat: add equities maker strategy family"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 4: Add `equities_taker` Strategy Family
+
+**Files:**
+- Create: `systems/flux/flux/strategies/equities_taker/__init__.py`
+- Create: `systems/flux/flux/strategies/equities_taker/constants.py`
+- Create: `systems/flux/flux/strategies/equities_taker/runtime_params.py`
+- Create: `systems/flux/flux/strategies/equities_taker/strategy.py`
+- Create: `tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py`
+- Create: `tests/unit_tests/flux/strategies/equities_taker/test_strategy.py`
+- Modify: `systems/flux/flux/strategies/registry.py`
+- Modify: `systems/flux/flux/strategies/__init__.py`
+- Modify: `systems/flux/flux/runners/equities/run_node.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+
+**Dependencies:** `Task 2: Extract Shared Equities-Arb Core From MakerV4`
+
+**Write Scope:** `systems/flux/flux/strategies/equities_taker`, `systems/flux/flux/strategies/registry.py`, `systems/flux/flux/strategies/__init__.py`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py`, `tests/unit_tests/flux/strategies/equities_taker/test_strategy.py`, `tests/unit_tests/examples/strategies/test_equities_run_node.py`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py -q`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_node.py -q`
+
+**Step 1: Write the failing `taker` family tests**
+
+Pin:
+
+- registry identity
+- suffix-based strategy-id resolution for `<symbol>_tradexyz_taker`
+- runtime params keep only taker-relevant knobs and omit local inventory/risk ownership knobs
+- `taker` signal generation and execution are family-owned, not hidden behind `execution_mode`
+- `taker` is pinned as a taker-on-both-venues strategy rather than a maker quote loop
+- exact preservation of the current RTH / outside-RTH hedge semantics
+- hedge backlog and shared portfolio-risk reads still work through the shared core
+- `run_node.py` resolves the `equities_taker` runtime params/config surface without relying on `makerv4`-specific fallback paths
+
+**Step 2: Run tests to verify failure**
+
+Expected: FAIL because `equities_taker` does not exist.
+
+**Step 3: Implement the extracted `taker` family**
+
+Create `EquitiesTakerStrategy` and config/runtime modules that:
+
+- consume the shared core
+- expose taker-specific params such as threshold and cooldown knobs
+- keep the current aggressive outside-band behavior and shared hedge path
+- implement a taker-on-both-venues execution model instead of reusing the maker quote loop
+- perform the non-trivial extraction currently hidden inside `makerv4.execution_mode` branches
+- omit `des_qty_local`, `max_qty_local`, `max_skew_bps_local`, and equivalent local-inventory controls
+- replace the remaining `makerv4`-specific `run_node.py` wiring for runtime params, allowed instruments, immediate-hedge capability, and config construction with spec-driven `equities_taker` behavior
+
+**Step 4: Re-run the focused `taker` tests**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  systems/flux/flux/strategies/equities_taker \
+  systems/flux/flux/strategies/registry.py \
+  systems/flux/flux/strategies/__init__.py \
+  systems/flux/flux/runners/equities/run_node.py \
+  tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py \
+  tests/unit_tests/flux/strategies/equities_taker/test_strategy.py \
+  tests/unit_tests/examples/strategies/test_equities_run_node.py
+git commit -m "feat: add equities taker strategy family"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts
+
+**Files:**
+- Modify: `systems/flux/flux/api/app.py`
+- Modify: `systems/flux/flux/runners/equities/run_api.py`
+- Modify: `systems/flux/flux/runners/equities/run_bridge.py`
+- Modify: `systems/flux/flux/runners/equities/readiness.py`
+- Modify: `systems/flux/flux/api/_payloads_signals.py`
+- Modify: `fluxboard/types.ts`
+- Modify: `tests/unit_tests/flux/api/test_app.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_api.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_readiness.py`
+- Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
+- Modify: `tests/unit_tests/flux/api/test_payloads.py`
+
+**Dependencies:** `Task 3: Add \`equities_maker\` Strategy Family`, `Task 4: Add \`equities_taker\` Strategy Family`
+
+**Write Scope:** `systems/flux/flux/api/app.py`, `systems/flux/flux/runners/equities/run_api.py`, `systems/flux/flux/runners/equities/run_bridge.py`, `systems/flux/flux/runners/equities/readiness.py`, `systems/flux/flux/api/_payloads_signals.py`, `fluxboard/types.ts`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/examples/strategies/test_equities_run_bridge.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `tests/unit_tests/flux/api/test_payloads.py`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/api/test_app.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
+
+**Step 1: Write the failing API and payload tests**
+
+Require:
+
+- strategy metadata recognizes `aapl_tradexyz_maker` and `aapl_tradexyz_taker`
+- the params API can serve separate `maker` and `taker` `params_schema`, `params_defaults`, and `param_set` contracts keyed off the selected strategy/family, for example via `GET /api/v1/param-schema?strategy=<strategy_id>`, rather than a single global equities schema
+- `GET /api/v1/params` can load mixed `maker` and `taker` rows in one response without one family rejecting the other family's keys
+- bulk `POST/PATCH /api/v1/params` accepts mixed-family updates in one request and validates each strategy against its own param contract
+- `GET/POST/PATCH /api/v1/strategies/<strategy_id>/parameters` resolves schema/defaults/validation from the selected strategy family instead of the app-wide default bundle
+- signal payloads expose one shared equities-arb operator contract
+- fee assumptions and pricing fields remain visible for both variants
+- family-specific rows still share common leg/quote-health semantics
+- bridge allowlist and explicit strategy-id resolution accept both variants cleanly
+- readiness quote-snapshot parsing works against the new shared signal contract instead of hard-coding `payload["maker_v4"]`
+- the production `run_api.main()` path binds per-strategy asset/family metadata from merged config and `strategy_contracts`, not only helper tests that inject contracts into an isolated `api_cfg`
+
+**Step 2: Run tests to verify failure**
+
+Expected: FAIL because the API currently recognizes `maker_v4`-specific semantics.
+
+**Step 3: Update metadata and payload builders**
+
+Implement:
+
+- strategy-aware params schema/default selection in `flux.api.app` and `run_api.py`, exposed through an explicit strategy-scoped selector rather than only a page-global profile query
+- per-strategy schema/default/param-set resolution for all params read/write endpoints, including mixed-family `/api/v1/params` loads and bulk updates in the generic app surface
+- new strategy-id-to-spec resolution
+- family-aware metadata emission
+- `run_api.main()` and related helpers wired so the live merged-config path can resolve `strategy_contracts` and family metadata without relying on a synthetic api-only test shape
+- shared equities-arb payload shape replacing the hard-coded MakerV4 contract
+- readiness payload parsing updated in the same task so the API/signal contract change cannot break live gating between commits
+
+**Step 4: Re-run the focused API suite**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  systems/flux/flux/api/app.py \
+  systems/flux/flux/runners/equities/run_api.py \
+  systems/flux/flux/runners/equities/run_bridge.py \
+  systems/flux/flux/runners/equities/readiness.py \
+  systems/flux/flux/api/_payloads_signals.py \
+  fluxboard/types.ts \
+  tests/unit_tests/flux/api/test_app.py \
+  tests/unit_tests/examples/strategies/test_equities_run_api.py \
+  tests/unit_tests/examples/strategies/test_equities_run_bridge.py \
+  tests/unit_tests/examples/strategies/test_equities_readiness.py \
+  tests/unit_tests/flux/api/test_equities_profile_contract.py \
+  tests/unit_tests/flux/api/test_payloads.py
+git commit -m "feat: add dual equities arb api contract"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 6: Update Fluxboard To A Shared Equities-Arb Surface
+
+**Files:**
+- Modify: `fluxboard/api.ts`
+- Create: `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`
+- Modify: `fluxboard/components/domain/signal/SignalTable.tsx`
+- Modify: `fluxboard/Params.tsx`
+- Modify: `fluxboard/config/paramsProfiles.ts`
+- Modify: `fluxboard/components/panels/ParamsPanel.tsx`
+- Modify: `fluxboard/stores.ts`
+- Modify: `fluxboard/api.flux.test.ts`
+- Modify: `fluxboard/Signal.delta-pass-through.test.tsx`
+- Modify: `fluxboard/tests/signal/MakerV4SignalTable.test.tsx`
+- Create: `fluxboard/tests/signal/EquitiesArbSignalTable.test.tsx`
+- Modify: `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`
+- Modify: `fluxboard/components/domain/signal/SignalTable.store.test.ts`
+- Modify: `fluxboard/__tests__/components/ParamsProfileColumns.test.tsx`
+- Modify: `fluxboard/__tests__/Params.short-headers.test.tsx`
+- Modify: `fluxboard/__tests__/config/paramsProfiles.test.ts`
+
+**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts`
+
+**Write Scope:** `fluxboard/api.ts`, `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/panels/ParamsPanel.tsx`, `fluxboard/stores.ts`, `fluxboard/api.flux.test.ts`, `fluxboard/Signal.delta-pass-through.test.tsx`, `fluxboard/tests/signal/EquitiesArbSignalTable.test.tsx`, `fluxboard/tests/signal/MakerV4SignalTable.test.tsx`, `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`, `fluxboard/components/domain/signal/SignalTable.store.test.ts`, `fluxboard/__tests__/components/ParamsProfileColumns.test.tsx`, `fluxboard/__tests__/Params.short-headers.test.tsx`, `fluxboard/__tests__/config/paramsProfiles.test.ts`
+
+**Verification Commands:**
+- `pnpm --dir fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts`
+- `pnpm --dir fluxboard exec vitest run __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts`
+
+**Step 1: Write the failing Fluxboard tests**
+
+Require:
+
+- the equities signal route renders one shared table for both variants
+- rows include a visible variant label
+- the family filter and params profile logic no longer assume `maker_v4`
+- rows sort/group by symbol then variant
+- the params route uses separate `maker` and `taker` schemas chosen from the selected strategy/family in the dropdown
+- the params route shows common controls first, then session/shared-risk controls, then family-specific controls for the active family
+- local inventory/risk controls such as `des_qty_local`, `max_qty_local`, and `max_skew_bps_local` are absent from the split equities profiles
+- API client metadata normalization still recognizes the split families and param sets
+- websocket delta patches preserve the new shared equities-arb top-level keys so live rows keep updating after the initial snapshot
+- persisted UI state migrates prior `maker_v4` prefs onto the new split profiles cleanly, with an explicit params-store version bump and migration path
+
+**Step 2: Run tests to verify failure**
+
+Expected: FAIL because the UI still routes equities through `MakerV4SignalTable` and `maker_v4` params assumptions.
+
+**Step 3: Implement the shared equities-arb surface**
+
+Build a shared table that:
+
+- reuses the existing leg and operator affordances where possible
+- adds explicit variant labeling
+- keeps fee and hedge-policy observability visible for both variants
+- updates Params profile routing, strategy-driven schema fetching/caching, canonical ordering, and persisted store migration for the shared `/equities/params` workflow
+- updates the websocket delta-merge path so new shared-equities payload keys survive incremental patches instead of relying on full snapshot refresh
+- bumps the persisted params-store version and maps legacy `maker_v4` active-profile/column-pref state onto the new split profiles
+
+**Step 4: Re-run the focused Fluxboard suite**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  fluxboard/api.ts \
+  fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx \
+  fluxboard/components/domain/signal/SignalTable.tsx \
+  fluxboard/Params.tsx \
+  fluxboard/config/paramsProfiles.ts \
+  fluxboard/components/panels/ParamsPanel.tsx \
+  fluxboard/stores.ts \
+  fluxboard/api.flux.test.ts \
+  fluxboard/Signal.delta-pass-through.test.tsx \
+  fluxboard/tests/signal/EquitiesArbSignalTable.test.tsx \
+  fluxboard/tests/signal/MakerV4SignalTable.test.tsx \
+  fluxboard/tests/signal/SignalFamilyFilter.test.tsx \
+  fluxboard/components/domain/signal/SignalTable.store.test.ts \
+  fluxboard/__tests__/components/ParamsProfileColumns.test.tsx \
+  fluxboard/__tests__/Params.short-headers.test.tsx \
+  fluxboard/__tests__/config/paramsProfiles.test.ts
+git commit -m "feat: add shared equities arb fluxboard surface"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset
+
+**Files:**
+- Modify: `deploy/equities/equities.live.toml`
+- Modify: `deploy/equities/README.md`
+- Modify: `deploy/equities/systemd/flux-equities.target`
+- Modify: `deploy/equities/systemd/flux-pulse.sudoers`
+- Modify: `deploy/equities/strategies/equities.strategy.template.toml`
+- Modify: `deploy/equities/strategies/*.toml`
+- Modify: `deploy/equities/strategies/README.md`
+- Modify: `ops/scripts/deploy/equities_stack.sh`
+- Modify: `ops/scripts/deploy/install_equities_systemd.sh`
+- Modify if needed after contract tests expose a real gap: `systems/flux/flux/runners/equities/run_portfolio.py`
+- Modify: `systems/flux/flux/runners/equities/readiness.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_readiness.py`
+
+**Dependencies:** `Task 5: Replace MakerV4 API Metadata, Strategy-Scoped Params, Signal Payload, And Readiness Contracts`
+
+**Write Scope:** `deploy/equities/equities.live.toml`, `deploy/equities/README.md`, `deploy/equities/systemd/flux-equities.target`, `deploy/equities/systemd/flux-pulse.sudoers`, `deploy/equities/strategies/equities.strategy.template.toml`, `deploy/equities/strategies/*.toml`, `deploy/equities/strategies/README.md`, `ops/scripts/deploy/equities_stack.sh`, `ops/scripts/deploy/install_equities_systemd.sh`, `systems/flux/flux/runners/equities/run_portfolio.py`, `systems/flux/flux/runners/equities/readiness.py`, `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py`, `tests/unit_tests/examples/strategies/test_equities_stack_contract.py`, `tests/unit_tests/examples/strategies/test_equities_readiness.py`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py -q`
+
+**Step 1: Write the failing deploy/readiness tests**
+
+Require:
+
+- two active strategy IDs per symbol are allowed in `equities.live.toml`
+- `strategy_contracts` may repeat `portfolio_asset_id`
+- `tests/unit_tests/examples/strategies/test_equities_run_portfolio.py` must include a true same-symbol fixture such as `aapl_tradexyz_maker` plus `aapl_tradexyz_taker` sharing `portfolio_asset_id="AAPL"`; duplicated copies of the same strategy ID do not count
+- `tests/unit_tests/examples/strategies/test_equities_readiness.py` must include the same `maker` plus `taker` same-asset fixture and prove readiness expects both strategy IDs while evaluating one shared asset-level portfolio state
+- `tests/unit_tests/examples/strategies/test_equities_stack_contract.py` must stop hard-rejecting duplicate `portfolio_asset_id` values and instead assert uniqueness at the strategy-id level while allowing repeated asset IDs for the split variants
+- readiness expects both enrolled strategies while still checking shared asset-level portfolio health
+- the template and README use the new naming pattern
+- actual per-variant strategy TOMLs exist under the current one-strategy-per-node deploy model
+- the split keeps the existing session contract, including `use_regular_trading_hours = false` and `outside_rth_hedge_enabled`, for both families
+- templates and deploy profiles do not surface local inventory/risk ownership knobs
+- stack/install scripts discover, install, and launch both variants per symbol without hand-edited service drift
+- existing tuple-based `_strategy_ids_by_asset` grouping remains sufficient unless the deploy/readiness tests prove otherwise
+
+**Step 2: Run tests to verify failure**
+
+Expected: FAIL because the current stack contract still assumes one active strategy per asset.
+
+**Step 3: Update deploy and portfolio/readiness logic**
+
+Implement:
+
+- dual-strategy allowlists
+- dual `strategy_contracts` rows per asset
+- actual per-variant strategy files replacing the live `makerv4` TOMLs
+- reuse the existing tuple-based `run_portfolio.py` grouping and only patch portfolio-runner code if the deploy/readiness suite exposes a real remaining gap
+- readiness summaries and contract docs that understand the split
+- systemd/host-install surfaces that reflect the new per-variant deploy artifacts
+
+**Step 4: Re-run the focused deploy/readiness suite**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  deploy/equities/equities.live.toml \
+  deploy/equities/README.md \
+  deploy/equities/systemd/flux-equities.target \
+  deploy/equities/systemd/flux-pulse.sudoers \
+  deploy/equities/strategies/equities.strategy.template.toml \
+  deploy/equities/strategies/*.toml \
+  deploy/equities/strategies/README.md \
+  ops/scripts/deploy/equities_stack.sh \
+  ops/scripts/deploy/install_equities_systemd.sh \
+  systems/flux/flux/runners/equities/run_portfolio.py \
+  systems/flux/flux/runners/equities/readiness.py \
+  tests/unit_tests/examples/strategies/test_equities_run_portfolio.py \
+  tests/unit_tests/examples/strategies/test_equities_stack_contract.py \
+  tests/unit_tests/examples/strategies/test_equities_readiness.py
+git commit -m "feat: add dual-strategy equities deploy contract"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification
+
+**Files:**
+- Modify: `deploy/equities/README.md`
+- Modify: `fluxboard/Params.tsx`
+- Modify: `fluxboard/config/paramsProfiles.ts`
+- Modify: `fluxboard/components/domain/signal/SignalTable.tsx`
+- Modify: `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`
+- Modify: `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`
+- Modify: `fluxboard/stores.ts`
+- Modify: `fluxboard/types.ts`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+
+**Dependencies:** `Task 6: Update Fluxboard To A Shared Equities-Arb Surface`, `Task 7: Update Deploy, Portfolio, And Readiness Contracts For Dual Strategies Per Asset`
+
+**Write Scope:** `deploy/equities/README.md`, `fluxboard/Params.tsx`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx`, `fluxboard/components/domain/signal/MakerV4SignalTable.tsx`, `fluxboard/stores.ts`, `fluxboard/types.ts`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `docs/plans/2026-03-17-equities-makerv4-split.md`, `tests`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py tests/unit_tests/flux/strategies/equities_maker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_maker/test_strategy.py tests/unit_tests/flux/strategies/equities_taker/test_runtime_params.py tests/unit_tests/flux/strategies/equities_taker/test_strategy.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_equities_run_bridge.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_readiness.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/api/test_equities_profile_contract.py tests/unit_tests/flux/api/test_payloads.py -q`
+- `pnpm --dir fluxboard exec vitest run tests/signal/EquitiesArbSignalTable.test.tsx tests/signal/SignalFamilyFilter.test.tsx __tests__/components/ParamsProfileColumns.test.tsx __tests__/Params.short-headers.test.tsx __tests__/config/paramsProfiles.test.ts api.flux.test.ts Signal.delta-pass-through.test.tsx components/domain/signal/SignalTable.store.test.ts`
+- `git diff --check`
+
+**Step 1: Write the final failing cleanup assertions**
+
+Add or update tests so they require:
+
+- no active equities deploy/config/docs refer to `makerv4` as the live contract
+- the shared UI and API only describe the split families
+- the final active strategy IDs use the new suffixes
+- the params surfaces no longer expose local inventory/risk ownership knobs
+- the preserved RTH / outside-RTH hedge semantics still match the prior live contract
+
+**Step 2: Run the final suite and confirm remaining failures are only the cleanup gap**
+
+Expected: FAIL until the last MakerV4-specific references are removed.
+
+**Step 3: Remove the remaining live MakerV4 equities contract**
+
+Clean up:
+
+- active deploy references that still describe `MakerV4` as a live equities family
+- live docs
+- stale family-specific assumptions that are still exercised by active `/equities` params, signal, and persisted-column-preference paths
+- the dedicated MakerV4 Fluxboard surface if it is no longer used by any active route
+
+Do not delete dormant/internal `makerv4` strategy package code, registry identity, or compatibility tests in this wave unless they are proven unused after the shared-core extraction. The requirement here is to remove `makerv4` from active equities deploy/API/UI paths, not to force repo-wide historical cleanup.
+
+**Step 4: Re-run the final verification bundle**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  deploy/equities/README.md \
+  fluxboard/Params.tsx \
+  fluxboard/config/paramsProfiles.ts \
+  fluxboard/components/domain/signal/SignalTable.tsx \
+  fluxboard/components/domain/signal/EquitiesArbSignalTable.tsx \
+  fluxboard/components/domain/signal/MakerV4SignalTable.tsx \
+  fluxboard/stores.ts \
+  fluxboard/types.ts \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  docs/plans/2026-03-17-equities-makerv4-split.md \
+  tests
+git commit -m "feat: replace equities makerv4 with split arb families"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `deploy/equities/README.md`
+- Modify: `deploy/equities/strategies/README.md`
+- Modify: `systems/flux/flux/api/_payloads_common.py`
+- Modify: `systems/flux/flux/runners/equities/run_api.py`
+- Modify: `fluxboard/types.ts`
+- Modify: `fluxboard/config/paramsProfiles.ts`
+- Modify: `fluxboard/components/domain/signal/SignalTable.tsx`
+- Modify: `fluxboard/Params.tsx`
+- Modify: `tests/unit_tests/flux/api/test_payloads.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_api.py`
+- Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
+- Modify: `fluxboard/__tests__/config/paramsProfiles.test.ts`
+- Modify: `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`
+
+**Dependencies:** `Task 11: Publish Mainline Implementation PR Shape`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `systems/flux/flux/api/_payloads_common.py`, `systems/flux/flux/runners/equities/run_api.py`, `fluxboard/types.ts`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `tests/unit_tests/flux/api/test_payloads.py`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `fluxboard/__tests__/config/paramsProfiles.test.ts`, `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_payloads.py -q -k 'strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility'`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q -k 'signals_profile_equities_emits_makerv4_quote_snapshot'`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_api.py -q -k 'uses_makerv4_metadata_when_strategy_spec_is_makerv4 or can_publish_per_strategy_family_metadata'`
+- `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/pr61-finish/fluxboard exec vitest run __tests__/config/paramsProfiles.test.ts tests/signal/SignalFamilyFilter.test.tsx`
+- `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check`
+
+**Step 1: Write failing deprecation tests**
+
+Add or update tests so they require all of the following:
+
+- `maker_v4` / `makerv4` strategy metadata payloads include an explicit legacy/deprecation marker plus the split-family replacement guidance
+- the equities API metadata map produced by `run_api.py` marks `makerv4` rows deprecated without changing the compatibility payload shape
+- Fluxboard labels the `maker_v4` params/signal family as legacy instead of presenting it as a peer production family
+
+**Step 2: Run the targeted tests and confirm failure**
+
+Run the scoped pytest and Vitest slices above.
+
+Expected: FAIL until the new deprecation markers and labels are wired.
+
+**Step 3: Implement the minimal compatibility-preserving deprecation surface**
+
+Make the smallest changes that satisfy the new contract:
+
+- keep `maker_v4` signal/operator payload compatibility working for stale rows
+- add explicit strategy metadata fields for legacy/deprecated families
+- label `maker_v4` as legacy on Fluxboard family/profile selectors
+- update the deploy/design docs so the checked-in production contract says `equities_maker` / `equities_taker` are the active rollout path and `makerv4` is legacy compatibility only
+
+Do not delete the `makerv4` package, registry entry, or compatibility paths in this task.
+
+**Step 4: Re-run the targeted verification bundle**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  docs/plans/2026-03-17-equities-makerv4-split.md \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  deploy/equities/README.md \
+  deploy/equities/strategies/README.md \
+  systems/flux/flux/api/_payloads_common.py \
+  systems/flux/flux/runners/equities/run_api.py \
+  fluxboard/types.ts \
+  fluxboard/config/paramsProfiles.ts \
+  fluxboard/components/domain/signal/SignalTable.tsx \
+  fluxboard/Params.tsx \
+  tests/unit_tests/flux/api/test_payloads.py \
+  tests/unit_tests/flux/api/test_equities_profile_contract.py \
+  tests/unit_tests/examples/strategies/test_equities_run_api.py \
+  fluxboard/__tests__/config/paramsProfiles.test.ts \
+  fluxboard/tests/signal/SignalFamilyFilter.test.tsx
+git commit -m "docs(api): deprecate makerv4 equities surfaces"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 13: Open Follow-Up Issue For Full MakerV4 Deletion
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- External: `GitHub issue metadata`
+
+**Dependencies:** `Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split.md`, `GitHub issue metadata`
+
+**Verification Commands:**
+- `gh issue create --repo clickconfirm/nautilus-trader --title "Remove makerv4 after split-family rollout completes" --body-file /tmp/makerv4-removal-issue.md`
+
+**Step 1: Draft the issue**
+
+Write the issue body so it records:
+
+- `makerv4` is deprecated/retired from new equities production enrollment in PR `#80`
+- the split families must be validated in prod trading before deletion starts
+- the deletion wave must detach `equities_maker` / `equities_taker` from `MakerV4Strategy`
+- the deletion wave must remove the registry/API/Fluxboard compatibility seams and the disabled deploy artifacts
+
+**Step 2: Create the issue**
+
+Run the `gh issue create` command with the drafted body.
+
+Expected: PASS and print the new issue URL.
+
+**Step 3: Record the issue in the tracker**
+
+Update the Progress Tracker row with the new issue reference and status.
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.

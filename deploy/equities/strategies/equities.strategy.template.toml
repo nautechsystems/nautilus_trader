@@ -5,10 +5,10 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "symbol_tradexyz_makerv4"
-strategy_instance_id = "symbol_tradexyz_makerv4"
-trader_id = "EQUITIES-LIVE-SYMBOL-TRADEXYZ"
-external_strategy_id = "symbol_tradexyz_makerv4"
+strategy_id = "symbol_tradexyz_maker"
+strategy_instance_id = "symbol_tradexyz_maker"
+trader_id = "EQUITIES-LIVE-SYMBOL-TRADEXYZ-MAKER"
+external_strategy_id = "symbol_tradexyz_maker"
 
 [venues]
 execution_venue = "HYPERLIQUID"
@@ -73,9 +73,9 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "symbol_tradexyz_makerv4"
+strategy_id = "symbol_tradexyz_maker"
 strategy_groups = "equities"
-param_set = "makerv4"
+param_set = "equities_maker"
 force_bot_off_on_start = true
 order_qty = "1"
 qty = "1"
@@ -93,9 +93,6 @@ take_cooldown_ms = 15000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0
-des_qty_local = 0.0
-max_qty_local = 0.0
-max_skew_bps_local = 0.0
 linear_offset_bps = 0.0
 bid_edge1 = 5.0
 ask_edge1 = 5.0

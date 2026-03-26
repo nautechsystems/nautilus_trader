@@ -6,16 +6,19 @@ from nautilus_trader.flux.strategies.makerv4 import pricing as pricing_mod
 from nautilus_trader.flux.strategies.makerv4.pricing import build_ibkr_ioc_limit
 from nautilus_trader.flux.strategies.makerv4.pricing import build_maker_quote_price
 from nautilus_trader.flux.strategies.makerv4.pricing import validate_ibkr_quote
-from nautilus_trader.flux.strategies.makerv4.rounding import round_maker_price
+from nautilus_trader.flux.strategies.shared.equities_arb import (
+    observability as shared_observability_mod,
+)
+from nautilus_trader.flux.strategies.makerv4.rounding import round_hyperliquid_price
 
 
-def test_round_maker_price_is_side_aware_on_tick_size() -> None:
-    assert round_maker_price(
+def test_round_hyperliquid_price_is_side_aware_on_tick_size() -> None:
+    assert round_hyperliquid_price(
         Decimal("190.037"),
         tick_size=Decimal("0.01"),
         side="BUY",
     ) == Decimal("190.03")
-    assert round_maker_price(
+    assert round_hyperliquid_price(
         Decimal("190.037"),
         tick_size=Decimal("0.01"),
         side="SELL",
@@ -143,20 +146,20 @@ def test_build_fee_aware_threshold_reuses_configured_fee_inputs_across_modes() -
     assumptions = pricing_mod.build_fee_assumptions(
         ibkr_fee_plan="tiered",
         ibkr_fee_min_usd=Decimal("0.35"),
-        maker_taker_fee_bps=Decimal("4.50"),
-        maker_maker_fee_bps=Decimal("0.25"),
+        hl_taker_fee_bps=Decimal("4.50"),
+        hl_maker_fee_bps=Decimal("0.25"),
         assumed_hedge_fee_bps=Decimal("1.00"),
     )
 
     maker_threshold = pricing_mod.build_fee_aware_threshold_bps(
         target_edge_bps=Decimal("5.00"),
-        maker_fee_bps=assumptions.maker_maker_fee_bps,
+        hl_fee_bps=assumptions.hl_maker_fee_bps,
         ibkr_fee_bps=assumptions.assumed_hedge_fee_bps,
         offset_bps=Decimal("0.50"),
     )
     take_threshold = pricing_mod.build_fee_aware_threshold_bps(
         target_edge_bps=Decimal("5.00"),
-        maker_fee_bps=assumptions.maker_taker_fee_bps,
+        hl_fee_bps=assumptions.hl_taker_fee_bps,
         ibkr_fee_bps=assumptions.assumed_hedge_fee_bps,
         offset_bps=Decimal("0.50"),
     )
@@ -171,8 +174,8 @@ def test_take_take_limit_price_returns_none_when_fee_aware_threshold_is_not_met(
     assumptions = pricing_mod.build_fee_assumptions(
         ibkr_fee_plan="tiered",
         ibkr_fee_min_usd=Decimal("0.35"),
-        maker_taker_fee_bps=Decimal("4.50"),
-        maker_maker_fee_bps=Decimal("0.25"),
+        hl_taker_fee_bps=Decimal("4.50"),
+        hl_maker_fee_bps=Decimal("0.25"),
         assumed_hedge_fee_bps=Decimal("1.00"),
     )
     hedge_fee_bps = pricing_mod.build_effective_ibkr_fee_bps(
@@ -188,7 +191,7 @@ def test_take_take_limit_price_returns_none_when_fee_aware_threshold_is_not_met(
             reference_bid=Decimal("190.00"),
             reference_ask=Decimal("190.04"),
             target_edge_bps=Decimal("5.0"),
-            maker_taker_fee_bps=assumptions.maker_taker_fee_bps,
+            hl_taker_fee_bps=assumptions.hl_taker_fee_bps,
             hedge_fee_bps=hedge_fee_bps,
         )
         is None
@@ -199,8 +202,8 @@ def test_take_take_limit_price_returns_cross_price_when_fee_aware_threshold_is_m
     assumptions = pricing_mod.build_fee_assumptions(
         ibkr_fee_plan="tiered",
         ibkr_fee_min_usd=Decimal("0.35"),
-        maker_taker_fee_bps=Decimal("4.50"),
-        maker_maker_fee_bps=Decimal("0.25"),
+        hl_taker_fee_bps=Decimal("4.50"),
+        hl_maker_fee_bps=Decimal("0.25"),
         assumed_hedge_fee_bps=Decimal("1.00"),
     )
     hedge_fee_bps = pricing_mod.build_effective_ibkr_fee_bps(
@@ -215,6 +218,11 @@ def test_take_take_limit_price_returns_cross_price_when_fee_aware_threshold_is_m
         reference_bid=Decimal("190.00"),
         reference_ask=Decimal("190.04"),
         target_edge_bps=Decimal("5.0"),
-        maker_taker_fee_bps=assumptions.maker_taker_fee_bps,
+        hl_taker_fee_bps=assumptions.hl_taker_fee_bps,
         hedge_fee_bps=hedge_fee_bps,
     ) == Decimal("189.20")
+
+
+def test_makerv4_pricing_reexports_shared_equities_arb_helpers() -> None:
+    assert pricing_mod.build_fee_assumptions is shared_observability_mod.build_fee_assumptions
+    assert pricing_mod.build_take_take_limit_price is shared_observability_mod.build_take_take_limit_price

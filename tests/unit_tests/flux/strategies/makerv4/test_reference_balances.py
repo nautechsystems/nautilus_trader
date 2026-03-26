@@ -5,7 +5,25 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from flux.strategies.makerv4 import reference_balances
+from nautilus_trader.flux.strategies.makerv4 import (
+    reference_balances as makerv4_reference_balances,
+)
+from flux.strategies.shared.equities_arb import reference_balances
+
+
+def test_makerv4_reference_balances_reexport_shared_equities_arb_provider() -> None:
+    assert (
+        makerv4_reference_balances.IbkrReferenceBalanceSnapshotProvider
+        is reference_balances.IbkrReferenceBalanceSnapshotProvider
+    )
+    assert (
+        makerv4_reference_balances.IbkrReferenceBalanceSnapshotProviderConfig
+        is reference_balances.IbkrReferenceBalanceSnapshotProviderConfig
+    )
+    assert (
+        makerv4_reference_balances.get_cached_ibkr_reference_balance_provider
+        is reference_balances.get_cached_ibkr_reference_balance_provider
+    )
 
 
 def test_ibkr_reference_balance_provider_refresh_reuses_standalone_loop(

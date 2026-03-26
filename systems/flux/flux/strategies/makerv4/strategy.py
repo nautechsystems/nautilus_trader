@@ -32,13 +32,19 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 from flux.strategies.makerv4 import fees as fees_mod
 from flux.strategies.makerv4 import publisher as publisher_mod
 from flux.strategies.makerv4 import runtime_params as runtime_params_mod
-from flux.strategies.makerv4.instruments import MakerFillHedgeTranslation
-from flux.strategies.makerv4.instruments import round_base_fill_to_ibkr_shares
-from flux.strategies.makerv4.instruments import translate_maker_fill_to_ibkr_shares
-from flux.strategies.makerv4.managed_orders import HedgeBacklogState
-from flux.strategies.makerv4.managed_orders import HedgeOrderIntent
+from flux.strategies.shared.equities_arb.hedging import HedgeBacklogState
+from flux.strategies.shared.equities_arb.hedging import HedgeOrderIntent
+from flux.strategies.shared.equities_arb.hedging import PendingHedgeState
+from flux.strategies.shared.equities_arb.hedging import build_hedge_backlog_payload
+from flux.strategies.shared.equities_arb.hedging import build_hedge_policy_payload
+from flux.strategies.shared.equities_arb.hedging import build_pending_hedge_payload
+from flux.strategies.shared.equities_arb.instruments import (
+    translate_hyperliquid_fill_to_ibkr_shares,
+)
+from flux.strategies.shared.equities_arb.observability import (
+    build_fee_assumptions_payload,
+)
 from flux.strategies.makerv4.managed_orders import ManagedMakerOrderState
-from flux.strategies.makerv4.managed_orders import PendingHedgeState
 from flux.strategies.makerv4.market_data import IbkrQuoteSnapshot
 from flux.strategies.makerv4.pricing import build_effective_ibkr_fee_bps
 from flux.strategies.makerv4.pricing import build_fee_assumptions
@@ -50,7 +56,6 @@ from flux.strategies.shared.account_projection_positions import (
     read_matching_shared_account_position_row,
 )
 from flux.strategies.shared import alerts as shared_alerts_mod
-from flux.strategies.shared.ibkr_order_policy import build_ibkr_hedge_order_policy
 from flux.strategies.shared.ibkr_order_policy import is_us_equities_regular_session
 from flux.strategies.shared.ibkr_tags import build_ibkr_order_tags
 from flux.strategies.shared.publisher_common import build_role_map_payload
@@ -60,9 +65,6 @@ from flux.strategies.shared.venue_protection import extract_hyperliquid_request_
 from flux.strategies.shared.venue_protection import is_venue_protection_reason
 from flux.strategies.shared.venue_protection import normalize_reason_text
 from nautilus_trader.adapters.interactive_brokers.common import IB_CLIENT_ID
-from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import BookType
 from flux.strategies.makerv4.wire import HedgeExecutionReport
 from flux.strategies.makerv4.wire import MakerFill
 from flux.strategies.makerv3.strategy import MakerV3StrategyConfig
@@ -103,10 +105,7 @@ class MakerV4Strategy(Strategy):
     """
 
     BALANCES_PUBLISH_INTERVAL_MS = 10_000
-    MARKET_BBO_HEARTBEAT_MS = 1_000
     PARAMS_REFRESH_INTERVAL_MS = 500
-    TAKE_TAKE_ORDER_TRACK_LIMIT = 64
-    TAKE_TAKE_ORDER_TTL_NS = 5 * 60 * 1_000_000_000
 
     def __init__(self, config: MakerV4StrategyConfig) -> None:
         super().__init__(config)
@@ -137,7 +136,6 @@ class MakerV4Strategy(Strategy):
         self._runtime_params = dict(runtime_params_mod.MAKERV4_RUNTIME_PARAM_DEFAULTS)
         self._maker_instrument = None
         self._instruments: dict[Any, Any] = {}
-        self._books: dict[Any, OrderBook] = {}
         self._latest_quotes: dict[Any, dict[str, Any]] = {}
         self._last_market_bbo_publish_ns: dict[Any, int] = {}
         self._last_balances_ns = 0
@@ -157,7 +155,6 @@ class MakerV4Strategy(Strategy):
         self._seen_fill_ids: set[str] = set()
         self._fill_ids_head: list[str] = []
         self._last_take_submission_ns = 0
-        self._recent_take_take_order_ids: dict[str, int] = {}
         self._take_take_fill_accumulators: dict[str, dict[str, Any]] = {}
         self._take_take_residual_base_fill: dict[str, Any] | None = None
         self._last_runtime_params_refresh_ns = 0
@@ -407,7 +404,7 @@ class MakerV4Strategy(Strategy):
 
     @staticmethod
     def _order_side_enum(side: str) -> OrderSide:
-        return OrderSide.BUY if MakerV4Strategy._enum_name(side) == "BUY" else OrderSide.SELL
+        return OrderSide.BUY if str(side).strip().upper() == "BUY" else OrderSide.SELL
 
     def _make_order_quantity(self, instrument: Any, qty: Decimal) -> Any:
         make_qty = getattr(instrument, "make_qty", None)
@@ -474,100 +471,13 @@ class MakerV4Strategy(Strategy):
 
     def _maker_order_hedge_qty(self) -> Decimal:
         return abs(
-            round_base_fill_to_ibkr_shares(
+            translate_hyperliquid_fill_to_ibkr_shares(
                 fill_qty=self._maker_order_base_qty(),
-                min_share_increment=self._hedge_min_share_increment(),
-            )
-        )
-
-    def _hedge_min_share_increment(self) -> Decimal:
-        return Decimal(str(getattr(self.config, "hedge_min_share_increment", Decimal("1"))))
-
-    def _translate_maker_fill(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None = None,
-    ) -> MakerFillHedgeTranslation | None:
-        maker_instrument = self._resolve_instrument(self.config.maker_instrument_id)
-        if maker_instrument is None:
-            self.log.warning(
-                "MakerV4 fill conversion instrument unavailable for "
-                f"{self._external_strategy_id}; using identity fallback",
-            )
-            return MakerFillHedgeTranslation(
-                venue_qty=fill_qty,
-                base_qty=fill_qty,
-                hedge_qty=round_base_fill_to_ibkr_shares(
-                    fill_qty=fill_qty,
-                    min_share_increment=self._hedge_min_share_increment(),
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
                 ),
-                qty_conversion_status="identity_fallback",
-                qty_conversion_source="maker_instrument:unavailable_identity_fallback",
             )
-        return translate_maker_fill_to_ibkr_shares(
-            maker_instrument=maker_instrument,
-            fill_qty=fill_qty,
-            fill_price=fill_price,
-            min_share_increment=self._hedge_min_share_increment(),
         )
-
-    def _maker_fill_hedge_qty(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None = None,
-    ) -> Decimal | None:
-        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
-        if translation is None or translation.hedge_qty is None:
-            self.log.error(
-                "Failed MakerV4 hedge qty conversion for "
-                f"{self._external_strategy_id}: qty={fill_qty} price={fill_price} "
-                f"status={getattr(translation, 'qty_conversion_status', 'missing_metadata')} "
-                f"source={getattr(translation, 'qty_conversion_source', 'maker instrument unavailable')}",
-            )
-            return None
-        return abs(translation.hedge_qty)
-
-    def _maker_fill_base_qty(
-        self,
-        *,
-        fill_qty: Decimal,
-        fill_price: Decimal | None = None,
-    ) -> Decimal | None:
-        translation = self._translate_maker_fill(fill_qty=fill_qty, fill_price=fill_price)
-        if translation is None or translation.base_qty is None:
-            self.log.error(
-                "Failed MakerV4 base qty conversion for "
-                f"{self._external_strategy_id}: qty={fill_qty} price={fill_price} "
-                f"status={getattr(translation, 'qty_conversion_status', 'missing_metadata')} "
-                f"source={getattr(translation, 'qty_conversion_source', 'maker instrument unavailable')}",
-            )
-            return None
-        return translation.base_qty
-
-    def _subscribe_maker_book_deltas_or_fallback_to_quotes(self, instrument_id) -> None:
-        self._books[instrument_id] = OrderBook(
-            instrument_id=instrument_id,
-            book_type=BookType.L2_MBP,
-        )
-        if not self._prime_cached_order_book(instrument_id):
-            self._prime_cached_quote(instrument_id)
-        try:
-            self.subscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                book_type=BookType.L2_MBP,
-            )
-        except ValueError as exc:
-            if "has not been registered" not in str(exc):
-                raise
-            self.log.warning(
-                "MakerV4 order-book subscription unavailable before actor registration; "
-                "falling back to quote ticks",
-            )
-            self._books.pop(instrument_id, None)
-            self._prime_cached_quote(instrument_id)
-            self.subscribe_quote_ticks(instrument_id=instrument_id)
 
     def _maker_tick_size(self) -> Decimal:
         instrument = self._resolve_instrument(self.config.maker_instrument_id)
@@ -585,37 +495,21 @@ class MakerV4Strategy(Strategy):
         ]
 
     def _pending_hedge_payload(self) -> dict[str, Any] | None:
-        if self._pending_hedge is None:
-            return None
-        return {
-            "client_order_id": self._pending_hedge.order_id,
-            "instrument_id": str(self._hedge_instrument_id(self._pending_hedge.route)),
-            "route": self._pending_hedge.route,
-            "side": self._pending_hedge.side,
-            "time_in_force": self._pending_hedge.time_in_force,
-            "outside_rth": self._pending_hedge.outside_rth,
-            "include_overnight": self._pending_hedge.include_overnight,
-            "cancel_after_ms": self._pending_hedge.cancel_after_ms,
-            "remaining_qty": makerv3_publisher_mod.decimal_to_json_str(
-                self._pending_hedge.remaining_qty,
+        return build_pending_hedge_payload(
+            self._pending_hedge,
+            hedge_instrument_id=(
+                None
+                if self._pending_hedge is None
+                else self._hedge_instrument_id(self._pending_hedge.route)
             ),
-        }
+            decimal_to_json=makerv3_publisher_mod.decimal_to_json_str,
+        )
 
     def _hedge_backlog_payload(self) -> dict[str, Any] | None:
-        if self._hedge_backlog is None:
-            return None
-        return {
-            "fill_id": self._hedge_backlog.fill_id,
-            "side": self._hedge_backlog.side,
-            "requested_qty": makerv3_publisher_mod.decimal_to_json_str(
-                self._hedge_backlog.requested_qty,
-            ),
-            "blocked_reason": self._hedge_backlog.blocked_reason,
-            "fill_ts_ms": self._hedge_backlog.fill_ts_ms,
-            "maker_fee_bps": makerv3_publisher_mod.decimal_to_json_str(
-                self._hedge_backlog.maker_fee_bps,
-            ),
-        }
+        return build_hedge_backlog_payload(
+            self._hedge_backlog,
+            decimal_to_json=makerv3_publisher_mod.decimal_to_json_str,
+        )
 
     def _maker_quote_status_payload(self) -> dict[str, int]:
         bid_open = 1 if "BUY" in self._managed_maker_orders else 0
@@ -1194,31 +1088,26 @@ class MakerV4Strategy(Strategy):
         )
 
     def _fee_assumptions_payload(self) -> dict[str, Any]:
-        assumptions = self._fee_assumptions()
-        return {
-            "ibkr_fee_plan": assumptions.ibkr_fee_plan,
-            "ibkr_fee_min_usd": float(assumptions.ibkr_fee_min_usd),
-            "maker_taker_fee_bps": float(assumptions.maker_taker_fee_bps),
-            "maker_maker_fee_bps": float(assumptions.maker_maker_fee_bps),
-            "assumed_hedge_fee_bps": float(assumptions.assumed_hedge_fee_bps),
-        }
+        return build_fee_assumptions_payload(self._fee_assumptions())
 
     def _fee_assumptions(self):
         legacy_hedge_fee_plan = str(self._runtime_params.get("hedge_fee_plan", "")).strip().lower()
         default_ibkr_fee_plan = "tiered" if legacy_hedge_fee_plan == "ibkr_pro_tiered" else "fixed"
+        hl_taker_fee_bps = self._runtime_params.get(
+            "hl_taker_fee_bps",
+            self._runtime_params.get("maker_taker_fee_bps", 4.5),
+        )
+        hl_maker_fee_bps = self._runtime_params.get(
+            "hl_maker_fee_bps",
+            self._runtime_params.get("maker_maker_fee_bps", 0.25),
+        )
         return build_fee_assumptions(
             ibkr_fee_plan=str(
                 self._runtime_params.get("ibkr_fee_plan", default_ibkr_fee_plan),
             ),
             ibkr_fee_min_usd=self._runtime_params.get("ibkr_fee_min_usd", 0.35),
-            maker_taker_fee_bps=self._runtime_params.get(
-                "maker_taker_fee_bps",
-                self._runtime_params.get("hl_taker_fee_bps", 4.5),
-            ),
-            maker_maker_fee_bps=self._runtime_params.get(
-                "maker_maker_fee_bps",
-                self._runtime_params.get("hl_maker_fee_bps", 0.25),
-            ),
+            hl_taker_fee_bps=hl_taker_fee_bps,
+            hl_maker_fee_bps=hl_maker_fee_bps,
             assumed_hedge_fee_bps=self._runtime_params.get("assumed_hedge_fee_bps", 1.0),
         )
 
@@ -1240,7 +1129,7 @@ class MakerV4Strategy(Strategy):
         return is_us_equities_regular_session(int(ts_ms))
 
     def _hedge_policy_payload(self, *, now_ns: int) -> dict[str, Any]:
-        policy = build_ibkr_hedge_order_policy(
+        return build_hedge_policy_payload(
             configured_route=self._hedge_route(),
             outside_rth_enabled=bool(getattr(self.config, "outside_rth_hedge_enabled", False)),
             is_regular_session=self._is_regular_hedge_session(
@@ -1248,13 +1137,6 @@ class MakerV4Strategy(Strategy):
             ),
             hedge_mode=self._execution_mode(),
         )
-        return {
-            "route": policy.route,
-            "time_in_force": policy.time_in_force,
-            "outside_rth": policy.outside_rth,
-            "include_overnight": policy.include_overnight,
-            "cancel_after_ms": policy.cancel_after_ms,
-        }
 
     def _hedge_instrument_id(self, hedge_route: str | None = None) -> Any:
         explicit = str(self._last_pricing_debug.get("hedge_instrument_id", "")).strip()
@@ -1292,60 +1174,6 @@ class MakerV4Strategy(Strategy):
             ask=self._decimal_or_none(getattr(tick, "ask_price", None)),
             ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
         )
-
-    def _prime_cached_order_book(self, instrument_id: Any) -> bool:
-        cache = self._strategy_cache()
-        order_book_lookup = getattr(cache, "order_book", None)
-        if not callable(order_book_lookup):
-            return False
-        book = None
-        with suppress(Exception):
-            book = order_book_lookup(instrument_id)
-        if book is None:
-            return False
-
-        bid = self._decimal_or_none(getattr(book, "best_bid_price", lambda: None)())
-        ask = self._decimal_or_none(getattr(book, "best_ask_price", lambda: None)())
-        ts_ns = self._quote_ts_ns(
-            getattr(book, "ts_last", 0) or getattr(book, "ts_event", 0),
-        )
-        self._update_quote_snapshot(
-            instrument_id=instrument_id,
-            bid=bid,
-            ask=ask,
-            ts_ns=ts_ns,
-        )
-        return True
-
-    def _maker_uses_order_book_deltas(self) -> bool:
-        venue = str(getattr(self.config.maker_instrument_id, "venue", "")).strip().upper()
-        return venue in {"HYPERLIQUID", "BINANCE_PERP", "BINANCE"}
-
-    def _should_publish_market_bbo(
-        self,
-        *,
-        instrument_id: Any,
-        bid: Decimal,
-        ask: Decimal,
-        now_ns: int,
-    ) -> bool:
-        previous = self._latest_quotes.get(instrument_id)
-        previous_bid = (
-            self._decimal_or_none(previous.get("bid"))
-            if isinstance(previous, Mapping)
-            else None
-        )
-        previous_ask = (
-            self._decimal_or_none(previous.get("ask"))
-            if isinstance(previous, Mapping)
-            else None
-        )
-        if previous_bid != bid or previous_ask != ask:
-            return True
-        last_publish_ns = self._last_market_bbo_publish_ns.get(instrument_id, 0)
-        if last_publish_ns <= 0:
-            return True
-        return now_ns - last_publish_ns >= self.MARKET_BBO_HEARTBEAT_MS * 1_000_000
 
     def _quote_leg_snapshot(
         self,
@@ -1520,7 +1348,7 @@ class MakerV4Strategy(Strategy):
                 - float(assumed_hedge_fee_bps)
                 - float(hedge_slippage_bps or 0.0)
             )
-        payload = publisher_mod.build_quote_snapshot_payload(
+        return publisher_mod.build_quote_snapshot_payload(
             maker_leg=maker_leg,
             hedge_leg=hedge_leg,
             ref_leg=ref_leg,
@@ -1554,10 +1382,6 @@ class MakerV4Strategy(Strategy):
             ts_ms=max(0, int(now_ns)) // 1_000_000,
             fee_assumptions=fee_assumptions,
         )
-        payload["max_ibkr_quote_age_ms"] = int(
-            getattr(self.config, "max_ibkr_quote_age_ms", 1_000),
-        )
-        return payload
 
     def _maker_quote_health(self, *, now_ns: int):
         maker_leg = self._quote_leg_snapshot(
@@ -1614,7 +1438,7 @@ class MakerV4Strategy(Strategy):
             return None
 
         fee_assumptions = self._fee_assumptions()
-        maker_fee_bps = fee_assumptions.maker_maker_fee_bps
+        maker_fee_bps = fee_assumptions.hl_maker_fee_bps
         hedge_fee_bps = build_effective_ibkr_fee_bps(
             fee_assumptions=fee_assumptions,
             hedge_notional_usd=reference_quote.mid * self._maker_order_base_qty(),
@@ -1716,34 +1540,6 @@ class MakerV4Strategy(Strategy):
         if side is None:
             return None
         return self._managed_maker_orders.get(side)
-
-    def _prune_recent_take_take_order_ids(self, *, now_ns: int) -> None:
-        cutoff_ns = max(0, int(now_ns)) - self.TAKE_TAKE_ORDER_TTL_NS
-        expired = [
-            client_order_id
-            for client_order_id, seen_ns in self._recent_take_take_order_ids.items()
-            if seen_ns < cutoff_ns
-        ]
-        for client_order_id in expired:
-            self._recent_take_take_order_ids.pop(client_order_id, None)
-        while len(self._recent_take_take_order_ids) > self.TAKE_TAKE_ORDER_TRACK_LIMIT:
-            oldest = next(iter(self._recent_take_take_order_ids))
-            self._recent_take_take_order_ids.pop(oldest, None)
-
-    def _remember_recent_take_take_order_id(self, client_order_id: Any, *, now_ns: int) -> None:
-        order_id = str(client_order_id or "").strip()
-        if not order_id:
-            return
-        self._prune_recent_take_take_order_ids(now_ns=now_ns)
-        self._recent_take_take_order_ids.pop(order_id, None)
-        self._recent_take_take_order_ids[order_id] = max(0, int(now_ns))
-
-    def _is_recent_take_take_order_id(self, client_order_id: Any, *, now_ns: int) -> bool:
-        order_id = str(client_order_id or "").strip()
-        if not order_id:
-            return False
-        self._prune_recent_take_take_order_ids(now_ns=now_ns)
-        return order_id in self._recent_take_take_order_ids
 
     def _cache_order_is_closed(self, client_order_id: Any) -> bool:
         order_id = str(client_order_id or "").strip()
@@ -1904,11 +1700,6 @@ class MakerV4Strategy(Strategy):
                     post_only=bool(getattr(order, "post_only", True)),
                     pending_cancel=False,
                 )
-                if not reclaimed[side].post_only:
-                    self._remember_recent_take_take_order_id(
-                        reclaimed[side].client_order_id,
-                        now_ns=order_ts_init,
-                    )
                 latest_ts_init_by_side[side] = order_ts_init
             if reclaimed:
                 self._managed_maker_orders = reclaimed
@@ -1963,10 +1754,6 @@ class MakerV4Strategy(Strategy):
             price=self._required_decimal(getattr(order, "price", target_price), field_name="price"),
             post_only=False,
         )
-        self._remember_recent_take_take_order_id(
-            self._managed_maker_orders[side].client_order_id,
-            now_ns=now_ns,
-        )
         self._last_take_submission_ns = max(0, int(now_ns))
 
     def _take_take_signal(self, *, now_ns: int) -> tuple[str, Decimal] | None:
@@ -2016,7 +1803,7 @@ class MakerV4Strategy(Strategy):
             reference_bid=reference_quote.bid,
             reference_ask=reference_quote.ask,
             target_edge_bps=Decimal(str(self._runtime_params.get("bid_edge_take_bps", "0"))),
-            maker_taker_fee_bps=fee_assumptions.maker_taker_fee_bps,
+            hl_taker_fee_bps=fee_assumptions.hl_taker_fee_bps,
             hedge_fee_bps=hedge_fee_bps,
         )
         if buy_price is not None:
@@ -2029,7 +1816,7 @@ class MakerV4Strategy(Strategy):
             reference_bid=reference_quote.bid,
             reference_ask=reference_quote.ask,
             target_edge_bps=Decimal(str(self._runtime_params.get("ask_edge_take_bps", "0"))),
-            maker_taker_fee_bps=fee_assumptions.maker_taker_fee_bps,
+            hl_taker_fee_bps=fee_assumptions.hl_taker_fee_bps,
             hedge_fee_bps=hedge_fee_bps,
         )
         if sell_price is not None:
@@ -2242,7 +2029,7 @@ class MakerV4Strategy(Strategy):
             return
         fill = MakerFill(
             fill_id=str(getattr(event, "trade_id", "")).strip(),
-            side=self._enum_name(getattr(event, "order_side", "")),
+            side=str(getattr(event, "order_side", "")).strip(),
             qty=self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty"),
             price=self._required_decimal(getattr(event, "last_px", None), field_name="last_px"),
             ts_ms=max(0, now_ns // 1_000_000),
@@ -2252,14 +2039,14 @@ class MakerV4Strategy(Strategy):
         if quote is None:
             self._queue_hedge_backlog_for_fill(
                 fill=fill,
-                maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
+                maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
                 blocked_reason="missing_ref_quote",
             )
             return
         order = self.record_maker_fill(
             fill=fill,
             quote=quote,
-            maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
+            maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
         )
         if order is None:
             return
@@ -2281,24 +2068,20 @@ class MakerV4Strategy(Strategy):
             return None
         self._remember_fill_id(fill_id)
 
-        fill_qty = self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty")
-        fill_price = self._required_decimal(getattr(event, "last_px", None), field_name="last_px")
-        base_fill_qty = self._maker_fill_base_qty(fill_qty=fill_qty, fill_price=fill_price)
-        if base_fill_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return None
         accumulator = self._take_take_fill_accumulators.get(client_order_id, {})
-        accumulated_base_qty = Decimal(str(accumulator.get("base_qty", "0")))
+        accumulated_qty = Decimal(str(accumulator.get("qty", "0")))
         self._take_take_fill_accumulators[client_order_id] = {
-            "side": self._enum_name(getattr(event, "order_side", "")),
-            "base_qty": accumulated_base_qty + abs(base_fill_qty),
+            "side": str(getattr(event, "order_side", "")).strip(),
+            "qty": accumulated_qty
+            + self._required_decimal(getattr(event, "last_qty", None), field_name="last_qty"),
+            "price": self._required_decimal(getattr(event, "last_px", None), field_name="last_px"),
             "ts_ms": max(0, int(now_ns) // 1_000_000),
         }
         return client_order_id
 
     @staticmethod
     def _signed_fill_qty(*, side: str, qty: Decimal) -> Decimal:
-        return abs(qty) if MakerV4Strategy._enum_name(side) == "BUY" else -abs(qty)
+        return abs(qty) if str(side).strip().upper() == "BUY" else -abs(qty)
 
     @staticmethod
     def _is_retryable_hedge_block_reason(reason: str | None) -> bool:
@@ -2361,11 +2144,15 @@ class MakerV4Strategy(Strategy):
         fill_id = str(fill.fill_id).strip()
         if fill_id and fill_id not in self._seen_fill_ids:
             self._remember_fill_id(fill_id)
-        hedge_side = "SELL" if self._enum_name(fill.side) == "BUY" else "BUY"
-        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
-        if hedge_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return False
+        hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
+        hedge_qty = abs(
+            translate_hyperliquid_fill_to_ibkr_shares(
+                fill_qty=fill.qty,
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
+            )
+        )
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return False
@@ -2469,24 +2256,26 @@ class MakerV4Strategy(Strategy):
             return "invalid_hedge_limit"
 
         hedge_route = self._hedge_route()
-        policy = build_ibkr_hedge_order_policy(
+        policy = build_hedge_policy_payload(
             configured_route=hedge_route,
             outside_rth_enabled=bool(getattr(self.config, "outside_rth_hedge_enabled", False)),
             is_regular_session=self._is_regular_hedge_session(ts_ms=int(fill_ts_ms)),
             hedge_mode="maker_hedge",
         )
-        effective_hedge_route = str(policy.route).strip().upper() or None
+        effective_hedge_route = str(policy["route"]).strip().upper() or None
         hedge_instrument_id = self._hedge_instrument_id(effective_hedge_route)
         order = HedgeOrderIntent(
             instrument_id=str(hedge_instrument_id),
             side=hedge_side,
             qty=abs(Decimal(str(hedge_qty))),
             limit_price=limit_price,
-            route=policy.route,
-            time_in_force=policy.time_in_force,
-            outside_rth=policy.outside_rth,
-            include_overnight=policy.include_overnight,
-            cancel_after_ms=policy.cancel_after_ms,
+            route=str(policy["route"]),
+            time_in_force=str(policy["time_in_force"]),
+            outside_rth=bool(policy["outside_rth"]),
+            include_overnight=bool(policy["include_overnight"]),
+            cancel_after_ms=(
+                None if policy["cancel_after_ms"] is None else int(policy["cancel_after_ms"])
+            ),
         )
         self._last_pricing_debug.update(
             {
@@ -2508,11 +2297,11 @@ class MakerV4Strategy(Strategy):
             requested_qty=abs(Decimal(str(hedge_qty))),
             remaining_qty=abs(Decimal(str(hedge_qty))),
             limit_price=limit_price,
-            route=policy.route,
-            time_in_force=policy.time_in_force,
+            route=str(policy["route"]),
+            time_in_force=str(policy["time_in_force"]),
             outside_rth=order.outside_rth,
-            include_overnight=policy.include_overnight,
-            cancel_after_ms=policy.cancel_after_ms,
+            include_overnight=bool(policy["include_overnight"]),
+            cancel_after_ms=order.cancel_after_ms,
         )
         _ = fee_rules
         return order, pending
@@ -2538,22 +2327,12 @@ class MakerV4Strategy(Strategy):
         accumulator = self._take_take_fill_accumulators.pop(order_id, None)
         if not isinstance(accumulator, dict):
             return
+        fill_qty = Decimal(str(accumulator.get("qty", "0")))
+        if fill_qty <= 0:
+            return
         fill_side = str(accumulator.get("side", "")).strip().upper() or "BUY"
         fill_ts_ms = max(0, int(accumulator.get("ts_ms", max(0, int(now_ns) // 1_000_000))))
-        base_fill_qty = self._decimal_or_none(accumulator.get("base_qty"))
-        if base_fill_qty is None:
-            fill_qty = Decimal(str(accumulator.get("qty", "0")))
-            if fill_qty <= 0:
-                return
-            fill_price = self._required_decimal(accumulator.get("price"), field_name="price")
-            base_fill_qty = self._maker_fill_base_qty(fill_qty=fill_qty, fill_price=fill_price)
-            if base_fill_qty is None:
-                self._disable_hedging("maker_qty_conversion_failed")
-                return
-            base_fill_qty = abs(base_fill_qty)
-        if base_fill_qty <= 0:
-            return
-        signed_qty = self._signed_fill_qty(side=fill_side, qty=base_fill_qty)
+        signed_qty = self._signed_fill_qty(side=fill_side, qty=fill_qty)
         residual = self._take_take_residual_base_fill
         if isinstance(residual, dict):
             residual_side = str(residual.get("side", "")).strip().upper() or "BUY"
@@ -2570,52 +2349,38 @@ class MakerV4Strategy(Strategy):
             ts_ms=fill_ts_ms,
         )
         hedgeable_qty = abs(
-            round_base_fill_to_ibkr_shares(
+            translate_hyperliquid_fill_to_ibkr_shares(
                 fill_qty=aggregated_qty,
-                min_share_increment=self._hedge_min_share_increment(),
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
             )
         )
         if hedgeable_qty <= 0:
             return
+        fill = MakerFill(
+            fill_id=f"take_take:{order_id}",
+            side=aggregated_side,
+            qty=hedgeable_qty,
+            price=self._required_decimal(accumulator.get("price"), field_name="price"),
+            ts_ms=fill_ts_ms,
+        )
         quote = self._reference_quote_snapshot(now_ns=now_ns)
         if quote is None:
-            self._queue_hedge_backlog(
-                fill_id=f"take_take:{order_id}",
-                side="SELL" if aggregated_side == "BUY" else "BUY",
-                requested_qty=hedgeable_qty,
+            self._queue_hedge_backlog_for_fill(
+                fill=fill,
+                maker_fee_bps=self._fee_assumptions().hl_maker_fee_bps,
                 blocked_reason="missing_ref_quote",
-                fill_ts_ms=fill_ts_ms,
-                maker_fee_bps=self._fee_assumptions().maker_maker_fee_bps,
             )
             return
         fee_assumptions = self._fee_assumptions()
-        pending = self._build_pending_hedge_state(
-            fill_id=f"take_take:{order_id}",
-            hedge_side="SELL" if aggregated_side == "BUY" else "BUY",
-            hedge_qty=hedgeable_qty,
+        order = self.record_maker_fill(
+            fill=fill,
             quote=quote,
-            maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
-            fill_ts_ms=fill_ts_ms,
+            maker_fee_bps=fee_assumptions.hl_maker_fee_bps,
         )
-        if isinstance(pending, str):
-            if self._is_retryable_hedge_block_reason(pending):
-                self._queue_hedge_backlog(
-                    fill_id=f"take_take:{order_id}",
-                    side="SELL" if aggregated_side == "BUY" else "BUY",
-                    requested_qty=hedgeable_qty,
-                    blocked_reason=pending,
-                    fill_ts_ms=fill_ts_ms,
-                    maker_fee_bps=fee_assumptions.maker_maker_fee_bps,
-                )
-                return
-            self._disable_hedging(pending)
+        if order is None:
             return
-        order, pending_state = pending
-        self._hedge_requests.append(order)
-        self._pending_hedge = pending_state
-        self._hedge_backlog = None
-        self.tradeable = True
-        self.hedge_disabled_reason = None
         remaining_qty = aggregated_qty - hedgeable_qty
         self._store_take_take_residual(
             side=aggregated_side,
@@ -2786,25 +2551,12 @@ class MakerV4Strategy(Strategy):
         reason = getattr(event, "reason", None)
         if not is_venue_protection_reason(reason):
             return False
-        instrument_id = getattr(event, "instrument_id", None)
-        maker_order_event = (
-            instrument_id is not None
-            and self._instrument_id_matches(instrument_id, self.config.maker_instrument_id)
-        ) or (
-            self._managed_maker_state_for_client_order_id(
-                getattr(event, "client_order_id", None),
-            )
-            is not None
-        )
         self._reconcile_managed_maker_order(event)
         self._record_venue_protection(
             reason=reason,
             source_event=source_event,
             client_order_id=getattr(event, "client_order_id", None),
         )
-        if maker_order_event:
-            self._publish_state_snapshot(now_ns=self._quote_ts_ns(getattr(event, "ts_event", 0)))
-            return True
         self._disable_hedging("venue_protection")
         self._publish_state_snapshot(now_ns=self._quote_ts_ns(getattr(event, "ts_event", 0)))
         return True
@@ -2850,7 +2602,6 @@ class MakerV4Strategy(Strategy):
             self.config.maker_instrument_id: maker_instrument,
             self.config.reference_instrument_id: reference_instrument,
         }
-        self._books = {}
         subscribed_instrument_ids: list[Any] = []
         self._last_market_bbo_publish_ns = {}
         for instrument_id in (
@@ -2861,14 +2612,8 @@ class MakerV4Strategy(Strategy):
                 continue
             subscribed_instrument_ids.append(instrument_id)
             self._last_market_bbo_publish_ns[instrument_id] = 0
-            if (
-                instrument_id == self.config.maker_instrument_id
-                and self._maker_uses_order_book_deltas()
-            ):
-                self._subscribe_maker_book_deltas_or_fallback_to_quotes(instrument_id)
-            else:
-                self._prime_cached_quote(instrument_id)
-                self.subscribe_quote_ticks(instrument_id=instrument_id)
+            self._prime_cached_quote(instrument_id)
+            self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         provider_start = getattr(self._reference_balance_snapshot_provider, "start", None)
         if callable(provider_start):
@@ -2892,15 +2637,8 @@ class MakerV4Strategy(Strategy):
             if instrument_id in unsubscribed_instrument_ids:
                 continue
             unsubscribed_instrument_ids.append(instrument_id)
-            if (
-                instrument_id == self.config.maker_instrument_id
-                and self._maker_uses_order_book_deltas()
-            ):
-                with suppress(Exception):
-                    self.unsubscribe_order_book_deltas(instrument_id=instrument_id)
-            else:
-                with suppress(Exception):
-                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+            with suppress(Exception):
+                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
         provider_stop = getattr(self._reference_balance_snapshot_provider, "stop", None)
         if callable(provider_stop):
             with suppress(Exception):
@@ -2962,51 +2700,6 @@ class MakerV4Strategy(Strategy):
         self._publish_balances_if_due()
         self._publish_state_snapshot(now_ns=ts_ns)
 
-    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-        instrument_id = getattr(deltas, "instrument_id", None)
-        if instrument_id is None:
-            return
-
-        book = self._books.get(instrument_id)
-        if book is None:
-            return
-
-        book.apply_deltas(deltas)
-        ts_ns = self._quote_ts_ns(
-            getattr(deltas, "ts_event", 0) or getattr(book, "ts_last", 0),
-        )
-        self._refresh_runtime_params_if_due(now_ns=ts_ns)
-        bid = self._decimal_or_none(book.best_bid_price())
-        ask = self._decimal_or_none(book.best_ask_price())
-        should_publish_bbo = (
-            bid is not None
-            and ask is not None
-            and self._should_publish_market_bbo(
-                instrument_id=instrument_id,
-                bid=bid,
-                ask=ask,
-                now_ns=ts_ns,
-            )
-        )
-        self._update_quote_snapshot(
-            instrument_id=instrument_id,
-            bid=bid,
-            ask=ask,
-            ts_ns=ts_ns,
-        )
-        self._retry_hedge_backlog(now_ns=ts_ns)
-        self._refresh_maker_quotes(now_ns=ts_ns)
-        if should_publish_bbo and bid is not None and ask is not None:
-            self._last_market_bbo_publish_ns[instrument_id] = ts_ns
-            self._publish_market_bbo(
-                instrument_id=instrument_id,
-                bid=bid,
-                ask=ask,
-                ts_ns=ts_ns,
-            )
-        self._publish_balances_if_due()
-        self._publish_state_snapshot(now_ns=ts_ns)
-
     def on_order_filled(self, event: Any) -> None:
         instrument_id = getattr(event, "instrument_id", None)
         if instrument_id is None:
@@ -3044,12 +2737,6 @@ class MakerV4Strategy(Strategy):
             maker_state = self._managed_maker_state_for_client_order_id(
                 getattr(event, "client_order_id", None),
             )
-            is_take_take_fill = maker_state is not None and not maker_state.post_only
-            if not is_take_take_fill:
-                is_take_take_fill = self._is_recent_take_take_order_id(
-                    getattr(event, "client_order_id", None),
-                    now_ns=now_ns,
-                )
             if maker_state is not None:
                 publish_shared_trade(
                     self._publish_json,
@@ -3059,7 +2746,7 @@ class MakerV4Strategy(Strategy):
                     trade_role="maker",
                 )
             self._apply_maker_fill_to_managed_order(event)
-            if is_take_take_fill:
+            if maker_state is not None and not maker_state.post_only:
                 if self._cache_order_is_closed(getattr(event, "client_order_id", None)):
                     self._reconcile_managed_maker_order(event)
                 self._handle_take_take_fill_event(event, now_ns=now_ns)
@@ -3154,11 +2841,15 @@ class MakerV4Strategy(Strategy):
                 self._disable_hedging(quote_error)
             return None
 
-        hedge_side = "SELL" if self._enum_name(fill.side) == "BUY" else "BUY"
-        hedge_qty = self._maker_fill_hedge_qty(fill_qty=fill.qty, fill_price=fill.price)
-        if hedge_qty is None:
-            self._disable_hedging("maker_qty_conversion_failed")
-            return None
+        hedge_side = "SELL" if str(fill.side).strip().upper() == "BUY" else "BUY"
+        hedge_qty = abs(
+            translate_hyperliquid_fill_to_ibkr_shares(
+                fill_qty=fill.qty,
+                min_share_increment=Decimal(
+                    str(getattr(self.config, "hedge_min_share_increment", Decimal("1")))
+                ),
+            )
+        )
         if hedge_qty <= 0:
             self._disable_hedging("hedge_qty_rounds_to_zero")
             return None

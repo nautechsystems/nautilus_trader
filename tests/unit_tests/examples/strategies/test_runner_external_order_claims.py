@@ -82,6 +82,7 @@ def test_tokenmm_build_node_sets_external_order_claims(monkeypatch) -> None:
 
 def test_equities_build_node_sets_external_order_claims(monkeypatch) -> None:
     maker_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    reference_instrument_id = InstrumentId.from_str("MSFT.NASDAQ")
     captured: dict[str, object] = {}
 
     def _captured_node(config):
@@ -96,7 +97,7 @@ def test_equities_build_node_sets_external_order_claims(monkeypatch) -> None:
         "resolve_strategy_venues",
         lambda **_kwargs: SimpleNamespace(
             execution_instrument_id=maker_instrument_id,
-            reference_instrument_id=InstrumentId.from_str("MSFT.NASDAQ"),
+            reference_instrument_id=reference_instrument_id,
             data_clients={},
             exec_clients={},
             data_factories={},
@@ -123,5 +124,11 @@ def test_equities_build_node_sets_external_order_claims(monkeypatch) -> None:
     )
 
     strategy = captured["node"].strategy
-    assert strategy.config.allowed_submit_instrument_ids == [maker_instrument_id]
-    assert strategy.config.external_order_claims == [maker_instrument_id]
+    assert strategy.config.allowed_submit_instrument_ids == [
+        maker_instrument_id,
+        reference_instrument_id,
+    ]
+    assert strategy.config.external_order_claims == [
+        maker_instrument_id,
+        reference_instrument_id,
+    ]

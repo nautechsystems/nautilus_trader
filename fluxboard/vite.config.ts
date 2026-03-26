@@ -24,6 +24,9 @@ function parseAllowedHosts(rawValue: string | undefined): string[] {
 }
 
 const fullVitestSuite = process.env.VITEST_FULL === '1';
+const hasExplicitVitestFileFilters = process.argv
+  .slice(2)
+  .some((arg) => /(^|\/).+\.(test|spec)\.[cm]?[jt]sx?$/.test(arg));
 
 const quarantinedGlobs = [
   'e2e/**',                      // Playwright suites (run via pnpm test:e2e)
@@ -44,6 +47,7 @@ const quarantinedGlobs = [
 ];
 
 const testExclude = fullVitestSuite
+  || hasExplicitVitestFileFilters
   ? configDefaults.exclude
   : [...configDefaults.exclude, ...quarantinedGlobs];
 
