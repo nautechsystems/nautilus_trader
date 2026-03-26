@@ -37,6 +37,8 @@ Use this for deployment and live-run concerns.
 2. Keep operational defaults and environment-specific wiring out of `engine/`.
 3. Reference canonical system entrypoints rather than duplicating runtime logic in shell scripts.
 4. Update runbooks whenever service names, env contracts, or launch sequences change.
+5. Treat deploy lanes as first-class architecture: `dev` is mutable, while `pilot` and `prod` must run from pinned release roots only.
+6. Do not let live services resolve to repo checkouts or worktrees; lane env files must point only at immutable release roots.
 
 ## Tooling change workflow
 
