@@ -223,6 +223,8 @@ impl PolymarketDataClient {
     async fn bootstrap_instruments(&mut self) -> anyhow::Result<()> {
         self.provider.load_all(None).await?;
 
+        let all_instruments = self.provider.store().list_all();
+        let total = all_instruments.len();
         for instrument in self.provider.store().list_all() {
             self.instruments.insert(instrument.id(), instrument.clone());
 
@@ -234,6 +236,7 @@ impl PolymarketDataClient {
             }
         }
 
+        log::info!("Published all {total} instruments to data engine");
         Ok(())
     }
 
@@ -771,7 +774,12 @@ impl DataClient for PolymarketDataClient {
 
         log::info!("Connecting Polymarket data client");
 
+        log::info!("Bootstrapping instruments from Gamma API...");
         self.bootstrap_instruments().await?;
+        log::info!(
+            "Bootstrap complete — {} instruments loaded",
+            self.instruments.load().len(),
+        );
 
         self.ws_client.connect().await?;
 
@@ -785,11 +793,13 @@ impl DataClient for PolymarketDataClient {
 
         if !token_ids.is_empty() || self.config.subscribe_new_markets {
             log::info!(
-                "Subscribing {} instruments to WS market data (subscribe_new_markets={})",
+                "Subscribing {} token IDs to WS market channel (subscribe_new_markets={})...",
                 token_ids.len(),
                 self.config.subscribe_new_markets,
             );
             self.ws_client.subscribe_market(token_ids).await?;
+        } else {
+            log::info!("No instruments to subscribe (skipped)");
         }
 
         let rx = self

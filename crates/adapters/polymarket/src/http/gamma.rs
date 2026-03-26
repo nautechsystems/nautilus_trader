@@ -172,7 +172,13 @@ impl PolymarketGammaRawHttpClient {
 /// prevent the remaining markets from being returned.
 fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
     let mut instruments = Vec::new();
+    let mut skipped_empty = 0u32;
     for market in markets {
+        // Markets without CLOB token IDs are not tradeable (resolved, pending, etc.)
+        if market.clob_token_ids.is_empty() {
+            skipped_empty += 1;
+            continue;
+        }
         match parse_gamma_market(market) {
             Ok(defs) => {
                 for def in defs {
@@ -184,6 +190,12 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
             }
             Err(e) => log::warn!("Failed to parse gamma market: {e}"),
         }
+    }
+
+    if skipped_empty > 0 {
+        log::debug!(
+            "Skipped {skipped_empty} markets with empty clob_token_ids (currently not tradeable)"
+        );
     }
     instruments
 }
@@ -231,6 +243,7 @@ impl PolymarketGammaHttpClient {
         let max_markets = base_params.max_markets;
         let mut all_markets = Vec::new();
         let mut offset: u32 = base_params.offset.unwrap_or(0);
+        let mut page_num = 0u32;
 
         loop {
             let params = GetGammaMarketsParams {
@@ -241,7 +254,13 @@ impl PolymarketGammaHttpClient {
 
             let page = self.inner.get_gamma_markets(params).await?;
             let page_len = page.len() as u32;
+            page_num += 1;
             all_markets.extend(page);
+
+            log::info!(
+                "Fetched markets page {page_num}: {page_len} markets (total: {})",
+                all_markets.len(),
+            );
 
             if let Some(cap) = max_markets
                 && all_markets.len() as u32 >= cap
@@ -553,6 +572,7 @@ impl PolymarketGammaHttpClient {
         let max_events = base_params.max_events;
         let mut all_events = Vec::new();
         let mut offset: u32 = base_params.offset.unwrap_or(0);
+        let mut page_num = 0u32;
 
         loop {
             let params = GetGammaEventsParams {
@@ -563,7 +583,14 @@ impl PolymarketGammaHttpClient {
 
             let page = self.inner.get_gamma_events(params).await?;
             let page_len = page.len() as u32;
+            page_num += 1;
+            let market_count: usize = page.iter().map(|e| e.markets.len()).sum();
             all_events.extend(page);
+
+            log::info!(
+                "Fetched events page {page_num}: {page_len} events, {market_count} markets (total events: {})",
+                all_events.len(),
+            );
 
             if let Some(cap) = max_events
                 && all_events.len() as u32 >= cap
@@ -589,11 +616,13 @@ impl PolymarketGammaHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let events = self.fetch_gamma_events_paginated(params).await?;
         let ts_init = self.clock.get_time_ns();
+        let total_events = events.len();
         let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let total_markets = markets.len();
         let instruments = parse_markets_to_instruments(&markets, ts_init);
-        log::debug!(
-            "Parsed {} instruments from event params query",
-            instruments.len()
+        log::info!(
+            "Parsed {} instruments from {total_events} events ({total_markets} markets)",
+            instruments.len(),
         );
         Ok(instruments)
     }
