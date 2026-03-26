@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
@@ -298,6 +299,8 @@ class BitgetExecutionClient(LiveExecutionClient):
                     locked_amount = implied_locked
             else:
                 total_amount = Decimal(str(entry.get("equity") or (free_amount + locked_amount)))
+            if free_amount + locked_amount != total_amount:
+                free_amount = total_amount - locked_amount
             free = Money(free_amount, currency)
             locked = Money(locked_amount, currency)
             total = Money(total_amount, currency)
@@ -704,6 +707,15 @@ class BitgetExecutionClient(LiveExecutionClient):
                 matches.append((instrument, product_type))
 
         if not matches:
+            provider_find = getattr(self._instrument_provider, "find", None)
+            if callable(provider_find):
+                instrument = provider_find(InstrumentId.from_str(f"{raw_symbol}-PERP.BITGET"))
+                if instrument is not None:
+                    product_type = BitgetExecutionClient._product_type_for_instrument(self, instrument)
+                    if BitgetExecutionClient._product_type_key(product_type) != "SPOT":
+                        matches.append((instrument, product_type))
+
+        if not matches:
             return None, None, None
 
         if len(matches) > 1:
@@ -1100,8 +1112,14 @@ class BitgetExecutionClient(LiveExecutionClient):
         total_value = (
             BitgetExecutionClient._field(payload, "total")
             or BitgetExecutionClient._field(payload, "size")
-            or "0"
         )
+        if total_value in (None, "") and (
+            BitgetExecutionClient._account_mode_from_config(getattr(self, "_config", None)) == "UTA"
+            and BitgetExecutionClient._product_type_key(product_type) != "SPOT"
+        ):
+            total_value = BitgetExecutionClient._field(payload, "available")
+        if total_value in (None, ""):
+            total_value = "0"
         total = Decimal(BitgetExecutionClient._string_value(total_value))
         ts_event = BitgetExecutionClient._timestamp_ns_from_value(
             BitgetExecutionClient._field(payload, "uTime")

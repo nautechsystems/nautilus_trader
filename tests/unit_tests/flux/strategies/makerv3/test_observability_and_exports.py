@@ -1,11 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from decimal import Decimal
+import sys
 from types import SimpleNamespace
+from types import ModuleType
 from typing import Any
 
 import pytest
+
+
+@dataclass(frozen=True)
+class _IBOrderTagsStub:
+    outsideRth: bool = False
+    includeOvernight: bool = False
+
+    @property
+    def value(self) -> str:
+        return f"outsideRth={self.outsideRth};includeOvernight={self.includeOvernight}"
+
+
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+_IB_COMMON_STUB.IBOrderTags = _IBOrderTagsStub
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
 
 from nautilus_trader.flux.api.payloads import build_balances_rows
 from nautilus_trader.flux.common.account_projection import encode_profile_account_snapshot
@@ -547,6 +566,50 @@ def test_publish_state_exports_spot_borrow_blocker_metadata(clocked_strategy_fac
     assert state_payload["quote_blockers"][0]["reason_code"] == "spot_borrow_cap"
     assert state_payload["quote_blockers"][0]["blocked_side"] == "SELL"
     assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
+
+
+def test_spot_borrow_block_alerts_are_rate_limited_until_recovery_transition(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory(
+        [1_000_000_000, 1_001_000_000, 1_002_000_000, 1_003_000_000],
+        maker_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+    )
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = MakerV3Strategy._publish_actionable_alert.__get__(
+        strategy,
+        MakerV3Strategy,
+    )
+    strategy._publish_alert = MakerV3Strategy._publish_alert.__get__(strategy, MakerV3Strategy)
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason="binance_http_error: status=400 code=51006 msg=Exceeds maximum borrowable amount.",
+        now_ns=1_000_000_000,
+    )
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason="binance_http_error: status=400 code=51006 msg=Exceeds maximum borrowable amount.",
+        now_ns=1_001_000_000,
+    )
+    strategy._clear_spot_borrow_block(
+        side=OrderSide.SELL,
+        now_ns=1_002_000_000,
+        recovery="inventory_recovered",
+    )
+    strategy._record_spot_borrow_block(
+        side=OrderSide.SELL,
+        reason="binance_http_error: status=400 code=51006 msg=Exceeds maximum borrowable amount.",
+        now_ns=1_003_000_000,
+    )
+
+    alerts = [payload for topic, payload in payloads if topic == TOPIC_ALERT]
+    assert len(alerts) == 2
+    assert all(payload["level"] == "warning" for payload in alerts)
+    assert all(payload["reason_code"] == "spot_borrow_cap" for payload in alerts)
 
 
 def test_publish_state_extracts_exchange_code_from_live_binance_dict_reason(

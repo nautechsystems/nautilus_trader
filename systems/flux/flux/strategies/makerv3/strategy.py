@@ -1063,6 +1063,22 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "blocked_since_ts_ms": blocked_since_ts_ms,
             }
             self._side_quote_blockers[side_text] = blocker
+            self._publish_actionable_alert(
+                alert_key="spot_borrow_cap",
+                message=(
+                    "spot_borrow_cap "
+                    f"blocked_side={side_text} exchange_code={exchange_code!r} reason={reason!r}"
+                ),
+                level="warning",
+                reason_code="spot_borrow_cap",
+                cooldown_ms=SPOT_BORROW_BLOCK_ALERT_COOLDOWN_MS,
+                transition=f"spot_borrow_cap:{side_text}:{blocked_since_ts_ms}",
+                now_ns=now_ns,
+                blocked_side=side_text,
+                exchange_code=exchange_code,
+                raw_reason=str(reason),
+                blocked_since_ts_ms=blocked_since_ts_ms,
+            )
             self._publish_event(
                 "spot_borrow_blocked",
                 blocked_side=side_text,
@@ -3263,3 +3279,4 @@ else:
                 raise ModuleNotFoundError(
                     "NautilusTrader runtime modules are unavailable in this environment",
                 ) from _NAUTILUS_IMPORT_ERROR
+SPOT_BORROW_BLOCK_ALERT_COOLDOWN_MS = 300_000

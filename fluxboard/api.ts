@@ -1759,6 +1759,8 @@ export const api = {
       limit: number;
       offset: number;
       last_seq?: number;
+      reset_required?: boolean;
+      compatibility_mode?: boolean;
       page?: number;
       page_size?: number;
       total_records?: number;
@@ -1812,6 +1814,8 @@ export const api = {
       next_offset: nextOffset,
       next_cursor: nextCursorValue,
       sort: typeof data.sort === 'string' ? data.sort : (params.sort as string | undefined),
+      reset_required: typeof data.reset_required === 'boolean' ? data.reset_required : false,
+      compatibility_mode: typeof data.compatibility_mode === 'boolean' ? data.compatibility_mode : false,
     };
   },
 
@@ -1819,7 +1823,12 @@ export const api = {
     cursor: TradesDeltaCursor,
     limit = 2000,
     init?: RequestInit
-  ): Promise<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }> => {
+  ): Promise<{
+    rows: TradeEvent[];
+    last_seq?: number;
+    reset_required?: boolean;
+    compatibility_mode?: boolean;
+  }> => {
     const resolvedCursor =
       typeof cursor === 'number'
         ? { sinceSeq: cursor }
@@ -1851,7 +1860,12 @@ export const api = {
       qs.set('since_seq', String(sinceSeq));
     }
     appendProfileQuery(qs);
-    const r = await fetchJSON<FluxEnvelope<{ rows: TradeEvent[]; last_seq?: number; reset_required?: boolean }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
+    const r = await fetchJSON<FluxEnvelope<{
+      rows: TradeEvent[];
+      last_seq?: number;
+      reset_required?: boolean;
+      compatibility_mode?: boolean;
+    }>>(`/api/v1/trades/delta?${qs.toString()}`, init);
     const data = unwrapFluxEnvelope(r);
     const rows = (data.rows || [])
       .map((row, index) => normalizeTradeEventCandidate(row, index, sinceSeq + index + 1))
@@ -1861,6 +1875,7 @@ export const api = {
       rows,
       last_seq: typeof data.last_seq === 'number' ? data.last_seq : (maxSeq > 0 ? maxSeq : sinceSeq),
       reset_required: data.reset_required,
+      compatibility_mode: typeof data.compatibility_mode === 'boolean' ? data.compatibility_mode : false,
     };
   },
 

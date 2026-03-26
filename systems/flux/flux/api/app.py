@@ -2117,6 +2117,13 @@ def create_flux_api_app(  # noqa: C901
                     details={"strategy_id": strategy_id},
                 )
             state_summary = store.load_state_summary(strategy_id)
+            state_ts_ms = safe_int(state_summary.get("state_ts_ms"))
+            if (
+                state_summary.get("state") == "on_stop"
+                and state_ts_ms is not None
+                and now_ms() - state_ts_ms > PARAMS_RUNNING_STALE_AFTER_MS
+            ):
+                state_summary = {}
             payload = build_params_payload(
                 strategy_id=strategy_id,
                 params=params,
@@ -2857,25 +2864,11 @@ def create_flux_api_app(  # noqa: C901
                 continue
             filtered_rows.append(row)
 
-        if _tokenmm_trade_rows_require_reset_for_strategies(
+        compatibility_mode = _tokenmm_trade_rows_require_reset_for_strategies(
             strategy_ids=strategy_ids,
             metadata_resolver=_metadata_for_strategy,
             stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
-        ):
-            payload: dict[str, Any] = {
-                "rows": [],
-                "total": 0,
-                "limit": limit,
-                "requested_limit": int(requested_limit if requested_limit is not None else limit),
-                "effective_limit": limit,
-                "max_limit": 200,
-                "offset": offset,
-                "has_more": False,
-                "last_seq": 0,
-                "sort": sort_label,
-                "reset_required": True,
-            }
-            return _ok(data=payload)
+        )
 
         if multi_strategy_profile_fanout:
             filtered_rows.sort(
@@ -2905,7 +2898,10 @@ def create_flux_api_app(  # noqa: C901
             "has_more": has_more,
             "last_seq": last_seq,
             "sort": sort_label,
+            "reset_required": False,
         }
+        if compatibility_mode:
+            payload["compatibility_mode"] = True
         if has_more:
             payload["next_offset"] = offset + len(rows)
         return _ok(data=payload)
@@ -2927,18 +2923,27 @@ def create_flux_api_app(  # noqa: C901
             and bool(profile_strategy_ids)
             and len(strategy_ids) > 1
         )
-        if _tokenmm_trade_rows_require_reset_for_strategies(
+        compatibility_mode = _tokenmm_trade_rows_require_reset_for_strategies(
             strategy_ids=strategy_ids,
             metadata_resolver=_metadata_for_strategy,
             stream_reset_resolver=store.tokenmm_trade_stream_requires_reset,
-        ):
-            return _ok(
-                data={
-                    "rows": [],
-                    "last_seq": 0,
-                    "reset_required": True,
-                },
-            )
+        )
+
+        def _delta_ok(
+            *,
+            rows: list[dict[str, Any]],
+            last_seq: int,
+            reset_required: bool,
+        ) -> Response:
+            payload: dict[str, Any] = {
+                "rows": rows,
+                "last_seq": int(last_seq),
+                "reset_required": reset_required,
+            }
+            if compatibility_mode:
+                payload["compatibility_mode"] = True
+            return _ok(data=payload)
+
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         since_seq = safe_int(request.args.get("since_seq"))
         since_ms = None if since_seq is not None else coerce_ts_ms(request.args.get("after"))
@@ -2950,13 +2955,7 @@ def create_flux_api_app(  # noqa: C901
             if since_seq is not None:
                 # Safe Phase 1 behavior: multi-strategy profile delta does not claim
                 # a synthetic global cursor; clients should resync to snapshot.
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": 0,
-                        "reset_required": since_seq > 0,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=0, reset_required=since_seq > 0)
 
             rows: list[dict[str, Any]] = []
             for strategy_id in strategy_ids:
@@ -2972,13 +2971,7 @@ def create_flux_api_app(  # noqa: C901
                     normalized_row.setdefault("strategy_id", strategy_id)
                     rows.append(normalized_row)
             rows.sort(key=_trade_replay_sort_key)
-            return _ok(
-                data={
-                    "rows": rows[:limit],
-                    "last_seq": 0,
-                    "reset_required": False,
-                },
-            )
+            return _delta_ok(rows=rows[:limit], last_seq=0, reset_required=False)
 
         strategy_id = strategy_ids[0]
         base_first_qty = _strategy_groups_include_tokenmm(_metadata_for_strategy(strategy_id))
@@ -2996,33 +2989,22 @@ def create_flux_api_app(  # noqa: C901
             parsed_seqs = [seq for seq in seq_values if seq is not None]
             if not parsed_seqs:
                 reset_required = since_seq > 0
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": 0,
-                        "reset_required": reset_required,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=0, reset_required=reset_required)
 
             min_seq = min(parsed_seqs)
             max_seq = max(parsed_seqs)
             if since_seq < (min_seq - 1):
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": int(since_seq),
-                        "reset_required": True,
-                    },
-                )
+                if compatibility_mode and since_seq <= 0:
+                    rows = scanned_rows[:limit]
+                    return _delta_ok(
+                        rows=rows,
+                        last_seq=_extract_last_seq(rows, fallback=max_seq),
+                        reset_required=False,
+                    )
+                return _delta_ok(rows=[], last_seq=int(since_seq), reset_required=True)
 
             if since_seq > max_seq:
-                return _ok(
-                    data={
-                        "rows": [],
-                        "last_seq": int(max_seq),
-                        "reset_required": True,
-                    },
-                )
+                return _delta_ok(rows=[], last_seq=int(max_seq), reset_required=True)
 
             eligible_rows: list[dict[str, Any]] = []
             for row in scanned_rows:
@@ -3033,12 +3015,10 @@ def create_flux_api_app(  # noqa: C901
             eligible_rows.sort(key=lambda item: safe_int(item.get("seq")) or 0)
             rows = eligible_rows[:limit]
             last_seq = safe_int(rows[-1].get("seq")) if rows else since_seq
-            return _ok(
-                data={
-                    "rows": rows,
-                    "last_seq": int(last_seq if last_seq is not None else since_seq),
-                    "reset_required": False,
-                },
+            return _delta_ok(
+                rows=rows,
+                last_seq=int(last_seq if last_seq is not None else since_seq),
+                reset_required=False,
             )
 
         if since_ms is not None:
@@ -3047,12 +3027,10 @@ def create_flux_api_app(  # noqa: C901
                 since_ms=since_ms,
             )
             rows = rows[:limit]
-            return _ok(
-                data={
-                    "rows": rows,
-                    "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
-                    "reset_required": False,
-                },
+            return _delta_ok(
+                rows=rows,
+                last_seq=_extract_last_seq(rows, fallback=fallback_seq),
+                reset_required=False,
             )
 
         rows = store.load_trades_rows(
@@ -3062,12 +3040,10 @@ def create_flux_api_app(  # noqa: C901
             since_seq=None,
             base_first_qty=base_first_qty,
         )
-        return _ok(
-            data={
-                "rows": rows,
-                "last_seq": _extract_last_seq(rows, fallback=fallback_seq),
-                "reset_required": False,
-            },
+        return _delta_ok(
+            rows=rows,
+            last_seq=_extract_last_seq(rows, fallback=fallback_seq),
+            reset_required=False,
         )
 
     @app.get("/api/v1/alerts")

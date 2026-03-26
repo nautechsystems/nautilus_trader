@@ -399,14 +399,16 @@ def test_tokenmm_trades_snapshot_and_delta_require_reset_when_legacy_rows_lack_n
         delta_body = delta_response.get_json()
 
     assert trades_response.status_code == 200
-    assert trades_body["data"]["reset_required"] is True
-    assert trades_body["data"]["rows"] == []
-    assert trades_body["data"]["last_seq"] == 0
+    assert trades_body["data"]["compatibility_mode"] is True
+    assert trades_body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in trades_body["data"]["rows"]] == ["t-legacy"]
+    assert trades_body["data"]["last_seq"] == 101
 
     assert delta_response.status_code == 200
-    assert delta_body["data"]["reset_required"] is True
-    assert delta_body["data"]["rows"] == []
-    assert delta_body["data"]["last_seq"] == 0
+    assert delta_body["data"]["compatibility_mode"] is True
+    assert delta_body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in delta_body["data"]["rows"]] == ["t-legacy"]
+    assert delta_body["data"]["last_seq"] == 101
 
 
 def test_tokenmm_trades_snapshot_requires_reset_when_legacy_rows_fall_outside_visible_page(
@@ -463,9 +465,10 @@ def test_tokenmm_trades_snapshot_requires_reset_when_legacy_rows_fall_outside_vi
         body = response.get_json()
 
     assert response.status_code == 200
-    assert body["data"]["reset_required"] is True
-    assert body["data"]["rows"] == []
-    assert body["data"]["last_seq"] == 0
+    assert body["data"]["compatibility_mode"] is True
+    assert body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["t-103", "t-102"]
+    assert body["data"]["last_seq"] == 103
 
 
 def test_tokenmm_trades_delta_requires_reset_when_legacy_rows_fall_outside_bounded_scan(
@@ -516,9 +519,10 @@ def test_tokenmm_trades_delta_requires_reset_when_legacy_rows_fall_outside_bound
         body = response.get_json()
 
     assert response.status_code == 200
-    assert body["data"]["reset_required"] is True
-    assert body["data"]["rows"] == []
-    assert body["data"]["last_seq"] == 0
+    assert body["data"]["compatibility_mode"] is True
+    assert body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["t-2001"]
+    assert body["data"]["last_seq"] == 2_001
 
 
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
