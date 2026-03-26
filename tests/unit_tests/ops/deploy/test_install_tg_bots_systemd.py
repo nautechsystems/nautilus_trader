@@ -25,6 +25,23 @@ def _make_release_root(root: Path) -> None:
     python_bin.chmod(python_bin.stat().st_mode | stat.S_IXUSR)
 
 
+def _run_installer_snippet(snippet: str, *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    repo_root = _repo_root()
+    script_path = repo_root / "ops/scripts/deploy/install_tg_bots_systemd.sh"
+    return subprocess.run(  # noqa: S603 - controlled test invocation of repo shell helper
+        [
+            "/usr/bin/bash",
+            "-lc",
+            f'source "{script_path}"\n{snippet}\n',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env=env,
+    )
+
+
 def test_install_tg_bots_systemd_seeds_readable_local_config() -> None:
     script = (_repo_root() / "ops/scripts/deploy/install_tg_bots_systemd.sh").read_text(
         encoding="utf-8"
@@ -74,13 +91,13 @@ FLUX_TG_BOTS_LOG_LEVEL=DEBUG
         }
     )
     subprocess.run(  # noqa: S603 - controlled test invocation of the repo installer helper
-            [
-                "/usr/bin/bash",
-                "-lc",
-                f'source "{repo_root / "ops/scripts/deploy/install_tg_bots_systemd.sh"}"\ninitialize_stack_context\nrender_service_env\n',
-            ],
-            check=True,
-            env=env,
+        [
+            "/usr/bin/bash",
+            "-lc",
+            f'source "{repo_root / "ops/scripts/deploy/install_tg_bots_systemd.sh"}"\ninitialize_stack_context\nrender_service_env\n',
+        ],
+        check=True,
+        env=env,
         cwd=repo_root,
     )
 
@@ -151,3 +168,54 @@ def test_render_service_env_uses_release_root_python_and_env_overrides(tmp_path:
     ) in rendered_env
     assert f"WORKDIR={deploy_root}" in rendered_env
     assert f"PYTHONPATH={deploy_root}" in rendered_env
+
+
+def test_resolve_deploy_root_honors_explicit_release_root(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    common_env_path = env_dir / "common.env"
+    deploy_root = tmp_path / "releases/prod/tg_bots/current"
+    _make_release_root(deploy_root)
+    _write(common_env_path, "WORKDIR=/tmp/old-common-root\n")
+
+    result = _run_installer_snippet(
+        "resolve_deploy_root\n",
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "TG_BOTS_DEPLOY_ROOT": str(deploy_root),
+        },
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(deploy_root)
+
+
+def test_require_deploy_root_rejects_git_checkout(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    common_env_path = env_dir / "common.env"
+    checkout_root = tmp_path / "checkout"
+    checkout_root.mkdir(parents=True)
+    subprocess.run(
+        ["git", "init", str(checkout_root)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = _run_installer_snippet(
+        "initialize_stack_context\n",
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "TG_BOTS_DEPLOY_ROOT": str(checkout_root),
+        },
+    )
+
+    assert result.returncode != 0
+    assert "must not be a git checkout" in result.stderr

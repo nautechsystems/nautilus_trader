@@ -74,6 +74,14 @@ initialize_stack_context() {
 }
 
 
+require_project_python() {
+  if [[ ! -x "${TG_BOTS_PYTHON_BIN}" ]]; then
+    echo "[tg-bots-systemd] missing project python at ${TG_BOTS_PYTHON_BIN}; run \`uv sync --all-groups --all-extras\` in ${DEPLOY_ROOT} first" >&2
+    exit 1
+  fi
+}
+
+
 install_units() {
   strategy_stack_install_base_units \
     "${DEPLOY_ROOT}" \
@@ -215,6 +223,7 @@ enable_stack() {
 main() {
   initialize_stack_context
   require_sudo
+  require_project_python
   install_units
   render_service_env
   rebuild_pulse_sudoers
