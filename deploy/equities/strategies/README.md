@@ -19,7 +19,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 ## March 13, 2026 Prod Hardening Universe Policy
 
 - The checked-in active file set is pruned to the Tier 1 production basket below.
-- Treat the categories below as the source of truth for which strategy ids are active, disabled for second-wave validation, or decommissioned from the first-wave production set. Additional disabled `*.toml.disabled` files may remain in the directory as historical or rollback material until later cleanup removes them.
+- Treat the categories below as the source of truth for which symbol-level routes are active, disabled for second-wave validation, or decommissioned from the first-wave production set. Additional disabled `*.toml.disabled` files may remain in the directory as historical or rollback material until later cleanup removes them.
 
 ### Tier 1 Core Basket
 
@@ -45,6 +45,8 @@ This directory holds one TOML file per equities node process enrolled into the P
 - `tsla_tradexyz_taker`
 
 ### Second-Wave Disabled Basket
+
+- These lists use the legacy `*_makerv3` rollback identifier as a short symbol label. On disk, the same symbols may also carry disabled split `*_maker`, `*_taker`, or `*_makerv4` files.
 
 - `coin_tradexyz_makerv3`
 - `hood_tradexyz_makerv3`

@@ -21,7 +21,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe the active rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
+- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
 - `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
@@ -78,6 +78,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `tsla_tradexyz_taker`
 
 ### Second-Wave Disabled Basket
+
+- These lists use the legacy `*_makerv3` rollback identifier as a short symbol label. On disk, the same symbols may also carry disabled split `*_maker`, `*_taker`, or `*_makerv4` artifacts.
 
 - `coin_tradexyz_makerv3`
 - `hood_tradexyz_makerv3`
