@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-9-rt-alerts`
+- owner: `coordinator`
+- branch: `lanes/task-9-rt-alerts`
+- worktree: `.worktrees/task-9-rt-alerts`
+- depends_on: `Task 8: Refactor Shared Legacy Socket Adapter For Remaining Surfaces`
+- write_scope: `fluxboard/App.tsx`, `fluxboard/lib/realtime/runtimeBridge.ts`, `fluxboard/Alerts.tsx`, `fluxboard/components/domain/alerts/AlertsTable.tsx`, `fluxboard/components/domain/alerts/AlertDetails.tsx`, `fluxboard/components/domain/alerts/index.ts`, `fluxboard/Alerts.test.tsx`, `fluxboard/App.test.tsx`, `fluxboard/__tests__/panels/alerts.test.tsx`, `fluxboard/__tests__/panels/alerts.perf.test.tsx`, `fluxboard/__tests__/ui/AlertsTableAffordance.test.tsx`, `fluxboard/__tests__/ui/AlertsTableTypography.test.tsx`, `fluxboard/__tests__/realtime/legacy-adapter.test.tsx`, `fluxboard/__tests__/realtime/runtime-bridge-bootstrap.test.ts`, `fluxboard/__tests__/realtime/alerts-cutover-packet.test.ts`, `fluxboard/e2e/realtime-cutovers/alerts.spec.ts`, `docs/plans/realtime-surfaces/alerts-cutover.md`
+- rollout_control: `alerts surface flag + backend capability`
+- rollback_trigger: `legacy payload dependency, recovery regression, or baseline alerts behavior drift`
+- current status: `completed`
+- active task: `Task 9: Migrate Alerts Surface To The Standard`
+- current commit or diff: `1f2f16f740`
+- cutover_packet: `docs/plans/realtime-surfaces/alerts-cutover.md`
+- canary_scope: `alerts realtime surface`
+- minimum_canary_cohort: `1 internal profile-scoped /alerts canary for 7 consecutive days`
+- minimum_standard_subscribers: `1 flagged Alerts subscriber during the cleanup review window`
+- minimum_standard_event_volume: `50 alerts realtime_event packets/day, with recovery snapshot counts tracked separately as supporting evidence`
+- alert_state: `green in lane-owned verification; no active rollback trigger`
+- rollback_exercise_result: `pass via the flag-off Alerts test path preserving legacy fetch + polling behavior`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `active_standard_subscribers.alerts:v2, standard_subscribe_counts, standard_recovery_required_counts, plus client-observed initial fetch count, recovery fetch count per summary key, and surface health-state transitions`
+- legacy_traffic_status: `legacy-default`
+- verification run: `baseline red before Task 9 implementation: __tests__/panels/alerts.test.tsx failed on timer reset behavior and stale loading-copy expectations. lane green: VITEST_FULL=1 pnpm exec vitest run __tests__/realtime/runtime-bridge-bootstrap.test.ts __tests__/realtime/alerts-cutover-packet.test.ts passed (2 files, 2 tests). lane green: VITEST_FULL=1 pnpm exec vitest run App.test.tsx Alerts.test.tsx __tests__/panels/alerts.test.tsx __tests__/panels/alerts.perf.test.tsx __tests__/ui/AlertsTableAffordance.test.tsx __tests__/ui/AlertsTableTypography.test.tsx __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/runtime-bridge-bootstrap.test.ts __tests__/realtime/alerts-cutover-packet.test.ts passed (9 files, 48 tests). controller green: VITEST_FULL=1 pnpm exec vitest run App.test.tsx Alerts.test.tsx __tests__/panels/alerts.test.tsx __tests__/panels/alerts.perf.test.tsx __tests__/ui/AlertsTableAffordance.test.tsx __tests__/ui/AlertsTableTypography.test.tsx __tests__/realtime/legacy-adapter.test.tsx __tests__/realtime/runtime-bridge-bootstrap.test.ts __tests__/realtime/alerts-cutover-packet.test.ts passed (9 files, 48 tests). lane green: pnpm build:test passed. controller green: pnpm build:test passed. lane green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts passed (1 spec). controller green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/alerts.spec.ts passed (1 spec).`
+- blockers: `none for Alerts itself; downstream backend cleanup is still blocked by Balances and explicit rollback clients`
+- notes_last_update: `Task 9 originally integrated into controller as 4289aa7a84. Task 15a follow-up then migrated Alerts off the compatibility bridge onto the real backend standard contract, added canonical `contract_version=2` alerts lineage, moved flag-on Alerts to the standard subscribe/realtime_event transport, hardened stale request and failed authoritative-recovery handling, and closed the remaining review gaps around manual refresh recovery and alert `recovery_required` coverage. The reviewed follow-up integrated into controller as 1f2f16f740 with fresh spec and quality re-reviews returning no findings.`
+- next handoff: `Alerts is resolved for Task 15. Balances follow-up removes the last active surface-side cleanup blocker, while MarketData stays parked from the active cleanup wave and explicit rollback-client support still blocks backend legacy-event removal.`

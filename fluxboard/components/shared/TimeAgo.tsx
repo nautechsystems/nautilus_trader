@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useId, useMemo } from 'react';
+import { useViewportClock } from '@/hooks/useViewportClock';
 
 /**
  * TimeAgo
@@ -10,12 +11,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 export type TimeAgoProps = {
   /** Unix timestamp in seconds or milliseconds */
   timestamp: number | null | undefined;
-  /** Polling interval in ms for live updates (default: 1000ms) */
+  /** Shared polling interval in ms for live updates (default: 1000ms) */
   intervalMs?: number;
   /** Additional className for styling */
   className?: string;
+  /** Optional inline styles */
+  style?: React.CSSProperties;
   /** Optional override for "now" to keep all cells in sync */
   now?: number;
+  /** Shared clock key for grouped live cells */
+  clockKey?: string;
+  /** Stable cell id within the shared clock */
+  clockId?: string;
+  /** Whether this cell is currently visible and should receive ticks */
+  isVisible?: boolean;
 };
 
 function isMillis(ts: number) {
@@ -52,60 +61,44 @@ function formatLocal(tsMs: number): string {
   });
 }
 
-export function TimeAgo({ timestamp, intervalMs = 1000, className, now }: TimeAgoProps) {
-  const [tick, setTick] = useState(0);
-  const lastNowRef = React.useRef<number | undefined>(now);
-
-  // Track `now` prop changes to force re-renders when it updates
-  useEffect(() => {
-    if (typeof now === 'number' && now !== lastNowRef.current) {
-      lastNowRef.current = now;
-      // Force a tick update when `now` prop changes to trigger recalculation
-      setTick((t) => t + 1);
-    }
-  }, [now]);
-
-  useEffect(() => {
-    if (!timestamp) return;
-
-    // When `now` prop is provided, we still need a ticker to trigger re-renders
-    // so that useMemo recalculates with the latest `now` value from parent.
-    // However, we can optimize the interval when `now` is provided since the
-    // parent is already updating `now` periodically.
-    const m = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    const effectiveInterval = m?.matches ? Math.max(intervalMs, 5000) : intervalMs;
-
-    // If `now` is provided, use a shorter interval to ensure we react quickly
-    // to parent updates. Otherwise, use the standard interval.
-    // When `now` is provided and updating, we can rely on the parent's ticker
-    // and use a longer interval as a fallback (in case parent stops updating)
-    const tickerInterval = typeof now === 'number' ? Math.min(effectiveInterval, 1000) : effectiveInterval;
-
-    const id = window.setInterval(() => {
-      // Always increment tick to force recalculation
-      setTick((t) => t + 1);
-    }, tickerInterval);
-    return () => window.clearInterval(id);
-  }, [timestamp, intervalMs, now]);
+export function TimeAgo({
+  timestamp,
+  intervalMs = 1000,
+  className,
+  style,
+  now,
+  clockKey,
+  clockId,
+  isVisible = true,
+}: TimeAgoProps) {
+  const autoClockId = useId();
+  const reducedMotion =
+    typeof window !== 'undefined'
+      ? window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      : false;
+  const effectiveInterval = reducedMotion ? Math.max(intervalMs, 5000) : intervalMs;
+  const clockNow = useViewportClock({
+    clockKey,
+    subscriberId: clockId ?? autoClockId,
+    intervalMs: effectiveInterval,
+    active: Boolean(timestamp) && typeof now !== 'number' && isVisible,
+  });
 
   const { label, title } = useMemo(() => {
     if (!timestamp || timestamp <= 0) {
       return { label: '—', title: '' };
     }
     const tsMs = toMillis(timestamp);
-    // When `now` prop is provided, use it; otherwise fall back to Date.now()
-    // The `tick` dependency ensures we recalculate even when `now` doesn't change
-    // (for cases where parent doesn't provide `now` prop)
-    const referenceNow = typeof now === 'number' ? now : Date.now();
+    const referenceNow = typeof now === 'number' ? now : clockNow;
     const ageMs = referenceNow - tsMs;
     return {
       label: formatRelative(ageMs),
       title: formatLocal(tsMs),
     };
-  }, [timestamp, tick, now]);
+  }, [clockNow, now, timestamp]);
 
   return (
-    <span className={className} title={title} aria-label={title}>
+    <span className={className} style={style} title={title} aria-label={title}>
       {label}
     </span>
   );

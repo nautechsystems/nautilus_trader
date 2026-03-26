@@ -2,7 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api, deriveCanonicalNaming } from './api';
-import { socket } from './sockets';
+import {
+  socket,
+  type StandardSocketEventEnvelope,
+  type StandardSocketFailure,
+} from './sockets';
 import {
   useTradesStore,
   selectTradesRows,
@@ -12,10 +16,16 @@ import {
   markGlobalResyncApplied,
   shallow,
 } from './stores';
+import {
+  createRealtimeSurfaceController,
+  useRealtimeSurfaceController,
+  type RealtimeRowDelta,
+} from './hooks/useRealtimeSurfaceController';
+import { useStandardWebSocketSubscription } from './hooks/useWebSocket';
 import { useResyncStatus } from './hooks/useResyncStatus';
 import { TableFilter, type FilterValues, type ColumnFilter } from './components/shared/TableFilter';
 import { PanelHeader } from './components/shared/PanelHeader';
-import type { TradeRow, TradeEvent } from './types';
+import type { RealtimeSnapshotLineage, TradeRow, TradeEvent } from './types';
 import { playTradeClick } from './utils/sound';
 import { getSoundMuted, setSoundMuted } from './utils/storage';
 import { TradesTable, type TradesTableScrollState } from './components/trades/TradesTable';
@@ -25,9 +35,10 @@ import { Button } from './components/ui/button/Button';
 import { colors, spacing, typography, STALE_THRESHOLDS, borderRadius } from './lib/tokens';
 import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
 import { exportCSV, generateTimestampFilename } from './utils/export';
-import { isTradesDecisionDetailsEnabled } from './config/featureFlags';
-import { computeTradesRollups } from './components/trades/rollups';
+import { isRealtimeStandardEnabled, isTradesDecisionDetailsEnabled } from './config/featureFlags';
 import { resolvePathnameProfile } from './config/uiProfiles';
+import { computeTradesRollups } from './components/trades/rollups';
+import { RealtimeSurfaceState, type RealtimeSnapshotRevision } from './lib/realtime/types';
 
 const PERF_RENDER_ENABLED = typeof import.meta !== 'undefined'
   && Boolean(import.meta.env?.DEV)
@@ -57,6 +68,7 @@ const POLL_MAX_MS = 3000; // Cap backoff at 3s to reduce UI staleness
 const DELTA_LIMIT = 500;
 const MAX_EMPTY_POLLS = 3; // Log warning if this many consecutive polls return 0 trades
 const RECONNECT_CATCHUP_MIN_MS = 3000;
+const TRADE_HEALTH_STALE_MS = STALE_THRESHOLDS.REALTIME * 2;
 
 const coerceFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -93,6 +105,59 @@ type TradeReplayCursor = {
   tsMs: number;
   rowId: string;
   version: number;
+};
+
+type TradeStreamCursor = {
+  contractVersion?: number;
+  streamId?: string;
+  snapshotRevision?: RealtimeSnapshotRevision;
+  lastSeq: number;
+};
+
+function normalizeRealtimeSnapshotRevision(
+  value: RealtimeSnapshotRevision | undefined,
+): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  return String(value);
+}
+
+function matchesTradeStreamEpoch(
+  cursor: Pick<TradeStreamCursor, 'streamId' | 'snapshotRevision'>,
+  streamId: string | undefined,
+  snapshotRevision: RealtimeSnapshotRevision | undefined,
+): boolean {
+  return (
+    cursor.streamId === streamId
+    && normalizeRealtimeSnapshotRevision(cursor.snapshotRevision) === normalizeRealtimeSnapshotRevision(snapshotRevision)
+  );
+}
+
+const getTradeRowSortKey = (row: TradeRow): number => {
+  if (typeof row.ts === 'number' && Number.isFinite(row.ts)) {
+    return row.ts;
+  }
+  if (typeof row.seq === 'number' && Number.isFinite(row.seq)) {
+    return row.seq;
+  }
+  return 0;
+};
+
+const createTradeRowComparator = (
+  direction: 'ts_desc' | 'ts_asc',
+) => (left: TradeRow, right: TradeRow): number => {
+  const leftKey = getTradeRowSortKey(left);
+  const rightKey = getTradeRowSortKey(right);
+  if (leftKey !== rightKey) {
+    return direction === 'ts_desc' ? rightKey - leftKey : leftKey - rightKey;
+  }
+  if (left.seq !== right.seq) {
+    return direction === 'ts_desc' ? right.seq - left.seq : left.seq - right.seq;
+  }
+  return direction === 'ts_desc'
+    ? left.row_id.localeCompare(right.row_id)
+    : right.row_id.localeCompare(left.row_id);
 };
 
 const extractTradeTimestampMs = (value: any): number | undefined => {
@@ -272,12 +337,114 @@ const getTimestampParts = (payload: any): TradeTimestampParts => {
 export const hasReliableTradeTimestamp = (payload: any): boolean =>
   getTimestampParts(payload).hasReliableTimestamp;
 
+const toOptionalText = (value: unknown): string | undefined => {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+};
+
+const toTradeRow = (event: TradeEvent | null | undefined): TradeRow | null => {
+  if (!event || typeof event !== 'object' || event.op === 'delete' || !event.row_id) {
+    return null;
+  }
+
+  const seq = coerceFiniteNumber(event.seq);
+  if (seq === undefined) {
+    return null;
+  }
+
+  const versionValue = coerceFiniteNumber(event.version);
+  const version = versionValue !== undefined && versionValue > 0 ? Math.trunc(versionValue) : 1;
+  const tsMs = extractTradeTimestampMs(event);
+  const ts =
+    coerceFiniteNumber(event.ts) ??
+    tsMs ??
+    seq;
+  const timeText = String(event.time ?? '').trim();
+  const time = timeText || (tsMs !== undefined ? new Date(tsMs).toISOString() : '');
+  const price = coerceFiniteNumber(event.price);
+  const qty = coerceFiniteNumber(event.qty);
+  const derivedMv = price !== undefined && qty !== undefined ? price * qty : undefined;
+  const rawMv = coerceFiniteNumber((event as any).mv ?? (event as any).notional);
+  const mv =
+    (rawMv === undefined || rawMv === 0) && derivedMv !== undefined && derivedMv !== 0
+      ? derivedMv
+      : rawMv;
+
+  return {
+    time,
+    coin: String(event.coin ?? ''),
+    exchange: String(event.exchange ?? event.venue ?? '').trim().toLowerCase(),
+    venue: toOptionalText((event as any).venue),
+    symbol: toOptionalText((event as any).symbol),
+    instrument_uid: toOptionalText((event as any).instrument_uid),
+    instrument_id: toOptionalText((event as any).instrument_id),
+    venue_root: toOptionalText((event as any).venue_root),
+    product_type: toOptionalText((event as any).product_type),
+    market_type: toOptionalText((event as any).market_type),
+    contract_type: toOptionalText((event as any).contract_type),
+    raw_symbol: toOptionalText((event as any).raw_symbol),
+    base_asset: toOptionalText((event as any).base_asset),
+    quote_asset: toOptionalText((event as any).quote_asset),
+    pair: toOptionalText((event as any).pair),
+    inventory_asset: toOptionalText((event as any).inventory_asset),
+    display_name_short: toOptionalText((event as any).display_name_short),
+    display_name_long: toOptionalText((event as any).display_name_long),
+    side: normalizeTradeSide((event as any).side),
+    price: price ?? null,
+    qty: qty ?? null,
+    mv: mv ?? null,
+    fee: coerceFiniteNumber((event as any).fee) ?? null,
+    fee_asset_raw: (event as any).fee_asset_raw ?? (event as any).fee_currency ?? null,
+    fee_amount_raw: (event as any).fee_amount_raw ?? (event as any).fee_cost ?? null,
+    fee_quote: coerceFiniteNumber((event as any).fee_quote) ?? null,
+    exch_id: String(
+      (event as any).exch_id ??
+      (event as any).exec_id ??
+      (event as any).exchange_trade_id ??
+      (event as any).id ??
+      (event as any).tx_hash ??
+      (event as any).hash ??
+      '',
+    ),
+    trade_id: String((event as any).trade_id ?? ''),
+    signal_id: String((event as any).signal_id ?? ''),
+    strategy_id: toOptionalText((event as any).strategy_id),
+    order_id: String((event as any).exchange_order_id ?? (event as any).order_id ?? ''),
+    decision: (event as any).decision,
+    decision_timestamp: (event as any).decision_timestamp,
+    gas_used: (event as any).gas_used ?? (event as any).gas,
+    gas_units: coerceFiniteNumber((event as any).gas_units ?? (event as any).gas_used ?? (event as any).gas),
+    notes: (event as any).notes,
+    explorer_url: (event as any).explorer_url,
+    placeholder: Boolean(event.placeholder),
+    row_id: event.row_id,
+    version,
+    seq: Math.trunc(seq),
+    ts,
+  };
+};
+
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
+const STANDARD_REALTIME_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 100;
 
 const normalizePageSize = (value: unknown): number => {
   const parsed = parseInt(String(value ?? DEFAULT_PAGE_SIZE), 10);
   return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
+};
+
+const getInitialTradesPageSize = (tradesStandardEnabled: boolean): number => {
+  if (tradesStandardEnabled) {
+    return STANDARD_REALTIME_PAGE_SIZE;
+  }
+  if (typeof window === 'undefined' || !window?.sessionStorage) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  const stored = window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+  if (stored == null || stored === '') {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return normalizePageSize(stored);
 };
 
 const hasActiveFilters = (filters: FilterValues): boolean => {
@@ -289,6 +456,17 @@ const hasActiveFilters = (filters: FilterValues): boolean => {
     || (filters.signal_id ?? '').trim(),
   );
 };
+
+const isCanonicalTradesRealtimeView = (
+  page: number,
+  pageSize: number,
+  sort: 'ts_desc' | 'ts_asc',
+  filters: FilterValues,
+): boolean =>
+  page === 1
+  && pageSize === STANDARD_REALTIME_PAGE_SIZE
+  && sort === 'ts_desc'
+  && !hasActiveFilters(filters);
 
 const rowMatchesFilters = (row: any, filters: FilterValues): boolean => {
   if (!filters) return true;
@@ -411,6 +589,7 @@ type FetchOptions = {
   cursor?: string | null;
   append?: boolean;
   resyncId?: number;
+  allowManualRefreshClear?: boolean;
 };
 
 export default function Trades({
@@ -439,15 +618,9 @@ export default function Trades({
   const applyDelta = useTradesStore((state) => state.applyDelta);
   const resyncId = useResyncStore(selectResyncId);
   const { isResyncing } = useResyncStatus();
+  const tradesStandardEnabled = useMemo(() => isRealtimeStandardEnabled('trades'), []);
   const decisionDetailsEnabled = useMemo(() => isTradesDecisionDetailsEnabled(), []);
-
-  const [pageSize, setPageSize] = useState(() => {
-    if (typeof window === 'undefined' || !window?.sessionStorage) {
-      return DEFAULT_PAGE_SIZE;
-    }
-    const stored = window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY);
-    return normalizePageSize(stored);
-  });
+  const [pageSize, setPageSize] = useState(() => getInitialTradesPageSize(tradesStandardEnabled));
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState<boolean | null>(null);
@@ -463,6 +636,15 @@ export default function Trades({
   const [socketConnected, setSocketConnected] = useState(true);
   const [isViewingLatest, setIsViewingLatest] = useState(true);
   const [perfHarnessActive, setPerfHarnessActive] = useState(false);
+  const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
+  const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const [standardLineageGeneration, setStandardLineageGeneration] = useState<number | null>(null);
+  const [standardSubscriptionEpoch, setStandardSubscriptionEpoch] = useState(0);
+  const [canonicalViewGeneration, setCanonicalViewGeneration] = useState(0);
+  const tradesStandardActiveView = useMemo(
+    () => tradesStandardEnabled && isCanonicalTradesRealtimeView(page, pageSize, sort, filters),
+    [filters, page, pageSize, sort, tradesStandardEnabled],
+  );
 
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef<boolean>(true);
@@ -501,7 +683,184 @@ export default function Trades({
   const lastReconnectCatchupAtRef = useRef<number>(0);
   const latestTradeTsMsRef = useRef<number>(0);
   const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
-  const deltaCursorModeRef = useRef<'since_seq' | 'after'>('since_seq');
+  const streamCursorRef = useRef<TradeStreamCursor>({ lastSeq });
+  const gapRecoveryTargetSeqRef = useRef<number | null>(null);
+  const gapRecoveryBaseSeqRef = useRef<number | null>(null);
+  const gapRecoveryObservedReplaySeqsRef = useRef<Set<number>>(new Set());
+  const lastUpdateRef = useRef<number>(lastUpdate);
+  const loadingRef = useRef<boolean>(loading);
+  const isResyncingRef = useRef<boolean>(isResyncing);
+  const surfaceStateRef = useRef<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
+  const manualRefreshRequiredRef = useRef<boolean>(false);
+  const manualRefreshGenerationRef = useRef(0);
+  const standardLineageRef = useRef<RealtimeSnapshotLineage | null>(null);
+  const canonicalViewGenerationRef = useRef(0);
+  const previousTradesStandardActiveViewRef = useRef(tradesStandardActiveView);
+  const enqueueTradeMessageRef = useRef<(msg: any) => void>(() => undefined);
+  const standardSnapshotRecoveryInFlightRef = useRef<boolean>(false);
+
+  const tradesController = useMemo(() => createRealtimeSurfaceController<TradeRow>({
+    getRowId: (row) => row.row_id,
+    compareRows: createTradeRowComparator(sort),
+    initialRows: sort === 'ts_desc' ? storeRows : [...storeRows].reverse(),
+    batchSchedule: (flush) => {
+      if (typeof window === 'undefined') {
+        flush();
+        return () => {};
+      }
+      const id = window.requestAnimationFrame(flush);
+      return () => window.cancelAnimationFrame(id);
+    },
+  }), [sort]);
+  const tradesControllerRef = useRef(tradesController);
+  const controllerState = useRealtimeSurfaceController(
+    tradesController,
+    (snapshot) => ({
+      rows: snapshot.rows as TradeRow[],
+      dataVersion: snapshot.dataVersion,
+    }),
+  );
+
+  const trimControllerRows = useCallback(() => {
+    const overflowRows = tradesControllerRef.current.getSnapshot().rows.slice(pageSizeRef.current);
+    if (!overflowRows.length) {
+      return;
+    }
+    tradesControllerRef.current.applyDelta(
+      overflowRows.map((row) => ({ kind: 'delete', id: row.row_id } satisfies RealtimeRowDelta<TradeRow>)),
+    );
+  }, []);
+
+  const applyControllerSnapshot = useCallback((rows: TradeEvent[] | undefined | null) => {
+    const nextRows = (rows ?? [])
+      .map((row) => toTradeRow(row))
+      .filter((row): row is TradeRow => Boolean(row));
+    tradesControllerRef.current.applySnapshot(nextRows);
+  }, []);
+
+  const applyControllerDelta = useCallback((events: TradeEvent[] | undefined | null) => {
+    if (!events?.length) {
+      return;
+    }
+    const deltas = events.flatMap((event) => {
+      if (event.op === 'delete') {
+        return [{ kind: 'delete', id: event.row_id } satisfies RealtimeRowDelta<TradeRow>];
+      }
+      const row = toTradeRow(event);
+      return row
+        ? [{ kind: 'upsert', row } satisfies RealtimeRowDelta<TradeRow>]
+        : [];
+    });
+    if (!deltas.length) {
+      return;
+    }
+    tradesControllerRef.current.applyDelta(deltas);
+    trimControllerRows();
+  }, [trimControllerRows]);
+
+  const clearGapRecoveryState = useCallback(() => {
+    gapRecoveryTargetSeqRef.current = null;
+    gapRecoveryBaseSeqRef.current = null;
+    gapRecoveryObservedReplaySeqsRef.current.clear();
+  }, []);
+
+  const beginGapRecovery = useCallback((baseSeq: number, targetSeq: number) => {
+    if (gapRecoveryBaseSeqRef.current == null) {
+      gapRecoveryBaseSeqRef.current = baseSeq;
+    }
+    gapRecoveryTargetSeqRef.current = Math.max(
+      gapRecoveryTargetSeqRef.current ?? targetSeq,
+      targetSeq,
+    );
+  }, []);
+
+  const reconcileGapRecoveryTarget = useCallback((
+    lastSeq: number,
+    replaySeqs?: Iterable<number>,
+  ): { acknowledgedSeq: number; targetSeq: number | null } => {
+    const target = gapRecoveryTargetSeqRef.current;
+    const base = gapRecoveryBaseSeqRef.current;
+    if (target == null || base == null) {
+      return { acknowledgedSeq: lastSeq, targetSeq: null };
+    }
+
+    let acknowledgedSeq = base;
+    if (replaySeqs) {
+      for (const replaySeq of replaySeqs) {
+        if (replaySeq > acknowledgedSeq) {
+          gapRecoveryObservedReplaySeqsRef.current.add(replaySeq);
+        }
+      }
+    }
+
+    while (gapRecoveryObservedReplaySeqsRef.current.has(acknowledgedSeq + 1)) {
+      gapRecoveryObservedReplaySeqsRef.current.delete(acknowledgedSeq + 1);
+      acknowledgedSeq += 1;
+    }
+
+    gapRecoveryBaseSeqRef.current = acknowledgedSeq;
+    if (acknowledgedSeq >= target) {
+      clearGapRecoveryState();
+      return { acknowledgedSeq, targetSeq: null };
+    }
+
+    return { acknowledgedSeq, targetSeq: target };
+  }, [clearGapRecoveryState]);
+
+  const syncSurfaceState = useCallback(() => {
+    let nextState: RealtimeSurfaceState;
+    if (manualRefreshRequiredRef.current) {
+      nextState = RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
+    } else if (loadingRef.current && tradesControllerRef.current.getSnapshot().rows.length === 0) {
+      nextState = RealtimeSurfaceState.SYNCING;
+    } else if (
+      catchingUpRef.current
+      || isResyncingRef.current
+      || !streamCursorRef.current.streamId
+      || streamCursorRef.current.snapshotRevision == null
+    ) {
+      nextState = RealtimeSurfaceState.RECOVERING;
+    } else {
+      const ageMs = Date.now() - lastUpdateRef.current;
+      if (ageMs > TRADE_HEALTH_STALE_MS) {
+        nextState = RealtimeSurfaceState.STALE;
+      } else if (ageMs > STALE_THRESHOLDS.REALTIME) {
+        nextState = RealtimeSurfaceState.LAGGING;
+      } else {
+        nextState = RealtimeSurfaceState.LIVE;
+      }
+    }
+
+    surfaceStateRef.current = nextState;
+    setSurfaceState((current) => (current === nextState ? current : nextState));
+    return nextState;
+  }, []);
+
+  const clearManualRefreshRequired = useCallback(() => {
+    manualRefreshRequiredRef.current = false;
+    if (surfaceStateRef.current === RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED) {
+      surfaceStateRef.current = RealtimeSurfaceState.SYNCING;
+      setSurfaceState(RealtimeSurfaceState.SYNCING);
+    }
+  }, []);
+
+  const requireManualRefresh = useCallback(() => {
+    manualRefreshRequiredRef.current = true;
+    manualRefreshGenerationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (refreshTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
+    standardSnapshotRecoveryInFlightRef.current = false;
+    catchingUpRef.current = false;
+    clearGapRecoveryState();
+    setStandardLineage(null);
+    surfaceStateRef.current = RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
+    setSurfaceState(RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED);
+    setLoading(false);
+  }, [clearGapRecoveryState]);
 
   const advanceTradeReplayCursor = useCallback((rows: Array<any> | undefined | null) => {
     const latestCursor = getLatestTradeReplayCursor(rows);
@@ -528,8 +887,49 @@ export default function Trades({
   });
 
   useEffect(() => {
+    tradesControllerRef.current = tradesController;
+    return () => {
+      tradesController.destroy();
+    };
+  }, [tradesController]);
+
+  useEffect(() => {
     mutedRef.current = soundMuted;
   }, [soundMuted]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+    syncSurfaceState();
+  }, [loading, syncSurfaceState]);
+
+  useEffect(() => {
+    isResyncingRef.current = isResyncing;
+    syncSurfaceState();
+  }, [isResyncing, syncSurfaceState]);
+
+  useEffect(() => {
+    lastUpdateRef.current = lastUpdate;
+    syncSurfaceState();
+  }, [lastUpdate, syncSurfaceState]);
+
+  useEffect(() => {
+    standardLineageRef.current = standardLineage;
+  }, [standardLineage]);
+
+  useEffect(() => {
+    const previous = previousTradesStandardActiveViewRef.current;
+    if (previous && !tradesStandardActiveView) {
+      canonicalViewGenerationRef.current += 1;
+      setCanonicalViewGeneration(canonicalViewGenerationRef.current);
+      setStandardLineageGeneration(null);
+      setStandardLineage(null);
+    }
+    previousTradesStandardActiveViewRef.current = tradesStandardActiveView;
+  }, [tradesStandardActiveView]);
+
+  useEffect(() => {
+    syncSurfaceState();
+  }, [syncSurfaceState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -556,8 +956,25 @@ export default function Trades({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+    const id = window.setInterval(() => {
+      syncSurfaceState();
+    }, 1_000);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [syncSurfaceState]);
+
+  useEffect(() => {
     latestSeqRef.current = lastSeq;
-  }, [lastSeq]);
+    const recoveryState = reconcileGapRecoveryTarget(lastSeq);
+    streamCursorRef.current.lastSeq = recoveryState.targetSeq == null
+      ? Math.max(streamCursorRef.current.lastSeq, lastSeq)
+      : recoveryState.acknowledgedSeq;
+    syncSurfaceState();
+  }, [lastSeq, syncSurfaceState, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     pollDelayRef.current = pollDelay;
@@ -579,15 +996,7 @@ export default function Trades({
     resyncIdRef.current = resyncId;
   }, [resyncId]);
 
-  const rowsToRender = useMemo(() => {
-    if (!Array.isArray(storeRows)) {
-      return [];
-    }
-    if (sort === 'ts_desc') {
-      return storeRows;
-    }
-    return [...storeRows].reverse();
-  }, [storeRows, sort]);
+  const rowsToRender = controllerState.rows;
 
   const recomputeIsViewingLatest = useCallback(
     (atTopOverride?: boolean) => {
@@ -617,6 +1026,8 @@ export default function Trades({
       abortRef.current = ac;
       const requestSeq = requestSeqRef.current + 1;
       requestSeqRef.current = requestSeq;
+      const manualRefreshGeneration = manualRefreshGenerationRef.current;
+      const canonicalViewGenerationAtStart = canonicalViewGenerationRef.current;
       const isForegroundRequest = !options.silent;
 
       if (isForegroundRequest) {
@@ -630,6 +1041,11 @@ export default function Trades({
       };
       const requestResyncId = options.resyncId ?? resyncIdRef.current;
       const requestPage = pageRef.current;
+      const requestUsesStandardLineage = tradesStandardEnabled
+        && isCanonicalTradesRealtimeView(requestPage, pageSizeRef.current, sortRef.current, filtersRef.current);
+      if (requestUsesStandardLineage) {
+        params.contract_version = 2;
+      }
       // Offset-based pagination: pageRef defines which slice to fetch
 
       try {
@@ -638,6 +1054,9 @@ export default function Trades({
           return;
         }
         if (!mountedRef.current) {
+          return;
+        }
+        if (manualRefreshGeneration !== manualRefreshGenerationRef.current) {
           return;
         }
 
@@ -649,10 +1068,13 @@ export default function Trades({
         // Snapshot for the current page slice
         const snapshotResult = setSnapshot(snapshotRows, pageSizeRef.current, requestResyncId);
         if (snapshotResult?.applied) {
+          applyControllerSnapshot(response.rows);
+        }
+        if (snapshotResult?.applied) {
           markGlobalResyncApplied('trades', requestResyncId);
         }
         // Update latest-viewing flag based on page and scroll state
-        const nowViewingLatest = recomputeIsViewingLatest();
+        recomputeIsViewingLatest();
 
         const totalCount = response.total ?? response.total_records ?? 0;
         setCompatibilityMode(Boolean(response.compatibility_mode));
@@ -665,24 +1087,89 @@ export default function Trades({
         }
 
         advanceTradeReplayCursor(snapshotRows);
-
-        const activeProfile = typeof window === 'undefined'
-          ? 'default'
-          : resolvePathnameProfile(window.location.pathname);
-        if (activeProfile === 'tokenmm' && (response.last_seq ?? 0) <= 0) {
-          deltaCursorModeRef.current = 'after';
+        const snapshotRowsMaxSeq = snapshotRows.reduce(
+          (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
+          0,
+        );
+        const realtimeLineage = requestUsesStandardLineage
+          ? response.realtime
+          : standardLineageRef.current;
+        const canClearManualRefresh = !manualRefreshRequiredRef.current || options.allowManualRefreshClear === true;
+        if (tradesStandardEnabled) {
+          if (requestUsesStandardLineage && realtimeLineage) {
+            if (canClearManualRefresh) {
+              clearManualRefreshRequired();
+              setStandardLineage({ ...realtimeLineage });
+              setStandardLineageGeneration(canonicalViewGenerationAtStart);
+            } else {
+              setStandardLineage(null);
+              setStandardLineageGeneration(null);
+            }
+          } else if (requestUsesStandardLineage) {
+            setStandardLineageGeneration(null);
+            requireManualRefresh();
+          } else {
+            setStandardLineageGeneration(null);
+          }
         } else {
-          deltaCursorModeRef.current = 'since_seq';
+          clearManualRefreshRequired();
+          setStandardLineage(null);
+          setStandardLineageGeneration(null);
         }
+        const currentStreamCursor = streamCursorRef.current;
+        const responseStreamId =
+          typeof realtimeLineage?.stream_id === 'string' && realtimeLineage.stream_id.trim()
+            ? realtimeLineage.stream_id.trim()
+            : (
+              typeof response.stream_id === 'string' && response.stream_id.trim()
+                ? response.stream_id.trim()
+                : currentStreamCursor.streamId
+            );
+        const responseSnapshotRevision =
+          realtimeLineage?.snapshot_revision
+          ?? response.snapshot_revision
+          ?? currentStreamCursor.snapshotRevision;
+        const lineageLastSeq =
+          typeof realtimeLineage?.last_seq === 'number'
+            ? Math.max(0, realtimeLineage.last_seq)
+            : 0;
+        const responseLastSeq =
+          typeof response.last_seq === 'number'
+            ? Math.max(0, response.last_seq)
+            : 0;
+        const snapshotLastSeq = Math.max(lineageLastSeq, responseLastSeq, snapshotRowsMaxSeq);
+        const snapshotEpochChanged =
+          (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
+          && !matchesTradeStreamEpoch(currentStreamCursor, responseStreamId, responseSnapshotRevision);
+        const nextLastSeq = snapshotEpochChanged
+          ? snapshotLastSeq
+          : Math.max(currentStreamCursor.lastSeq, snapshotLastSeq);
+        streamCursorRef.current = {
+          contractVersion:
+            typeof realtimeLineage?.contract_version === 'number'
+              ? realtimeLineage.contract_version
+              : (
+                typeof response.contract_version === 'number'
+                  ? response.contract_version
+                  : currentStreamCursor.contractVersion
+              ),
+          streamId: responseStreamId,
+          snapshotRevision: responseSnapshotRevision,
+          lastSeq: nextLastSeq,
+        };
+        latestSeqRef.current = nextLastSeq;
+        clearGapRecoveryState();
+        catchingUpRef.current = false;
 
-        if (typeof response.last_seq === 'number') {
-          latestSeqRef.current = Math.max(latestSeqRef.current, response.last_seq);
-        }
-
-        setLastUpdate(Date.now());
+        const nextUpdate = Date.now();
+        lastUpdateRef.current = nextUpdate;
+        setLastUpdate(nextUpdate);
+        syncSurfaceState();
       } catch (e) {
         if ((e as any).name !== 'AbortError' && abortRef.current === ac) {
           console.error('[trades] load failed:', e);
+          catchingUpRef.current = true;
+          syncSurfaceState();
         }
       } finally {
         if (abortRef.current === ac) {
@@ -696,9 +1183,25 @@ export default function Trades({
           activeForegroundRequestRef.current = null;
           setLoading(false);
         }
+        if (mountedRef.current) {
+          syncSurfaceState();
+        }
       }
     },
-    [setSnapshot, setTotal, setUnread, setLoading, recomputeIsViewingLatest, advanceTradeReplayCursor],
+    [
+      applyControllerSnapshot,
+      clearManualRefreshRequired,
+      setSnapshot,
+      setTotal,
+      setUnread,
+      setLoading,
+      recomputeIsViewingLatest,
+      advanceTradeReplayCursor,
+      syncSurfaceState,
+      clearGapRecoveryState,
+      requireManualRefresh,
+      tradesStandardEnabled,
+    ],
   );
 
   const handleTimeSortChange = useCallback((direction: 'ts_desc' | 'ts_asc') => {
@@ -715,6 +1218,27 @@ export default function Trades({
     recomputeIsViewingLatest(true);
     fetchPage();
   }, [fetchPage, recomputeIsViewingLatest]);
+
+  const recoverStandardSnapshot = useCallback(() => {
+    if (manualRefreshRequiredRef.current || standardSnapshotRecoveryInFlightRef.current) {
+      return;
+    }
+    standardSnapshotRecoveryInFlightRef.current = true;
+    setStandardSubscriptionEpoch((epoch) => epoch + 1);
+    catchingUpRef.current = true;
+    setStandardLineage(null);
+    syncSurfaceState();
+    const recoveryResyncId = useResyncStore.getState().resyncId;
+    resyncIdRef.current = recoveryResyncId;
+    fetchPage({
+      silent: true,
+      keepUnread: !isViewingLatestRef.current,
+      resyncId: recoveryResyncId,
+    }).finally(() => {
+      standardSnapshotRecoveryInFlightRef.current = false;
+      syncSurfaceState();
+    });
+  }, [fetchPage, syncSurfaceState]);
 
   const handleScrollStateChange = useCallback(
     ({ atTop, isScrolling, scrollElement }: TradesTableScrollState) => {
@@ -900,33 +1424,114 @@ export default function Trades({
       if (!isActiveRef.current) {
         return;
       }
+      const currentSurfaceState = syncSurfaceState();
+      const shouldReplay =
+        currentSurfaceState === RealtimeSurfaceState.RECOVERING
+        || currentSurfaceState === RealtimeSurfaceState.LAGGING
+        || currentSurfaceState === RealtimeSurfaceState.STALE;
+      if (!shouldReplay) {
+        setPollDelay(dynamicBase);
+        schedulePoll();
+        return;
+      }
       try {
         const pollResyncId = resyncIdRef.current;
-        const requestedSinceSeq = latestSeqRef.current;
-        const usingTimestampFallback = deltaCursorModeRef.current === 'after';
-        const replayCursor = latestTradeReplayCursorRef.current;
-        const deltaCursor = usingTimestampFallback
-          ? {
-              afterMs: replayCursor?.tsMs ?? latestTradeTsMsRef.current,
-              afterRowId: replayCursor?.rowId,
-              afterVersion: replayCursor?.version,
-            }
-          : requestedSinceSeq;
+        const requestCursor = { ...streamCursorRef.current };
+        const requestedSinceSeq = requestCursor.lastSeq;
+        const deltaCursor = {
+          sinceSeq: requestedSinceSeq,
+          streamId: requestCursor.streamId,
+          snapshotRevision: requestCursor.snapshotRevision,
+        };
         const delta = await api.getTradesDelta(deltaCursor, DELTA_LIMIT);
         setCompatibilityMode(Boolean(delta.compatibility_mode));
 
         if (!isActiveRef.current) {
           return;
         }
+        const latestStreamCursor = streamCursorRef.current;
+        const responseStreamId =
+          typeof delta.stream_id === 'string' && delta.stream_id.trim()
+            ? delta.stream_id.trim()
+            : requestCursor.streamId;
+        const responseSnapshotRevision = delta.snapshot_revision ?? requestCursor.snapshotRevision;
+        const deltaRowsMaxSeq = (delta.rows || []).reduce(
+          (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
+          0,
+        );
+        const effectiveDeltaLastSeq =
+          typeof delta.last_seq === 'number'
+            ? Math.max(delta.last_seq, deltaRowsMaxSeq)
+            : deltaRowsMaxSeq;
+        const requestEpochStillCurrent = matchesTradeStreamEpoch(
+          latestStreamCursor,
+          requestCursor.streamId,
+          requestCursor.snapshotRevision,
+        );
+        const responseMatchesLatestEpoch = matchesTradeStreamEpoch(
+          latestStreamCursor,
+          responseStreamId,
+          responseSnapshotRevision,
+        );
+        const responseMatchesRequestEpoch = matchesTradeStreamEpoch(
+          requestCursor,
+          responseStreamId,
+          responseSnapshotRevision,
+        );
+        const staleSupersededResponse =
+          !requestEpochStillCurrent
+          && responseMatchesRequestEpoch
+          && !responseMatchesLatestEpoch;
+        if (staleSupersededResponse) {
+          return;
+        }
+        const hasStreamMismatch =
+          !responseMatchesLatestEpoch
+          && (latestStreamCursor.streamId != null || latestStreamCursor.snapshotRevision != null);
+        if (hasStreamMismatch) {
+          catchingUpRef.current = true;
+          await fetchPage({
+            keepUnread: !isViewingLatestRef.current,
+            silent: true,
+            resyncId: pollResyncId,
+          });
+          return;
+        }
+        const replayRows = [...(delta.rows || [])];
+        const replaySeqs = replayRows
+          .map((row) => coerceFiniteNumber((row as any)?.seq))
+          .filter((seq): seq is number => seq !== undefined);
+        const recoveryState = reconcileGapRecoveryTarget(latestStreamCursor.lastSeq, replaySeqs);
+        const nextCursorLastSeq = recoveryState.targetSeq == null
+          ? (
+              effectiveDeltaLastSeq > 0
+                ? Math.max(latestStreamCursor.lastSeq, effectiveDeltaLastSeq)
+                : latestStreamCursor.lastSeq
+            )
+          : recoveryState.acknowledgedSeq;
+        streamCursorRef.current = {
+          contractVersion:
+            typeof delta.contract_version === 'number'
+              ? delta.contract_version
+              : latestStreamCursor.contractVersion,
+          streamId: responseStreamId,
+          snapshotRevision: responseSnapshotRevision,
+          lastSeq: nextCursorLastSeq,
+        };
 
-        // DEFENSIVE FIX: Validate sequence consistency
-        const deltaLastSeq = typeof delta.last_seq === 'number' ? delta.last_seq : null;
+        const deltaLastSeq = effectiveDeltaLastSeq > 0 ? effectiveDeltaLastSeq : null;
         const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
-          !usingTimestampFallback
-          && hasNumericLastSeq
+          hasNumericLastSeq
           && deltaLastSeq >= requestedSinceSeq;
-        if (!usingTimestampFallback && hasNumericLastSeq && !seqIsNonRegressive) {
+        const seqAdvanced =
+          hasNumericLastSeq
+          && deltaLastSeq > requestedSinceSeq;
+        const currentGapRecoveryTargetSeq = recoveryState.targetSeq;
+        const gapRecoveryResolved =
+          currentGapRecoveryTargetSeq == null
+          || streamCursorRef.current.lastSeq >= currentGapRecoveryTargetSeq;
+        if (hasNumericLastSeq && !seqIsNonRegressive) {
           console.warn(
             `[trades] Delta seq regression detected! Backend last_seq (${deltaLastSeq}) < ` +
             `frontend latestSeq (${requestedSinceSeq}). This suggests missed trades. ` +
@@ -946,7 +1551,6 @@ export default function Trades({
               silent: true,
               resyncId: pollResyncId,
             });
-            catchingUpRef.current = false;
           } else {
             console.warn('[trades] Reset requested but throttled to prevent thrash');
           }
@@ -963,18 +1567,18 @@ export default function Trades({
         } else {
           let pollAcknowledgedCurrentEpoch = false;
           let appliedCurrentEpoch = false;
-          const replayRows = usingTimestampFallback
-            ? filterTradeRowsAfterReplayCursor(delta.rows, replayCursor)
-            : [...(delta.rows || [])];
           advanceTradeReplayCursor(replayRows);
           const rowsForView = filterEventsForFilters(replayRows, filtersRef.current);
           if (rowsForView.length) {
             const isLiveView = isViewingLatestRef.current && sortRef.current === 'ts_desc';
             let liveNewRows = 0;
             if (isLiveView) {
-              const stats = applyDelta(rowsForView, pageSizeRef.current, pollResyncId);
+              const stats = applyDeltaRef.current(rowsForView, pageSizeRef.current, pollResyncId);
               liveNewRows = stats?.newRows ?? 0;
               appliedCurrentEpoch = Boolean(stats?.applied);
+              if (stats?.applied) {
+                applyControllerDelta(rowsForView);
+              }
             }
 
             const filteredUpserts = rowsForView.filter((evt) => evt.op === 'upsert').length;
@@ -985,6 +1589,9 @@ export default function Trades({
             if (typeof delta.last_seq === 'number') {
               latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
             }
+            if (!appliedCurrentEpoch && seqIsNonRegressive && gapRecoveryResolved) {
+              pollAcknowledgedCurrentEpoch = true;
+            }
 
             if (liveNewRows > 0) {
               playSoundForSeq(typeof delta.last_seq === 'number' ? delta.last_seq : undefined);
@@ -992,27 +1599,28 @@ export default function Trades({
 
             queueSnapshotRefreshRef.current?.(!isLiveView);
             emptyPollCountRef.current = 0; // Reset empty poll counter on successful sync
-            setLastUpdate(Date.now());
+            const nextUpdate = Date.now();
+            lastUpdateRef.current = nextUpdate;
+            setLastUpdate(nextUpdate);
           } else if (replayRows.length) {
             // Rows existed but did not match current filters; treat as successful sync for poll timing.
             emptyPollCountRef.current = 0;
             if (typeof delta.last_seq === 'number') {
               latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
             }
-            if (seqIsNonRegressive) {
+            if (seqIsNonRegressive && gapRecoveryResolved) {
               pollAcknowledgedCurrentEpoch = true;
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (usingTimestampFallback) {
-              emptyPollCountRef.current = 0;
-              pollAcknowledgedCurrentEpoch = true;
-            } else if (seqIsNonRegressive) {
+            if (seqIsNonRegressive && (currentGapRecoveryTargetSeq == null || seqAdvanced)) {
               const lastSeq = delta.last_seq as number;
-              // Empty rows with an advancing (or equal) sequence is a successful reconciliation.
+              // Empty rows only reconcile a seq-gap recovery when the backend advances beyond sinceSeq.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
               emptyPollCountRef.current = 0;
-              pollAcknowledgedCurrentEpoch = true;
+              if (gapRecoveryResolved) {
+                pollAcknowledgedCurrentEpoch = true;
+              }
             } else {
               // Empty rows without a usable sequence might indicate a problem.
               emptyPollCountRef.current += 1;
@@ -1025,8 +1633,24 @@ export default function Trades({
               }
             }
           }
-          if (appliedCurrentEpoch || pollAcknowledgedCurrentEpoch) {
+          const replayResolvedCurrentEpoch =
+            gapRecoveryResolved
+            && (appliedCurrentEpoch || pollAcknowledgedCurrentEpoch);
+          if (replayResolvedCurrentEpoch) {
             markGlobalResyncApplied('trades', pollResyncId);
+            const nextUpdate = Date.now();
+            lastUpdateRef.current = nextUpdate;
+            setLastUpdate(nextUpdate);
+          }
+          if (
+            socketConnectedRef.current
+            && replayRows.length < DELTA_LIMIT
+            && replayResolvedCurrentEpoch
+            && currentGapRecoveryTargetSeq == null
+          ) {
+            catchingUpRef.current = false;
+          } else if (currentGapRecoveryTargetSeq != null) {
+            catchingUpRef.current = true;
           }
           if (!isActiveRef.current) {
             return;
@@ -1036,17 +1660,20 @@ export default function Trades({
             pollDelayRef.current = base;
             return base;
           });
+          syncSurfaceState();
         }
       } catch (err) {
         console.error('[trades] delta poll failed', err);
         if (!isActiveRef.current) {
           return;
         }
+        catchingUpRef.current = true;
         setPollDelay((prev) => {
           const next = Math.min((prev || POLL_BASE_MS) * 2, POLL_MAX_MS);
           pollDelayRef.current = next;
           return next;
         });
+        syncSurfaceState();
       } finally {
         if (!isActiveRef.current) {
           return;
@@ -1054,7 +1681,7 @@ export default function Trades({
         schedulePoll();
       }
     }, delay);
-  }, [applyDelta, fetchPage, queueSnapshotRefresh, playSoundForSeq, setLastUpdate, advanceTradeReplayCursor]);
+  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, syncSurfaceState, reconcileGapRecoveryTarget]);
 
   useEffect(() => {
     schedulePoll();
@@ -1090,9 +1717,13 @@ export default function Trades({
             version: msg.version ?? msg.trade?.version,
             // Prefer the trade-stream seq/ts for dedupe/order; the outer msg.seq is a transport sequence.
             seq: msg.trade?.seq ?? msg.seq,
+            surface_seq: msg.surface_seq ?? msg.seq,
             ts_ms: msg.trade?.ts_ms ?? msg.ts_ms ?? msg.server_ts_ms,
             strategy_id: msg.strategy_id ?? msg.trade?.strategy_id,
             signal_id: msg.signal_id ?? msg.strategy_id ?? msg.trade?.signal_id ?? msg.trade?.strategy_id,
+            stream_id: msg.stream_id ?? msg.trade?.stream_id,
+            snapshot_revision: msg.snapshot_revision ?? msg.trade?.snapshot_revision,
+            contract_version: msg.contract_version ?? msg.trade?.contract_version,
           }
         : msg;
       const normalizedEventCandidate = normalizeTradeEventLike(normalizedMsg);
@@ -1138,6 +1769,7 @@ export default function Trades({
           row_id: rowId,
           version: versionFromMsg ?? 1,
           seq,
+          surface_seq: normalizedEventCandidate?.surface_seq,
           ts_ms: extractTradeTimestampMs(normalizedEventCandidate),
           ts: seq,
           time: normalizedEventCandidate?.time,
@@ -1170,25 +1802,95 @@ export default function Trades({
           decision: normalizedEventCandidate?.decision,
           notes: normalizedEventCandidate?.notes,
           explorer_url: normalizedEventCandidate?.explorer_url,
+          stream_id: normalizedEventCandidate?.stream_id,
+          snapshot_revision: normalizedEventCandidate?.snapshot_revision,
+          contract_version: normalizedEventCandidate?.contract_version,
         } as TradeEvent;
       }
 
       const messageResyncId = resyncIdRef.current;
+      const eventStreamId = typeof (event as any).stream_id === 'string' && (event as any).stream_id.trim()
+        ? (event as any).stream_id.trim()
+        : undefined;
+      const eventSnapshotRevision = (event as any).snapshot_revision;
+      const currentStreamCursor = streamCursorRef.current;
+      const surfaceSeq = coerceFiniteNumber((event as any).surface_seq) ?? event.seq;
+      const eventHasEpochMetadata = eventStreamId != null || eventSnapshotRevision != null;
+      const hasStreamMismatch =
+        eventHasEpochMetadata
+        && (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
+        && !matchesTradeStreamEpoch(currentStreamCursor, eventStreamId, eventSnapshotRevision);
+      if (hasStreamMismatch) {
+        catchingUpRef.current = true;
+        queueSnapshotRefreshRef.current?.(true);
+        syncSurfaceState();
+        return;
+      }
+      const hasExactCurrentEpoch =
+        currentStreamCursor.streamId != null
+        && currentStreamCursor.snapshotRevision != null
+        && eventStreamId != null
+        && eventSnapshotRevision != null
+        && matchesTradeStreamEpoch(currentStreamCursor, eventStreamId, eventSnapshotRevision);
+      const hasCompatibleRecoveryEpoch =
+        hasExactCurrentEpoch
+        || (eventStreamId == null && eventSnapshotRevision == null);
+      const hasSeqGap =
+        typeof surfaceSeq === 'number'
+        && hasExactCurrentEpoch
+        && surfaceSeq > currentStreamCursor.lastSeq + 1;
+      if (hasSeqGap) {
+        beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
+        catchingUpRef.current = true;
+        syncSurfaceState();
+        schedulePoll();
+        return;
+      }
+      const pendingGapTargetSeq = gapRecoveryTargetSeqRef.current;
+      const shouldDeferEventDuringRecovery =
+        typeof surfaceSeq === 'number'
+        && pendingGapTargetSeq != null
+        && hasCompatibleRecoveryEpoch
+        && surfaceSeq > currentStreamCursor.lastSeq;
+      if (shouldDeferEventDuringRecovery) {
+        beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
+        catchingUpRef.current = true;
+        syncSurfaceState();
+        schedulePoll();
+        return;
+      }
+      streamCursorRef.current = {
+        contractVersion:
+          typeof (event as any).contract_version === 'number'
+            ? (event as any).contract_version
+            : currentStreamCursor.contractVersion,
+        streamId: eventStreamId ?? currentStreamCursor.streamId,
+        snapshotRevision: eventSnapshotRevision ?? currentStreamCursor.snapshotRevision,
+        lastSeq: currentStreamCursor.lastSeq,
+      };
       const eventTsMs = extractTradeTimestampMs(event);
       if (eventTsMs !== undefined) {
         latestTradeTsMsRef.current = Math.max(latestTradeTsMsRef.current, eventTsMs);
       }
       advanceTradeReplayCursor([event]);
+      if (typeof surfaceSeq === 'number') {
+        latestSeqRef.current = Math.max(latestSeqRef.current, surfaceSeq);
+        streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, surfaceSeq);
+      }
+      const recoveryState = reconcileGapRecoveryTarget(streamCursorRef.current.lastSeq);
+      streamCursorRef.current.lastSeq = recoveryState.acknowledgedSeq;
+      const outstandingGapRecoveryTargetSeq = recoveryState.targetSeq;
       const passesFilters = rowMatchesFilters(event, filtersRef.current);
       const rowVisibleInCurrentStore = Array.isArray(storeRows)
         && storeRows.some((row) => row?.row_id === event.row_id);
       if (!passesFilters) {
-        if (typeof event.seq === 'number') {
-          latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
-        }
         if (rowVisibleInCurrentStore || event.op === 'delete') {
+          catchingUpRef.current = true;
           queueSnapshotRefreshRef.current?.(true);
+        } else {
+          catchingUpRef.current = outstandingGapRecoveryTargetSeq != null;
         }
+        syncSurfaceState();
         return;
       }
 
@@ -1198,6 +1900,9 @@ export default function Trades({
       if (isLiveView) {
         const stats = applyDeltaRef.current([event], pageSizeRef.current, messageResyncId);
         appliedCurrentEpoch = Boolean(stats?.applied);
+        if (stats?.applied) {
+          applyControllerDelta([event]);
+        }
         if (op === 'upsert' && (stats?.newRows ?? 0) > 0 && typeof event.seq === 'number') {
           playSoundForSeqRef.current?.(event.seq);
         }
@@ -1205,18 +1910,22 @@ export default function Trades({
         setUnread((u) => u + 1);
       }
 
-      if (typeof event.seq === 'number') {
-        latestSeqRef.current = Math.max(latestSeqRef.current, event.seq);
-      }
       queueSnapshotRefreshRef.current?.(!isLiveView);
-      if (appliedCurrentEpoch) {
+      if (appliedCurrentEpoch && outstandingGapRecoveryTargetSeq == null) {
         markGlobalResyncApplied('trades', messageResyncId);
       }
-      setLastUpdate(Date.now());
+      const nextUpdate = Date.now();
+      lastUpdateRef.current = nextUpdate;
+      setLastUpdate(nextUpdate);
+      catchingUpRef.current = outstandingGapRecoveryTargetSeq != null;
+      if (outstandingGapRecoveryTargetSeq != null) {
+        schedulePoll();
+      }
+      syncSurfaceState();
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [setLastUpdate, setUnread, advanceTradeReplayCursor, storeRows]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery]);
 
   useEffect(() => {
     const pending: any[] = [];
@@ -1269,14 +1978,20 @@ export default function Trades({
         scheduleFrame();
       }
     };
+    enqueueTradeMessageRef.current = enqueueTradeMessage;
 
     const handleTradeUpdate = (msg: any) => {
       enqueueTradeMessage(msg);
     };
 
-    socket.on('trade_update', handleTradeUpdate);
+    if (!tradesStandardEnabled) {
+      socket.on('trade_update', handleTradeUpdate);
+    }
     return () => {
-      socket.off('trade_update', handleTradeUpdate);
+      enqueueTradeMessageRef.current = () => undefined;
+      if (!tradesStandardEnabled) {
+        socket.off('trade_update', handleTradeUpdate);
+      }
       flushPending();
       if (rafId !== null && typeof window !== 'undefined') {
         window.cancelAnimationFrame(rafId);
@@ -1285,7 +2000,127 @@ export default function Trades({
         window.clearTimeout(idleTimer);
       }
     };
-  }, [processTradeMessage]);
+  }, [processTradeMessage, tradesStandardEnabled]);
+
+  const getStandardResumeFromSeq = useCallback(() => streamCursorRef.current.lastSeq, []);
+
+  const handleStandardRealtimeFailure = useCallback((failure: StandardSocketFailure) => {
+    if (failure.type === 'recovery_required' && failure.reason === 'trade_gap') {
+      recoverStandardSnapshot();
+      return;
+    }
+    if (failure.type === 'lineage_mismatch') {
+      recoverStandardSnapshot();
+      return;
+    }
+    requireManualRefresh();
+  }, [recoverStandardSnapshot, requireManualRefresh]);
+
+  const handleStandardRealtimeEvent = useCallback((event: StandardSocketEventEnvelope<any>) => {
+    const currentStreamCursor = streamCursorRef.current;
+    const eventSeq = typeof event.seq === 'number' ? event.seq : currentStreamCursor.lastSeq;
+    const hasEnvelopeSeqGap =
+      typeof eventSeq === 'number'
+      && currentStreamCursor.streamId != null
+      && currentStreamCursor.snapshotRevision != null
+      && matchesTradeStreamEpoch(currentStreamCursor, event.stream_id, event.snapshot_revision)
+      && eventSeq > currentStreamCursor.lastSeq + 1;
+    streamCursorRef.current = {
+      contractVersion: event.contract_version,
+      streamId: event.stream_id,
+      snapshotRevision: event.snapshot_revision,
+      lastSeq: currentStreamCursor.lastSeq,
+    };
+    const nextUpdate = Date.now();
+    lastUpdateRef.current = nextUpdate;
+    setLastUpdate(nextUpdate);
+
+    if (event.kind === 'heartbeat') {
+      if (hasEnvelopeSeqGap) {
+        beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
+        catchingUpRef.current = true;
+        syncSurfaceState();
+        schedulePoll();
+        return;
+      }
+      latestSeqRef.current = Math.max(latestSeqRef.current, eventSeq);
+      streamCursorRef.current.lastSeq = Math.max(streamCursorRef.current.lastSeq, eventSeq);
+      catchingUpRef.current =
+        standardSnapshotRecoveryInFlightRef.current
+        || gapRecoveryTargetSeqRef.current != null;
+      syncSurfaceState();
+      return;
+    }
+
+    if (event.kind === 'invalidate') {
+      recoverStandardSnapshot();
+      return;
+    }
+
+    if (event.kind !== 'delta_batch') {
+      return;
+    }
+
+    const trades = Array.isArray(event.payload?.trades) ? event.payload.trades : [];
+    if (!trades.length && hasEnvelopeSeqGap) {
+      beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
+      catchingUpRef.current = true;
+      syncSurfaceState();
+      schedulePoll();
+      return;
+    }
+    catchingUpRef.current =
+      standardSnapshotRecoveryInFlightRef.current
+      || gapRecoveryTargetSeqRef.current != null;
+      for (const trade of trades) {
+        enqueueTradeMessageRef.current({
+          ...(trade ?? {}),
+          seq: (trade as any)?.seq ?? event.seq,
+          surface_seq: event.seq,
+          contract_version: event.contract_version,
+          stream_id: event.stream_id,
+          snapshot_revision: event.snapshot_revision,
+        server_ts_ms: event.server_ts_ms,
+      });
+    }
+    syncSurfaceState();
+  }, [beginGapRecovery, recoverStandardSnapshot, schedulePoll, syncSurfaceState]);
+
+  useStandardWebSocketSubscription({
+    enabled:
+      tradesStandardActiveView
+      && Boolean(standardLineage)
+      && standardLineageGeneration === canonicalViewGeneration
+      && !manualRefreshRequiredRef.current,
+    lineage: tradesStandardEnabled ? standardLineage : null,
+    subscriptionKey: standardSubscriptionEpoch,
+    resumeFromSeq: getStandardResumeFromSeq,
+    onEvent: handleStandardRealtimeEvent,
+    onFailure: handleStandardRealtimeFailure,
+    onSubscribed: (ack) => {
+      const currentStreamCursor = streamCursorRef.current;
+      streamCursorRef.current = {
+        contractVersion:
+          typeof ack.contract_version === 'number'
+            ? ack.contract_version
+            : currentStreamCursor.contractVersion,
+        streamId:
+          typeof ack.stream_id === 'string' && ack.stream_id.trim()
+            ? ack.stream_id.trim()
+            : currentStreamCursor.streamId,
+        snapshotRevision: ack.snapshot_revision ?? currentStreamCursor.snapshotRevision,
+        lastSeq:
+          typeof ack.last_seq === 'number'
+            ? Math.max(currentStreamCursor.lastSeq, ack.last_seq)
+            : currentStreamCursor.lastSeq,
+      };
+      latestSeqRef.current = Math.max(latestSeqRef.current, streamCursorRef.current.lastSeq);
+      if (!manualRefreshRequiredRef.current) {
+        catchingUpRef.current = false;
+        syncSurfaceState();
+      }
+    },
+  });
 
   // DEFENSIVE FIX: Track Socket.IO connection state for debugging
   useEffect(() => {
@@ -1294,6 +2129,15 @@ export default function Trades({
       socketConnectedRef.current = true;
       setSocketConnected(true);
       emptyPollCountRef.current = 0; // Reset empty poll counter on reconnect
+      syncSurfaceState();
+
+      if (manualRefreshRequiredRef.current) {
+        return;
+      }
+
+      if (tradesStandardActiveView && standardLineage) {
+        return;
+      }
 
       const now = Date.now();
       if (reconnectCatchupInFlightRef.current) {
@@ -1314,13 +2158,15 @@ export default function Trades({
         resyncId: reconnectResyncId,
       }).finally(() => {
         reconnectCatchupInFlightRef.current = false;
-        catchingUpRef.current = false;
+        syncSurfaceState();
       });
     };
     const handleDisconnect = (reason: string) => {
       console.warn(`[trades] Socket.IO disconnected: ${reason}`);
       socketConnectedRef.current = false;
       setSocketConnected(false);
+      catchingUpRef.current = true;
+      syncSurfaceState();
     };
 
     socket.on('connect', handleConnect);
@@ -1329,12 +2175,16 @@ export default function Trades({
     // Set initial state based on socket.connected
     socketConnectedRef.current = socket.connected;
     setSocketConnected(socket.connected);
+    if (!socket.connected) {
+      catchingUpRef.current = true;
+    }
+    syncSurfaceState();
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, [fetchPage]);
+  }, [fetchPage, standardLineage, syncSurfaceState, tradesStandardActiveView]);
 
   useEffect(() => {
     isActiveRef.current = true;
@@ -1350,7 +2200,7 @@ export default function Trades({
     isAtTopRef.current = true;
     recomputeIsViewingLatest(true);
     scrollElementRef.current?.scrollTo({ top: 0 });
-    fetchPage();
+    fetchPage({ allowManualRefreshClear: true });
   }, [fetchPage, recomputeIsViewingLatest]);
 
   const handleToggleSound = useCallback(() => {
@@ -1395,12 +2245,61 @@ export default function Trades({
     );
   }, [clearUnreadAndRefresh, unread]);
 
+  const surfaceStatusMeta = useMemo(() => {
+    switch (surfaceState) {
+      case RealtimeSurfaceState.LIVE:
+        return {
+          color: colors.semantic.success.DEFAULT,
+          title: 'LIVE',
+          label: 'LIVE',
+          bannerLabel: null,
+          bannerBg: undefined,
+        };
+      case RealtimeSurfaceState.LAGGING:
+        return {
+          color: colors.semantic.warning.DEFAULT,
+          title: 'Lagging',
+          label: 'LAGGING',
+          bannerLabel: 'LAGGING - Replaying recent deltas…',
+          bannerBg: colors.semantic.warning.bg,
+        };
+      case RealtimeSurfaceState.STALE:
+        return {
+          color: colors.semantic.danger.DEFAULT,
+          title: 'Stale data',
+          label: 'STALE',
+          bannerLabel: 'STALE - Recovering from replay…',
+          bannerBg: colors.semantic.danger.bg,
+        };
+      case RealtimeSurfaceState.RECOVERING:
+        return {
+          color: colors.semantic.warning.DEFAULT,
+          title: socketConnected ? 'Recovering' : 'Offline',
+          label: socketConnected ? 'RECOVERING' : 'OFFLINE',
+          bannerLabel: socketConnected ? 'RECOVERING - Replaying…' : 'OFFLINE - Reconnecting…',
+          bannerBg: socketConnected ? colors.semantic.warning.bg : colors.semantic.danger.bg,
+        };
+      case RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED:
+        return {
+          color: colors.semantic.danger.DEFAULT,
+          title: 'Manual refresh required',
+          label: 'REFRESH',
+          bannerLabel: 'MANUAL REFRESH REQUIRED',
+          bannerBg: colors.semantic.danger.bg,
+        };
+      default:
+        return {
+          color: colors.text.muted,
+          title: 'Syncing',
+          label: 'SYNCING',
+          bannerLabel: null,
+          bannerBg: undefined,
+        };
+    }
+  }, [socketConnected, surfaceState]);
+
   const headerActions = useMemo(
     () => {
-      const isCatchingUp = catchingUpRef.current;
-      const dotColor = socketConnected
-        ? (isCatchingUp ? colors.semantic.warning.DEFAULT : colors.semantic.success.DEFAULT)
-        : colors.text.muted;
       const handleExport = () => {
         // Map current visible rows to flat export objects
         const data = (rowsToRender || []).map((r) => ({
@@ -1439,7 +2338,7 @@ export default function Trades({
       return (
         <div className="flex items-center" style={{ gap: spacing.gap.xs }}>
           <span
-            title={socketConnected ? (isCatchingUp ? 'Catching up' : 'LIVE') : 'Offline'}
+            title={surfaceStatusMeta.title}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: colors.text.muted, fontSize: typography.fontSize.xs }}
           >
             <span
@@ -1448,11 +2347,11 @@ export default function Trades({
                 width: 8,
                 height: 8,
                 borderRadius: 9999,
-                backgroundColor: dotColor,
+                backgroundColor: surfaceStatusMeta.color,
                 display: 'inline-block',
               }}
             />
-            {socketConnected ? (isCatchingUp ? 'CATCHING UP' : 'LIVE') : 'OFFLINE'}
+            {surfaceStatusMeta.label}
           </span>
           {isResyncing ? (
             <span
@@ -1473,7 +2372,7 @@ export default function Trades({
         </div>
       );
     },
-    [loading, unreadBadge, lastUpdate, rowsToRender, perfHarnessActive, isResyncing, resyncId, socketConnected]
+    [loading, unreadBadge, rowsToRender, perfHarnessActive, isResyncing, resyncId, surfaceStatusMeta]
   );
 
   const panelHeaderSlots = usePanelHeaderSlots();
@@ -1518,20 +2417,19 @@ export default function Trades({
 
       {/* Live status banner (Phase 1): show OFFLINE or STALE prominently */}
       {(() => {
-        const showOffline = !socketConnected;
-        const showCatchingUp = catchingUpRef.current;
-        if (!showOffline && !showCatchingUp) return null;
-        const bg = showOffline ? colors.semantic.danger.bg : colors.semantic.warning.bg;
-        const fg = colors.text.secondary;
-        const label = showOffline ? 'OFFLINE — Reconnecting…' : 'CATCHING UP…';
+        if (!surfaceStatusMeta.bannerLabel || !surfaceStatusMeta.bannerBg) return null;
         return (
           <div
             className="w-full"
-            style={{ backgroundColor: bg, color: fg, padding: `${spacing.gap.xs} ${spacing.gap.md}` }}
+            style={{
+              backgroundColor: surfaceStatusMeta.bannerBg,
+              color: colors.text.secondary,
+              padding: `${spacing.gap.xs} ${spacing.gap.md}`,
+            }}
             role="status"
             aria-live="polite"
           >
-            {label}
+            {surfaceStatusMeta.bannerLabel}
           </div>
         );
       })()}
@@ -1584,13 +2482,14 @@ export default function Trades({
         >
           <PageSizeControl value={pageSize} onChange={setPageSize} />
           <span style={{ color: colors.text.muted, fontSize: typography.fontSize.sm }}>
-            Loaded {storeRows.length.toLocaleString()} of {total.toLocaleString()}
+            Loaded {rowsToRender.length.toLocaleString()} of {total.toLocaleString()}
           </span>
         </div>
 
         <div className="flex-1 min-h-0">
           <TradesTable
             trades={rowsToRender}
+            liveDataVersion={controllerState.dataVersion}
             sortDirection={sort}
             onTimeSortChange={handleTimeSortChange}
             onScrollStateChange={handleScrollStateChange}

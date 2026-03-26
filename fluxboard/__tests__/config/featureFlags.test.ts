@@ -1,54 +1,124 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { featureFlags, isScannersPerfV2Enabled } from '../../config/featureFlags';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+async function loadFeatureFlagsModule() {
+  return import('@/config/featureFlags');
+}
 
 describe('featureFlags', () => {
   beforeEach(() => {
-    // Clear localStorage
     localStorage.clear();
-    // Reset module cache to re-evaluate flags
+    vi.unstubAllEnvs();
     vi.resetModules();
   });
 
   afterEach(() => {
     localStorage.clear();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
   describe('scannersPerfV2', () => {
-    it('defaults to false', () => {
+    it('defaults to false', async () => {
+      const { featureFlags, isScannersPerfV2Enabled } = await loadFeatureFlagsModule();
+
       expect(featureFlags.scannersPerfV2).toBe(false);
       expect(isScannersPerfV2Enabled()).toBe(false);
     });
 
-    it('can be enabled via localStorage', () => {
+    it('can be enabled via localStorage', async () => {
       localStorage.setItem('fluxboard:feature:scanners-perf-v2', '1');
-      // Note: In a real test, we'd need to re-import the module to see the change
-      // This test verifies the flag structure exists
-      expect(typeof featureFlags.scannersPerfV2).toBe('boolean');
-      expect(typeof isScannersPerfV2Enabled).toBe('function');
+
+      const { featureFlags, isScannersPerfV2Enabled } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.scannersPerfV2).toBe(true);
+      expect(isScannersPerfV2Enabled()).toBe(true);
     });
 
-    it('isScannersPerfV2Enabled returns boolean', () => {
-      const result = isScannersPerfV2Enabled();
-      expect(typeof result).toBe('boolean');
+    it('isScannersPerfV2Enabled returns boolean', async () => {
+      const { isScannersPerfV2Enabled } = await loadFeatureFlagsModule();
+
+      expect(typeof isScannersPerfV2Enabled()).toBe('boolean');
+    });
+  });
+
+  describe('realtime standard flags', () => {
+    it('exposes per-surface rollout and kill-switch flags', async () => {
+      const {
+        REALTIME_SURFACE_FLAGS,
+        isRealtimeStandardEnabled,
+        isRealtimeSurfaceKillSwitched,
+      } = await loadFeatureFlagsModule();
+
+      expect(REALTIME_SURFACE_FLAGS.signal).toBeDefined();
+      expect(REALTIME_SURFACE_FLAGS.trades).toBeDefined();
+      expect(REALTIME_SURFACE_FLAGS.killSwitch).toBeDefined();
+      expect(typeof isRealtimeStandardEnabled('signal')).toBe('boolean');
+      expect(typeof isRealtimeSurfaceKillSwitched('signal')).toBe('boolean');
+    });
+
+    it('defaults the realtime standard rollout to disabled with no kill switch', async () => {
+      const {
+        featureFlags,
+        isRealtimeStandardEnabled,
+        isRealtimeSurfaceKillSwitched,
+      } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.realtimeStandard.global).toBe(false);
+      expect(featureFlags.realtimeStandard.signal).toBe(false);
+      expect(featureFlags.realtimeStandard.killSwitch).toBe(false);
+      expect(isRealtimeStandardEnabled('signal')).toBe(false);
+      expect(isRealtimeSurfaceKillSwitched('signal')).toBe(false);
+    });
+
+    it('requires both global and per-surface rollout flags', async () => {
+      localStorage.setItem('fluxboard:feature:realtime-standard', '1');
+
+      const globalOnly = await loadFeatureFlagsModule();
+      expect(globalOnly.isRealtimeStandardEnabled('signal')).toBe(false);
+
+      vi.resetModules();
+      localStorage.setItem('fluxboard:feature:realtime-standard-signal', '1');
+
+      const enabled = await loadFeatureFlagsModule();
+      expect(enabled.isRealtimeStandardEnabled('signal')).toBe(true);
+    });
+
+    it('lets the global kill switch disable all realtime surfaces', async () => {
+      localStorage.setItem('fluxboard:feature:realtime-standard', '1');
+      localStorage.setItem('fluxboard:feature:realtime-standard-signal', '1');
+      localStorage.setItem('fluxboard:feature:realtime-standard-kill-switch', '1');
+
+      const {
+        featureFlags,
+        isRealtimeStandardEnabled,
+        isRealtimeSurfaceKillSwitched,
+      } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.realtimeStandard.killSwitch).toBe(true);
+      expect(isRealtimeSurfaceKillSwitched('signal')).toBe(true);
+      expect(isRealtimeStandardEnabled('signal')).toBe(false);
     });
   });
 
   describe('featureFlags object structure', () => {
-    it('contains all expected flags', () => {
+    it('contains all expected flags', async () => {
+      const { featureFlags } = await loadFeatureFlagsModule();
+
       expect(featureFlags).toHaveProperty('tradingStatusPills');
       expect(featureFlags).toHaveProperty('scannersVirtualizedV1');
       expect(featureFlags).toHaveProperty('scannersPerfV2');
+      expect(featureFlags).toHaveProperty('realtimeStandard');
     });
 
-    it('all flags are boolean', () => {
+    it('all flags are boolean-valued or nested boolean flag groups', async () => {
+      const { featureFlags } = await loadFeatureFlagsModule();
+
       expect(typeof featureFlags.tradingStatusPills).toBe('boolean');
       expect(typeof featureFlags.scannersVirtualizedV1).toBe('boolean');
       expect(typeof featureFlags.scannersPerfV2).toBe('boolean');
+      expect(typeof featureFlags.realtimeStandard.global).toBe('boolean');
+      expect(typeof featureFlags.realtimeStandard.signal).toBe('boolean');
+      expect(typeof featureFlags.realtimeStandard.killSwitch).toBe('boolean');
     });
   });
 });
-
-
-
-

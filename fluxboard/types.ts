@@ -549,6 +549,7 @@ export type BalancesPayload = {
   generated_at: string;
   view: string;
   risk_groups?: RiskGroup[];
+  realtime?: RealtimeSnapshotLineage;
   degraded?: boolean;
   scope_status?: BalanceScopeStatus[];
 };
@@ -583,11 +584,34 @@ export type BalanceSummary = {
   counts: Record<'OK' | 'WARN' | 'FAIL' | 'UNKNOWN', number>;
 };
 
+export type RealtimeSnapshotCapabilities = {
+  recovery_mode?: string;
+  replay_supported?: boolean;
+  transport_mode?: string;
+  liveness_policy?: string;
+  heartbeat_interval_ms?: number;
+  heartbeat_jitter_tolerance_ms?: number;
+  missed_heartbeats_before_stale?: number;
+  [key: string]: unknown;
+};
+
+export type RealtimeSnapshotLineage = {
+  contract_version: number;
+  surface: string;
+  profile: string;
+  surface_query_key: string;
+  stream_id: string;
+  snapshot_revision: number | string;
+  last_seq: number;
+  capabilities?: RealtimeSnapshotCapabilities;
+};
+
 export type SignalStrategiesPayload = {
   strategies: SignalStrategy[];
   server_time?: string;
   server_ts_ms?: number;
   balance_summary?: BalanceSummary;
+  realtime?: RealtimeSnapshotLineage;
 };
 
 // Signal page types

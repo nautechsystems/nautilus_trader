@@ -22,6 +22,11 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('../sockets', () => ({
+  disconnectSocket: vi.fn(),
+  connectSocket: vi.fn(),
+}));
+
 const baseTokens = ['PLUME', 'ETH', 'SEI'];
 
 // Helper to create mock report with many by_symbol entries for performance testing
@@ -95,6 +100,10 @@ async function renderPnL() {
   return view;
 }
 
+async function findRefreshButton() {
+  return screen.findByRole('button', { name: /Refresh/i });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.getAvailableSymbols).mockResolvedValue(baseTokens);
@@ -117,7 +126,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -150,7 +159,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -178,7 +187,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -212,7 +221,7 @@ describe('PnL Performance Optimizations', () => {
         report: createMockReportWithManySymbols(10),
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -228,6 +237,7 @@ describe('PnL Performance Optimizations', () => {
         etag: 'test-etag-1',
         report: null,
       });
+      vi.mocked(api.runPnLDelta).mockResolvedValueOnce({ status: 304 } as any);
 
       // Enable auto-refresh to trigger delta check
       const autoRefresh = await screen.findByLabelText(/Auto-refresh/i);
@@ -262,7 +272,7 @@ describe('PnL Performance Optimizations', () => {
         report: initialReport,
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -295,7 +305,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -321,7 +331,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
 
       // First render
       await act(async () => {
@@ -365,7 +375,7 @@ describe('PnL Performance Optimizations', () => {
         report: createMockReportWithManySymbols(10),
       });
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -403,7 +413,7 @@ describe('PnL Performance Optimizations', () => {
 
       await renderPnL();
 
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       await act(async () => {
         runButton.click();
         await Promise.resolve();
@@ -429,7 +439,7 @@ describe('PnL Performance Optimizations', () => {
       await renderPnL();
 
       // Buttons should render immediately
-      const runButton = await screen.findByRole('button', { name: /Run Report/i });
+      const runButton = await findRefreshButton();
       expect(runButton).toBeInTheDocument();
     });
   });

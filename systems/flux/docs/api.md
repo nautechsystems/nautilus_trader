@@ -148,6 +148,38 @@ Compatibility is request/response-shape compatibility only; storage remains stri
    - `{rows, total, limit, offset, has_more}` (+ optional `next_offset`)
 7. `DELETE /api/v1/alerts` returns:
    - `{success, strategy_id, deleted, remaining, server_ts_ms}`
+8. `GET /api/v1/signals?contract_version=2` adds `data.realtime` only for the canonical profile-scoped
+   snapshot shape:
+   - normalized `profile` present
+   - no explicit `strategy`
+   - request-selected strategy set resolves to the same stream identity validated by `subscribe`
+9. Canonical signals snapshots keep the legacy payload shape and add `data.realtime` with:
+   - `contract_version`
+   - `surface`
+   - `profile`
+   - `surface_query_key`
+   - `stream_id`
+   - `snapshot_revision`
+   - `last_seq`
+   - `capabilities`
+10. Strategy-scoped or otherwise non-canonical signals queries remain REST-only and omit `data.realtime`.
+11. `GET /api/v1/trades?contract_version=2` adds `data.realtime` only for the canonical live-compatible
+   snapshot shape:
+   - normalized `profile` present
+   - no explicit `strategy`
+   - no filters
+   - first page (`offset=0`)
+   - descending/default sort (`ts_ms_desc`)
+   - default page size (`limit=50`, explicit or implicit)
+12. Canonical trades snapshots must also resolve to the same real subscribable stream identity that
+    `subscribe` validates for that profile; if no standard trades descriptor exists for the normalized profile,
+    the route remains REST-only and omits `data.realtime`.
+13. Non-canonical trades queries remain REST-only and omit `data.realtime`.
+14. In `data.realtime`, `last_seq` is the standard surface-specific stream cursor for subscribe lineage,
+    not the REST row-sequence value.
+15. Standard cursors are scoped by `(profile, surface)`. Legacy Socket.IO packets and the other standard surface
+    do not advance a surface's v2 cursor.
+16. `contract_version` is opt-in only. Unsupported values return `400 unsupported_contract_version`.
 
 ## Socket.IO contract (`/socket.io`)
 
@@ -169,6 +201,8 @@ Connection/profile rules:
 6. `set_profile` leaves the previous room and joins the new room for the same client SID.
 7. Clearing profile via `set_profile` unset payload returns ack with `profile: ""` and `room: null`.
 8. Unsupported profiles return `ok: false` with `error.code: "unsupported_profile"` and no room join.
+
+Legacy event names remain the default path and are unchanged:
 
 Events (names are exact and stable):
 
@@ -198,6 +232,93 @@ Recovery:
    - `GET /api/v1/signals`
    - `GET /api/v1/trades/delta`
    - `GET /api/v1/alerts`
+
+### Standard realtime contract (`contract_version=2`)
+
+The standardized contract is additive and opt-in. Legacy clients continue receiving only the legacy event names
+unless they explicitly subscribe to the standard path.
+
+HTTP snapshot handshake:
+
+1. Client fetches a canonical live-compatible snapshot with `contract_version=2`.
+2. Snapshot response adds `data.realtime = {contract_version, surface, profile, surface_query_key, stream_id, snapshot_revision, last_seq, capabilities}`.
+3. Client subscribes with Socket.IO event `subscribe`.
+
+`subscribe` request payload:
+
+1. `contract_version`
+2. `surface`
+3. `profile`
+4. `surface_query_key`
+5. `stream_id`
+6. `snapshot_revision`
+7. `resume_from_seq`
+
+All three lineage fields are mandatory and must be echoed from the snapshot:
+
+1. `surface_query_key` must be non-empty
+2. `stream_id` must be non-empty
+3. `snapshot_revision` must be non-null
+
+`subscribe` ack payload:
+
+1. `accepted`
+2. `contract_version`
+3. `surface`
+4. `profile`
+5. `surface_query_key`
+6. `stream_id`
+7. `snapshot_revision`
+8. `accepted_start_seq`
+9. `last_seq`
+10. `capabilities`
+11. rejection-only: `reason`
+
+Standard live event name:
+
+1. `realtime_event`
+
+Standard live envelope invariants:
+
+1. Every event includes `contract_version`, `surface`, `stream_id`, `profile`, `kind`, `seq`, `snapshot_revision`, and `server_ts_ms`.
+2. `seq` is surface-specific for the standard contract and is scoped to `(profile, surface)`.
+3. Supported `kind` values are:
+   - `delta_batch`
+   - `heartbeat`
+   - `invalidate`
+   - `recovery_required`
+4. `delta_batch` carries machine-readable `payload` content:
+   - `signal` surface: `payload.signals[]`, `payload.alerts`, `payload.strategies.changed`
+   - `trades` surface: `payload.trades[]`
+5. `heartbeat` may carry an empty payload and reuses the current surface cursor value for liveness accounting (it does not advance `last_seq`).
+6. `invalidate` tells the client to resnapshot the affected surface and may include summary payload fields (for example alert counts).
+7. `recovery_required` includes machine-readable `reason` and advances only the affected surface's cursor.
+
+Standard rejection and recovery reasons:
+
+1. Subscribe rejection may return:
+   - `backend_kill_switch`
+   - `unsupported_contract_version`
+   - `unsupported_surface`
+   - `unsupported_profile`
+   - `capability_unavailable`
+   - `canary_denied`
+   - `missing_snapshot_lineage`
+   - `stream_rollover`
+   - `snapshot_revision_mismatch`
+   - `surface_query_key_mismatch`
+2. Mid-session withdrawal emits `recovery_required` with:
+   - `backend_kill_switch`
+   - `capability_withdrawn`
+3. Trade overflow/gap emits `recovery_required` with:
+   - `trade_gap`
+
+Current standard capabilities:
+
+1. `capabilities.recovery_mode` is `invalidate_only`.
+2. `capabilities.replay_supported` is `false`.
+3. `capabilities.transport_mode` is `polling_only`.
+4. Clients must resnapshot over REST after any `recovery_required`.
 
 ## Readiness policy
 

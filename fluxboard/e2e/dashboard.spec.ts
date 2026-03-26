@@ -1,12 +1,104 @@
 // Dashboard panel interaction tests
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
+
+const REALTIME_FLAG_KEYS = {
+  global: 'fluxboard:feature:realtime-standard',
+  signal: 'fluxboard:feature:realtime-standard-signal',
+  killSwitch: 'fluxboard:feature:realtime-standard-kill-switch',
+} as const;
+
+type RealtimeFlagOverrides = Partial<Record<keyof typeof REALTIME_FLAG_KEYS, boolean>>;
+
+async function setRealtimeFlags(page: Page, flags: RealtimeFlagOverrides) {
+  await page.evaluate((entries) => {
+    for (const [key, enabled] of entries) {
+      if (enabled) {
+        window.localStorage.setItem(key, '1');
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    }
+  }, Object.entries(flags).map(([name, enabled]) => [REALTIME_FLAG_KEYS[name as keyof typeof REALTIME_FLAG_KEYS], enabled]));
+}
+
+async function readRealtimeFlags(page: Page) {
+  return page.evaluate((keys) => {
+    const out: Record<string, string | null> = {};
+    for (const [name, key] of Object.entries(keys)) {
+      out[name] = window.localStorage.getItem(key);
+    }
+    return out;
+  }, REALTIME_FLAG_KEYS);
+}
+
+async function expectPanelToggleStillWorks(panel: Locator) {
+  const toggleButton = panel.locator('button[title*="Collapse"]').or(panel.locator('button[title*="Expand"]'));
+  const body = panel.locator('[data-testid="panel-body"]');
+  const initialBodyCount = await body.count();
+
+  await expect(toggleButton).toBeVisible();
+  await toggleButton.click({ force: true });
+  await expect(body).toHaveCount(initialBodyCount === 0 ? 1 : 0);
+}
 
 test.describe('Dashboard Panel Interactions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('http://localhost:5000/');
     // Wait for dashboard to load
     await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
+  });
+
+  test('dashboard panels stay interactive across frontend rollout flag toggles and rollback', async ({ page }) => {
+    await setRealtimeFlags(page, { global: true, signal: true, killSwitch: false });
+    await page.reload();
+    await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
+
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: '1',
+      signal: '1',
+      killSwitch: null,
+    });
+
+    const signalPanel = page.locator('.dashboard-panel[data-panel-title="Signal"]');
+    await expect(signalPanel).toBeVisible();
+    await expectPanelToggleStillWorks(signalPanel);
+
+    const tradesPanel = page.locator('.dashboard-panel[data-panel-title="Trades"]');
+    const tradesRemoveButton = tradesPanel.locator('button[title="Remove"]');
+    await expect(tradesPanel).toBeVisible();
+    await expect(tradesRemoveButton).toBeVisible();
+    await tradesRemoveButton.click({ force: true });
+    await page.waitForTimeout(300);
+    await expect(tradesPanel).toHaveCount(0);
+
+    const restoreTradesButton = page.locator('button:has-text("+ Trades")');
+    await expect(restoreTradesButton).toBeVisible();
+    await restoreTradesButton.click();
+    await expect(page.locator('.dashboard-panel[data-panel-title="Trades"]')).toBeVisible();
+
+    await setRealtimeFlags(page, { global: true, signal: true, killSwitch: true });
+    await page.reload();
+    await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: '1',
+      signal: '1',
+      killSwitch: '1',
+    });
+    await expect(page.locator('.dashboard-panel[data-panel-title="Signal"]')).toBeVisible();
+    await expectPanelToggleStillWorks(page.locator('.dashboard-panel[data-panel-title="Signal"]'));
+
+    await setRealtimeFlags(page, { global: false, signal: false, killSwitch: false });
+    await page.reload();
+    await page.waitForSelector('.dashboard-panel', { timeout: 5000 });
+    expect(await readRealtimeFlags(page)).toMatchObject({
+      global: null,
+      signal: null,
+      killSwitch: null,
+    });
+    await expect(page.locator('.dashboard-panel[data-panel-title="Signal"]')).toBeVisible();
+    await expect(page.locator('.dashboard-panel[data-panel-title="Trades"]')).toBeVisible();
+    await expectPanelToggleStillWorks(page.locator('.dashboard-panel[data-panel-title="Signal"]'));
   });
 
   test('collapse button (-) collapses and expands panel', async ({ page }) => {

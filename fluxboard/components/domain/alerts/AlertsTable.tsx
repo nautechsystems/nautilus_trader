@@ -129,7 +129,12 @@ export function AlertsTable({
 
   // Auto-dismiss logic (track scheduled timers to prevent duplicates)
   const scheduledTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const onDismissRef = useRef(onDismiss);
   const { isMobile, density } = useMobileLayout();
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
 
   useEffect(() => {
     const scheduledTimers = scheduledTimersRef.current;
@@ -147,7 +152,7 @@ export function AlertsTable({
       if (timeout > 0) {
         const timer = setTimeout(() => {
           scheduledTimers.delete(alert.id);
-          onDismiss(alert.id);
+          onDismissRef.current(alert.id);
         }, timeout);
         scheduledTimers.set(alert.id, timer);
       }
@@ -162,11 +167,13 @@ export function AlertsTable({
       }
     }
 
-    return () => {
-      scheduledTimers.forEach(timer => clearTimeout(timer));
-      scheduledTimers.clear();
-    };
-  }, [alerts, levelFilter, onDismiss, dismissedIds]);
+  }, [alerts, levelFilter, dismissedIds]);
+
+  useEffect(() => () => {
+    const scheduledTimers = scheduledTimersRef.current;
+    scheduledTimers.forEach((timer) => clearTimeout(timer));
+    scheduledTimers.clear();
+  }, []);
 
   // Filter and sort rows
   const filteredAlerts = useMemo(

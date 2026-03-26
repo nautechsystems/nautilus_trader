@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-12-rt-soak`
+- owner: `coordinator`
+- branch: `lanes/task-12-rt-soak`
+- worktree: `.worktrees/task-12-rt-soak`
+- depends_on: `Task 6: Migrate Signal Surface To The Standard ; Task 7: Migrate Trades Surface To The Standard ; Task 9: Migrate Alerts Surface To The Standard ; Task 10: Migrate MarketData And Balances To The Standard`
+- write_scope: `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/__tests__/panels/signal.virtualization.test.tsx`, `fluxboard/e2e/realtime-soak.spec.ts`, `docs/plans/2026-03-19-fluxboard-performance-improvement-plan.md`, `systems/flux/docs/realtime-rollout.md`
+- rollout_control: `mixed-surface cleanup rehearsal before cleanup execution`
+- rollback_trigger: `soak failure, budget miss, or mixed-rollout instability`
+- current status: `completed`
+- active task: `Task 12: Run Final Rollout Validation And Cleanup Readiness Review`
+- current commit or diff: `ec7349eb5a`
+- cutover_packet: `docs/plans/2026-03-19-fluxboard-performance-improvement-plan.md ; systems/flux/docs/realtime-rollout.md`
+- canary_scope: `final mixed-surface rollout validation for Signal, Trades, Alerts, MarketData, and Balances`
+- minimum_canary_cohort: `all active standard surfaces must have completed their per-surface cutover checkpoints before cleanup`
+- minimum_standard_subscribers: `machine-checked proof required per migrated surface during the cleanup review window`
+- minimum_standard_event_volume: `machine-checked proof required per migrated surface during the cleanup review window`
+- alert_state: `green in lane-owned rehearsal checks; no active rollback trigger`
+- rollback_exercise_result: `pass for frontend rollback prerequisites via the existing per-surface flag-off exercises; Task 12 mixed-surface soak stayed bounded under flag-on`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `rehearsal soak kept mounted dashboard rows within the <=120 gate after standard Signal virtualization was wired; 50 mixed dashboard invalidations yielded signal<=3 requests, alerts<=3 requests, balances<=3 requests, and exactly one trades delta replay; 50 market-data invalidations yielded marketData<=3 requests`
+- legacy_traffic_status: `Signal and Trades now negotiate backend contract_version=2 lineage, but the current frontend panels still retain legacy event subscriptions; Alerts, Balances, and MarketData still depend on the compatibility bridge over legacy market_update. Backend legacy-event cleanup therefore remains blocked for all active surfaces in this lane.`
+- verification run: `pnpm build:test PASS; VITEST_FULL=1 pnpm exec vitest run __tests__/panels/signal.virtualization.test.tsx __tests__/panels/signal.test.tsx tests/signal/SignalTable.audit.test.tsx __tests__/ui/DataTable.test.tsx __tests__/realtime/baseline-budgets.test.tsx __tests__/realtime/compatibility-matrix.test.tsx PASS (65 tests); E2E_BASE_URL=http://127.0.0.1:4273 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-soak.spec.ts PASS (1 test); PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus-trader-dev/.worktrees/task-3-rt-backend/.venv/bin/pytest -q tests/unit_tests/flux/api/test_realtime_contract.py tests/unit_tests/flux/api/test_tokenmm_compat.py --confcutdir=tests/unit_tests/flux/api PASS (28 tests) after temporary runtime-artifact links were added into the Task 12 worktree and then removed after verification`
+- blockers: `none for Task 12 itself; downstream cleanup remains blocked until Fluxboard consumes the standard Socket.IO transport for Signal/Trades and bridge-backed surfaces no longer require legacy market_update`
+- notes_last_update: `The new realtime soak gate went red on mounted dashboard row count and exposed that the standard Signal table path was not actually wiring a virtualizer into DataTable. Task 12 fixed that regression in SignalTable, reran the mixed-surface rehearsal green, added explicit polling_only compatibility verification, and then closed the backend contract verification gap with a fresh 28-test pytest pass using the Task 3 backend venv plus temporary runtime-artifact links. The actual 7-day cleanup-review traffic thresholds still come from rollout metrics and cutover packets rather than this synthetic lane test.`
+- next handoff: `Task 13 is blocked after the cleanup review. Start the frontend standard-transport lane for Signal/Trades next, but keep backend cleanup blocked until the bridge-backed surfaces are also resolved or explicitly retired.`

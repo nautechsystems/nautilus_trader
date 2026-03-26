@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { type ColumnDef } from '@tanstack/react-table';
 
 import { DataTable } from '@/components/ui/table/DataTable';
@@ -10,16 +10,21 @@ import { formatLocal } from '@/utils/time';
 import { deriveStrategyStatus, describeTradingStatus } from '@/utils/strategyStatus';
 import { resolveSignalRunning } from '@/utils/signalRunState';
 import type { MakerV4LegSnapshot, MakerV4OperatorPayload, MakerV4QuoteSnapshot, SignalStrategy } from '@/types';
+import { useVisibleNowMs } from './useVisibleNowMs';
 
 type MakerV4DisplayRow = SignalStrategy & {
   _quoteSnapshot: MakerV4QuoteSnapshot | null;
   _makerLeg: MakerV4LegSnapshot | null;
   _hedgeLeg: MakerV4LegSnapshot | null;
   _operator: MakerV4OperatorPayload | null;
+  _sourceFingerprint: string;
   _quoteHealthUsable: boolean;
   _statusLabel: ReturnType<typeof describeTradingStatus>;
   _lastUpdateMs: number | null;
   _lastAgeMs: number | null;
+  _recentAgeMs: number | null;
+  _ageAsOfMs: number | null;
+  _ageAnchorSource: 'local' | 'server';
 };
 
 function coerceNumber(value: unknown): number | null {
@@ -119,6 +124,40 @@ function deriveLastAgeMs(
   return Math.max(0, nowMs - lastUpdateMs);
 }
 
+function deriveRecentAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return Math.min(...snapshotAges);
+  }
+  if (lastUpdateMs == null) return null;
+  return Math.max(0, nowMs - lastUpdateMs);
+}
+
+function deriveAgeAsOfMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return nowMs;
+  }
+  if (lastUpdateMs == null) return null;
+  return nowMs;
+}
+
 function isLegUsable(leg: MakerV4LegSnapshot | null | undefined): boolean {
   if (!leg) return false;
   const feedState = formatStateWord(leg.feed_state);
@@ -143,22 +182,225 @@ function getAgeColor(ageMs: number | null): string {
   return colors.text.primary;
 }
 
-function formatLegAge(leg: MakerV4LegSnapshot | null | undefined): string {
-  const ageMs = coerceNumber(leg?.age_ms);
+function resolveLiveAgeMs(ageMs: number | null, ageAsOfMs: number | null, nowMs: number): number | null {
+  if (ageMs == null) return null;
+  if (ageAsOfMs == null) return ageMs;
+  return ageMs + Math.max(0, nowMs - ageAsOfMs);
+}
+
+function resolveLiveDisplayAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._lastAgeMs, row._ageAsOfMs, nowMs);
+}
+
+function resolveLiveRecentAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._recentAgeMs, row._ageAsOfMs, nowMs);
+}
+
+function buildMakerV4SourceFingerprint(row: SignalStrategy): string {
+  return JSON.stringify({
+    running: row.running ?? null,
+    tradeable: row.tradeable ?? null,
+    blocked: row.blocked ?? null,
+    balances_ok: row.balances_ok ?? null,
+    params: row.params ?? null,
+    state: row.state ?? null,
+    maker_v4: row.maker_v4 ?? null,
+    legs: row.legs ?? null,
+    legs_order: row.legs_order ?? null,
+    maker_role_map: row.maker_role_map ?? null,
+    meta: row.meta ?? null,
+  });
+}
+
+function formatLegAge(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+): string {
+  const ageMs = resolveLiveAgeMs(coerceNumber(leg?.age_ms), ageAsOfMs, nowMs);
   return ageMs == null ? '—' : fmtAgeSec(ageMs);
 }
 
-function buildAgeTooltip(row: MakerV4DisplayRow): string {
+function buildAgeTooltip(row: MakerV4DisplayRow, nowMs: number): string {
+  const ageMs = resolveLiveDisplayAgeMs(row, nowMs);
   const lines = [
-    `Worst leg age: ${row._lastAgeMs != null ? fmtAgeSec(row._lastAgeMs) : '—'}`,
-    `Maker leg: ${formatLegAge(row._makerLeg)}`,
-    `Hedge leg: ${formatLegAge(row._hedgeLeg)}`,
-    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null)}`,
+    `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+    `Maker leg: ${formatLegAge(row._makerLeg, row._ageAsOfMs, nowMs)}`,
+    `Hedge leg: ${formatLegAge(row._hedgeLeg, row._ageAsOfMs, nowMs)}`,
+    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null, row._ageAsOfMs, nowMs)}`,
   ];
   if (row._lastUpdateMs != null) {
     lines.push(`Last update: ${formatLocal(row._lastUpdateMs)}`);
   }
   return lines.join('\n');
+}
+
+function buildMakerV4DisplayRow(
+  row: SignalStrategy,
+  nowMs: number,
+  ageAnchorSource: MakerV4DisplayRow['_ageAnchorSource'],
+): MakerV4DisplayRow {
+  const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
+  const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
+  const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
+  const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const recentAgeMs = deriveRecentAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const ageAsOfMs = deriveAgeAsOfMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const status = deriveStrategyStatus({
+    running: resolveSignalRunning(row, nowMs),
+    trading: row.params?.bot_on,
+    blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
+  });
+
+  return {
+    ...row,
+    _quoteSnapshot: quoteSnapshot,
+    _makerLeg: quoteSnapshot?.maker_leg ?? null,
+    _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
+    _operator: row.maker_v4?.operator ?? null,
+    _sourceFingerprint: buildMakerV4SourceFingerprint(row),
+    _quoteHealthUsable: quoteHealthUsable,
+    _statusLabel: describeTradingStatus(status),
+    _lastUpdateMs: lastUpdateMs,
+    _lastAgeMs: lastAgeMs,
+    _recentAgeMs: recentAgeMs,
+    _ageAsOfMs: ageAsOfMs,
+    _ageAnchorSource: ageAnchorSource,
+  };
+}
+
+function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayRow) {
+  Object.keys(target).forEach((key) => {
+    if (!(key in next)) {
+      delete (target as Record<string, unknown>)[key];
+    }
+  });
+
+  Object.entries(next).forEach(([key, value]) => {
+    (target as Record<string, unknown>)[key] = value;
+  });
+}
+
+function didMakerV4DisplayRowChange(
+  existing: MakerV4DisplayRow,
+  next: MakerV4DisplayRow,
+): boolean {
+  const existingKeys = Object.keys(existing);
+  const nextKeys = Object.keys(next);
+  if (existingKeys.length !== nextKeys.length) {
+    return true;
+  }
+  return nextKeys.some((key) => {
+    if (key === '_statusLabel') {
+      return (
+        existing._statusLabel.label !== next._statusLabel.label
+        || existing._statusLabel.subLabel !== next._statusLabel.subLabel
+        || existing._statusLabel.variant !== next._statusLabel.variant
+      );
+    }
+    return existing[key as keyof MakerV4DisplayRow] !== next[key as keyof MakerV4DisplayRow];
+  });
+}
+
+function didMakerV4SourceRowChange(
+  existing: MakerV4DisplayRow | undefined,
+  sourceRow: SignalStrategy,
+): boolean {
+  if (!existing) {
+    return true;
+  }
+  return (
+    existing.maker_v4 !== sourceRow.maker_v4
+    || existing.state !== sourceRow.state
+    || existing.running !== sourceRow.running
+    || existing.tradeable !== sourceRow.tradeable
+    || existing.blocked !== sourceRow.blocked
+    || existing.balances_ok !== sourceRow.balances_ok
+    || existing.params !== sourceRow.params
+    || existing.legs !== sourceRow.legs
+    || existing.legs_order !== sourceRow.legs_order
+    || existing.maker_role_map !== sourceRow.maker_role_map
+    || existing.meta !== sourceRow.meta
+    || existing._sourceFingerprint !== buildMakerV4SourceFingerprint(sourceRow)
+  );
+}
+
+function reconcileMakerV4DisplayRows({
+  currentRows,
+  currentRowById,
+  currentSourceRowById,
+  changedRowIds,
+  forceRefreshAll,
+  sourceRows,
+  nowMs,
+  clockAnchorMs,
+}: {
+  currentRows: MakerV4DisplayRow[];
+  currentRowById: Map<string, MakerV4DisplayRow>;
+  currentSourceRowById: Map<string, SignalStrategy>;
+  changedRowIds?: readonly string[] | null;
+  forceRefreshAll?: boolean;
+  sourceRows: readonly SignalStrategy[];
+  nowMs: number;
+  clockAnchorMs?: number | null;
+}) {
+  const nextRows: MakerV4DisplayRow[] = [];
+  const nextRowById = new Map<string, MakerV4DisplayRow>();
+  const nextSourceRowById = new Map<string, SignalStrategy>();
+  const changedRowIdSet = changedRowIds ? new Set(changedRowIds) : null;
+
+  sourceRows.forEach((sourceRow) => {
+    const nextId = sourceRow.id;
+    const existing = currentRowById.get(nextId);
+    const previousSourceRow = currentSourceRowById.get(nextId);
+    const sourceRowChanged = forceRefreshAll
+      || (changedRowIdSet
+        ? changedRowIdSet.has(nextId)
+        : previousSourceRow == null
+          || previousSourceRow !== sourceRow
+          || didMakerV4SourceRowChange(existing, sourceRow));
+    const needsInitialServerRealignment = (
+      existing != null
+      && clockAnchorMs != null
+      && existing._ageAnchorSource !== 'server'
+    );
+
+    if (existing && !sourceRowChanged && !needsInitialServerRealignment) {
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
+      return;
+    }
+
+    const ageAnchorSource = clockAnchorMs != null ? 'server' : 'local';
+    const nextDisplayRow = buildMakerV4DisplayRow(
+      sourceRow,
+      clockAnchorMs ?? nowMs,
+      ageAnchorSource,
+    );
+    if (existing && didMakerV4DisplayRowChange(existing, nextDisplayRow) === false) {
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
+      return;
+    }
+
+    nextRows.push(nextDisplayRow);
+    nextRowById.set(nextId, nextDisplayRow);
+    nextSourceRowById.set(nextId, sourceRow);
+  });
+
+  const didRowsChange = (
+    currentRows.length !== nextRows.length
+    || nextRows.some((row, index) => currentRows[index] !== row)
+  );
+
+  return {
+    rows: nextRows,
+    rowById: nextRowById,
+    sourceRowById: nextSourceRowById,
+    didRowsChange,
+  };
 }
 
 function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
@@ -179,17 +421,23 @@ function formatLegPrices(leg: MakerV4LegSnapshot | null | undefined): string {
   return `${parts[0]} / ${parts[1]} / ${parts[2]}`;
 }
 
-function buildLegTooltip(leg: MakerV4LegSnapshot | null | undefined, fallback: string): string | undefined {
+export function buildLegTooltip(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+  fallbackAgeMs: number | null,
+): string | undefined {
   if (!leg) return undefined;
   const feedState = formatStateWord(leg.feed_state);
   const quoteState = formatStateWord(leg.quote_state);
   const pricingUsable = typeof leg.pricing_usable === 'boolean' ? leg.pricing_usable : null;
   const hedgeUsable = typeof leg.hedge_usable === 'boolean' ? leg.hedge_usable : null;
   const reasonCode = String(leg.reason_code ?? '').trim();
+  const liveAgeMs = resolveLiveAgeMs(coerceNumber(leg.age_ms), ageAsOfMs, nowMs) ?? fallbackAgeMs;
   const lines = [
     formatLegLine(leg),
     `Bid / Mid / Ask: ${formatLegPrices(leg)}`,
-    `Age: ${leg.age_ms != null ? fmtAgeSec(Number(leg.age_ms)) : fallback}`,
+    `Age: ${liveAgeMs != null ? fmtAgeSec(liveAgeMs) : '—'}`,
   ];
   if (feedState || quoteState) {
     lines.push(`Feed: ${feedState ?? '—'} · Quote: ${quoteState ?? '—'}`);
@@ -210,15 +458,19 @@ function buildLegTooltip(leg: MakerV4LegSnapshot | null | undefined, fallback: s
 
 function LegSummary({
   leg,
-  fallbackAgeLabel,
+  ageAsOfMs,
+  nowMs,
+  fallbackAgeMs,
 }: {
   leg: MakerV4LegSnapshot | null | undefined;
-  fallbackAgeLabel: string;
+  ageAsOfMs: number | null;
+  nowMs: number;
+  fallbackAgeMs: number | null;
 }): ReactNode {
   if (!leg) {
     return <span className="text-xs text-neutral-500">—</span>;
   }
-  const tooltip = buildLegTooltip(leg, fallbackAgeLabel);
+  const tooltip = buildLegTooltip(leg, ageAsOfMs, nowMs, fallbackAgeMs);
   const feedState = formatStateWord(leg.feed_state);
   const quoteState = formatStateWord(leg.quote_state);
   const healthLabel = feedState || quoteState
@@ -242,38 +494,114 @@ export default function MakerV4SignalTable({
   strategies,
   loading = false,
   nowProvider = () => Date.now(),
+  clockAnchorMs,
+  liveDataVersion,
+  changedRowIds,
 }: {
   rows?: SignalStrategy[];
   strategies?: SignalStrategy[];
   loading?: boolean;
   nowProvider?: () => number;
+  clockAnchorMs?: number | null;
+  liveDataVersion?: number;
+  changedRowIds?: readonly string[] | null;
 }) {
   const sourceRows = rows ?? strategies ?? [];
-  const data = useMemo<MakerV4DisplayRow[]>(() => {
-    return sourceRows.map((row) => {
-      const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
-      const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
-      const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
-      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowProvider());
-      const status = deriveStrategyStatus({
-        running: resolveSignalRunning(row, nowProvider()),
-        trading: row.params?.bot_on,
-        blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
+  const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
+    intervalMs: 1000,
+    nowProvider,
+    refreshKey: clockAnchorMs,
+    disabled: loading && sourceRows.length === 0,
+  });
+  const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
+  const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
+  const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
+  const previousLiveDataVersionRef = useRef<number | undefined>(liveDataVersion);
+  const [committedTableLiveDataVersion, setCommittedTableLiveDataVersion] = useState<number | undefined>(liveDataVersion);
+  const [, forceCommittedRender] = useState(0);
+  const reconciledData = useMemo(() => {
+    const forceRefreshAll =
+      changedRowIds == null
+      && liveDataVersion !== previousLiveDataVersionRef.current;
+    return reconcileMakerV4DisplayRows({
+      currentRows: displayRowsRef.current,
+      currentRowById: displayRowByIdRef.current,
+      currentSourceRowById: displaySourceRowByIdRef.current,
+      changedRowIds,
+      forceRefreshAll,
+      sourceRows,
+      nowMs,
+      clockAnchorMs,
+    });
+  }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
+  const data = displayRowsRef.current.length === 0
+    ? reconciledData.rows
+    : displayRowsRef.current;
+
+  useLayoutEffect(() => {
+    if (displayRowsRef.current.length === 0) {
+      displayRowsRef.current = reconciledData.rows;
+      displayRowByIdRef.current = reconciledData.rowById;
+      displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+      previousLiveDataVersionRef.current = liveDataVersion;
+      setCommittedTableLiveDataVersion(liveDataVersion);
+      return;
+    }
+
+    let shouldForceCommittedRender = false;
+    let shouldAdvanceCommittedTableVersion = false;
+
+    if (reconciledData.didRowsChange) {
+      const nextCommittedRows: MakerV4DisplayRow[] = [];
+      const nextCommittedRowById = new Map<string, MakerV4DisplayRow>();
+
+      reconciledData.rows.forEach((nextRow, index) => {
+        const existing = displayRowByIdRef.current.get(nextRow.id);
+        if (existing) {
+          if (existing !== nextRow) {
+            patchDisplayRowInPlace(existing, nextRow);
+            shouldForceCommittedRender = true;
+            shouldAdvanceCommittedTableVersion = true;
+          }
+          nextCommittedRows.push(existing);
+          nextCommittedRowById.set(nextRow.id, existing);
+          if (displayRowsRef.current[index] !== existing) {
+            shouldForceCommittedRender = true;
+          }
+          return;
+        }
+
+        nextCommittedRows.push(nextRow);
+        nextCommittedRowById.set(nextRow.id, nextRow);
+        shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
       });
 
-      return {
-        ...row,
-        _quoteSnapshot: quoteSnapshot,
-        _makerLeg: quoteSnapshot?.maker_leg ?? null,
-        _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
-        _operator: row.maker_v4?.operator ?? null,
-        _quoteHealthUsable: quoteHealthUsable,
-        _statusLabel: describeTradingStatus(status),
-        _lastUpdateMs: lastUpdateMs,
-        _lastAgeMs: lastAgeMs,
-      };
-    });
-  }, [nowProvider, sourceRows]);
+      const didStructureChange =
+        displayRowsRef.current.length !== nextCommittedRows.length
+        || nextCommittedRows.some((row, index) => displayRowsRef.current[index] !== row);
+      if (didStructureChange) {
+        displayRowsRef.current = nextCommittedRows;
+        shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
+      }
+
+      displayRowByIdRef.current = nextCommittedRowById;
+    } else {
+      displayRowByIdRef.current = reconciledData.rowById;
+    }
+
+    displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+    previousLiveDataVersionRef.current = liveDataVersion;
+
+    if (shouldAdvanceCommittedTableVersion && committedTableLiveDataVersion !== liveDataVersion) {
+      setCommittedTableLiveDataVersion(liveDataVersion);
+    }
+
+    if (shouldForceCommittedRender) {
+      forceCommittedRender((value) => value + 1);
+    }
+  }, [committedTableLiveDataVersion, reconciledData, liveDataVersion]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
     {
@@ -364,7 +692,9 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => (
         <LegSummary
           leg={row.original._makerLeg}
-          fallbackAgeLabel={row.original._lastAgeMs != null ? fmtAgeSec(row.original._lastAgeMs) : '—'}
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={resolveLiveDisplayAgeMs(row.original, nowMs)}
         />
       ),
     },
@@ -374,10 +704,16 @@ export default function MakerV4SignalTable({
       cell: ({ row }) => (
         <LegSummary
           leg={row.original._hedgeLeg}
-          fallbackAgeLabel={
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
-              ? fmtAgeSec(Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
-              : (row.original._lastAgeMs != null ? fmtAgeSec(row.original._lastAgeMs) : '—')
+              ? (resolveLiveAgeMs(
+                  Number(row.original._quoteSnapshot.ibkr_quote_age_ms),
+                  row.original._ageAsOfMs,
+                  nowMs,
+                ) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              : resolveLiveDisplayAgeMs(row.original, nowMs)
           }
         />
       ),
@@ -518,15 +854,15 @@ export default function MakerV4SignalTable({
       },
     },
     {
-      accessorFn: (row) => row._lastAgeMs ?? Number.POSITIVE_INFINITY,
+      accessorFn: (row) => resolveLiveDisplayAgeMs(row, nowMs) ?? Number.POSITIVE_INFINITY,
       id: 'age_ms',
       header: 'Age',
       cell: ({ row }) => {
-        const ageMs = row.original._lastAgeMs;
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
         if (ageMs == null) {
           return <span className="text-xs text-neutral-500">—</span>;
         }
-        const tooltip = buildAgeTooltip(row.original);
+        const tooltip = buildAgeTooltip(row.original, nowMs);
         return (
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <span
@@ -545,16 +881,18 @@ export default function MakerV4SignalTable({
       header: 'Last Updated',
       cell: ({ row }) => {
         const lastUpdateMs = row.original._lastUpdateMs;
-        const ageMs = row.original._lastAgeMs;
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
+        const recentAgeMs = resolveLiveRecentAgeMs(row.original, nowMs);
         if (lastUpdateMs == null) {
           return <span className="text-xs text-neutral-500">—</span>;
         }
         const tooltip = [
           `Last update: ${formatLocal(lastUpdateMs)}`,
-          `Age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+          `Recency: ${recentAgeMs != null ? fmtAgeSec(recentAgeMs) : '—'}`,
+          `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
           `IBKR quote age: ${
             row.original._quoteSnapshot?.ibkr_quote_age_ms != null
-              ? fmtAgeSec(Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
               : '—'
           }`,
         ].join('\n');
@@ -562,21 +900,22 @@ export default function MakerV4SignalTable({
           <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
             <span className="cursor-help text-xs text-neutral-300">
               {formatLocal(lastUpdateMs)}
-              {ageMs != null && <span className="text-neutral-500"> ({Math.max(0, Math.floor(ageMs / 1000))}s ago)</span>}
+              {recentAgeMs != null && <span className="text-neutral-500"> ({Math.max(0, Math.floor(recentAgeMs / 1000))}s ago)</span>}
             </span>
           </SimpleTooltip>
         );
       },
     },
-  ], []);
+  ], [nowMs]);
 
   return (
-    <div data-testid="maker-v4-signal-table">
+    <div data-testid="maker-v4-signal-table" ref={targetRef}>
       <DataTable
         data={data}
         columns={columns}
         getRowId={(row) => row.id}
         sortable
+        liveDataVersion={committedTableLiveDataVersion}
         dense={false}
         loading={loading}
         emptyMessage={loading ? 'Loading strategies...' : 'No Maker V4 strategies found'}

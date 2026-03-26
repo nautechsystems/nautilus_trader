@@ -8,6 +8,9 @@ import { PanelWrapper } from './components/layout/PanelWrapper';
 import { useBalancesStore } from './stores';
 import { INTERVALS } from './constants';
 
+const mockIsRealtimeStandardEnabled = vi.hoisted(() => vi.fn(() => false));
+const mockUseStandardWebSocketSubscription = vi.hoisted(() => vi.fn());
+
 vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>();
   return {
@@ -25,6 +28,14 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('./config/featureFlags', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./config/featureFlags')>();
+  return {
+    ...actual,
+    isRealtimeStandardEnabled: (...args: unknown[]) => mockIsRealtimeStandardEnabled(...args),
+  };
+});
+
 const mockedApi = vi.mocked(api, true);
 const mockUsePolling = vi.fn();
 let seenFetchFns: WeakSet<() => unknown>;
@@ -33,10 +44,17 @@ function setPathname(pathname: string) {
   (window.location as unknown as { pathname?: string }).pathname = pathname;
 }
 
-vi.mock('./hooks', () => ({
-  usePolling: (fn: () => unknown | Promise<unknown>, interval: number, enabled?: boolean) =>
-    mockUsePolling(fn, interval, enabled),
-}));
+vi.mock('./hooks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./hooks')>();
+  return {
+    ...actual,
+    usePolling: (fn: () => unknown | Promise<unknown>, interval: number, enabled?: boolean) =>
+      mockUsePolling(fn, interval, enabled),
+    useWebSocket: vi.fn(),
+    useStandardWebSocketSubscription: (...args: unknown[]) =>
+      mockUseStandardWebSocketSubscription(...args),
+  };
+});
 
 const buildPayload = () => ({
   rows: [
@@ -127,11 +145,30 @@ const buildPayload = () => ({
   risk_groups: [],
 });
 
+const buildStandardPayload = () => ({
+  ...buildPayload(),
+  realtime: {
+    contract_version: 2,
+    surface: 'balances',
+    profile: 'tokenmm',
+    surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+    stream_id: 'balances:tokenmm:strategy_01',
+    snapshot_revision: 'balances-snapshot-1',
+    last_seq: 0,
+    capabilities: {
+      recovery_mode: 'invalidate_only',
+      replay_supported: false,
+      transport_mode: 'polling_only',
+    },
+  },
+});
+
 describe('Balances component', () => {
   beforeEach(() => {
     seenFetchFns = new WeakSet();
     setPathname('/balances');
     localStorage.clear();
+    mockIsRealtimeStandardEnabled.mockReturnValue(false);
     useBalancesStore.setState({
       rows: [],
       totals: null,
@@ -160,10 +197,34 @@ describe('Balances component', () => {
     mockUsePolling.mockReset();
   });
 
+  it('requests contract_version=2 snapshots and standard socket lineage when balances realtime standard is enabled', async () => {
+    mockIsRealtimeStandardEnabled.mockReturnValue(true);
+    mockedApi.getBalances.mockResolvedValue(buildStandardPayload() as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(mockedApi.getBalances).toHaveBeenCalledWith({ contractVersion: 2 });
+    });
+
+    expect(mockUseStandardWebSocketSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        lineage: expect.objectContaining({
+          contract_version: 2,
+          surface: 'balances',
+          stream_id: 'balances:tokenmm:strategy_01',
+          snapshot_revision: 'balances-snapshot-1',
+          last_seq: 0,
+        }),
+      }),
+    );
+  });
+
   it('polls balances at the configured interval', async () => {
     render(<Balances />);
     await waitFor(() => {
-      expect(mockUsePolling).toHaveBeenCalledWith(expect.any(Function), INTERVALS.BALANCES_POLL, undefined);
+      expect(mockUsePolling).toHaveBeenCalledWith(expect.any(Function), INTERVALS.BALANCES_POLL, true);
       expect(mockedApi.getBalances).toHaveBeenCalledTimes(1);
     });
 

@@ -1,70 +1,25 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { __resetViewportClockRegistryForTests, getViewportClockDebugState } from '@/hooks/useViewportClock';
 import { useVisibleNowMs } from './useVisibleNowMs';
-
-type MockObserverInstance = {
-  emit: (isIntersecting: boolean) => void;
-  root: Element | Document | null;
-};
-
-const observers: MockObserverInstance[] = [];
-const originalIntersectionObserver = globalThis.IntersectionObserver;
-
-class MockIntersectionObserver implements IntersectionObserver {
-  readonly root: Element | Document | null;
-  readonly rootMargin = '0px';
-  readonly thresholds = [0];
-  private readonly callback: IntersectionObserverCallback;
-  private readonly elements = new Set<Element>();
-
-  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
-    this.callback = callback;
-    this.root = options?.root ?? null;
-    observers.push(this);
-  }
-
-  disconnect(): void {
-    this.elements.clear();
-  }
-
-  observe(target: Element): void {
-    this.elements.add(target);
-  }
-
-  takeRecords(): IntersectionObserverEntry[] {
-    return [];
-  }
-
-  unobserve(target: Element): void {
-    this.elements.delete(target);
-  }
-
-  emit(isIntersecting: boolean): void {
-    const entries = Array.from(this.elements).map((target) => ({
-      target,
-      isIntersecting,
-      intersectionRatio: isIntersecting ? 1 : 0,
-      time: Date.now(),
-      boundingClientRect: target.getBoundingClientRect(),
-      intersectionRect: target.getBoundingClientRect(),
-      rootBounds: null,
-    })) as IntersectionObserverEntry[];
-
-    this.callback(entries, this);
-  }
-}
 
 function Probe({
   nowProvider,
+  disabled = false,
   root,
+  refreshKey,
 }: {
   nowProvider: () => number;
+  disabled?: boolean;
   root?: Element | null;
+  refreshKey?: unknown;
 }) {
   const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
     intervalMs: 1000,
     nowProvider,
+    disabled,
     root,
+    refreshKey,
   });
 
   return (
@@ -77,23 +32,17 @@ function Probe({
 describe('useVisibleNowMs', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    observers.length = 0;
-    globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
+    __resetViewportClockRegistryForTests();
   });
 
   afterEach(() => {
+    __resetViewportClockRegistryForTests();
     vi.useRealTimers();
-    globalThis.IntersectionObserver = originalIntersectionObserver;
   });
 
-  it('ticks once per second while visible', () => {
+  it('ticks once per second while active', () => {
     let now = 1_000;
     render(<Probe nowProvider={() => now} />);
-
-    const observer = observers[0] as MockIntersectionObserver;
-    act(() => {
-      observer.emit(true);
-    });
 
     expect(screen.getByTestId('probe')).toHaveTextContent('1000');
 
@@ -105,87 +54,75 @@ describe('useVisibleNowMs', () => {
     expect(screen.getByTestId('probe')).toHaveTextContent('2000');
   });
 
-  it('pauses ticking when hidden and resumes when visible again', () => {
+  it('pauses ticking when disabled and resumes when re-enabled', () => {
     let now = 5_000;
-    render(<Probe nowProvider={() => now} />);
+    const stableNowProvider = () => now;
+    const { rerender } = render(<Probe nowProvider={stableNowProvider} disabled />);
 
-    const observer = observers[0] as MockIntersectionObserver;
-    act(() => {
-      observer.emit(true);
-    });
+    expect(screen.getByTestId('probe')).toHaveTextContent('5000');
 
     act(() => {
       now = 6_000;
       vi.advanceTimersByTime(1000);
     });
 
-    expect(screen.getByTestId('probe')).toHaveTextContent('6000');
+    expect(screen.getByTestId('probe')).toHaveTextContent('5000');
 
     act(() => {
-      observer.emit(false);
+      rerender(<Probe nowProvider={stableNowProvider} />);
     });
 
     act(() => {
-      now = 9_000;
-      vi.advanceTimersByTime(3000);
-    });
-
-    expect(screen.getByTestId('probe')).toHaveTextContent('6000');
-
-    act(() => {
-      observer.emit(true);
-    });
-
-    act(() => {
-      now = 10_000;
+      now = 7_000;
       vi.advanceTimersByTime(1000);
     });
 
-    expect(screen.getByTestId('probe')).toHaveTextContent('10000');
+    expect(screen.getByTestId('probe')).toHaveTextContent('7000');
   });
 
-  it('falls back to regular ticking when IntersectionObserver is unavailable', () => {
-    delete (globalThis as any).IntersectionObserver;
-    let now = 10_000;
-    render(<Probe nowProvider={() => now} />);
+  it('shares a single viewport clock across subscribers', () => {
+    let now = 1_000;
 
-    expect(screen.getByTestId('probe')).toHaveTextContent('10000');
+    render(
+      <>
+        <Probe nowProvider={() => now} />
+        <Probe nowProvider={() => now} />
+      </>,
+    );
 
-    act(() => {
-      now = 11_000;
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(screen.getByTestId('probe')).toHaveTextContent('11000');
+    const debugState = getViewportClockDebugState('signal:visible-now-ms');
+    expect(debugState?.activeSubscriberCount).toBe(2);
+    expect(debugState?.timerCount).toBe(1);
   });
 
-  it('uses explicit root when provided', () => {
+  it('accepts explicit root without changing ticker behavior', () => {
     let now = 1_000;
     const root = document.createElement('div');
     document.body.appendChild(root);
 
     render(<Probe nowProvider={() => now} root={root} />);
+    expect(screen.getByTestId('probe')).toHaveTextContent('1000');
 
-    const observer = observers[0] as MockIntersectionObserver;
-    expect(observer.root).toBe(root);
+    act(() => {
+      now = 2_000;
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByTestId('probe')).toHaveTextContent('2000');
   });
 
-  it('auto-detects nearest scroll parent as observer root', () => {
+  it('recomputes immediately when refreshKey changes and nowProvider identity stays stable', () => {
     let now = 1_000;
+    const stableNowProvider = () => now;
+    const { rerender } = render(<Probe nowProvider={stableNowProvider} refreshKey="initial" />);
 
-    render(
-      <div>
-        <div
-          data-testid="outer-scroll"
-          style={{ overflowY: 'auto', maxHeight: '40px' }}
-        >
-          <Probe nowProvider={() => now} />
-        </div>
-      </div>
-    );
+    expect(screen.getByTestId('probe')).toHaveTextContent('1000');
 
-    const observer = observers[0] as MockIntersectionObserver;
-    const root = screen.getByTestId('outer-scroll');
-    expect(observer.root).toBe(root);
+    act(() => {
+      now = 2_000;
+      rerender(<Probe nowProvider={stableNowProvider} refreshKey="synced" />);
+    });
+
+    expect(screen.getByTestId('probe')).toHaveTextContent('2000');
   });
 });

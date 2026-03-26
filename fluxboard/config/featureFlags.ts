@@ -7,6 +7,12 @@
  *  3. Default values defined below
  */
 
+import {
+  REALTIME_STANDARD_ENV_FLAGS,
+  REALTIME_STANDARD_STORAGE_FLAGS,
+  type RealtimeSurface,
+} from '../lib/realtime/constants';
+
 type BooleanLike = string | number | boolean | null | undefined;
 
 function toBoolean(value: BooleanLike): boolean | null {
@@ -95,6 +101,16 @@ const TRADES_DECISION_DETAILS_FLAG_STORAGE = 'fluxboard:feature:trades-decision-
 const PNL_DECISION_DETAILS_FLAG_ENV = 'VITE_PNL_DECISION_DETAILS';
 const PNL_DECISION_DETAILS_FLAG_STORAGE = 'fluxboard:feature:pnl-decision-details';
 
+export const REALTIME_SURFACE_FLAGS = REALTIME_STANDARD_STORAGE_FLAGS;
+
+function resolveRealtimeStandardFlag(flag: keyof typeof REALTIME_STANDARD_STORAGE_FLAGS): boolean {
+  return resolveBooleanFlag({
+    envKey: REALTIME_STANDARD_ENV_FLAGS[flag],
+    storageKey: REALTIME_STANDARD_STORAGE_FLAGS[flag],
+    defaultValue: false,
+  });
+}
+
 const tradingStatusPillsEnabled = resolveBooleanFlag({
   envKey: TRADING_STATUS_FLAG_ENV,
   storageKey: TRADING_STATUS_FLAG_STORAGE,
@@ -153,6 +169,17 @@ const pnlDecisionDetailsEnabled = resolveBooleanFlag({
   defaultValue: false, // Keep PnL decision visuals opt-in
 });
 
+const realtimeStandardFlags = {
+  global: resolveRealtimeStandardFlag('global'),
+  signal: resolveRealtimeStandardFlag('signal'),
+  trades: resolveRealtimeStandardFlag('trades'),
+  alerts: resolveRealtimeStandardFlag('alerts'),
+  marketData: resolveRealtimeStandardFlag('marketData'),
+  balances: resolveRealtimeStandardFlag('balances'),
+  scanners: resolveRealtimeStandardFlag('scanners'),
+  killSwitch: resolveRealtimeStandardFlag('killSwitch'),
+} as const;
+
 export const featureFlags = {
   tradingStatusPills: tradingStatusPillsEnabled,
   scannersVirtualizedV1: scannersVirtualizedEnabled,
@@ -164,6 +191,7 @@ export const featureFlags = {
   scannersDeltaBufferLimits: scannersDeltaBufferLimitsEnabled,
   tradesDecisionDetails: tradesDecisionDetailsEnabled,
   pnlDecisionDetails: pnlDecisionDetailsEnabled,
+  realtimeStandard: realtimeStandardFlags,
 } as const;
 
 export function isTradingStatusPillEnabled(): boolean {
@@ -204,4 +232,16 @@ export function isTradesDecisionDetailsEnabled(): boolean {
 
 export function isPnlDecisionDetailsEnabled(): boolean {
   return featureFlags.pnlDecisionDetails;
+}
+
+export function isRealtimeStandardEnabled(surface: RealtimeSurface): boolean {
+  return (
+    featureFlags.realtimeStandard.global
+    && featureFlags.realtimeStandard[surface]
+    && !isRealtimeSurfaceKillSwitched(surface)
+  );
+}
+
+export function isRealtimeSurfaceKillSwitched(surface: RealtimeSurface): boolean {
+  return Boolean(REALTIME_SURFACE_FLAGS[surface]) && featureFlags.realtimeStandard.killSwitch;
 }

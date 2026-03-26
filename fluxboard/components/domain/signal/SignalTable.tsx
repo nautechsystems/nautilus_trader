@@ -15,8 +15,8 @@
  * - useMemo for column definitions and data enrichment
  * - memo for LegCell component
  * - Incremental WebSocket updates via mergeStrategy
- * - Visibility-aware cell-local age ticking (1s interval)
- * - Exponential backoff polling (1s → 2s → 4s → 8s cap)
+ * - Shared viewport age ticking (1s interval)
+ * - Invalidate-only recovery instead of steady-state polling overlap
  *
  * Fixes & Improvements:
  * - Safe paramTooltip with optional chaining (handles undefined/null params)
@@ -30,6 +30,7 @@
 
 import { useEffect, useState, useMemo, memo, useRef, useCallback, type FC } from 'react';
 import { type ColumnDef, type SortingFn, type SortingState } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { isEqual } from 'lodash-es';
 import { useLocation } from 'react-router-dom';
 import { api } from '@/api';
@@ -45,6 +46,7 @@ import { useVisibleNowMs } from './useVisibleNowMs';
 import MakerV4SignalTable from './MakerV4SignalTable';
 import type {
   BalanceSummary,
+  RealtimeSnapshotLineage,
   MakerRoleMap,
   MakerV2QuoteSnapshot,
   PricingAdjustment,
@@ -62,9 +64,18 @@ import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { colors, spacing, typography, STALE_THRESHOLDS } from '@/lib/tokens';
 import { cn } from '@/lib/utils';
 import { useMobileLayout } from '@/hooks/useMobileLayout';
+import { useStandardWebSocketSubscription } from '@/hooks/useWebSocket';
+import {
+  createRealtimeSurfaceController,
+  useRealtimeSurfaceController,
+  type RealtimeRowDelta,
+} from '@/hooks/useRealtimeSurfaceController';
+import { useRecoveryScheduler } from '@/hooks/useRecoveryScheduler';
 import { deriveStrategyProfile } from '@/config/paramsProfiles';
+import { isRealtimeStandardEnabled } from '@/config/featureFlags';
 import { resolvePathProfile, type PathProfile } from '@/config/uiProfiles';
 import { EMPTY_SNAPSHOT_HOLD_MS, evaluateEmptySnapshotPolicy } from './emptySnapshotPolicy';
+import { RealtimeSurfaceState } from '@/lib/realtime/types';
 import {
   deriveStrategyStatus,
   describeTradingStatus,
@@ -120,6 +131,95 @@ type SignalLegResolutionRow = Pick<
 
 function resolveQuoteSnapshot(row: Pick<SignalStrategy, 'maker_v2' | 'maker_v3'>): MakerV2QuoteSnapshot | undefined {
   return row.maker_v2?.quote_snapshot ?? row.maker_v3?.quote_snapshot;
+}
+
+function buildEnrichedSignalRow(row: SignalStrategy, serverNowMs: number): EnrichedRow | null {
+  if (!row.legs) {
+    return null;
+  }
+
+  const status = deriveStrategyStatus({
+    running: resolveSignalRunning(row, serverNowMs),
+    trading: resolveTradingValue(row as any),
+    blocked: resolveTradingBlocked(row as any),
+  });
+  const tradingFilter = statusToFilterValue(status);
+  const orderedLegs = getOrderedLegEntries(row);
+  const legA = resolveDisplayedLeg(row, 'A');
+  const legB = resolveDisplayedLeg(row, 'B');
+  const fallbackEdgeLeg = orderedLegs.find((entry) => {
+    const value = entry.leg?.net_edge_bps;
+    return typeof value === 'number' && Number.isFinite(value);
+  })?.leg;
+  const netEdge =
+    row.decision_edge_bps
+    ?? fallbackEdgeLeg?.net_edge_bps
+    ?? legA?.net_edge_bps
+    ?? legB?.net_edge_bps
+    ?? 0;
+  const edge2 = row.edge2_bps ?? null;
+  const spreadNet = spreadMarketVsFvBps(row);
+  const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
+  const { globalQty, localQty } = resolveInventoryQuantities(row);
+  const { makerLeg, referenceLeg } = resolveMakerV3RoleLegs(row);
+
+  const exchanges = orderedLegs
+    .map((entry) => entry.leg?.exchange)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ');
+  const coins = orderedLegs
+    .map((entry) => getLegUnderlying(entry.leg))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ');
+  const marketTypes = orderedLegs
+    .map((entry) => getLegMarketType(entry.leg))
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join(' ');
+  const ageData = computeStrategyAge(row, serverNowMs);
+  const lastUpdate = orderedLegs
+    .map((entry) => entry.leg?.update_time)
+    .find((value): value is string => typeof value === 'string' && value.length > 0);
+
+  const meta = row.meta || {};
+  const strategyClass = normalizeFacetValue(meta.class);
+  const asset = normalizeAssetFacet(meta.base_asset) || normalizeAssetFacet(getLegUnderlying(makerLeg)) || normalizeAssetFacet(getLegUnderlying(referenceLeg));
+  const makerVenue = normalizeFacetValue(makerLeg?.exchange ?? resolveQuoteSnapshot(row)?.maker_exchange);
+  const makerMarket = normalizeFacetValue(getLegMarketType(makerLeg));
+  const referenceVenue = normalizeFacetValue(referenceLeg?.exchange ?? resolveQuoteSnapshot(row)?.ref_exchange);
+  const referenceMarket = normalizeFacetValue(getLegMarketType(referenceLeg));
+  const normalizedChain = normalizeFacetValue(meta.chain);
+
+  return {
+    ...row,
+    _strategyFamily: deriveStrategyFamily(row),
+    status,
+    _netEdge: netEdge,
+    _edge2: typeof edge2 === 'number' ? edge2 : null,
+    _spreadNet: typeof spreadNet === 'number' ? spreadNet : null,
+    _globalQty: typeof globalQty === 'number' ? globalQty : null,
+    _localQty: typeof localQty === 'number' ? localQty : null,
+    _riskDelta: typeof riskDelta === 'number' ? riskDelta : null,
+    _maxAge: ageData.displayAgeMs,
+    _minAge: ageData.recentAgeMs ?? 0,
+    _lastUpdate: lastUpdate,
+    _lastUpdateMs: ageData.mostRecentTsMs,
+    _legAAge: ageData.perLeg.A?.ageMs,
+    _legBAge: ageData.perLeg.B?.ageMs,
+    _recentSide: ageData.mostRecentSide,
+    trading_enabled: tradingFilter,
+    exchange: exchanges,
+    coin: coins,
+    market_type: marketTypes,
+    asset,
+    maker_venue: makerVenue,
+    maker_market: makerMarket,
+    reference_venue: referenceVenue,
+    reference_market: referenceMarket,
+    strategy_class: strategyClass,
+    class: meta.class,
+    venue_prefix: meta.venue_prefix,
+    chain: normalizedChain,
+  };
 }
 
 const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
@@ -182,6 +282,49 @@ const BALANCE_STATUS_META: Record<BalanceStatus, { label: string; variant: Badge
     dotClass: 'bg-text-tertiary',
   },
 };
+
+function resolveSignalSurfaceStatus(
+  state: RealtimeSurfaceState,
+  wsConnected: boolean,
+  recoveryPending: boolean,
+): {
+  label: string;
+  dotClass: string;
+  tooltip: string;
+} {
+  switch (state) {
+    case RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED:
+      return {
+        label: 'Refresh required',
+        dotClass: 'bg-danger-light',
+        tooltip: 'Standard signal transport failed closed. Use Refresh after the rollout issue is resolved.',
+      };
+    case RealtimeSurfaceState.RECOVERING:
+      return {
+        label: wsConnected ? 'Recovering' : 'Recovering',
+        dotClass: 'bg-warning-light',
+        tooltip: 'Signal recovery uses one-shot invalidate snapshots instead of steady-state polling.',
+      };
+    case RealtimeSurfaceState.SYNCING:
+      return {
+        label: 'Syncing',
+        dotClass: 'bg-warning-light',
+        tooltip: 'Signal is fetching a fresh snapshot before the standard transport resumes.',
+      };
+    default:
+      return {
+        label: recoveryPending ? 'Live + Recovering' : 'Live (WS)',
+        dotClass: wsConnected ? 'bg-success-light' : 'bg-warning-light',
+        tooltip: wsConnected
+          ? (
+            recoveryPending
+              ? 'WebSocket connected. A one-shot recovery snapshot is scheduled from an invalidate or reconnect event.'
+              : 'WebSocket connected. Steady state stays on the realtime controller until an invalidate or reconnect event schedules recovery.'
+          )
+          : 'WebSocket disconnected. Recovery uses scheduled invalidate snapshots instead of steady-state polling.',
+      };
+  }
+}
 
 const ColumnHeaderWithTooltip: FC<{ label: string; tooltip: string }> = ({ label, tooltip }) => {
   return (
@@ -1727,6 +1870,7 @@ export default function SignalTable({
   onRemove?: () => void;
   showHeader?: boolean;
 } = {}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   const pathProfile = useMemo<PathProfile>(() => {
     const firstSegment = (location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
@@ -1752,6 +1896,7 @@ export default function SignalTable({
   const setRows = useSignalStore(s => s.setRows);
   const mergeStrategy = useSignalStore(s => s.mergeStrategy);
   const mergeStrategies = useSignalStore(s => s.mergeStrategies);
+  const signalStandardEnabled = useMemo(() => isRealtimeStandardEnabled('signal'), []);
   const [loading, setLoading] = useState(true);
   const [serverTime, setServerTime] = useState<string | null>(null);
   // Keep a ref for serverTime to avoid effect re-subscriptions on each tick
@@ -1762,6 +1907,10 @@ export default function SignalTable({
   const serverPerfNowRef = useRef<number | null>(null);
   const [filters, setFilters] = useState<FilterValues>({});
   const [wsConnected, setWsConnected] = useState(false);
+  const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(() => (
+    signalStandardEnabled ? RealtimeSurfaceState.SYNCING : RealtimeSurfaceState.LIVE
+  ));
+  const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
   const [showQuoted, setShowQuoted] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   // Track lastUpdate via ref to avoid resubscribing effects when checking staleness
@@ -1773,9 +1922,6 @@ export default function SignalTable({
   // Keep IDs of currently visible strategies to accept profile-compatible deltas
   // that omit full metadata.
   const visibleIdSetRef = useRef<Set<string>>(new Set());
-  // Polling interval tracker for dynamic backoff
-  const pollIntervalMsRef = useRef<number>(2000);
-  const pollBackoffLevelRef = useRef<number>(0);
   // Monotonic sequence IDs prevent older REST responses from overriding newer state.
   const restRequestSeqRef = useRef<number>(0);
   const restAppliedSeqRef = useRef<number>(0);
@@ -1794,6 +1940,10 @@ export default function SignalTable({
     () => sortingState.some((sort) => sort.id === 'age_ms'),
     [sortingState]
   );
+  const hasCustomSort = useMemo(
+    () => !isEqual(sortingState, initialSorting),
+    [initialSorting, sortingState],
+  );
   const familyCounts = useMemo(() => {
     const base = (rows || []).filter(isStrategyVisible);
     return {
@@ -1805,10 +1955,37 @@ export default function SignalTable({
     };
   }, [rows, isStrategyVisible]);
 
-  // Refs to track state without triggering dependency cycles
-  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  const realtimeController = useMemo(
+    () =>
+      createRealtimeSurfaceController<EnrichedRow>({
+        getRowId: (row) => row.id,
+      }),
+    [],
+  );
+  const { rows: realtimeRows, dataVersion: liveDataVersion } = useRealtimeSurfaceController(
+    realtimeController,
+    (snapshot) => ({
+      rows: snapshot.rows as EnrichedRow[],
+      dataVersion: snapshot.dataVersion,
+    }),
+    (left, right) => left.rows === right.rows && left.dataVersion === right.dataVersion,
+  );
+  const previousDisplayedSourceRowsRef = useRef<Map<string, SignalStrategy>>(new Map());
+  const previousDisplayedIdsRef = useRef<string[]>([]);
+  const previousAgeSortTickRef = useRef(ageSortTick);
   const wsConnectedRef = useRef(false);
-  const snapshotRefreshThrottleRef = useRef<number>(0);
+  const manualRefreshRequiredRef = useRef(false);
+  const standardLineageRef = useRef<RealtimeSnapshotLineage | null>(null);
+  const standardCursorSeqRef = useRef(0);
+  const snapshotGenerationRef = useRef(0);
+  const resetRecoveryRef = useRef<() => void>(() => undefined);
+  const makerV4ChangedRowIdsRef = useRef<readonly string[] | null>(null);
+
+  useEffect(() => {
+    return () => {
+      realtimeController.destroy();
+    };
+  }, [realtimeController]);
 
   useEffect(() => {
     visibleIdSetRef.current = new Set((rows || []).map((r) => r.id));
@@ -1847,6 +2024,7 @@ export default function SignalTable({
   }, [isAgeSortActive, rows.length]);
 
   const handleVisibilityRootRef = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
     setVisibilityRoot((prev) => (prev === node ? prev : node));
   }, []);
 
@@ -1855,6 +2033,42 @@ export default function SignalTable({
     wsConnectedRef.current = connected;
     setWsConnected(connected);
   };
+
+  const requireManualRefresh = useCallback(() => {
+    manualRefreshRequiredRef.current = true;
+    snapshotGenerationRef.current += 1;
+    standardLineageRef.current = null;
+    standardCursorSeqRef.current = 0;
+    resetRecoveryRef.current();
+    setStandardLineage(null);
+    setSurfaceState(RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED);
+  }, []);
+
+  const applyStandardSnapshotLineage = useCallback((nextLineage: RealtimeSnapshotLineage) => {
+    const previousLineage = standardLineageRef.current;
+    const nextLastSeq = Math.max(0, Math.trunc(nextLineage.last_seq));
+    const sameEpoch = Boolean(
+      previousLineage
+      && previousLineage.contract_version === nextLineage.contract_version
+      && previousLineage.surface === nextLineage.surface
+      && previousLineage.profile === nextLineage.profile
+      && previousLineage.surface_query_key === nextLineage.surface_query_key
+      && previousLineage.stream_id === nextLineage.stream_id
+      && String(previousLineage.snapshot_revision) === String(nextLineage.snapshot_revision),
+    );
+    standardLineageRef.current = { ...nextLineage };
+    standardCursorSeqRef.current = sameEpoch
+      ? Math.max(standardCursorSeqRef.current, nextLastSeq)
+      : nextLastSeq;
+    setStandardLineage({ ...nextLineage });
+  }, []);
+
+  const advanceStandardCursor = useCallback((seq: unknown) => {
+    if (typeof seq !== 'number' || !Number.isFinite(seq)) {
+      return;
+    }
+    standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(seq));
+  }, []);
 
   const markRowsNonEmpty = useCallback((nowMs?: number) => {
     const now = nowMs ?? Date.now();
@@ -1888,126 +2102,318 @@ export default function SignalTable({
     handleEmptyVisibleSnapshot(requestStartedAtMs);
   }, [handleEmptyVisibleSnapshot, markRowsNonEmpty, setRows]);
 
-  // Manual refresh handler
-  const handleRefresh = async () => {
+  const fetchSnapshot = useCallback(async ({ markRefreshing = false }: { markRefreshing?: boolean } = {}) => {
     const requestStartedAtMs = Date.now();
     const requestSeq = ++restRequestSeqRef.current;
-    setRefreshing(true);
+    const snapshotGeneration = snapshotGenerationRef.current;
+    if (markRefreshing) {
+      setRefreshing(true);
+    }
+
     try {
-      const data = await api.getSignalStrategies();
-      if (requestSeq < restAppliedSeqRef.current) return;
+      const data = await api.getSignalStrategies(
+        signalStandardEnabled ? { contractVersion: 2 } : undefined,
+      );
+      if (snapshotGeneration !== snapshotGenerationRef.current) return false;
+      if (requestSeq < restAppliedSeqRef.current) return false;
       restAppliedSeqRef.current = requestSeq;
+
       const all = (data.strategies || []) as SignalStrategy[];
       const filtered = all.filter(isStrategyVisible);
       applyVisibleSnapshotRows(filtered, requestStartedAtMs);
-      setServerTime(data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' '));
-      setServerClock((data as any).server_ts_ms as number | undefined);
+
+      const fetchedServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
+      setServerTime(fetchedServerTime);
+      serverTimeRef.current = fetchedServerTime;
+
+      const fetchedServerTsMs = typeof (data as any).server_ts_ms === 'number'
+        ? (data as any).server_ts_ms as number
+        : null;
+      setServerClock(fetchedServerTsMs);
+
       const now = Date.now();
       setLastUpdate(now);
       lastUpdateRef.current = now;
       setBalanceSummary(data.balance_summary ?? null);
-    } catch (e) {
-      if (import.meta.env?.DEV) {
-        console.error('[signal] Refresh failed:', e);
+      if (signalStandardEnabled) {
+        if (data.realtime) {
+          manualRefreshRequiredRef.current = false;
+          applyStandardSnapshotLineage(data.realtime);
+          setSurfaceState(RealtimeSurfaceState.LIVE);
+        } else {
+          requireManualRefresh();
+        }
+      } else {
+        standardLineageRef.current = null;
+        standardCursorSeqRef.current = 0;
+        setStandardLineage(null);
+        setSurfaceState(RealtimeSurfaceState.LIVE);
       }
+      setLoading(false);
+      if (!signalStandardEnabled || Boolean(data.realtime)) {
+        resetRecoveryRef.current();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      if (import.meta.env?.DEV) {
+        console.error('[signal] Failed to load:', error);
+      }
+      setLoading(false);
+      return false;
     } finally {
-      setRefreshing(false);
+      if (markRefreshing) {
+        setRefreshing(false);
+      }
     }
-  };
+  }, [
+    applyStandardSnapshotLineage,
+    applyVisibleSnapshotRows,
+    isStrategyVisible,
+    requireManualRefresh,
+    setServerClock,
+    signalStandardEnabled,
+  ]);
 
-  // Initial load, periodic refresh (only when WS disconnected), and WebSocket real-time updates
-  useEffect(() => {
-    const fetchData = () => {
-      const requestStartedAtMs = Date.now();
-      const requestSeq = ++restRequestSeqRef.current;
-      api.getSignalStrategies()
-        .then(data => {
-          if (requestSeq < restAppliedSeqRef.current) return;
-          restAppliedSeqRef.current = requestSeq;
-          const all = (data.strategies || []) as SignalStrategy[];
-          const strategies = all.filter(isStrategyVisible);
-          applyVisibleSnapshotRows(strategies, requestStartedAtMs);
-          // Use server_time if present, otherwise fall back to client time.
-          const fetchedServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
-          setServerTime(fetchedServerTime);
-          serverTimeRef.current = fetchedServerTime;
-          const fetchedServerTsMs = (typeof (data as any).server_ts_ms === 'number') ? (data as any).server_ts_ms as number : null;
-          setServerClock(fetchedServerTsMs);
-          const now = Date.now();
-          setLastUpdate(now);
-          lastUpdateRef.current = now;
-          setBalanceSummary(data.balance_summary ?? null);
-          setLoading(false);
-        })
-        .catch(e => {
-          if (import.meta.env?.DEV) {
-            console.error('[signal] Failed to load:', e);
+  const handleRecoveryFetch = useCallback(() => {
+    if (manualRefreshRequiredRef.current) {
+      return;
+    }
+    void fetchSnapshot();
+  }, [fetchSnapshot]);
+
+  const recovery = useRecoveryScheduler({
+    baseDelayMs: 1_000,
+    maxDelayMs: 8_000,
+    onRecover: handleRecoveryFetch,
+  });
+  const recoveryPending = recovery.pending;
+  const scheduleRecovery = useCallback((reason?: string) => {
+    recovery.scheduler.schedule(reason);
+  }, [recovery.scheduler]);
+  const resetRecovery = useCallback(() => {
+    recovery.scheduler.reset();
+  }, [recovery.scheduler]);
+  resetRecoveryRef.current = resetRecovery;
+
+  const handleRefresh = useCallback(async () => {
+    const refreshed = await fetchSnapshot({ markRefreshing: true });
+    if (refreshed) {
+      resetRecovery();
+    }
+  }, [fetchSnapshot, resetRecovery]);
+
+  const syncRealtimeEnvelope = useCallback((data: any) => {
+    const nextServerTime = data?.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const nextServerTsMs = typeof data?.server_ts_ms === 'number' ? data.server_ts_ms as number : null;
+    if (nextServerTime !== serverTimeRef.current || nextServerTsMs !== serverTsMsRef.current) {
+      setServerTime(nextServerTime);
+      serverTimeRef.current = nextServerTime;
+      setServerClock(nextServerTsMs);
+    }
+    if (data?.balance_summary) {
+      setBalanceSummary(data.balance_summary);
+    }
+    const now = Date.now();
+    setLastUpdate(now);
+    lastUpdateRef.current = now;
+  }, [setServerClock]);
+
+  const scheduleInvalidation = useCallback((reason: string) => {
+    if (manualRefreshRequiredRef.current) {
+      return;
+    }
+    if (signalStandardEnabled) {
+      setSurfaceState(RealtimeSurfaceState.RECOVERING);
+    }
+    scheduleRecovery(reason);
+  }, [scheduleRecovery, signalStandardEnabled]);
+
+  const applySignalDeltaPayload = useCallback((delta: any, fallbackTsMs?: number) => {
+    try {
+      const payload = (delta && typeof delta === 'object' && delta.patch && typeof delta.patch === 'object')
+        ? {
+            id: (delta as any).strategy_id ?? (delta as any).id,
+            ...(delta as any).patch,
+            ts_ms: (delta as any).server_ts_ms ?? (delta as any).ts_ms ?? fallbackTsMs,
           }
-          setLoading(false);
-        });
-    };
+        : {
+            ...(delta ?? {}),
+            ts_ms: (delta as any)?.ts_ms ?? (delta as any)?.server_ts_ms ?? fallbackTsMs,
+          };
+      const id = payload?.id;
+      if (!id) return;
 
-    const scheduleSnapshotRefresh = () => {
-      const now = Date.now();
-      if (now - snapshotRefreshThrottleRef.current < 1000) {
+      const hasMeta = !!(payload?.meta && typeof payload.meta === 'object');
+      const knownInView = visibleIdSetRef.current.has(id);
+      if (!hasMeta && !knownInView) {
+        scheduleInvalidation('signal_delta.invalidate');
         return;
       }
-      snapshotRefreshThrottleRef.current = now;
-      fetchData();
-    };
 
-    const startPolling = (intervalMs?: number) => {
-      const ms = intervalMs ?? pollIntervalMsRef.current ?? 2000;
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      const visibleByProfile = matchesSignalProfile(pathProfile, payload as SignalStrategy);
+      if (!visibleByProfile && (hasMeta || !visibleIdSetRef.current.has(id))) {
+        return;
       }
-      pollIntervalMsRef.current = ms;
-      pollRef.current = setInterval(fetchData, ms);
-    };
 
-    const startPollingWithBackoff = () => {
-      // Exponential backoff: 1s → 2s → 4s → 8s (cap at 8s)
-      const backoffIntervals = [1000, 2000, 4000, 8000];
-      const level = Math.min(pollBackoffLevelRef.current, backoffIntervals.length - 1);
-      const intervalMs = backoffIntervals[level];
-      startPolling(intervalMs);
-    };
+      const apply: Partial<SignalStrategy> = { id } as any;
+      const passThroughKeys = new Set([
+        'meta',
+        'strategy_family',
+        'decision_edge_bps',
+        'edge2_bps',
+        'required_edge_bps',
+        'spread_net_bps',
+        'spread_net_case1_bps',
+        'spread_net_case2_bps',
+        'spread_net_best_case',
+        'risk_delta',
+        'risk_delta_ts_ms',
+        'maker_v2',
+        'maker_v3',
+        'maker_role_map',
+        'maker_quote_status',
+        'quote_stacks',
+        'pricing_adjustments',
+        'legs_order',
+        'state',
+        'tradeable',
+        'blocked',
+        'near_tradeable',
+        'managed_orders',
+        'params',
+        'balance_readiness',
+        'balances_ok',
+        'last_trade',
+      ]);
 
-    const resetPollingBackoff = () => {
-      pollBackoffLevelRef.current = 0;
-      stopPolling();
-    };
-
-    const stopPolling = () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      for (const [key, value] of Object.entries(payload || {})) {
+        if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
+        (apply as any)[key] = value;
       }
-    };
 
-    // Initial load - always fetch on mount
-    fetchData();
+      if (payload && typeof payload === 'object' && 'legs_order' in payload) {
+        if ((payload as any).legs_order === null) {
+          (apply as any).legs_order = null;
+        } else if (Array.isArray((payload as any).legs_order)) {
+          (apply as any).legs_order = (payload as any).legs_order.filter((key: unknown) => typeof key === 'string');
+        }
+      }
 
-    // Start polling if socket not connected
-    if (!socket.connected) {
-      startPolling(2000);
+      const legPatch = buildLegDeltaPatch(normalizeDeltaLegs((payload as any).legs));
+      if (legPatch) {
+        (apply as any).legs = legPatch;
+      }
+
+      if (typeof mergeStrategy === 'function') {
+        mergeStrategy(apply as SignalStrategy);
+      }
+      if (typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)) {
+        setServerClock(payload.ts_ms as number);
+      }
+      const now = Date.now();
+      if ((useSignalStore.getState().rows || []).length > 0) {
+        markRowsNonEmpty(now);
+      }
+      setLastUpdate(now);
+      lastUpdateRef.current = now;
+    } catch (error) {
+      if (import.meta.env?.DEV) {
+        console.error('[signal] Delta handler failed:', error);
+      }
     }
+  }, [markRowsNonEmpty, mergeStrategy, pathProfile, scheduleInvalidation, setServerClock]);
+
+  const handleStandardRealtimeEvent = useCallback((event: {
+    kind: string;
+    seq: number;
+    server_ts_ms: number;
+    reason?: string;
+    payload?: any;
+  }) => {
+    syncRealtimeEnvelope({
+      server_ts_ms: event.server_ts_ms,
+    });
+    advanceStandardCursor(event.seq);
+
+    if (event.kind === 'heartbeat') {
+      if (!manualRefreshRequiredRef.current) {
+        setSurfaceState(RealtimeSurfaceState.LIVE);
+      }
+      return;
+    }
+
+    if (event.kind === 'invalidate') {
+      scheduleInvalidation(`realtime_event.invalidate:${String(event.reason ?? 'invalidate')}`);
+      return;
+    }
+
+    if (event.kind !== 'delta_batch') {
+      return;
+    }
+
+    const payload = event.payload ?? {};
+    const signalRows = Array.isArray(payload.signals) ? payload.signals : [];
+    const changedIds = Array.isArray(payload?.strategies?.changed)
+      ? payload.strategies.changed.filter((value: unknown) => typeof value === 'string')
+      : [];
+    const payloadIds = new Set(
+      signalRows
+        .map((row: any) => String(row?.id ?? row?.strategy_id ?? '').trim())
+        .filter((value: string) => value.length > 0),
+    );
+
+    for (const row of signalRows) {
+      applySignalDeltaPayload(row, event.server_ts_ms);
+    }
+
+    if (changedIds.some((id) => !payloadIds.has(id))) {
+      scheduleInvalidation('realtime_event.delta_batch.invalidate');
+      return;
+    }
+
+    if (!manualRefreshRequiredRef.current) {
+      setSurfaceState(RealtimeSurfaceState.LIVE);
+    }
+  }, [advanceStandardCursor, applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
+
+  useStandardWebSocketSubscription({
+    enabled: signalStandardEnabled && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED,
+    lineage: signalStandardEnabled ? standardLineage : null,
+    resumeFromSeq: () => standardCursorSeqRef.current,
+    onEvent: handleStandardRealtimeEvent,
+    onFailure: () => {
+      requireManualRefresh();
+    },
+    onSubscribed: (ack) => {
+      if (typeof ack.last_seq === 'number' && Number.isFinite(ack.last_seq)) {
+        standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(ack.last_seq));
+      }
+      if (!manualRefreshRequiredRef.current) {
+        setSurfaceState(RealtimeSurfaceState.LIVE);
+      }
+    },
+  });
+
+  useEffect(() => {
+    void fetchSnapshot();
 
     const handleMarketUpdate = (data: any) => {
       try {
-        if (Array.isArray(data.strategies)) {
-          // market_update is the authoritative strategy snapshot.
-          // Merge first (preserve sticky fields from prior deltas), then prune stale IDs.
+        if (Array.isArray(data?.strategies)) {
           if (data.strategies.length > 0) {
             const allowed = visibleIdSetRef.current;
-            const filtered = (data.strategies as SignalStrategy[]).filter((s) => {
-              if (matchesSignalProfile(pathProfile, s)) return true;
-              const hasMeta = !!(s.meta && typeof s.meta === 'object');
-              return !hasMeta && allowed.has(s.id);
+            const filtered = (data.strategies as SignalStrategy[]).filter((strategy) => {
+              if (matchesSignalProfile(pathProfile, strategy)) return true;
+              const hasMeta = !!(strategy.meta && typeof strategy.meta === 'object');
+              return !hasMeta && allowed.has(strategy.id);
             });
             if (filtered.length > 0) {
-              mergeStrategies(filtered);
+              if (typeof mergeStrategies === 'function') {
+                mergeStrategies(filtered);
+              } else {
+                setRows(filtered);
+              }
               const incomingIds = new Set(filtered.map((strategy) => strategy.id));
               const latestRows = useSignalStore.getState().rows || [];
               if (latestRows.some((row) => !incomingIds.has(row.id))) {
@@ -2020,58 +2426,27 @@ export default function SignalTable({
           } else {
             handleEmptyVisibleSnapshot();
           }
-          // Do not keep the table in loading if live snapshot updates are flowing.
+
           setLoading(false);
-          // Keep local server clock anchor in sync when server time changes.
-          const newServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
-          const newServerTsMs = (typeof data.server_ts_ms === 'number') ? (data.server_ts_ms as number) : null;
-          if (newServerTime !== serverTimeRef.current || newServerTsMs !== serverTsMsRef.current) {
-            setServerTime(newServerTime);
-            serverTimeRef.current = newServerTime;
-            setServerClock(newServerTsMs);
-          }
-          const now = Date.now();
-          setLastUpdate(now);
-          lastUpdateRef.current = now;
-          if (data.balance_summary) {
-            setBalanceSummary(data.balance_summary);
-          }
-          // Reset backoff when we receive fresh data
-          if (wsConnectedRef.current) {
-            resetPollingBackoff();
-          }
+          syncRealtimeEnvelope(data);
+          resetRecovery();
           return;
         }
 
-        // Newer socket contract sends changed IDs only:
-        // { strategies: { changed: [strategy_id...] }, ... }.
-        // Pull a fresh snapshot when this arrives so UI cannot stay stale/blank.
         const changed = Array.isArray(data?.strategies?.changed)
           ? data.strategies.changed.filter((item: unknown) => typeof item === 'string')
           : [];
         if (changed.length > 0) {
-          scheduleSnapshotRefresh();
-          const newServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
-          const newServerTsMs = (typeof data.server_ts_ms === 'number') ? (data.server_ts_ms as number) : null;
-          if (newServerTime !== serverTimeRef.current || newServerTsMs !== serverTsMsRef.current) {
-            setServerTime(newServerTime);
-            serverTimeRef.current = newServerTime;
-            setServerClock(newServerTsMs);
-          }
-          if (data.balance_summary) {
-            setBalanceSummary(data.balance_summary);
-          }
-          const now = Date.now();
-          setLastUpdate(now);
-          lastUpdateRef.current = now;
+          syncRealtimeEnvelope(data);
+          scheduleInvalidation('market_update.invalidate');
         }
-        // Apply param_update payloads immediately so Trading pill reflects saves from Params
-        if (data.param_update && data.param_update.strategy_id && data.param_update.parameters) {
-          const sid = data.param_update.strategy_id as string;
-          if (visibleIdSetRef.current.size > 0 && !visibleIdSetRef.current.has(sid)) return;
-          const paramsUpdate = data.param_update.parameters as Record<string, unknown>;
-          // Merge a minimal strategy shape containing updated params
-          mergeStrategy({ id: sid, params: paramsUpdate } as any as SignalStrategy);
+
+        if (data?.param_update?.strategy_id && data?.param_update?.parameters) {
+          const strategyId = data.param_update.strategy_id as string;
+          if (visibleIdSetRef.current.size > 0 && !visibleIdSetRef.current.has(strategyId)) return;
+          if (typeof mergeStrategy === 'function') {
+            mergeStrategy({ id: strategyId, params: data.param_update.parameters as Record<string, unknown> } as SignalStrategy);
+          }
           const now = Date.now();
           if ((useSignalStore.getState().rows || []).length > 0) {
             markRowsNonEmpty(now);
@@ -2079,104 +2454,15 @@ export default function SignalTable({
           setLastUpdate(now);
           lastUpdateRef.current = now;
         }
-      } catch (err) {
+      } catch (error) {
         if (import.meta.env?.DEV) {
-          console.error('[signal] Market update handler failed:', err);
+          console.error('[signal] Market update handler failed:', error);
         }
       }
     };
 
-    /**
-     * Handle signal_delta WebSocket events (single strategy updates).
-     *
-     * Merge semantics:
-     * - Only patches legs that exist in the delta (undefined = no change)
-     * - null explicitly deletes a leg
-     * - Deep merges leg properties to preserve existing data
-     *
-     * This prevents leg drops when partial updates arrive.
-     */
     const handleSignalDelta = (delta: any) => {
-      try {
-        const payload = (delta && typeof delta === 'object' && delta.patch && typeof delta.patch === 'object')
-          ? {
-              id: (delta as any).strategy_id ?? (delta as any).id,
-              ...(delta as any).patch,
-              ts_ms: (delta as any).server_ts_ms ?? (delta as any).ts_ms,
-            }
-          : delta;
-        const id = payload?.id;
-        if (!id) return;
-        const hasMeta = !!(payload?.meta && typeof payload.meta === 'object');
-        const knownInView = visibleIdSetRef.current.has(id);
-        if (!hasMeta && !knownInView) {
-          scheduleSnapshotRefresh();
-          return;
-        }
-        const visibleByProfile = matchesSignalProfile(pathProfile, payload as SignalStrategy);
-        if (!visibleByProfile && (hasMeta || !visibleIdSetRef.current.has(id))) {
-          return;
-        }
-        const apply: Partial<SignalStrategy> = { id } as any;
-        const passThroughKeys = new Set([
-          'meta',
-          'strategy_family',
-          'decision_edge_bps',
-          'edge2_bps',
-          'required_edge_bps',
-          'spread_net_bps',
-          'spread_net_case1_bps',
-          'spread_net_case2_bps',
-          'spread_net_best_case',
-          'risk_delta',
-          'risk_delta_ts_ms',
-          'maker_v2',
-          'maker_v3',
-          'maker_role_map',
-          'maker_quote_status',
-          'quote_stacks',
-          'pricing_adjustments',
-          'legs_order',
-          'state',
-          'tradeable',
-          'blocked',
-          'near_tradeable',
-          'managed_orders',
-          'params',
-          'balance_readiness',
-          'balances_ok',
-          'last_trade',
-        ]);
-        for (const [key, value] of Object.entries(payload || {})) {
-          if (key === 'id' || key === 'legs' || !passThroughKeys.has(key)) continue;
-          (apply as any)[key] = value;
-        }
-        if (payload && typeof payload === 'object' && 'legs_order' in payload) {
-          if ((payload as any).legs_order === null) {
-            (apply as any).legs_order = null;
-          } else if (Array.isArray((payload as any).legs_order)) {
-            (apply as any).legs_order = (payload as any).legs_order.filter((key: unknown) => typeof key === 'string');
-          }
-        }
-        const legPatch = buildLegDeltaPatch(normalizeDeltaLegs((payload as any).legs));
-        if (legPatch) {
-          (apply as any).legs = legPatch;
-        }
-        // Merge strategy delta
-        mergeStrategy(apply as SignalStrategy);
-        // If backend provided authoritative server ts, anchor our local ticking to it
-        if (typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)) {
-          setServerClock(payload.ts_ms as number);
-        }
-        const now = Date.now();
-        if ((useSignalStore.getState().rows || []).length > 0) {
-          markRowsNonEmpty(now);
-        }
-        setLastUpdate(now);
-        lastUpdateRef.current = now;
-      } catch (err) {
-        if (import.meta.env?.DEV) console.error('[signal] Delta handler failed:', err);
-      }
+      applySignalDeltaPayload(delta);
     };
 
     const handleConnect = () => {
@@ -2184,10 +2470,14 @@ export default function SignalTable({
         console.log('[signal] WebSocket connected');
       }
       updateWsConnected(true);
-      // Fetch fresh data on connection to ensure sync
-      fetchData();
-      // Stop polling when WS connects
-      stopPolling();
+      if (manualRefreshRequiredRef.current) {
+        return;
+      }
+      if (signalStandardEnabled && standardLineageRef.current) {
+        return;
+      }
+      resetRecovery();
+      void fetchSnapshot();
     };
 
     const handleDisconnect = () => {
@@ -2195,178 +2485,108 @@ export default function SignalTable({
         console.log('[signal] WebSocket disconnected');
       }
       updateWsConnected(false);
-      // Resume polling when WS disconnects
-      startPolling(1000);
+      scheduleInvalidation('socket.disconnect');
     };
 
-    const handleConnectError = (err: any) => {
+    const handleConnectError = (error: any) => {
       if (import.meta.env?.DEV) {
-        console.error('[signal] WebSocket connect_error:', err?.message || err);
+        console.error('[signal] WebSocket connect_error:', error?.message || error);
       }
       updateWsConnected(false);
-      // Kick off polling immediately on connect errors so UI isn’t stuck waiting
-      startPolling(500);
+      scheduleInvalidation(`socket.connect_error:${String(error?.message || error || 'unknown')}`);
     };
 
     const handleReconnectAttempt = (attempt: number) => {
       if (import.meta.env?.DEV) {
         console.log('[signal] WebSocket reconnect_attempt:', attempt);
       }
-      // While attempting to reconnect, ensure polling keeps data warm
-      startPolling(500);
+      scheduleInvalidation(`socket.reconnect_attempt:${attempt}`);
     };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('market_update', handleMarketUpdate);
-    socket.on('signal_delta', handleSignalDelta);
     socket.on('connect_error', handleConnectError);
     socket.on('reconnect_attempt', handleReconnectAttempt);
-
-    // Check if already connected
-    if (socket.connected) {
-      updateWsConnected(true);
+    if (!signalStandardEnabled) {
+      socket.on('market_update', handleMarketUpdate);
+      socket.on('signal_delta', handleSignalDelta);
     }
 
-    // Watchdog: if WS is connected but no updates arrive for a while, resume polling as a safety net
-    const watchdog = setInterval(() => {
-      try {
-        const ageMs = Date.now() - (lastUpdateRef.current || 0);
-        const isStale = ageMs > STALE_THRESHOLDS.REALTIME; // 2s threshold for real-time channels
-        if (isStale) {
-          // Increase polling rate when stale
-          startPolling(wsConnectedRef.current ? 500 : 1000);
-        } else if (wsConnectedRef.current) {
-          // WS is live, we can stop polling
-          stopPolling();
-        } else {
-          // WS not connected, keep modest polling
-          startPolling(2000);
-        }
-      } catch {}
-    }, 1000);
+    updateWsConnected(Boolean(socket.connected));
 
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('market_update', handleMarketUpdate);
-      socket.off('signal_delta', handleSignalDelta);
       socket.off('connect_error', handleConnectError);
       socket.off('reconnect_attempt', handleReconnectAttempt);
-      stopPolling();
-      clearInterval(watchdog);
+      if (!signalStandardEnabled) {
+        socket.off('market_update', handleMarketUpdate);
+        socket.off('signal_delta', handleSignalDelta);
+      }
     };
   }, [
-    pathProfile,
-    setRows,
-    mergeStrategy,
-    mergeStrategies,
-    isStrategyVisible,
+    applySignalDeltaPayload,
     applyVisibleSnapshotRows,
+    fetchSnapshot,
     handleEmptyVisibleSnapshot,
     markRowsNonEmpty,
+    mergeStrategies,
+    mergeStrategy,
+    pathProfile,
+    resetRecovery,
+    scheduleInvalidation,
+    setRows,
+    signalStandardEnabled,
+    syncRealtimeEnvelope,
   ]);
 
-  // Baseline row enrichment. Ages here are snapshot values used for sorting/filtering;
-  // live age display is handled in cell-local components.
-  const enrichedRows = useMemo<EnrichedRow[]>(() => {
+  useEffect(() => {
     const serverNowMs = getServerNowMs();
-    const visibleRows = (rows || []).filter((row) => isStrategyVisible(row) && isFamilyVisible(row));
-    return (visibleRows.map(row => {
-      // Defensive check: ensure legs exists (may be missing in WebSocket deltas)
-      if (!row.legs) {
-        // Skip rows without legs to prevent crashes
-        return null;
-      }
+    const visibleRows = (rows || []).filter((row) => isStrategyVisible(row) && isFamilyVisible(row) && Boolean(row.legs));
+    const nextIds = visibleRows.map((row) => row.id);
+    const previousIds = previousDisplayedIdsRef.current;
+    const tickChanged = previousAgeSortTickRef.current !== ageSortTick;
+    const orderChanged = tickChanged
+      || nextIds.length !== previousIds.length
+      || nextIds.some((id, index) => id !== previousIds[index]);
 
-      const status = deriveStrategyStatus({
-        running: resolveSignalRunning(row, serverNowMs),
-        trading: resolveTradingValue(row as any),
-        blocked: resolveTradingBlocked(row as any),
+    if (orderChanged || hasCustomSort) {
+      makerV4ChangedRowIdsRef.current = null;
+      realtimeController.applySnapshot(
+        visibleRows
+          .map((row) => buildEnrichedSignalRow(row, serverNowMs))
+          .filter((row): row is EnrichedRow => row !== null),
+      );
+      setSortingState((current) => (current.length > 0 ? [...current] : current));
+    } else {
+      const previousRowsById = previousDisplayedSourceRowsRef.current;
+      const deltas: RealtimeRowDelta<EnrichedRow>[] = [];
+
+      visibleRows.forEach((row) => {
+        if (previousRowsById.get(row.id) === row) {
+          return;
+        }
+        const nextRow = buildEnrichedSignalRow(row, serverNowMs);
+        if (nextRow) {
+          deltas.push({ kind: 'upsert', row: nextRow });
+        }
       });
-      const tradingFilter = statusToFilterValue(status);
-      const orderedLegs = getOrderedLegEntries(row);
-      const legA = resolveDisplayedLeg(row, 'A');
-      const legB = resolveDisplayedLeg(row, 'B');
-      const fallbackEdgeLeg = orderedLegs.find((entry) => {
-        const value = entry.leg?.net_edge_bps;
-        return typeof value === 'number' && Number.isFinite(value);
-      })?.leg;
-      // Use strategy-level decision_edge_bps (single source of truth) to prevent jumping
-      // during incremental WebSocket updates. Fall back to leg values only if missing.
-      const netEdge =
-        row.decision_edge_bps
-        ?? fallbackEdgeLeg?.net_edge_bps
-        ?? legA?.net_edge_bps
-        ?? legB?.net_edge_bps
-        ?? 0;
-      const edge2 = row.edge2_bps ?? null;
-      const spreadNet = spreadMarketVsFvBps(row);
-      const riskDelta = coerceFiniteNumber(row.risk_delta) ?? null;
-      const { globalQty, localQty } = resolveInventoryQuantities(row);
-      const { makerLeg, referenceLeg } = resolveMakerV3RoleLegs(row);
 
-      // Extract filterable fields (exchange and coin from legs)
-      const exchanges = orderedLegs
-        .map((entry) => entry.leg?.exchange)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0)
-        .join(' ');
-      const coins = orderedLegs
-        .map((entry) => getLegUnderlying(entry.leg))
-        .filter((value): value is string => typeof value === 'string' && value.length > 0)
-        .join(' ');
-      const marketTypes = orderedLegs
-        .map((entry) => getLegMarketType(entry.leg))
-        .filter((value): value is string => typeof value === 'string' && value.length > 0)
-        .join(' ');
-      const ageData = computeStrategyAge(row, serverNowMs);
-      const lastUpdate = orderedLegs
-        .map((entry) => entry.leg?.update_time)
-        .find((value): value is string => typeof value === 'string' && value.length > 0);
+      if (deltas.length > 0) {
+        makerV4ChangedRowIdsRef.current = deltas
+          .filter((delta): delta is Extract<RealtimeRowDelta<EnrichedRow>, { kind: 'upsert' }> => delta.kind === 'upsert')
+          .map((delta) => delta.row.id);
+        realtimeController.applyDelta(deltas);
+        setSortingState((current) => (current.length > 0 ? [...current] : current));
+      }
+    }
 
-      const meta = row.meta || {};
-      const strategyClass = normalizeFacetValue(meta.class);
-      const asset = normalizeAssetFacet(meta.base_asset) || normalizeAssetFacet(getLegUnderlying(makerLeg)) || normalizeAssetFacet(getLegUnderlying(referenceLeg));
-      const makerVenue = normalizeFacetValue(makerLeg?.exchange ?? resolveQuoteSnapshot(row)?.maker_exchange);
-      const makerMarket = normalizeFacetValue(getLegMarketType(makerLeg));
-      const referenceVenue = normalizeFacetValue(referenceLeg?.exchange ?? resolveQuoteSnapshot(row)?.ref_exchange);
-      const referenceMarket = normalizeFacetValue(getLegMarketType(referenceLeg));
-      const normalizedChain = normalizeFacetValue(meta.chain);
+    previousDisplayedSourceRowsRef.current = new Map(visibleRows.map((row) => [row.id, row]));
+    previousDisplayedIdsRef.current = nextIds;
+    previousAgeSortTickRef.current = ageSortTick;
+  }, [ageSortTick, getServerNowMs, hasCustomSort, isFamilyVisible, isStrategyVisible, realtimeController, rows]);
 
-      return {
-        ...row,
-        _strategyFamily: deriveStrategyFamily(row),
-        status,
-        _netEdge: netEdge,
-        _edge2: typeof edge2 === 'number' ? edge2 : null,
-        _spreadNet: typeof spreadNet === 'number' ? spreadNet : null,
-        _globalQty: typeof globalQty === 'number' ? globalQty : null,
-        _localQty: typeof localQty === 'number' ? localQty : null,
-        _riskDelta: typeof riskDelta === 'number' ? riskDelta : null,
-        _maxAge: ageData.displayAgeMs,
-        _minAge: ageData.recentAgeMs ?? 0,
-        _lastUpdate: lastUpdate,
-        _lastUpdateMs: ageData.mostRecentTsMs,
-        _legAAge: ageData.perLeg.A?.ageMs,
-        _legBAge: ageData.perLeg.B?.ageMs,
-        _recentSide: ageData.mostRecentSide,
-        // Filterable string fields
-        trading_enabled: tradingFilter,
-        exchange: exchanges,
-        coin: coins,
-        market_type: marketTypes,
-        asset,
-        maker_venue: makerVenue,
-        maker_market: makerMarket,
-        reference_venue: referenceVenue,
-        reference_market: referenceMarket,
-        strategy_class: strategyClass,
-        class: meta.class,
-        venue_prefix: meta.venue_prefix,
-        chain: normalizedChain,
-      };
-    }).filter((row) => row !== null)) as EnrichedRow[];
-  }, [ageSortTick, getServerNowMs, isFamilyVisible, isStrategyVisible, rows]);
+  const enrichedRows = realtimeRows;
 
   const signalFilters = useMemo<ColumnFilter[]>(() => {
     if (!isMakerSuiteProfile) {
@@ -2397,17 +2617,27 @@ export default function SignalTable({
     }
 
     return filters;
-  }, [enrichedRows, isMakerSuiteProfile]);
+  }, [enrichedRows, isMakerSuiteProfile, liveDataVersion]);
 
   // Apply filters
   const filteredRows = useMemo(() => {
     return applyFilters(enrichedRows, filters, { columns: signalFilters });
-  }, [enrichedRows, filters, signalFilters]);
+  }, [enrichedRows, filters, signalFilters, liveDataVersion]);
 
   const shouldUseMakerV4Table = useMemo(() => {
     if (familyScope === 'maker_v4') return true;
     return filteredRows.length > 0 && filteredRows.every((row) => row._strategyFamily === 'maker_v4');
   }, [familyScope, filteredRows]);
+  const signalRowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
+    count: !isMobile && !shouldUseMakerV4Table ? filteredRows.length : 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 44,
+    overscan: 8,
+  });
+  const shouldVirtualizeStandardTable = !isMobile
+    && !shouldUseMakerV4Table
+    && filteredRows.length > 0
+    && signalRowVirtualizer.getVirtualItems().length > 0;
 
   // Column definitions (TanStack Table format)
   const columns = useMemo<ColumnDef<EnrichedRow>[]>(() => {
@@ -2809,9 +3039,15 @@ export default function SignalTable({
       row={row}
       showQuoted={showQuoted}
       nowProvider={getServerNowMs}
+      pathProfile={pathProfile}
       visibilityRoot={visibilityRoot}
     />
-  ), [getServerNowMs, showQuoted, visibilityRoot]);
+  ), [getServerNowMs, pathProfile, showQuoted, visibilityRoot]);
+
+  const signalSurfaceStatus = useMemo(
+    () => resolveSignalSurfaceStatus(surfaceState, wsConnected, recoveryPending),
+    [recoveryPending, surfaceState, wsConnected],
+  );
 
   const content = (
     <>
@@ -2827,15 +3063,11 @@ export default function SignalTable({
           titleActions={
             <SimpleTooltip
               delay={250}
-              content={
-                wsConnected
-                  ? 'Live via WebSocket. Polling pauses while updates are fresh.'
-                  : 'Polling fallback active. WebSocket is disconnected or stale.'
-              }
+              content={signalSurfaceStatus.tooltip}
             >
               <span className="flex items-center gap-2 text-[11px]" style={{ color: colors.text.muted }}>
-                <span className={cn('h-2 w-2 rounded-full', wsConnected ? 'bg-success-light' : 'bg-warning-light')} />
-                <span>{wsConnected ? 'Live (WS)' : 'Polling'}</span>
+                <span className={cn('h-2 w-2 rounded-full', signalSurfaceStatus.dotClass)} />
+                <span>{signalSurfaceStatus.label}</span>
               </span>
             </SimpleTooltip>
           }
@@ -2888,13 +3120,21 @@ export default function SignalTable({
       />
       <PanelBody ref={handleVisibilityRootRef}>
         {shouldUseMakerV4Table ? (
-          <MakerV4SignalTable rows={filteredRows} loading={loading} />
+          <MakerV4SignalTable
+            rows={filteredRows}
+            loading={loading}
+            nowProvider={getServerNowMs}
+            clockAnchorMs={serverTsMs}
+            liveDataVersion={liveDataVersion}
+            changedRowIds={makerV4ChangedRowIdsRef.current}
+          />
         ) : (
           <DataTable
             data={filteredRows}
             columns={columns}
             getRowId={(row) => (row as any).id}
             sortable
+            liveDataVersion={liveDataVersion}
             initialSorting={initialSorting}
             sortingState={sortingState}
             onSortingStateChange={setSortingState}
@@ -2904,6 +3144,7 @@ export default function SignalTable({
             className={tableClassName}
             widthMode="content"
             columnWidthMode="explicit"
+            virtualizer={shouldVirtualizeStandardTable ? signalRowVirtualizer : undefined}
             mobileMode="cards"
             renderMobileRow={renderMobileRow}
           />
@@ -2922,10 +3163,11 @@ interface SignalMobileCardProps {
   row: EnrichedRow;
   showQuoted: boolean;
   nowProvider: () => number;
+  pathProfile: PathProfile;
   visibilityRoot?: Element | null;
 }
 
-const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvider, visibilityRoot }) => {
+const SignalMobileCard: FC<SignalMobileCardProps> = ({ row, showQuoted, nowProvider, pathProfile, visibilityRoot }) => {
   const [expanded, setExpanded] = useState(false);
   const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
     intervalMs: 1000,

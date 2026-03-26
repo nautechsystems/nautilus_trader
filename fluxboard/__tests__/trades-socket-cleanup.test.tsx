@@ -21,7 +21,12 @@ const { socketMock, getTrades, getTradesDelta, trackLastHandler } = vi.hoisted((
   };
 });
 
-vi.mock('../sockets', () => ({ socket: socketMock }));
+vi.mock('../sockets', () => ({
+  socket: socketMock,
+  standardSocketClient: {
+    subscribe: vi.fn(() => () => {}),
+  },
+}));
 
 vi.mock('../api', () => ({
   api: {
