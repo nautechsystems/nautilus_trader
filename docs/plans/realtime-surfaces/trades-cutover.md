@@ -32,7 +32,8 @@ Non-canonical trades views remain REST-only and do not advertise `data.realtime`
 
 ## Rollout Notes
 
-- The current backend transport is still `polling_only`.
+- Steady-state live traffic now runs through standard Socket.IO `subscribe` / `realtime_event` / `unsubscribe`.
+- The advertised capability still reports `transport_mode = polling_only` and `replay_supported = false` because recovery remains REST snapshot based and replay is not available yet.
 - Backend `trade_update` removal remains blocked until Task 15 and Task 13 resolve the remaining cleanup boundary.
 - Trades is ready for frontend duplicate-path cleanup review, not backend legacy-event cleanup.
 

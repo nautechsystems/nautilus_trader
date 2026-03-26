@@ -3,9 +3,9 @@
 > **For the execution agent:** REQUIRED SUB-SKILL: Before implementing this plan, choose exactly one execution mode and use the matching skill: `superpowers:subagent-driven-development` for same-session execution or `superpowers:executing-plans` for a separate-session handoff.
 > **Progress:** The Progress Tracker in this document is the execution source of truth and must be updated on every state change.
 
-**Goal:** Capture explicit baseline telemetry and numeric rollout gates for the realtime pilot surfaces before any cutover proceeds.
+**Goal:** Define numeric rollout gates, record the committed reference fixtures used to approve them, and surface the limited live runtime telemetry the harness actually measures before any cutover proceeds.
 
-**Architecture:** The canonical rollout budget contract lives in the frontend perf harness layer so the same scenario definitions drive dev-harness visibility and Vitest approval gates. `PerfHarness` owns the shared scenario and budget exports, exposes measured local runtime telemetry for mounted-row DOM count plus synthetic local apply-to-paint timing, and keeps external freshness lag and snapshot cadence in the committed reference baseline until the harness measures those inputs for real. `ScannersHarness` renders the committed baselines and approval thresholds for operators, and Task 2 intentionally centralizes the approval assertions in `fluxboard/__tests__/realtime/baseline-budgets.test.tsx` so the documented default Vitest commands execute the intended Task 2 gate under the existing default quarantine. The scoped `pnl` and `panels` suites remain reference coverage only for this task and do not enforce rollout approval budgets.
+**Architecture:** The canonical rollout budget contract lives in the frontend perf harness layer so the same scenario definitions drive dev-harness visibility and Vitest approval gates. `PerfHarness` owns the shared scenario and budget exports, exposes measured local runtime telemetry for mounted-row DOM count plus synthetic local apply-to-paint timing, and returns committed reference fixtures for metrics that are not recollected during the test run. External freshness lag and snapshot cadence remain explicitly reference-only until the harness measures those inputs for real. `ScannersHarness` renders the committed reference fixtures and approval thresholds for operators, and Task 2 intentionally centralizes the approval assertions in `fluxboard/__tests__/realtime/baseline-budgets.test.tsx` so the documented default Vitest commands execute the intended Task 2 gate under the existing default quarantine. The scoped `pnl` and `panels` suites remain reference coverage only for this task and do not enforce rollout approval budgets.
 
 **Tech Stack:** React, TypeScript, Vitest, Testing Library, existing Fluxboard trades/scanners harness pages.
 
@@ -35,7 +35,9 @@ The rollout approval gates used by both harness visibility and the canonical Tas
 | Steady-state snapshot refreshes per minute | `<= 2` |
 | Per-cell timers | `0` |
 
-## Benchmark Scenarios Used For Approval
+## Committed Reference Scenarios Used For Approval
+
+These rows are committed reference fixtures, not a live benchmark rerun performed by `runRealtimeBenchmark(...)` during CI or local verification.
 
 | Scenario | Mounted Rows | Apply+Commit p95 | Freshness Lag p95 | Selector Invalidations p95 | Row Rerenders / Delta p95 | Snapshot Refreshes / Minute | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -53,11 +55,12 @@ pnpm --dir fluxboard exec vitest run __tests__/realtime/baseline-budgets.test.ts
 ## Verification Notes
 
 - The shared contract is exported from `fluxboard/components/trades/PerfHarness.tsx` as `REALTIME_BUDGETS`, `REALTIME_BENCHMARK_SCENARIOS`, `runRealtimeBenchmark(...)`, and `evaluateRealtimeBudgetStatus(...)`.
-- `fluxboard/pages/ScannersHarness.tsx` renders the rollout budget table plus the committed scenario baselines so operators can inspect the same approval data the tests validate.
-- `fluxboard/__tests__/realtime/baseline-budgets.test.tsx` is the canonical Task 2 approval suite. It verifies the exported budgets, scenario coverage, committed benchmark fixtures, harness-visible baseline data, the `TradesPerfHarness` live runtime-sampling path, and this plan's verification contract.
+- `runRealtimeBenchmark(...)` returns committed reference fixtures with explicit `evidenceMode = committed_reference`; it does not execute a fresh browser benchmark during the test run.
+- `fluxboard/pages/ScannersHarness.tsx` renders the rollout budget table plus the committed reference scenarios so operators can inspect the same approval data the tests validate.
+- `fluxboard/__tests__/realtime/baseline-budgets.test.tsx` is the canonical Task 2 approval suite. It verifies the exported budgets, scenario coverage, committed reference fixtures, harness-visible baseline data, the `TradesPerfHarness` live runtime-sampling path, and this plan's verification contract.
 - The exact default commands above execute the intended Task 2 assertions without extra environment flags because the approval gate lives in `fluxboard/__tests__/realtime/baseline-budgets.test.tsx`, which is collected under the current default quarantine.
-- `fluxboard/components/trades/PerfHarness.tsx` now distinguishes measured local runtime telemetry from reference-only rollout baselines: the live card reports mounted-row DOM count and local apply-to-paint timing from synthetic deltas, while external freshness lag and snapshot cadence remain in the committed reference baseline card.
-- The default-collected runtime guard validates that `TradesPerfHarness` records real local delta samples and non-placeholder timing measurements. The mounted-row numeric gate itself remains enforced through the committed benchmark baseline contract because jsdom does not deterministically materialize the live virtual row DOM for this harness.
+- `fluxboard/components/trades/PerfHarness.tsx` now distinguishes measured local runtime telemetry from reference-only rollout fixtures: the live card reports mounted-row DOM count and local apply-to-paint timing from synthetic deltas, while external freshness lag and snapshot cadence remain in the committed reference card.
+- The default-collected runtime guard validates that `TradesPerfHarness` records real local delta samples and non-placeholder timing measurements. The mounted-row numeric gate itself remains enforced through the committed reference contract because jsdom does not deterministically materialize the live virtual row DOM for this harness.
 - `fluxboard/__tests__/pnl-performance.test.tsx` and `fluxboard/__tests__/panels/trades.perf.test.tsx` no longer carry rollout-budget approval assertions in Task 2.
 
 ## Task 12 Mixed-Surface Cleanup Rehearsal

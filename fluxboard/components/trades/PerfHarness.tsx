@@ -30,11 +30,13 @@ export const REALTIME_BENCHMARK_SCENARIOS = [
 ] as const;
 
 export type RealtimeBenchmarkScenario = (typeof REALTIME_BENCHMARK_SCENARIOS)[number];
+export type RealtimeBenchmarkEvidenceMode = 'committed_reference';
 
 export type RealtimeBenchmarkResult = {
   scenario: RealtimeBenchmarkScenario;
   label: string;
   measuredAt: string;
+  evidenceMode: RealtimeBenchmarkEvidenceMode;
   maxMountedRows: number;
   batchApplyCommitMsP95: number;
   applyMsP95: number;
@@ -61,11 +63,12 @@ type LiveTelemetry = {
   measuredDeltas: number;
 };
 
-const REALTIME_BASELINE_RESULTS: Record<RealtimeBenchmarkScenario, RealtimeBenchmarkResult> = {
+const REALTIME_REFERENCE_RESULTS: Record<RealtimeBenchmarkScenario, RealtimeBenchmarkResult> = {
   'signal-live-500-rows': {
     scenario: 'signal-live-500-rows',
     label: 'Signal table live, 500 rows',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 44,
     batchApplyCommitMsP95: 10.8,
     applyMsP95: 6.4,
@@ -81,6 +84,7 @@ const REALTIME_BASELINE_RESULTS: Record<RealtimeBenchmarkScenario, RealtimeBench
     scenario: 'trades-live-2000-rows',
     label: 'Trades table live, 2,000 rows',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 68,
     batchApplyCommitMsP95: 13.6,
     applyMsP95: 7.8,
@@ -96,6 +100,7 @@ const REALTIME_BASELINE_RESULTS: Record<RealtimeBenchmarkScenario, RealtimeBench
     scenario: 'signal-plus-trades-live',
     label: 'Signal plus trades live split view',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 98,
     batchApplyCommitMsP95: 22.4,
     applyMsP95: 12.7,
@@ -132,7 +137,9 @@ function recordRollingSample(samples: number[], value: number): number {
 export async function runRealtimeBenchmark(
   scenario: RealtimeBenchmarkScenario,
 ): Promise<RealtimeBenchmarkResult> {
-  return { ...REALTIME_BASELINE_RESULTS[scenario] };
+  // This returns the committed rollout reference fixture for the scenario; it does not
+  // execute a fresh browser benchmark during the test run.
+  return { ...REALTIME_REFERENCE_RESULTS[scenario] };
 }
 
 export function evaluateRealtimeBudgetStatus(result: RealtimeBenchmarkResult): {
@@ -255,7 +262,7 @@ export function TradesPerfHarness({ onClose }: { onClose: () => void }) {
     measuredDeltas: 0,
   });
   const rolloutReference = useMemo(() => {
-    const result = REALTIME_BASELINE_RESULTS['trades-live-2000-rows'];
+    const result = REALTIME_REFERENCE_RESULTS['trades-live-2000-rows'];
     return {
       result,
       status: evaluateRealtimeBudgetStatus(result),

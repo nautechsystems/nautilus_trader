@@ -116,6 +116,8 @@ async function installTradesTestRuntime(page: Parameters<typeof test>[0]['page']
             last_seq: payload?.resume_from_seq,
             requested_resume_from_seq: payload?.resume_from_seq,
             capabilities: {
+              // The standard steady-state path is Socket.IO; capability metadata still
+              // advertises polling-only recovery because replay is not available yet.
               recovery_mode: 'invalidate_only',
               replay_supported: false,
               transport_mode: 'polling_only',
@@ -215,6 +217,8 @@ test.describe('Trades realtime cutover', () => {
               snapshot_revision: 'snap-1',
               last_seq: 2,
               capabilities: {
+                // Recovery remains invalidate-only/polling-only even though steady-state
+                // updates arrive on realtime_event.
                 recovery_mode: 'invalidate_only',
                 replay_supported: false,
                 transport_mode: 'polling_only',

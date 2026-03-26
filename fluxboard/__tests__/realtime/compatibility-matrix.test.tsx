@@ -81,6 +81,9 @@ function standardSurface(): SurfaceCompatibility {
     mode: 'standard',
     contractVersion: STANDARD_CONTRACT_VERSION,
     capabilities: {
+      // Live updates still arrive through the standard Socket.IO contract; these
+      // capability fields describe the recovery path, which remains polling-only
+      // and replay-free today.
       recoveryMode: 'invalidate_only',
       transportMode: 'polling_only',
       replaySupported: false,
@@ -289,7 +292,7 @@ describe('realtime compatibility matrix contract', () => {
     });
   });
 
-  it('routes only flagged surfaces to the standard contract with invalidate-only polling capabilities in the matrix', async () => {
+  it('routes only flagged surfaces to the standard contract with invalidate-only recovery capabilities in the matrix', async () => {
     const matrix = await exerciseCompatibilityMatrix();
 
     expect(matrix['new-fe-flag-on:new-be']).toMatchObject({

@@ -40,11 +40,12 @@ const EXPECTED_BUDGETS = {
   maxPerCellTimers: 0,
 } as const;
 
-const EXPECTED_BENCHMARK_RESULTS = [
+const EXPECTED_REFERENCE_RESULTS = [
   {
     scenario: 'signal-live-500-rows',
     label: 'Signal table live, 500 rows',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 44,
     batchApplyCommitMsP95: 10.8,
     applyMsP95: 6.4,
@@ -60,6 +61,7 @@ const EXPECTED_BENCHMARK_RESULTS = [
     scenario: 'trades-live-2000-rows',
     label: 'Trades table live, 2,000 rows',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 68,
     batchApplyCommitMsP95: 13.6,
     applyMsP95: 7.8,
@@ -75,6 +77,7 @@ const EXPECTED_BENCHMARK_RESULTS = [
     scenario: 'signal-plus-trades-live',
     label: 'Signal plus trades live split view',
     measuredAt: '2026-03-19T00:00:00.000Z',
+    evidenceMode: 'committed_reference',
     maxMountedRows: 98,
     batchApplyCommitMsP95: 22.4,
     applyMsP95: 12.7,
@@ -98,12 +101,12 @@ describe('realtime rollout budget baselines', () => {
     ]);
   });
 
-  it('provides committed benchmark fixtures for every approval scenario', async () => {
+  it('provides committed reference fixtures for every approval scenario', async () => {
     const results = await Promise.all(
       REALTIME_BENCHMARK_SCENARIOS.map((scenario) => runRealtimeBenchmark(scenario)),
     );
 
-    expect(results).toEqual(EXPECTED_BENCHMARK_RESULTS);
+    expect(results).toEqual(EXPECTED_REFERENCE_RESULTS);
 
     for (const result of results) {
       const status = evaluateRealtimeBudgetStatus(result);
@@ -254,7 +257,8 @@ describe('realtime rollout budget baselines', () => {
     );
 
     expect(plan).toContain('## Rollout Budget Contract');
-    expect(plan).toContain('## Benchmark Scenarios Used For Approval');
+    expect(plan).toContain('## Committed Reference Scenarios Used For Approval');
+    expect(plan).toContain('committed reference fixtures');
     expect(plan).toContain('measured local runtime telemetry');
     expect(plan).toContain('external freshness lag and snapshot cadence remain');
     expect(plan).toContain(

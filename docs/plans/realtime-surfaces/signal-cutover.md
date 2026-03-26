@@ -30,7 +30,8 @@ Local rollback still exists through the per-surface feature flag. If the backend
 
 ## Rollout Notes
 
-- The current backend transport is still `polling_only`.
+- Steady-state live traffic now runs through standard Socket.IO `subscribe` / `realtime_event` / `unsubscribe`.
+- The advertised capability still reports `transport_mode = polling_only` and `replay_supported = false` because recovery remains REST snapshot based and replay is not available yet.
 - Backend legacy event removal is still blocked by bridge-backed surfaces and explicit flag-off rollback support.
 - Signal is ready for frontend duplicate-path cleanup review, not backend legacy-event cleanup.
 
