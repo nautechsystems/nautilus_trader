@@ -162,4 +162,80 @@ def test_render_pilot_envs_use_lane_aware_service_ids(tmp_path: Path) -> None:
     assert "PULSE_GROUP_KEY=equities-pilot" in portfolio_env
     assert "PULSE_GROUP_KEY=equities-pilot" in bridge_env
     assert "PULSE_GROUP_KEY=equities-pilot" in node_env
+    assert "EQUITIES_REDIS_DB=1" in api_env
+    assert "EQUITIES_REDIS_DB=1" in portfolio_env
+    assert "EQUITIES_REDIS_DB=1" in bridge_env
+    assert "EQUITIES_REDIS_DB=1" in node_env
     assert f"{deploy_root}/.venv/bin/python" in node_env
+
+
+def test_render_pilot_target_uses_lane_aware_service_ids(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    systemd_dir = tmp_path / "etc" / "systemd" / "system"
+    common_env_path = env_dir / "common.env"
+    deploy_root = tmp_path / "releases/pilot/equities/current"
+    strategy_id = "aapl_tradexyz_makerv4"
+    env_dir.mkdir(parents=True)
+    systemd_dir.mkdir(parents=True)
+    _make_release_root(deploy_root, strategy_id=strategy_id)
+
+    result = _run_installer_snippet(
+        "\n".join(
+            [
+                "initialize_stack_context",
+                "discover_node_strategies",
+                "render_target",
+            ],
+        ),
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "SYSTEMD_DIR": str(systemd_dir),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "EQUITIES_DEPLOY_ROOT": str(deploy_root),
+            "EQUITIES_DEPLOY_LANE": "pilot",
+        },
+    )
+
+    assert result.returncode == 0
+
+    target_text = (systemd_dir / "flux-equities-pilot.target").read_text(encoding="utf-8")
+    assert "Description=Flux Equities Pilot Stack" in target_text
+    assert "Wants=flux@equities-pilot-api.service" in target_text
+    assert "Wants=flux@equities-pilot-portfolio.service" in target_text
+    assert "Wants=flux@equities-pilot-bridge.service" in target_text
+    assert f"Wants=flux@equities-pilot-node-{strategy_id}.service" in target_text
+
+
+def test_render_pilot_envs_allow_lane_redis_db_override(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    common_env_path = env_dir / "common.env"
+    deploy_root = tmp_path / "releases/pilot/equities/current"
+    env_dir.mkdir(parents=True)
+    _make_release_root(deploy_root)
+
+    result = _run_installer_snippet(
+        "\n".join(
+            [
+                "initialize_stack_context",
+                "discover_node_strategies",
+                "render_api_env",
+            ],
+        ),
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "EQUITIES_DEPLOY_ROOT": str(deploy_root),
+            "EQUITIES_DEPLOY_LANE": "pilot",
+            "EQUITIES_LANE_REDIS_DB": "7",
+        },
+    )
+
+    assert result.returncode == 0
+    api_env = (env_dir / "equities-pilot-api.env").read_text(encoding="utf-8")
+    assert "EQUITIES_REDIS_DB=7" in api_env

@@ -18,6 +18,7 @@ Typical use cases:
 - `equities-pilot` has distinct service IDs from equities prod
 - `equities-pilot` appears as its own Pulse group
 - `equities-pilot` may be bounced independently of equities prod
+- `equities-pilot` binds its hidden API to `127.0.0.1:5124` and defaults to `EQUITIES_REDIS_DB=1` so pilot state stays out of prod Redis DB `0`
 
 ## Deploy To Pilot
 
@@ -29,6 +30,23 @@ Typical use cases:
 4. regenerate `/etc/flux/equities-pilot*.env`
 5. verify the rendered env files point only at the pilot release root
 6. restart only the `equities-pilot` services
+
+Reference commands:
+
+```bash
+export SOURCE_ROOT=~/nautilus_trader/.worktrees/<your-worktree>
+export SOURCE_REF="$(git -C "${SOURCE_ROOT}" rev-parse --short HEAD)"
+export RELEASE_ROOT="$(DEPLOY_LANE=pilot \
+  STACK_NAME=equities \
+  SOURCE_ROOT="${SOURCE_ROOT}" \
+  SOURCE_REF="${SOURCE_REF}" \
+  "${SOURCE_ROOT}/ops/scripts/deploy/create_release_root.sh")"
+cd ~/releases/pilot/equities/current
+uv sync --all-groups --all-extras
+sudo EQUITIES_DEPLOY_ROOT=~/releases/pilot/equities/current \
+  EQUITIES_DEPLOY_LANE=pilot \
+  ops/scripts/deploy/install_equities_systemd.sh
+```
 
 ## Bounce Pilot
 
@@ -54,14 +72,16 @@ Before restart:
 
 - inspect `/etc/flux/equities-pilot*.env`
 - confirm `WORKDIR` and `PYTHONPATH` point at the pilot release root
+- confirm `EQUITIES_REDIS_DB=1` unless you intentionally chose a different pilot Redis DB
 - confirm no pilot env points at `~/nautilus_trader` or `.worktrees/*`
-- confirm pilot ports and state paths do not collide with prod
+- confirm pilot API binds `127.0.0.1:5124`, not the prod backend port `127.0.0.1:5024`
+- if pilot and prod will run concurrently, confirm the pilot release config uses a deliberate shared-account contract before restart
 
 After restart:
 
 - inspect `systemctl status 'flux@equities-pilot*' --no-pager`
 - inspect Pulse group status at `/api/pulse/jobs`
-- inspect the pilot `/equities` surface and pilot-backed API routes as defined by the current deploy contract
+- inspect the pilot backend directly on `http://127.0.0.1:5124`
 
 ## Debugging Workflow
 

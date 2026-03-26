@@ -160,7 +160,9 @@ Installer behavior:
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
 - writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
 - rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls every discovered equities node service
-- when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
+- when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target`, binds the hidden API to `127.0.0.1:5124`, and pins `EQUITIES_REDIS_DB=1` by default so pilot runtime state stays out of prod Redis DB `0`
+- the pilot lane uses the loopback API port `127.0.0.1:5124`
+- when pilot and prod run concurrently, the pilot release config must carry a distinct Redis namespace and shared portfolio identity before restart; service-name isolation alone is not enough
 
 Runtime registration is explicit:
 
