@@ -11,6 +11,7 @@ DEPLOY_LANE="${EQUITIES_DEPLOY_LANE:-prod}"
 TEST_MODE="${FLUX_DEPLOY_TEST_MODE:-0}"
 ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"
 EQUITIES_API_PORT_OVERRIDE="${EQUITIES_API_PORT:-}"
+EQUITIES_LANE_REDIS_DB_OVERRIDE="${EQUITIES_LANE_REDIS_DB:-}"
 
 declare -a NODE_STRATEGIES=()
 
@@ -19,6 +20,7 @@ PULSE_GROUP_KEY=""
 PULSE_GROUP_LABEL=""
 PULSE_GROUP_ORDER=""
 EQUITIES_API_PORT=""
+EQUITIES_REDIS_DB=""
 TARGET_PATH=""
 DEPLOY_ROOT=""
 SHARED_CONFIG=""
@@ -54,6 +56,14 @@ default_api_port() {
     printf '5024\n'
   else
     printf '5124\n'
+  fi
+}
+
+default_redis_db() {
+  if [[ "${DEPLOY_LANE}" == "prod" ]]; then
+    printf '\n'
+  else
+    printf '1\n'
   fi
 }
 
@@ -95,6 +105,7 @@ initialize_stack_context() {
   PULSE_GROUP_LABEL="$(build_group_label)"
   PULSE_GROUP_ORDER="$(default_group_order)"
   EQUITIES_API_PORT="${EQUITIES_API_PORT_OVERRIDE:-$(default_api_port)}"
+  EQUITIES_REDIS_DB="${EQUITIES_LANE_REDIS_DB_OVERRIDE:-$(default_redis_db)}"
   TARGET_PATH="${SYSTEMD_DIR}/flux-${STACK_SERVICE_PREFIX}.target"
   DEPLOY_ROOT="$(resolve_deploy_root)"
   strategy_stack_require_immutable_release_root "${DEPLOY_ROOT}"
@@ -158,6 +169,9 @@ append_deploy_root_env_overrides() {
   local env_path="$1"
 
   printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}" >> "${env_path}"
+  if [[ -n "${EQUITIES_REDIS_DB}" ]]; then
+    printf 'EQUITIES_REDIS_DB=%s\n' "${EQUITIES_REDIS_DB}" >> "${env_path}"
+  fi
 }
 
 cleanup_obsolete_envs() {

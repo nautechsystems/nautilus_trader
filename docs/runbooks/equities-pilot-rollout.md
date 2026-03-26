@@ -75,7 +75,7 @@ Before restart:
 - confirm `EQUITIES_REDIS_DB=1` unless you intentionally chose a different pilot Redis DB
 - confirm no pilot env points at `~/nautilus_trader` or `.worktrees/*`
 - confirm pilot API binds `127.0.0.1:5124`, not the prod backend port `127.0.0.1:5024`
-- if pilot and prod will run concurrently, confirm the pilot release config uses a deliberate shared-account contract before restart
+- if pilot and prod will run concurrently on the same Redis host, keep pilot on its own Redis DB unless you intentionally want shared state
 
 After restart:
 
