@@ -15,11 +15,13 @@
 
 | Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Overall | completed | main | none | `systems/flux/flux/strategies`, `systems/flux/flux/api`, `systems/flux/flux/runners/equities`, `deploy/equities`, `ops/scripts/deploy`, `fluxboard`, `tests`, `docs/plans` | `shared` + `work/pr61-finish` | `shared` + `.worktrees/pr61-finish` | historical implementation: `29dc2906fd`, `b2b5a9ae67`, `e8e34737ea`, `e13854360c`, `6a6d2dd9e5`, `3943dd689a`, `1e04ff1f33`, `350d0d4fe5`, `e0a7512ddf`, `7ef3c94c30`, `765554b919`, `a1b1c7fa4b`, `18b8de664d`, `2a8b561620`, `a2b14fba64`, `69cc8b7c70`, `82f23eaf88`; refresh pass: `5d150967c3`, `79de2bab1d`, `173f300cf9`, `78b2ad1d6a` | Historical Task 0, Task 2, Task 3, Task 4, and Task 5 verification bundles passed on the shared branch; Historical Task 6 exact Fluxboard verification passed on the shared branch after integration (`5` files / `65` tests and `3` files / `27` tests); Historical Task 7 verification reran clean on the shared branch after integration (`276` tests) plus `git diff --check`; Historical Task 8 final shared verification passed (`9` files / `98` tests in Fluxboard, `368` pytest tests, `git diff --check`). Final refresh-pass verification in `.worktrees/pr61-finish`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_runner_external_order_claims.py -q` pass (`103` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q` pass (`28` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/common/test_portfolio_snapshot.py -q -k 'projection_status or include_in_reconciliation or stale'` pass (`1` test, `21` deselected); `git diff --check` pass; `git status --short --branch` clean before publish | Historical Tasks 0-8 remain complete on the implementation lane, and the refreshed-on-`origin/main` finish pass is now also complete. The branch was published as PR `#80` against `main`, with comments linking planning PR `#61` and superseding stacked draft `#64`, so there is now one clean implementation review surface for merge. |
+| Overall | in_progress | main | none | `systems/flux/flux/strategies`, `systems/flux/flux/api`, `systems/flux/flux/runners/equities`, `deploy/equities`, `ops/scripts/deploy`, `fluxboard`, `tests`, `docs/plans` | `shared` + `work/pr61-finish` | `shared` + `.worktrees/pr61-finish` | historical implementation: `29dc2906fd`, `b2b5a9ae67`, `e8e34737ea`, `e13854360c`, `6a6d2dd9e5`, `3943dd689a`, `1e04ff1f33`, `350d0d4fe5`, `e0a7512ddf`, `7ef3c94c30`, `765554b919`, `a1b1c7fa4b`, `18b8de664d`, `2a8b561620`, `a2b14fba64`, `69cc8b7c70`, `82f23eaf88`; refresh pass: `5d150967c3`, `79de2bab1d`, `173f300cf9`, `78b2ad1d6a`; retirement follow-up: local diff | Historical Task 0, Task 2, Task 3, Task 4, and Task 5 verification bundles passed on the shared branch; Historical Task 6 exact Fluxboard verification passed on the shared branch after integration (`5` files / `65` tests and `3` files / `27` tests); Historical Task 7 verification reran clean on the shared branch after integration (`276` tests) plus `git diff --check`; Historical Task 8 final shared verification passed (`9` files / `98` tests in Fluxboard, `368` pytest tests, `git diff --check`). Final refresh-pass verification in `.worktrees/pr61-finish`: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_runner_external_order_claims.py -q` pass (`103` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q` pass (`28` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/common/test_portfolio_snapshot.py -q -k 'projection_status or include_in_reconciliation or stale'` pass (`1` test, `21` deselected); `git diff --check` pass; `git status --short --branch` clean before publish | Historical Tasks 0-8 remain complete on the implementation lane, and the refreshed-on-`origin/main` finish pass is also complete. A late PR-closeout request now adds one more in-PR retirement pass: keep `makerv4` runtime compatibility intact, but mark it explicitly deprecated/legacy on the checked-in prod contract, API metadata, and Fluxboard operator surfaces before merge, then open a tracked follow-up issue for full deletion. |
 | Post-Plan Refresh Reconciliation | completed | main | Task 8: Retire Legacy MakerV4 Equities Control-Plane Contract And Run Final Verification | `docs/plans/2026-03-17-equities-makerv4-split.md`, `deploy/equities`, `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/strategies/makerv4` | `work/pr61-finish` | `.worktrees/pr61-finish` | `5d150967c3`, `79de2bab1d`, `173f300cf9`, `78b2ad1d6a` | `git rev-list --left-right --count origin/main...HEAD` -> `0 103`; refresh-pass pytest slices pass (`103`, `28`, `1`/`21 deselected`); `git diff --check` pass; `git status --short --branch` clean before publish | 2026-03-26 UTC reconciliation pass after refreshing the implementation onto current `origin/main` is complete. The finish-pass branch now carries the post-merge code fixes, deploy-prune inventory, reconciled docs, recorded verification, and a published mainline implementation PR (`#80`). |
 | Task 9: Reconcile Docs And Contract Notes With Refreshed Implementation | completed | main | Post-Plan Refresh Reconciliation | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | local finish-pass diff | `git diff --check` pass; stale-wording sweep clean | 2026-03-26 UTC fresh implementer handoffs stalled twice without a usable patch, so the controller reclaimed local execution in `.worktrees/pr61-finish`. Review loops surfaced six concrete doc issues and all were fixed locally: the legacy-compat contradiction in the design doc, the README overstatement about disabled artifact inventory, the last retired operator-label phrase in Task 0 history, the stale “Disable MakerV3 cleanly” rollback bullet, the lingering single-canary phrasing in the deploy contract note, and the late clarification that the disabled/decommissioned baskets are symbol-level shorthand rather than exhaustive per-file split inventories. After those fixes, `git diff --check` still passed and the scoped stale-wording sweep came back clean. No broader doc-quality issues remained after the final quality-review feedback was applied, so Task 9 is complete. |
 | Task 10: Commit Refreshed Mainline Finish Pass And Record Verification | completed | main | Task 9: Reconcile Docs And Contract Notes With Refreshed Implementation | `deploy/equities`, `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/runners/equities/run_node.py`, `tests/unit_tests/examples/strategies`, `tests/unit_tests/flux/strategies/makerv4`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | `5d150967c3`, `79de2bab1d`, `173f300cf9` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_stack_contract.py tests/unit_tests/examples/strategies/test_equities_run_api.py tests/unit_tests/examples/strategies/test_runner_external_order_claims.py -q` pass (`103` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py -q` pass (`28` tests); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/common/test_portfolio_snapshot.py -q -k 'projection_status or include_in_reconciliation or stale'` pass (`1` test, `21` deselected); `git diff --check` pass; `git status --short --branch` clean (`ahead 104`) | 2026-03-26 UTC Task 10 landed as three commits on the refreshed branch: the main refresh snapshot in `5d150967c3`, a doc-only follow-up in `79de2bab1d`, and the matching contract-test wording fix in `173f300cf9`. The final committed tree reran all three refresh-pass pytest slices successfully and remained clean afterward. |
 | Task 11: Publish Mainline Implementation PR Shape | completed | main | Task 10: Commit Refreshed Mainline Finish Pass And Record Verification | `GitHub PR metadata`, `branch topology` | `work/pr61-finish` | `.worktrees/pr61-finish` | PR `#80` (`codex/equities-maker-taker-mainline-20260326` -> `main`) | GitHub PR created and cross-linked to `#61` / `#64` | 2026-03-26 UTC Task 11 published the refreshed finish-pass branch to `origin/codex/equities-maker-taker-mainline-20260326` and opened PR `#80` against `main`. Comment threads on `#61` and `#64` now point reviewers to `#80` as the active implementation review surface. |
+| Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces | completed | main | Task 11: Publish Mainline Implementation PR Shape | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `systems/flux/flux/api/_payloads_common.py`, `systems/flux/flux/runners/equities/run_api.py`, `fluxboard/types.ts`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `tests/unit_tests/flux/api`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `fluxboard/__tests__/config/paramsProfiles.test.ts`, `fluxboard/tests/signal` | `work/pr61-finish` | `.worktrees/pr61-finish` | local diff | Red phase: targeted pytest slices fail on missing `deprecated` / `replacement` metadata and targeted Fluxboard Vitest slice fails on plain `Maker V4` labels. Green phase: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_payloads.py -q -k 'strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility'` pass (`1`/`72 deselected`); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q -k 'signals_profile_equities_emits_makerv4_quote_snapshot'` pass (`1`/`40 deselected`); `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_api.py -q -k 'uses_makerv4_metadata_when_strategy_spec_is_makerv4 or can_publish_per_strategy_family_metadata'` pass (`2`/`19 deselected`); `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/pr61-finish/fluxboard exec vitest run __tests__/config/paramsProfiles.test.ts tests/signal/SignalFamilyFilter.test.tsx` pass (`2` files / `16` tests, pre-existing React `act(...)` warnings only); `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check` pass | 2026-03-26 UTC PR `#80` now retires `makerv4` operationally without deleting runtime compatibility. The checked-in production docs mark it legacy-only, API metadata now emits explicit deprecation guidance for `maker_v4` compatibility rows, and Fluxboard labels the family as legacy instead of a peer production family. |
+| Task 13: Open Follow-Up Issue For Full MakerV4 Deletion | completed | main | Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces | `GitHub issue metadata`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `work/pr61-finish` | `.worktrees/pr61-finish` | issue `#81` | `gh issue create --repo clickconfirm/nautilus-trader --title "Remove makerv4 after split-family rollout completes" --body-file /tmp/makerv4-removal-issue.md` pass (`https://github.com/clickconfirm/nautilus-trader/issues/81`) | 2026-03-26 UTC follow-up issue `#81` now tracks the true deletion wave after live split-family rollout validation: detach split strategies from `MakerV4Strategy`, remove registry/runtime/API/Fluxboard compatibility seams, remove disabled deploy artifacts, and retire the `makerv4` package. |
 | Task 0: Align Approved `equities_maker` / `equities_taker` Naming | completed | main | Task 1: Lock Split Contract In Docs And Execution Matrix | `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `GitHub PR #64 title/body` | `shared` | `shared` | `9c27e7c708` | `git diff --check` pass | 2026-03-17 UTC docs/PR naming aligned in `9c27e7c708`; controller spec review and quality review passed after subagent timeouts |
 | Task 1: Lock Split Contract In Docs And Execution Matrix | completed | main | none | `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `fluxboard/docs/equities_contract.md`, `docs/plans/2026-03-17-equities-makerv4-split.md` | `shared` | `shared` | `929dad49a0` | `git diff --check` pass | Completed on planning branch before implementation bootstrap |
 | Task 2: Extract Shared Equities-Arb Core From MakerV4 | completed | main | Task 1: Lock Split Contract In Docs And Execution Matrix | `systems/flux/flux/strategies/shared/equities_arb`, `systems/flux/flux/strategies/shared/ibkr_order_policy.py`, `systems/flux/flux/strategies/makerv4`, `systems/flux/flux/runners/equities/run_node.py`, `systems/flux/flux/runners/shared/profile_accounts.py`, `tests/unit_tests/flux/strategies/shared`, `tests/unit_tests/flux/strategies/shared/test_ibkr_order_policy.py`, `tests/unit_tests/flux/strategies/makerv4`, `tests/unit_tests/examples/strategies` | `shared` | `shared` | `1a80ba3c6d`, `5bf8cdb7c2`, `16b0e1f956` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/shared/test_equities_arb_core.py -q` pass; `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --group test pytest tests/unit_tests/flux/strategies/makerv4/test_strategy.py tests/unit_tests/flux/strategies/makerv4/test_publisher_contract.py tests/unit_tests/flux/strategies/makerv4/test_instruments.py tests/unit_tests/flux/strategies/makerv4/test_pricing.py tests/unit_tests/flux/strategies/makerv4/test_reference_balances.py tests/unit_tests/examples/strategies/test_equities_run_node.py tests/unit_tests/examples/strategies/test_equities_run_portfolio.py -q` pass | 2026-03-17 UTC implementation landed in `1a80ba3c6d`, scope cleanup in `5bf8cdb7c2`, and quality-fix hardening in `16b0e1f956`; spec review passed with no findings, quality review findings were fixed, and quality re-review passed with no findings |
@@ -722,5 +724,122 @@ git add \
   tests
 git commit -m "feat: replace equities makerv4 with split arb families"
 ```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split-design.md`
+- Modify: `deploy/equities/README.md`
+- Modify: `deploy/equities/strategies/README.md`
+- Modify: `systems/flux/flux/api/_payloads_common.py`
+- Modify: `systems/flux/flux/runners/equities/run_api.py`
+- Modify: `fluxboard/types.ts`
+- Modify: `fluxboard/config/paramsProfiles.ts`
+- Modify: `fluxboard/components/domain/signal/SignalTable.tsx`
+- Modify: `fluxboard/Params.tsx`
+- Modify: `tests/unit_tests/flux/api/test_payloads.py`
+- Modify: `tests/unit_tests/examples/strategies/test_equities_run_api.py`
+- Modify: `tests/unit_tests/flux/api/test_equities_profile_contract.py`
+- Modify: `fluxboard/__tests__/config/paramsProfiles.test.ts`
+- Modify: `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`
+
+**Dependencies:** `Task 11: Publish Mainline Implementation PR Shape`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split.md`, `docs/plans/2026-03-17-equities-makerv4-split-design.md`, `deploy/equities/README.md`, `deploy/equities/strategies/README.md`, `systems/flux/flux/api/_payloads_common.py`, `systems/flux/flux/runners/equities/run_api.py`, `fluxboard/types.ts`, `fluxboard/config/paramsProfiles.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Params.tsx`, `tests/unit_tests/flux/api/test_payloads.py`, `tests/unit_tests/examples/strategies/test_equities_run_api.py`, `tests/unit_tests/flux/api/test_equities_profile_contract.py`, `fluxboard/__tests__/config/paramsProfiles.test.ts`, `fluxboard/tests/signal/SignalFamilyFilter.test.tsx`
+
+**Verification Commands:**
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_payloads.py -q -k 'strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility'`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/flux/api/test_equities_profile_contract.py -q -k 'signals_profile_equities_emits_makerv4_quote_snapshot'`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/ubuntu/nautilus_trader/.venv/bin/pytest tests/unit_tests/examples/strategies/test_equities_run_api.py -q -k 'uses_makerv4_metadata_when_strategy_spec_is_makerv4 or can_publish_per_strategy_family_metadata'`
+- `pnpm --dir /home/ubuntu/nautilus_trader/.worktrees/pr61-finish/fluxboard exec vitest run __tests__/config/paramsProfiles.test.ts tests/signal/SignalFamilyFilter.test.tsx`
+- `git -C /home/ubuntu/nautilus_trader/.worktrees/pr61-finish diff --check`
+
+**Step 1: Write failing deprecation tests**
+
+Add or update tests so they require all of the following:
+
+- `maker_v4` / `makerv4` strategy metadata payloads include an explicit legacy/deprecation marker plus the split-family replacement guidance
+- the equities API metadata map produced by `run_api.py` marks `makerv4` rows deprecated without changing the compatibility payload shape
+- Fluxboard labels the `maker_v4` params/signal family as legacy instead of presenting it as a peer production family
+
+**Step 2: Run the targeted tests and confirm failure**
+
+Run the scoped pytest and Vitest slices above.
+
+Expected: FAIL until the new deprecation markers and labels are wired.
+
+**Step 3: Implement the minimal compatibility-preserving deprecation surface**
+
+Make the smallest changes that satisfy the new contract:
+
+- keep `maker_v4` signal/operator payload compatibility working for stale rows
+- add explicit strategy metadata fields for legacy/deprecated families
+- label `maker_v4` as legacy on Fluxboard family/profile selectors
+- update the deploy/design docs so the checked-in production contract says `equities_maker` / `equities_taker` are the active rollout path and `makerv4` is legacy compatibility only
+
+Do not delete the `makerv4` package, registry entry, or compatibility paths in this task.
+
+**Step 4: Re-run the targeted verification bundle**
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add \
+  docs/plans/2026-03-17-equities-makerv4-split.md \
+  docs/plans/2026-03-17-equities-makerv4-split-design.md \
+  deploy/equities/README.md \
+  deploy/equities/strategies/README.md \
+  systems/flux/flux/api/_payloads_common.py \
+  systems/flux/flux/runners/equities/run_api.py \
+  fluxboard/types.ts \
+  fluxboard/config/paramsProfiles.ts \
+  fluxboard/components/domain/signal/SignalTable.tsx \
+  fluxboard/Params.tsx \
+  tests/unit_tests/flux/api/test_payloads.py \
+  tests/unit_tests/flux/api/test_equities_profile_contract.py \
+  tests/unit_tests/examples/strategies/test_equities_run_api.py \
+  fluxboard/__tests__/config/paramsProfiles.test.ts \
+  fluxboard/tests/signal/SignalFamilyFilter.test.tsx
+git commit -m "docs(api): deprecate makerv4 equities surfaces"
+```
+
+**Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
+
+### Task 13: Open Follow-Up Issue For Full MakerV4 Deletion
+
+**Files:**
+- Modify: `docs/plans/2026-03-17-equities-makerv4-split.md`
+- External: `GitHub issue metadata`
+
+**Dependencies:** `Task 12: Mark MakerV4 As Deprecated On Checked-In Prod, API Metadata, And Fluxboard Surfaces`
+
+**Write Scope:** `docs/plans/2026-03-17-equities-makerv4-split.md`, `GitHub issue metadata`
+
+**Verification Commands:**
+- `gh issue create --repo clickconfirm/nautilus-trader --title "Remove makerv4 after split-family rollout completes" --body-file /tmp/makerv4-removal-issue.md`
+
+**Step 1: Draft the issue**
+
+Write the issue body so it records:
+
+- `makerv4` is deprecated/retired from new equities production enrollment in PR `#80`
+- the split families must be validated in prod trading before deletion starts
+- the deletion wave must detach `equities_maker` / `equities_taker` from `MakerV4Strategy`
+- the deletion wave must remove the registry/API/Fluxboard compatibility seams and the disabled deploy artifacts
+
+**Step 2: Create the issue**
+
+Run the `gh issue create` command with the drafted body.
+
+Expected: PASS and print the new issue URL.
+
+**Step 3: Record the issue in the tracker**
+
+Update the Progress Tracker row with the new issue reference and status.
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.

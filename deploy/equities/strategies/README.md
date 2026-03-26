@@ -11,6 +11,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
 - The intended active target after the March 13, 2026 admission freeze is the split `maker` plus `taker` rollout on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
+- `*_makerv4.toml.disabled` files are legacy compatibility artifacts only. Keep them out of new production enrollment and remove them in the later deletion wave after live split rollout is validated.
 - The rollback file is `aapl_tradexyz_makerv3.toml.disabled`.
 - Treat `aapl_tradexyz_makerv3.toml.disabled` as rollback material, not the active control-plane contract.
 - Strategy-file swaps must not change the public shared-host GUI contract: on `tokenmm-api`, `/equities` still serves the shared Fluxboard shell and that shell must resolve assets from `/static/fluxboard/assets/*`, not `/tokenmm/assets/*`.

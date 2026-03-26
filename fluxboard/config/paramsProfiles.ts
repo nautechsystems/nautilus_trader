@@ -25,7 +25,7 @@ const PROFILE_LABELS: Record<ParamsProfileId, string> = {
   maker_v3: 'Maker V3',
   equities_maker: 'Maker',
   equities_taker: 'Taker',
-  maker_v4: 'Maker V4',
+  maker_v4: 'Maker V4 (legacy)',
 };
 
 const PROFILE_ORDER: ParamsProfileId[] = [

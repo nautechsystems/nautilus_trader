@@ -371,6 +371,12 @@ def test_signals_profile_equities_emits_makerv4_quote_snapshot(
     assert response.status_code == 200
     row = body["data"]["strategies"][0]
     assert row["strategy_family"] == "maker_v4"
+    assert row["meta"]["deprecated"] is True
+    assert row["meta"]["replacement"] == "equities_maker/equities_taker"
+    assert (
+        row["meta"]["deprecation_note"]
+        == "Legacy compatibility only; use equities_maker/equities_taker for new equities production enrollment."
+    )
     assert row["maker_v4"]["quote_snapshot"]["maker_leg"]["venue"] == "HYPERLIQUID"
     assert row["maker_v4"]["quote_snapshot"]["hedge_leg"]["venue"] == "IBKR"
     assert row["maker_v4"]["quote_snapshot"]["mid_spread_bps"] == 2.0

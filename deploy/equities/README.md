@@ -45,6 +45,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 - The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled Tier 1 strategy ids/service names are `*_maker` and `*_taker`.
 - `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` remains available as rollback material, but it is not part of normal installer discovery.
+- `makerv4` / `maker_v4` is now a legacy compatibility surface only. Keep it disabled on the checked-in production contract, validate live split-family trading first, and do not re-enroll `makerv4` for new production rollout work.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
 - The standalone equities runner keeps `/equities` as the SPA route while shared Fluxboard assets load from `/static/fluxboard/*`.
 - The March 11 live host drift to watch for is `/etc/flux/equities-api.env` or `/etc/flux/equities-node-*.env` pointing at `/.worktrees/makerv3-mono-pr` with `--mode paper` instead of the intended live checkout and flags.

@@ -2932,7 +2932,7 @@ export default function SignalTable({
                     </>
                   ) : (
                     <>
-                      <option value="maker_v4">Maker V4 ({familyCounts.maker_v4})</option>
+                      <option value="maker_v4">Maker V4 (legacy) ({familyCounts.maker_v4})</option>
                       <option value="maker_v3">Maker V3 ({familyCounts.maker_v3})</option>
                       <option value="maker_v2">Maker V2 ({familyCounts.maker_v2})</option>
                       <option value="taker">Taker ({familyCounts.taker})</option>

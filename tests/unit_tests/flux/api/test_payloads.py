@@ -1481,6 +1481,35 @@ def test_strategy_metadata_payload_includes_param_set_and_strategy_version() -> 
     }
 
 
+def test_strategy_metadata_payload_marks_makerv4_as_legacy_split_compatibility() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="maker_v4",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+
+    assert metadata.as_payload(strategy_id="aapl_tradexyz_makerv4") == {
+        "strategy_id": "aapl_tradexyz_makerv4",
+        "class": "maker_v4",
+        "strategy_groups": "equities",
+        "base_asset": "AAPL",
+        "quote_asset": "USD",
+        "param_set": "makerv4",
+        "strategy_family": "maker_v4",
+        "strategy_version": "v4",
+        "deprecated": True,
+        "replacement": "equities_maker/equities_taker",
+        "deprecation_note": (
+            "Legacy compatibility only; use equities_maker/equities_taker "
+            "for new equities production enrollment."
+        ),
+    }
+
+
 def test_build_signals_payload_derives_inventory_skew_and_quote_snapshot_from_state(
     contract_catalog,
 ) -> None:

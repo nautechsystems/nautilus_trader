@@ -14,7 +14,7 @@ Both variants must remain on the shared equities control plane:
 - shared `/equities` Fluxboard surface
 - shared deploy stack and readiness model
 
-The live equities control-plane contract is the split `equities_maker` / `equities_taker` family surface. The refreshed implementation still keeps narrow legacy `maker_v4` / `makerv4` compatibility shims in API metadata resolution, readiness parsing, and Fluxboard types so stale persisted state and mixed-rollout artifacts can be read during the finish pass, but new deploy/API/UI surfaces are expected to emit the split-family contract.
+The live equities control-plane contract is the split `equities_maker` / `equities_taker` family surface. The refreshed implementation still keeps narrow legacy `maker_v4` / `makerv4` compatibility shims in API metadata resolution, readiness parsing, and Fluxboard types so stale persisted state and mixed-rollout artifacts can be read during the finish pass, but those shims are now explicitly deprecated/legacy-only and new deploy/API/UI surfaces are expected to emit the split-family contract.
 
 ## Recommendation
 

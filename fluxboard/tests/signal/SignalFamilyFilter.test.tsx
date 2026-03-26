@@ -266,4 +266,27 @@ describe('Signal family filter', () => {
     expect(screen.queryByText('aapl_tradexyz_makerv4')).not.toBeInTheDocument();
     expect(screen.queryByText('aapl_tradexyz_taker')).not.toBeInTheDocument();
   });
+
+  it('labels maker_v4 as a legacy family on the default signal route', async () => {
+    const strategies = [buildLegacyMakerV4EquitiesStrategy()];
+    (api.getSignalStrategies as any).mockResolvedValue({
+      strategies,
+      server_time: '2024-01-01 12:00:00',
+      server_ts_ms: 1_700_000_001_500,
+    });
+    initSignalState({
+      rows: strategies,
+      setRows: vi.fn(),
+      mergeStrategy: vi.fn(),
+      mergeStrategies: vi.fn(),
+    });
+
+    renderSignalTable('/signal');
+
+    await screen.findByText('aapl_tradexyz_makerv4');
+
+    expect(
+      screen.getByRole('option', { name: 'Maker V4 (legacy) (1)' }),
+    ).toBeInTheDocument();
+  });
 });

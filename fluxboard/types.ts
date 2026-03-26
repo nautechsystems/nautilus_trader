@@ -367,6 +367,9 @@ export type StrategyMeta = {
   param_set?: string;
   strategy_family?: string;
   strategy_version?: string;
+  deprecated?: boolean;
+  replacement?: string;
+  deprecation_note?: string;
 };
 
 export type StrategyRunState = 'running' | 'stopped' | 'unknown';

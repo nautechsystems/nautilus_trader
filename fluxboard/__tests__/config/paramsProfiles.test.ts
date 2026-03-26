@@ -127,7 +127,7 @@ describe('paramsProfiles', () => {
     expect(getProfileLabel('maker_v3')).toBe('Maker V3');
     expect(getProfileLabel('equities_maker')).toBe('Maker');
     expect(getProfileLabel('equities_taker')).toBe('Taker');
-    expect(getProfileLabel('maker_v4')).toBe('Maker V4');
+    expect(getProfileLabel('maker_v4')).toBe('Maker V4 (legacy)');
   });
 
   it('hides local-inventory ownership controls from the split equities profiles', () => {
