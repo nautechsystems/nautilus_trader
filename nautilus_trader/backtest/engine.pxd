@@ -422,6 +422,9 @@ cdef class OrderMatchingEngine:
     cdef PriceRaw _prev_ask_price_raw
     cdef QuantityRaw _prev_bid_size_raw
     cdef QuantityRaw _prev_ask_size_raw
+    cdef PriceRaw _last_quote_bid_raw
+    cdef PriceRaw _last_quote_ask_raw
+    cdef bint _has_quote_context
     cdef bint _tob_initialized
 
     cdef int _position_count

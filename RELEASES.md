@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed `make_dict_serializer` incompatible with instance-method `to_dict` for `@customdataclass` types (#3722), thanks for reporting @Lacleman-trading
 - Fixed Sandbox `RefCell` re-entrancy panic when submitting orders through `ExecutionEngine` in async runner (#3732), thanks for reporting @linimin
 - Fixed triggered stop orders remaining in matching core after full fill, causing repeated duplicate fill log messages (#3741), thanks for reporting @linimin
+- Fixed matching engine `L1_MBP` stale bid/ask when backtesting with trade-only data (Rust and Cython)
 - Fixed matching engine GTD order expiry running after fills, allowing expired orders to fill before being expired
 - Fixed `Order::calculate_overfill` emitting false `Quantity` saturation warnings during normal partial fills (#3746), thanks for reporting @linimin
 - Fixed Sandbox reconciliation missing `account_id` (#3705), thanks for reporting @eliotOrderson

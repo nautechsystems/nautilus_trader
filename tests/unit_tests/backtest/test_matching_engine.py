@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from nautilus_trader.backtest.engine import OrderMatchingEngine
+from nautilus_trader.backtest.models import BestPriceFillModel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
@@ -3649,6 +3650,88 @@ class TestOrderMatchingEngine:
         # Assert: stop-market fills directly (no OrderTriggered event)
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 1, f"Stop should fill, was {len(filled_events)} fills"
+
+    def test_l1_ask_tracks_trade_price_across_seller_trades(self) -> None:
+        # Regression test: L1_MBP ask must not become stale after trades at
+        # lower prices. Previously the ask only monotonically increased and a
+        # restore block overwrote the correct value with the stale high-water mark.
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=990.0,
+            ask_price=1010.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Three seller trades: 1000 -> 1050 -> 900
+        for i, price in enumerate([1000.0, 1050.0, 900.0], start=1):
+            trade = TestDataStubs.trade_tick(
+                instrument=self.instrument,
+                price=price,
+                aggressor_side=AggressorSide.SELLER,
+                ts_event=i,
+                ts_init=i,
+            )
+            self.matching_engine.process_trade_tick(trade)
+
+        # Submit market BUY: should fill at 900 (latest trade), not stale 1050
+        messages.clear()
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+        )
+        self.matching_engine.process_order(order, self.account_id)
+
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+        assert fills[0].last_px == Price.from_str("900.000")
+
+    def test_l1_trade_only_best_price_fill_model_tracks_price(self) -> None:
+        # The exact scenario from the bug report: trade-only data (no quotes),
+        # BestPriceFillModel, CASH account, NETTING OMS. The fill model builds
+        # a synthetic L2 book from core.bid/core.ask so stale core values
+        # produce wrong fill prices.
+        messages: list[Any] = []
+        self.msgbus.register("ExecEngine.process", messages.append)
+
+        engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=BestPriceFillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            reject_stop_orders=True,
+            trade_execution=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # No quote: only trade ticks, seller trades at 100 -> 105 -> 90
+        for i, price in enumerate([100.0, 105.0, 90.0], start=1):
+            trade = TestDataStubs.trade_tick(
+                instrument=self.instrument,
+                price=price,
+                aggressor_side=AggressorSide.SELLER,
+                ts_event=i,
+                ts_init=i,
+            )
+            engine.process_trade_tick(trade)
+
+        messages.clear()
+        order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+        )
+        engine.process_order(order, self.account_id)
+
+        fills = [m for m in messages if isinstance(m, OrderFilled)]
+        assert len(fills) == 1
+        assert fills[0].last_px == Price.from_str("90.000")
 
 
 def _create_bar_execution_matching_engine() -> OrderMatchingEngine:
