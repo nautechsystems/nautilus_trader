@@ -112,6 +112,40 @@ describe('Trades resync clearing behavior', () => {
   });
 
   it('marks reconnect resync as applied on successful empty delta poll', async () => {
+    const view = render(<Trades />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockGetTrades).toHaveBeenCalled();
+    expect(useResyncStore.getState().mountedConsumers.trades).toBe(1);
+
+    mockMarkGlobalResyncApplied.mockClear();
+
+    let reconnectResyncId = 0;
+    await act(async () => {
+      reconnectResyncId = useResyncStore.getState().bumpResync('socket-reconnect');
+    });
+    expect(useResyncStore.getState().isResyncing).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+      await Promise.resolve();
+    });
+
+    expect(mockGetTradesDelta).toHaveBeenCalled();
+
+    expect(mockMarkGlobalResyncApplied).toHaveBeenCalledWith('trades', reconnectResyncId);
+    view.unmount();
+    expect(useResyncStore.getState().mountedConsumers.trades).toBeUndefined();
+  });
+
+  it('does not mark reconnect resync as applied when empty delta poll omits last_seq', async () => {
+    mockGetTradesDelta.mockResolvedValue({
+      rows: [],
+      reset_required: false,
+    });
+
     render(<Trades />);
 
     await act(async () => {
@@ -133,7 +167,6 @@ describe('Trades resync clearing behavior', () => {
     });
 
     expect(mockGetTradesDelta).toHaveBeenCalled();
-
-    expect(mockMarkGlobalResyncApplied).toHaveBeenCalledWith('trades', reconnectResyncId);
+    expect(mockMarkGlobalResyncApplied).not.toHaveBeenCalledWith('trades', reconnectResyncId);
   });
 });

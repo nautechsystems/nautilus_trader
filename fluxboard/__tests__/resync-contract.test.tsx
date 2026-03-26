@@ -124,6 +124,7 @@ describe('Trades resync apply contract', () => {
     localStorage.clear();
     getTrades.mockReset();
     getTradesDelta.mockReset();
+    socketMock.connected = true;
     vi.mocked(socketMock.on).mockClear();
     vi.mocked(socketMock.off).mockClear();
     vi.mocked(markGlobalResyncApplied).mockReset();
@@ -262,6 +263,38 @@ describe('Trades resync apply contract', () => {
     });
     getTradesDelta.mockResolvedValueOnce({
       rows: [{ op: 'upsert', row_id: 'poll-noop', version: 1, seq: 4, exchange: 'bybit' }],
+      last_seq: 4,
+      reset_required: false,
+    });
+
+    render(<Trades />);
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    vi.mocked(markGlobalResyncApplied).mockClear();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+
+    await waitFor(() => expect(getTradesDelta).toHaveBeenCalled());
+    expect(markGlobalResyncApplied).not.toHaveBeenCalled();
+  });
+
+  it('does not mark resync applied for no-op poll deltas while disconnected', async () => {
+    socketMock.connected = false;
+    setupMockStores({
+      setSnapshotResult: { accepted: true, applied: true },
+      applyDeltaResult: {
+        upserts: 0,
+        deletes: 0,
+        changed: false,
+        newRows: 0,
+        staleRejected: 0,
+        accepted: true,
+        applied: false,
+      },
+    });
+    getTradesDelta.mockResolvedValueOnce({
+      rows: [{ op: 'upsert', row_id: 'poll-disconnected-noop', version: 1, seq: 4, exchange: 'bybit' }],
       last_seq: 4,
       reset_required: false,
     });

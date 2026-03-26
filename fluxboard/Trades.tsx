@@ -14,7 +14,9 @@ import {
   useResyncStore,
   selectResyncId,
   markGlobalResyncApplied,
+  registerGlobalResyncConsumer,
   shallow,
+  unregisterGlobalResyncConsumer,
 } from './stores';
 import {
   createRealtimeSurfaceController,
@@ -933,7 +935,9 @@ export default function Trades({
 
   useEffect(() => {
     mountedRef.current = true;
+    registerGlobalResyncConsumer('trades');
     return () => {
+      unregisterGlobalResyncConsumer('trades');
       mountedRef.current = false;
       abortRef.current?.abort();
       abortRef.current = null;
@@ -1459,10 +1463,11 @@ export default function Trades({
           (max, row) => Math.max(max, coerceFiniteNumber((row as any)?.seq) ?? 0),
           0,
         );
+        const hasExplicitDeltaLastSeq = typeof delta.last_seq === 'number';
         const effectiveDeltaLastSeq =
-          typeof delta.last_seq === 'number'
+          hasExplicitDeltaLastSeq
             ? Math.max(delta.last_seq, deltaRowsMaxSeq)
-            : deltaRowsMaxSeq;
+            : (deltaRowsMaxSeq > 0 ? deltaRowsMaxSeq : null);
         const requestEpochStillCurrent = matchesTradeStreamEpoch(
           latestStreamCursor,
           requestCursor.streamId,
@@ -1504,7 +1509,7 @@ export default function Trades({
         const recoveryState = reconcileGapRecoveryTarget(latestStreamCursor.lastSeq, replaySeqs);
         const nextCursorLastSeq = recoveryState.targetSeq == null
           ? (
-              effectiveDeltaLastSeq > 0
+              effectiveDeltaLastSeq != null && effectiveDeltaLastSeq > 0
                 ? Math.max(latestStreamCursor.lastSeq, effectiveDeltaLastSeq)
                 : latestStreamCursor.lastSeq
             )
@@ -1519,7 +1524,7 @@ export default function Trades({
           lastSeq: nextCursorLastSeq,
         };
 
-        const deltaLastSeq = effectiveDeltaLastSeq > 0 ? effectiveDeltaLastSeq : null;
+        const deltaLastSeq = effectiveDeltaLastSeq;
         const hasNumericLastSeq = deltaLastSeq !== null;
         const seqIsNonRegressive =
           hasNumericLastSeq
@@ -1586,15 +1591,12 @@ export default function Trades({
               setUnread((u) => u + filteredUpserts);
             }
 
-            if (typeof delta.last_seq === 'number') {
-              latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
-            }
-            if (!appliedCurrentEpoch && seqIsNonRegressive && gapRecoveryResolved) {
-              pollAcknowledgedCurrentEpoch = true;
+            if (deltaLastSeq !== null) {
+              latestSeqRef.current = Math.max(latestSeqRef.current, deltaLastSeq);
             }
 
             if (liveNewRows > 0) {
-              playSoundForSeq(typeof delta.last_seq === 'number' ? delta.last_seq : undefined);
+              playSoundForSeq(deltaLastSeq ?? undefined);
             }
 
             queueSnapshotRefreshRef.current?.(!isLiveView);
@@ -1605,16 +1607,21 @@ export default function Trades({
           } else if (replayRows.length) {
             // Rows existed but did not match current filters; treat as successful sync for poll timing.
             emptyPollCountRef.current = 0;
-            if (typeof delta.last_seq === 'number') {
-              latestSeqRef.current = Math.max(latestSeqRef.current, delta.last_seq);
+            if (deltaLastSeq !== null) {
+              latestSeqRef.current = Math.max(latestSeqRef.current, deltaLastSeq);
             }
             if (seqIsNonRegressive && gapRecoveryResolved) {
               pollAcknowledgedCurrentEpoch = true;
             }
           } else {
             // DEFENSIVE FIX: Track consecutive empty polls
-            if (seqIsNonRegressive && (currentGapRecoveryTargetSeq == null || seqAdvanced)) {
-              const lastSeq = delta.last_seq as number;
+            if (
+              hasExplicitDeltaLastSeq
+              && deltaLastSeq !== null
+              && seqIsNonRegressive
+              && (currentGapRecoveryTargetSeq == null || seqAdvanced)
+            ) {
+              const lastSeq = deltaLastSeq;
               // Empty rows only reconcile a seq-gap recovery when the backend advances beyond sinceSeq.
               latestSeqRef.current = Math.max(latestSeqRef.current, lastSeq);
               emptyPollCountRef.current = 0;
