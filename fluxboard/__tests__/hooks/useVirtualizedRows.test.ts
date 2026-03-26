@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 
 type Row = { id: string };
@@ -173,5 +173,61 @@ describe('useVirtualizedRows', () => {
     await waitFor(() => {
       expect(latestRange).toEqual({ start: 0, end: 3 });
     });
+  });
+
+  it('updates the visible range when the viewport height changes without a scroll event', async () => {
+    let currentClientHeight = 40;
+    const resizeObservers: Array<(entries: Array<{ target: Element }>) => void> = [];
+    const ResizeObserverMock = vi.fn((callback: (entries: Array<{ target: Element }>) => void) => {
+      resizeObservers.push(callback);
+      return {
+        observe: vi.fn(),
+        disconnect: vi.fn(),
+        unobserve: vi.fn(),
+      };
+    });
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+
+    const scrollElement = document.createElement('div');
+    let currentScrollTop = 0;
+    Object.defineProperty(scrollElement, 'clientHeight', {
+      configurable: true,
+      get: () => currentClientHeight,
+    });
+    Object.defineProperty(scrollElement, 'scrollTop', {
+      configurable: true,
+      get: () => currentScrollTop,
+      set: (value: number) => {
+        currentScrollTop = value;
+      },
+    });
+    document.body.appendChild(scrollElement);
+
+    const rows = makeRows(['0', '1', '2', '3', '4', '5']);
+    const { result } = renderHook(() =>
+      useVirtualizedRows({
+        rows,
+        getRowId: (row) => row.id,
+        estimateSize: () => 20,
+        overscan: 0,
+        scrollRef: { current: scrollElement },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.visibleRange).toEqual({ start: 0, end: 2 });
+    });
+    expect(ResizeObserverMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      currentClientHeight = 80;
+      resizeObservers[0]?.([{ target: scrollElement }]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.visibleRange).toEqual({ start: 0, end: 4 });
+    });
+
+    vi.unstubAllGlobals();
   });
 });

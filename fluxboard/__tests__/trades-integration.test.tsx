@@ -1026,6 +1026,56 @@ describe('Trades integration flows', () => {
     });
   });
 
+  it('normalizes a persisted non-canonical page size back to the realtime canonical snapshot size', async () => {
+    realtimeFlags.trades = true;
+    window.sessionStorage.setItem('trades_page_size', '100');
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 2,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    const firstCall = getTrades.mock.calls[0];
+    expect(firstCall[1]).toBe(50);
+    expect(firstCall[2]).toMatchObject({
+      sort: 'ts_desc',
+      contract_version: 2,
+    });
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({
+          contract_version: 2,
+          surface: 'trades',
+          stream_id: 'trades-main',
+          snapshot_revision: 'snap-1',
+          resume_from_seq: 2,
+        }),
+        expect.any(Function),
+      );
+    });
+  });
+
   it('reconnects with a fresh canonical snapshot after an older canonical request resolves late', async () => {
     realtimeFlags.trades = true;
     const initialCanonical = createDeferred<any>();

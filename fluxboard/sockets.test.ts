@@ -210,6 +210,99 @@ describe('sockets status state machine', () => {
     expect(sockets.getSocketStatus()).toBe(sockets.SocketConnectionStatus.CONNECTED);
   });
 
+  it('re-attaches shared standard socket subscriptions after the socket instance is recreated', async () => {
+    const sockets = await import('./sockets');
+    let currentResumeFromSeq = 3;
+    const onSubscribed = vi.fn();
+    const onEvent = vi.fn();
+
+    sockets.getSocket();
+    ioCalls[0].control.socket.connected = true;
+
+    const unsubscribe = sockets.standardSocketClient.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'signal',
+        profile: 'default',
+        surface_query_key: 'signal|profile=default',
+        stream_id: 'signal-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 3,
+      },
+      resumeFromSeq: () => currentResumeFromSeq,
+      onEvent,
+      onSubscribed,
+    });
+
+    const firstSubscribeCall = ioCalls[0].control.socket.emit.mock.calls.find(
+      ([event]) => event === 'subscribe',
+    );
+    expect(firstSubscribeCall).toBeDefined();
+    const firstAck = firstSubscribeCall?.[2];
+    firstAck?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 3,
+      last_seq: 3,
+    });
+    expect(onSubscribed).toHaveBeenCalledTimes(1);
+
+    sockets.disconnectSocket();
+    currentResumeFromSeq = 6;
+    sockets.connectSocket();
+
+    expect(ioMock).toHaveBeenCalledTimes(2);
+    ioCalls[1].control.socket.connected = true;
+    ioCalls[1].control.emit('connect');
+
+    const secondSubscribeCall = ioCalls[1].control.socket.emit.mock.calls.find(
+      ([event]) => event === 'subscribe',
+    );
+    expect(secondSubscribeCall).toBeDefined();
+    expect(secondSubscribeCall?.[1]).toEqual(expect.objectContaining({
+      surface: 'signal',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      resume_from_seq: 6,
+    }));
+
+    const secondAck = secondSubscribeCall?.[2];
+    secondAck?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      surface_query_key: 'signal|profile=default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 6,
+      last_seq: 6,
+    });
+    expect(onSubscribed).toHaveBeenCalledTimes(2);
+
+    ioCalls[1].control.emit('realtime_event', {
+      contract_version: 2,
+      surface: 'signal',
+      profile: 'default',
+      stream_id: 'signal-main',
+      snapshot_revision: 'snap-1',
+      kind: 'delta_batch',
+      seq: 7,
+      server_ts_ms: 1_700_000_000_007,
+      payload: { signals: [] },
+    });
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    expect(ioCalls[1].control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'signal' });
+  });
+
   it('tracks reconnect attempts as reconnecting when reconnect is allowed', async () => {
     const sockets = await import('./sockets');
 

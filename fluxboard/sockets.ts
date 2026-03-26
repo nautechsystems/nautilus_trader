@@ -155,8 +155,13 @@ export interface StandardSocketClient {
     onFailure?: (failure: StandardSocketFailure) => void;
     onSubscribed?: (ack: StandardSocketSubscribeAck) => void;
   }) => () => void;
+  refreshSocketBinding: () => void;
   resetForTests: () => void;
 }
+
+type StandardSocketTarget =
+  | StandardSocketLike
+  | (() => StandardSocketLike | null | undefined);
 
 function buildStandardSubscribeRequest(
   lineage: RealtimeSnapshotLineage,
@@ -208,26 +213,64 @@ function matchesStandardSubscribeAck(
 }
 
 export function createStandardSocketClient(
-  targetSocket?: StandardSocketLike,
+  targetSocket?: StandardSocketTarget,
 ): StandardSocketClient {
-  const resolvedSocket = targetSocket ?? (socket as unknown as StandardSocketLike);
+  const resolveSocket = (): StandardSocketLike => {
+    if (typeof targetSocket === 'function') {
+      return targetSocket() ?? (socket as unknown as StandardSocketLike);
+    }
+    return targetSocket ?? (socket as unknown as StandardSocketLike);
+  };
   let nextSubscriptionId = 0;
+  let boundSocket: StandardSocketLike | null = null;
   let realtimeEventHandler: ((payload?: any) => void) | null = null;
   let connectHandler: (() => void) | null = null;
   const subscriptions = new Map<number, StandardSocketSubscription<any>>();
+
+  const attachSocketHandlers = (nextSocket: StandardSocketLike) => {
+    if (realtimeEventHandler) {
+      nextSocket.on('realtime_event', realtimeEventHandler);
+    }
+    if (connectHandler) {
+      nextSocket.on('connect', connectHandler);
+    }
+  };
+
+  const detachSocketHandlersFromBoundSocket = () => {
+    if (!boundSocket) {
+      return;
+    }
+    if (realtimeEventHandler) {
+      boundSocket.off('realtime_event', realtimeEventHandler);
+    }
+    if (connectHandler) {
+      boundSocket.off('connect', connectHandler);
+    }
+    boundSocket = null;
+  };
+
+  const refreshSocketBinding = (): boolean => {
+    if (subscriptions.size === 0) {
+      detachSocketHandlersFromBoundSocket();
+      return false;
+    }
+    const nextSocket = resolveSocket();
+    if (nextSocket === boundSocket) {
+      return false;
+    }
+    detachSocketHandlersFromBoundSocket();
+    boundSocket = nextSocket;
+    attachSocketHandlers(nextSocket);
+    return true;
+  };
 
   const detachSocketHandlers = () => {
     if (subscriptions.size !== 0) {
       return;
     }
-    if (realtimeEventHandler) {
-      resolvedSocket.off('realtime_event', realtimeEventHandler);
-      realtimeEventHandler = null;
-    }
-    if (connectHandler) {
-      resolvedSocket.off('connect', connectHandler);
-      connectHandler = null;
-    }
+    detachSocketHandlersFromBoundSocket();
+    realtimeEventHandler = null;
+    connectHandler = null;
   };
 
   const removeSubscription = (subscriptionId: number): StandardSocketSubscription<any> | undefined => {
@@ -240,12 +283,15 @@ export function createStandardSocketClient(
     return subscription;
   };
 
-  const emitSurfaceUnsubscribeIfUnused = (surface: string) => {
+  const emitSurfaceUnsubscribeIfUnused = (
+    surface: string,
+    socketTarget: StandardSocketLike | null = boundSocket,
+  ) => {
     const hasSameSurfaceSubscription = [...subscriptions.values()].some(
       (candidate) => candidate.request.surface === surface,
     );
-    if (!hasSameSurfaceSubscription) {
-      resolvedSocket.emit('unsubscribe', { surface });
+    if (!hasSameSurfaceSubscription && socketTarget) {
+      socketTarget.emit('unsubscribe', { surface });
     }
   };
 
@@ -257,7 +303,7 @@ export function createStandardSocketClient(
     subscription.request = issuedRequest;
     subscription.issueId += 1;
     const issuedRequestId = subscription.issueId;
-    resolvedSocket.emit('subscribe', issuedRequest, (response: any) => {
+    (boundSocket ?? resolveSocket()).emit('subscribe', issuedRequest, (response: any) => {
       const activeSubscription = subscriptions.get(subscription.id);
       if (!activeSubscription || activeSubscription.issueId !== issuedRequestId) {
         return;
@@ -276,8 +322,9 @@ export function createStandardSocketClient(
       }
 
       if (!matchesStandardSubscribeAck(issuedRequest, ack)) {
+        const socketTarget = boundSocket;
         removeSubscription(subscription.id);
-        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface);
+        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface, socketTarget);
         subscription.onFailure?.({
           type: 'lineage_mismatch',
           reason: 'ack_lineage_mismatch',
@@ -291,8 +338,9 @@ export function createStandardSocketClient(
         typeof ack.accepted_start_seq === 'number'
         && ack.accepted_start_seq !== issuedRequest.resume_from_seq
       ) {
+        const socketTarget = boundSocket;
         removeSubscription(subscription.id);
-        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface);
+        emitSurfaceUnsubscribeIfUnused(issuedRequest.surface, socketTarget);
         subscription.onFailure?.({
           type: 'lineage_mismatch',
           reason: 'accepted_start_seq_mismatch',
@@ -332,7 +380,6 @@ export function createStandardSocketClient(
         subscription.onEvent(event);
       }
     };
-      resolvedSocket.on('realtime_event', realtimeEventHandler);
     }
     if (!connectHandler) {
       connectHandler = () => {
@@ -340,8 +387,8 @@ export function createStandardSocketClient(
           issueSubscribe(subscription);
         }
       };
-      resolvedSocket.on('connect', connectHandler);
     }
+    refreshSocketBinding();
   };
 
   return {
@@ -378,17 +425,27 @@ export function createStandardSocketClient(
 
       subscriptions.set(subscriptionId, subscription);
       ensureSocketHandlers();
-      if (resolvedSocket.connected) {
+      if ((boundSocket ?? resolveSocket()).connected) {
         issueSubscribe(subscription);
       }
 
       return () => {
+        const socketTarget = boundSocket;
         const removed = removeSubscription(subscriptionId);
         if (!removed) {
           return;
         }
-        emitSurfaceUnsubscribeIfUnused(removed.request.surface);
+        emitSurfaceUnsubscribeIfUnused(removed.request.surface, socketTarget);
       };
+    },
+    refreshSocketBinding() {
+      const didRebind = refreshSocketBinding();
+      if (!didRebind || !boundSocket?.connected) {
+        return;
+      }
+      for (const subscription of subscriptions.values()) {
+        issueSubscribe(subscription);
+      }
     },
     resetForTests() {
       subscriptions.clear();
@@ -624,6 +681,7 @@ export const connectSocket = (): void => {
   }
   // Re-enable auto-reconnection
   socketInstance.io.reconnect(true);
+  standardSocketClient.refreshSocketBinding();
 
   if (!socketInstance.connected) {
     setSocketStatus(SocketConnectionStatus.CONNECTING);
@@ -693,4 +751,6 @@ export const socket = new Proxy({} as Socket, {
   },
 });
 
-export const standardSocketClient = createStandardSocketClient();
+export const standardSocketClient = createStandardSocketClient(
+  () => getSocketExport() as unknown as StandardSocketLike,
+);

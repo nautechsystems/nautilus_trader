@@ -88,19 +88,14 @@ export function useVirtualizedRows<TRow>({
     scrollTop: 0,
     viewportHeight: 0,
   });
-
-  useLayoutEffect(() => {
-    const nextScrollElement = scrollRef.current;
-    if (nextScrollElement !== scrollElement) {
-      setScrollElement(nextScrollElement);
-    }
-    if (!nextScrollElement) {
+  const syncScrollState = useCallback((element: HTMLElement | null) => {
+    if (!element) {
       return;
     }
     setScrollState((previous) => {
       const nextState = {
-        scrollTop: nextScrollElement.scrollTop,
-        viewportHeight: nextScrollElement.clientHeight,
+        scrollTop: element.scrollTop,
+        viewportHeight: element.clientHeight,
       };
       if (
         previous.scrollTop === nextState.scrollTop
@@ -110,7 +105,18 @@ export function useVirtualizedRows<TRow>({
       }
       return nextState;
     });
-  }, [scrollElement, scrollRef]);
+  }, []);
+
+  useLayoutEffect(() => {
+    const nextScrollElement = scrollRef.current;
+    if (nextScrollElement !== scrollElement) {
+      setScrollElement(nextScrollElement);
+    }
+    if (!nextScrollElement) {
+      return;
+    }
+    syncScrollState(nextScrollElement);
+  }, [scrollElement, scrollRef, syncScrollState]);
 
   const rowIds = useMemo(
     () => rows.map((row, index) => getRowId(row, index)),
@@ -144,19 +150,26 @@ export function useVirtualizedRows<TRow>({
       return undefined;
     }
 
-    const syncScrollState = () => {
-      setScrollState({
-        scrollTop: scrollElement.scrollTop,
-        viewportHeight: scrollElement.clientHeight,
-      });
+    const handleScrollOrResize = () => {
+      syncScrollState(scrollElement);
     };
 
-    syncScrollState();
-    scrollElement.addEventListener('scroll', syncScrollState, { passive: true });
+    handleScrollOrResize();
+    scrollElement.addEventListener('scroll', handleScrollOrResize, { passive: true });
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => {
+          handleScrollOrResize();
+        })
+      : null;
+    resizeObserver?.observe(scrollElement);
+    window.addEventListener('resize', handleScrollOrResize);
+
     return () => {
-      scrollElement.removeEventListener('scroll', syncScrollState);
+      scrollElement.removeEventListener('scroll', handleScrollOrResize);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [enabled, scrollElement]);
+  }, [enabled, scrollElement, syncScrollState]);
 
   const layout = useMemo(() => {
     const sizes: number[] = [];

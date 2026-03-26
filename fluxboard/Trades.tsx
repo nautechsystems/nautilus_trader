@@ -433,6 +433,20 @@ const normalizePageSize = (value: unknown): number => {
   return PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
 };
 
+const getInitialTradesPageSize = (tradesStandardEnabled: boolean): number => {
+  if (tradesStandardEnabled) {
+    return STANDARD_REALTIME_PAGE_SIZE;
+  }
+  if (typeof window === 'undefined' || !window?.sessionStorage) {
+    return DEFAULT_PAGE_SIZE;
+  }
+  const stored = window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+  if (stored == null || stored === '') {
+    return DEFAULT_PAGE_SIZE;
+  }
+  return normalizePageSize(stored);
+};
+
 const hasActiveFilters = (filters: FilterValues): boolean => {
   return Boolean(
     (filters.coin ?? '').trim()
@@ -606,17 +620,7 @@ export default function Trades({
   const { isResyncing } = useResyncStatus();
   const tradesStandardEnabled = useMemo(() => isRealtimeStandardEnabled('trades'), []);
   const decisionDetailsEnabled = useMemo(() => isTradesDecisionDetailsEnabled(), []);
-
-  const [pageSize, setPageSize] = useState(() => {
-    if (typeof window === 'undefined' || !window?.sessionStorage) {
-      return tradesStandardEnabled ? STANDARD_REALTIME_PAGE_SIZE : DEFAULT_PAGE_SIZE;
-    }
-    const stored = window.sessionStorage.getItem(PAGE_SIZE_STORAGE_KEY);
-    if (stored == null || stored === '') {
-      return tradesStandardEnabled ? STANDARD_REALTIME_PAGE_SIZE : DEFAULT_PAGE_SIZE;
-    }
-    return normalizePageSize(stored);
-  });
+  const [pageSize, setPageSize] = useState(() => getInitialTradesPageSize(tradesStandardEnabled));
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState<boolean | null>(null);
@@ -635,6 +639,7 @@ export default function Trades({
   const [surfaceState, setSurfaceState] = useState<RealtimeSurfaceState>(RealtimeSurfaceState.SYNCING);
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
   const [standardLineageGeneration, setStandardLineageGeneration] = useState<number | null>(null);
+  const [standardSubscriptionEpoch, setStandardSubscriptionEpoch] = useState(0);
   const [canonicalViewGeneration, setCanonicalViewGeneration] = useState(0);
   const tradesStandardActiveView = useMemo(
     () => tradesStandardEnabled && isCanonicalTradesRealtimeView(page, pageSize, sort, filters),
@@ -1219,6 +1224,7 @@ export default function Trades({
       return;
     }
     standardSnapshotRecoveryInFlightRef.current = true;
+    setStandardSubscriptionEpoch((epoch) => epoch + 1);
     catchingUpRef.current = true;
     setStandardLineage(null);
     syncSurfaceState();
@@ -2087,6 +2093,7 @@ export default function Trades({
       && standardLineageGeneration === canonicalViewGeneration
       && !manualRefreshRequiredRef.current,
     lineage: tradesStandardEnabled ? standardLineage : null,
+    subscriptionKey: standardSubscriptionEpoch,
     resumeFromSeq: getStandardResumeFromSeq,
     onEvent: handleStandardRealtimeEvent,
     onFailure: handleStandardRealtimeFailure,

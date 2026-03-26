@@ -84,6 +84,7 @@ export function resetSharedWebSocketBridgeForTests(): void {
 export type UseStandardWebSocketSubscriptionOptions<TPayload = unknown> = {
   enabled?: boolean;
   lineage?: RealtimeSnapshotLineage | null;
+  subscriptionKey?: string | number | null;
   resumeFromSeq?: number | (() => number);
   onEvent: (event: StandardSocketEventEnvelope<TPayload>) => void;
   onFailure?: (failure: StandardSocketFailure) => void;
@@ -103,6 +104,7 @@ function subscribeToSocket<T = unknown>(
 export function useStandardWebSocketSubscription<TPayload = unknown>({
   enabled = true,
   lineage,
+  subscriptionKey,
   resumeFromSeq,
   onEvent,
   onFailure,
@@ -145,21 +147,22 @@ export function useStandardWebSocketSubscription<TPayload = unknown>({
   }, [resumeFromSeq]);
 
   useEffect(() => {
-    if (!enabled || !lineage) {
+    const currentLineage = lineageRef.current;
+    if (!enabled || !currentLineage) {
       return undefined;
     }
 
     return standardSocketClient.subscribe<TPayload>({
-      lineage,
+      lineage: currentLineage,
       resumeFromSeq: () => {
-        const currentLineage = lineageRef.current ?? lineage;
+        const latestLineage = lineageRef.current ?? currentLineage;
         const resolved = typeof resumeFromSeqRef.current === 'function'
           ? resumeFromSeqRef.current()
           : resumeFromSeqRef.current;
         if (typeof resolved === 'number' && Number.isFinite(resolved)) {
           return resolved;
         }
-        return currentLineage.last_seq;
+        return latestLineage.last_seq;
       },
       onEvent: (event) => {
         onEventRef.current(event as StandardSocketEventEnvelope<TPayload>);
@@ -171,7 +174,7 @@ export function useStandardWebSocketSubscription<TPayload = unknown>({
         onSubscribedRef.current?.(ack as StandardSocketSubscribeAck);
       },
     });
-  }, [enabled, lineageKey, lineage]);
+  }, [enabled, lineageKey, subscriptionKey]);
 }
 
 function isRealtimeSurface(surface?: string): surface is RealtimeSurface {
