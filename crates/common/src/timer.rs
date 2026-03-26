@@ -290,6 +290,20 @@ impl TimeEventHandler {
         Self { event, callback }
     }
 
+    fn cmp_event(&self, other: &Self) -> Ordering {
+        self.event
+            .ts_event
+            .cmp(&other.event.ts_event)
+            .then_with(|| self.event.name.cmp(&other.event.name))
+            .then_with(|| self.event.ts_init.cmp(&other.event.ts_init))
+            .then_with(|| {
+                self.event
+                    .event_id
+                    .as_str()
+                    .cmp(other.event.event_id.as_str())
+            })
+    }
+
     /// Executes the handler by invoking its callback for the associated event.
     pub fn run(self) {
         let Self { event, callback } = self;
@@ -305,7 +319,7 @@ impl PartialOrd for TimeEventHandler {
 
 impl PartialEq for TimeEventHandler {
     fn eq(&self, other: &Self) -> bool {
-        self.event.ts_event == other.event.ts_event
+        self.cmp_event(other).is_eq()
     }
 }
 
@@ -313,7 +327,7 @@ impl Eq for TimeEventHandler {}
 
 impl Ord for TimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.event.ts_event.cmp(&other.event.ts_event)
+        self.cmp_event(other)
     }
 }
 
@@ -478,11 +492,11 @@ impl Iterator for TestTimer {
 mod tests {
     use std::num::NonZeroU64;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use rstest::*;
     use ustr::Ustr;
 
-    use super::{TestTimer, TimeEvent};
+    use super::{TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler};
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -632,6 +646,53 @@ mod tests {
         let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(15)).collect();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].ts_event, UnixNanos::from(15));
+    }
+
+    #[rstest]
+    fn test_time_event_handler_ordering_uses_tie_breakers() {
+        let callback = TimeEventCallback::from(|_: TimeEvent| {});
+
+        let later_name = TimeEventHandler::new(
+            TimeEvent::new(
+                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                UUID4::from("00000000-0000-4000-8000-000000000003"),
+                100.into(),
+                100.into(),
+            ),
+            callback.clone(),
+        );
+        let earlier_name = TimeEventHandler::new(
+            TimeEvent::new(
+                Ustr::from("spread_quote_ESM4"),
+                UUID4::from("00000000-0000-4000-8000-000000000002"),
+                100.into(),
+                100.into(),
+            ),
+            callback.clone(),
+        );
+        let later_init = TimeEventHandler::new(
+            TimeEvent::new(
+                Ustr::from("spread_quote_ESM4"),
+                UUID4::from("00000000-0000-4000-8000-000000000004"),
+                100.into(),
+                101.into(),
+            ),
+            callback.clone(),
+        );
+        let later_id = TimeEventHandler::new(
+            TimeEvent::new(
+                Ustr::from("spread_quote_ESM4"),
+                UUID4::from("00000000-0000-4000-8000-000000000005"),
+                100.into(),
+                100.into(),
+            ),
+            callback,
+        );
+
+        assert!(earlier_name < later_name);
+        assert!(earlier_name < later_init);
+        assert!(earlier_name < later_id);
+        assert_ne!(earlier_name, later_id);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
