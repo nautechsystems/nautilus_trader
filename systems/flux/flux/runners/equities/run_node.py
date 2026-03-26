@@ -383,6 +383,33 @@ def _effective_venue_resolution_config(
     )
 
 
+def _uses_shared_asset_split_contract(
+    *,
+    config: dict[str, Any],
+    external_strategy_id: str,
+    strategy_spec: FluxStrategySpec,
+) -> bool:
+    if strategy_spec.strategy_id not in {"equities_maker", "equities_taker"}:
+        return False
+
+    portfolio_asset_id: str | None = None
+    shared_strategy_count = 0
+
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id == external_strategy_id:
+            portfolio_asset_id = contract.portfolio_asset_id
+            break
+
+    if portfolio_asset_id is None:
+        return False
+
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.portfolio_asset_id == portfolio_asset_id:
+            shared_strategy_count += 1
+
+    return shared_strategy_count > 1
+
+
 def _strategy_config_accepts(config_cls: type[object], field_name: str) -> bool:
     try:
         signature = inspect.signature(config_cls)
@@ -580,9 +607,18 @@ def build_node(
         maker_instrument_id=maker_instrument_id,
         reference_instrument_id=reference_instrument_id,
     )
+    shared_asset_split_contract = _uses_shared_asset_split_contract(
+        config=config,
+        external_strategy_id=external_strategy_id,
+        strategy_spec=strategy_spec,
+    )
+    if shared_asset_split_contract:
+        filter_unclaimed_external_orders = True
     exec_reconciliation = bool(node_cfg.get("exec_reconciliation", True))
     reconciliation_instrument_ids = allowed_instrument_ids
-    external_order_claims = allowed_instrument_ids
+    # Same-asset split variants share venue/account scope, so they must reconcile
+    # only their cached orders and leave stray venue orders unclaimed.
+    external_order_claims = [] if shared_asset_split_contract else allowed_instrument_ids
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),

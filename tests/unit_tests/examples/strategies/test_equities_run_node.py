@@ -2294,6 +2294,7 @@ def test_build_node_clears_stale_execution_flags_when_contract_promotes_new_make
     class _CapturedNode:
         def __init__(self, *args, **kwargs) -> None:
             _ = args, kwargs
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
 
         def add_data_client_factory(self, _venue, _factory) -> None:
             return None
@@ -2418,6 +2419,8 @@ def test_build_node_clears_stale_execution_flags_when_contract_promotes_new_make
                 },
             ],
         },
+        mode="paper",
+        force_enable_execution=False,
     )
 
     assert captured["execution_venue"] == "BINANCE_PERP"
@@ -2974,7 +2977,7 @@ def test_build_node_real_makerv4_strategy_receives_profile_account_projection_fe
     assert strategy._profile_account_projection_account_scope_id == "hyperliquid.xyz.main"
 
 
-def test_build_node_keeps_shared_execution_claims_for_primary_same_asset_variant(
+def test_build_node_filters_shared_external_orders_for_primary_same_asset_variant(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -3076,18 +3079,16 @@ def test_build_node_keeps_shared_execution_claims_for_primary_same_asset_variant
     strategy = captured["strategy"]
     node_config = captured["node_config"]
 
-    assert strategy.config.external_order_claims == [
-        maker_instrument_id,
-        reference_instrument_id,
-    ]
+    assert strategy.config.external_order_claims == []
     assert node_config.exec_engine.reconciliation is True
+    assert node_config.exec_engine.filter_unclaimed_external_orders is True
     assert node_config.exec_engine.reconciliation_instrument_ids == [
         maker_instrument_id,
         reference_instrument_id,
     ]
 
 
-def test_build_node_keeps_shared_execution_claims_for_secondary_same_asset_variant(
+def test_build_node_filters_shared_external_orders_for_secondary_same_asset_variant(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -3189,11 +3190,9 @@ def test_build_node_keeps_shared_execution_claims_for_secondary_same_asset_varia
     strategy = captured["strategy"]
     node_config = captured["node_config"]
 
-    assert strategy.config.external_order_claims == [
-        maker_instrument_id,
-        reference_instrument_id,
-    ]
+    assert strategy.config.external_order_claims == []
     assert node_config.exec_engine.reconciliation is True
+    assert node_config.exec_engine.filter_unclaimed_external_orders is True
     assert node_config.exec_engine.reconciliation_instrument_ids == [
         maker_instrument_id,
         reference_instrument_id,

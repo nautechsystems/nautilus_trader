@@ -262,7 +262,7 @@ LEGACY_DISABLED_STRATEGIES = (
         "ibkr_instrument_id": "USAR.NASDAQ",
     },
 )
-LIVE_ENROLLED_TRADEXYZ_STRATEGIES = CORE_PROD_STRATEGIES + tuple(
+DISABLED_SPLIT_TRADEXYZ_STRATEGIES = tuple(
     _split_core_strategy_entry(
         {
             "symbol": route["symbol"],
@@ -274,41 +274,15 @@ LIVE_ENROLLED_TRADEXYZ_STRATEGIES = CORE_PROD_STRATEGIES + tuple(
     for route in LEGACY_DISABLED_STRATEGIES
     for variant in ("maker", "taker")
 )
-LIVE_ENROLLED_STRATEGIES = LIVE_ENROLLED_TRADEXYZ_STRATEGIES + BINANCE_PERP_STRATEGIES
-LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
-LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = (
-    "aapl_tradexyz",
-    "amd_tradexyz",
-    "amzn_binance_perp",
-    "amzn_tradexyz",
-    "baba_tradexyz",
-    "coin_binance_perp",
-    "coin_tradexyz",
-    "crcl_binance_perp",
-    "crcl_tradexyz",
-    "crwv_tradexyz",
-    "ewy_binance_perp",
-    "googl_tradexyz",
-    "hood_binance_perp",
-    "hood_tradexyz",
-    "intc_binance_perp",
-    "intc_tradexyz",
-    "meta_tradexyz",
-    "msft_tradexyz",
-    "mstr_binance_perp",
-    "mstr_tradexyz",
-    "mu_tradexyz",
-    "nflx_tradexyz",
-    "nvda_tradexyz",
-    "orcl_tradexyz",
-    "pltr_binance_perp",
-    "pltr_tradexyz",
-    "rivn_tradexyz",
-    "sndk_tradexyz",
-    "tsla_binance_perp",
-    "tsla_tradexyz",
-    "tsm_tradexyz",
-    "usar_tradexyz",
+DISABLED_SPLIT_STRATEGY_IDS = tuple(
+    entry["strategy_id"]
+    for entry in DISABLED_SPLIT_TRADEXYZ_STRATEGIES + BINANCE_PERP_STRATEGIES
+)
+LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES
+LIVE_ENROLLED_STRATEGY_IDS = CORE_PROD_STRATEGY_IDS
+LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = tuple(
+    f"{route['symbol'].lower()}_tradexyz"
+    for route in CORE_PROD_SYMBOL_ROUTES
 )
 LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER = tuple(
     f"{route_id}_{variant}"
@@ -498,7 +472,6 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
     assert "[strategy]" not in live_config
     assert "[[strategy_contracts]]" in live_config
     assert 'exchange = "hyperliquid"' in live_config
-    assert 'exchange = "binance_perp"' in live_config
     assert 'exchange = "ibkr"' in live_config
     assert contracts == LIVE_ENROLLED_MAKER_CONTRACTS | LIVE_ENROLLED_REFERENCE_CONTRACTS
 
@@ -565,6 +538,9 @@ def test_equities_non_core_strategy_configs_are_disabled_from_discovery() -> Non
     )
 
     assert active_strategy_ids == sorted(LIVE_ENROLLED_STRATEGY_IDS)
+    for strategy_id in DISABLED_SPLIT_STRATEGY_IDS:
+        assert not (strategies_dir / f"{strategy_id}.toml").exists()
+        assert (strategies_dir / f"{strategy_id}.toml.disabled").exists()
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert not (strategies_dir / f"{strategy_id}.toml").exists()
         assert (strategies_dir / f"{strategy_id}.toml.disabled").exists()
@@ -711,19 +687,15 @@ def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset(
         row for row in contracts if row["portfolio_asset_id"] == "AMZN"
     ]
     assert sorted(row["strategy_id"] for row in amzn_contracts) == [
-        "amzn_binance_perp_maker",
-        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
-    assert {row["maker_venue"] for row in amzn_contracts} == {"BINANCE_PERP", "HYPERLIQUID"}
+    assert {row["maker_venue"] for row in amzn_contracts} == {"HYPERLIQUID"}
     assert sorted(
         strategy_id
         for strategy_id in strategy_ids
         if strategy_id.startswith("amzn_")
     ) == [
-        "amzn_binance_perp_maker",
-        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
@@ -732,12 +704,10 @@ def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset(
         for strategy_id in required_strategy_ids
         if strategy_id.startswith("amzn_")
     ) == [
-        "amzn_binance_perp_maker",
-        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
-    assert [row["portfolio_asset_id"] for row in contracts].count("AMZN") == 4
+    assert [row["portfolio_asset_id"] for row in contracts].count("AMZN") == 2
 
 
 def test_equities_live_config_strategy_contracts_cover_live_enrolled_split_routes() -> None:
@@ -797,17 +767,12 @@ def test_equities_dual_variant_strategy_files_preserve_shared_session_contract()
             ("bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"),
         ),
         (
-            "baba_tradexyz_maker",
+            "amzn_tradexyz_maker",
             "equities_maker",
             (),
         ),
         (
-            "amzn_binance_perp_maker",
-            "equities_maker",
-            (),
-        ),
-        (
-            "amzn_binance_perp_taker",
+            "amzn_tradexyz_taker",
             "equities_taker",
             ("bid_edge1", "ask_edge1", "place_edge1", "distance1", "n_orders1"),
         ),
@@ -1083,7 +1048,7 @@ def test_equities_prod_admission_policy_baskets_are_exhaustive_and_disjoint() ->
 def test_equities_deploy_readme_freezes_prod_baskets_and_readd_policy() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
 
-    assert "current checked-in live config still carries the broad 23-name equities basket" in readme
+    assert "checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket" in readme
     assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
     assert (
         _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)

@@ -18,8 +18,8 @@ This directory holds one TOML file per equities node process enrolled into the P
 
 ## March 13, 2026 Prod Hardening Universe Policy
 
-- The current active file set is still broader than the intended production basket while the prune plan is being executed.
-- Treat the categories below as the source of truth for which strategy files should remain active, disabled for second-wave validation, or decommissioned from the first-wave production set.
+- The checked-in active file set is pruned to the Tier 1 production basket below.
+- Treat the categories below as the source of truth for which strategy ids are active, disabled for second-wave validation, or decommissioned from the first-wave production set. Additional disabled `*.toml.disabled` files may remain in the directory as historical or rollback material until later cleanup removes them.
 
 ### Tier 1 Core Basket
 

@@ -21,7 +21,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The checked-in split maker/taker surface is still broader than the first-wave prod target until pruning tasks land; use the frozen admission baskets below as the source of truth for what remains in scope for prod.
+- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe the active rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
 - `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
@@ -51,8 +51,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 13, 2026 Prod Hardening Universe Policy
 
-- The current checked-in live config still carries the broad 23-name equities basket while the prod-hardening prune is in progress.
-- Freeze the intended production universe in docs/tests first, then prune `deploy/equities/equities.live.toml`, service discovery, and runtime rollout in follow-on tasks.
+- The checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket.
+- Second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
 
 ### Tier 1 Core Basket
 
@@ -111,7 +111,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - Each `[[account_scopes]]` row defines the shared provider config for one profile-owned account scope so the portfolio runner can build shared Hyperliquid/IBKR account projections without scraping one arbitrary node TOML.
 - The shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, and `[[account_scopes]]`, so active node settings live in `deploy/equities/strategies/*.toml` while canonical asset/account contracts stay centralized in `deploy/equities/equities.live.toml`.
 - The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
-- The old single-canary wording still applies as a safety invariant: shared IBKR contract entry must mirror the active canary route before that route is added to the enrolled stock set.
+- The same safety invariant still applies to the split rollout: each shared IBKR contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
 - The checked-in equities nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ` and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false`. `ibkr.reference.main` is the only equities IBKR gateway owner; enrolled nodes keep a non-owning `[node.venues.IBKR.dockerized_gateway]` block with `manage_container = false` so they connect to the shared gateway without starting or restarting it.
 - Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
@@ -277,6 +277,6 @@ Fluxboard contract reference:
 
 ## Rollback
 
-- Disable MakerV3 cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
+- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
 - Roll back the AAPL canary to MakerV3 only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the active split family files from discovery for that symbol, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
 - `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry move with the file swap.

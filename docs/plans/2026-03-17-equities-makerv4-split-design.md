@@ -14,7 +14,7 @@ Both variants must remain on the shared equities control plane:
 - shared `/equities` Fluxboard surface
 - shared deploy stack and readiness model
 
-No backward-compatibility path is required for the live equities `makerv4` control-plane contract; the new families become the only supported equities arb deploy/API/UI contract.
+The live equities control-plane contract is the split `equities_maker` / `equities_taker` family surface. The refreshed implementation still keeps narrow legacy `maker_v4` / `makerv4` compatibility shims in API metadata resolution, readiness parsing, and Fluxboard types so stale persisted state and mixed-rollout artifacts can be read during the finish pass, but new deploy/API/UI surfaces are expected to emit the split-family contract.
 
 ## Recommendation
 
@@ -52,7 +52,7 @@ Recommended strategy metadata:
 - `strategy_family = "equities_maker"` / `"equities_taker"`
 - `strategy_version = "v1"`
 - `param_set = "equities_maker"` / `"equities_taker"`
-- `class = "equity_perp_maker"` / `"equity_perp_taker"`
+- `strategy_class = "equities_maker"` / `"equities_taker"`
 
 ### Operator Params Profiles
 
@@ -65,6 +65,7 @@ Recommended strategy metadata:
 - the live `run_api.main()` path must bind per-strategy family and asset metadata from merged config plus `strategy_contracts`, not only helper-unit tests that inject contracts into an isolated `[api]` table
 - row metadata still carries family-specific `param_set` / `strategy_family`
 - persisted Fluxboard `maker_v4` params preferences should migrate into the new split profiles
+- legacy `maker_v4` / `makerv4` selectors may remain accepted as fallback aliases while old persisted state is drained, but active equities rows and new operator actions should resolve to `equities_maker` / `equities_taker`
 
 ### Operator Labels
 
@@ -232,5 +233,5 @@ The design below assumes:
 - both variants can run concurrently for the same stock
 - both share the same equities portfolio/book and shared asset-level risk view
 - node topology is not redesigned in this wave
-- no compatibility layer for legacy `makerv4` is required
+- narrow legacy `maker_v4` / `makerv4` compatibility shims remain in place during the finish pass, but the split-family contract is the only active equities deploy surface
 - no cross-strategy arbitration is added in this wave

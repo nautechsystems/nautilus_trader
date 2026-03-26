@@ -405,68 +405,145 @@ def effective_venue_resolution_config(
     if not isinstance(venue_entries, dict):
         return config
 
-    hyperliquid_cfg = venue_entries.get("HYPERLIQUID")
     ibkr_cfg = venue_entries.get("IBKR")
-    if not isinstance(hyperliquid_cfg, dict) or not isinstance(ibkr_cfg, dict):
+    if not isinstance(ibkr_cfg, dict):
         return config
 
-    maker_instrument_id = _optional_text(hyperliquid_cfg.get("instrument_id"))
-    if maker_instrument_id is None:
-        return config
-
-    strategy_cfg = config.get("strategy")
-    if not isinstance(strategy_cfg, dict):
-        return config
-    derived_reference_instrument_id = hyperliquid_perp_to_ibkr_instrument_id(
-        maker_instrument_id,
-        primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
-    )
     identity_cfg = config.get("identity")
     external_strategy_id = (
         _optional_text(identity_cfg.get("external_strategy_id"))
         if isinstance(identity_cfg, dict)
         else None
     ) or _resolve_flux_strategy_id(config)
+    strategy_contract = None
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id == external_strategy_id:
+            strategy_contract = contract
+            break
+
+    maker_venue_name = (
+        _optional_text(getattr(strategy_contract, "maker_venue", None))
+        if strategy_contract is not None
+        else None
+    ) or "HYPERLIQUID"
+    maker_cfg = venue_entries.get(maker_venue_name)
+    if not isinstance(maker_cfg, dict):
+        return config
+
+    maker_instrument_id = (
+        _optional_text(getattr(strategy_contract, "maker_instrument_id", None))
+        if strategy_contract is not None
+        else None
+    ) or _optional_text(maker_cfg.get("instrument_id"))
+    if maker_instrument_id is None:
+        return config
+
+    reference_instrument_id = (
+        _optional_text(getattr(strategy_contract, "reference_instrument_id", None))
+        if strategy_contract is not None
+        else None
+    )
+    if reference_instrument_id is None:
+        strategy_cfg = config.get("strategy")
+        if not isinstance(strategy_cfg, dict):
+            return config
+        reference_instrument_id = hyperliquid_perp_to_ibkr_instrument_id(
+            maker_instrument_id,
+            primary_exchange=str(strategy_cfg.get("ibkr_primary_exchange", "NASDAQ")),
+        )
+
     ibkr_scope_overrides: dict[str, Any] = {}
     scope_configs = {
         scope.scope_id: scope
         for scope in decode_account_scopes(config.get("account_scopes") or [])
     }
-    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
-        if contract.strategy_id != external_strategy_id:
-            continue
-        scope_id = contract.hedge_account_scope_id or contract.reference_account_scope_id
+    if strategy_contract is not None:
+        scope_id = strategy_contract.hedge_account_scope_id or strategy_contract.reference_account_scope_id
         scope = scope_configs.get(scope_id)
         if scope is None or scope.provider.lower() != "ibkr":
-            break
-        if scope.ibg_host is not None:
-            ibkr_scope_overrides["ibg_host"] = scope.ibg_host
-        if scope.ibg_port is not None and scope.dockerized_gateway is None:
-            ibkr_scope_overrides["ibg_port"] = scope.ibg_port
-        if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
-            ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
-        if scope.account_id is not None:
-            ibkr_scope_overrides["account_id"] = scope.account_id
-        if scope.dockerized_gateway is not None:
-            ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
-        break
-    needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != derived_reference_instrument_id
-    needs_execution_promotion = not bool(ibkr_cfg.get("execution", False))
+            scope = None
+        if scope is not None:
+            if scope.ibg_host is not None:
+                ibkr_scope_overrides["ibg_host"] = scope.ibg_host
+            if scope.ibg_port is not None and scope.dockerized_gateway is None:
+                ibkr_scope_overrides["ibg_port"] = scope.ibg_port
+            if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
+                ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
+            if scope.account_id is not None:
+                ibkr_scope_overrides["account_id"] = scope.account_id
+            if scope.dockerized_gateway is not None:
+                ibkr_scope_overrides["dockerized_gateway"] = dict(scope.dockerized_gateway)
+
+    execution_venues_cfg = config.get("venues")
+    execution_venue = (
+        _optional_text(execution_venues_cfg.get("execution_venue"))
+        if isinstance(execution_venues_cfg, dict)
+        else None
+    )
+    maker_cfg_is_executing = bool(maker_cfg.get("execution", False))
+    stale_execution_flags = any(
+        venue_name not in {maker_venue_name, "IBKR"}
+        and isinstance(venue_cfg, dict)
+        and bool(venue_cfg.get("execution", False))
+        for venue_name, venue_cfg in venue_entries.items()
+    )
+    needs_maker_rewrite = _optional_text(maker_cfg.get("instrument_id")) != maker_instrument_id
+    needs_top_level_execution_promotion = execution_venue != maker_venue_name
+    needs_maker_execution_promotion = not maker_cfg_is_executing
+    needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != reference_instrument_id
+    needs_ibkr_execution_promotion = not bool(ibkr_cfg.get("execution", False))
     needs_scope_overlay = bool(ibkr_scope_overrides)
-    if not needs_reference_rewrite and not needs_execution_promotion and not needs_scope_overlay:
+    if not (
+        needs_maker_rewrite
+        or needs_top_level_execution_promotion
+        or needs_maker_execution_promotion
+        or stale_execution_flags
+        or needs_reference_rewrite
+        or needs_ibkr_execution_promotion
+        or needs_scope_overlay
+    ):
         return config
 
+    effective_venues_cfg = (
+        dict(execution_venues_cfg)
+        if isinstance(execution_venues_cfg, dict)
+        else {}
+    )
+    effective_venues_cfg["execution_venue"] = maker_venue_name
+
     effective_node_cfg = dict(node_cfg)
-    effective_venue_entries = dict(venue_entries)
-    effective_venue_entries["IBKR"] = {
-        **ibkr_cfg,
-        **ibkr_scope_overrides,
-        "instrument_id": derived_reference_instrument_id,
-        "execution": True,
-    }
+    effective_venue_entries: dict[str, Any] = {}
+    for venue_name, venue_cfg in venue_entries.items():
+        if not isinstance(venue_cfg, dict):
+            effective_venue_entries[venue_name] = venue_cfg
+            continue
+        if venue_name == maker_venue_name:
+            effective_venue_entries[venue_name] = {
+                **venue_cfg,
+                "instrument_id": maker_instrument_id,
+                "execution": True,
+            }
+            continue
+        if venue_name == "IBKR":
+            effective_venue_entries[venue_name] = {
+                **venue_cfg,
+                **ibkr_scope_overrides,
+                "instrument_id": reference_instrument_id,
+                "execution": True,
+            }
+            continue
+        if bool(venue_cfg.get("execution", False)):
+            effective_venue_entries[venue_name] = {
+                **venue_cfg,
+                "execution": False,
+            }
+            continue
+        effective_venue_entries[venue_name] = venue_cfg
+
     effective_node_cfg["venues"] = effective_venue_entries
     return {
         **config,
+        "venues": effective_venues_cfg,
         "node": effective_node_cfg,
     }
 
