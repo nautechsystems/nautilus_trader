@@ -5,6 +5,7 @@ Thin equities-maker family built on the shared MakerV4 maker hedge path.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from flux.strategies.equities_maker import runtime_params as runtime_params_mod
 from flux.strategies.makerv3.strategy import OrderQtyUnit
@@ -88,7 +89,20 @@ class EquitiesMakerStrategy(MakerV4Strategy):
 
     def __init__(self, config: EquitiesMakerStrategyConfig) -> None:
         super().__init__(config)
-        self._runtime_params = dict(runtime_params_mod.EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS)
+        self._runtime_params = self._seed_runtime_params_from_config(config)
+
+    @staticmethod
+    def _seed_runtime_params_from_config(config: EquitiesMakerStrategyConfig) -> dict[str, Any]:
+        seeded = dict(runtime_params_mod.EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS)
+        seeded["qty"] = config.active_order_qty
+        for name in runtime_params_mod.EQUITIES_MAKER_RUNTIME_PARAM_REGISTRY.names:
+            if not hasattr(config, name):
+                continue
+            value = getattr(config, name)
+            if value is None:
+                continue
+            seeded[name] = value
+        return seeded
 
     def _execution_mode(self) -> str:
         return "maker_hedge"

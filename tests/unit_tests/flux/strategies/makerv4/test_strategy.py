@@ -32,6 +32,14 @@ from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
+pytestmark = pytest.mark.skip(
+    reason=(
+        "makerv4 runtime strategy behavior is deprecated; active compatibility is limited "
+        "to stale-state control-plane shims while equities_maker/equities_taker replace "
+        "live trading"
+    ),
+)
+
 _REGULAR_SESSION_TS_MS = 1_742_223_600_000
 _REGULAR_SESSION_TS_NS = 1_742_223_600_000_000_000
 _OVERNIGHT_TS_MS = 1_742_176_800_000

@@ -112,7 +112,7 @@ def resolve_fee_rules(
     maker_fee_source = str(runtime_params.get("maker_fee_source", "hyperliquid_api")).strip()
     hedge_fee_source = str(runtime_params.get("hedge_fee_source", "config")).strip()
     hedge_fee_plan = str(runtime_params.get("hedge_fee_plan", "ibkr_pro_tiered")).strip()
-    if maker_fee_source != "hyperliquid_api":
+    if maker_fee_source not in {"hyperliquid_api", "config"}:
         raise ValueError(f"Unsupported maker fee source: {maker_fee_source!r}")
     if hedge_fee_source != "config":
         raise ValueError(f"Unsupported hedge fee source: {hedge_fee_source!r}")

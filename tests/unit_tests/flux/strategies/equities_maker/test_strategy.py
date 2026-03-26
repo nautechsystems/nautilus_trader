@@ -122,3 +122,33 @@ def test_equities_maker_forces_maker_mode_and_preserves_overnight_immediate_hedg
     assert order.outside_rth is True
     assert order.include_overnight is True
     assert order.cancel_after_ms is None
+
+
+def test_equities_maker_seeds_runtime_params_from_config() -> None:
+    strategy = EquitiesMakerStrategy(
+        config=_config(
+            bot_on=True,
+            qty=Decimal("3"),
+            des_qty_global=4.0,
+            max_qty_global=5.0,
+            max_skew_bps_global=6.0,
+            linear_offset_bps=1.5,
+            max_age_ms=2_500,
+            bid_edge1=7.0,
+            ask_edge1=8.0,
+            place_edge1=0.5,
+            n_orders1=2,
+        )
+    )
+
+    assert strategy._runtime_params["bot_on"] is True
+    assert Decimal(str(strategy._runtime_params["qty"])) == Decimal("3")
+    assert strategy._runtime_params["des_qty_global"] == 4.0
+    assert strategy._runtime_params["max_qty_global"] == 5.0
+    assert strategy._runtime_params["max_skew_bps_global"] == 6.0
+    assert strategy._runtime_params["linear_offset_bps"] == 1.5
+    assert strategy._runtime_params["max_age_ms"] == 2_500
+    assert strategy._runtime_params["bid_edge1"] == 7.0
+    assert strategy._runtime_params["ask_edge1"] == 8.0
+    assert strategy._runtime_params["place_edge1"] == 0.5
+    assert strategy._runtime_params["n_orders1"] == 2

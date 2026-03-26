@@ -1093,13 +1093,21 @@ class MakerV4Strategy(Strategy):
     def _fee_assumptions(self):
         legacy_hedge_fee_plan = str(self._runtime_params.get("hedge_fee_plan", "")).strip().lower()
         default_ibkr_fee_plan = "tiered" if legacy_hedge_fee_plan == "ibkr_pro_tiered" else "fixed"
+        hl_taker_fee_bps = self._runtime_params.get(
+            "hl_taker_fee_bps",
+            self._runtime_params.get("maker_taker_fee_bps", 4.5),
+        )
+        hl_maker_fee_bps = self._runtime_params.get(
+            "hl_maker_fee_bps",
+            self._runtime_params.get("maker_maker_fee_bps", 0.25),
+        )
         return build_fee_assumptions(
             ibkr_fee_plan=str(
                 self._runtime_params.get("ibkr_fee_plan", default_ibkr_fee_plan),
             ),
             ibkr_fee_min_usd=self._runtime_params.get("ibkr_fee_min_usd", 0.35),
-            hl_taker_fee_bps=self._runtime_params.get("hl_taker_fee_bps", 4.5),
-            hl_maker_fee_bps=self._runtime_params.get("hl_maker_fee_bps", 0.25),
+            hl_taker_fee_bps=hl_taker_fee_bps,
+            hl_maker_fee_bps=hl_maker_fee_bps,
             assumed_hedge_fee_bps=self._runtime_params.get("assumed_hedge_fee_bps", 1.0),
         )
 

@@ -59,8 +59,8 @@ def test_makerv4_publisher_reuses_shared_quote_snapshot_contract() -> None:
         fee_assumptions={
             "ibkr_fee_plan": "tiered",
             "ibkr_fee_min_usd": 0.35,
-            "maker_taker_fee_bps": 4.5,
-            "maker_maker_fee_bps": 0.25,
+            "hl_taker_fee_bps": 4.5,
+            "hl_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
     )
@@ -82,8 +82,8 @@ def test_makerv4_publisher_reuses_shared_quote_snapshot_contract() -> None:
     assert payload["fee_assumptions"] == {
         "ibkr_fee_plan": "tiered",
         "ibkr_fee_min_usd": 0.35,
-        "maker_taker_fee_bps": 4.5,
-        "maker_maker_fee_bps": 0.25,
+        "hl_taker_fee_bps": 4.5,
+        "hl_maker_fee_bps": 0.25,
         "assumed_hedge_fee_bps": 1.0,
     }
     assert payload["hedge_leg"]["fee_assumptions"] == payload["fee_assumptions"]
@@ -219,7 +219,7 @@ def test_makerv4_real_maker_fill_path_uses_configured_maker_maker_fee_in_exporte
 
     assert strategy._last_pricing_debug["expected_maker_fee_bps"] == 1.75
     assert payload["expected_maker_fee_bps"] == 1.75
-    assert payload["fee_assumptions"]["maker_maker_fee_bps"] == 1.75
+    assert payload["fee_assumptions"]["hl_maker_fee_bps"] == 1.75
 
 
 def test_makerv4_strategy_does_not_assume_smart_route_without_explicit_route_metadata() -> None:
@@ -297,8 +297,8 @@ def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_q
     expected_fee_assumptions = {
         "ibkr_fee_plan": "tiered",
         "ibkr_fee_min_usd": 0.35,
-        "maker_taker_fee_bps": 4.5,
-        "maker_maker_fee_bps": 0.25,
+        "hl_taker_fee_bps": 4.5,
+        "hl_maker_fee_bps": 0.25,
         "assumed_hedge_fee_bps": 1.0,
     }
 
