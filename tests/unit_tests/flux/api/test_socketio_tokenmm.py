@@ -118,6 +118,18 @@ def _room_size(socket_server, room: str) -> int:
 def _take_socket_packets(client) -> list[dict]:
     return [packet for packet in client.get_received() if packet.get("name") in SOCKET_EVENT_NAMES]
 
+def _set_profile_without_background_emitter(
+    client,
+    emitter: FluxSocketEmitter,
+    *,
+    profile: str = "tokenmm",
+) -> dict[str, Any]:
+    original_start = emitter.start
+    emitter.start = lambda: None  # type: ignore[method-assign]
+    try:
+        return client.emit("set_profile", {"profile": profile}, callback=True)
+    finally:
+        emitter.start = original_start
 
 def _prepare_profile_for_manual_emit(client, emitter, *, profile: str = "tokenmm") -> None:
     _ = client.emit("set_profile", {"profile": profile}, callback=True)
@@ -315,7 +327,8 @@ def test_socket_emitter_emits_minimum_tokenmm_payload_shapes(
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
 
@@ -401,7 +414,8 @@ def test_socket_emitter_emits_seq_less_trade_rows_via_ts_seq_fallback(
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
 
@@ -698,7 +712,8 @@ def test_socket_emitter_tokenmm_market_update_reports_changed_allowlisted_signal
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
     received = _take_socket_packets(client)
@@ -753,7 +768,8 @@ def test_socket_emitter_tokenmm_market_update_reports_alert_changes_from_seconda
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
     _ = _take_socket_packets(client)
@@ -819,7 +835,8 @@ def test_socket_emitter_tokenmm_trade_fanout_keeps_same_seq_and_ts_across_strate
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
     _ = _take_socket_packets(client)
@@ -879,8 +896,8 @@ def test_socket_emitter_second_poll_with_no_changes_emits_no_extra_events(
     socketio = app.extensions["flux_socketio"]
     emitter = app.extensions["flux_socket_emitter"]
     client = socketio.test_client(app)
-    _ = client.emit("set_profile", {"profile": "tokenmm"}, callback=True)
-    emitter.stop()
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
     first_packets = _take_socket_packets(client)
@@ -914,7 +931,8 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
     emitter = app.extensions["flux_socket_emitter"]
 
     client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(client, emitter)
+    ack = _set_profile_without_background_emitter(client, emitter)
+    assert ack["ok"] is True
 
     emitter.emit_once(profile="tokenmm")
     _ = _take_socket_packets(client)
@@ -946,7 +964,8 @@ def test_trade_delete_event_emits_once_and_is_reconnect_safe(
 
     client.disconnect()
     reconnect_client = socketio.test_client(app)
-    _prepare_profile_for_manual_emit(reconnect_client, emitter)
+    reconnect_ack = _set_profile_without_background_emitter(reconnect_client, emitter)
+    assert reconnect_ack["ok"] is True
     emitter.emit_once(profile="tokenmm")
     reconnect_packets = _take_socket_packets(reconnect_client)
     reconnect_trade_packets = [

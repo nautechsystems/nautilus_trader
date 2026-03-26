@@ -6,7 +6,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ColumnDef } from '@tanstack/react-table';
-import { DataTable } from '@/components/ui/table/DataTable';
+import {
+  DataTable,
+  materializeLiveSortedData,
+  type DataTableDebugMetrics,
+} from '@/components/ui/table/DataTable';
 
 interface TestData {
   id: number;
@@ -39,6 +43,33 @@ const columns: ColumnDef<TestData>[] = [
     header: 'Email',
   },
 ];
+
+function getVisibleNameOrder(): string[] {
+  return screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) => within(row).getAllByRole('cell')[1]?.textContent ?? '');
+}
+
+describe('materializeLiveSortedData', () => {
+  it('returns the original array when no live sorted snapshot is needed', () => {
+    expect(materializeLiveSortedData(mockData, false)).toBe(mockData);
+  });
+
+  it('clones top-level row identities for live sorted updates while preserving nested references', () => {
+    const nested = { venue: 'bybit' };
+    const liveData = [{ id: 1, nested }, { id: 2, nested }];
+
+    const snapshot = materializeLiveSortedData(liveData, true);
+
+    expect(snapshot).not.toBe(liveData);
+    expect(snapshot).toHaveLength(2);
+    expect(snapshot[0]).not.toBe(liveData[0]);
+    expect(snapshot[1]).not.toBe(liveData[1]);
+    expect(snapshot[0]?.nested).toBe(nested);
+    expect(snapshot[1]?.nested).toBe(nested);
+  });
+});
 
 describe('DataTable', () => {
   it('renders table with data', () => {
@@ -226,5 +257,323 @@ describe('DataTable', () => {
     const dataRow = rows[1]; // First data row (after header)
 
     expect(dataRow).not.toHaveAttribute('role', 'button');
+  });
+
+  it('supports liveDataVersion updates by refreshing the data identity when row objects mutate in place', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Initial')).toBeInTheDocument();
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('recomputes accessor-backed sort order when liveDataVersion changes but data identity stays stable', async () => {
+    const user = userEvent.setup();
+    const liveData = [
+      { id: 1, name: 'Alpha', age: 20, email: 'alpha@example.com' },
+      { id: 2, name: 'Bravo', age: 30, email: 'bravo@example.com' },
+    ];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    await user.click(screen.getByText('Age'));
+    expect(getVisibleNameOrder()).toEqual(['Bravo', 'Alpha']);
+
+    liveData[0].age = 40;
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleNameOrder()).toEqual(['Alpha', 'Bravo']);
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('refreshes data identity when sorting state exists but sorting is disabled', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable={false}
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columns}
+        sortable={false}
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('refreshes data identity when sorting state targets a missing column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const columnsWithoutAge = columns.filter((column) => (column as { accessorKey?: string }).accessorKey !== 'age');
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columnsWithoutAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columnsWithoutAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('refreshes data identity when sorting state targets a non-sortable column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const columnsWithStaticAge = columns.map((column) => (
+      (column as { accessorKey?: string }).accessorKey === 'age'
+        ? { ...column, enableSorting: false }
+        : column
+    ));
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={columnsWithStaticAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={columnsWithStaticAge}
+        sortable
+        initialSorting={[{ id: 'age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('refreshes data identity when sorting state targets an id-only display column', () => {
+    const liveRow = { id: 10, name: 'Initial', age: 42, email: 'stable@example.com' };
+    const liveData = [liveRow];
+    const metrics: DataTableDebugMetrics[] = [];
+    const displayOnlyColumns: ColumnDef<TestData>[] = [
+      columns[1]!,
+      {
+        id: 'status',
+        header: 'Status',
+        cell: ({ row }) => (row.original.age >= 40 ? 'Active' : 'Idle'),
+      },
+    ];
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={displayOnlyColumns}
+        sortable
+        initialSorting={[{ id: 'status', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    liveRow.name = 'Updated';
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={displayOnlyColumns}
+        sortable
+        initialSorting={[{ id: 'status', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(screen.getByText('Updated')).toBeInTheDocument();
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('recomputes accessorFn sort order when the runtime sort id comes from the string header', () => {
+    const liveData = [
+      { id: 1, name: 'Alpha', age: 20, email: 'alpha@example.com' },
+      { id: 2, name: 'Bravo', age: 30, email: 'bravo@example.com' },
+    ];
+    const metrics: DataTableDebugMetrics[] = [];
+    const accessorFnColumns: ColumnDef<TestData>[] = [
+      columns[1]!,
+      {
+        header: 'Derived Age',
+        accessorFn: (row) => row.age,
+      },
+    ];
+    const getVisibleDerivedAgeNameOrder = () => screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent ?? '');
+
+    const { rerender } = render(
+      <DataTable
+        data={liveData}
+        columns={accessorFnColumns}
+        sortable
+        initialSorting={[{ id: 'Derived Age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={1}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleDerivedAgeNameOrder()).toEqual(['Bravo', 'Alpha']);
+
+    liveData[0].age = 40;
+
+    rerender(
+      <DataTable
+        data={liveData}
+        columns={accessorFnColumns}
+        sortable
+        initialSorting={[{ id: 'Derived Age', desc: true }]}
+        getRowId={(row) => String(row.id)}
+        liveDataVersion={2}
+        onDebugMetrics={(next) => metrics.push(next)}
+      />
+    );
+
+    expect(getVisibleDerivedAgeNameOrder()).toEqual(['Alpha', 'Bravo']);
+    expect(metrics.at(-1)).toMatchObject({
+      coreRowModelInvalidated: true,
+      liveCacheReset: true,
+    });
+  });
+
+  it('measures rendered virtual rows for variable-height virtualization', () => {
+    const measureElement = vi.fn();
+    const virtualizer = {
+      getVirtualItems: () => [{ index: 0, start: 0, size: 32 }],
+      getTotalSize: () => 32,
+      measureElement,
+    };
+
+    render(
+      <DataTable
+        data={[mockData[0]]}
+        columns={columns}
+        getRowId={(row) => String(row.id)}
+        virtualizer={virtualizer as any}
+      />
+    );
+
+    expect(measureElement).toHaveBeenCalled();
+    expect(screen.getByText('Alice').closest('tr')).toHaveAttribute('data-index', '0');
   });
 });

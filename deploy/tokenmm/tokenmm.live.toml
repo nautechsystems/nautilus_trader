@@ -132,6 +132,8 @@ tokenmm_required_strategy_ids = [
   "plumeusdt_bybit_perp_makerv3",
   "plumeusdt_bybit_spot_makerv3",
   "plumeusdt_okx_perp_makerv3",
+  "plumeusdt_binance_perp_makerv3",
+  "plumeusdt_binance_spot_makerv3",
   "plumeusdt_bitget_perp_makerv3",
   "plumeusdt_bitget_spot_makerv3",
 ]

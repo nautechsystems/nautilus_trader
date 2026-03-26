@@ -48,7 +48,10 @@ from flux.api.payloads import safe_float
 from flux.api.payloads import safe_int
 from flux.api.payloads import select_latest_strategy_row
 from flux.api.payloads import strategy_id_from_row
+from flux.api.socketio import REALTIME_STANDARD_CONTRACT_VERSION
+from flux.api.socketio import build_standard_snapshot_metadata
 from flux.api.socketio import create_flux_socket_server
+from flux.api.socketio import default_realtime_rollout
 from flux.api.socketio import normalize_profile
 from flux.common.config import FluxConfig
 from flux.common.config import validate_identifier_part
@@ -1754,6 +1757,7 @@ def create_flux_api_app(  # noqa: C901
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
     app.json.sort_keys = False
+    app.extensions["flux_realtime_rollout"] = default_realtime_rollout()
 
     def _coerce_strategy_ids(raw_value: Any) -> list[str]:
         values: list[Any]
@@ -1936,16 +1940,243 @@ def create_flux_api_app(  # noqa: C901
             explicit=False,
         )
 
-    create_flux_socket_server(
+    socket_server = create_flux_socket_server(
         app,
         store=store,
         metadata_resolver=_metadata_for_strategy,
         strategy_resolver=_strategy_for_profile,
         strategy_ids_resolver=_strategy_ids_for_profile,
+        required_strategy_ids_resolver=_required_strategy_ids_for_profile,
     )
+    socket_emitter = socket_server.emitter
     app.extensions["flux_strategy_set_descriptors"] = dict(strategy_set_descriptors)
     app.extensions["flux_profile_strategy_map"] = dict(resolved_profile_strategy_map)
     app.extensions["flux_profile_required_strategy_map"] = dict(resolved_profile_required_strategy_map)
+
+    def _requested_contract_version() -> int | None:
+        raw_value = request.args.get("contract_version")
+        if raw_value is None or decode_text(raw_value).strip() == "":
+            return None
+        parsed = safe_int(raw_value)
+        if parsed is None:
+            raise ApiEnvelopeError(
+                status=400,
+                code="invalid_contract_version",
+                message="`contract_version` must be an integer.",
+            )
+        if int(parsed) != REALTIME_STANDARD_CONTRACT_VERSION:
+            raise ApiEnvelopeError(
+                status=400,
+                code="unsupported_contract_version",
+                message="Requested realtime contract version is not supported.",
+                details={"contract_version": int(parsed)},
+            )
+        return int(parsed)
+
+    def _profile_for_realtime_snapshot(profile_text: str) -> str:
+        normalized = normalize_profile(profile_text)
+        if normalized:
+            return normalized
+        if default_unscoped_descriptor is not None:
+            descriptor_profile = normalize_profile(default_unscoped_descriptor.profile)
+            if descriptor_profile:
+                return descriptor_profile
+        return ""
+
+    def _realtime_snapshot_metadata(
+        *,
+        surface: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        last_seq: int,
+    ) -> dict[str, Any]:
+        normalized_profile = _profile_for_realtime_snapshot(profile_text)
+        return build_standard_snapshot_metadata(
+            surface=surface,
+            profile=normalized_profile,
+            strategy_ids=strategy_ids,
+            last_seq=last_seq,
+            poll_interval_s=socket_emitter.poll_interval_s,
+        )
+
+    def _is_canonical_trades_realtime_query(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        requested_limit: int | None,
+        offset: int,
+        sort_label: str,
+        coin_filter: str,
+        exchange_filter: str,
+        market_type_filter: str,
+        side_filter: str,
+        signal_id_filter: str,
+    ) -> bool:
+        if requested_strategy:
+            return False
+        if not normalize_profile(profile_text):
+            return False
+        if offset != 0:
+            return False
+        if requested_limit is not None and int(requested_limit) != 50:
+            return False
+        if sort_label != "ts_ms_desc":
+            return False
+        if any(
+            (
+                coin_filter,
+                exchange_filter,
+                market_type_filter,
+                side_filter,
+                signal_id_filter,
+            ),
+        ):
+            return False
+        return True
+
+    def _canonical_signals_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, Any] | None:
+        normalized_profile = normalize_profile(profile_text)
+        if requested_strategy:
+            return None
+        if not normalized_profile:
+            return None
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
+            surface="signal",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="signal",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "signal"),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
+    def _canonical_trades_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        requested_limit: int | None,
+        offset: int,
+        sort_label: str,
+        coin_filter: str,
+        exchange_filter: str,
+        market_type_filter: str,
+        side_filter: str,
+        signal_id_filter: str,
+    ) -> dict[str, Any] | None:
+        if not _is_canonical_trades_realtime_query(
+            requested_strategy=requested_strategy,
+            profile_text=profile_text,
+            requested_limit=requested_limit,
+            offset=offset,
+            sort_label=sort_label,
+            coin_filter=coin_filter,
+            exchange_filter=exchange_filter,
+            market_type_filter=market_type_filter,
+            side_filter=side_filter,
+            signal_id_filter=signal_id_filter,
+        ):
+            return None
+        normalized_profile = normalize_profile(profile_text)
+        if not normalized_profile:
+            return None
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
+            surface="trades",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="trades",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "trades"),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
+    def _canonical_alerts_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        limit: int,
+        offset: int,
+    ) -> dict[str, Any] | None:
+        if requested_strategy:
+            return None
+        if limit != 50:
+            return None
+        if offset != 0:
+            return None
+        normalized_profile = normalize_profile(profile_text)
+        if not normalized_profile:
+            return None
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
+            surface="alerts",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="alerts",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "alerts"),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
+
+    def _canonical_balances_realtime_metadata(
+        *,
+        requested_strategy: str,
+        profile_text: str,
+        strategy_ids: Sequence[str],
+        limit: int,
+    ) -> dict[str, Any] | None:
+        if requested_strategy:
+            return None
+        if limit != 50:
+            return None
+        normalized_profile = _profile_for_realtime_snapshot(profile_text)
+        if not normalized_profile:
+            return None
+        stream_metadata, _ = socket_emitter.resolve_standard_subscription_descriptor(
+            contract_version=REALTIME_STANDARD_CONTRACT_VERSION,
+            surface="balances",
+            profile=normalized_profile,
+        )
+        if stream_metadata is None:
+            return None
+        request_metadata = _realtime_snapshot_metadata(
+            surface="balances",
+            profile_text=profile_text,
+            strategy_ids=strategy_ids,
+            last_seq=socket_emitter.current_standard_seq(normalized_profile, "balances"),
+        )
+        for key in ("surface_query_key", "stream_id", "snapshot_revision"):
+            if request_metadata.get(key) != stream_metadata.get(key):
+                return None
+        return stream_metadata
 
     def _response(
         *,
@@ -2311,6 +2542,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/signals")
     def api_signals() -> Response:
+        contract_version = _requested_contract_version()
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
@@ -2347,7 +2579,20 @@ def create_flux_api_app(  # noqa: C901
                 )
             strategy_payloads.append(strategy_payload)
 
-        return _ok(data={"server_ts_ms": now_ms(), "strategies": strategy_payloads})
+        payload: dict[str, Any] = {
+            "server_ts_ms": now_ms(),
+            "strategies": strategy_payloads,
+        }
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_signals_realtime_metadata(
+                requested_strategy=requested_strategy,
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+            )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
+
+        return _ok(data=payload)
 
     @app.get("/api/v1/strategies")
     def api_strategies() -> Response:
@@ -2436,6 +2681,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/balances")
     def api_balances() -> Response:
+        contract_version = _requested_contract_version()
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
@@ -2446,6 +2692,7 @@ def create_flux_api_app(  # noqa: C901
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
+            strategy_ids = [strategy_id]
             rows = store.load_balances_rows(strategy_id)
             response_ts_ms = now_ms()
         elif profile_strategy_ids:
@@ -2526,29 +2773,41 @@ def create_flux_api_app(  # noqa: C901
                             elif projection_totals and snapshot_account_rows_missing:
                                 totals = _merge_account_totals(totals, projection_totals)
                         total_rows = len(rows)
-                        return _ok(
-                            data={
-                                "source": "portfolio_snapshot_v2",
-                                "rows": rows[:limit],
-                                "count": total_rows,
-                                "total": total_rows,
-                                "limit": limit,
-                                "totals": totals,
-                                "risk_groups": risk_groups,
-                                "server_ts_ms": response_ts_ms,
-                                "portfolio_id": decode_text(
-                                    portfolio_snapshot.get("portfolio_id") or profile_normalized,
-                                ),
-                                "base_currency": base_currency,
-                                "inventory_by_asset": inventory_summary["inventory_by_asset"],
-                                "components": inventory_summary["components"],
-                                "degraded": inventory_summary["degraded"],
-                                "missing_required": inventory_summary["missing_required"],
-                                "stale_required": inventory_summary["stale_required"],
-                                "null_qty_required": inventory_summary["null_qty_required"],
-                                "stale_after_ms": snapshot_stale_after_ms,
-                            },
-                        )
+                        payload = {
+                            "source": "portfolio_snapshot_v2",
+                            "rows": rows[:limit],
+                            "count": total_rows,
+                            "total": total_rows,
+                            "limit": limit,
+                            "totals": totals,
+                            "risk_groups": risk_groups,
+                            "server_ts_ms": response_ts_ms,
+                            "portfolio_id": decode_text(
+                                portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                            ),
+                            "base_currency": base_currency,
+                            "inventory_by_asset": inventory_summary["inventory_by_asset"],
+                            "components": inventory_summary["components"],
+                            "degraded": bool(
+                                inventory_summary["degraded"]
+                                or _scope_status_entries_degraded(scope_status)
+                            ),
+                            "missing_required": inventory_summary["missing_required"],
+                            "stale_required": inventory_summary["stale_required"],
+                            "null_qty_required": inventory_summary["null_qty_required"],
+                            "stale_after_ms": snapshot_stale_after_ms,
+                            **({"scope_status": scope_status} if scope_status else {}),
+                        }
+                        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+                            realtime_metadata = _canonical_balances_realtime_metadata(
+                                requested_strategy=requested_strategy,
+                                profile_text=profile_text,
+                                strategy_ids=strategy_ids,
+                                limit=limit,
+                            )
+                            if realtime_metadata is not None:
+                                payload["realtime"] = realtime_metadata
+                        return _ok(data=payload)
                 elif profile_normalized == "tokenmm":
                     inventory = portfolio_snapshot.get("inventory")
                     inventory_payload = dict(inventory) if isinstance(inventory, Mapping) else {}
@@ -2604,43 +2863,51 @@ def create_flux_api_app(  # noqa: C901
                             if isinstance(component, Mapping)
                         ]
                         total_rows = len(rows)
-                        return _ok(
-                            data={
-                                "source": "portfolio_snapshot",
-                                "rows": rows[:limit],
-                                "count": total_rows,
-                                "total": total_rows,
-                                "limit": limit,
-                                "totals": _balances_totals(rows),
-                                "risk_groups": risk_groups,
-                                "server_ts_ms": response_ts_ms,
-                                "portfolio_id": decode_text(
-                                    portfolio_snapshot.get("portfolio_id") or profile_normalized,
-                                ),
-                                "base_currency": decode_text(
-                                    portfolio_snapshot.get("base_currency")
-                                    or inventory_payload.get("base_currency"),
-                                ).strip().upper(),
-                                "components": components,
-                                "degraded": bool(inventory_payload.get("degraded", False)),
-                                "global_qty_base": inventory_payload.get("global_qty_base")
-                                or inventory_payload.get("global_qty"),
-                                "global_qty": inventory_payload.get("global_qty"),
-                                "aggregation_mode": decode_text(
-                                    inventory_payload.get("aggregation_mode") or "strict",
-                                ),
-                                "global_qty_base_complete": bool(
-                                    inventory_payload.get("global_qty_base_complete", True),
-                                ),
-                                "global_qty_complete": bool(
-                                    inventory_payload.get("global_qty_complete", True),
-                                ),
-                                "missing_required": list(inventory_payload.get("missing_required") or []),
-                                "stale_required": list(inventory_payload.get("stale_required") or []),
-                                "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
-                                "stale_after_ms": snapshot_stale_after_ms,
-                            },
-                        )
+                        payload = {
+                            "source": "portfolio_snapshot",
+                            "rows": rows[:limit],
+                            "count": total_rows,
+                            "total": total_rows,
+                            "limit": limit,
+                            "totals": _balances_totals(rows),
+                            "risk_groups": risk_groups,
+                            "server_ts_ms": response_ts_ms,
+                            "portfolio_id": decode_text(
+                                portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                            ),
+                            "base_currency": decode_text(
+                                portfolio_snapshot.get("base_currency")
+                                or inventory_payload.get("base_currency"),
+                            ).strip().upper(),
+                            "components": components,
+                            "degraded": bool(inventory_payload.get("degraded", False)),
+                            "global_qty_base": inventory_payload.get("global_qty_base")
+                            or inventory_payload.get("global_qty"),
+                            "global_qty": inventory_payload.get("global_qty"),
+                            "aggregation_mode": decode_text(
+                                inventory_payload.get("aggregation_mode") or "strict",
+                            ),
+                            "global_qty_base_complete": bool(
+                                inventory_payload.get("global_qty_base_complete", True),
+                            ),
+                            "global_qty_complete": bool(
+                                inventory_payload.get("global_qty_complete", True),
+                            ),
+                            "missing_required": list(inventory_payload.get("missing_required") or []),
+                            "stale_required": list(inventory_payload.get("stale_required") or []),
+                            "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
+                            "stale_after_ms": snapshot_stale_after_ms,
+                        }
+                        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+                            realtime_metadata = _canonical_balances_realtime_metadata(
+                                requested_strategy=requested_strategy,
+                                profile_text=profile_text,
+                                strategy_ids=strategy_ids,
+                                limit=limit,
+                            )
+                            if realtime_metadata is not None:
+                                payload["realtime"] = realtime_metadata
+                        return _ok(data=payload)
 
             response_ts_ms = request_now_ms
             rows_by_strategy: dict[str, list[dict[str, Any]]] = {}
@@ -2717,46 +2984,67 @@ def create_flux_api_app(  # noqa: C901
                 if component["required"] and component["missing"]
             )
             degraded = bool(missing_required) or any(component["stale"] for component in components)
+            if projection_scope_status:
+                degraded = degraded or _scope_status_entries_degraded(projection_scope_status)
             total_rows = len(rows)
             totals = _balances_totals(rows)
             if projection_totals:
                 totals = _merge_account_totals(totals, projection_totals)
-            return _ok(
-                data={
-                    "rows": rows[:limit],
-                    "count": total_rows,
-                    "total": total_rows,
-                    "limit": limit,
-                    "totals": totals,
-                    "risk_groups": risk_groups,
-                    "server_ts_ms": response_ts_ms,
-                    "components": components,
-                    "degraded": degraded,
-                    "missing_required": missing_required,
-                    "stale_after_ms": TOKENMM_BALANCES_STALE_AFTER_MS,
-                },
-            )
+            payload = {
+                "rows": rows[:limit],
+                "count": total_rows,
+                "total": total_rows,
+                "limit": limit,
+                "totals": totals,
+                "risk_groups": risk_groups,
+                "server_ts_ms": response_ts_ms,
+                "components": components,
+                "degraded": degraded,
+                "missing_required": missing_required,
+                "stale_after_ms": TOKENMM_BALANCES_STALE_AFTER_MS,
+                **({"scope_status": projection_scope_status} if projection_scope_status else {}),
+            }
+            if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+                realtime_metadata = _canonical_balances_realtime_metadata(
+                    requested_strategy=requested_strategy,
+                    profile_text=profile_text,
+                    strategy_ids=strategy_ids,
+                    limit=limit,
+                )
+                if realtime_metadata is not None:
+                    payload["realtime"] = realtime_metadata
+            return _ok(data=payload)
         else:
             strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            strategy_ids = [strategy_id]
             rows = store.load_balances_rows(strategy_id)
             response_ts_ms = now_ms()
 
         rows, risk_groups = build_balance_risk_groups(rows)
         total_rows = len(rows)
-        return _ok(
-            data={
-                "rows": rows[:limit],
-                "count": total_rows,
-                "total": total_rows,
-                "limit": limit,
-                "totals": _balances_totals(rows),
-                "risk_groups": risk_groups,
-                "server_ts_ms": response_ts_ms,
-            },
-        )
+        payload = {
+            "rows": rows[:limit],
+            "count": total_rows,
+            "total": total_rows,
+            "limit": limit,
+            "totals": _balances_totals(rows),
+            "risk_groups": risk_groups,
+            "server_ts_ms": response_ts_ms,
+        }
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_balances_realtime_metadata(
+                requested_strategy=requested_strategy,
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                limit=limit,
+            )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
+        return _ok(data=payload)
 
     @app.get("/api/v1/trades")
     def api_trades() -> Response:
+        contract_version = _requested_contract_version()
         requested_strategy = decode_text(request.args.get("strategy")).strip()
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []
@@ -2868,6 +3156,22 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_trades_realtime_metadata(
+                requested_strategy=requested_strategy,
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                requested_limit=requested_limit,
+                offset=offset,
+                sort_label=sort_label,
+                coin_filter=coin_filter,
+                exchange_filter=exchange_filter,
+                market_type_filter=market_type_filter,
+                side_filter=side_filter,
+                signal_id_filter=signal_id_filter,
+            )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
         return _ok(data=payload)
 
     @app.get("/api/v1/trades/delta")
@@ -3008,6 +3312,7 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/alerts")
     def api_alerts() -> Response:
+        contract_version = _requested_contract_version()
         limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         offset = _clamp_offset(request.args.get("offset"), default=0)
         requested_strategy = decode_text(request.args.get("strategy")).strip()
@@ -3016,6 +3321,7 @@ def create_flux_api_app(  # noqa: C901
 
         if requested_strategy:
             strategy_id = _resolve_strategy_id(requested_strategy, field_name="strategy")
+            strategy_ids = [strategy_id]
             all_rows = store.load_all_alerts_rows(strategy_id)
         elif profile_strategy_ids:
             strategy_ids = profile_strategy_ids
@@ -3030,6 +3336,7 @@ def create_flux_api_app(  # noqa: C901
             )
         else:
             strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            strategy_ids = [strategy_id]
             all_rows = store.load_all_alerts_rows(strategy_id)
 
         total = len(all_rows)
@@ -3044,6 +3351,16 @@ def create_flux_api_app(  # noqa: C901
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
+        if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
+            realtime_metadata = _canonical_alerts_realtime_metadata(
+                requested_strategy=requested_strategy,
+                profile_text=profile_text,
+                strategy_ids=strategy_ids,
+                limit=limit,
+                offset=offset,
+            )
+            if realtime_metadata is not None:
+                payload["realtime"] = realtime_metadata
         return _ok(data=payload)
 
     @app.delete("/api/v1/alerts")

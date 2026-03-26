@@ -2,7 +2,7 @@
 
 // Data fetching hooks
 export { usePolling } from './usePolling';
-export { useWebSocket } from './useWebSocket';
+export { useWebSocket, useStandardWebSocketSubscription } from './useWebSocket';
 export { useAutoRefresh } from './useAutoRefresh';
 
 // UI interaction hooks

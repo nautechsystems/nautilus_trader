@@ -1,0 +1,27 @@
+# Realtime Lane Status
+
+- lane: `lanes/task-14-rt-standard-transport`
+- owner: `coordinator`
+- branch: `lanes/task-14-rt-standard-transport`
+- worktree: `.worktrees/task-14-rt-standard-transport`
+- depends_on: `Task 12: Run Final Rollout Validation And Cleanup Readiness Review`
+- write_scope: `fluxboard/api.ts`, `fluxboard/types.ts`, `fluxboard/hooks/useRealtimeChannel.ts`, `fluxboard/hooks/useWebSocket.ts`, `fluxboard/sockets.ts`, `fluxboard/components/domain/signal/SignalTable.tsx`, `fluxboard/Trades.tsx`, `fluxboard/__tests__/realtime/standard-socket-client.test.tsx`, `fluxboard/__tests__/panels/signal.test.tsx`, `fluxboard/__tests__/trades-integration.test.tsx`, `fluxboard/e2e/realtime-cutovers/signal.spec.ts`, `fluxboard/e2e/realtime-cutovers/trades.spec.ts`, `docs/plans/realtime-surfaces/signal-cutover.md`, `docs/plans/realtime-surfaces/trades-cutover.md`, `docs/plans/realtime-status/rt-standard-transport.md`, `systems/flux/docs/realtime-rollout.md`
+- rollout_control: `signal + trades surface flags with backend standard capability`
+- rollback_trigger: `lineage mismatch, standard live regression, or fail-closed behavior drift`
+- current status: `completed`
+- active task: `Task 14: Adopt Standard Socket Transport For Signal And Trades`
+- current commit or diff: `controller integration commit 24ff38781e (initial transport wave 287ac3b6f8, hardening follow-up f9cda8ab3b, regression follow-up 24ff38781e); closeout-doc clarification follow-up b2bb54e3b4`
+- cutover_packet: `docs/plans/realtime-surfaces/signal-cutover.md ; docs/plans/realtime-surfaces/trades-cutover.md`
+- canary_scope: `flagged Signal and Trades route cutovers`
+- minimum_canary_cohort: `1 internal Signal canary and 1 internal Trades canary for 7 consecutive days`
+- minimum_standard_subscribers: `1 flagged Signal subscriber and 1 flagged Trades subscriber during cleanup review`
+- minimum_standard_event_volume: `50 signal standard packets/day and 50 trades standard packets/day during cleanup review`
+- alert_state: `green in lane verification; no active rollback trigger`
+- rollback_exercise_result: `pass in owned tests via local flag-off rollback, subscribe rejection, and capability withdrawal`
+- dashboards_playbooks: `systems/flux/docs/realtime-rollout.md#Observability ; systems/flux/docs/realtime-rollout.md#Operational-guidance`
+- rollout_metrics_snapshot: `standard_subscribe_counts, standard_recovery_required_counts, active_standard_subscribers, legacy_event_counts plus client-observed subscribe/unsubscribe and recovery state transitions`
+- legacy_traffic_status: `signal + trades frontend duplicate-path cleanup complete in flag-on mode; backend legacy traffic still retained for rollback clients and bridge-backed surfaces`
+- verification run: `lane/controller green: VITEST_FULL=1 pnpm exec vitest run sockets.test.ts __tests__/realtime/standard-socket-client.test.tsx __tests__/panels/signal.test.tsx __tests__/trades-integration.test.tsx __tests__/trades-socket-cleanup.test.tsx passed (77 tests). lane/controller green: pnpm build:test passed. lane/controller green: E2E_BASE_URL=http://127.0.0.1:4173 pnpm exec playwright test -c playwright.smoke.config.ts e2e/realtime-cutovers/signal.spec.ts e2e/realtime-cutovers/trades.spec.ts passed (2 specs).`
+- blockers: `none in owned scope`
+- notes_last_update: `Task 14 is integrated on controller. The follow-up hardening series ignores stale subscribe acks from superseded reconnect attempts, keeps the Signal standard cursor monotonic across heartbeat/invalidate/snapshot recovery, prevents late pre-fail-close Signal and Trades snapshots from clearing manual refresh state, treats recoverable trades lineage drift as background snapshot recovery instead of manual refresh, and gates canonical Trades re-entry on a fresh canonical snapshot before re-subscribing. The latest follow-up adds a dedicated Trades regression that proves reconnect still fetches a fresh canonical snapshot after an older canonical request resolves late. Signal and Trades steady-state live traffic now runs through standard Socket.IO `subscribe` / `realtime_event` / `unsubscribe`; the advertised `transport_mode=polling_only` and `replay_supported=false` capabilities still describe the recovery path, which remains REST snapshot based. Fresh spec review returned no findings, and the re-reviewed quality lane returned no findings on the reconnect concern.`
+- next handoff: `Coordinator sync the shared root tracker to include the closeout-doc clarification follow-up b2bb54e3b4 and keep Task 13 blocked until bridge-backed surfaces stop relying on legacy events.`

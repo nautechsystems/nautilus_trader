@@ -403,6 +403,23 @@ All panels MUST show data freshness:
 - Red dot: Data very stale (> 2x threshold)
 - Timestamp tooltip on hover
 
+### Shared Realtime Foundation
+
+Panels that stream row-level updates MUST use the shared realtime primitives instead of ad-hoc `setState` replacement:
+
+- `useRealtimeSurfaceController` owns canonical entity state (`byId` + stable ordering) and keeps per-view concerns such as visible range outside row-subscribed reactive state.
+- `useRealtimeChannel` owns channel lifecycle, snapshot/delta forwarding, and recovery backoff through `useRecoveryScheduler`.
+- `useViewportClock` is the only allowed timer source for relative freshness cells when a parent does not provide `now`; one shared clock per panel/clock key, never one timer per cell.
+
+### Live-Mode DataTable Rules
+
+When a table is fed by row-level deltas instead of full snapshots, follow these rules:
+
+- Pass the controller-owned canonical `rows` array into `DataTable`.
+- Keep the array identity stable for in-order single-row updates and increment `liveDataVersion` so cells refresh without forcing a full TanStack row-model rebuild.
+- Do not store pending delta queues or visible-range tracking in the same reactive state selected by row subscribers.
+- Freshness cells must subscribe through `TimeAgo` + `useViewportClock`, and only visible cells should be marked active.
+
 ---
 
 ## Component Selection Guide
@@ -873,6 +890,16 @@ const rowVirtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
 ```
 
 This keeps sticky headers intact, maintains accessibility (real `<table>` semantics), and ensures smooth auto-focus behavior because the spacer rows preserve total scroll height. See `fluxboard/Params.tsx` for a full implementation with density toggles and conflict banners.
+
+### Shared Virtualization Rules
+
+For realtime tables, the virtualization hook and scroll container must also preserve these invariants:
+
+- Use stable row keys (`getRowId`) so measurement caches survive row updates and reorder events.
+- Preserve the current anchor row when rows are inserted above the viewport.
+- Store measurement caches by row key, not array index, and prune removed keys promptly.
+- Forward the scroll viewport ref (`ScrollArea.viewportRef` or equivalent) so `useVirtualizedRows` can own visible-range tracking and scroll restoration.
+- When rendering virtual table rows, pass the row element into the measurement callback so variable-height rows keep the cache accurate.
 
 ## Maintenance
 

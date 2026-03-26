@@ -9,8 +9,8 @@
  * - Accessibility
  */
 
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ScrollArea } from '@/components/ui/scroll-area/ScrollArea';
 
 describe('ScrollArea', () => {
@@ -45,6 +45,18 @@ describe('ScrollArea', () => {
       // Viewport is a child element
       const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
       expect(viewport).toHaveClass('custom-viewport');
+    });
+
+    it('forwards root data attributes and exposes the viewport ref', () => {
+      const viewportRef = { current: null as HTMLDivElement | null };
+      render(
+        <ScrollArea data-testid="root" viewportRef={viewportRef}>
+          <div>Content</div>
+        </ScrollArea>
+      );
+
+      expect(screen.getByTestId('root')).toBeInTheDocument();
+      expect(viewportRef.current).toBeInstanceOf(HTMLDivElement);
     });
   });
 
@@ -272,6 +284,24 @@ describe('ScrollArea', () => {
 
       const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
       expect(viewport).toBeInTheDocument();
+    });
+
+    it('forwards viewport scroll events', () => {
+      const onViewportScroll = vi.fn();
+      const { container } = render(
+        <ScrollArea onViewportScroll={onViewportScroll}>
+          <div style={{ height: '1000px' }}>Content</div>
+        </ScrollArea>
+      );
+
+      const viewport = container.querySelector('[data-radix-scroll-area-viewport]');
+      expect(viewport).toBeInTheDocument();
+
+      if (viewport) {
+        fireEvent.scroll(viewport);
+      }
+
+      expect(onViewportScroll).toHaveBeenCalledTimes(1);
     });
 
     it('scrollbar has correct orientation attribute', () => {

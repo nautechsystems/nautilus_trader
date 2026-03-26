@@ -5,6 +5,7 @@ import { Outlet } from 'react-router-dom';
 import Nav from './Nav';
 import type { PathProfile, UiSurfaceContract } from './config/uiProfiles';
 import { useSuiteStore, type FluxboardSuite } from './stores';
+import './lib/realtime/runtimeBridge';
 
 const PROFILE_SUITE_MAP: Record<PathProfile, FluxboardSuite> = {
   default: 'all',

@@ -16,19 +16,26 @@ import {
   selectBalancesScopeStatus,
   shallow,
 } from './stores';
-import { usePolling } from './hooks';
+import { usePolling, useStandardWebSocketSubscription, useWebSocket } from './hooks';
 import { useMobileLayout } from './hooks/useMobileLayout';
+import { useViewportClock } from './hooks/useViewportClock';
 import { PanelHeader } from './components/shared/PanelHeader';
 import { PanelBody } from './components/shared/PanelBody';
-import { DataAgeCell } from './components/shared/DataAgeCell';
 import { CoinCell } from './components/shared/CoinCell';
 import { PageShell } from './components/layout/PageShell';
 import { usePanelHeaderSlots } from './components/layout/PanelWrapper';
+import { StatusDot, type StatusDotState } from './components/ui';
 import { Button } from './components/ui/button/Button';
 import { Switch } from './components/ui/switch';
 import { Tooltip, TooltipProvider } from './components/ui/tooltip';
 import { TableFilter, applyFilters, type ColumnFilter, type FilterValues } from './components/shared/TableFilter';
-import type { BalanceParentRow, BalanceChildRow, BalanceScopeStatus } from './types';
+import type {
+  BalanceParentRow,
+  BalanceChildRow,
+  BalancesPayload,
+  BalanceScopeStatus,
+  RealtimeSnapshotLineage,
+} from './types';
 import { RiskTable, type RiskSortState } from './components/balances/RiskTable';
 import {
   DUST_THRESHOLD,
@@ -41,8 +48,16 @@ import { exportCSV, exportJSON, generateTimestampFilename } from './utils/export
 import {
   colors,
   STALE_THRESHOLDS,
+  severity,
+  typography,
 } from './lib/tokens';
 import { resolvePathnameProfile, type PathProfile } from './config/uiProfiles';
+import { isRealtimeStandardEnabled } from './config/featureFlags';
+import {
+  createRealtimeSurfaceController,
+  useRealtimeSurfaceController,
+} from './hooks/useRealtimeSurfaceController';
+import { formatAbsoluteTime } from './utils/time';
 
 import { cn } from './lib/utils';
 
@@ -52,6 +67,143 @@ const LEGACY_FILTER_STORAGE_KEY = 'balances:filters:v2';
 const LEGACY_FILTER_STORAGE_KEY_V1 = 'balances:filters:v1';
 const EXPANDED_STORAGE_KEY_PREFIX = 'balances:expanded:v2';
 const LEGACY_EXPANDED_STORAGE_KEY = 'balances:expanded:v1';
+const BALANCES_CLOCK_KEY = 'surface:balances';
+
+const noopWebSocketSubscribe = () => () => {};
+
+function getBalancesRealtimeLineage(payload: BalancesPayload): RealtimeSnapshotLineage | null {
+  return payload.realtime ?? null;
+}
+
+function sameLineageIdentity(
+  left: RealtimeSnapshotLineage | null,
+  right: RealtimeSnapshotLineage | null,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return left.contract_version === right.contract_version
+    && left.surface === right.surface
+    && left.profile === right.profile
+    && left.surface_query_key === right.surface_query_key
+    && left.stream_id === right.stream_id
+    && String(left.snapshot_revision) === String(right.snapshot_revision);
+}
+
+function getFreshnessColor(timestampMs: number | null | undefined, nowMs: number): string {
+  if (!timestampMs || timestampMs <= 0) {
+    return colors.text.tertiary;
+  }
+
+  const ageMs = nowMs - timestampMs;
+  if (ageMs > 30 * 60 * 1000) {
+    return severity.critical.color;
+  }
+  if (ageMs > 15 * 60 * 1000) {
+    return severity.warning.color;
+  }
+  return colors.text.secondary;
+}
+
+function formatFreshnessAge(ageMs: number): string {
+  if (ageMs < 1_000) {
+    return 'just now';
+  }
+
+  const seconds = Math.floor(ageMs / 1_000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function BalancesAgeCell({
+  timestamp,
+  subscriberId,
+}: {
+  timestamp: number | null | undefined;
+  subscriberId: string;
+}) {
+  const nowMs = useViewportClock({
+    clockKey: BALANCES_CLOCK_KEY,
+    subscriberId,
+    intervalMs: 5_000,
+    active: Boolean(timestamp && timestamp > 0),
+  });
+  const label = useMemo(() => formatAbsoluteTime(timestamp), [timestamp]);
+  const color = useMemo(() => getFreshnessColor(timestamp, nowMs), [timestamp, nowMs]);
+
+  return (
+    <span
+      className="tabular-nums"
+      style={{
+        color,
+        fontSize: typography.fontSize.sm,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function BalancesFreshnessIndicator({
+  lastUpdate,
+  staleThresholdMs,
+}: {
+  lastUpdate?: number;
+  staleThresholdMs: number;
+}) {
+  const nowMs = useViewportClock({
+    clockKey: BALANCES_CLOCK_KEY,
+    subscriberId: 'balances:header',
+    intervalMs: 5_000,
+    active: true,
+  });
+
+  const status = useMemo(() => {
+    if (!lastUpdate) {
+      return {
+        dotStatus: 'loading' as StatusDotState,
+        text: 'No data',
+      };
+    }
+
+    const ageMs = Math.max(0, nowMs - lastUpdate);
+    return {
+      dotStatus: (ageMs < staleThresholdMs ? 'live' : 'stale') as StatusDotState,
+      text: formatFreshnessAge(ageMs),
+    };
+  }, [lastUpdate, nowMs, staleThresholdMs]);
+
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      title={`Last updated: ${status.text}`}
+    >
+      <StatusDot status={status.dotStatus} size="xs" />
+      <span
+        className="tabular-nums"
+        style={{
+          fontSize: typography.fontSize.xs,
+          color: colors.text.muted,
+        }}
+      >
+        {status.text}
+      </span>
+    </div>
+  );
+}
 
 type SortKey = 'mv' | 'time' | 'coin' | 'qty' | 'mark';
 type SortDir = 'asc' | 'desc';
@@ -289,7 +441,7 @@ export default function Balances({
   onRemove?: () => void;
   showHeader?: boolean;
 } = {}) {
-  const rows = useBalancesStore(selectBalancesRows, shallow);
+  const storeRows = useBalancesStore(selectBalancesRows, shallow);
   const totals = useBalancesStore(selectBalancesTotals);
   const loading = useBalancesStore(selectBalancesLoading);
   const degraded = useBalancesStore(selectBalancesDegraded);
@@ -311,6 +463,38 @@ export default function Balances({
   const [selectedRiskKey, setSelectedRiskKey] = useState<string | null>(null);
   const [selectedRiskLabel, setSelectedRiskLabel] = useState<string | null>(null);
   const { isMobile } = useMobileLayout();
+  const balancesRealtimeStandardEnabled = useMemo(
+    () => isRealtimeStandardEnabled('balances'),
+    [],
+  );
+  const [pollingFallbackEnabled, setPollingFallbackEnabled] = useState(
+    () => !balancesRealtimeStandardEnabled,
+  );
+  const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const lastOkMsRef = useRef<number | null>(null);
+  const freshnessHealthNowMs = useViewportClock({
+    clockKey: BALANCES_CLOCK_KEY,
+    subscriberId: 'balances:health',
+    intervalMs: 5_000,
+    active: balancesRealtimeStandardEnabled,
+  });
+  const initialRowsRef = useRef(storeRows);
+  const balancesController = useMemo(
+    () => createRealtimeSurfaceController<BalanceParentRow>({
+      getRowId: (row) => row.id,
+      initialRows: initialRowsRef.current,
+      compareRows: (left, right) => (right.mv_raw ?? 0) - (left.mv_raw ?? 0),
+    }),
+    [],
+  );
+  const controllerState = useRealtimeSurfaceController(
+    balancesController,
+    (snapshot) => ({
+      rows: snapshot.rows as BalanceParentRow[],
+      dataVersion: snapshot.dataVersion,
+    }),
+  );
+  const rows = balancesRealtimeStandardEnabled ? controllerState.rows : storeRows;
 
   const renderMarkCell = (symbol: string, mark: number | null | undefined) => {
     const formatted = formatMark(symbol, mark);
@@ -323,6 +507,21 @@ export default function Balances({
 
   const abortRef = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
+  const pendingRefreshRef = useRef(false);
+  const standardResumeSeqRef = useRef(0);
+
+  const markRealtimeHealthy = useCallback(() => {
+    const receivedAt = Date.now();
+    setLastOkMs(receivedAt);
+    lastOkMsRef.current = receivedAt;
+    if (balancesRealtimeStandardEnabled) {
+      setPollingFallbackEnabled(false);
+    }
+  }, [balancesRealtimeStandardEnabled]);
+
+  useEffect(() => () => {
+    balancesController.destroy();
+  }, [balancesController]);
 
   const persistFilters = useCallback((state: FilterState) => {
     if (typeof window === 'undefined') return;
@@ -348,8 +547,11 @@ export default function Balances({
     }
   }, []);
 
-  const fetchBalances = useCallback(async () => {
-    if (inFlight.current) return;
+  const fetchBalances = useCallback(async function fetchBalancesImpl() {
+    if (inFlight.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
     inFlight.current = true;
 
     abortRef.current?.abort();
@@ -358,29 +560,116 @@ export default function Balances({
 
     setLoading(true);
     try {
-      const data = await api.getBalances();
+      const data = await api.getBalances(
+        balancesRealtimeStandardEnabled ? { contractVersion: 2 } : undefined,
+      );
       if (!ac.signal.aborted) {
+        const nextLineage = getBalancesRealtimeLineage(data);
+        standardResumeSeqRef.current = Math.max(
+          0,
+          typeof nextLineage?.last_seq === 'number' ? nextLineage.last_seq : 0,
+        );
+        setStandardLineage((previousLineage) => (
+          sameLineageIdentity(previousLineage, nextLineage)
+            ? previousLineage
+            : nextLineage
+        ));
+        if (balancesRealtimeStandardEnabled) {
+          balancesController.applySnapshot(data.rows);
+        }
         setData(data);
-        setLastOkMs(Date.now());
+        markRealtimeHealthy();
+        if (balancesRealtimeStandardEnabled && !nextLineage) {
+          setPollingFallbackEnabled(true);
+        }
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
+      if (balancesRealtimeStandardEnabled) {
+        setPollingFallbackEnabled(true);
+      }
       console.error('[balances] Failed to load:', error);
     } finally {
       inFlight.current = false;
       if (!ac.signal.aborted) {
         setLoading(false);
       }
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        void fetchBalancesImpl();
+      }
     }
-  }, [setData, setLoading]);
+  }, [balancesController, balancesRealtimeStandardEnabled, markRealtimeHealthy, setData, setLoading]);
 
-  usePolling(fetchBalances, REFRESH_MS);
+  usePolling(fetchBalances, REFRESH_MS, pollingFallbackEnabled);
+
+  useStandardWebSocketSubscription({
+    enabled: balancesRealtimeStandardEnabled && Boolean(standardLineage),
+    lineage: balancesRealtimeStandardEnabled ? standardLineage : null,
+    resumeFromSeq: () => (
+      standardResumeSeqRef.current > 0
+        ? standardResumeSeqRef.current
+        : (standardLineage?.last_seq ?? 0)
+    ),
+    onEvent: (event) => {
+      if (typeof event.seq === 'number' && Number.isFinite(event.seq)) {
+        standardResumeSeqRef.current = Math.max(standardResumeSeqRef.current, event.seq);
+      }
+      if (event.kind === 'heartbeat') {
+        markRealtimeHealthy();
+        return;
+      }
+      if (event.kind === 'invalidate') {
+        void fetchBalances();
+      }
+    },
+    onFailure: () => {
+      if (balancesRealtimeStandardEnabled) {
+        setPollingFallbackEnabled(true);
+      }
+      void fetchBalances();
+    },
+    onSubscribed: (ack) => {
+      const acceptedSeq = typeof ack.accepted_start_seq === 'number' ? ack.accepted_start_seq : 0;
+      const lastSeq = typeof ack.last_seq === 'number' ? ack.last_seq : acceptedSeq;
+      standardResumeSeqRef.current = Math.max(standardResumeSeqRef.current, acceptedSeq, lastSeq);
+      markRealtimeHealthy();
+    },
+  });
+
+  useWebSocket(
+    balancesRealtimeStandardEnabled ? '__balances_legacy_disabled__' : 'market_update',
+    useCallback(() => {
+      if (balancesRealtimeStandardEnabled) {
+        return;
+      }
+      void fetchBalances();
+    }, [balancesRealtimeStandardEnabled, fetchBalances]),
+    balancesRealtimeStandardEnabled
+      ? { subscribe: noopWebSocketSubscribe }
+      : { surface: 'balances' },
+  );
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (!balancesRealtimeStandardEnabled) {
+      return undefined;
+    }
+    const lastOk = lastOkMsRef.current;
+    if (lastOk == null) {
+      setPollingFallbackEnabled(true);
+      return undefined;
+    }
+    if ((freshnessHealthNowMs - lastOk) > STALE_THRESHOLDS.SLOW) {
+      setPollingFallbackEnabled(true);
+    }
+    return undefined;
+  }, [balancesRealtimeStandardEnabled, freshnessHealthNowMs]);
 
   useEffect(() => {
     persistFilters(filters);
@@ -826,7 +1115,10 @@ export default function Balances({
                     {renderMarkCell(parent.canonical, parent.mark_raw)}
                   </span>
                   <span className="flex items-center gap-1">
-                    <DataAgeCell timestamp={parent.last_ts} />
+                    <BalancesAgeCell
+                      timestamp={parent.last_ts}
+                      subscriberId={`balances:parent:${parent.id}`}
+                    />
                   </span>
                 </div>
               )}
@@ -856,7 +1148,10 @@ export default function Balances({
           )}
           {!isMobile && (
             <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
-              <DataAgeCell timestamp={parent.last_ts} />
+              <BalancesAgeCell
+                timestamp={parent.last_ts}
+                subscriberId={`balances:parent:${parent.id}`}
+              />
             </td>
           )}
         </tr>
@@ -882,7 +1177,10 @@ export default function Balances({
                     <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-zinc-500">
                       <span>{renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}</span>
                       <span className="flex items-center gap-1">
-                        <DataAgeCell timestamp={child.last_ts} />
+                        <BalancesAgeCell
+                          timestamp={child.last_ts}
+                          subscriberId={`balances:child:${child.id}`}
+                        />
                       </span>
                     </div>
                   )}
@@ -905,7 +1203,10 @@ export default function Balances({
               )}
               {!isMobile && (
                 <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
-                  <DataAgeCell timestamp={child.last_ts} />
+                  <BalancesAgeCell
+                    timestamp={child.last_ts}
+                    subscriberId={`balances:child:${child.id}`}
+                  />
                 </td>
               )}
             </tr>
@@ -939,7 +1240,10 @@ export default function Balances({
             <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-zinc-500">
               <span>{renderMarkCell(child.inventory_asset ?? child.base_asset ?? child.coin, child.mark_raw)}</span>
               <span className="flex items-center gap-1">
-                <DataAgeCell timestamp={child.last_ts} />
+                <BalancesAgeCell
+                  timestamp={child.last_ts}
+                  subscriberId={`balances:child:${child.id}`}
+                />
               </span>
             </div>
           )}
@@ -958,7 +1262,10 @@ export default function Balances({
       )}
       {!isMobile && (
         <td className={cn("text-right font-mono tabular-nums", paddingClass)}>
-          <DataAgeCell timestamp={child.last_ts} />
+          <BalancesAgeCell
+            timestamp={child.last_ts}
+            subscriberId={`balances:child:${child.id}`}
+          />
         </td>
       )}
     </tr>
@@ -1043,8 +1350,12 @@ export default function Balances({
           title="Balances"
           onRefresh={handleManualRefresh}
           refreshing={loading}
-          lastUpdate={lastOkMs ?? undefined}
-          staleThresholdMs={STALE_THRESHOLDS.SLOW}
+          titleActions={(
+            <BalancesFreshnessIndicator
+              lastUpdate={lastOkMs ?? undefined}
+              staleThresholdMs={STALE_THRESHOLDS.SLOW}
+            />
+          )}
           onRemove={onRemove}
           actions={headerActions}
         />

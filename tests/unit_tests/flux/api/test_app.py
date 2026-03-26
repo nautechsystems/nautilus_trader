@@ -5,6 +5,7 @@ import json
 import pytest
 
 import nautilus_trader.flux.api.app as app_module
+import nautilus_trader.flux.api.payloads as payloads_module
 from nautilus_trader.flux.api import DEFAULT_PARAMS_DEFAULTS
 from nautilus_trader.flux.api import DEFAULT_PARAMS_SCHEMA
 from nautilus_trader.flux.api import ContractCatalogEntry
@@ -1252,6 +1253,7 @@ def test_signals_profile_tokenmm_overlays_portfolio_inventory_metadata_onto_rows
     params_defaults,
 ) -> None:
     monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    monkeypatch.setattr(payloads_module, "now_ms", lambda: 123_456)
     primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
     secondary_keys = FluxRedisKeys(
         strategy_id="strategy_02",

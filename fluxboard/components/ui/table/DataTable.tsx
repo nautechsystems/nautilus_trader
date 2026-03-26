@@ -22,6 +22,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  useRef,
   useCallback,
   Fragment,
   type ReactNode,
@@ -113,6 +114,92 @@ export interface DataTableProps<T> {
   mobileMode?: 'table' | 'cards';
   /** Custom row renderer for mobile cards */
   renderMobileRow?: (row: T) => React.ReactNode;
+  /** Stable live-data version when mutating row objects in place */
+  liveDataVersion?: number;
+  /** Optional debug callback for live-table verification */
+  onDebugMetrics?: (metrics: DataTableDebugMetrics) => void;
+}
+
+export interface DataTableDebugMetrics {
+  coreRowModelInvalidated: boolean;
+  liveCacheReset: boolean;
+  rowModelStable: boolean;
+  rowCount: number;
+}
+
+export function materializeLiveSortedData<T>(data: T[], shouldCloneRows: boolean): T[] {
+  if (!shouldCloneRows) {
+    return data;
+  }
+
+  return data.map((row) => {
+    if (Array.isArray(row)) {
+      return [...row] as T;
+    }
+
+    if (row != null && typeof row === 'object') {
+      return Object.create(
+        Object.getPrototypeOf(row),
+        Object.getOwnPropertyDescriptors(row),
+      ) as T;
+    }
+
+    return row;
+  });
+}
+
+function resolveRuntimeSortableColumnId<T>(columnDef: ColumnDef<T>): string | null {
+  const typedColumnDef = columnDef as ColumnDef<T> & {
+    accessorFn?: unknown;
+    accessorKey?: string | number;
+    enableSorting?: boolean;
+    header?: unknown;
+    id?: string;
+  };
+
+  if (typedColumnDef.enableSorting === false) {
+    return null;
+  }
+
+  const hasAccessor = typedColumnDef.accessorFn != null || typedColumnDef.accessorKey != null;
+  if (!hasAccessor) {
+    return null;
+  }
+
+  if (typedColumnDef.id != null) {
+    return String(typedColumnDef.id);
+  }
+
+  if (typedColumnDef.accessorKey != null) {
+    const accessorKey = String(typedColumnDef.accessorKey);
+    return typeof String.prototype.replaceAll === 'function'
+      ? accessorKey.replaceAll('.', '_')
+      : accessorKey.replace(/\./g, '_');
+  }
+
+  return typeof typedColumnDef.header === 'string' ? typedColumnDef.header : null;
+}
+
+function collectSortableLeafColumnIds<T>(columnDefs: ColumnDef<T>[]): Set<string> {
+  const sortableColumnIds = new Set<string>();
+
+  const visit = (colDefs: ColumnDef<T>[]) => {
+    colDefs.forEach((column) => {
+      const childColumns = (column as ColumnDef<T> & { columns?: ColumnDef<T>[] }).columns;
+      if (childColumns && childColumns.length > 0) {
+        visit(childColumns);
+        return;
+      }
+
+      const runtimeColumnId = resolveRuntimeSortableColumnId(column);
+      if (runtimeColumnId != null) {
+        sortableColumnIds.add(runtimeColumnId);
+      }
+    });
+  };
+
+  visit(columnDefs);
+  return sortableColumnIds;
 }
 
 /**
@@ -163,6 +250,8 @@ function DataTableInner<T>({
   secondaryColumns,
   mobileMode = 'table',
   renderMobileRow,
+  liveDataVersion,
+  onDebugMetrics,
 }: DataTableProps<T>) {
   // Sorting state (controlled or uncontrolled)
   const [internalSorting, setInternalSorting] = useState<SortingState>(
@@ -263,6 +352,43 @@ function DataTableInner<T>({
 
     return filterColumns(columns);
   }, [columns, isMobileViewport, mobileMode, primarySet, secondarySet]);
+
+  const activeSortableColumnIds = useMemo(
+    () => collectSortableLeafColumnIds(resolvedColumns),
+    [resolvedColumns]
+  );
+  const appliedSorting = useMemo(
+    () => {
+      if (currentSorting.length === 0) {
+        return currentSorting;
+      }
+
+      const nextSorting = currentSorting.filter((entry) => activeSortableColumnIds.has(entry.id));
+      return nextSorting.length === currentSorting.length ? currentSorting : nextSorting;
+    },
+    [activeSortableColumnIds, currentSorting]
+  );
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  const hasActiveSorting = sortable && appliedSorting.length > 0;
+  const effectiveData = useMemo(() => {
+    if (!liveCacheReset) {
+      return data;
+    }
+
+    // TanStack invalidates row models when the data array identity changes.
+    // For actively sorted live tables, we also need fresh top-level row identities
+    // so accessor caches recompute without reaching into TanStack internals.
+    return hasActiveSorting
+      ? materializeLiveSortedData(data, true)
+      : [...data];
+  }, [data, hasActiveSorting, liveCacheReset]);
+  const effectiveSorting = useMemo(
+    () => (liveCacheReset && hasActiveSorting
+      ? appliedSorting.map((entry) => ({ ...entry }))
+      : appliedSorting),
+    [appliedSorting, hasActiveSorting, liveCacheReset]
+  );
 
   // Group data if grouping function provided
   const groupedData = useMemo(() => {
@@ -370,10 +496,10 @@ function DataTableInner<T>({
   // Memoize table configuration
   const tableConfig = useMemo(
     () => ({
-      data,
+      data: effectiveData,
       columns: expandedColumns,
       state: {
-        sorting: currentSorting,
+        sorting: effectiveSorting,
         expanded: currentExpanded,
         ...(rowSelection && { rowSelection }),
       },
@@ -388,19 +514,24 @@ function DataTableInner<T>({
       enableSorting: sortable,
       enableExpanding: enableRowExpansion,
     }),
-    [data, expandedColumns, currentSorting, currentExpanded, sortable, enableRowSelection, enableRowExpansion, rowSelection, onRowSelectionChange, handleSortingChange, handleExpandedChange, getRowId]
+    [effectiveData, expandedColumns, effectiveSorting, currentExpanded, sortable, enableRowSelection, enableRowExpansion, rowSelection, onRowSelectionChange, handleSortingChange, handleExpandedChange, getRowId]
   );
 
   const table = useReactTable(tableConfig as any);
+  const previousDataRef = useRef(effectiveData);
+  const previousRowModelRef = useRef<ReturnType<typeof table.getRowModel>>();
 
   // Extract current sort state for indicators
-  const currentSort = currentSorting[0];
+  const currentSort = appliedSorting[0];
   const sortColumn = currentSort?.id ?? null;
   const sortDirection = currentSort?.desc ? 'desc' : 'asc';
 
   const densityStyles = getDensityStyles(dense, densityMode);
 
   const rowModel = table.getRowModel();
+  if (liveCacheReset) {
+    previousLiveDataVersionRef.current = liveDataVersion;
+  }
   const rows = rowModel.rows;
   const useCardMode = isMobileViewport && mobileMode === 'cards' && Boolean(renderMobileRow);
   const virtualItems: VirtualItem[] = useCardMode ? [] : virtualizer?.getVirtualItems() ?? [];
@@ -420,34 +551,81 @@ function DataTableInner<T>({
     return new Map(rows.map((row) => [row.original, row]));
   }, [groupedData, renderGroupHeader, rows]);
 
-  const renderTableRow = (row: Row<T>) => (
-    <Fragment key={`row-fragment-${row.id}`}>
-      <TableRow
-        key={row.id}
-        dense={dense}
-        selected={row.getIsSelected()}
-        onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
-      >
-        {row.getVisibleCells().map((cell) => {
-          const widthStyle = getWidthStyle(cell.column);
+  useEffect(() => {
+    const metrics: DataTableDebugMetrics = {
+      coreRowModelInvalidated: previousDataRef.current !== effectiveData,
+      liveCacheReset,
+      rowModelStable: previousRowModelRef.current === rowModel,
+      rowCount: rows.length,
+    };
+    onDebugMetrics?.(metrics);
+    previousDataRef.current = effectiveData;
+    previousRowModelRef.current = rowModel;
+  }, [effectiveData, liveCacheReset, onDebugMetrics, rowModel, rows.length]);
 
-          return (
-            <td
-              key={cell.id}
-              style={{
-                padding: '6px 10px',
-                fontSize: densityStyles.fontSize,
-                fontWeight: typography.fontWeight.normal,
-                color: colors.text.primary,
-                fontFamily: typography.fontFamily.sans,
-                ...(widthStyle ?? {}),
-              }}
-            >
-              {flexRender(cell.column.columnDef.cell, cell.getContext())}
-            </td>
-          );
-        })}
-      </TableRow>
+  const renderTableCells = (row: Row<T>) =>
+    row.getVisibleCells().map((cell) => {
+      const widthStyle = getWidthStyle(cell.column);
+
+      return (
+        <td
+          key={cell.id}
+          style={{
+            padding: '6px 10px',
+            fontSize: densityStyles.fontSize,
+            fontWeight: typography.fontWeight.normal,
+            color: colors.text.primary,
+            fontFamily: typography.fontFamily.sans,
+            ...(widthStyle ?? {}),
+          }}
+        >
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </td>
+      );
+    });
+
+  const renderTableRow = (row: Row<T>, virtualRow?: VirtualItem) => (
+    <Fragment key={`row-fragment-${row.id}`}>
+      {virtualRow ? (
+        <tr
+          aria-selected={row.getIsSelected()}
+          className={cn(
+            'transition-colors duration-150 border-b border-border',
+            onRowClick && 'cursor-pointer',
+            !row.getIsSelected() && 'hover:bg-bg-hover',
+            row.getIsSelected() && 'bg-accent/12 border-accent/60',
+          )}
+          style={{
+            height: dense ? spacing.row.compact : spacing.row.normal,
+          }}
+          onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
+          onKeyDown={(event) => {
+            if (onRowClick && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault();
+              onRowClick(row.original as T);
+            }
+          }}
+          role={onRowClick ? 'button' : undefined}
+          tabIndex={onRowClick ? 0 : undefined}
+          ref={(node) => {
+            if (node) {
+              (virtualizer as any)?.measureElement?.(node);
+            }
+          }}
+          data-index={virtualRow.index}
+        >
+          {renderTableCells(row)}
+        </tr>
+      ) : (
+        <TableRow
+          key={row.id}
+          dense={dense}
+          selected={row.getIsSelected()}
+          onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}
+        >
+          {renderTableCells(row)}
+        </TableRow>
+      )}
       {enableRowExpansion && row.getIsExpanded() && renderExpandedRow && (
         <tr
           key={`${row.id}-expanded`}
@@ -552,7 +730,7 @@ function DataTableInner<T>({
               {virtualItems.map((virtualRow) => {
                 const row = rows[virtualRow.index];
                 if (!row) return null;
-                return renderTableRow(row as Row<T>);
+                return renderTableRow(row as Row<T>, virtualRow);
               })}
               {bottomVirtualHeight > 0 && (
                 <tr aria-hidden style={{ height: bottomVirtualHeight, lineHeight: 0 }}>

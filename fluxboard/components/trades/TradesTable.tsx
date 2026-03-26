@@ -100,6 +100,7 @@ type ScrollState = {
 
 type TradesTableProps = {
   trades: TradeRow[] | undefined | null;
+  liveDataVersion?: number;
   sortDirection?: 'ts_desc' | 'ts_asc';
   onTimeSortChange?: (dir: 'ts_desc' | 'ts_asc') => void;
   onReachEnd?: () => void;
@@ -110,7 +111,13 @@ type TradesTableProps = {
 const alignForColumn = (columnId: string): 'left' | 'right' | 'center' =>
   COLUMN_ALIGN[columnId] ?? 'left';
 
-const CellRenderer = memo(({ cell }: { cell: Cell<TradeRow, unknown> }) => {
+const CellRenderer = memo(({
+  cell,
+  renderToken,
+}: {
+  cell: Cell<TradeRow, unknown>;
+  renderToken: string;
+}) => {
   const align = alignForColumn(cell.column.id);
   return (
     <div
@@ -123,19 +130,19 @@ const CellRenderer = memo(({ cell }: { cell: Cell<TradeRow, unknown> }) => {
     </div>
   );
 }, (prev, next) => {
+  if (prev.renderToken !== next.renderToken) return false;
   if (prev.cell.id !== next.cell.id) return false;
-  const prevValue = prev.cell.getValue();
-  const nextValue = next.cell.getValue();
-  return prevValue === nextValue && prev.cell.column.id === next.cell.column.id;
+  return prev.cell.column.id === next.cell.column.id;
 });
 
 type RowProps = {
   row: Row<TradeRow>;
   style: CSSProperties;
   gridTemplate: string;
+  renderToken: string;
 };
 
-const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate }) => (
+const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate, renderToken }) => (
   <div
     className="trades-row"
     style={{
@@ -145,7 +152,7 @@ const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate }) => (
     }}
   >
     {row.getVisibleCells().map((cell) => (
-      <CellRenderer key={cell.id} cell={cell} />
+      <CellRenderer key={cell.id} cell={cell} renderToken={renderToken} />
     ))}
   </div>
 ), (prev, next) => (
@@ -153,10 +160,12 @@ const VirtualRowComponent = memo<RowProps>(({ row, style, gridTemplate }) => (
   && prev.style?.transform === next.style?.transform
   && prev.style?.top === next.style?.top
   && prev.gridTemplate === next.gridTemplate
+  && prev.renderToken === next.renderToken
 ));
 
 export function TradesTable({
   trades,
+  liveDataVersion = 0,
   sortDirection = 'ts_desc',
   onTimeSortChange,
   onReachEnd,
@@ -213,7 +222,21 @@ export function TradesTable({
   });
 
   const rows = table.getRowModel().rows;
+  const previousLiveDataVersionRef = useRef(liveDataVersion);
+  const liveCacheReset = previousLiveDataVersionRef.current !== liveDataVersion;
+  if (liveCacheReset) {
+    rows.forEach((row) => {
+      (row as any)._valuesCache = {};
+      (row as any)._uniqueValuesCache = {};
+    });
+    previousLiveDataVersionRef.current = liveDataVersion;
+  }
   const reachEndNotifiedRef = useRef(-1);
+
+  const getRowRenderToken = useCallback((row: Row<TradeRow>) => {
+    const original = row.original;
+    return `${row.id}:${String(original?.version ?? '')}:${String(original?.seq ?? '')}`;
+  }, []);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -374,6 +397,7 @@ export function TradesTable({
               transform: 'none',
             }}
             gridTemplate={gridTemplate}
+            renderToken={getRowRenderToken(row)}
           />
         ))}
 
@@ -403,6 +427,7 @@ export function TradesTable({
                     height: ROW_HEIGHT,
                   }}
                   gridTemplate={gridTemplate}
+                  renderToken={getRowRenderToken(row)}
                 />
               );
             })}

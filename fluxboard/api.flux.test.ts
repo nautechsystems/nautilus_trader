@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchJSONMock = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./apiClient', () => {
   class MockAPIClient {
@@ -16,6 +17,22 @@ import { api, deriveCanonicalNaming } from './api';
 function setPathname(pathname: string) {
   (window.location as unknown as { pathname?: string }).pathname = pathname;
 }
+
+function mockFetchJsonResponse(payload: unknown, options: { ok?: boolean; status?: number; statusText?: string } = {}) {
+  const ok = options.ok ?? true;
+  const status = options.status ?? (ok ? 200 : 500);
+  const statusText = options.statusText ?? (ok ? 'OK' : 'Server Error');
+  return {
+    ok,
+    status,
+    statusText,
+    json: vi.fn().mockResolvedValue(payload),
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('api.getTrades', () => {
   beforeEach(() => {
@@ -437,11 +454,13 @@ describe('api.getTrades', () => {
 describe('api.patchStrategyParams', () => {
   beforeEach(() => {
     fetchJSONMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
     setPathname('/tokenmm/params');
   });
 
   it('treats HTTP 200 responses with data.errors as save failure', async () => {
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [],
@@ -454,25 +473,25 @@ describe('api.patchStrategyParams', () => {
           },
         ],
       },
-    });
+    }));
 
     await expect(api.patchStrategyParams('makerv3', { qty: '-1' })).rejects.toThrow(/qty must be >= 0/i);
   });
 
   it('appends profile to params writes on equities routes', async () => {
     setPathname('/equities/params');
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
         failed: [],
         errors: [],
       },
-    });
+    }));
 
     await api.patchStrategyParams('aapl_tradexyz_makerv4', { qty: '1' });
 
-    const [path] = fetchJSONMock.mock.calls[0];
+    const [path] = fetchMock.mock.calls[0];
     expect(path).toContain('/api/v1/params?');
     expect(path).toContain('profile=equities');
   });
@@ -481,24 +500,26 @@ describe('api.patchStrategyParams', () => {
 describe('api.updateParams', () => {
   beforeEach(() => {
     fetchJSONMock.mockReset();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
     setPathname('/equities/params');
   });
 
   it('appends profile to bulk params writes on equities routes', async () => {
-    fetchJSONMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mockFetchJsonResponse({
       ok: true,
       data: {
         success: [{ strategy_id: 'aapl_tradexyz_makerv4' }],
         failed: [],
         errors: [],
       },
-    });
+    }));
 
     await api.updateParams([
       { strategy_id: 'aapl_tradexyz_makerv4', params: { qty: '1' } },
     ]);
 
-    const [path] = fetchJSONMock.mock.calls[0];
+    const [path] = fetchMock.mock.calls[0];
     expect(path).toContain('/api/v1/params?');
     expect(path).toContain('profile=equities');
   });
@@ -593,6 +614,49 @@ describe('profile-scoped read APIs', () => {
     const [path] = fetchJSONMock.mock.calls[0];
     expect(path).toContain('/api/v1/balances?');
     expect(path).toContain('profile=equities');
+  });
+
+  it('appends balances contract_version and preserves realtime lineage for canonical standard snapshots', async () => {
+    setPathname('/tokenmm/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [],
+        total: 0,
+        totals: {
+          mv_raw: 0,
+          mv_display: '$0.00',
+        },
+        realtime: {
+          contract_version: 2,
+          surface: 'balances',
+          profile: 'tokenmm',
+          surface_query_key: 'balances|profile=tokenmm|strategy_ids=strategy_01',
+          stream_id: 'balances:tokenmm:strategy_01',
+          snapshot_revision: 'balances-snapshot-1',
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      },
+    });
+
+    const payload = await api.getBalances({ contractVersion: 2 });
+
+    const [path] = fetchJSONMock.mock.calls.at(-1) ?? [];
+    expect(path).toContain('/api/v1/balances?');
+    expect(path).toContain('profile=tokenmm');
+    expect(path).toContain('contract_version=2');
+    expect((payload as any).realtime).toMatchObject({
+      contract_version: 2,
+      surface: 'balances',
+      stream_id: 'balances:tokenmm:strategy_01',
+      snapshot_revision: 'balances-snapshot-1',
+      last_seq: 3,
+    });
   });
 
   it('appends profile to alerts request on equities routes', async () => {
@@ -1263,5 +1327,45 @@ describe('profile-scoped read APIs', () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.id).toBe('alert-from-alerts-key');
     expect(alerts[0]?.level).toBe('CRITICAL');
+  });
+
+  it('requests alerts contract_version 2 and preserves realtime lineage metadata on the returned rows', async () => {
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'alert-standard-1',
+            severity: 'warning',
+            message: 'standard alerts snapshot',
+            timestamp: 1_700_000_000,
+            details: {},
+          },
+        ],
+        realtime: {
+          contract_version: 2,
+          surface: 'alerts',
+          profile: 'default',
+          surface_query_key: 'alerts|profile=default',
+          stream_id: 'alerts-main',
+          snapshot_revision: 'alerts-snap-1',
+          last_seq: 9,
+        },
+      },
+    });
+
+    const alerts = await api.getAlerts({ contractVersion: 2 });
+
+    expect(fetchJSONMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/alerts?contract_version=2'),
+      undefined,
+    );
+    expect((alerts as any).realtime).toEqual(expect.objectContaining({
+      contract_version: 2,
+      surface: 'alerts',
+      stream_id: 'alerts-main',
+      snapshot_revision: 'alerts-snap-1',
+      last_seq: 9,
+    }));
   });
 });

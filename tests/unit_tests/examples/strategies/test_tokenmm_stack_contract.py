@@ -40,6 +40,8 @@ TOKENMM_SUPPORTED_CORE_STRATEGY_IDS = [
     "plumeusdt_bybit_perp_makerv3",
     "plumeusdt_bybit_spot_makerv3",
     "plumeusdt_okx_perp_makerv3",
+    "plumeusdt_binance_perp_makerv3",
+    "plumeusdt_binance_spot_makerv3",
     "plumeusdt_bitget_perp_makerv3",
     "plumeusdt_bitget_spot_makerv3",
 ]
@@ -197,7 +199,7 @@ def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
         assert not (strategies_dir / f"{strategy_id}.toml.disabled").exists()
 
 
-def test_tokenmm_registry_keeps_seven_node_allowlist_but_requires_only_supported_live_core() -> None:
+def test_tokenmm_registry_requires_all_supported_live_core_strategies() -> None:
     assert TOKENMM_STRATEGY_IDS == [
         "plumeusdt_bybit_perp_makerv3",
         "plumeusdt_bybit_spot_makerv3",
@@ -209,10 +211,10 @@ def test_tokenmm_registry_keeps_seven_node_allowlist_but_requires_only_supported
     ]
     assert len(TOKENMM_STRATEGY_IDS) == 7
     assert TOKENMM_REQUIRED_STRATEGY_IDS == TOKENMM_SUPPORTED_CORE_STRATEGY_IDS
-    assert len(TOKENMM_REQUIRED_STRATEGY_IDS) == 5
+    assert len(TOKENMM_REQUIRED_STRATEGY_IDS) == 7
     assert set(TOKENMM_REQUIRED_STRATEGY_IDS).issubset(TOKENMM_STRATEGY_IDS)
-    assert "plumeusdt_binance_perp_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
-    assert "plumeusdt_binance_spot_makerv3" not in TOKENMM_REQUIRED_STRATEGY_IDS
+    assert "plumeusdt_binance_perp_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
+    assert "plumeusdt_binance_spot_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
 
 
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:

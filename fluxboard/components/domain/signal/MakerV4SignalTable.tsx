@@ -1,36 +1,929 @@
-import type { SignalStrategy } from '@/types';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { type ColumnDef } from '@tanstack/react-table';
 
-import { ArbSignalTable } from './EquitiesArbSignalTable';
+import { DataTable } from '@/components/ui/table/DataTable';
+import { SimpleTooltip } from '@/components/ui/tooltip/Tooltip';
+import { StatusPill } from '@/components/shared/StatusPill';
+import { colors } from '@/lib/tokens';
+import { fmtAgeSec, fmtPriceSignal } from '@/utils';
+import { formatLocal } from '@/utils/time';
+import { deriveStrategyStatus, describeTradingStatus } from '@/utils/strategyStatus';
+import { resolveSignalRunning } from '@/utils/signalRunState';
+import type { MakerV4LegSnapshot, MakerV4OperatorPayload, MakerV4QuoteSnapshot, SignalStrategy } from '@/types';
+import { useVisibleNowMs } from './useVisibleNowMs';
 
-type MakerV4SignalTableProps = {
-  rows?: SignalStrategy[];
-  strategies?: SignalStrategy[];
-  loading?: boolean;
-  nowProvider?: () => number;
-  showVariantColumn?: boolean;
-  tableTestId?: string;
-  emptyMessage?: string;
+type MakerV4DisplayRow = SignalStrategy & {
+  _quoteSnapshot: MakerV4QuoteSnapshot | null;
+  _makerLeg: MakerV4LegSnapshot | null;
+  _hedgeLeg: MakerV4LegSnapshot | null;
+  _operator: MakerV4OperatorPayload | null;
+  _sourceFingerprint: string;
+  _quoteHealthUsable: boolean;
+  _statusLabel: ReturnType<typeof describeTradingStatus>;
+  _lastUpdateMs: number | null;
+  _lastAgeMs: number | null;
+  _recentAgeMs: number | null;
+  _ageAsOfMs: number | null;
+  _ageAnchorSource: 'local' | 'server';
 };
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function formatBps(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return `${value.toFixed(1)} bps`;
+}
+
+function formatCompactBps(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return value.toFixed(1);
+}
+
+function formatExecutionMode(mode: string | null | undefined): string {
+  return String(mode || '').trim().toLowerCase() === 'take_take' ? 'Take-Take' : 'Maker-Hedge';
+}
+
+function formatStateWord(value: unknown): string | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  return text ? text : null;
+}
+
+function formatCancelAfter(cancelAfterMs: number | null | undefined): string {
+  if (cancelAfterMs == null || !Number.isFinite(cancelAfterMs)) return '—';
+  if (cancelAfterMs < 1000) return `${cancelAfterMs} ms`;
+  return `${(cancelAfterMs / 1000).toFixed(cancelAfterMs % 1000 === 0 ? 0 : 1)} s`;
+}
+
+function instrumentRouteSuffix(instrumentId: string | null | undefined): string | null {
+  const raw = instrumentId?.trim();
+  if (!raw) return null;
+  const suffix = raw.split('.').pop()?.trim();
+  return suffix || null;
+}
+
+function resolveConfiguredHedgeRoute(row: MakerV4DisplayRow): string {
+  const operatorRoute = row._operator?.hedge_policy?.route?.trim();
+  if (operatorRoute) return operatorRoute;
+  const snapshotRoute = row._quoteSnapshot?.hedge_route?.trim();
+  if (snapshotRoute) return snapshotRoute;
+  const hedgeRoute = row._hedgeLeg?.route;
+  if (typeof hedgeRoute === 'string' && hedgeRoute.trim()) return hedgeRoute.trim();
+
+  const legEntries = row.legs_order?.map((key) => row.legs?.[key] ?? null)
+    ?? Object.values(row.legs ?? {});
+  for (const leg of legEntries) {
+    if (!leg) continue;
+    const exchange = String(leg.exchange || '').trim().toLowerCase();
+    if (exchange !== 'ibkr') continue;
+    const explicitRoute = typeof leg.route === 'string' ? leg.route.trim() : '';
+    if (explicitRoute) return explicitRoute;
+    const suffix = instrumentRouteSuffix(typeof leg.instrument_id === 'string' ? leg.instrument_id : null);
+    if (suffix) return suffix;
+  }
+
+  return '—';
+}
+
+function deriveLastUpdateMs(snapshot: MakerV4QuoteSnapshot | null): number | null {
+  if (!snapshot) return null;
+  const candidates = [
+    coerceNumber(snapshot.ts_ms),
+    coerceNumber(snapshot.maker_leg?.ts_ms),
+    coerceNumber(snapshot.hedge_leg?.ts_ms),
+    coerceNumber(snapshot.ref_leg?.ts_ms),
+  ].filter((value): value is number => value != null);
+  if (candidates.length === 0) return null;
+  return Math.max(...candidates);
+}
+
+function deriveLastAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return Math.max(...snapshotAges);
+  }
+  if (lastUpdateMs == null) return null;
+  return Math.max(0, nowMs - lastUpdateMs);
+}
+
+function deriveRecentAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return Math.min(...snapshotAges);
+  }
+  if (lastUpdateMs == null) return null;
+  return Math.max(0, nowMs - lastUpdateMs);
+}
+
+function deriveAgeAsOfMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  const snapshotAges = [
+    coerceNumber(snapshot?.maker_leg?.age_ms),
+    coerceNumber(snapshot?.hedge_leg?.age_ms),
+    coerceNumber(snapshot?.ref_leg?.age_ms),
+  ].filter((value): value is number => value != null);
+  if (snapshotAges.length > 0) {
+    return nowMs;
+  }
+  if (lastUpdateMs == null) return null;
+  return nowMs;
+}
+
+function isLegUsable(leg: MakerV4LegSnapshot | null | undefined): boolean {
+  if (!leg) return false;
+  const feedState = formatStateWord(leg.feed_state);
+  const quoteState = formatStateWord(leg.quote_state);
+  const usabilityFlags = [leg.pricing_usable, leg.hedge_usable]
+    .filter((value): value is boolean => typeof value === 'boolean');
+  if (feedState && !['ok', 'fresh'].includes(feedState)) return false;
+  if (quoteState && quoteState !== 'fresh') return false;
+  if (usabilityFlags.length === 0) return false;
+  return usabilityFlags.every(Boolean);
+}
+
+function isQuoteHealthUsable(snapshot: MakerV4QuoteSnapshot | null): boolean {
+  if (!snapshot) return false;
+  return [snapshot.maker_leg, snapshot.hedge_leg, snapshot.ref_leg].every((leg) => isLegUsable(leg ?? null));
+}
+
+function getAgeColor(ageMs: number | null): string {
+  if (ageMs == null) return colors.text.muted;
+  if (ageMs > 10_000) return colors.semantic.danger.DEFAULT;
+  if (ageMs > 3_000) return colors.semantic.warning.DEFAULT;
+  return colors.text.primary;
+}
+
+function resolveLiveAgeMs(ageMs: number | null, ageAsOfMs: number | null, nowMs: number): number | null {
+  if (ageMs == null) return null;
+  if (ageAsOfMs == null) return ageMs;
+  return ageMs + Math.max(0, nowMs - ageAsOfMs);
+}
+
+function resolveLiveDisplayAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._lastAgeMs, row._ageAsOfMs, nowMs);
+}
+
+function resolveLiveRecentAgeMs(row: MakerV4DisplayRow, nowMs: number): number | null {
+  return resolveLiveAgeMs(row._recentAgeMs, row._ageAsOfMs, nowMs);
+}
+
+function buildMakerV4SourceFingerprint(row: SignalStrategy): string {
+  return JSON.stringify({
+    running: row.running ?? null,
+    tradeable: row.tradeable ?? null,
+    blocked: row.blocked ?? null,
+    balances_ok: row.balances_ok ?? null,
+    params: row.params ?? null,
+    state: row.state ?? null,
+    maker_v4: row.maker_v4 ?? null,
+    legs: row.legs ?? null,
+    legs_order: row.legs_order ?? null,
+    maker_role_map: row.maker_role_map ?? null,
+    meta: row.meta ?? null,
+  });
+}
+
+function formatLegAge(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+): string {
+  const ageMs = resolveLiveAgeMs(coerceNumber(leg?.age_ms), ageAsOfMs, nowMs);
+  return ageMs == null ? '—' : fmtAgeSec(ageMs);
+}
+
+function buildAgeTooltip(row: MakerV4DisplayRow, nowMs: number): string {
+  const ageMs = resolveLiveDisplayAgeMs(row, nowMs);
+  const lines = [
+    `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+    `Maker leg: ${formatLegAge(row._makerLeg, row._ageAsOfMs, nowMs)}`,
+    `Hedge leg: ${formatLegAge(row._hedgeLeg, row._ageAsOfMs, nowMs)}`,
+    `Reference leg: ${formatLegAge(row._quoteSnapshot?.ref_leg ?? null, row._ageAsOfMs, nowMs)}`,
+  ];
+  if (row._lastUpdateMs != null) {
+    lines.push(`Last update: ${formatLocal(row._lastUpdateMs)}`);
+  }
+  return lines.join('\n');
+}
+
+function buildMakerV4DisplayRow(
+  row: SignalStrategy,
+  nowMs: number,
+  ageAnchorSource: MakerV4DisplayRow['_ageAnchorSource'],
+): MakerV4DisplayRow {
+  const quoteSnapshot = row.maker_v4?.quote_snapshot ?? null;
+  const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
+  const quoteHealthUsable = isQuoteHealthUsable(quoteSnapshot);
+  const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const recentAgeMs = deriveRecentAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const ageAsOfMs = deriveAgeAsOfMs(quoteSnapshot, lastUpdateMs, nowMs);
+  const status = deriveStrategyStatus({
+    running: resolveSignalRunning(row, nowMs),
+    trading: row.params?.bot_on,
+    blocked: Boolean(row.blocked) || !quoteHealthUsable || quoteSnapshot?.hedge_ready === false,
+  });
+
+  return {
+    ...row,
+    _quoteSnapshot: quoteSnapshot,
+    _makerLeg: quoteSnapshot?.maker_leg ?? null,
+    _hedgeLeg: quoteSnapshot?.hedge_leg ?? null,
+    _operator: row.maker_v4?.operator ?? null,
+    _sourceFingerprint: buildMakerV4SourceFingerprint(row),
+    _quoteHealthUsable: quoteHealthUsable,
+    _statusLabel: describeTradingStatus(status),
+    _lastUpdateMs: lastUpdateMs,
+    _lastAgeMs: lastAgeMs,
+    _recentAgeMs: recentAgeMs,
+    _ageAsOfMs: ageAsOfMs,
+    _ageAnchorSource: ageAnchorSource,
+  };
+}
+
+function patchDisplayRowInPlace(target: MakerV4DisplayRow, next: MakerV4DisplayRow) {
+  Object.keys(target).forEach((key) => {
+    if (!(key in next)) {
+      delete (target as Record<string, unknown>)[key];
+    }
+  });
+
+  Object.entries(next).forEach(([key, value]) => {
+    (target as Record<string, unknown>)[key] = value;
+  });
+}
+
+function didMakerV4DisplayRowChange(
+  existing: MakerV4DisplayRow,
+  next: MakerV4DisplayRow,
+): boolean {
+  const existingKeys = Object.keys(existing);
+  const nextKeys = Object.keys(next);
+  if (existingKeys.length !== nextKeys.length) {
+    return true;
+  }
+  return nextKeys.some((key) => {
+    if (key === '_statusLabel') {
+      return (
+        existing._statusLabel.label !== next._statusLabel.label
+        || existing._statusLabel.subLabel !== next._statusLabel.subLabel
+        || existing._statusLabel.variant !== next._statusLabel.variant
+      );
+    }
+    return existing[key as keyof MakerV4DisplayRow] !== next[key as keyof MakerV4DisplayRow];
+  });
+}
+
+function didMakerV4SourceRowChange(
+  existing: MakerV4DisplayRow | undefined,
+  sourceRow: SignalStrategy,
+): boolean {
+  if (!existing) {
+    return true;
+  }
+  return (
+    existing.maker_v4 !== sourceRow.maker_v4
+    || existing.state !== sourceRow.state
+    || existing.running !== sourceRow.running
+    || existing.tradeable !== sourceRow.tradeable
+    || existing.blocked !== sourceRow.blocked
+    || existing.balances_ok !== sourceRow.balances_ok
+    || existing.params !== sourceRow.params
+    || existing.legs !== sourceRow.legs
+    || existing.legs_order !== sourceRow.legs_order
+    || existing.maker_role_map !== sourceRow.maker_role_map
+    || existing.meta !== sourceRow.meta
+    || existing._sourceFingerprint !== buildMakerV4SourceFingerprint(sourceRow)
+  );
+}
+
+function reconcileMakerV4DisplayRows({
+  currentRows,
+  currentRowById,
+  currentSourceRowById,
+  changedRowIds,
+  forceRefreshAll,
+  sourceRows,
+  nowMs,
+  clockAnchorMs,
+}: {
+  currentRows: MakerV4DisplayRow[];
+  currentRowById: Map<string, MakerV4DisplayRow>;
+  currentSourceRowById: Map<string, SignalStrategy>;
+  changedRowIds?: readonly string[] | null;
+  forceRefreshAll?: boolean;
+  sourceRows: readonly SignalStrategy[];
+  nowMs: number;
+  clockAnchorMs?: number | null;
+}) {
+  const nextRows: MakerV4DisplayRow[] = [];
+  const nextRowById = new Map<string, MakerV4DisplayRow>();
+  const nextSourceRowById = new Map<string, SignalStrategy>();
+  const changedRowIdSet = changedRowIds ? new Set(changedRowIds) : null;
+
+  sourceRows.forEach((sourceRow) => {
+    const nextId = sourceRow.id;
+    const existing = currentRowById.get(nextId);
+    const previousSourceRow = currentSourceRowById.get(nextId);
+    const sourceRowChanged = forceRefreshAll
+      || (changedRowIdSet
+        ? changedRowIdSet.has(nextId)
+        : previousSourceRow == null
+          || previousSourceRow !== sourceRow
+          || didMakerV4SourceRowChange(existing, sourceRow));
+    const needsInitialServerRealignment = (
+      existing != null
+      && clockAnchorMs != null
+      && existing._ageAnchorSource !== 'server'
+    );
+
+    if (existing && !sourceRowChanged && !needsInitialServerRealignment) {
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
+      return;
+    }
+
+    const ageAnchorSource = clockAnchorMs != null ? 'server' : 'local';
+    const nextDisplayRow = buildMakerV4DisplayRow(
+      sourceRow,
+      clockAnchorMs ?? nowMs,
+      ageAnchorSource,
+    );
+    if (existing && didMakerV4DisplayRowChange(existing, nextDisplayRow) === false) {
+      nextRows.push(existing);
+      nextRowById.set(nextId, existing);
+      nextSourceRowById.set(nextId, sourceRow);
+      return;
+    }
+
+    nextRows.push(nextDisplayRow);
+    nextRowById.set(nextId, nextDisplayRow);
+    nextSourceRowById.set(nextId, sourceRow);
+  });
+
+  const didRowsChange = (
+    currentRows.length !== nextRows.length
+    || nextRows.some((row, index) => currentRows[index] !== row)
+  );
+
+  return {
+    rows: nextRows,
+    rowById: nextRowById,
+    sourceRowById: nextSourceRowById,
+    didRowsChange,
+  };
+}
+
+function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
+  if (!leg) return '—';
+  const venue = leg.venue?.trim() || '—';
+  const instrument = leg.instrument_id?.trim() || leg.symbol?.trim() || '—';
+  return `${venue} ${instrument}`;
+}
+
+function formatLegPrices(leg: MakerV4LegSnapshot | null | undefined): string {
+  if (!leg) return '—';
+  const bid = coerceNumber(leg.bid);
+  const ask = coerceNumber(leg.ask);
+  const mid = coerceNumber(leg.mid) ?? ((bid != null && ask != null) ? (bid + ask) / 2 : null);
+  if (bid == null && ask == null && mid == null) return '—';
+
+  const parts = [bid, mid, ask].map((value) => (value == null ? '—' : fmtPriceSignal(value)));
+  return `${parts[0]} / ${parts[1]} / ${parts[2]}`;
+}
+
+export function buildLegTooltip(
+  leg: MakerV4LegSnapshot | null | undefined,
+  ageAsOfMs: number | null,
+  nowMs: number,
+  fallbackAgeMs: number | null,
+): string | undefined {
+  if (!leg) return undefined;
+  const feedState = formatStateWord(leg.feed_state);
+  const quoteState = formatStateWord(leg.quote_state);
+  const pricingUsable = typeof leg.pricing_usable === 'boolean' ? leg.pricing_usable : null;
+  const hedgeUsable = typeof leg.hedge_usable === 'boolean' ? leg.hedge_usable : null;
+  const reasonCode = String(leg.reason_code ?? '').trim();
+  const liveAgeMs = resolveLiveAgeMs(coerceNumber(leg.age_ms), ageAsOfMs, nowMs) ?? fallbackAgeMs;
+  const lines = [
+    formatLegLine(leg),
+    `Bid / Mid / Ask: ${formatLegPrices(leg)}`,
+    `Age: ${liveAgeMs != null ? fmtAgeSec(liveAgeMs) : '—'}`,
+  ];
+  if (feedState || quoteState) {
+    lines.push(`Feed: ${feedState ?? '—'} · Quote: ${quoteState ?? '—'}`);
+  }
+  if (pricingUsable != null || hedgeUsable != null) {
+    lines.push(
+      `Pricing usable: ${pricingUsable == null ? '—' : pricingUsable ? 'yes' : 'no'} · Hedge usable: ${hedgeUsable == null ? '—' : hedgeUsable ? 'yes' : 'no'}`,
+    );
+  }
+  if (reasonCode) {
+    lines.push(`Reason: ${reasonCode}`);
+  }
+  if (leg.symbol && leg.instrument_id && leg.symbol !== leg.instrument_id) {
+    lines.splice(1, 0, `Symbol: ${leg.symbol}`);
+  }
+  return lines.join('\n');
+}
+
+function LegSummary({
+  leg,
+  ageAsOfMs,
+  nowMs,
+  fallbackAgeMs,
+}: {
+  leg: MakerV4LegSnapshot | null | undefined;
+  ageAsOfMs: number | null;
+  nowMs: number;
+  fallbackAgeMs: number | null;
+}): ReactNode {
+  if (!leg) {
+    return <span className="text-xs text-neutral-500">—</span>;
+  }
+  const tooltip = buildLegTooltip(leg, ageAsOfMs, nowMs, fallbackAgeMs);
+  const feedState = formatStateWord(leg.feed_state);
+  const quoteState = formatStateWord(leg.quote_state);
+  const healthLabel = feedState || quoteState
+    ? `Feed ${feedState ?? '—'} · Quote ${quoteState ?? '—'}`
+    : null;
+  return (
+    <SimpleTooltip content={tooltip ? <pre className="whitespace-pre-wrap">{tooltip}</pre> : undefined} delay={150}>
+      <div className="flex min-w-[250px] cursor-help flex-col gap-0.5">
+        <span className="text-xs font-semibold text-neutral-100">{formatLegLine(leg)}</span>
+        <span className="font-mono text-xs text-neutral-300">{formatLegPrices(leg)}</span>
+        {healthLabel && (
+          <span className="text-[10px] text-neutral-500">{healthLabel}</span>
+        )}
+      </div>
+    </SimpleTooltip>
+  );
+}
 
 export default function MakerV4SignalTable({
   rows,
   strategies,
   loading = false,
   nowProvider = () => Date.now(),
-  showVariantColumn = false,
-  tableTestId = 'maker-v4-signal-table',
-  emptyMessage = 'No Maker V4 strategies found',
-}: MakerV4SignalTableProps) {
+  clockAnchorMs,
+  liveDataVersion,
+  changedRowIds,
+}: {
+  rows?: SignalStrategy[];
+  strategies?: SignalStrategy[];
+  loading?: boolean;
+  nowProvider?: () => number;
+  clockAnchorMs?: number | null;
+  liveDataVersion?: number;
+  changedRowIds?: readonly string[] | null;
+}) {
+  const sourceRows = rows ?? strategies ?? [];
+  const { nowMs, targetRef } = useVisibleNowMs<HTMLDivElement>({
+    intervalMs: 1000,
+    nowProvider,
+    refreshKey: clockAnchorMs,
+    disabled: loading && sourceRows.length === 0,
+  });
+  const displayRowsRef = useRef<MakerV4DisplayRow[]>([]);
+  const displayRowByIdRef = useRef<Map<string, MakerV4DisplayRow>>(new Map());
+  const displaySourceRowByIdRef = useRef<Map<string, SignalStrategy>>(new Map());
+  const previousLiveDataVersionRef = useRef<number | undefined>(liveDataVersion);
+  const [committedTableLiveDataVersion, setCommittedTableLiveDataVersion] = useState<number | undefined>(liveDataVersion);
+  const [, forceCommittedRender] = useState(0);
+  const reconciledData = useMemo(() => {
+    const forceRefreshAll =
+      changedRowIds == null
+      && liveDataVersion !== previousLiveDataVersionRef.current;
+    return reconcileMakerV4DisplayRows({
+      currentRows: displayRowsRef.current,
+      currentRowById: displayRowByIdRef.current,
+      currentSourceRowById: displaySourceRowByIdRef.current,
+      changedRowIds,
+      forceRefreshAll,
+      sourceRows,
+      nowMs,
+      clockAnchorMs,
+    });
+  }, [changedRowIds, clockAnchorMs, liveDataVersion, sourceRows]);
+  const data = displayRowsRef.current.length === 0
+    ? reconciledData.rows
+    : displayRowsRef.current;
+
+  useLayoutEffect(() => {
+    if (displayRowsRef.current.length === 0) {
+      displayRowsRef.current = reconciledData.rows;
+      displayRowByIdRef.current = reconciledData.rowById;
+      displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+      previousLiveDataVersionRef.current = liveDataVersion;
+      setCommittedTableLiveDataVersion(liveDataVersion);
+      return;
+    }
+
+    let shouldForceCommittedRender = false;
+    let shouldAdvanceCommittedTableVersion = false;
+
+    if (reconciledData.didRowsChange) {
+      const nextCommittedRows: MakerV4DisplayRow[] = [];
+      const nextCommittedRowById = new Map<string, MakerV4DisplayRow>();
+
+      reconciledData.rows.forEach((nextRow, index) => {
+        const existing = displayRowByIdRef.current.get(nextRow.id);
+        if (existing) {
+          if (existing !== nextRow) {
+            patchDisplayRowInPlace(existing, nextRow);
+            shouldForceCommittedRender = true;
+            shouldAdvanceCommittedTableVersion = true;
+          }
+          nextCommittedRows.push(existing);
+          nextCommittedRowById.set(nextRow.id, existing);
+          if (displayRowsRef.current[index] !== existing) {
+            shouldForceCommittedRender = true;
+          }
+          return;
+        }
+
+        nextCommittedRows.push(nextRow);
+        nextCommittedRowById.set(nextRow.id, nextRow);
+        shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
+      });
+
+      const didStructureChange =
+        displayRowsRef.current.length !== nextCommittedRows.length
+        || nextCommittedRows.some((row, index) => displayRowsRef.current[index] !== row);
+      if (didStructureChange) {
+        displayRowsRef.current = nextCommittedRows;
+        shouldForceCommittedRender = true;
+        shouldAdvanceCommittedTableVersion = true;
+      }
+
+      displayRowByIdRef.current = nextCommittedRowById;
+    } else {
+      displayRowByIdRef.current = reconciledData.rowById;
+    }
+
+    displaySourceRowByIdRef.current = reconciledData.sourceRowById;
+    previousLiveDataVersionRef.current = liveDataVersion;
+
+    if (shouldAdvanceCommittedTableVersion && committedTableLiveDataVersion !== liveDataVersion) {
+      setCommittedTableLiveDataVersion(liveDataVersion);
+    }
+
+    if (shouldForceCommittedRender) {
+      forceCommittedRender((value) => value + 1);
+    }
+  }, [committedTableLiveDataVersion, reconciledData, liveDataVersion]);
+
+  const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => [
+    {
+      accessorKey: 'id',
+      header: 'Strategy',
+      cell: ({ row }) => {
+        const feeAssumptions = row.original._operator?.fee_assumptions;
+        const tooltip = [
+          `Strategy: ${row.original.id}`,
+          `IBKR fee plan: ${feeAssumptions?.ibkr_fee_plan ?? '—'}`,
+          `IBKR fee min: ${
+            feeAssumptions?.ibkr_fee_min_usd == null
+              ? '—'
+              : `$${Number(feeAssumptions.ibkr_fee_min_usd).toFixed(2)}`
+          }`,
+          `Maker taker fee: ${
+            feeAssumptions?.maker_taker_fee_bps == null
+              ? '—'
+              : `${Number(feeAssumptions.maker_taker_fee_bps).toFixed(2)} bps`
+          }`,
+          `Maker maker fee: ${
+            feeAssumptions?.maker_maker_fee_bps == null
+              ? '—'
+              : `${Number(feeAssumptions.maker_maker_fee_bps).toFixed(2)} bps`
+          }`,
+          `Assumed hedge fee: ${
+            feeAssumptions?.assumed_hedge_fee_bps == null
+              ? '—'
+              : `${Number(feeAssumptions.assumed_hedge_fee_bps).toFixed(2)} bps`
+          }`,
+        ].join('\n');
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <span className="cursor-help font-mono text-xs text-neutral-100" title={tooltip}>
+              {row.original.id}
+            </span>
+          </SimpleTooltip>
+        );
+      },
+    },
+    {
+      id: 'trading',
+      header: 'Trading',
+      cell: ({ row }) => (
+        <StatusPill
+          variant={row.original._statusLabel.variant}
+          label={row.original._statusLabel.label}
+          subLabel={row.original._statusLabel.subLabel}
+          size="xs"
+          tone="subtle"
+        />
+      ),
+    },
+    {
+      id: 'mode',
+      header: 'Mode',
+      cell: ({ row }) => {
+        const operator = row.original._operator;
+        const hedgePolicy = operator?.hedge_policy;
+        const route = resolveConfiguredHedgeRoute(row.original);
+        const tif = hedgePolicy?.time_in_force ?? '—';
+        const tooltip = [
+          `Execution mode: ${formatExecutionMode(operator?.execution_mode)}`,
+          `Behavior: ${operator?.behavior ?? 'maker'}`,
+          `Route: ${route}`,
+          `Time in force: ${tif}`,
+          `Outside RTH: ${hedgePolicy?.outside_rth == null ? '—' : hedgePolicy.outside_rth ? 'true' : 'false'}`,
+          `Include overnight: ${hedgePolicy?.include_overnight == null ? '—' : hedgePolicy.include_overnight ? 'true' : 'false'}`,
+          `Cancel after: ${formatCancelAfter(hedgePolicy?.cancel_after_ms)}`,
+        ].join('\n');
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <div className="flex min-w-[140px] cursor-help flex-col gap-0.5">
+              <span className="text-xs font-semibold text-neutral-100">
+                {formatExecutionMode(operator?.execution_mode)}
+              </span>
+              <span className="font-mono text-xs text-neutral-400">
+                {route} · {tif}
+              </span>
+            </div>
+          </SimpleTooltip>
+        );
+      },
+    },
+    {
+      id: 'maker_market',
+      header: 'Maker Market',
+      cell: ({ row }) => (
+        <LegSummary
+          leg={row.original._makerLeg}
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={resolveLiveDisplayAgeMs(row.original, nowMs)}
+        />
+      ),
+    },
+    {
+      id: 'hedge_market',
+      header: 'Hedge Market',
+      cell: ({ row }) => (
+        <LegSummary
+          leg={row.original._hedgeLeg}
+          ageAsOfMs={row.original._ageAsOfMs}
+          nowMs={nowMs}
+          fallbackAgeMs={
+            row.original._quoteSnapshot?.ibkr_quote_age_ms != null
+              ? (resolveLiveAgeMs(
+                  Number(row.original._quoteSnapshot.ibkr_quote_age_ms),
+                  row.original._ageAsOfMs,
+                  nowMs,
+                ) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              : resolveLiveDisplayAgeMs(row.original, nowMs)
+          }
+        />
+      ),
+    },
+    {
+      accessorFn: (row) => (
+        row._quoteHealthUsable ? coerceNumber(row._quoteSnapshot?.mid_spread_bps) : undefined
+      ),
+      id: 'mid_spread',
+      header: 'Mid Spread',
+      sortUndefined: 'last',
+      cell: ({ row }) => {
+        const quoteHealthUsable = row.original._quoteHealthUsable;
+        const midSpreadBps = coerceNumber(row.original._quoteSnapshot?.mid_spread_bps);
+        const makerMid = coerceNumber(row.original._makerLeg?.mid);
+        const hedgeMid = coerceNumber((row.original._hedgeLeg ?? row.original._quoteSnapshot?.ref_leg)?.mid);
+        const tooltip = [
+          'Strategy-published maker-vs-hedge midpoint spread',
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
+          `Mid spread: ${formatBps(midSpreadBps)}`,
+          `Maker mid: ${makerMid == null ? '—' : fmtPriceSignal(makerMid)}`,
+          `Hedge mid: ${hedgeMid == null ? '—' : fmtPriceSignal(hedgeMid)}`,
+        ].join('\n');
+        if (!quoteHealthUsable) {
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span className="cursor-help text-xs text-neutral-500">stale</span>
+            </SimpleTooltip>
+          );
+        }
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <span
+              className="cursor-help font-mono text-xs"
+              style={{
+                color:
+                  midSpreadBps == null
+                    ? colors.text.muted
+                    : midSpreadBps >= 0
+                      ? colors.semantic.success.DEFAULT
+                      : colors.semantic.danger.DEFAULT,
+              }}
+            >
+              {formatBps(midSpreadBps)}
+            </span>
+          </SimpleTooltip>
+        );
+      },
+    },
+    {
+      accessorFn: (row) => {
+        const bid = coerceNumber(row._quoteSnapshot?.arb_bid_spread_bps);
+        const ask = coerceNumber(row._quoteSnapshot?.arb_ask_spread_bps);
+        return Math.max(bid ?? Number.NEGATIVE_INFINITY, ask ?? Number.NEGATIVE_INFINITY);
+      },
+      id: 'arb_spread',
+      header: 'Arb Spread',
+      cell: ({ row }) => {
+        const quoteHealthUsable = row.original._quoteHealthUsable;
+        const arbBidSpreadBps = coerceNumber(row.original._quoteSnapshot?.arb_bid_spread_bps);
+        const arbAskSpreadBps = coerceNumber(row.original._quoteSnapshot?.arb_ask_spread_bps);
+        const makerBid = coerceNumber(row.original._makerLeg?.bid);
+        const makerAsk = coerceNumber(row.original._makerLeg?.ask);
+        const hedgeBid = coerceNumber((row.original._hedgeLeg ?? row.original._quoteSnapshot?.ref_leg)?.bid);
+        const hedgeAsk = coerceNumber((row.original._hedgeLeg ?? row.original._quoteSnapshot?.ref_leg)?.ask);
+        const tooltip = [
+          'Strategy-published arbitrage bounds',
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
+          `Bid arb spread: ${formatBps(arbBidSpreadBps)} (hedge bid vs maker ask)`,
+          `Ask arb spread: ${formatBps(arbAskSpreadBps)} (maker bid vs hedge ask)`,
+          `Maker bid / ask: ${makerBid == null ? '—' : fmtPriceSignal(makerBid)} / ${makerAsk == null ? '—' : fmtPriceSignal(makerAsk)}`,
+          `Hedge bid / ask: ${hedgeBid == null ? '—' : fmtPriceSignal(hedgeBid)} / ${hedgeAsk == null ? '—' : fmtPriceSignal(hedgeAsk)}`,
+        ].join('\n');
+        if (!quoteHealthUsable) {
+          return (
+            <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+              <span className="cursor-help text-xs text-neutral-500">stale</span>
+            </SimpleTooltip>
+          );
+        }
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <div className="flex cursor-help flex-col font-mono text-[11px] leading-tight">
+              <span style={{ color: arbBidSpreadBps != null && arbBidSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.primary }}>
+                {`B ${formatCompactBps(arbBidSpreadBps)}`}
+              </span>
+              <span style={{ color: arbAskSpreadBps != null && arbAskSpreadBps >= 0 ? colors.semantic.success.DEFAULT : colors.text.primary }}>
+                {`A ${formatCompactBps(arbAskSpreadBps)}`}
+              </span>
+            </div>
+          </SimpleTooltip>
+        );
+      },
+    },
+    {
+      id: 'hedge_status',
+      header: 'Hedge',
+      cell: ({ row }) => {
+        const snapshot = row.original._quoteSnapshot;
+        const hedgePolicy = row.original._operator?.hedge_policy;
+        const hedgeBacklog = row.original._operator?.hedge_backlog;
+        const quoteHealthUsable = row.original._quoteHealthUsable;
+        const hasBacklog = Boolean(hedgeBacklog?.blocked_reason);
+        const hedgeReady = snapshot?.hedge_ready === true && quoteHealthUsable && !hasBacklog;
+        const disabledReason = snapshot?.hedge_disabled_reason
+          ?? (!quoteHealthUsable ? 'quote_health_unusable' : (row.original.tradeable === false ? 'blocked' : '—'));
+        const route = resolveConfiguredHedgeRoute(row.original);
+        const timeInForce = hedgePolicy?.time_in_force ?? '—';
+        const hedgeLatencyMs = coerceNumber(snapshot?.hedge_latency_ms);
+        const hedgeSlippageBps = coerceNumber(snapshot?.hedge_slippage_bps_vs_mid);
+        const backlogQty = hedgeBacklog?.requested_qty == null ? '—' : String(hedgeBacklog.requested_qty);
+        const backlogSide = hedgeBacklog?.side?.trim() || '—';
+        const subLabel = hasBacklog
+          ? `${backlogSide} ${backlogQty}`
+          : (!quoteHealthUsable ? 'Quote health' : (hedgeLatencyMs != null ? `${route} · ${hedgeLatencyMs} ms` : `${route} · ${timeInForce}`));
+        const tooltip = [
+          `Route: ${route}`,
+          `Time in force: ${timeInForce}`,
+          `Quote health usable: ${quoteHealthUsable ? 'yes' : 'no'}`,
+          `Reason: ${disabledReason}`,
+          `Hedge backlog: ${hasBacklog ? `${backlogSide} ${backlogQty} (${hedgeBacklog?.blocked_reason ?? 'blocked'})` : '—'}`,
+          `Hedge latency: ${hedgeLatencyMs != null ? `${hedgeLatencyMs} ms` : '—'}`,
+          `Hedge slippage vs mid: ${formatBps(hedgeSlippageBps)}`,
+          `Outside RTH: ${hedgePolicy?.outside_rth == null ? '—' : hedgePolicy.outside_rth ? 'true' : 'false'}`,
+          `Include overnight: ${hedgePolicy?.include_overnight == null ? '—' : hedgePolicy.include_overnight ? 'true' : 'false'}`,
+          `Cancel after: ${formatCancelAfter(hedgePolicy?.cancel_after_ms)}`,
+        ].join('\n');
+        return (
+          <StatusPill
+            status={hedgeReady ? 'ok' : hasBacklog || !quoteHealthUsable || snapshot?.hedge_disabled_reason ? 'warning' : 'muted'}
+            label={hedgeReady ? 'Ready' : hasBacklog ? 'Backlog' : 'Blocked'}
+            subLabel={subLabel}
+            tooltip={tooltip}
+            size="xs"
+            tone="subtle"
+          />
+        );
+      },
+    },
+    {
+      accessorFn: (row) => resolveLiveDisplayAgeMs(row, nowMs) ?? Number.POSITIVE_INFINITY,
+      id: 'age_ms',
+      header: 'Age',
+      cell: ({ row }) => {
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
+        if (ageMs == null) {
+          return <span className="text-xs text-neutral-500">—</span>;
+        }
+        const tooltip = buildAgeTooltip(row.original, nowMs);
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <span
+              className="cursor-help font-mono text-xs"
+              style={{ color: getAgeColor(ageMs) }}
+            >
+              {fmtAgeSec(ageMs)}
+            </span>
+          </SimpleTooltip>
+        );
+      },
+    },
+    {
+      accessorFn: (row) => row._lastUpdateMs ?? Number.NEGATIVE_INFINITY,
+      id: 'last_update',
+      header: 'Last Updated',
+      cell: ({ row }) => {
+        const lastUpdateMs = row.original._lastUpdateMs;
+        const ageMs = resolveLiveDisplayAgeMs(row.original, nowMs);
+        const recentAgeMs = resolveLiveRecentAgeMs(row.original, nowMs);
+        if (lastUpdateMs == null) {
+          return <span className="text-xs text-neutral-500">—</span>;
+        }
+        const tooltip = [
+          `Last update: ${formatLocal(lastUpdateMs)}`,
+          `Recency: ${recentAgeMs != null ? fmtAgeSec(recentAgeMs) : '—'}`,
+          `Worst leg age: ${ageMs != null ? fmtAgeSec(ageMs) : '—'}`,
+          `IBKR quote age: ${
+            row.original._quoteSnapshot?.ibkr_quote_age_ms != null
+              ? fmtAgeSec(resolveLiveAgeMs(Number(row.original._quoteSnapshot.ibkr_quote_age_ms), row.original._ageAsOfMs, nowMs) ?? Number(row.original._quoteSnapshot.ibkr_quote_age_ms))
+              : '—'
+          }`,
+        ].join('\n');
+        return (
+          <SimpleTooltip content={<pre className="whitespace-pre-wrap">{tooltip}</pre>} delay={150}>
+            <span className="cursor-help text-xs text-neutral-300">
+              {formatLocal(lastUpdateMs)}
+              {recentAgeMs != null && <span className="text-neutral-500"> ({Math.max(0, Math.floor(recentAgeMs / 1000))}s ago)</span>}
+            </span>
+          </SimpleTooltip>
+        );
+      },
+    },
+  ], [nowMs]);
+
   return (
-    <ArbSignalTable
-      rows={rows}
-      strategies={strategies}
-      loading={loading}
-      nowProvider={nowProvider}
-      payloadKey="maker_v4"
-      showVariantColumn={showVariantColumn}
-      tableTestId={tableTestId}
-      emptyMessage={emptyMessage}
-    />
+    <div data-testid="maker-v4-signal-table" ref={targetRef}>
+      <DataTable
+        data={data}
+        columns={columns}
+        getRowId={(row) => row.id}
+        sortable
+        liveDataVersion={committedTableLiveDataVersion}
+        dense={false}
+        loading={loading}
+        emptyMessage={loading ? 'Loading strategies...' : 'No Maker V4 strategies found'}
+        className="min-w-[1100px]"
+        widthMode="content"
+        columnWidthMode="explicit"
+        mobileMode="table"
+      />
+    </div>
   );
 }
