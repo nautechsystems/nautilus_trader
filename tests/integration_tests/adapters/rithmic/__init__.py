@@ -1,0 +1,1 @@
+"""Rithmic adapter integration tests."""

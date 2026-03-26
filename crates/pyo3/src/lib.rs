@@ -280,6 +280,13 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "cython-compat")]
     re_export_module_attributes(m, n)?;
 
+    let n = "rithmic";
+    let submodule = pyo3::wrap_pymodule!(nautilus_rithmic::python::rithmic);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    // Keep Rithmic bindings namespaced under `nautilus_pyo3.rithmic` so venue-level
+    // QuoteTick/TradeTick/Order* types do not shadow the core top-level exports.
+
     let n = "sandbox";
     let submodule = pyo3::wrap_pymodule!(nautilus_sandbox::python::sandbox);
     m.add_wrapped(submodule)?;
