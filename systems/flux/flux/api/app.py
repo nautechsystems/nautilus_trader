@@ -2117,6 +2117,13 @@ def create_flux_api_app(  # noqa: C901
                     details={"strategy_id": strategy_id},
                 )
             state_summary = store.load_state_summary(strategy_id)
+            state_ts_ms = safe_int(state_summary.get("state_ts_ms"))
+            if (
+                state_summary.get("state") == "on_stop"
+                and state_ts_ms is not None
+                and now_ms() - state_ts_ms > PARAMS_RUNNING_STALE_AFTER_MS
+            ):
+                state_summary = {}
             payload = build_params_payload(
                 strategy_id=strategy_id,
                 params=params,

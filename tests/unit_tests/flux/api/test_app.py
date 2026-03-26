@@ -1029,6 +1029,59 @@ def test_params_ignore_stale_state_summary_when_augmenting_bot_on_fields(
     assert "state" not in row
 
 
+def test_params_ignore_stale_on_stop_state_summary_when_augmenting_bot_on_fields(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_010_000)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(
+        primary_keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "0", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(
+        primary_keys.state(),
+        {
+            "state": "on_stop",
+            "bot_on": True,
+            "effective_bot_on": True,
+            "persisted_bot_on": True,
+            "config_bot_on": True,
+            "bot_on_reason": "running",
+            "managed_orders": 0,
+            "ts_ms": 1_700_000_000_000,
+        },
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/params", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"][0]
+    assert row["params"]["bot_on"] is False
+    assert row["persisted_bot_on"] is False
+    assert row["config_bot_on"] is False
+    assert row["effective_bot_on"] is False
+    assert row["bot_on_reason"] == "bot_off"
+    assert row["running"] is False
+    assert "state" not in row
+
+
 def test_store_update_params_records_bot_on_control_revision(
     flux_config,
     redis_client,
