@@ -7,6 +7,7 @@ import pytest
 
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
 from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_details
@@ -199,6 +200,58 @@ def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics
     assert _result_field(diagnostics, "planned_stale_replacement_count") == 1
     assert _result_field(diagnostics, "total_missing_level_count") == 1
     assert _result_field(diagnostics, "backlog_mode") == "normal"
+
+
+def test_bounded_side_planner_stale_matched_stack_does_not_churn_the_back_level() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, True],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "planned_stale_replacement_count") == 0
+
+
+def test_bounded_side_planner_reports_deque_front_back_mode_without_room_candidates() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("99"), Decimal(0)),
+            (Decimal("98"), Decimal("98"), Decimal(0)),
+            (Decimal("97"), Decimal("97"), Decimal(0)),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    cancel_actions = _cancel_pairs(_result_field(result, "cancel_actions"))
+
+    assert [index for index, _reason_code in cancel_actions] == [0]
+    assert list(_result_field(result, "place_level_indices")) == [2]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "cancel_front_place_back"
+    assert REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL not in {
+        reason_code
+        for _index, reason_code in cancel_actions
+    }
+    assert REASON_CANCEL_TOO_AGGRESSIVE not in {
+        reason_code
+        for _index, reason_code in cancel_actions
+    }
 
 
 def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:

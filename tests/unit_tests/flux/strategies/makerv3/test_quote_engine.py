@@ -7,7 +7,11 @@ import nautilus_trader.flux.strategies.makerv3.quote_engine as quote_engine_mod
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
+from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -22,6 +26,19 @@ class _FakeRedis:
     def set(self, key: str, value: str | bytes) -> bool:
         self.values[key] = value.encode() if isinstance(value, str) else value
         return True
+
+
+def _desired_levels(*prices: str) -> list[tuple[Decimal, Decimal, Decimal]]:
+    return [
+        (Decimal(price), Decimal(price), Decimal(0))
+        for price in prices
+    ]
+
+
+def _bounded_convergence_summary(**kwargs) -> dict[str, object]:
+    planner = getattr(rebalancing_mod, "plan_side_bounded_convergence", None)
+    assert callable(planner), "bounded convergence planner surface missing"
+    return quote_engine_mod._bounded_convergence_summary(planner(**kwargs))
 
 
 def test_shared_quote_health_distinguishes_old_quote_from_feed_down() -> None:
@@ -388,6 +405,45 @@ def test_refresh_quotes_passes_bounded_convergence_budgets_and_planned_levels_pe
     assert bounded_convergence["buy"]["cancel_reason_counts"] == {}
     assert bounded_convergence["sell"]["planned_place_count"] == 1
     assert bounded_convergence["sell"]["budget_limited"] is True
+
+
+def test_bounded_convergence_summary_stale_stable_stack_is_no_op() -> None:
+    summary = _bounded_convergence_summary(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, True],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert summary["stack_action_mode"] == "no_op"
+    assert summary["planned_cancel_count"] == 0
+    assert summary["planned_place_count"] == 0
+    assert summary["cancel_reason_counts"].get(REASON_CANCEL_STALE_ORDER, 0) == 0
+
+
+def test_bounded_convergence_summary_inward_deque_cycle_reports_front_back_only_mode() -> None:
+    summary = _bounded_convergence_summary(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("101", "100", "99"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert summary["stack_action_mode"] == "place_front_cancel_back"
+    assert summary["planned_cancel_count"] == 1
+    assert summary["planned_place_count"] == 1
+    assert summary["cancel_reason_counts"].get(REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL, 0) == 0
+    assert summary["cancel_reason_counts"].get(REASON_CANCEL_TOO_AGGRESSIVE, 0) == 0
 
 
 def test_refresh_quotes_alternates_side_priority_when_total_action_budget_is_one(
