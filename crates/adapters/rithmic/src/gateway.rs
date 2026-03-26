@@ -1283,9 +1283,17 @@ fn transform_market_data(
     _instruments: &DashMap<String, InstrumentInfo>,
     quote_state: &mut AHashMap<String, crate::data::QuoteTick>,
 ) -> Option<MarketDataEvent> {
+    transform_market_data_message(&response.message, _instruments, quote_state)
+}
+
+fn transform_market_data_message(
+    message: &RithmicMessage,
+    _instruments: &DashMap<String, InstrumentInfo>,
+    quote_state: &mut AHashMap<String, crate::data::QuoteTick>,
+) -> Option<MarketDataEvent> {
     use crate::data::{QuoteTick, TradeTick};
 
-    match &response.message {
+    match message {
         RithmicMessage::BestBidOffer(bbo) => {
             use rithmic_rs::rti::best_bid_offer::PresenceBits;
 
@@ -1410,9 +1418,13 @@ fn transform_market_data(
 /// Handles `AccountPnLPositionUpdate` for account-level balance/margin updates
 /// and `InstrumentPnLPositionUpdate` for per-instrument position updates.
 fn transform_pnl(response: &RithmicResponse) -> Option<PnlEvent> {
+    transform_pnl_message(&response.message)
+}
+
+fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
     use crate::providers::{AccountBalance, Position};
 
-    match &response.message {
+    match message {
         RithmicMessage::AccountPnLPositionUpdate(update) => {
             let account_id = update.account_id.clone()?;
 
@@ -1520,6 +1532,18 @@ mod tests {
                 None => unsafe { std::env::remove_var(key) },
             }
         }
+    }
+
+    fn transform_market_data_for_test(
+        message: RithmicMessage,
+        instruments: &DashMap<String, InstrumentInfo>,
+        quote_state: &mut AHashMap<String, crate::data::QuoteTick>,
+    ) -> Option<MarketDataEvent> {
+        transform_market_data_message(&message, instruments, quote_state)
+    }
+
+    fn transform_pnl_for_test(message: RithmicMessage) -> Option<PnlEvent> {
+        transform_pnl_message(&message)
     }
 
     #[test]
@@ -1789,17 +1813,11 @@ mod tests {
             usecs: Some(500000),
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(bbo),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::BestBidOffer(bbo),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_some());
 
         if let Some(MarketDataEvent::Quote(quote)) = event {
@@ -1823,9 +1841,7 @@ mod tests {
         let instruments = DashMap::new();
         let mut quote_state = AHashMap::new();
 
-        let initial = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let initial = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -1845,17 +1861,9 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(1),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let partial = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let partial = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -1875,16 +1883,10 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(2),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let _ = transform_market_data(&initial, &instruments, &mut quote_state);
-        let event = transform_market_data(&partial, &instruments, &mut quote_state);
+        let _ = transform_market_data_for_test(initial, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(partial, &instruments, &mut quote_state);
 
         match event {
             Some(MarketDataEvent::Quote(quote)) => {
@@ -1905,9 +1907,7 @@ mod tests {
         let instruments = DashMap::new();
         let mut quote_state = AHashMap::new();
 
-        let initial = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let initial = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -1927,17 +1927,9 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(1),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let bid_only = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let bid_only = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -1957,16 +1949,10 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(2),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let _ = transform_market_data(&initial, &instruments, &mut quote_state);
-        let event = transform_market_data(&bid_only, &instruments, &mut quote_state);
+        let _ = transform_market_data_for_test(initial, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(bid_only, &instruments, &mut quote_state);
 
         match event {
             Some(MarketDataEvent::Quote(quote)) => {
@@ -1987,9 +1973,7 @@ mod tests {
         let instruments = DashMap::new();
         let mut quote_state = AHashMap::new();
 
-        let ask_only = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let ask_only = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -2009,17 +1993,9 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(1),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let bid_only = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(BestBidOffer {
+        let bid_only = RithmicMessage::BestBidOffer(BestBidOffer {
                 template_id: 150,
                 symbol: Some("ESM6".to_string()),
                 exchange: Some("CME".to_string()),
@@ -2039,18 +2015,12 @@ mod tests {
                 lean_price: None,
                 ssboe: Some(2),
                 usecs: Some(0),
-            }),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
+            });
 
-        let first = transform_market_data(&ask_only, &instruments, &mut quote_state);
+        let first = transform_market_data_for_test(ask_only, &instruments, &mut quote_state);
         assert!(first.is_none());
 
-        let second = transform_market_data(&bid_only, &instruments, &mut quote_state);
+        let second = transform_market_data_for_test(bid_only, &instruments, &mut quote_state);
         match second {
             Some(MarketDataEvent::Quote(quote)) => {
                 assert_eq!(quote.bid_price, 6617.00);
@@ -2094,17 +2064,11 @@ mod tests {
             jop_nsecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::LastTrade(trade),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::LastTrade(trade),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_some());
 
         if let Some(MarketDataEvent::Trade(trade)) = event {
@@ -2148,17 +2112,11 @@ mod tests {
             usecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(bbo),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::BestBidOffer(bbo),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_none());
     }
 
@@ -2190,17 +2148,11 @@ mod tests {
             usecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::BestBidOffer(bbo),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::BestBidOffer(bbo),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_none());
     }
 
@@ -2236,17 +2188,11 @@ mod tests {
             jop_nsecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::LastTrade(trade),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::LastTrade(trade),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_none());
     }
 
@@ -2282,17 +2228,11 @@ mod tests {
             jop_nsecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::LastTrade(trade),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "ticker_plant".to_string(),
-        };
-
-        let event = transform_market_data(&response, &instruments, &mut quote_state);
+        let event = transform_market_data_for_test(
+            RithmicMessage::LastTrade(trade),
+            &instruments,
+            &mut quote_state,
+        );
         assert!(event.is_some());
 
         if let Some(MarketDataEvent::Trade(trade)) = event {
@@ -2351,17 +2291,7 @@ mod tests {
             usecs: Some(123456),
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::AccountPnLPositionUpdate(update),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "pnl_plant".to_string(),
-        };
-
-        let event = transform_pnl(&response);
+        let event = transform_pnl_for_test(RithmicMessage::AccountPnLPositionUpdate(update));
         assert!(event.is_some());
 
         if let Some(PnlEvent::Account(AccountEvent::BalanceUpdate(balance))) = event {
@@ -2417,17 +2347,7 @@ mod tests {
             usecs: Some(500000),
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::InstrumentPnLPositionUpdate(update),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "pnl_plant".to_string(),
-        };
-
-        let event = transform_pnl(&response);
+        let event = transform_pnl_for_test(RithmicMessage::InstrumentPnLPositionUpdate(update));
         assert!(event.is_some());
 
         if let Some(PnlEvent::Position(PositionEvent::Updated(position))) = event {
@@ -2493,17 +2413,7 @@ mod tests {
             usecs: None,
         };
 
-        let response = RithmicResponse {
-            request_id: String::new(),
-            message: RithmicMessage::AccountPnLPositionUpdate(update),
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "pnl_plant".to_string(),
-        };
-
-        let event = transform_pnl(&response);
+        let event = transform_pnl_for_test(RithmicMessage::AccountPnLPositionUpdate(update));
         assert!(event.is_none());
     }
 

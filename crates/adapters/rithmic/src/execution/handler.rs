@@ -8,6 +8,7 @@ use rithmic_rs::{
         ExchangeOrderNotification, RithmicOrderNotification,
         exchange_order_notification::BracketType as ExchangeBracketType,
         exchange_order_notification::NotifyType as ExchangeNotifyType,
+        messages::RithmicMessage,
         rithmic_order_notification::BracketType as RithmicBracketType,
         rithmic_order_notification::NotifyType as RithmicNotifyType,
     },
@@ -109,8 +110,12 @@ impl ExecutionHandler {
     /// Converts a generic `RithmicResponse` into an `ExecutionEvent` if the
     /// message represents an execution update.
     pub fn handle_response(&self, response: &RithmicResponse) -> Option<ExecutionEvent> {
-        match &response.message {
-            rithmic_rs::rti::messages::RithmicMessage::RithmicOrderNotification(notif) => {
+        self.handle_message(&response.message)
+    }
+
+    fn handle_message(&self, message: &RithmicMessage) -> Option<ExecutionEvent> {
+        match message {
+            RithmicMessage::RithmicOrderNotification(notif) => {
                 debug!(
                     user_tag = ?notif.user_tag,
                     basket_id = ?notif.basket_id,
@@ -122,7 +127,7 @@ impl ExecutionHandler {
                 );
                 self.handle_rithmic_order_notification(notif)
             }
-            rithmic_rs::rti::messages::RithmicMessage::ExchangeOrderNotification(notif) => {
+            RithmicMessage::ExchangeOrderNotification(notif) => {
                 debug!(
                     user_tag = ?notif.user_tag,
                     basket_id = ?notif.basket_id,
@@ -136,7 +141,7 @@ impl ExecutionHandler {
                 );
                 self.handle_exchange_order_notification(notif)
             }
-            rithmic_rs::rti::messages::RithmicMessage::ForcedLogout(_) => {
+            RithmicMessage::ForcedLogout(_) => {
                 warn!("Forced logout received from order plant");
                 Some(ExecutionEvent::Error("Forced logout".to_string()))
             }
@@ -367,19 +372,6 @@ impl ExecutionHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rithmic_rs::rti::messages::RithmicMessage;
-
-    fn response(message: RithmicMessage) -> RithmicResponse {
-        RithmicResponse {
-            request_id: "test".to_string(),
-            message,
-            is_update: true,
-            has_more: false,
-            multi_response: false,
-            error: None,
-            source: "test".to_string(),
-        }
-    }
 
     #[test]
     fn submitted_from_rithmic_notification() {
@@ -401,7 +393,7 @@ mod tests {
 
         let handler = ExecutionHandler::new();
         let event = handler
-            .handle_response(&response(RithmicMessage::RithmicOrderNotification(notif)))
+            .handle_message(&RithmicMessage::RithmicOrderNotification(notif))
             .expect("expected submitted event");
 
         match event {
@@ -442,7 +434,7 @@ mod tests {
 
         let handler = ExecutionHandler::new();
         let event = handler
-            .handle_response(&response(RithmicMessage::ExchangeOrderNotification(notif)))
+            .handle_message(&RithmicMessage::ExchangeOrderNotification(notif))
             .expect("expected filled event");
 
         match event {
@@ -475,7 +467,7 @@ mod tests {
 
         let handler = ExecutionHandler::new();
         let event = handler
-            .handle_response(&response(RithmicMessage::ExchangeOrderNotification(notif)))
+            .handle_message(&RithmicMessage::ExchangeOrderNotification(notif))
             .expect("expected rejected event");
 
         match event {
@@ -507,7 +499,7 @@ mod tests {
 
         let handler = ExecutionHandler::new();
         let event = handler
-            .handle_response(&response(RithmicMessage::ExchangeOrderNotification(notif)))
+            .handle_message(&RithmicMessage::ExchangeOrderNotification(notif))
             .expect("expected filled event");
 
         match event {
