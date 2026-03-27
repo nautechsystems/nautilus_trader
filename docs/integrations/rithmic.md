@@ -9,6 +9,9 @@ loading, historical bar requests, and live order execution through NautilusTrade
 and should not be used for live trading.
 :::
 
+Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
+During these periods connections might be terminated and it might not be possible to test or deploy live connections.
+
 ## Overview
 
 This guide assumes a trader is setting up for both live market data feeds and trade execution.
