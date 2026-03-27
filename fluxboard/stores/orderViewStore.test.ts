@@ -6,7 +6,7 @@ import {
   ORDER_VIEW_MARKET_TRADES_CAP,
   useOrderViewStore,
 } from './orderViewStore';
-import { useResyncStore } from '@/stores';
+import { registerGlobalResyncConsumer, useResyncStore } from '@/stores';
 
 const makeSnapshot = (overrides: Partial<any> = {}) => ({
   room_id: 'order_view:strat-1:maker:book:0:depth:20',
@@ -187,6 +187,9 @@ describe('orderViewStore', () => {
   });
 
   it('keeps global resync active after order view acknowledges until trades also acknowledges', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
     const store = useOrderViewStore.getState();
     const currentResyncId = useResyncStore.getState().bumpResync('order-view-current');
     expect(currentResyncId).toBe(1);
@@ -203,6 +206,9 @@ describe('orderViewStore', () => {
   });
 
   it('does not clear the current order-view resync when trades only replays an older epoch acknowledgement', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
     const store = useOrderViewStore.getState();
 
     const firstEpoch = useResyncStore.getState().bumpResync('order-view-epoch-1');

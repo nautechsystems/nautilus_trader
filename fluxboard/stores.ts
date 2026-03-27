@@ -429,22 +429,44 @@ type ResyncStore = {
   lastReason?: string;
   lastBumpAt?: number;
   appliedBy: Record<string, number>;
+  mountedConsumers: Record<string, number>;
+  requiredConsumers: string[];
   bumpResync: (reason: string) => number;
+  registerResyncConsumer: (consumer: string) => void;
+  unregisterResyncConsumer: (consumer: string) => void;
   markResyncApplied: (consumer: string, resyncId: number) => void;
   resetResyncState: () => void;
 };
 
-export const RESYNC_ACK_CONSUMERS = ['trades', 'order-view'] as const;
+export const DEFAULT_RESYNC_ACK_CONSUMERS = ['trades'] as const;
+
+const normalizeResyncConsumer = (consumer: unknown): string =>
+  typeof consumer === 'string' ? consumer.trim() : '';
+
+const getResyncRequiredConsumers = (mountedConsumers: Record<string, number>): string[] => {
+  const mounted = Object.entries(mountedConsumers)
+    .filter(([, count]) => count > 0)
+    .map(([consumer]) => consumer);
+  return mounted.length ? mounted : [...DEFAULT_RESYNC_ACK_CONSUMERS];
+};
 
 const hasCurrentResyncAckFromAllConsumers = (
   resyncId: number,
   appliedBy: Record<string, number>,
+  requiredConsumers: string[],
 ): boolean => {
   if (resyncId <= 0) {
     return false;
   }
-  return RESYNC_ACK_CONSUMERS.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
+  return requiredConsumers.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
 };
+
+const hasPendingResyncForConsumers = (
+  state: Pick<ResyncStore, 'isResyncing' | 'resyncId' | 'appliedBy'>,
+  requiredConsumers: string[],
+): boolean =>
+  state.isResyncing
+  && !hasCurrentResyncAckFromAllConsumers(state.resyncId, state.appliedBy, requiredConsumers);
 
 export const useResyncStore = create<ResyncStore>((set, get) => ({
   resyncId: 0,
@@ -452,21 +474,74 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
   lastReason: undefined,
   lastBumpAt: undefined,
   appliedBy: {},
+  mountedConsumers: {},
+  requiredConsumers: [...DEFAULT_RESYNC_ACK_CONSUMERS],
 
   bumpResync: (reason) => {
-    const nextResyncId = get().resyncId + 1;
+    const state = get();
+    const nextResyncId = state.resyncId + 1;
+    const requiredConsumers = getResyncRequiredConsumers(state.mountedConsumers);
     set({
       resyncId: nextResyncId,
       isResyncing: true,
       lastReason: reason,
       lastBumpAt: Date.now(),
+      requiredConsumers,
     });
     return nextResyncId;
   },
 
+  registerResyncConsumer: (consumer) =>
+    set((state) => {
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
+      if (!normalizedConsumer) {
+        return state;
+      }
+
+      const mountedCount = state.mountedConsumers[normalizedConsumer] ?? 0;
+      const mountedConsumers = {
+        ...state.mountedConsumers,
+        [normalizedConsumer]: mountedCount + 1,
+      };
+      const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
+
+      return {
+        mountedConsumers,
+        requiredConsumers,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
+      };
+    }),
+
+  unregisterResyncConsumer: (consumer) =>
+    set((state) => {
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
+      if (!normalizedConsumer) {
+        return state;
+      }
+
+      const mountedCount = state.mountedConsumers[normalizedConsumer] ?? 0;
+      if (mountedCount <= 0) {
+        return state;
+      }
+
+      const mountedConsumers = { ...state.mountedConsumers };
+      if (mountedCount <= 1) {
+        delete mountedConsumers[normalizedConsumer];
+      } else {
+        mountedConsumers[normalizedConsumer] = mountedCount - 1;
+      }
+      const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
+
+      return {
+        mountedConsumers,
+        requiredConsumers,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
+      };
+    }),
+
   markResyncApplied: (consumer, resyncId) =>
     set((state) => {
-      const normalizedConsumer = typeof consumer === 'string' ? consumer.trim() : '';
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
       const normalizedResyncId = coerceResyncId(resyncId);
       if (!normalizedConsumer || normalizedResyncId === undefined) {
         return state;
@@ -478,7 +553,11 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       }
 
       const appliedBy = { ...state.appliedBy, [normalizedConsumer]: normalizedResyncId };
-      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(state.resyncId, appliedBy);
+      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(
+        state.resyncId,
+        appliedBy,
+        state.requiredConsumers,
+      );
 
       return {
         appliedBy,
@@ -493,6 +572,8 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       lastReason: undefined,
       lastBumpAt: undefined,
       appliedBy: {},
+      mountedConsumers: {},
+      requiredConsumers: [...DEFAULT_RESYNC_ACK_CONSUMERS],
     }),
 }));
 
@@ -504,6 +585,14 @@ export const selectResyncAppliedBy = (state: ResyncStore) => state.appliedBy;
 
 export const bumpGlobalResync = (reason: string): number =>
   useResyncStore.getState().bumpResync(reason);
+
+export const registerGlobalResyncConsumer = (consumer: string): void => {
+  useResyncStore.getState().registerResyncConsumer(consumer);
+};
+
+export const unregisterGlobalResyncConsumer = (consumer: string): void => {
+  useResyncStore.getState().unregisterResyncConsumer(consumer);
+};
 
 export const markGlobalResyncApplied = (consumer: string, resyncId: number): void => {
   useResyncStore.getState().markResyncApplied(consumer, resyncId);
@@ -1081,10 +1170,12 @@ function mergeNestedRecord<T extends Record<string, any> | null | undefined>(
   return { ...prev, ...next } as T;
 }
 
-function mergeArbSignalPayload<T extends { operator?: Record<string, any> | null; quote_snapshot?: Record<string, any> | null } | null | undefined>(
-  prev: T,
-  next: T,
-): T {
+function mergeArbSignalPayload<
+  T extends {
+    operator?: Record<string, any> | null;
+    quote_snapshot?: Record<string, any> | null;
+  } | null | undefined,
+>(prev: T, next: T): T {
   if (next === undefined) return prev;
   if (next === null) return next;
   if (prev === null || prev === undefined) {

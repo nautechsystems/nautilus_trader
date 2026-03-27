@@ -86,3 +86,22 @@ def test_build_trade_payload_exposes_normalized_quantity_fields_for_exact_multip
     assert payload["qty_venue"] == "100"
     assert payload["qty_conversion_status"] == "exact_multiplier"
     assert payload["qty_conversion_source"] == "generic:multiplier"
+
+
+def test_build_trade_payload_emits_explicit_degraded_quantity_contract_on_lookup_miss() -> None:
+    payload = build_trade_payload(
+        strategy_id="plumeusdt_okx_perp_makerv3",
+        event=_event(
+            commission="0.00127360 USDT",
+            instrument_id="PLUME-USDT-SWAP.OKX",
+            last_qty=Decimal("100"),
+        ),
+        instrument_lookup=lambda _instrument_id: None,
+        trade_role="maker",
+    )
+
+    assert payload["qty"] == "100"
+    assert payload["qty_base"] == ""
+    assert payload["qty_venue"] == "100"
+    assert payload["qty_conversion_status"] == "missing_metadata"
+    assert payload["qty_conversion_source"] == "trade_payload:instrument lookup miss"

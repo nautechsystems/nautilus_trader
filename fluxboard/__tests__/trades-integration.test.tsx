@@ -847,6 +847,95 @@ describe('Trades integration flows', () => {
     });
   });
 
+  it('does not start a second reconnect snapshot while a standard trade-gap recovery snapshot is already in flight', async () => {
+    realtimeFlags.trades = true;
+    const deferredRecovery = createDeferred<any>();
+    getTrades
+      .mockResolvedValueOnce({
+        rows: baseRows,
+        total: baseRows.length,
+        page: 1,
+        page_size: 50,
+        last_seq: 2,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'default',
+          surface_query_key: 'trades|profile=default',
+          stream_id: 'trades-main',
+          snapshot_revision: 'snap-1',
+          last_seq: 2,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      })
+      .mockImplementationOnce(() => deferredRecovery.promise);
+
+    render(<Trades />);
+    await waitFor(() => expect(socketHandlers.realtime_event).toBeTypeOf('function'));
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades-main',
+        profile: 'default',
+        kind: 'recovery_required',
+        seq: 3,
+        snapshot_revision: 'snap-1',
+        server_ts_ms: 1_700_000_000_003,
+        reason: 'trade_gap',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByText('RECOVERING - Refreshing snapshot…')).toBeTruthy();
+
+    act(() => {
+      socketHandlers.disconnect?.('transport close');
+      socketHandlers.connect?.();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getTrades).toHaveBeenCalledTimes(2);
+
+    deferredRecovery.resolve({
+      rows: [{ ...baseRows[0], row_id: 'recovered-after-reconnect', seq: 9, ts: 9 }],
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 9,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 9,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('recovers with a fresh snapshot instead of failing closed on accepted_start_seq drift', async () => {
     realtimeFlags.trades = true;
     setNextSubscribeAck({
@@ -1325,6 +1414,60 @@ describe('Trades integration flows', () => {
       }),
       500,
     );
+  });
+
+  it('shows OFFLINE on disconnect, RECOVERING during reconnect catch-up, then returns to LIVE', async () => {
+    const reconnectSnapshot = createDeferred<any>();
+
+    render(<Trades />);
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('RECOVERING')).toBeNull();
+    expect(screen.getByText('LIVE')).toBeTruthy();
+
+    act(() => {
+      socketHandlers.disconnect?.('transport close');
+    });
+
+    await waitFor(() => expect(screen.getByText('OFFLINE')).toBeTruthy());
+
+    getTrades.mockImplementationOnce(() => reconnectSnapshot.promise);
+
+    await act(async () => {
+      socketMock.connected = true;
+      socketHandlers.connect?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('RECOVERING - Reconnecting…')).toBeTruthy();
+
+    await act(async () => {
+      reconnectSnapshot.resolve({
+        rows: [{ ...baseRows[0], row_id: 'reconnected', seq: 3, ts: 3 }],
+        total: baseRows.length,
+        page: 1,
+        page_size: 50,
+        last_seq: 3,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'default',
+          surface_query_key: 'trades|profile=default',
+          stream_id: 'trades-main',
+          snapshot_revision: 17,
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByText('LIVE')).toBeTruthy());
+    expect(screen.queryByText('RECOVERING')).toBeNull();
   });
 
   it('enters recovery and replays from the last acknowledged seq when a socket seq gap is detected', async () => {

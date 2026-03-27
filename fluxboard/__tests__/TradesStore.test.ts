@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useResyncStore, useTradesStore } from '../stores';
+import {
+  registerGlobalResyncConsumer,
+  unregisterGlobalResyncConsumer,
+  useResyncStore,
+  useTradesStore,
+} from '../stores';
 
 describe('useTradesStore', () => {
   beforeEach(() => {
@@ -238,6 +243,9 @@ describe('useTradesStore', () => {
   });
 
   it('does not clear global resync after only trades acknowledges the current epoch', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
     const currentResyncId = useResyncStore.getState().bumpResync('two-consumer-contract');
     expect(currentResyncId).toBe(1);
 
@@ -251,7 +259,77 @@ describe('useTradesStore', () => {
     expect(useResyncStore.getState().isResyncing).toBe(false);
   });
 
+  it('clears trades-only resync for tokenmm trades after trades acknowledges the current epoch', () => {
+    window.history.pushState({}, '', '/tokenmm/trades');
+    registerGlobalResyncConsumer('trades');
+
+    const currentResyncId = useResyncStore.getState().bumpResync('tokenmm-trades-refresh');
+    expect(currentResyncId).toBe(1);
+
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('clears trades-only resync for equities trades after trades acknowledges the current epoch', () => {
+    window.history.pushState({}, '', '/equities/trades');
+    registerGlobalResyncConsumer('trades');
+
+    const currentResyncId = useResyncStore.getState().bumpResync('equities-trades-refresh');
+    expect(currentResyncId).toBe(1);
+
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('requires both acknowledgements when trades and order-view are both mounted', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
+    const currentResyncId = useResyncStore.getState().bumpResync('dual-consumer-contract');
+    expect(currentResyncId).toBe(1);
+
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('order-view', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('requires consumers that mount while the current epoch is still active', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+    unregisterGlobalResyncConsumer('order-view');
+
+    const currentResyncId = useResyncStore.getState().bumpResync('dynamic-consumer-join');
+    expect(currentResyncId).toBe(1);
+
+    registerGlobalResyncConsumer('order-view');
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(true);
+
+    useResyncStore.getState().markResyncApplied('order-view', currentResyncId);
+    expect(useResyncStore.getState().isResyncing).toBe(false);
+  });
+
+  it('drops order-view from the active epoch once it unmounts and the surface becomes trades-only', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
+    const currentResyncId = useResyncStore.getState().bumpResync('dual-consumer-to-trades-only');
+    expect(currentResyncId).toBe(1);
+
+    unregisterGlobalResyncConsumer('order-view');
+    useResyncStore.getState().markResyncApplied('trades', currentResyncId);
+
+    const state = useResyncStore.getState();
+    expect(state.requiredConsumers).toEqual(['trades']);
+    expect(state.isResyncing).toBe(false);
+  });
+
   it('keeps resync active for rejected/no-op events and after accepted trades apply until order view acknowledges', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
     const store = useTradesStore.getState() as any;
     store.setSnapshot(
       [{ op: 'upsert', row_id: 'base', seq: 10, version: 2 } as any],
@@ -304,6 +382,9 @@ describe('useTradesStore', () => {
   });
 
   it('does not clear the current resync when trades replays an older epoch acknowledgement', () => {
+    registerGlobalResyncConsumer('trades');
+    registerGlobalResyncConsumer('order-view');
+
     const firstEpoch = useResyncStore.getState().bumpResync('epoch-1');
     expect(firstEpoch).toBe(1);
     useResyncStore.getState().markResyncApplied('trades', firstEpoch);

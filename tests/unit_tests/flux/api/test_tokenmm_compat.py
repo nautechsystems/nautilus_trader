@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from nautilus_trader.flux.api import ContractCatalogEntry
+from nautilus_trader.flux.api._payloads_common import tokenmm_trade_rows_require_reset
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 
@@ -331,7 +334,7 @@ def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_pre
         trades_body = trades_response.get_json()
         delta_response = client.get(
             "/api/v1/trades/delta",
-            query_string={"since_seq": 100, "limit": 10},
+            query_string={"since_seq": 0, "limit": 10},
         )
         delta_body = delta_response.get_json()
 
@@ -352,6 +355,20 @@ def test_trades_and_delta_project_base_qty_when_explicit_quantity_fields_are_pre
     assert delta_row["qty_venue"] == "100"
     assert delta_row["row_id"] == "t-okx"
     assert delta_body["data"]["last_seq"] == 101
+
+
+@pytest.mark.parametrize("status", ["missing_metadata", "missing_price", "unsupported"])
+def test_tokenmm_reset_gate_accepts_explicit_degraded_qty_statuses(status: str) -> None:
+    assert tokenmm_trade_rows_require_reset(
+        [
+            {
+                "qty": "100",
+                "qty_venue": "100",
+                "qty_conversion_status": status,
+                "qty_conversion_source": f"test:{status}",
+            },
+        ],
+    ) is False
 
 
 def test_tokenmm_trades_snapshot_and_delta_require_reset_when_legacy_rows_lack_normalized_qty(
@@ -408,6 +425,72 @@ def test_tokenmm_trades_snapshot_and_delta_require_reset_when_legacy_rows_lack_n
     assert delta_body["data"]["compatibility_mode"] is True
     assert delta_body["data"]["reset_required"] is False
     assert [row["row_id"] for row in delta_body["data"]["rows"]] == ["t-legacy"]
+    assert delta_body["data"]["last_seq"] == 101
+
+
+def test_tokenmm_trades_snapshot_and_delta_accept_explicit_degraded_qty_contract_rows(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-missing-metadata",
+                "seq": 101,
+                "ts_ms": 101_000,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "buy",
+                "price": "0.012736",
+                "qty": "100",
+                "qty_venue": "100",
+                "qty_conversion_status": "missing_metadata",
+                "qty_conversion_source": "trade_payload:instrument lookup miss",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        trades_response = client.get("/api/v1/trades", query_string={"limit": 10, "offset": 0})
+        trades_body = trades_response.get_json()
+        delta_response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"since_seq": 100, "limit": 10},
+        )
+        delta_body = delta_response.get_json()
+
+    assert trades_response.status_code == 200
+    assert trades_body["data"].get("compatibility_mode") is not True
+    assert trades_body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in trades_body["data"]["rows"]] == ["t-missing-metadata"]
+    assert trades_body["data"]["rows"][0]["qty"] == "100"
+    assert trades_body["data"]["rows"][0]["qty_venue"] == "100"
+    assert trades_body["data"]["rows"][0]["qty_conversion_status"] == "missing_metadata"
+    assert trades_body["data"]["last_seq"] == 101
+
+    assert delta_response.status_code == 200
+    assert delta_body["data"].get("compatibility_mode") is not True
+    assert delta_body["data"]["reset_required"] is False
+    assert [row["row_id"] for row in delta_body["data"]["rows"]] == ["t-missing-metadata"]
+    assert delta_body["data"]["rows"][0]["qty"] == "100"
+    assert delta_body["data"]["rows"][0]["qty_venue"] == "100"
+    assert delta_body["data"]["rows"][0]["qty_conversion_status"] == "missing_metadata"
     assert delta_body["data"]["last_seq"] == 101
 
 

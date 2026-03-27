@@ -478,6 +478,34 @@ describe('SignalTable Store Merge Logic', () => {
   });
 
   describe('Params store migration', () => {
+    it('rehydrates an existing version 4 params store payload instead of discarding it', async () => {
+      localStorage.setItem(
+        'fluxboard:params:ui:v1',
+        JSON.stringify({
+          state: {
+            activeProfile: 'equities_taker',
+            columnPrefsByProfile: {
+              equities_taker: {
+                order: ['qty', 'bid_edge_take_bps'],
+                visibility: { bid_edge_take_bps: true },
+              },
+            },
+            sortState: { key: 'qty', direction: 'desc' },
+          },
+          version: 4,
+        }),
+      );
+
+      vi.resetModules();
+      const { useParamsStore } = await import('../../../stores');
+      const state = useParamsStore.getState();
+
+      expect(state.activeProfile).toBe('equities_taker');
+      expect(state.columnPrefs.order).toEqual(['qty', 'bid_edge_take_bps']);
+      expect(state.columnPrefs.visibility).toMatchObject({ bid_edge_take_bps: true });
+      expect(state.sortState).toEqual({ key: 'qty', direction: 'desc' });
+    });
+
     it('migrates a legacy maker_v4 active profile onto equities_maker while copying its params preferences onto the split equities profiles', async () => {
       localStorage.setItem(
         'fluxboard:params:ui:v1',
