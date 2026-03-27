@@ -269,9 +269,7 @@ def _attach_reference_balance_snapshot_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
             ibg_port=(
-                None
-                if dockerized_gateway is not None or ibkr_cfg.get("ibg_port") is None
-                else int(ibkr_cfg.get("ibg_port"))
+                None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
             ),
             ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
             dockerized_gateway=dockerized_gateway,

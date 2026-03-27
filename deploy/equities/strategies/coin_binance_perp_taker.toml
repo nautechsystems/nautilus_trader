@@ -51,6 +51,7 @@ api_secret_env = "EQUITIES_BINANCE_API_SECRET"
 adapter = "interactive_brokers"
 instrument_id = "COIN.NASDAQ"
 ibg_client_id = 45
+ibg_port = 4002
 execution = false
 use_regular_trading_hours = false
 

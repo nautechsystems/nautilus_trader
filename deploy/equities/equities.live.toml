@@ -158,7 +158,7 @@ account_id = "U10015777"
 [account_scopes.dockerized_gateway]
 trading_mode = "live"
 read_only_api = true
-manage_container = true
+manage_container = false
 auto_restart_time = "11:45 PM"
 time_zone = "America/New_York"
 relogin_after_twofa_timeout = false

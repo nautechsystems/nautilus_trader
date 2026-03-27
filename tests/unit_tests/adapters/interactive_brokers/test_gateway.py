@@ -47,6 +47,41 @@ def test_get_cached_ib_client_skips_gateway_start_for_non_owner(monkeypatch) -> 
     assert created_clients[0]["port"] == 4001
 
 
+def test_get_cached_ib_client_honors_explicit_port_for_non_owner_dockerized_gateway(
+    monkeypatch,
+) -> None:
+    created_clients: list[object] = []
+
+    class _FakeClient:
+        def __init__(self, **kwargs) -> None:
+            created_clients.append(kwargs)
+
+        def start(self) -> None:
+            return None
+
+    monkeypatch.setattr(factories, "IB_CLIENTS", {})
+    monkeypatch.setattr(factories, "GATEWAYS", {})
+    monkeypatch.setattr(factories, "InteractiveBrokersClient", _FakeClient)
+
+    client = factories.get_cached_ib_client(
+        loop=asyncio.new_event_loop(),
+        msgbus=MagicMock(),
+        cache=MagicMock(),
+        clock=MagicMock(),
+        host="127.0.0.1",
+        port=4002,
+        client_id=107,
+        dockerized_gateway=DockerizedIBGatewayConfig(
+            trading_mode="live",
+            read_only_api=True,
+            manage_container=False,
+        ),
+    )
+
+    assert client is not None
+    assert created_clients[0]["port"] == 4002
+
+
 def test_drop_cached_ib_client_removes_client_and_stops_it(monkeypatch) -> None:
     stopped: list[str] = []
 

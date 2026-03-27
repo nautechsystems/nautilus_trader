@@ -425,10 +425,10 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     )
     assert len(captured_provider_configs) == 2
     assert captured_provider_configs[0].dockerized_gateway is not None
-    assert captured_provider_configs[0].ibg_port is None
+    assert captured_provider_configs[0].ibg_port == 4002
     assert captured_provider_configs[0].ibg_client_id == 7
     assert captured_provider_configs[1].dockerized_gateway is not None
-    assert captured_provider_configs[1].ibg_port is None
+    assert captured_provider_configs[1].ibg_port == 4002
     assert captured_provider_configs[1].ibg_client_id == 8
 
 

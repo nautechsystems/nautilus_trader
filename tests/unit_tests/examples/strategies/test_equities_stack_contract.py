@@ -276,13 +276,16 @@ DISABLED_SPLIT_TRADEXYZ_STRATEGIES = tuple(
 )
 DISABLED_SPLIT_STRATEGY_IDS = tuple(
     entry["strategy_id"]
-    for entry in DISABLED_SPLIT_TRADEXYZ_STRATEGIES + BINANCE_PERP_STRATEGIES
+    for entry in DISABLED_SPLIT_TRADEXYZ_STRATEGIES
 )
-LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES
-LIVE_ENROLLED_STRATEGY_IDS = CORE_PROD_STRATEGY_IDS
+LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES + BINANCE_PERP_STRATEGIES
+LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
 LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = tuple(
     f"{route['symbol'].lower()}_tradexyz"
     for route in CORE_PROD_SYMBOL_ROUTES
+) + tuple(
+    f"{route['symbol'].lower()}_binance_perp"
+    for route in BINANCE_PERP_SYMBOL_ROUTES
 )
 LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER = tuple(
     f"{route_id}_{variant}"
@@ -509,6 +512,10 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         assert config["node"]["venues"]["IBKR"]["instrument_id"] == entry["ibkr_instrument_id"]
         assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
         assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["manage_container"] is False
+        if "_binance_perp_" in entry["strategy_id"]:
+            assert config["node"]["venues"]["IBKR"]["ibg_port"] == 4002
+        else:
+            assert "ibg_port" not in config["node"]["venues"]["IBKR"]
         assert (
             config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"]
             == "TRADE_XYZ_VAULT_ADDRESS"
@@ -645,7 +652,7 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
     assert scopes["ibkr.reference.main"]["account_id"] == "U10015777"
-    assert reference_gateway["manage_container"] is True
+    assert reference_gateway["manage_container"] is False
     assert reference_gateway["relogin_after_twofa_timeout"] is False
     assert reference_gateway["twofa_timeout_action"] == "exit"
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
@@ -857,7 +864,7 @@ def test_equities_shared_gateway_owner_is_configured_once() -> None:
         and row.get("dockerized_gateway", {}).get("manage_container") is True
     ]
 
-    assert owners == ["ibkr.reference.main"]
+    assert owners == []
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:

@@ -102,10 +102,14 @@ def get_cached_ib_client(
     """
     if dockerized_gateway:
         PyCondition.equal(host, "127.0.0.1", "host", "127.0.0.1")
-        PyCondition.none(port, "Ensure `port` is set to None when using DockerizedIBGatewayConfig.")
 
-        # Create a unique key for the gateway based on its trading_mode
-        gateway_key = (dockerized_gateway.trading_mode,)
+        # Allow explicit ports so separate live gateways can be addressed without
+        # disabling dockerized-gateway wiring entirely.
+        gateway_key = (
+            (dockerized_gateway.trading_mode,)
+            if port is None
+            else (dockerized_gateway.trading_mode, port)
+        )
 
         if dockerized_gateway.manage_container and gateway_key not in GATEWAYS:
             gateway = DockerizedIBGateway(dockerized_gateway)
@@ -113,7 +117,7 @@ def get_cached_ib_client(
             GATEWAYS[gateway_key] = gateway
         if gateway_key in GATEWAYS:
             port = GATEWAYS[gateway_key].port
-        else:
+        elif port is None:
             port = DockerizedIBGateway.PORTS_INTERNAL[dockerized_gateway.trading_mode]
     else:
         PyCondition.not_none(

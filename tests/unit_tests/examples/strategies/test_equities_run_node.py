@@ -2784,7 +2784,7 @@ def test_build_node_keeps_ibkr_reference_balance_snapshot_provider_profile_owned
     assert strategy.reference_balance_snapshot_provider is None
 
 
-def test_attach_reference_balance_snapshot_provider_uses_none_port_with_dockerized_gateway(
+def test_attach_reference_balance_snapshot_provider_preserves_explicit_port_with_dockerized_gateway(
     monkeypatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -2827,7 +2827,7 @@ def test_attach_reference_balance_snapshot_provider_uses_none_port_with_dockeriz
 
     provider_config = captured["provider_config"]
     assert provider_config.dockerized_gateway is not None
-    assert provider_config.ibg_port is None
+    assert provider_config.ibg_port == 4002
     assert provider_config.ibg_client_id == 7
     assert captured["provider"] is not None
 
