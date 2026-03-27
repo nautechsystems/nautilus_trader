@@ -225,7 +225,7 @@ impl PolymarketDataClient {
 
         let all_instruments = self.provider.store().list_all();
         let total = all_instruments.len();
-        for instrument in self.provider.store().list_all() {
+        for instrument in all_instruments {
             self.instruments.insert(instrument.id(), instrument.clone());
 
             if let Err(e) = self
@@ -640,7 +640,7 @@ impl PolymarketDataClient {
                                 }
                             }
                         }
-                        Err(e) => log::debug!(
+                        Err(e) => log::warn!(
                             "Failed to fetch instruments for new market slug '{slug}' after retries: {e}"
                         ),
                     }
@@ -656,14 +656,14 @@ impl PolymarketDataClient {
                 );
 
                 let ts_init = ctx.clock.get_time_ns();
+                let reason = Ustr::from(&format!(
+                    "Winner: {} ({})",
+                    resolved.winning_asset_id, resolved.winning_outcome
+                ));
 
                 for asset_id in &resolved.assets_ids {
                     let token_id = Ustr::from(asset_id.as_str());
                     if let Some(meta) = ctx.token_meta.get(&token_id) {
-                        let reason = Ustr::from(&format!(
-                            "Winner: {} ({})",
-                            resolved.winning_asset_id, resolved.winning_outcome
-                        ));
                         let status = InstrumentStatus::new(
                             meta.instrument_id,
                             MarketStatusAction::Close,

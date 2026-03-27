@@ -22,7 +22,7 @@ use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
@@ -305,7 +305,8 @@ fn build_ws_order_status_report(
     ts_event: UnixNanos,
 ) -> OrderStatusReport {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
-    let order_status = OrderStatus::from(order.status);
+    let order_status =
+        crate::execution::parse::resolve_order_status(order.status, order.event_type);
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
     let quantity = Quantity::new(
@@ -391,10 +392,6 @@ fn build_ws_taker_fill_report(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Emission helpers (bifurcated: emit immediately or buffer for pending accept)
-// ---------------------------------------------------------------------------
-
 /// Emits an order report immediately if accepted, otherwise buffers it.
 fn emit_or_buffer_order_report(
     report: OrderStatusReport,
@@ -438,7 +435,7 @@ fn emit_or_buffer_fill_report(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{AccountType, CurrencyType},
+        enums::{AccountType, CurrencyType, OrderStatus},
         identifiers::TraderId,
         types::Currency,
     };
@@ -485,6 +482,22 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
         assert!(report.price.is_some());
+    }
+
+    #[rstest]
+    fn test_build_ws_order_status_report_venue_cancel_maps_to_canceled() {
+        let order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
+        let instrument = test_instrument();
+        let ts_event = UnixNanos::from(1_000_000_000u64);
+
+        let report = build_ws_order_status_report(
+            &order,
+            &instrument,
+            AccountId::from("POLY-001"),
+            ts_event,
+        );
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
     }
 
     #[rstest]

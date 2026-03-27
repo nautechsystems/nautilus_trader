@@ -26,7 +26,10 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        enums::{PolymarketLiquiditySide, PolymarketOrderSide},
+        enums::{
+            PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
+            PolymarketOrderStatus,
+        },
         models::PolymarketMakerOrder,
     },
     http::models::{ClobBookLevel, PolymarketOpenOrder, PolymarketTradeReport},
@@ -37,6 +40,21 @@ pub const fn parse_liquidity_side(side: PolymarketLiquiditySide) -> LiquiditySid
     match side {
         PolymarketLiquiditySide::Maker => LiquiditySide::Maker,
         PolymarketLiquiditySide::Taker => LiquiditySide::Taker,
+    }
+}
+
+/// Resolves the Nautilus order status from Polymarket status and event type.
+///
+/// Venue-initiated cancellations arrive as `status=Invalid, event_type=Cancellation`
+/// (e.g. sport market resolution). These map to `Canceled`, not `Rejected`.
+pub fn resolve_order_status(
+    status: PolymarketOrderStatus,
+    event_type: PolymarketEventType,
+) -> OrderStatus {
+    if status == PolymarketOrderStatus::Invalid && event_type == PolymarketEventType::Cancellation {
+        OrderStatus::Canceled
+    } else {
+        OrderStatus::from(status)
     }
 }
 
