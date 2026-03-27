@@ -23,9 +23,8 @@
 
 use std::sync::Mutex;
 
-use ahash::AHashMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
+use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
@@ -65,7 +64,7 @@ pub(crate) struct WsDispatchState {
 /// Immutable context borrowed from the async block's owned values.
 #[derive(Debug)]
 pub(crate) struct WsDispatchContext<'a> {
-    pub token_instruments: &'a AHashMap<Ustr, InstrumentAny>,
+    pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
     pub pending_fills: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
     pub pending_order_reports: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
@@ -92,7 +91,7 @@ pub(crate) fn dispatch_user_message(
 }
 
 fn dispatch_order_update(order: &PolymarketUserOrder, ctx: &WsDispatchContext<'_>) {
-    let instrument = match ctx.token_instruments.get(&order.asset_id) {
+    let instrument = match ctx.token_instruments.get_cloned(&order.asset_id) {
         Some(i) => i,
         None => {
             log::warn!("Unknown asset_id in order update: {}", order.asset_id);
@@ -103,7 +102,7 @@ fn dispatch_order_update(order: &PolymarketUserOrder, ctx: &WsDispatchContext<'_
     let ts_event = parse_timestamp_ms(&order.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
     let venue_order_id = VenueOrderId::from(order.id.as_str());
 
-    let report = build_ws_order_status_report(order, instrument, ctx.account_id, ts_event);
+    let report = build_ws_order_status_report(order, &instrument, ctx.account_id, ts_event);
     let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
 
     emit_or_buffer_order_report(
@@ -210,7 +209,7 @@ fn dispatch_maker_fills(
 
     for mo in user_orders {
         let asset_id = Ustr::from(mo.asset_id.as_str());
-        let instrument = match ctx.token_instruments.get(&asset_id) {
+        let instrument = match ctx.token_instruments.get_cloned(&asset_id) {
             Some(i) => i,
             None => {
                 log::warn!("Unknown asset_id in maker order: {asset_id}");
@@ -263,7 +262,7 @@ fn dispatch_taker_fill(
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
 ) {
-    let instrument = match ctx.token_instruments.get(&trade.asset_id) {
+    let instrument = match ctx.token_instruments.get_cloned(&trade.asset_id) {
         Some(i) => i,
         None => {
             log::warn!("Unknown asset_id in trade: {}", trade.asset_id);
@@ -274,7 +273,7 @@ fn dispatch_taker_fill(
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
 
     let mut report =
-        build_ws_taker_fill_report(trade, instrument, ctx.account_id, liquidity_side, ts_event);
+        build_ws_taker_fill_report(trade, &instrument, ctx.account_id, liquidity_side, ts_event);
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
@@ -522,7 +521,7 @@ mod tests {
         let order: PolymarketUserOrder = load("ws_user_order_placement.json");
         let instrument = test_instrument();
 
-        let mut token_instruments = AHashMap::new();
+        let token_instruments = AtomicMap::new();
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
@@ -557,7 +556,7 @@ mod tests {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
 
-        let mut token_instruments = AHashMap::new();
+        let token_instruments = AtomicMap::new();
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();

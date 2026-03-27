@@ -16,11 +16,11 @@
 //! Reconciliation report generation for the Polymarket execution client.
 
 use anyhow::Context;
-use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
     enums::LiquiditySide,
     identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::Currency,
 };
@@ -36,7 +36,6 @@ use crate::{
         models::{PolymarketOpenOrder, PolymarketTradeReport},
         query::{GetOrdersParams, GetTradesParams},
     },
-    providers::PolymarketInstrumentProvider,
 };
 
 /// Shared context for trade-to-fill-report conversion.
@@ -53,7 +52,7 @@ pub(crate) struct FillContext<'a> {
 pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],
     ctx: &FillContext<'_>,
-    provider: &PolymarketInstrumentProvider,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
 ) -> (Vec<FillReport>, usize) {
@@ -69,7 +68,7 @@ pub(crate) fn build_fill_reports_from_trades(
                     continue;
                 }
                 let token_id = Ustr::from(mo.asset_id.as_str());
-                let instrument = provider.get_by_token_id(&token_id);
+                let instrument = instruments.get_cloned(&token_id);
                 let (instrument_id, price_prec, size_prec) = match instrument {
                     Some(i) => (i.id(), i.price_precision(), i.size_precision()),
                     None => {
@@ -105,7 +104,7 @@ pub(crate) fn build_fill_reports_from_trades(
             }
         } else {
             let token_id = Ustr::from(trade.asset_id.as_str());
-            let instrument = provider.get_by_token_id(&token_id);
+            let instrument = instruments.get_cloned(&token_id);
             let (instrument_id, price_prec, size_prec) = match instrument {
                 Some(i) => (i.id(), i.price_precision(), i.size_precision()),
                 None => {
@@ -140,7 +139,7 @@ pub(crate) fn build_fill_reports_from_trades(
 /// Converts open orders into order status reports.
 pub(crate) fn build_order_reports_from_orders(
     orders: &[PolymarketOpenOrder],
-    provider: &PolymarketInstrumentProvider,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     account_id: AccountId,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
@@ -150,7 +149,7 @@ pub(crate) fn build_order_reports_from_orders(
 
     for order in orders {
         let token_id = Ustr::from(order.asset_id.as_str());
-        let instrument = provider.get_by_token_id(&token_id);
+        let instrument = instruments.get_cloned(&token_id);
         let (instrument_id, price_prec, size_prec) = match instrument {
             Some(i) => (i.id(), i.price_precision(), i.size_precision()),
             None => {
@@ -204,7 +203,7 @@ pub(crate) fn apply_fill_filters(
 /// Full reconciliation mass status generation.
 pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
-    provider: &PolymarketInstrumentProvider,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     ctx: &FillContext<'_>,
     client_id: ClientId,
     venue: Venue,
@@ -219,7 +218,7 @@ pub(crate) async fn generate_mass_status(
         .context("failed to fetch orders for mass status")?;
 
     let (mut order_reports, orders_filtered) =
-        build_order_reports_from_orders(&orders, provider, ctx.account_id, None, ts_init);
+        build_order_reports_from_orders(&orders, instruments, ctx.account_id, None, ts_init);
 
     // Fetch and parse fill reports
     let trades = http_client
@@ -228,7 +227,7 @@ pub(crate) async fn generate_mass_status(
         .context("failed to fetch trades for mass status")?;
 
     let (mut fill_reports, fills_filtered) =
-        build_fill_reports_from_trades(&trades, ctx, provider, None, ts_init);
+        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
 
     // Position reports: empty for cash/prediction markets
     let position_reports: Vec<PositionStatusReport> = vec![];

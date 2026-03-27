@@ -23,12 +23,11 @@ pub(crate) mod submitter;
 pub(crate) mod types;
 
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -40,10 +39,10 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
-    providers::InstrumentProvider,
 };
 use nautilus_core::{
     MUTEX_POISONED, UUID4, UnixNanos,
+    collections::AtomicMap,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -61,6 +60,7 @@ use nautilus_model::{
 };
 use nautilus_network::retry::RetryConfig;
 use tokio::task::JoinHandle;
+use ustr::Ustr;
 
 use self::{
     order_builder::PolymarketOrderBuilder,
@@ -77,13 +77,10 @@ use crate::{
         enums::SignatureType,
     },
     config::PolymarketExecClientConfig,
-    filters::InstrumentFilter,
     http::{
         clob::PolymarketClobHttpClient,
-        gamma::PolymarketGammaHttpClient,
         query::{CancelResponse, GetBalanceAllowanceParams, GetTradesParams, OrderResponse},
     },
-    providers::PolymarketInstrumentProvider,
     signing::eip712::OrderSigner,
     websocket::{
         client::PolymarketWebSocketClient,
@@ -102,11 +99,11 @@ pub struct PolymarketExecutionClient {
     http_client: PolymarketClobHttpClient,
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
-    provider: PolymarketInstrumentProvider,
     secrets: Secrets,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
-    neg_risk_index: AHashMap<InstrumentId, bool>,
+    shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
     fill_tracker: Arc<OrderFillTrackerMap>,
     pending_fills: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>>,
     pending_order_reports: Arc<Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>>,
@@ -167,22 +164,12 @@ impl PolymarketExecutionClient {
             immediate_first: false,
             max_elapsed_ms: Some(180_000),
         };
-        let submitter =
-            OrderSubmitter::new(http_client.clone(), order_builder, retry_config.clone());
+        let submitter = OrderSubmitter::new(http_client.clone(), order_builder, retry_config);
 
         let ws_client = PolymarketWebSocketClient::new_user(
             config.base_url_ws.clone(),
             secrets.credential.clone(),
         );
-
-        let gamma_http = PolymarketGammaHttpClient::new(
-            config.base_url_gamma.clone(),
-            Some(config.http_timeout_secs),
-            retry_config,
-        )
-        .map_err(|e| anyhow::anyhow!("{e}"))
-        .context("failed to create Gamma HTTP client")?;
-        let provider = PolymarketInstrumentProvider::new(gamma_http);
 
         let clock = get_atomic_clock_realtime();
         let usdc = get_usdc_currency();
@@ -202,11 +189,11 @@ impl PolymarketExecutionClient {
             http_client,
             submitter,
             ws_client,
-            provider,
             secrets,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
-            neg_risk_index: AHashMap::new(),
+            shared_token_instruments: Arc::new(AtomicMap::new()),
+            neg_risk_index: Arc::new(AtomicMap::new()),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
             pending_fills: Arc::new(Mutex::new(FifoCacheMap::default())),
             pending_order_reports: Arc::new(Mutex::new(FifoCacheMap::default())),
@@ -228,11 +215,6 @@ impl PolymarketExecutionClient {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
         tasks.retain(|handle| !handle.is_finished());
         tasks.push(handle);
-    }
-
-    /// Adds an instrument filter on the underlying provider.
-    pub fn add_instrument_filter(&mut self, filter: Arc<dyn InstrumentFilter>) {
-        self.provider.add_filter(filter);
     }
 
     fn abort_pending_tasks(&self) {
@@ -297,7 +279,7 @@ impl PolymarketExecutionClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket message receiver not available"))?;
 
         let emitter = self.emitter.clone();
-        let token_instruments = self.provider.build_token_map();
+        let token_instruments = self.shared_token_instruments.clone();
         let account_id = self.core.account_id;
         let http_client = self.http_client.clone();
         let clock = self.clock;
@@ -371,24 +353,38 @@ impl PolymarketExecutionClient {
 
     fn get_neg_risk(&self, instrument_id: &InstrumentId) -> bool {
         self.neg_risk_index
-            .get(instrument_id)
-            .copied()
+            .get_cloned(instrument_id)
             .unwrap_or(false)
     }
 
-    fn build_neg_risk_index(&mut self) {
-        self.neg_risk_index.clear();
+    fn load_instruments_from_cache(&self) {
+        let cache = self.core.cache();
+        let instruments: Vec<InstrumentAny> = cache
+            .instruments(&self.core.venue, None)
+            .into_iter()
+            .cloned()
+            .collect();
+        drop(cache);
 
-        for instrument in self.provider.store().list_all() {
-            if let InstrumentAny::BinaryOption(inst) = instrument {
-                let neg_risk = inst
+        // Populate shared AtomicMap for WS handler and reconciliation
+        for inst in &instruments {
+            self.shared_token_instruments
+                .insert(Ustr::from(inst.raw_symbol().as_str()), inst.clone());
+        }
+
+        // Build neg_risk_index
+        for inst in &instruments {
+            if let InstrumentAny::BinaryOption(bo) = inst {
+                let neg_risk = bo
                     .info
                     .as_ref()
-                    .and_then(|info| info.get_bool("neg_risk"))
+                    .and_then(|i| i.get_bool("neg_risk"))
                     .unwrap_or(false);
-                self.neg_risk_index.insert(inst.id, neg_risk);
+                self.neg_risk_index.insert(bo.id, neg_risk);
             }
         }
+
+        log::info!("Loaded {} instruments from cache", instruments.len());
     }
 
     fn submit_limit_order(&self, order: OrderAny) {
@@ -1055,6 +1051,23 @@ impl ExecutionClient for PolymarketExecutionClient {
     ) {
     }
 
+    fn instrument_update_callback(&self) -> Option<Arc<dyn Fn(InstrumentAny) + Send + Sync>> {
+        let token_instruments = self.shared_token_instruments.clone();
+        let neg_risk_index = self.neg_risk_index.clone();
+        Some(Arc::new(move |instrument: InstrumentAny| {
+            let token_id = Ustr::from(instrument.raw_symbol().as_str());
+            if let InstrumentAny::BinaryOption(bo) = &instrument {
+                let neg_risk = bo
+                    .info
+                    .as_ref()
+                    .and_then(|i| i.get_bool("neg_risk"))
+                    .unwrap_or(false);
+                neg_risk_index.insert(bo.id, neg_risk);
+            }
+            token_instruments.insert(token_id, instrument);
+        }))
+    }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.core.is_connected() {
             return Ok(());
@@ -1062,11 +1075,8 @@ impl ExecutionClient for PolymarketExecutionClient {
 
         log::info!("Connecting Polymarket execution client");
 
-        self.provider
-            .load_all(None::<&HashMap<String, String>>)
-            .await
-            .context("failed to load instruments")?;
-        self.build_neg_risk_index();
+        // Read instruments from global cache (populated by data client)
+        self.load_instruments_from_cache();
         self.core.set_instruments_initialized();
 
         self.start_ws_stream().await?;
@@ -1098,6 +1108,11 @@ impl ExecutionClient for PolymarketExecutionClient {
         log::info!("Disconnecting Polymarket execution client");
 
         self.ws_client.disconnect().await?;
+
+        if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
+            handle.abort();
+        }
+
         self.abort_pending_tasks();
         self.core.set_disconnected();
 
@@ -1170,7 +1185,7 @@ impl ExecutionClient for PolymarketExecutionClient {
 
         let (reports, _) = reconciliation::build_order_reports_from_orders(
             &orders,
-            &self.provider,
+            &self.shared_token_instruments,
             self.core.account_id,
             cmd.instrument_id,
             self.clock.get_time_ns(),
@@ -1203,7 +1218,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         let (reports, _) = build_fill_reports_from_trades(
             &trades,
             &ctx,
-            &self.provider,
+            &self.shared_token_instruments,
             cmd.instrument_id,
             self.clock.get_time_ns(),
         );
@@ -1228,7 +1243,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         let ctx = self.fill_context();
         reconciliation::generate_mass_status(
             &self.http_client,
-            &self.provider,
+            &self.shared_token_instruments,
             &ctx,
             self.core.client_id,
             self.core.venue,

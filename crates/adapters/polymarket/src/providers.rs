@@ -170,7 +170,7 @@ impl PolymarketInstrumentProvider {
         self.http_client.request_tags().await
     }
 
-    fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
+    pub fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         for inst in &instruments {
             self.token_index
                 .insert(Ustr::from(inst.raw_symbol().as_str()), inst.id());
