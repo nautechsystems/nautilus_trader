@@ -118,7 +118,7 @@ def test_refresh_quotes_emits_place_order_intent_payloads_with_runtime_strategy_
     assert place_payload["external_strategy_id"] == strategy._external_strategy_id
     assert place_payload["run_id"]
     assert place_payload["quote_cycle_id"] == "RUN-42:7"
-    assert place_payload["reason_code"] == "place_missing_hole_repair"
+    assert place_payload["reason_code"] == "place_front_improve"
     assert place_payload["level_index"] == 0
     assert place_payload["target_px"]
     assert place_payload["cancel_px"]
@@ -366,7 +366,7 @@ def test_refresh_quotes_emits_place_front_then_cancel_back_intents_with_deque_re
     assert any(payload["reason_code"] == "cancel_back_excess" for payload in cancel_payloads)
 
 
-def test_refresh_quotes_emits_cancel_front_then_place_back_intents_with_deque_reason_codes(
+def test_refresh_quotes_emits_cancel_front_then_deferred_place_back_intents_with_deque_reason_codes(
     clocked_strategy_factory,
     monkeypatch,
 ) -> None:
@@ -409,8 +409,24 @@ def test_refresh_quotes_emits_cancel_front_then_place_back_intents_with_deque_re
 
     strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:12")
 
-    place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
     cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
 
     assert any(payload["reason_code"] == "cancel_front_violation" for payload in cancel_payloads)
+    assert _collect_order_intents(payloads, intent_type="PLACE") == []
+
+    strategy._clear_pending_cancel("BUY-1")
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="BUY-2",
+            side=OrderSide.BUY,
+            price=Decimal("99.9"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+    ]
+    payloads.clear()
+
+    strategy._refresh_quotes(now_ns=1_001_000_000, quote_cycle_id="RUN-42:13")
+
+    place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
     assert any(payload["reason_code"] == "place_back_backfill" for payload in place_payloads)

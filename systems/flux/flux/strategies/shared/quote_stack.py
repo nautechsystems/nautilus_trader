@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
-from collections.abc import Sequence
-import sys
 
 
 Side = Literal["buy", "sell"]
@@ -79,7 +79,7 @@ def _normalize_side(side: str) -> Side:
     return normalized
 
 
-def _as_decimal(value: Decimal | int | float | str) -> Decimal:
+def _as_decimal(value: Decimal | float | str) -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))
@@ -279,9 +279,7 @@ def _should_place_back_after_front_cancel(
     if remainder_alignment.unmatched_levels:
         return False
     tail_position = len(desired_levels) - 1
-    if remainder_alignment.missing_positions != (tail_position,):
-        return False
-    return True
+    return remainder_alignment.missing_positions == (tail_position,)
 
 
 def _build_plan(
@@ -309,8 +307,16 @@ def _build_plan(
         temporary_oversize_depth=max_depth,
         missing_level_count=missing_level_count,
         interior_hole_count=interior_hole_count,
-        front_changed=any(action.kind in {"cancel_front", "place_front"} for action in actions),
-        back_changed=any(action.kind in {"cancel_back", "place_back"} for action in actions),
+        front_changed=any(
+            action.kind in {"cancel_front", "place_front"}
+            or (action.kind == "place_missing" and action.level_index == 0)
+            for action in actions
+        ),
+        back_changed=any(
+            action.kind in {"cancel_back", "place_back"}
+            or (action.kind == "place_missing" and action.level_index == depth_before)
+            for action in actions
+        ),
     )
     return StackPlan(actions=tuple(actions), diagnostics=diagnostics)
 
@@ -344,11 +350,13 @@ def plan_side_deque_actions(
         desired_levels=normalized_desired_levels,
     )
     depth_before = len(normalized_active_levels)
+    target_depth = len(normalized_desired_levels)
     missing_level_count = len(alignment.missing_levels)
     interior_hole_count = _interior_hole_count(
         desired_levels=normalized_desired_levels,
         missing_positions=alignment.missing_positions,
     )
+    frontier_missing_count = max(0, missing_level_count - interior_hole_count)
 
     if _has_front_cancel_violation(
         side=normalized_side,
@@ -428,7 +436,19 @@ def plan_side_deque_actions(
         )
 
     if alignment.missing_levels:
-        mode: StackActionMode = "repair_hole" if interior_hole_count else "place_missing"
+        if depth_before >= target_depth:
+            return _build_plan(
+                mode="no_op",
+                actions=[],
+                depth_before=depth_before,
+                missing_level_count=missing_level_count,
+                interior_hole_count=interior_hole_count,
+            )
+        mode: StackActionMode = (
+            "repair_hole"
+            if interior_hole_count > 0 and frontier_missing_count == 0
+            else "place_missing"
+        )
         return _build_plan(
             mode=mode,
             actions=[

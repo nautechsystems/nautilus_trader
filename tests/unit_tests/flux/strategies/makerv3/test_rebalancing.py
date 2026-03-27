@@ -249,6 +249,28 @@ def test_bounded_side_planner_reports_deque_front_back_mode_without_room_candida
     }
 
 
+def test_bounded_side_planner_does_not_report_interior_hole_as_frontier_underfill() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("98"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 0
+    assert _result_field(diagnostics, "interior_hole_count") == 1
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
 def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:
     result = _bounded_side_plan(
         side="buy",

@@ -6,12 +6,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
 
 from flux.strategies.makerv3.constants import REASON_CANCEL_BACK_EXCESS
 from flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
-from flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+from flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
 from flux.strategies.shared.quote_stack import ActiveStackLevel
@@ -371,7 +370,7 @@ def plan_side_bounded_convergence(
         active_stale=active_stale,
         desired_levels=desired_levels,
     )
-    stale_budget = _normalize_non_negative_int(stale_cancel_budget, "stale_cancel_budget")
+    _normalize_non_negative_int(stale_cancel_budget, "stale_cancel_budget")
     reprice_budget = _normalize_non_negative_int(
         max_reprice_cancel_actions,
         "max_reprice_cancel_actions",
@@ -439,7 +438,10 @@ def plan_side_bounded_convergence(
         ),
         keep_level_count=max(0, len(active_prices) - len(cancel_actions)),
         missing_level_count=stack_plan.diagnostics.missing_level_count,
-        frontier_missing_level_count=stack_plan.diagnostics.missing_level_count,
+        frontier_missing_level_count=max(
+            0,
+            stack_plan.diagnostics.missing_level_count - stack_plan.diagnostics.interior_hole_count,
+        ),
         interior_hole_count=stack_plan.diagnostics.interior_hole_count,
         planned_stale_replacement_count=0,
         total_missing_level_count=max(
@@ -507,10 +509,7 @@ def plan_side_rebalance_details(
         desired_levels=desired_levels,
     )
 
-    cancel_reasons: dict[int, str] = {
-        index: REASON_CANCEL_TOO_AGGRESSIVE
-        for index in alignment.aggressive_cancel_candidates
-    }
+    cancel_reasons: dict[int, str] = dict.fromkeys(alignment.aggressive_cancel_candidates, REASON_CANCEL_TOO_AGGRESSIVE)
 
     if stale_budget > 0:
         stale_candidates = [

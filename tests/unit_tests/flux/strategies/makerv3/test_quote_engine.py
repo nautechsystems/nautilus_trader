@@ -10,6 +10,7 @@ from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
 from nautilus_trader.model.enums import OrderSide
@@ -735,6 +736,130 @@ def test_refresh_quotes_pending_cancel_soft_throttle_skips_repricing_when_backlo
     assert bounded_convergence["buy"]["backlog_mode"] == "soft_throttle"
     assert bounded_convergence["buy"]["backlog_limited"] is True
     assert bounded_convergence["sell"]["backlog_mode"] == "normal"
+
+
+def test_refresh_quotes_does_not_same_cycle_backfill_after_front_cancel(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="RESTING-BUY-1",
+            side=OrderSide.BUY,
+            price=Decimal("100"),
+            quantity=Decimal("1"),
+            ts_init=1,
+        ),
+    ]
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    buy_plan = rebalancing_mod.BoundedConvergencePlan(
+        cancel_actions=(
+            rebalancing_mod.CancelAction(
+                index=0,
+                reason_code=REASON_CANCEL_FRONT_VIOLATION,
+            ),
+        ),
+        place_level_indices=(2,),
+        diagnostics=rebalancing_mod.ConvergenceDiagnostics(
+            stack_action_mode="cancel_front_place_back",
+            backlog_mode="normal",
+            matched_level_count=0,
+            keep_level_count=0,
+            missing_level_count=1,
+            frontier_missing_level_count=1,
+            interior_hole_count=0,
+            planned_stale_replacement_count=0,
+            total_missing_level_count=0,
+            excess_cancel_candidate_count=0,
+            aggressive_cancel_candidate_count=1,
+            stale_cancel_candidate_count=0,
+            room_cancel_candidate_count=0,
+            budget_limited=False,
+            backlog_limited=False,
+            depth_before=1,
+            depth_after=1,
+            temporary_oversize_depth=1,
+            front_changed=True,
+            back_changed=True,
+        ),
+    )
+    sell_plan = rebalancing_mod.BoundedConvergencePlan(
+        cancel_actions=(),
+        place_level_indices=(),
+        diagnostics=rebalancing_mod.ConvergenceDiagnostics(
+            stack_action_mode="no_op",
+            backlog_mode="normal",
+            matched_level_count=0,
+            keep_level_count=0,
+            missing_level_count=0,
+            frontier_missing_level_count=0,
+            interior_hole_count=0,
+            planned_stale_replacement_count=0,
+            total_missing_level_count=0,
+            excess_cancel_candidate_count=0,
+            aggressive_cancel_candidate_count=0,
+            stale_cancel_candidate_count=0,
+            room_cancel_candidate_count=0,
+            budget_limited=False,
+            backlog_limited=False,
+            depth_before=0,
+            depth_after=0,
+            temporary_oversize_depth=0,
+            front_changed=False,
+            back_changed=False,
+        ),
+    )
+
+    def _plan_side_bounded_convergence(*, side: str, **_kwargs):
+        return buy_plan if side == "buy" else sell_plan
+
+    monkeypatch.setattr(
+        rebalancing_mod,
+        "plan_side_bounded_convergence",
+        _plan_side_bounded_convergence,
+    )
+
+    rebalance_calls: list[tuple[OrderSide, tuple[tuple[int, str], ...]]] = []
+    place_calls: list[tuple[OrderSide, tuple[int, ...]]] = []
+
+    def _rebalance_side(**kwargs) -> int:
+        rebalance_calls.append(
+            (
+                kwargs["side"],
+                tuple((action.index, action.reason_code) for action in kwargs["cancel_actions"]),
+            ),
+        )
+        return 1 if kwargs["side"] == OrderSide.BUY else 0
+
+    def _place_missing_levels(**kwargs) -> int:
+        place_calls.append((kwargs["side"], tuple(kwargs["level_indices"])))
+        return 0
+
+    strategy._rebalance_side = _rebalance_side
+    strategy._place_missing_levels = _place_missing_levels
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert rebalance_calls == [
+        (OrderSide.BUY, ((0, REASON_CANCEL_FRONT_VIOLATION),)),
+        (OrderSide.SELL, ()),
+    ]
+    assert place_calls == []
 
 
 def test_refresh_quotes_pending_cancel_hard_freeze_stays_unblocked_until_stall_threshold(
