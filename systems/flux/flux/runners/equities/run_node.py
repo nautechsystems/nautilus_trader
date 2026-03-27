@@ -379,7 +379,6 @@ def _validate_grouped_shared_tables(configs: Sequence[dict[str, Any]]) -> dict[s
     shared_table_names = (
         "flux",
         "redis",
-        "node",
         "portfolio",
         "strategy_contracts",
         "account_scopes",
