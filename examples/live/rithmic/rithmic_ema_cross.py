@@ -51,9 +51,10 @@ Warning:
     Use a demo account first.
 
 Notes:
-    External Rithmic bars can be warmed from historical history-plant data.
-    Internal bars remain available, but historical warmup is currently disabled
-    for that path in this example.
+    By default, this example warms the EMAs from native Rithmic historical bars
+    before live execution begins.
+    Internal bars remain available, but historical warmup is only requested when
+    using externally aggregated Rithmic bars.
 """
 
 from __future__ import annotations
