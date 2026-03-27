@@ -3433,6 +3433,7 @@ def test_build_grouped_node_builds_one_shared_node_for_tradexyz_node_group(
     }
 
     node_config = captured["node_config"]
+    assert str(node_config.trader_id) == "EQUITIES-LIVE-AAPL-TRADEXYZ"
     assert node_config.message_bus.streams_prefix == "flux:v1:in:stream:live:aapl_tradexyz"
     assert node_config.exec_engine.reconciliation_instrument_ids == [
         maker_instrument_id,
@@ -3551,6 +3552,7 @@ def test_build_grouped_node_keeps_binance_perp_hooks_strategy_scoped(
         strategy.config.external_strategy_id
         for strategy in captured["strategies"]
     } == {"amzn_binance_perp_maker", "amzn_binance_perp_taker"}
+    assert str(captured["node_config"].trader_id) == "EQUITIES-LIVE-AMZN-BINANCE-PERP"
     assert captured["node_config"].message_bus.streams_prefix == (
         "flux:v1:in:stream:live:amzn_binance_perp"
     )
@@ -3698,6 +3700,7 @@ def test_main_accepts_multi_strategy_config_paths_for_node_group(monkeypatch, tm
     @contextmanager
     def _noop_lock(_config):
         captured["lock_strategy_id"] = _config["identity"]["strategy_id"]
+        captured["lock_trader_id"] = _config["identity"]["trader_id"]
         yield
 
     monkeypatch.setattr(
@@ -3731,6 +3734,7 @@ def test_main_accepts_multi_strategy_config_paths_for_node_group(monkeypatch, tm
     assert captured["build_configs"][0]["identity"]["external_strategy_id"] == "aapl_tradexyz_maker"
     assert captured["build_configs"][1]["identity"]["external_strategy_id"] == "aapl_tradexyz_taker"
     assert captured["lock_strategy_id"] == "aapl_tradexyz"
+    assert captured["lock_trader_id"] == "EQUITIES-LIVE-AAPL-TRADEXYZ"
     assert captured["ran"] is True
     assert captured["disposed"] is True
 

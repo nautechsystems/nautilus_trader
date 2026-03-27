@@ -349,6 +349,10 @@ def _resolve_grouped_node_id(configs: Sequence[dict[str, Any]]) -> str:
     return next(iter(node_group_ids))
 
 
+def _grouped_node_trader_id(node_group_id: str) -> str:
+    return f"EQUITIES-LIVE-{node_group_id.replace('_', '-').upper()}"
+
+
 def _validate_grouped_member_composition(
     configs: Sequence[dict[str, Any]],
     *,
@@ -393,10 +397,17 @@ def _validate_grouped_shared_tables(configs: Sequence[dict[str, Any]]) -> dict[s
     return primary_config
 
 
-def _node_identity_config(config: dict[str, Any], *, node_scoped_id: str) -> dict[str, Any]:
+def _node_identity_config(
+    config: dict[str, Any],
+    *,
+    node_scoped_id: str,
+    node_trader_id: str | None = None,
+) -> dict[str, Any]:
     updated_config = dict(config)
     updated_identity = dict(_table(config, "identity"))
     updated_identity["strategy_id"] = node_scoped_id
+    if node_trader_id is not None:
+        updated_identity["trader_id"] = node_trader_id
     updated_config["identity"] = updated_identity
     return updated_config
 
@@ -633,6 +644,7 @@ def _build_node_for_configs(
     force_enable_execution: bool,
     log_level_override: str | None = None,
     node_scoped_id: str,
+    node_trader_id: str | None = None,
 ) -> TradingNode:
     if not configs:
         raise ValueError("At least one equities strategy config is required")
@@ -642,7 +654,7 @@ def _build_node_for_configs(
     identity = _table(primary_config, "identity")
     redis_cfg = _table(primary_config, "redis")
     node_cfg = _table(primary_config, "node")
-    trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
+    trader_id = node_trader_id or _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
 
@@ -869,12 +881,14 @@ def build_grouped_node(
     _validate_grouped_shared_tables(configs)
     node_group_id = _resolve_grouped_node_id(configs)
     _validate_grouped_member_composition(configs, node_group_id=node_group_id)
+    node_trader_id = _grouped_node_trader_id(node_group_id)
     return _build_node_for_configs(
         tuple(configs),
         mode=mode,
         force_enable_execution=force_enable_execution,
         log_level_override=log_level_override,
         node_scoped_id=node_group_id,
+        node_trader_id=node_trader_id,
     )
 
 
@@ -899,13 +913,18 @@ def main() -> None:
         lock_config = config
     else:
         node_group_id = _resolve_grouped_node_id(configs)
+        node_trader_id = _grouped_node_trader_id(node_group_id)
         node = build_grouped_node(
             configs,
             mode=mode,
             force_enable_execution=bool(args.enable_execution),
             log_level_override=args.log_level,
         )
-        lock_config = _node_identity_config(config, node_scoped_id=node_group_id)
+        lock_config = _node_identity_config(
+            config,
+            node_scoped_id=node_group_id,
+            node_trader_id=node_trader_id,
+        )
 
     with _strategy_startup_lock(lock_config):
         fatal_error: TradingNodeFatalError | None = None
