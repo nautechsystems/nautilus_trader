@@ -177,6 +177,107 @@ allow_partial_global_risk = true
 #   exposes incompleteness through metadata rather than nulling the quantity.
 # - `allow_partial_global_risk = true` allows strategies to consume partial shared inventory intentionally.
 
+[[account_scopes]]
+scope_id = "bybit.unified.main"
+provider = "disabled"
+venue = "BYBIT"
+
+[[account_scopes]]
+scope_id = "okx.main"
+provider = "disabled"
+venue = "OKX"
+
+[[account_scopes]]
+scope_id = "bitget.uta.main"
+provider = "disabled"
+venue = "BITGET"
+
+[[account_scopes]]
+scope_id = "binance.pm.main"
+provider = "binance"
+venue = "BINANCE"
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+account_type = "PORTFOLIO_MARGIN"
+private_api_family = "PORTFOLIO_MARGIN"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bybit_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BYBIT"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bybit.unified.main"
+reference_account_scope_id = "bybit.unified.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bybit_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BYBIT"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT-SPOT.BYBIT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bybit.unified.main"
+reference_account_scope_id = "bybit.unified.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_okx_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "OKX"
+maker_symbol = "PLUME-USDT-SWAP"
+market_type = "perp"
+maker_instrument_id = "PLUME-USDT-SWAP.OKX"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "okx.main"
+reference_account_scope_id = "okx.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BINANCE_PERP"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "binance.pm.main"
+reference_account_scope_id = "binance.pm.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_binance_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BINANCE_SPOT"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "binance.pm.main"
+reference_account_scope_id = "binance.pm.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bitget_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BITGET"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-PERP.BITGET"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bitget.uta.main"
+reference_account_scope_id = "bitget.uta.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bitget_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BITGET"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT.BITGET"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bitget.uta.main"
+reference_account_scope_id = "bitget.uta.main"
+
 [[contracts]]
 exchange = "bybit"
 symbol = "PLUME/USDT"

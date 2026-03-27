@@ -25,6 +25,18 @@ def _tokenmm_required_strategy_ids() -> list[str]:
     return [str(item).strip() for item in raw_ids if str(item).strip()]
 
 
+def _tokenmm_account_scopes() -> list[dict]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_rows = config.get("account_scopes") or []
+    return [dict(row) for row in raw_rows if isinstance(row, dict)]
+
+
+def _tokenmm_strategy_contracts() -> list[dict]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_rows = config.get("strategy_contracts") or []
+    return [dict(row) for row in raw_rows if isinstance(row, dict)]
+
+
 def _strategy_config_path(strategy_id: str) -> Path:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
     active_path = strategies_dir / f"{strategy_id}.toml"
@@ -36,6 +48,8 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
 TOKENMM_REQUIRED_STRATEGY_IDS = _tokenmm_required_strategy_ids()
+TOKENMM_ACCOUNT_SCOPES = _tokenmm_account_scopes()
+TOKENMM_STRATEGY_CONTRACTS = _tokenmm_strategy_contracts()
 TOKENMM_SUPPORTED_CORE_STRATEGY_IDS = [
     "plumeusdt_bybit_perp_makerv3",
     "plumeusdt_bybit_spot_makerv3",
@@ -215,6 +229,46 @@ def test_tokenmm_registry_requires_all_supported_live_core_strategies() -> None:
     assert set(TOKENMM_REQUIRED_STRATEGY_IDS).issubset(TOKENMM_STRATEGY_IDS)
     assert "plumeusdt_binance_perp_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
     assert "plumeusdt_binance_spot_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
+
+
+def test_tokenmm_live_config_declares_shared_account_scope_for_binance() -> None:
+    scopes_by_id = {
+        str(row["scope_id"]).strip(): row
+        for row in TOKENMM_ACCOUNT_SCOPES
+        if str(row.get("scope_id") or "").strip()
+    }
+
+    assert "binance.pm.main" in scopes_by_id
+    assert scopes_by_id["binance.pm.main"]["provider"] == "binance"
+    assert scopes_by_id["binance.pm.main"]["venue"] == "BINANCE"
+    assert scopes_by_id["binance.pm.main"]["api_key_env"] == "BINANCE_API_KEY"
+    assert scopes_by_id["binance.pm.main"]["api_secret_env"] == "BINANCE_API_SECRET"
+    assert scopes_by_id["binance.pm.main"]["private_api_family"] == "PORTFOLIO_MARGIN"
+
+
+def test_tokenmm_live_config_declares_strategy_contracts_for_tokenmm_allowlist() -> None:
+    contracts_by_strategy = {
+        str(row["strategy_id"]).strip(): row
+        for row in TOKENMM_STRATEGY_CONTRACTS
+        if str(row.get("strategy_id") or "").strip()
+    }
+
+    assert set(TOKENMM_STRATEGY_IDS).issubset(contracts_by_strategy)
+    assert len(contracts_by_strategy) == len(TOKENMM_STRATEGY_IDS)
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        contract = contracts_by_strategy[strategy_id]
+        assert contract["portfolio_asset_id"] == "PLUME"
+        assert str(contract["maker_instrument_id"]).strip()
+        assert str(contract["reference_instrument_id"]).strip()
+        assert str(contract["execution_account_scope_id"]).strip()
+        assert str(contract["reference_account_scope_id"]).strip()
+
+    binance_perp = contracts_by_strategy["plumeusdt_binance_perp_makerv3"]
+    binance_spot = contracts_by_strategy["plumeusdt_binance_spot_makerv3"]
+    assert binance_perp["execution_account_scope_id"] == "binance.pm.main"
+    assert binance_spot["execution_account_scope_id"] == "binance.pm.main"
+    assert binance_perp["execution_account_scope_id"] == binance_spot["execution_account_scope_id"]
 
 
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
