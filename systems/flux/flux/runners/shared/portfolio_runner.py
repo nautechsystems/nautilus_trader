@@ -323,6 +323,11 @@ class StrategySetPortfolioAggregator:
             portfolio_id=self._portfolio_id,
             balance_rows_by_strategy=balance_rows_by_strategy,
             shared_position_groups_by_strategy=shared_observation_group_by_strategy_id,
+            execution_account_scope_by_strategy=getattr(
+                self,
+                "_execution_account_scope_by_strategy_id",
+                None,
+            ),
         )
         inventory_by_asset: dict[str, dict[str, Any]] = {}
         for base_currency in self._base_assets:

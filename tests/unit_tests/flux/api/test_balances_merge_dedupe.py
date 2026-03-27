@@ -188,6 +188,64 @@ def test_merge_portfolio_balances_rows_canonicalizes_bitget_shared_account_stabl
     assert row["display_name_long"] == "Bitget USDT"
 
 
+def test_merge_portfolio_balances_rows_uses_account_scope_identity_for_shared_binance_stable_cash() -> None:
+    merged = merge_portfolio_balances_rows(
+        rows_by_strategy={
+            "plumeusdt_binance_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "exchange": "binance_spot",
+                    "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                    "asset": "USDT",
+                    "free": "1285.28070703",
+                    "locked": "0",
+                    "total": "1285.28070703",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_binance_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_binance_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_binance_perp_makerv3",
+                    "exchange": "binance_spot",
+                    "account_id": "BINANCE_SPOT-MARGIN-master",
+                    "asset": "USDT",
+                    "free": "873.32524016",
+                    "locked": "0",
+                    "total": "873.32524016",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_binance_perp_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+        },
+        portfolio_id="tokenmm",
+        preserve_product_scope_cash=True,
+        execution_account_scope_by_strategy={
+            "plumeusdt_binance_spot_makerv3": "binance.execution.main",
+            "plumeusdt_binance_perp_makerv3": "binance.execution.main",
+        },
+    )
+
+    binance_rows = [
+        row
+        for row in merged
+        if row.get("exchange") == "binance_spot" and row.get("asset") == "USDT"
+    ]
+
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["row_id"] == "tokenmm:cash:binance_spot:binance.execution.main:USDT"
+    assert row["account"] == "binance.execution.main"
+    assert row["account_scope_id"] == "binance.execution.main"
+    assert row["scope"] == "shared_account"
+    assert row["source_strategy_ids"] == [
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    ]
+
+
 def test_merge_portfolio_balances_rows_deduplicates_shared_position_snapshots_by_group() -> None:
     merged = merge_portfolio_balances_rows(
         rows_by_strategy={

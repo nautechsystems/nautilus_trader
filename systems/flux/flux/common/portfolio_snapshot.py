@@ -85,6 +85,7 @@ def build_portfolio_balance_rows(
     portfolio_id: str,
     balance_rows_by_strategy: Mapping[str, Sequence[Mapping[str, Any]]],
     shared_position_groups_by_strategy: Mapping[str, str] | None = None,
+    execution_account_scope_by_strategy: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     return _coherent_balance_rows(
         merge_portfolio_balances_rows(
@@ -92,6 +93,7 @@ def build_portfolio_balance_rows(
             portfolio_id=portfolio_id,
             preserve_product_scope_cash=True,
             shared_position_groups_by_strategy=shared_position_groups_by_strategy,
+            execution_account_scope_by_strategy=execution_account_scope_by_strategy,
         ),
     )
 
@@ -163,6 +165,7 @@ def build_portfolio_snapshot(
     stale_after_ms: int = DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS,
     aggregation_mode: str = "strict",
     inventory_payload: Mapping[str, Any] | None = None,
+    execution_account_scope_by_strategy: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     inventory = dict(inventory_payload) if inventory_payload is not None else aggregate_components(
         portfolio_id=portfolio_id,
@@ -176,6 +179,7 @@ def build_portfolio_snapshot(
     balance_rows = build_portfolio_balance_rows(
         portfolio_id=portfolio_id,
         balance_rows_by_strategy=balance_rows_by_strategy,
+        execution_account_scope_by_strategy=execution_account_scope_by_strategy,
     )
     return build_portfolio_snapshot_v2(
         portfolio_id=portfolio_id,

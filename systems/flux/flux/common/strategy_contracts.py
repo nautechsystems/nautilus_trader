@@ -121,8 +121,23 @@ def shared_observation_group_by_strategy_id(
     }
 
 
+def execution_account_scope_by_strategy_id(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    allowlist: Iterable[str] | None = None,
+) -> dict[str, str]:
+    allowlist_set = set(allowlist or ())
+    use_allowlist = allowlist is not None
+    return {
+        contract.strategy_id: contract.execution_account_scope_id
+        for contract in decode_strategy_contracts(rows)
+        if not use_allowlist or contract.strategy_id in allowlist_set
+    }
+
+
 __all__ = (
     "StrategyContractEntry",
     "decode_strategy_contracts",
+    "execution_account_scope_by_strategy_id",
     "shared_observation_group_by_strategy_id",
 )
