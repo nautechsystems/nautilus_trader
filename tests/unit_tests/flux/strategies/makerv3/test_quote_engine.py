@@ -124,6 +124,50 @@ def test_refresh_quotes_treats_age_equal_to_max_age_ms_as_stale(strategy_factory
     assert states == ["blocked_maker_md"]
 
 
+def test_refresh_quotes_does_not_consult_resting_order_age_for_rebalance(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="RESTING-1",
+            price=Decimal("100"),
+            quantity=Decimal("1"),
+            side=OrderSide.BUY,
+            ts_init=1,
+        ),
+    ]
+    strategy.cancel_order = lambda _order: None
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_quote_cycle_event = lambda **_kwargs: None
+    strategy._publish_state = lambda *_args, **_kwargs: None
+
+    now_ns = 1_000_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    monkeypatch.setattr(
+        quote_engine_mod,
+        "build_ladder_place_cancel_levels_from_bps",
+        lambda **_kwargs: ([(Decimal("100"), Decimal("100"))], []),
+    )
+
+    def _raise_if_called(*_args, **_kwargs):
+        raise AssertionError("_is_stale_order should not be used by quote refresh")
+
+    strategy._is_stale_order = _raise_if_called
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+
 def test_refresh_quotes_uses_shared_quote_health_for_maker_stale_block(
     strategy_factory,
     monkeypatch,

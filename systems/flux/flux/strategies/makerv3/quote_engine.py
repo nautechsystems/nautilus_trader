@@ -999,16 +999,12 @@ def refresh_quotes(  # noqa: C901
             for target_price, cancel_px, match_tol in desired_levels
         ]
         active_prices = [_price_to_decimal(order.price) for order in side_active_orders]
-        active_stale = [
-            strategy._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-            for order in side_active_orders
-        ]
         side_plan = rebalancing_mod.plan_side_bounded_convergence(
             side="buy" if side == OrderSide.BUY else "sell",
             active_prices=active_prices,
-            active_stale=active_stale,
+            active_stale=[False] * len(side_active_orders),
             desired_levels=desired_dec,
-            stale_cancel_budget=strategy.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+            stale_cancel_budget=0,
             max_reprice_cancel_actions=max_reprice_cancel_actions,
             max_place_actions=max_place_actions,
             max_total_actions=side_total_actions,

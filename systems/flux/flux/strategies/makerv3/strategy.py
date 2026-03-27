@@ -258,7 +258,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
         STALE_CANCEL_COOLDOWN_MS = 1_000
         CANCEL_REJECT_RETRY_COOLDOWN_MS = 1_000
         BALANCES_PUBLISH_INTERVAL_MS = 10_000
-        STALE_CANCELS_PER_SIDE_PER_CYCLE = 1
         PARAMS_REFRESH_INTERVAL_MS = 500
         MARKET_BBO_HEARTBEAT_MS = 1_000
         INVENTORY_SKEW_CACHE_TTL_MS = 100
@@ -2718,10 +2717,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             max_age_ms: int | None = None,
         ) -> bool:
-            age_ms = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
-            max_age_ns = age_ms * 1_000_000
-            ts_init = int(getattr(order, "ts_init", 0))
-            return ts_init > 0 and now_ns - ts_init >= max_age_ns
+            # Resting-order TTL refresh is retired from normal quote maintenance.
+            # Keep the helper surface as a compatibility no-op while `max_age_ms`
+            # remains the market-data freshness budget.
+            _ = (order, now_ns, max_age_ms)
+            return False
 
         def _rebalance_side(
             self,
@@ -2756,16 +2756,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if cancel_actions is None:
                 side_name = "buy" if side == OrderSide.BUY else "sell"
                 active_prices = [_price_to_decimal(order.price) for order in active_orders]
-                active_stale = [
-                    self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-                    for order in active_orders
-                ]
                 plan = rebalancing_mod.plan_side_bounded_convergence(
                     side=side_name,
                     active_prices=active_prices,
-                    active_stale=active_stale,
+                    active_stale=[False] * len(active_orders),
                     desired_levels=desired_dec,
-                    stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+                    stale_cancel_budget=0,
                     max_reprice_cancel_actions=max(
                         0,
                         int(max_reprice_cancel_actions or 0),
