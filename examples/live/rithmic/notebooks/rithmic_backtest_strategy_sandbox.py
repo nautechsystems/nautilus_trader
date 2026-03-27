@@ -22,7 +22,6 @@
 # - Run a simple EMA-cross backtest from that catalog to validate the historical bar path.
 #
 # Note:
-# - Rithmic historical quote and trade tick requests are not implemented yet in this adapter.
 # - This sandbox therefore backtests from historical 1-minute bars requested through `request_bars`.
 # - On basic Rithmic plans, historical API usage is typically capped at 20 GB per month.
 # - Rithmic sends warning emails to the registered account email address as usage approaches the
@@ -143,6 +142,8 @@ def build_data_client_config(profile: str, exchange: str) -> RithmicDataClientCo
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
+        server=base.server,
+        alt_server=base.alt_server,
         enable_history=True,
         instrument_provider=InstrumentProviderConfig(
             load_all=False,
@@ -166,6 +167,8 @@ async def resolve_front_month_contract(
         fcm_id=config.fcm_id or "",
         ib_id=config.ib_id or "",
         account_id="",
+        server=config.server,
+        alt_server=config.alt_server,
         enable_ticker=True,
         enable_order=False,
         enable_pnl=False,
@@ -194,6 +197,8 @@ async def load_nautilus_instrument(
         fcm_id=config.fcm_id or "",
         ib_id=config.ib_id or "",
         account_id="",
+        server=config.server,
+        alt_server=config.alt_server,
         enable_ticker=True,
         enable_order=False,
         enable_pnl=False,
@@ -267,6 +272,8 @@ def download_bars_to_catalog(
             app_version=base.app_version,
             fcm_id=base.fcm_id,
             ib_id=base.ib_id,
+            server=base.server,
+            alt_server=base.alt_server,
             enable_history=True,
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,

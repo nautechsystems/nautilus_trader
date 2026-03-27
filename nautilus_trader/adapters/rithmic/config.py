@@ -124,6 +124,10 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
         FCM ID (Futures Commission Merchant).
     ib_id : str, optional
         IB ID (Introducing Broker).
+    server : str, optional
+        Named primary Rithmic server endpoint (for example, ``Chicago``).
+    alt_server : str, optional
+        Named alternate Rithmic server endpoint.
     enable_history : bool, default True
         Whether the client should connect the Rithmic history plant. Disable
         this for live-only streaming sessions that do not request bars.
@@ -137,6 +141,8 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     app_version: str = "1.0"
     fcm_id: Optional[str] = None
     ib_id: Optional[str] = None
+    server: Optional[str] = None
+    alt_server: Optional[str] = None
     enable_history: bool = True
 
     @classmethod
@@ -162,6 +168,10 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
             FCM ID (optional).
         RITHMIC_IB_ID : str
             IB ID (optional).
+        RITHMIC_SERVER : str
+            Named primary server (optional).
+        RITHMIC_ALT_SERVER : str
+            Named alternate server (optional).
         RITHMIC_{PROFILE}_* : str
             Profile-scoped overrides for any of the variables above. When
             `profile` is provided, these names are checked before the flat
@@ -179,6 +189,8 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
             app_version=_optional_env("APP_VERSION", profile) or "1.0",
             fcm_id=_optional_env("FCM_ID", profile),
             ib_id=_optional_env("IB_ID", profile),
+            server=_optional_env("SERVER", profile),
+            alt_server=_optional_env("ALT_SERVER", profile),
         )
 
 
@@ -206,6 +218,10 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
         FCM ID (Futures Commission Merchant).
     ib_id : str, optional
         IB ID (Introducing Broker).
+    server : str, optional
+        Named primary Rithmic server endpoint (for example, ``Chicago``).
+    alt_server : str, optional
+        Named alternate Rithmic server endpoint.
     execution_replay_lookback_secs : int, default 86400
         Replay window used when reconnecting without a prior local execution
         timestamp to anchor recovery.
@@ -223,6 +239,8 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
     app_version: str = "1.0"
     fcm_id: Optional[str] = None
     ib_id: Optional[str] = None
+    server: Optional[str] = None
+    alt_server: Optional[str] = None
     execution_replay_lookback_secs: int = 86_400
     native_bracket_state_path: Optional[str] = None
 
@@ -251,6 +269,10 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
             FCM ID (optional).
         RITHMIC_IB_ID : str
             IB ID (optional).
+        RITHMIC_SERVER : str
+            Named primary server (optional).
+        RITHMIC_ALT_SERVER : str
+            Named alternate server (optional).
         RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS : str
             Replay window in seconds used when reconnecting without any prior
             local execution timestamp. Default: 86400
@@ -275,6 +297,8 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
             app_version=_optional_env("APP_VERSION", profile) or "1.0",
             fcm_id=_optional_env("FCM_ID", profile),
             ib_id=_optional_env("IB_ID", profile),
+            server=_optional_env("SERVER", profile),
+            alt_server=_optional_env("ALT_SERVER", profile),
             execution_replay_lookback_secs=(
                 _optional_int_env("EXECUTION_REPLAY_LOOKBACK_SECS", profile) or 86_400
             ),

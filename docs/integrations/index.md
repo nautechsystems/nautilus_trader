@@ -4,7 +4,7 @@ NautilusTrader uses modular *adapters* to connect to trading venues and data pro
 
 The following integrations are currently supported:
 
-| Name                                                                         | ID                    | Type                    | Status                                               | Docs                     |
+| Name                                                                         | ID                    | Type                    | Status                                                | Docs                     |
 | :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :--------------------------------------------------- | :----------------------- |
 | [AX Exchange](https://architect.exchange)                                    | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/beta-yellow)  | [Guide](architect_ax.md) |
 | [Architect](https://architect.co)                                            | `ARCHITECT`           | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planned-gray) | -                        |
@@ -20,7 +20,7 @@ The following integrations are currently supported:
 | [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](kraken.md)       |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](okx.md)          |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](polymarket.md)   |
-| [Rithmic](https://www.rithmic.com)                                           | `RITHMIC`             | Futures Execution/Data  | ![status](https://img.shields.io/badge/beta-yellow)  | [Guide](rithmic.md)      |
+| [Rithmic](https://www.rithmic.com)                                           | `RITHMIC`             | Futures Execution/Data  | ![status](https://img.shields.io/badge/alpha-orange) | [Guide](rithmic.md)      |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](tardis.md)       |
 
 - **ID**: The default client ID for the integrations adapter clients.
@@ -30,6 +30,7 @@ The following integrations are currently supported:
 
 - `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
+- `alpha`: Early-stage integration under active development and testing.
 - `beta`: Completed to a minimally working state and in a 'beta' testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 

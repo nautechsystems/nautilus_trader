@@ -244,6 +244,8 @@ class RithmicGateway:
         fcm_id: str,
         ib_id: str,
         account_id: str,
+        server: str | None = ...,
+        alt_server: str | None = ...,
         enable_ticker: bool,
         enable_order: bool,
         enable_pnl: bool,

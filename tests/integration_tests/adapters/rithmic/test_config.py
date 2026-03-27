@@ -49,10 +49,12 @@ class TestRithmicDataClientConfig:
         assert config.username == "test_user"
         assert config.password == "test_pass"
         assert config.system_name == "test_system"
-        assert config.app_name == "NautilusTrader"
+        assert config.app_name == "fufo:fund-forge"
         assert config.app_version == "1.0"
         assert config.fcm_id is None
         assert config.ib_id is None
+        assert config.server is None
+        assert config.alt_server is None
         assert config.enable_history is True
 
     def test_create_config_with_optional_fields(self):
@@ -65,12 +67,16 @@ class TestRithmicDataClientConfig:
             app_version="2.0",
             fcm_id="FCM001",
             ib_id="IB001",
+            server="Chicago",
+            alt_server="Sydney",
             enable_history=False,
         )
         assert config.app_name == "MyApp"
         assert config.app_version == "2.0"
         assert config.fcm_id == "FCM001"
         assert config.ib_id == "IB001"
+        assert config.server == "Chicago"
+        assert config.alt_server == "Sydney"
         assert config.enable_history is False
 
     def test_from_env(self):
@@ -79,6 +85,8 @@ class TestRithmicDataClientConfig:
             "RITHMIC_USERNAME": "env_user",
             "RITHMIC_PASSWORD": "env_pass",
             "RITHMIC_SYSTEM_NAME": "env_system",
+            "RITHMIC_SERVER": "Chicago",
+            "RITHMIC_ALT_SERVER": "Sydney",
         }
         with patch.dict(os.environ, env_vars, clear=False):
             config = RithmicDataClientConfig.from_env()
@@ -86,6 +94,8 @@ class TestRithmicDataClientConfig:
             assert config.username == "env_user"
             assert config.password == "env_pass"
             assert config.system_name == "env_system"
+            assert config.server == "Chicago"
+            assert config.alt_server == "Sydney"
             assert config.enable_history is True
 
     def test_from_env_profile(self):
@@ -95,6 +105,7 @@ class TestRithmicDataClientConfig:
             "RITHMIC_APEX_PASSWORD": "profile_pass",
             "RITHMIC_APEX_SYSTEM_NAME": "Apex",
             "RITHMIC_APEX_APP_NAME": "ProfileApp",
+            "RITHMIC_APEX_SERVER": "Frankfurt",
         }
         with patch.dict(os.environ, env_vars, clear=True):
             config = RithmicDataClientConfig.from_env("Apex")
@@ -103,6 +114,7 @@ class TestRithmicDataClientConfig:
             assert config.password == "profile_pass"
             assert config.system_name == "Apex"
             assert config.app_name == "ProfileApp"
+            assert config.server == "Frankfurt"
 
     def test_from_env_missing_username(self):
         env_vars = {
@@ -127,6 +139,8 @@ class TestRithmicExecClientConfig:
         )
         assert config.environment == RithmicEnvironment.DEMO
         assert config.account_id == "ACCOUNT123"
+        assert config.server is None
+        assert config.alt_server is None
         assert config.execution_replay_lookback_secs == 86_400
         assert config.native_bracket_state_path is None
 
@@ -137,12 +151,16 @@ class TestRithmicExecClientConfig:
             "RITHMIC_PASSWORD": "env_pass",
             "RITHMIC_SYSTEM_NAME": "env_system",
             "RITHMIC_ACCOUNT_ID": "ENV_ACCOUNT",
+            "RITHMIC_SERVER": "Chicago",
+            "RITHMIC_ALT_SERVER": "Sydney",
             "RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS": "7200",
             "RITHMIC_NATIVE_BRACKET_STATE_PATH": "/tmp/rithmic-native-brackets.json",
         }
         with patch.dict(os.environ, env_vars, clear=False):
             config = RithmicExecClientConfig.from_env()
             assert config.account_id == "ENV_ACCOUNT"
+            assert config.server == "Chicago"
+            assert config.alt_server == "Sydney"
             assert config.execution_replay_lookback_secs == 7200
             assert config.native_bracket_state_path == "/tmp/rithmic-native-brackets.json"
 
@@ -152,11 +170,13 @@ class TestRithmicExecClientConfig:
             "RITHMIC_APEX_PASSWORD": "profile_pass",
             "RITHMIC_APEX_SYSTEM_NAME": "Apex",
             "RITHMIC_APEX_ACCOUNT_ID": "PROFILE_ACCOUNT",
+            "RITHMIC_APEX_SERVER": "Frankfurt",
         }
         with patch.dict(os.environ, env_vars, clear=True):
             config = RithmicExecClientConfig.from_env("Apex")
             assert config.username == "profile_user"
             assert config.account_id == "PROFILE_ACCOUNT"
+            assert config.server == "Frankfurt"
 
     def test_from_env_missing_account_id(self):
         env_vars = {

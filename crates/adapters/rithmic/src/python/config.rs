@@ -99,7 +99,7 @@ pub struct PyRithmicDataClientConfig {
 impl PyRithmicDataClientConfig {
     /// Creates a new data client configuration.
     #[new]
-    #[pyo3(signature = (environment, username, password, system_name, app_name="NautilusTrader", app_version="1.0", fcm_id=None, ib_id=None))]
+    #[pyo3(signature = (environment, username, password, system_name, app_name="NautilusTrader", app_version="1.0", fcm_id=None, ib_id=None, server=None, alt_server=None))]
     fn new(
         environment: PyRithmicEnv,
         username: String,
@@ -109,6 +109,8 @@ impl PyRithmicDataClientConfig {
         app_version: &str,
         fcm_id: Option<String>,
         ib_id: Option<String>,
+        server: Option<String>,
+        alt_server: Option<String>,
     ) -> Self {
         Self {
             inner: RithmicDataClientConfig {
@@ -120,6 +122,8 @@ impl PyRithmicDataClientConfig {
                 app_version: app_version.to_string(),
                 fcm_id,
                 ib_id,
+                server,
+                alt_server,
             },
         }
     }
@@ -169,7 +173,7 @@ pub struct PyRithmicExecClientConfig {
 impl PyRithmicExecClientConfig {
     /// Creates a new execution client configuration.
     #[new]
-    #[pyo3(signature = (environment, username, password, system_name, account_id, app_name="NautilusTrader", app_version="1.0", fcm_id=None, ib_id=None))]
+    #[pyo3(signature = (environment, username, password, system_name, account_id, app_name="NautilusTrader", app_version="1.0", fcm_id=None, ib_id=None, server=None, alt_server=None))]
     fn new(
         environment: PyRithmicEnv,
         username: String,
@@ -180,6 +184,8 @@ impl PyRithmicExecClientConfig {
         app_version: &str,
         fcm_id: Option<String>,
         ib_id: Option<String>,
+        server: Option<String>,
+        alt_server: Option<String>,
     ) -> Self {
         Self {
             inner: RithmicExecClientConfig {
@@ -192,6 +198,8 @@ impl PyRithmicExecClientConfig {
                 fcm_id,
                 ib_id,
                 account_id,
+                server,
+                alt_server,
             },
         }
     }

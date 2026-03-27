@@ -44,6 +44,8 @@ impl PyRithmicGateway {
         fcm_id,
         ib_id,
         account_id,
+        server=None,
+        alt_server=None,
         app_name="NautilusTrader",
         app_version="1.0",
         enable_ticker=true,
@@ -60,6 +62,8 @@ impl PyRithmicGateway {
         fcm_id: String,
         ib_id: String,
         account_id: String,
+        server: Option<String>,
+        alt_server: Option<String>,
         app_name: &str,
         app_version: &str,
         enable_ticker: bool,
@@ -67,7 +71,7 @@ impl PyRithmicGateway {
         enable_pnl: bool,
         enable_history: bool,
     ) -> Self {
-        let config = GatewayConfig::new(
+        let mut config = GatewayConfig::new(
             environment.into(),
             username,
             password,
@@ -82,6 +86,14 @@ impl PyRithmicGateway {
         .with_order(enable_order)
         .with_pnl(enable_pnl)
         .with_history(enable_history);
+
+        if let Some(server) = server {
+            config = config.with_server(server);
+        }
+
+        if let Some(alt_server) = alt_server {
+            config = config.with_alt_server(alt_server);
+        }
 
         Self {
             inner: Arc::new(RwLock::new(RithmicGateway::new(config))),

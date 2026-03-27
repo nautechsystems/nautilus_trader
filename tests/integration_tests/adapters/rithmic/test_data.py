@@ -52,6 +52,7 @@ class _FakeProvider:
 
 class _DummyDataClient:
     _resolve_rithmic_symbol = RithmicLiveDataClient._resolve_rithmic_symbol
+    _event_instrument_id = staticmethod(RithmicLiveDataClient._event_instrument_id)
     _lookup_instrument = RithmicLiveDataClient._lookup_instrument
     _resolve_exchange = RithmicLiveDataClient._resolve_exchange
     _publish_instrument_to_data_engine = RithmicLiveDataClient._publish_instrument_to_data_engine
@@ -547,7 +548,7 @@ class TestRithmicLiveDataClient:
         assert bar.ts_event == 100 * 1_000_000_000
 
     @pytest.mark.asyncio
-    async def test_request_bars_rejects_tick_history_above_one_tick(self):
+    async def test_request_bars_rejects_tick_bar_requests_above_one_tick(self):
         client = _DummyDataClient()
         client._rust_client = object()
         request = SimpleNamespace(
@@ -558,7 +559,7 @@ class TestRithmicLiveDataClient:
             id="req-tick-unsupported",
         )
 
-        with pytest.raises(NotImplementedError, match="Historical TickBar replay with period > 1"):
+        with pytest.raises(NotImplementedError, match="Historical TickBar requests with period > 1"):
             await client._request_bars(request)
 
     @pytest.mark.asyncio

@@ -9,6 +9,9 @@ loading, historical bar requests, and live order execution through NautilusTrade
 and should not be used for live trading.
 :::
 
+Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
+During these periods connections might be terminated and it might not be possible to test or deploy live connections.
+
 ## Overview
 
 This guide assumes a trader is setting up for both live market data feeds and trade execution.
@@ -194,11 +197,9 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Instrument definition loading | ✓ | Via `RithmicInstrumentProvider` and the live data client provider path. |
 | Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
-| Historical bars | ✓ | Time bars plus `1-TICK` replay via the history plant. Native `N-TICK` replay exists in the Rithmic protocol but is not yet exposed by the current `rithmic-rs` request helper used here. |
+| Historical bars | ✓ | TimeBar and TickBar requests via the history plant. Historical TickBar requests are currently limited to `1-TICK`; native `N-TICK` support is not yet exposed by the current `rithmic-rs` request helper used here. |
 | Live external bar subscriptions | ✓ | Time bars and tick bars via the history plant when `enable_history=True`. |
 | Internal bars | ✓ | Still the simplest live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
-| Historical quote ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
-| Historical trade ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
 | Order book deltas / depth | Limited | Adapter hooks exist, but full depth support is not complete. |
 | Instrument status / close updates | - | No streaming venue path is exposed. |
 | Funding, mark price, index price feeds | - | Not provided by the current adapter. |
@@ -236,23 +237,34 @@ Current historical external bar limits:
 - only `EXTERNAL` bars are supported
 - only `LAST` price bars are supported
 - supported time aggregations are `SECOND`, `MINUTE`, `DAY`, and `WEEK`
-- supported historical tick aggregation is currently `1-TICK` only
+- supported historical `TickBar` aggregation is currently `1-TICK` only
 
-The `1-TICK` limit is intentional. The adapter does not locally re-aggregate raw ticks into larger
-tick bars outside Nautilus aggregators. The Rithmic protocol defines native tick-bar replay, but
-the current `rithmic-rs` history request helper still hardcodes the replay specifier to `1`, so the
-adapter rejects `>1-TICK` historical requests instead of faking them.
+The `1-TICK` limit is intentional. The adapter does not locally re-aggregate historical `TickBar`
+responses into larger `TickBar` windows outside Nautilus aggregators. The Rithmic protocol defines
+native parameterized `TickBar` replay, but the current `rithmic-rs` history request helper still
+hardcodes the bar specifier to `1`, so the adapter rejects `>1-TICK` historical `TickBar`
+requests instead of faking them.
 
 Planned completion:
 
-- once upstream `rithmic-rs` exposes native parameterized tick-bar replay, the adapter should pass
-  historical `N-TICK` replay through directly
-- no adapter-side tick-bar re-aggregation is planned as part of that follow-up
+- once upstream `rithmic-rs` exposes native parameterized `TickBar` replay, the adapter should
+  pass historical `N-TICK` `TickBar` requests through directly
+- no adapter-side `TickBar` re-aggregation is planned as part of that follow-up
 
-Rithmic history requests can also be truncated venue-side. If a response returns a round-number bar
-count such as `10000`, or the returned bars do not cover the requested window, retry with smaller
-time windows. Rithmic documents a `request_key`/resume flow for this case, but the adapter does not
-yet auto-resume history requests.
+Rithmic history requests can also be truncated venue-side. A large date-range request is not
+guaranteed to return the full requested window in a single response; the vendor may return only a
+partial segment of the available bars. Treat each history response as a page of data rather than as
+proof that the full range was delivered.
+
+In practice, compare the timestamp of the last returned bar with the requested end time. If the
+response stops early, issue another request from the last returned bar onward (or from the next bar
+boundary if you want to avoid a duplicate boundary bar) and continue until the requested range is
+fully covered. A round-number result such as `10000` bars can be a useful signal that truncation
+occurred, but the more reliable check is whether the returned bars actually span the requested
+window.
+
+Rithmic exposes a `request_key`/resume flow for truncated replies, but the current adapter does not
+yet drive that path automatically, so callers must currently page large backfills themselves.
 
 ### Live external bars
 
@@ -371,6 +383,8 @@ Optional environment variables:
 - `RITHMIC_ENV`
 - `RITHMIC_FCM_ID`
 - `RITHMIC_IB_ID`
+- `RITHMIC_SERVER`
+- `RITHMIC_ALT_SERVER`
 - `RITHMIC_APP_NAME`
 - `RITHMIC_APP_VERSION`
 - `RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS`
@@ -399,6 +413,8 @@ export RITHMIC_SYSTEM_NAME="your_system_name"  # Exact System value from RTrader
 export RITHMIC_ACCOUNT_ID="your_account"
 export RITHMIC_FCM_ID="your_fcm_id"            # Exact FCM value from RTrader Pro > File > User Profile
 export RITHMIC_IB_ID="your_ib_id"              # Exact IB value from RTrader Pro > File > User Profile
+export RITHMIC_SERVER="Chicago"                # Optional named primary route
+export RITHMIC_ALT_SERVER="Sydney"             # Optional named alternate route
 ```
 
 `RITHMIC_PROFILE` is only a local environment-variable namespace. The actual broker-facing values
@@ -414,11 +430,45 @@ To find the correct values, sign in to the RTrader Pro desktop application and o
 case-sensitive.
 :::
 
+### Server endpoint selection
+
+For most setups, prefer named server selection through `RITHMIC_SERVER` and `RITHMIC_ALT_SERVER`
+or the equivalent `server=` / `alt_server=` config fields. The adapter resolves the following
+server names case-insensitively:
+
+| Server | WebSocket URL |
+| :----- | :------------ |
+| Chicago | `wss://rprotocol.rithmic.com:443` |
+| Sydney | `wss://rprotocol-au.rithmic.com:443` |
+| Sao Paulo | `wss://rprotocol-br.rithmic.com:443` |
+| Colo75 | `wss://protocol-colo75.rithmic.com:443` |
+| Frankfurt | `wss://rprotocol-de.rithmic.com:443` |
+| Hong Kong | `wss://rprotocol-hk.rithmic.com:443` |
+| Ireland | `wss://rprotocol-ie.rithmic.com:443` |
+| Mumbai | `wss://rprotocol-in.rithmic.com:443` |
+| Seoul | `wss://rprotocol-kr.rithmic.com:443` |
+| Cape Town | `wss://rprotocol-za.rithmic.com:443` |
+| Tokyo | `wss://rprotocol-jp.rithmic.com:443` |
+| Singapore | `wss://rprotocol-sg.rithmic.com:443` |
+| Test | `wss://rituz00100.rithmic.com:443` |
+
+If you need an exact URL instead of a named route, the low-level gateway still honors the canonical
+environment-specific URL overrides, for example:
+
+```bash
+export RITHMIC_DEMO_URL="wss://rprotocol-au.rithmic.com:443"
+export RITHMIC_DEMO_ALT_URL="wss://rprotocol.rithmic.com:443"
+```
+
+Exact URL overrides take precedence over named server selection.
+
 ### Data client configuration
 
 The most important data-client options are:
 
 - `enable_history`: enable this only when the node needs historical bar requests.
+- `server`: optional named primary route such as `Chicago`.
+- `alt_server`: optional named alternate route.
 - `instrument_provider.load_all`: preload the full instrument snapshot on connect.
 - `instrument_provider.load_ids`: preload a selected live contract set.
 - `instrument_provider.filters`: usually include the target futures exchange, such as `{"exchange": "CME"}`.
@@ -428,13 +478,16 @@ The most important data-client options are:
 The most important execution-client options are:
 
 - `account_id`: the Rithmic account this execution client is allowed to control.
+- `server`: optional named primary route such as `Chicago`.
+- `alt_server`: optional named alternate route.
 - `execution_replay_lookback_secs`: bounded replay window used during reconnect reconciliation.
 - `native_bracket_state_path`: optional override for the local persistence file used to recover
   adapter-created native bracket child IDs across restart.
 
 Low-level Rust users can also override the primary and alternate WebSocket endpoints directly on
 `GatewayConfig` when targeting a non-standard route or a local test harness. Regular operator
-setups should continue to use the canonical `RITHMIC_*_URL` environment variables.
+setups can use named `server` / `alt_server` selection and only fall back to canonical
+`RITHMIC_*_URL` environment variables when an exact endpoint override is required.
 
 ## Trading node example
 
@@ -466,6 +519,8 @@ data_config = RithmicDataClientConfig(
     app_version=base_data.app_version,
     fcm_id=base_data.fcm_id,
     ib_id=base_data.ib_id,
+    server=base_data.server,
+    alt_server=base_data.alt_server,
     instrument_provider=provider,
 )
 exec_config = RithmicExecClientConfig(
@@ -478,6 +533,8 @@ exec_config = RithmicExecClientConfig(
     app_version=base_exec.app_version,
     fcm_id=base_exec.fcm_id,
     ib_id=base_exec.ib_id,
+    server=base_exec.server,
+    alt_server=base_exec.alt_server,
     execution_replay_lookback_secs=base_exec.execution_replay_lookback_secs,
     native_bracket_state_path=base_exec.native_bracket_state_path,
     instrument_provider=provider,

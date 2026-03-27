@@ -102,6 +102,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             fcm_id=self._config.fcm_id or "",
             ib_id=self._config.ib_id or "",
             account_id="",  # Data client doesn't need account
+            server=self._config.server,
+            alt_server=self._config.alt_server,
             enable_ticker=True,
             enable_order=False,
             enable_pnl=False,
@@ -656,7 +658,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         self._warn_unsupported("Historical quote tick requests")
 
     async def _request_trade_ticks(self, request) -> None:
-        """Request historical trade tick requests."""
+        """Request historical trade ticks."""
         self._warn_unsupported("Historical trade tick requests")
 
     async def _request_bars(self, request) -> None:
@@ -694,7 +696,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 and int(request.bar_type.spec.step) != 1
             ):
                 raise NotImplementedError(
-                    "Historical TickBar replay with period > 1 is not exposed by the current "
+                    "Historical TickBar requests with period > 1 are not exposed by the current "
                     "rithmic-rs history API. The adapter intentionally avoids local re-aggregation "
                     "outside Nautilus aggregators.",
                 )

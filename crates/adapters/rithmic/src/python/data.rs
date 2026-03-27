@@ -68,7 +68,7 @@ impl ParsedBarType {
     }
 }
 
-const TICK_BAR_HISTORY_NOT_EXPOSED: &str = "Historical TickBar replay with period > 1 is not exposed by the current \
+const TICK_BAR_HISTORY_NOT_EXPOSED: &str = "Historical TickBar requests with period > 1 are not exposed by the current \
      rithmic-rs history API. The adapter intentionally avoids local re-aggregation \
      outside Nautilus aggregators.";
 

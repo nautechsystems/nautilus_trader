@@ -51,9 +51,10 @@ Warning:
     Use a demo account first.
 
 Notes:
-    External Rithmic bars can be warmed from historical history-plant data.
-    Internal bars remain available, but historical warmup is currently disabled
-    for that path in this example.
+    By default, this example warms the EMAs from native Rithmic historical bars
+    before live execution begins.
+    Internal bars remain available, but historical warmup is only requested when
+    using externally aggregated Rithmic bars.
 """
 
 from __future__ import annotations
@@ -116,6 +117,8 @@ def build_gateway(config: RithmicDataClientConfig) -> RithmicGateway:
         fcm_id=config.fcm_id or "",
         ib_id=config.ib_id or "",
         account_id="",
+        server=config.server,
+        alt_server=config.alt_server,
         enable_ticker=True,
         enable_order=False,
         enable_pnl=False,
@@ -170,6 +173,8 @@ def build_data_client_config(
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
+        server=base.server,
+        alt_server=base.alt_server,
         enable_history=enable_history,
         instrument_provider=build_provider_config(instrument_id, exchange),
     )
@@ -191,6 +196,8 @@ def build_exec_client_config(
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
+        server=base.server,
+        alt_server=base.alt_server,
         execution_replay_lookback_secs=base.execution_replay_lookback_secs,
         native_bracket_state_path=base.native_bracket_state_path,
         instrument_provider=build_provider_config(instrument_id, exchange),
