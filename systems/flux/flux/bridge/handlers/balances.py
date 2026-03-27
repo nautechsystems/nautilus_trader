@@ -70,8 +70,14 @@ def _account_from_row(row: dict[str, Any]) -> str:
 
 
 def transform_balances(payload: Any, context: CorrelationContext) -> list[WriteOp]:
+    raw_rows = as_rows(payload)
     rows = _rows_from_payload(payload)
-    if not rows:
+    has_explicit_snapshot = any(
+        isinstance(row, dict)
+        and (isinstance(row.get("accounts"), list) or isinstance(row.get("positions"), list))
+        for row in raw_rows
+    )
+    if not rows and not has_explicit_snapshot:
         return []
 
     normalized_rows: list[JSONValue] = []

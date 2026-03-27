@@ -83,6 +83,41 @@ TOKENMM_BALANCES_STALE_AFTER_MS = 30_000
 PARAMS_RUNNING_STALE_AFTER_MS = 3_000
 
 
+def _scope_status_entries_degraded(scope_status: Any) -> bool:
+    if not isinstance(scope_status, Sequence) or isinstance(scope_status, str | bytes):
+        return False
+
+    for entry in scope_status:
+        if not isinstance(entry, Mapping):
+            continue
+        projection_status = entry.get("projection_status")
+        if not isinstance(projection_status, Mapping):
+            continue
+        healthy = safe_bool(projection_status.get("healthy"))
+        last_attempt_ts_ms = safe_int(projection_status.get("last_attempt_ts_ms"))
+        last_success_ts_ms = safe_int(projection_status.get("last_success_ts_ms"))
+        stale_after_ms = safe_int(projection_status.get("stale_after_ms")) or 0
+        if healthy is False:
+            return True
+        if last_attempt_ts_ms is None or last_success_ts_ms is None or stale_after_ms <= 0:
+            continue
+        if (last_attempt_ts_ms - last_success_ts_ms) > stale_after_ms:
+            return True
+    return False
+
+
+def _projection_rows_excluded_from_reconciliation(raw_rows: Any) -> bool:
+    if not isinstance(raw_rows, list):
+        return False
+
+    for row in raw_rows:
+        if not isinstance(row, Mapping):
+            continue
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            return True
+    return False
+
+
 class RedisPipelineProtocol(Protocol):
     def get(self, key: str) -> Any: ...
     def exists(self, key: str) -> Any: ...
@@ -782,7 +817,7 @@ class FluxApiStore:
         *,
         account_scope_ids: Sequence[str] | None = None,
         limit: int = 200,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         max_items = max(1, min(2_000, int(limit)))
         projection_keys: list[str] = []
         seen_keys: set[str] = set()
@@ -819,18 +854,28 @@ class FluxApiStore:
 
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}
+        scope_status: list[dict[str, Any]] = []
         for key in projection_keys:
             payload = load_json(self._redis.get(key))
             if not isinstance(payload, Mapping):
                 continue
             raw_rows = payload.get("rows")
+            raw_scope_status = payload.get("scope_status")
             if isinstance(raw_rows, Sequence) and not isinstance(raw_rows, str | bytes):
                 rows.extend(dict(row) for row in raw_rows if isinstance(row, Mapping))
             raw_totals = payload.get("totals")
-            if isinstance(raw_totals, Mapping):
+            if (
+                isinstance(raw_totals, Mapping)
+                and not _scope_status_entries_degraded(raw_scope_status)
+                and not _projection_rows_excluded_from_reconciliation(raw_rows)
+            ):
                 totals = _merge_account_totals(totals, raw_totals)
+            if isinstance(raw_scope_status, Sequence) and not isinstance(raw_scope_status, str | bytes):
+                scope_status.extend(
+                    dict(item) for item in raw_scope_status if isinstance(item, Mapping)
+                )
 
-        return rows, totals
+        return rows, totals, scope_status
 
     def _tokenmm_inventory_overlay(
         self,
@@ -1325,6 +1370,8 @@ def _format_money_display(value: float) -> str:
 def _balances_totals(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     total_mv = 0.0
     for row in rows:
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            continue
         mv = _coerce_finite_float(
             row.get("mv_raw")
             or row.get("mv")
@@ -2703,8 +2750,13 @@ def create_flux_api_app(  # noqa: C901
             request_now_ms = now_ms()
             projection_rows: list[dict[str, Any]] = []
             projection_totals: dict[str, Any] = {}
+            projection_scope_status: list[dict[str, Any]] = []
             if profile_normalized == "equities":
-                projection_rows, projection_totals = store.load_profile_account_projection_rows(
+                (
+                    projection_rows,
+                    projection_totals,
+                    projection_scope_status,
+                ) = store.load_profile_account_projection_rows(
                     profile_normalized,
                     account_scope_ids=_profile_projection_scope_ids_for_profile(profile_normalized),
                 )
@@ -2724,6 +2776,16 @@ def create_flux_api_app(  # noqa: C901
                     ):
                         snapshot_balances = portfolio_snapshot.get("balances")
                         snapshot_accounts = portfolio_snapshot.get("accounts")
+                        scope_status = list(projection_scope_status)
+                        if isinstance(snapshot_accounts, Mapping):
+                            raw_scope_status = snapshot_accounts.get("scope_status")
+                            if isinstance(raw_scope_status, Sequence) and not isinstance(
+                                raw_scope_status,
+                                str | bytes,
+                            ):
+                                scope_status = [
+                                    dict(item) for item in raw_scope_status if isinstance(item, Mapping)
+                                ]
                         snapshot_balance_rows = _portfolio_snapshot_rows(
                             snapshot_balances.get("rows")
                             if isinstance(snapshot_balances, Mapping)
@@ -2926,12 +2988,15 @@ def create_flux_api_app(  # noqa: C901
                     if latest_ts_ms is None or parsed > latest_ts_ms:
                         latest_ts_ms = parsed
                 age_ms = (response_ts_ms - latest_ts_ms) if latest_ts_ms is not None else None
+                empty_snapshot_present = (
+                    profile_normalized == "equities" and snapshot_present and not strategy_rows
+                )
                 stale = (
                     not snapshot_present
-                    or latest_ts_ms is None
+                    or (latest_ts_ms is None and not empty_snapshot_present)
                     or (age_ms is not None and age_ms > TOKENMM_BALANCES_STALE_AFTER_MS)
                 )
-                missing = (not snapshot_present) or not strategy_rows
+                missing = (not snapshot_present) or (not strategy_rows and not empty_snapshot_present)
                 components.append(
                     {
                         "strategy_id": strategy_id,

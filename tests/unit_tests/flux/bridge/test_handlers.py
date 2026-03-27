@@ -179,6 +179,27 @@ def test_transform_balances_writes_snapshot_and_rows_hash() -> None:
     assert isinstance(row["ts_ms"], int)
 
 
+def test_transform_balances_persists_empty_snapshot_presence() -> None:
+    ops = transform_balances(
+        {
+            "strategy_id": "maker_v3_01",
+            "accounts": [],
+            "positions": [],
+            "ts_ms": 1700000000123,
+        },
+        _context("balances"),
+    )
+
+    assert len(ops) == 2
+    snapshot_op, rows_op = ops
+    assert type(snapshot_op).__name__ == "SetJSONOp"
+    assert snapshot_op.key == "flux:v1:balances:snapshot:maker_v3_01"
+    assert snapshot_op.value == []
+    assert type(rows_op).__name__ == "ReplaceHashJSONOp"
+    assert rows_op.key == "flux:v1:balances:rows:maker_v3_01"
+    assert rows_op.mapping == {}
+
+
 def test_transform_event_supports_ts_event_fallback() -> None:
     ops = transform_event({"event": "quote_refresh", "ts_event": "1700000001"}, _context("event"))
 

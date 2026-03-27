@@ -28,7 +28,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
     async def _log_message(
         self,
-        error_code: int,
+        error_code: int | None,
         req_id: int,
         error_string: str,
         is_warning: bool,
@@ -60,7 +60,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         *,
         req_id: int,
         error_time: int,
-        error_code: int,
+        error_code: int | None,
         error_string: str,
         advanced_order_reject_json: str = "",
     ) -> None:
@@ -83,7 +83,9 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             The JSON string for advanced order rejection.
 
         """
-        is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
+        is_warning = (error_code in self.WARNING_CODES) or (
+            isinstance(error_code, int) and 2100 <= error_code < 2200
+        )
         error_string = error_string.replace("\n", " ")
         await self._log_message(error_code, req_id, error_string, is_warning)
 

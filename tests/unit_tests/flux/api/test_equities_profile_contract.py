@@ -1616,6 +1616,87 @@ def test_balances_profile_equities_marks_ibkr_positions_from_listing_venue_alias
     assert position_rows[0]["instrument_uid"] == "ibkr:equity:AAPL.NASDAQ"
 
 
+def test_balances_profile_equities_does_not_degrade_on_empty_strategy_snapshots(
+    monkeypatch,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_001_000)
+    strategy_id = "aapl_tradexyz_maker"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    _seed_required_schema_keys(redis_client, flux_config)
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["degraded"] is False
+    assert body["data"]["missing_required"] == []
+    assert body["data"]["rows"] == []
+    assert body["data"]["components"] == [
+        {
+            "strategy_id": strategy_id,
+            "snapshot_present": True,
+            "rows": 0,
+            "latest_ts_ms": None,
+            "age_ms": None,
+            "stale": False,
+            "required": True,
+            "missing": False,
+        },
+    ]
+
+
 def test_signals_profile_equities_projects_makerv4_inventory_fields_from_strategy_state(
     redis_client,
     params_schema,
