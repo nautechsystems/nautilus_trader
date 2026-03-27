@@ -186,7 +186,7 @@ Released on TBD (UTC).
 - Refined IB option symbols to be OCC compliant (#3731), thanks @faysou
 - Standardized `type_name()` across order events and instruments
 - Optimized network client performance and add benchmarks
-- Upgraded Rust (MSRV) to 1.94.0
+- Upgraded Rust (MSRV) to 1.94.1
 - Upgraded `databento` crate to v0.44.0
 - Upgraded `datafusion` crate to v53.0.0
 - Upgraded `redis` crate to v1.1.0
