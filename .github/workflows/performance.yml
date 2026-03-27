@@ -10,7 +10,7 @@ on:
 
 jobs:
   performance-benchmarks:
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-22.04-8
     env:
       BUILD_MODE: release
       RUST_BACKTRACE: 1

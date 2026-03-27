@@ -458,6 +458,274 @@ async def test_submit_stop_market_order(exec_client_builder, monkeypatch, instru
         await client._disconnect()
 
 
+@pytest.mark.asyncio
+async def test_submit_limit_order_with_take_profit_stop_loss(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    Limit order with take_profit + stop_loss in params routes through the native TP/SL
+    path: build_place_order_params is called with correct Price objects and the result
+    is submitted via batch_place_orders.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock(return_value=MagicMock())
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "55000.00", "stop_loss": "47000.00"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.build_place_order_params.assert_called_once()
+        call_kwargs = ws_trade_client.build_place_order_params.call_args.kwargs
+        assert call_kwargs["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
+        assert call_kwargs["stop_loss"] == nautilus_pyo3.Price.from_str("47000.00")
+        ws_trade_client.batch_place_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_market_order_with_take_profit_only(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    Only take_profit in params also triggers the native TP/SL path; stop_loss is not
+    set.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock(return_value=MagicMock())
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "55000.00"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.build_place_order_params.assert_called_once()
+        call_kwargs = ws_trade_client.build_place_order_params.call_args.kwargs
+        assert call_kwargs["take_profit"] == nautilus_pyo3.Price.from_str("55000.00")
+        assert call_kwargs.get("stop_loss") is None
+        ws_trade_client.batch_place_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_tp_sl_enum_fields(exec_client_builder, monkeypatch, instrument):
+    """
+    Trigger types and order types are applied as string attributes on the params object
+    after build_place_order_params returns (fields are mutable via PyO3 get+set).
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    fake_order_params = MagicMock()
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.build_place_order_params = MagicMock(return_value=fake_order_params)
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={
+            "take_profit": "55000.00",
+            "stop_loss": "47000.00",
+            "tp_trigger_by": "MarkPrice",
+            "sl_trigger_by": "LastPrice",
+            "tp_order_type": "Limit",
+            "sl_order_type": "Market",
+            "tp_limit_price": "54990.00",
+            "sl_trigger_price": "46990.00",
+            "close_on_trigger": True,
+        },
+    )
+
+    try:
+        await client._submit_order(command)
+
+        # Enum/price fields must be set directly on the returned params object.
+        assert fake_order_params.tp_trigger_by == "MarkPrice"
+        assert fake_order_params.sl_trigger_by == "LastPrice"
+        assert fake_order_params.tp_order_type == "Limit"
+        assert fake_order_params.sl_order_type == "Market"
+        assert fake_order_params.tp_limit_price == "54990.00"
+        assert fake_order_params.sl_trigger_price == "46990.00"
+        assert fake_order_params.close_on_trigger is True
+        ws_trade_client.batch_place_orders.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_invalid_tp_trigger_type_emits_order_denied(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    An unrecognised tp_trigger_by value must emit generate_order_denied before
+    generate_order_submitted — the order must never reach the exchange.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "55000.00", "tp_trigger_by": "invalid_type"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        # Nothing must be sent to the exchange.
+        ws_trade_client.submit_order.assert_not_awaited()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_invalid_sl_order_type_emits_order_denied(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    An unrecognised sl_order_type value must emit generate_order_denied.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"stop_loss": "47000.00", "sl_order_type": "Stop"},  # "Stop" is not valid
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_not_awaited()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
 # ============================================================================
 # ORDER MODIFICATION TESTS
 # ============================================================================

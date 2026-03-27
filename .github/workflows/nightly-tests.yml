@@ -16,7 +16,7 @@ on:
 jobs:
   turmoil:
     name: turmoil network tests
-    runs-on: ubuntu-22.04
+    runs-on: depot-ubuntu-22.04-8
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@a90bcbc6539c36a85cdfeb73f7e2f433735f215b # v2.15.0

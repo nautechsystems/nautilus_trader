@@ -79,6 +79,144 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
+# ---------------------------------------------------------------------------
+# Bybit TP/SL parameter helpers
+# ---------------------------------------------------------------------------
+
+# Bybit V5 API uses PascalCase strings for these enum fields.
+_BYBIT_VALID_TRIGGER_TYPES: frozenset[str] = frozenset({"LastPrice", "IndexPrice", "MarkPrice"})
+_BYBIT_VALID_ORDER_TYPES: frozenset[str] = frozenset({"Market", "Limit"})
+
+
+def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
+    """
+    Parse and validate Bybit-specific TP/SL execution parameters.
+
+    Call this *before* emitting ``generate_order_submitted`` so that invalid
+    values can be surfaced as ``generate_order_denied`` instead of a runtime
+    error after the order is already considered accepted.
+
+    Expected param keys and valid values
+    -------------------------------------
+    take_profit : str
+        Take-profit activation price (e.g. ``"55000.00"``).
+    stop_loss : str
+        Stop-loss activation price (e.g. ``"47000.00"``).
+    tp_trigger_by : str
+        Price type used to trigger take-profit. One of ``"LastPrice"``,
+        ``"MarkPrice"``, ``"IndexPrice"``. Defaults to ``"LastPrice"``
+        when *take_profit* is set and this key is omitted.
+    sl_trigger_by : str
+        Price type used to trigger stop-loss (same valid values as above).
+    tp_order_type : str
+        Order type for the take-profit leg: ``"Market"`` (default) or
+        ``"Limit"``. Use ``"Limit"`` together with *tp_limit_price*.
+    sl_order_type : str
+        Order type for the stop-loss leg: ``"Market"`` (default) or
+        ``"Limit"``.
+    tp_trigger_price : str
+        Trigger price for the TP leg when *tp_order_type* is ``"Limit"``.
+    sl_trigger_price : str
+        Trigger price for the SL leg when *sl_order_type* is ``"Limit"``.
+    tp_limit_price : str
+        Limit execution price for the TP leg (only valid when
+        *tp_order_type* is ``"Limit"``).
+    sl_limit_price : str
+        Limit execution price for the SL leg.
+    close_on_trigger : bool
+        If ``True``, the position is fully closed when the TP/SL triggers.
+    is_leverage : bool
+        Mark the order as a leveraged order.
+
+    Returns
+    -------
+    dict
+        Validated, normalised parameter dict ready for use.
+
+    Raises
+    ------
+    ValueError
+        If *tp_trigger_by*, *sl_trigger_by*, *tp_order_type*, or
+        *sl_order_type* contains a value not accepted by the Bybit V5 API.
+
+    """
+    p = params or {}
+    result: dict = {"is_leverage": bool(p.get("is_leverage", False))}
+
+    # Price fields — passed through as strings so Bybit receives them verbatim.
+    for key in (
+        "take_profit",
+        "stop_loss",
+        "tp_trigger_price",
+        "sl_trigger_price",
+        "tp_limit_price",
+        "sl_limit_price",
+    ):
+        val = p.get(key)
+        if val is not None:
+            result[key] = str(val)
+
+    # Trigger-type enum fields (Bybit V5 PascalCase: "LastPrice", "MarkPrice", "IndexPrice").
+    for key in ("tp_trigger_by", "sl_trigger_by"):
+        val = p.get(key)
+        if val is not None:
+            if val not in _BYBIT_VALID_TRIGGER_TYPES:
+                raise ValueError(
+                    f"Invalid Bybit trigger type for '{key}': '{val}'. "
+                    f"Expected one of {sorted(_BYBIT_VALID_TRIGGER_TYPES)}.",
+                )
+            result[key] = val
+
+    # Order-type enum fields (Bybit V5: "Market" or "Limit").
+    for key in ("tp_order_type", "sl_order_type"):
+        val = p.get(key)
+        if val is not None:
+            if val not in _BYBIT_VALID_ORDER_TYPES:
+                raise ValueError(
+                    f"Invalid Bybit order type for '{key}': '{val}'. "
+                    f"Expected one of {sorted(_BYBIT_VALID_ORDER_TYPES)}.",
+                )
+            result[key] = val
+
+    # Bool field.
+    val = p.get("close_on_trigger")
+    if val is not None:
+        result["close_on_trigger"] = bool(val)
+
+    return result
+
+
+def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
+    """
+    Write extra TP/SL fields onto a ``BybitWsPlaceOrderParams`` object.
+
+    ``take_profit`` and ``stop_loss`` are passed directly to
+    ``build_place_order_params`` as ``Price`` objects so that the Rust layer
+    can set ``tpsl_mode`` and the default trigger types automatically.  This
+    helper applies only the remaining override fields that are not accepted by
+    ``build_place_order_params``.
+
+    All relevant fields on ``BybitWsPlaceOrderParams`` are exposed with
+    ``#[pyo3(get, set)]`` and can therefore be set directly from Python
+    after the object is constructed by ``build_place_order_params``.
+
+    """
+    for attr in (
+        "tp_trigger_by",
+        "sl_trigger_by",
+        "tp_order_type",
+        "sl_order_type",
+        "tp_trigger_price",
+        "sl_trigger_price",
+        "tp_limit_price",
+        "sl_limit_price",
+        "close_on_trigger",
+    ):
+        val = tp_sl.get(attr)
+        if val is not None:
+            setattr(order_params, attr, val)
+
+
 class BybitExecutionClient(LiveExecutionClient):
     """
     Execution client for Bybit exchange.
@@ -883,6 +1021,20 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Parse and validate adapter-specific params BEFORE emitting order submitted,
+        # so that bad values surface as order_denied (not order_rejected after submission).
+        try:
+            tp_sl = _parse_bybit_tp_sl_params(command.params)
+        except ValueError as e:
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=str(e),
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate OrderSubmitted event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -908,11 +1060,10 @@ class BybitExecutionClient(LiveExecutionClient):
         if order.has_trigger_price:
             pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
-        is_leverage = command.params.get("is_leverage", False) if command.params else False
+        is_leverage = tp_sl["is_leverage"]
         is_quote_quantity = (
             order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
         )
-
         try:
             if self._is_demo:
                 await self._http_client.submit_order(
@@ -930,6 +1081,44 @@ class BybitExecutionClient(LiveExecutionClient):
                     reduce_only=order.is_reduce_only,
                     is_quote_quantity=is_quote_quantity,
                     is_leverage=is_leverage,
+                )
+            elif tp_sl.get("take_profit") or tp_sl.get("stop_loss"):
+                # Native TP/SL: pass take_profit/stop_loss as Price objects so the Rust
+                # layer sets tpsl_mode="Full" and default trigger types automatically.
+                # _apply_tp_sl_fields then applies any override fields (trigger type,
+                # order type, limit prices, etc.).
+                pyo3_take_profit = (
+                    nautilus_pyo3.Price.from_str(tp_sl["take_profit"])
+                    if tp_sl.get("take_profit")
+                    else None
+                )
+                pyo3_stop_loss = (
+                    nautilus_pyo3.Price.from_str(tp_sl["stop_loss"])
+                    if tp_sl.get("stop_loss")
+                    else None
+                )
+                order_params = self._ws_trade_client.build_place_order_params(
+                    product_type=product_type,
+                    instrument_id=pyo3_instrument_id,
+                    client_order_id=pyo3_client_order_id,
+                    order_side=pyo3_order_side,
+                    order_type=pyo3_order_type,
+                    quantity=pyo3_quantity,
+                    is_quote_quantity=is_quote_quantity,
+                    time_in_force=pyo3_time_in_force,
+                    price=pyo3_price,
+                    trigger_price=pyo3_trigger_price,
+                    post_only=order.is_post_only,
+                    reduce_only=order.is_reduce_only,
+                    is_leverage=is_leverage,
+                    take_profit=pyo3_take_profit,
+                    stop_loss=pyo3_stop_loss,
+                )
+                _apply_tp_sl_fields(order_params, tp_sl)
+                await self._ws_trade_client.batch_place_orders(
+                    pyo3_trader_id,
+                    pyo3_strategy_id,
+                    [order_params],
                 )
             else:
                 await self._ws_trade_client.submit_order(
@@ -965,13 +1154,26 @@ class BybitExecutionClient(LiveExecutionClient):
         if not command.order_list.orders:
             return
 
-        is_leverage = command.params.get("is_leverage", False) if command.params else False
-
-        if self._is_demo:
-            await self._submit_order_list_http(command, is_leverage)
+        # Parse and validate adapter-specific params before touching any order state.
+        try:
+            tp_sl = _parse_bybit_tp_sl_params(command.params)
+        except ValueError as e:
+            now_ns = self._clock.timestamp_ns()
+            for order in command.order_list.orders:
+                self.generate_order_denied(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=str(e),
+                    ts_event=now_ns,
+                )
             return
 
-        await self._submit_order_list_ws(command, is_leverage)
+        if self._is_demo:
+            await self._submit_order_list_http(command, tp_sl["is_leverage"])
+            return
+
+        await self._submit_order_list_ws(command, tp_sl)
 
     async def _submit_order_list_http(
         self,
@@ -1049,12 +1251,14 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _submit_order_list_ws(
         self,
         command: SubmitOrderList,
-        is_leverage: bool,
+        tp_sl: dict,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
         order_list = command.order_list
         orders = order_list.orders
         order_params = []
+
+        is_leverage = tp_sl["is_leverage"]
 
         for order in orders:
             if order.is_closed:
@@ -1097,13 +1301,19 @@ class BybitExecutionClient(LiveExecutionClient):
             if order.has_trigger_price:
                 pyo3_trigger_price = nautilus_pyo3.Price.from_str(str(order.trigger_price))
 
-            post_only = order.is_post_only
-            reduce_only = order.is_reduce_only
             is_quote_quantity = (
                 order.is_quote_quantity if hasattr(order, "is_quote_quantity") else False
             )
 
-            params = self._ws_trade_client.build_place_order_params(
+            pyo3_take_profit = (
+                nautilus_pyo3.Price.from_str(tp_sl["take_profit"])
+                if tp_sl.get("take_profit")
+                else None
+            )
+            pyo3_stop_loss = (
+                nautilus_pyo3.Price.from_str(tp_sl["stop_loss"]) if tp_sl.get("stop_loss") else None
+            )
+            ws_params = self._ws_trade_client.build_place_order_params(
                 product_type=product_type,
                 instrument_id=pyo3_instrument_id,
                 client_order_id=pyo3_client_order_id,
@@ -1114,11 +1324,14 @@ class BybitExecutionClient(LiveExecutionClient):
                 time_in_force=pyo3_time_in_force,
                 price=pyo3_price,
                 trigger_price=pyo3_trigger_price,
-                post_only=post_only,
-                reduce_only=reduce_only,
+                post_only=order.is_post_only,
+                reduce_only=order.is_reduce_only,
                 is_leverage=is_leverage,
+                take_profit=pyo3_take_profit,
+                stop_loss=pyo3_stop_loss,
             )
-            order_params.append(params)
+            _apply_tp_sl_fields(ws_params, tp_sl)
+            order_params.append(ws_params)
 
         if order_params:
             pyo3_trader_id = nautilus_pyo3.TraderId(command.trader_id.value)

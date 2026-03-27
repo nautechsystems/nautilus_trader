@@ -18,7 +18,7 @@
 //! Exposed to Python via the persistence PyO3 module so Python tests can exercise
 //! custom data write/query roundtrips.
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_persistence_macros::custom_data;
 
@@ -47,8 +47,18 @@ pub struct MacroYieldCurveData {
     pub ts_init: UnixNanos,
 }
 
+/// Rust custom data type that exercises `Params` field support in the macro.
+#[custom_data(pyo3)]
+pub struct RustTestParamsCustomData {
+    pub name: String,
+    pub params: Params,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::DataType;
     use nautilus_serialization::arrow::ArrowSchemaProvider;
     use rstest::rstest;
 
@@ -66,5 +76,13 @@ mod tests {
             field_names.iter().any(|f| f == "ts_event"),
             "Schema must have ts_event; got: {field_names:?}",
         );
+    }
+
+    #[rstest]
+    fn test_rust_test_params_custom_data_schema_uses_utf8_for_params() {
+        let schema = RustTestParamsCustomData::get_schema(None);
+        let params_field = schema.field_with_name("params").unwrap();
+
+        assert_eq!(params_field.data_type(), &DataType::Utf8);
     }
 }
