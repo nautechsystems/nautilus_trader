@@ -54,6 +54,30 @@ def test_filter_external_reconciliation_artifacts_keeps_external_with_non_reconc
     assert filtered == [owned_position, external_position]
 
 
+def test_filter_external_reconciliation_artifacts_drops_strategy_owned_synthetic_lineage_when_owned_position_exists() -> None:
+    owned_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-OWNED",
+    )
+    synthetic_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-SYNTHETIC",
+    )
+
+    filtered = filter_external_reconciliation_artifacts(
+        [owned_position, synthetic_position],
+        order_lookup=lambda position_id: (
+            [SimpleNamespace(tags=None, venue_order_id="S-RECON-001")]
+            if position_id == "P-SYNTHETIC"
+            else [SimpleNamespace(tags=None, venue_order_id="V-OWNED-001")]
+        ),
+    )
+
+    assert filtered == [owned_position]
+
+
 def test_collapse_duplicate_netting_position_reports_prefers_newest_nonzero_duplicate() -> None:
     reports, collapse_events = collapse_duplicate_netting_position_reports(
         [

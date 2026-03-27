@@ -2247,6 +2247,68 @@ class TestReconciliationEdgeCases:
         assert generated_order.status == OrderStatus.FILLED
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_mass_status_synthetic_partial_window_order_not_claimed_by_strategy_external_order_claims(
+        self,
+        live_exec_engine,
+    ):
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        live_exec_engine._external_order_claims[instrument.id] = StrategyId("S-CLAIMED")
+
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("ADJUSTED-ORDER-001"),
+            venue_order_id=VenueOrderId("S-RECON-ORDER-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.FILLED,
+            quantity=Quantity.from_int(31_000),
+            filled_qty=Quantity.from_int(31_000),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=1,
+            ts_last=1,
+            ts_init=1,
+        )
+        fill = FillReport(
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId("S-RECON-TRADE-001"),
+            account_id=report.account_id,
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(31_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=report.account_id,
+            report_id=UUID4(),
+            ts_init=1,
+        )
+        mass_status.add_order_reports([report])
+        mass_status.add_fill_reports([fill])
+
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
+
+        assert result is True
+        generated_order = self.cache.order(report.client_order_id)
+        assert generated_order is not None
+        assert generated_order.strategy_id.value == "EXTERNAL"
+        assert generated_order.tags == ["RECONCILIATION"]
+        assert generated_order.venue_order_id == report.venue_order_id
+
+    @pytest.mark.asyncio
     async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
         self,
         live_exec_engine,

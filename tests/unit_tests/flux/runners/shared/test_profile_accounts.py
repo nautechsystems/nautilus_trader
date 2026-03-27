@@ -127,6 +127,57 @@ def test_binance_spot_margin_projection_provider_marks_cached_snapshot_unhealthy
     assert failed_snapshot["rows"][0]["include_in_reconciliation"] is False
 
 
+def test_build_account_projection_provider_routes_binance_portfolio_margin_private_api_to_papi(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("BINANCE_API_KEY", "api-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "api-secret")
+
+    captured_kwargs: dict[str, object] = {}
+
+    def _capture_http_client(**kwargs):
+        captured_kwargs.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        profile_accounts_module,
+        "get_cached_binance_http_client",
+        _capture_http_client,
+    )
+
+    class _DummySpotAccountHttpAPI:
+        def __init__(self, *, client, clock, account_type) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+
+    monkeypatch.setattr(
+        profile_accounts_module,
+        "BinanceSpotAccountHttpAPI",
+        _DummySpotAccountHttpAPI,
+    )
+
+    scope_config = AccountScopeConfig(
+        scope_id="binance.pm.main",
+        provider="binance",
+        venue="BINANCE",
+        api_key_env="BINANCE_API_KEY",
+        api_secret_env="BINANCE_API_SECRET",
+        account_type="PORTFOLIO_MARGIN",
+        private_api_family="PORTFOLIO_MARGIN",
+    )
+
+    provider = profile_accounts_module.build_account_projection_provider(
+        scope_config=scope_config,
+        account_scope_id=scope_config.scope_id,
+        source_strategy_ids=("plumeusdt_binance_spot_makerv3",),
+    )
+
+    assert isinstance(provider, profile_accounts_module.BinanceSpotMarginAccountProjectionProvider)
+    assert captured_kwargs["account_type"] == BinanceAccountType.PORTFOLIO_MARGIN
+    assert captured_kwargs["base_url"] == "https://papi.binance.com"
+
+
 def test_build_account_projection_provider_rejects_binance_isolated_margin_scope(
     monkeypatch,
 ) -> None:

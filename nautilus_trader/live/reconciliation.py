@@ -88,32 +88,72 @@ def order_has_reconciliation_tag(order: Any) -> bool:
     return False
 
 
+def is_synthetic_reconciliation_identifier(value: Any) -> bool:
+    return _stringify_identifier(value).strip().upper().startswith("S-")
+
+
+def order_has_reconciliation_lineage(order: Any) -> bool:
+    if order_has_reconciliation_tag(order):
+        return True
+
+    if is_synthetic_reconciliation_identifier(getattr(order, "venue_order_id", None)):
+        return True
+
+    events = getattr(order, "events", None)
+    if isinstance(events, Sequence):
+        for event in events:
+            if is_synthetic_reconciliation_identifier(getattr(event, "venue_order_id", None)):
+                return True
+            if is_synthetic_reconciliation_identifier(getattr(event, "trade_id", None)):
+                return True
+
+    return False
+
+
+def report_has_synthetic_reconciliation_lineage(
+    order_report: Any,
+    fill_reports: Sequence[Any] | None = None,
+) -> bool:
+    if is_synthetic_reconciliation_identifier(getattr(order_report, "venue_order_id", None)):
+        return True
+
+    if not isinstance(fill_reports, Sequence):
+        return False
+
+    for fill_report in fill_reports:
+        if is_synthetic_reconciliation_identifier(getattr(fill_report, "venue_order_id", None)):
+            return True
+        if is_synthetic_reconciliation_identifier(getattr(fill_report, "trade_id", None)):
+            return True
+
+    return False
+
+
 def is_external_reconciliation_artifact_position(
     position: Any,
     *,
     order_lookup: Callable[[Any], list[Any]] | None = None,
 ) -> bool:
     """
-    Return whether the position looks like a stale EXTERNAL reconciliation artifact.
+    Return whether the position looks like a stale reconciliation artifact.
     """
     strategy_id = _stringify_identifier(getattr(position, "strategy_id", None)).strip().upper()
-    if strategy_id != "EXTERNAL":
-        return False
+    is_external = strategy_id == "EXTERNAL"
 
     if not callable(order_lookup):
-        return True
+        return is_external
 
     position_id = _position_identifier(position)
     if position_id is None:
-        return True
+        return is_external
 
     with suppress(Exception):
         orders = list(order_lookup(position_id) or [])
         if not orders:
-            return True
-        return all(order_has_reconciliation_tag(order) for order in orders)
+            return is_external
+        return all(order_has_reconciliation_lineage(order) for order in orders)
 
-    return True
+    return is_external
 
 
 def filter_external_reconciliation_artifacts(

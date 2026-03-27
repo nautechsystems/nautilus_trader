@@ -61,6 +61,7 @@ from nautilus_trader.live.reconciliation import collapse_duplicate_netting_posit
 from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
 from nautilus_trader.live.reconciliation import is_external_reconciliation_artifact_position
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
+from nautilus_trader.live.reconciliation import report_has_synthetic_reconciliation_lineage
 from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -2718,7 +2719,14 @@ class LiveExecutionEngine(ExecutionEngine):
 
             try:
                 # Apply all fills - let position cycle naturally through all lifecycles
-                result = self._reconcile_order_report(order_report, trades)
+                result = self._reconcile_order_report(
+                    order_report,
+                    trades,
+                    is_external=not report_has_synthetic_reconciliation_lineage(
+                        order_report,
+                        trades,
+                    ),
+                )
             except InvalidStateTrigger as e:
                 self._log.error(str(e))
                 result = False
