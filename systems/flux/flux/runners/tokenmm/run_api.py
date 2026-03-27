@@ -743,6 +743,7 @@ def main() -> None:
         strategy_metadata=metadata,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
+        strategy_contracts=config.get("strategy_contracts"),
     )
     _attach_tokenmm_readiness_route(
         app,

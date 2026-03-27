@@ -143,6 +143,97 @@ def test_parse_args_describes_shared_fluxboard_static_contract(monkeypatch, caps
     assert "/lp" in captured.out
 
 
+def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> None:
+    from flux.runners.tokenmm import run_api
+
+    captured: dict[str, object] = {}
+    config = {
+        "flux": {"mode": "paper"},
+        "identity": {"strategy_id": "tokenmm_api"},
+        "redis": {"host": "localhost", "port": 6379, "db": 0},
+        "venues": {
+            "execution_venue": "binance",
+            "reference_venue": "binance",
+            "execution_symbol": "PLUMEUSDT",
+            "reference_symbol": "PLUMEUSDT",
+        },
+        "api": {
+            "tokenmm_strategy_ids": [
+                "plumeusdt_binance_spot_makerv3",
+                "plumeusdt_binance_perp_makerv3",
+            ],
+        },
+        "strategy_contracts": [
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+            },
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+            },
+        ],
+        "contracts": [
+            {
+                "exchange": "binance_spot",
+                "symbol": "PLUME/USDT",
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+            },
+        ],
+    }
+    args = Namespace(
+        config=Path("tokenmm.toml"),
+        mode=None,
+        confirm_live=False,
+        log_level=None,
+        host=None,
+        port=None,
+        serve_fluxboard=False,
+        fluxboard_dist=None,
+        serve_pulse=False,
+        pulse_dist=None,
+    )
+
+    monkeypatch.setattr(run_api, "_parse_args", lambda: args)
+    monkeypatch.setattr(run_api, "_load_config", lambda path: config)
+    monkeypatch.setattr(run_api, "_resolve_mode", lambda cfg, parsed: "paper")
+    monkeypatch.setattr(run_api, "configure_python_logging", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "emit_startup_banner", lambda **kwargs: None)
+    monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
+    monkeypatch.setattr(run_api, "_should_enable_pulse_routes", lambda args, api_cfg: False)
+    monkeypatch.setattr(run_api, "_resolve_surface_proxy_backends", lambda: {})
+    monkeypatch.setattr(
+        run_api,
+        "_run_with_socketio_if_available",
+        lambda app, *, host, port: captured.update({"host": host, "port": port}),
+    )
+
+    def _fake_create_flux_api_app(*args, **kwargs):
+        captured["strategy_contracts"] = kwargs["strategy_contracts"]
+        captured["profile_strategy_map"] = kwargs["profile_strategy_map"]
+        return Flask(__name__)
+
+    monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
+
+    run_api.main()
+
+    assert captured["strategy_contracts"] == config["strategy_contracts"]
+    assert captured["profile_strategy_map"] == {
+        "tokenmm": [
+            "plumeusdt_binance_spot_makerv3",
+            "plumeusdt_binance_perp_makerv3",
+        ],
+    }
+
+
 def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path) -> None:
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()

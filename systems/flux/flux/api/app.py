@@ -61,6 +61,7 @@ from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.common.strategy_contracts import execution_account_scope_by_strategy_id
 from flux.common.strategy_contracts import shared_observation_group_by_strategy_id
 from flux.params.manager import FluxParamsManager
 from flux.runners.shared.strategy_set import StrategySetDescriptor
@@ -2033,6 +2034,10 @@ def create_flux_api_app(  # noqa: C901
 
     shared_position_groups_cache: dict[str, dict[str, str]] = {}
     profile_projection_scope_ids_cache: dict[str, tuple[str, ...]] = {}
+    execution_account_scope_cache: dict[str, dict[str, str]] = {}
+
+    def _profile_supports_account_projections(profile: str) -> bool:
+        return normalize_profile(profile) in {"equities", "tokenmm"}
 
     def _shared_position_groups_for_profile(profile: str) -> dict[str, str]:
         normalized = normalize_profile(profile)
@@ -2069,6 +2074,18 @@ def create_flux_api_app(  # noqa: C901
                 scope_ids.append(scope_id)
         result = tuple(scope_ids)
         profile_projection_scope_ids_cache[normalized] = result
+        return result
+
+    def _execution_account_scopes_for_profile(profile: str) -> dict[str, str]:
+        normalized = normalize_profile(profile)
+        cached = execution_account_scope_cache.get(normalized)
+        if cached is not None:
+            return cached
+        result = execution_account_scope_by_strategy_id(
+            strategy_contracts or (),
+            allowlist=_strategy_ids_for_profile(normalized),
+        )
+        execution_account_scope_cache[normalized] = result
         return result
 
     def _required_strategy_ids_for_profile(
@@ -2916,10 +2933,11 @@ def create_flux_api_app(  # noqa: C901
                 _required_strategy_ids_for_profile(profile_text, fallback=strategy_ids),
             )
             request_now_ms = now_ms()
+            projection_enabled = _profile_supports_account_projections(profile_normalized)
             projection_rows: list[dict[str, Any]] = []
             projection_totals: dict[str, Any] = {}
             projection_scope_status: list[dict[str, Any]] = []
-            if profile_normalized == "equities":
+            if projection_enabled:
                 (
                     projection_rows,
                     projection_totals,
@@ -3063,14 +3081,40 @@ def create_flux_api_app(  # noqa: C901
                         )
                     ):
                         snapshot_balances = portfolio_snapshot.get("balances")
-                        snapshot_rows = _portfolio_snapshot_rows(
+                        snapshot_accounts = portfolio_snapshot.get("accounts")
+                        snapshot_balance_rows = _portfolio_snapshot_rows(
                             snapshot_balances.get("rows")
                             if isinstance(snapshot_balances, Mapping)
                             else [],
                         )
+                        snapshot_account_rows = _portfolio_snapshot_rows(
+                            snapshot_accounts.get("rows")
+                            if isinstance(snapshot_accounts, Mapping)
+                            else [],
+                        )
+                        snapshot_scope_status = _normalize_scope_status_entries(
+                            snapshot_accounts.get("scope_status")
+                            if isinstance(snapshot_accounts, Mapping)
+                            else [],
+                        )
+                        snapshot_account_rows_missing = not snapshot_account_rows
+                        if projection_rows and snapshot_account_rows_missing:
+                            snapshot_account_rows = [*snapshot_account_rows, *projection_rows]
+                        scope_status = _merge_scope_status_entries(
+                            snapshot_scope_status,
+                            projection_scope_status,
+                        )
+                        snapshot_rows = combine_portfolio_snapshot_rows(
+                            balance_rows=snapshot_balance_rows,
+                            account_rows=snapshot_account_rows,
+                            portfolio_id=decode_text(
+                                portfolio_snapshot.get("portfolio_id") or profile_normalized,
+                            ),
+                        )
                         rows = filter_balance_rows_for_contract_scope(
                             snapshot_rows,
                             contracts=store._contracts,
+                            preserve_shared_account_rows=projection_enabled,
                         )
                         if not rows and snapshot_rows:
                             rows = snapshot_rows
@@ -3083,7 +3127,13 @@ def create_flux_api_app(  # noqa: C901
                                     market_rows=market_rows,
                                 ),
                             )
-                        rows, risk_groups = build_balance_risk_groups(rows)
+                        reconciliation_rows = (
+                            _rows_for_reconciliation(rows)
+                            if projection_enabled
+                            else [dict(row) for row in rows]
+                        )
+                        rows, _ = build_balance_risk_groups(rows)
+                        _, risk_groups = build_balance_risk_groups(reconciliation_rows)
                         response_ts_ms = (
                             safe_int(portfolio_snapshot.get("server_ts_ms"))
                             or safe_int(inventory_payload.get("ts_ms"))
@@ -3098,13 +3148,22 @@ def create_flux_api_app(  # noqa: C901
                             if isinstance(component, Mapping)
                         ]
                         total_rows = len(rows)
+                        totals = _balances_totals(reconciliation_rows)
+                        if isinstance(snapshot_accounts, Mapping):
+                            account_totals = snapshot_accounts.get("totals")
+                            if isinstance(account_totals, Mapping):
+                                totals.update(dict(account_totals))
+                            elif projection_totals and snapshot_account_rows_missing:
+                                totals.update(dict(projection_totals))
+                        elif projection_totals and snapshot_account_rows_missing:
+                            totals.update(dict(projection_totals))
                         payload = {
                             "source": "portfolio_snapshot",
                             "rows": rows[:limit],
                             "count": total_rows,
                             "total": total_rows,
                             "limit": limit,
-                            "totals": _balances_totals(rows),
+                            "totals": totals,
                             "risk_groups": risk_groups,
                             "server_ts_ms": response_ts_ms,
                             "portfolio_id": decode_text(
@@ -3115,7 +3174,10 @@ def create_flux_api_app(  # noqa: C901
                                 or inventory_payload.get("base_currency"),
                             ).strip().upper(),
                             "components": components,
-                            "degraded": bool(inventory_payload.get("degraded", False)),
+                            "degraded": bool(
+                                inventory_payload.get("degraded", False)
+                                or _scope_status_entries_degraded(scope_status)
+                            ),
                             "global_qty_base": inventory_payload.get("global_qty_base")
                             or inventory_payload.get("global_qty"),
                             "global_qty": inventory_payload.get("global_qty"),
@@ -3132,6 +3194,7 @@ def create_flux_api_app(  # noqa: C901
                             "stale_required": list(inventory_payload.get("stale_required") or []),
                             "null_qty_required": list(inventory_payload.get("null_qty_required") or []),
                             "stale_after_ms": snapshot_stale_after_ms,
+                            **({"scope_status": scope_status} if scope_status else {}),
                         }
                         if contract_version == REALTIME_STANDARD_CONTRACT_VERSION:
                             realtime_metadata = _canonical_balances_realtime_metadata(
@@ -3184,13 +3247,18 @@ def create_flux_api_app(  # noqa: C901
                 rows_by_strategy=rows_by_strategy,
                 portfolio_id=profile_normalized,
                 preserve_product_scope_cash=True,
+                execution_account_scope_by_strategy=(
+                    _execution_account_scopes_for_profile(profile_normalized)
+                    if projection_enabled
+                    else None
+                ),
                 shared_position_groups_by_strategy=(
                     _shared_position_groups_for_profile(profile_normalized)
                     if profile_normalized == "equities"
                     else None
                 ),
             )
-            if profile_normalized == "equities":
+            if projection_enabled:
                 if projection_rows:
                     rows = combine_portfolio_snapshot_rows(
                         balance_rows=rows,
@@ -3200,7 +3268,7 @@ def create_flux_api_app(  # noqa: C901
             filtered_rows = filter_balance_rows_for_contract_scope(
                 rows,
                 contracts=store._contracts,
-                preserve_shared_account_rows=(profile_normalized == "equities"),
+                preserve_shared_account_rows=projection_enabled,
             )
             if filtered_rows:
                 rows = filtered_rows
@@ -3215,7 +3283,7 @@ def create_flux_api_app(  # noqa: C901
                 )
             reconciliation_rows = (
                 _rows_for_reconciliation(rows)
-                if profile_normalized == "equities"
+                if projection_enabled
                 else [dict(row) for row in rows]
             )
             rows, _ = build_balance_risk_groups(rows)
