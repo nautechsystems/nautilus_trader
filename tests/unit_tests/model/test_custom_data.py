@@ -14,6 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 
+import json
+from dataclasses import field
+
+import pyarrow as pa
+
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.identifiers import InstrumentId
@@ -23,6 +28,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 class GreeksTestData(Data):
     instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
     delta: float = 0.0
+
+
+@customdataclass
+class JsonTestData(Data):
+    name: str = ""
+    payload: dict[str, object] = field(default_factory=dict)
 
 
 def test_customdata_decorator_properties() -> None:
@@ -111,3 +122,37 @@ def test_customdata_decorator_arrow_identity() -> None:
 
     # Assert
     assert new_data == data
+
+
+def test_customdata_decorator_arrow_identity_with_dict_payload() -> None:
+    # Arrange
+    payload = {
+        "symbol": "CLM4",
+        "nested": {"count": 2, "enabled": True},
+        "values": [1, 2, 3],
+    }
+    data = JsonTestData(
+        ts_event=1,
+        ts_init=2,
+        name="snapshot",
+        payload=payload,
+    )
+
+    # Act
+    data_dict = data.to_dict()
+    arrow_batch = data.to_arrow()
+    arrow_row = arrow_batch.to_pylist()[0]
+    new_data = JsonTestData.from_arrow(arrow_batch)[0]
+
+    # Assert
+    assert data_dict == {
+        "name": "snapshot",
+        "payload": payload,
+        "type": "JsonTestData",
+        "ts_event": 1,
+        "ts_init": 2,
+    }
+    assert JsonTestData._schema.field("payload").type == pa.string()
+    assert arrow_row["payload"] == json.dumps(payload, sort_keys=True)
+    assert new_data == data
+    assert isinstance(new_data.payload, dict)
