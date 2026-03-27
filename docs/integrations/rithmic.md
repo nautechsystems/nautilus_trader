@@ -249,10 +249,20 @@ Planned completion:
   historical `N-TICK` replay through directly
 - no adapter-side tick-bar re-aggregation is planned as part of that follow-up
 
-Rithmic history requests can also be truncated venue-side. If a response returns a round-number bar
-count such as `10000`, or the returned bars do not cover the requested window, retry with smaller
-time windows. Rithmic documents a `request_key`/resume flow for this case, but the adapter does not
-yet auto-resume history requests.
+Rithmic history requests can also be truncated venue-side. A large date-range request is not
+guaranteed to return the full requested window in a single response; the vendor may return only a
+partial segment of the available bars. Treat each history response as a page of data rather than as
+proof that the full range was delivered.
+
+In practice, compare the timestamp of the last returned bar with the requested end time. If the
+response stops early, issue another request from the last returned bar onward (or from the next bar
+boundary if you want to avoid a duplicate boundary bar) and continue until the requested range is
+fully covered. A round-number result such as `10000` bars can be a useful signal that truncation
+occurred, but the more reliable check is whether the returned bars actually span the requested
+window.
+
+Rithmic exposes a `request_key`/resume flow for truncated replies, but the current adapter does not
+yet drive that path automatically, so callers must currently page large backfills themselves.
 
 ### Live external bars
 
