@@ -2054,43 +2054,70 @@ def test_param_schema_profile_equities_strategy_id_selectors_remain_external_for
     redis_client,
     contract_catalog,
 ) -> None:
-    strategy_ids = ["aapl_tradexyz_maker", "amzn_binance_perp_taker"]
+    tradexyz_maker_id = "aapl_tradexyz_maker"
+    tradexyz_taker_id = "aapl_tradexyz_taker"
+    binance_maker_id = "amzn_binance_perp_maker"
+    binance_taker_id = "amzn_binance_perp_taker"
 
     app = create_flux_api_app(
         _compat_flux_config(flux_config),
         redis_client,
         contract_catalog=contract_catalog,
-        strategy_metadata=_split_equities_metadata_for_strategy(strategy_ids[0]),
+        strategy_metadata=_split_equities_metadata_for_strategy(tradexyz_maker_id),
         strategy_metadata_resolver=_split_equities_metadata_for_strategy,
-        profile_strategy_map={"equities": strategy_ids},
+        profile_strategy_map={
+            "equities": [
+                tradexyz_maker_id,
+                tradexyz_taker_id,
+                binance_maker_id,
+                binance_taker_id,
+            ],
+        },
         params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
         params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
         param_set="equities_maker",
     )
 
     with app.test_client() as client:
-        maker_response = client.get(
+        tradexyz_maker_response = client.get(
             "/api/v1/param-schema",
-            query_string={"profile": "equities", "strategy": "aapl_tradexyz_maker"},
+            query_string={"profile": "equities", "strategy": tradexyz_maker_id},
         )
-        maker_body = maker_response.get_json()
-        taker_response = client.get(
+        tradexyz_maker_body = tradexyz_maker_response.get_json()
+        tradexyz_taker_response = client.get(
             "/api/v1/param-schema",
-            query_string={"profile": "equities", "strategy": "amzn_binance_perp_taker"},
+            query_string={"profile": "equities", "strategy": tradexyz_taker_id},
         )
-        taker_body = taker_response.get_json()
+        tradexyz_taker_body = tradexyz_taker_response.get_json()
+        binance_maker_response = client.get(
+            "/api/v1/param-schema",
+            query_string={"profile": "equities", "strategy": binance_maker_id},
+        )
+        binance_maker_body = binance_maker_response.get_json()
+        binance_taker_response = client.get(
+            "/api/v1/param-schema",
+            query_string={"profile": "equities", "strategy": binance_taker_id},
+        )
+        binance_taker_body = binance_taker_response.get_json()
 
-    assert maker_response.status_code == 200
-    assert maker_body["data"]["param_set"] == "equities_maker"
-    assert "n_orders1" in maker_body["data"]["params"]
-    assert "bid_edge_take_bps" not in maker_body["data"]["params"]
-    assert "node_group_id" not in maker_body["data"]
+    for response, body in (
+        (tradexyz_maker_response, tradexyz_maker_body),
+        (tradexyz_taker_response, tradexyz_taker_body),
+        (binance_maker_response, binance_maker_body),
+        (binance_taker_response, binance_taker_body),
+    ):
+        assert response.status_code == 200
+        assert "node_group_id" not in body["data"]
 
-    assert taker_response.status_code == 200
-    assert taker_body["data"]["param_set"] == "equities_taker"
-    assert "bid_edge_take_bps" in taker_body["data"]["params"]
-    assert taker_body["data"]["params_defaults"] == EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS
-    assert "node_group_id" not in taker_body["data"]
+    for body in (tradexyz_maker_body, binance_maker_body):
+        assert body["data"]["param_set"] == "equities_maker"
+        assert "n_orders1" in body["data"]["params"]
+        assert "bid_edge_take_bps" not in body["data"]["params"]
+
+    for body in (tradexyz_taker_body, binance_taker_body):
+        assert body["data"]["param_set"] == "equities_taker"
+        assert "bid_edge_take_bps" in body["data"]["params"]
+        assert body["data"]["params_defaults"] == EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS
 
 
 def test_params_profile_equities_strategy_id_selectors_remain_external_for_grouped_pairs(
@@ -2098,21 +2125,44 @@ def test_params_profile_equities_strategy_id_selectors_remain_external_for_group
     redis_client,
     contract_catalog,
 ) -> None:
-    maker_id = "aapl_tradexyz_maker"
-    taker_id = "amzn_binance_perp_taker"
-    maker_keys = FluxRedisKeys(
-        strategy_id=maker_id,
+    tradexyz_maker_id = "aapl_tradexyz_maker"
+    tradexyz_taker_id = "aapl_tradexyz_taker"
+    binance_maker_id = "amzn_binance_perp_maker"
+    binance_taker_id = "amzn_binance_perp_taker"
+    tradexyz_maker_keys = FluxRedisKeys(
+        strategy_id=tradexyz_maker_id,
         namespace=flux_config.identity.namespace,
         schema_version=flux_config.identity.schema_version,
     )
-    taker_keys = FluxRedisKeys(
-        strategy_id=taker_id,
+    tradexyz_taker_keys = FluxRedisKeys(
+        strategy_id=tradexyz_taker_id,
         namespace=flux_config.identity.namespace,
         schema_version=flux_config.identity.schema_version,
     )
-    redis_client.set_hash_json(maker_keys.params_hash_key(), {"qty": "1.0", "n_orders1": "4"})
+    binance_maker_keys = FluxRedisKeys(
+        strategy_id=binance_maker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    binance_taker_keys = FluxRedisKeys(
+        strategy_id=binance_taker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
     redis_client.set_hash_json(
-        taker_keys.params_hash_key(),
+        tradexyz_maker_keys.params_hash_key(),
+        {"qty": "1.0", "n_orders1": "4"},
+    )
+    redis_client.set_hash_json(
+        tradexyz_taker_keys.params_hash_key(),
+        {"qty": "1.0", "bid_edge_take_bps": "6.75"},
+    )
+    redis_client.set_hash_json(
+        binance_maker_keys.params_hash_key(),
+        {"qty": "1.0", "n_orders1": "5"},
+    )
+    redis_client.set_hash_json(
+        binance_taker_keys.params_hash_key(),
         {"qty": "1.0", "bid_edge_take_bps": "7.25"},
     )
 
@@ -2120,35 +2170,59 @@ def test_params_profile_equities_strategy_id_selectors_remain_external_for_group
         _compat_flux_config(flux_config),
         redis_client,
         contract_catalog=contract_catalog,
-        strategy_metadata=_split_equities_metadata_for_strategy(maker_id),
+        strategy_metadata=_split_equities_metadata_for_strategy(tradexyz_maker_id),
         strategy_metadata_resolver=_split_equities_metadata_for_strategy,
-        profile_strategy_map={"equities": [maker_id, taker_id]},
+        profile_strategy_map={
+            "equities": [
+                tradexyz_maker_id,
+                tradexyz_taker_id,
+                binance_maker_id,
+                binance_taker_id,
+            ],
+        },
         params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
         params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
         param_set="equities_maker",
     )
 
     with app.test_client() as client:
-        maker_response = client.get(
+        tradexyz_maker_response = client.get(
             "/api/v1/params",
-            query_string={"profile": "equities", "strategy": maker_id},
+            query_string={"profile": "equities", "strategy": tradexyz_maker_id},
         )
-        maker_body = maker_response.get_json()
-        taker_response = client.get(
+        tradexyz_maker_body = tradexyz_maker_response.get_json()
+        tradexyz_taker_response = client.get(
             "/api/v1/params",
-            query_string={"profile": "equities", "strategy": taker_id},
+            query_string={"profile": "equities", "strategy": tradexyz_taker_id},
         )
-        taker_body = taker_response.get_json()
+        tradexyz_taker_body = tradexyz_taker_response.get_json()
+        binance_maker_response = client.get(
+            "/api/v1/params",
+            query_string={"profile": "equities", "strategy": binance_maker_id},
+        )
+        binance_maker_body = binance_maker_response.get_json()
+        binance_taker_response = client.get(
+            "/api/v1/params",
+            query_string={"profile": "equities", "strategy": binance_taker_id},
+        )
+        binance_taker_body = binance_taker_response.get_json()
 
-    assert maker_response.status_code == 200
-    assert [row["strategy_id"] for row in maker_body["data"]] == [maker_id]
-    assert maker_body["data"][0]["params"]["n_orders1"] == 4
-    assert "node_group_id" not in maker_body["data"][0]
+    expectations = (
+        (tradexyz_maker_response, tradexyz_maker_body, tradexyz_maker_id),
+        (tradexyz_taker_response, tradexyz_taker_body, tradexyz_taker_id),
+        (binance_maker_response, binance_maker_body, binance_maker_id),
+        (binance_taker_response, binance_taker_body, binance_taker_id),
+    )
+    for response, body, strategy_id in expectations:
+        assert response.status_code == 200
+        assert [row["strategy_id"] for row in body["data"]] == [strategy_id]
+        assert "node_group_id" not in body["data"][0]
+        assert "job_id" not in body["data"][0]
 
-    assert taker_response.status_code == 200
-    assert [row["strategy_id"] for row in taker_body["data"]] == [taker_id]
-    assert taker_body["data"][0]["params"]["bid_edge_take_bps"] == 7.25
-    assert "job_id" not in taker_body["data"][0]
+    assert tradexyz_maker_body["data"][0]["params"]["n_orders1"] == 4
+    assert binance_maker_body["data"][0]["params"]["n_orders1"] == 5
+    assert tradexyz_taker_body["data"][0]["params"]["bid_edge_take_bps"] == 6.75
+    assert binance_taker_body["data"][0]["params"]["bid_edge_take_bps"] == 7.25
 
 
 def test_balances_profile_equities_keeps_profile_readiness_metadata_for_grouped_strategy_ids(
