@@ -242,6 +242,10 @@ class LiveExecutionEngine(ExecutionEngine):
             tuple[AccountId | None, InstrumentId],
             list[FillReport],
         ] = {}
+        self._startup_orders_missing_at_venue: dict[
+            tuple[AccountId | None, InstrumentId],
+            set[StartupOrderReference],
+        ] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
         self._execution_alert_windows: dict[tuple[str, str, str], list[int]] = {}
@@ -1765,6 +1769,7 @@ class LiveExecutionEngine(ExecutionEngine):
     def _clear_startup_reconciliation_snapshot(self) -> None:
         self._startup_reconciliation_snapshot.clear()
         self._startup_unmatched_fill_reports.clear()
+        self._startup_orders_missing_at_venue.clear()
 
     def _capture_startup_reconciliation_snapshot(self) -> None:
         snapshot_data: dict[tuple[AccountId | None, InstrumentId, StrategyId], dict[str, Any]] = {}
@@ -2074,6 +2079,15 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"the bulk open-order sweep omitted {command.client_order_id!r}; "
                         "marking cached order as missing at venue",
                         LogColor.BLUE,
+                    )
+                    self._startup_orders_missing_at_venue.setdefault(
+                        (client.account_id, instrument_id),
+                        set(),
+                    ).add(
+                        StartupOrderReference(
+                            client_order_id=command.client_order_id,
+                            venue_order_id=command.venue_order_id,
+                        ),
                     )
                     self._resolve_cached_order_missing_at_venue(
                         cached_order,
@@ -3633,10 +3647,15 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
+        startup_orders_missing_at_venue = self._startup_orders_missing_at_venue.get(
+            (account_id, instrument_id),
+            set(),
+        )
         current_startup_open_orders = [
             order
             for ref in snapshot.open_order_refs
-            if (
+            if ref not in startup_orders_missing_at_venue
+            and (
                 order := self._cache.order(ref.client_order_id)
             ) is not None
             and order.is_open
@@ -3660,7 +3679,8 @@ class LiveExecutionEngine(ExecutionEngine):
             f"Treating startup netting positions as stale cached positions for "
             f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
             f"snapshot_open_orders={snapshot.total_open_order_count}, "
-            f"current_startup_open_orders={len(current_startup_open_orders)}",
+            f"current_startup_open_orders={len(current_startup_open_orders)}, "
+            f"startup_orders_missing_at_venue={len(startup_orders_missing_at_venue)}",
             LogColor.BLUE,
         )
         return True

@@ -1806,6 +1806,90 @@ class TestLiveExecutionEngine:
         assert snapshot.total_cached_order_count == 1
         assert snapshot.open_order_refs == ()
 
+    def test_should_cleanup_stale_startup_netting_positions_ignores_orders_proven_missing_at_venue(
+        self,
+    ):
+        stale_position_order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+        )
+        self.cache.add_order(stale_position_order)
+        stale_position_order.apply(
+            TestEventStubs.order_accepted(
+                stale_position_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-POSITION-001"),
+            ),
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            position_id=PositionId("P-STARTUP-MISSING-001"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("T-STARTUP-MISSING-001"),
+        )
+        stale_position_order.apply(stale_position_fill)
+        self.cache.update_order(stale_position_order)
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        startup_open_order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(25),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(startup_open_order)
+        startup_open_order.apply(
+            TestEventStubs.order_submitted(
+                startup_open_order,
+                account_id=self.client.account_id,
+            ),
+        )
+        startup_open_order.apply(
+            TestEventStubs.order_accepted(
+                startup_open_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-MISSING-001"),
+            ),
+        )
+        self.cache.update_order(startup_open_order)
+
+        self.exec_engine._capture_startup_reconciliation_snapshot()
+
+        positions_open = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert (
+            self.exec_engine._should_cleanup_stale_startup_netting_positions(
+                positions_open=positions_open,
+                account_id=self.client.account_id,
+                instrument_id=AUDUSD_SIM.id,
+                venue_qty=Decimal("0"),
+            )
+            is False
+        )
+
+        self.exec_engine._startup_orders_missing_at_venue[
+            (self.client.account_id, AUDUSD_SIM.id)
+        ] = {
+            StartupOrderReference(
+                client_order_id=startup_open_order.client_order_id,
+                venue_order_id=startup_open_order.venue_order_id,
+            ),
+        }
+
+        assert (
+            self.exec_engine._should_cleanup_stale_startup_netting_positions(
+                positions_open=positions_open,
+                account_id=self.client.account_id,
+                instrument_id=AUDUSD_SIM.id,
+                venue_qty=Decimal("0"),
+            )
+            is True
+        )
+
     def test_reconcile_position_report_netting_startup_cleanup_uses_matching_account_scope(
         self,
     ):

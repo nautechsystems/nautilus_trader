@@ -1,5 +1,6 @@
 import asyncio
 from decimal import Decimal
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -6923,6 +6924,102 @@ class TestHedgeModeReconciliation:
             and order.quantity == Quantity.from_int(1_500)
         ]
         assert cleanup_orders
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_state_cleans_stale_startup_position_when_missing_startup_orders_stay_open_in_cache(
+        self,
+    ):
+        """
+        Startup cleanup should trust explicit missing-at-venue evidence even if a later
+        startup path leaves the cached startup orders open in cache.
+
+        This matches the March 27, 2026 Binance spot production shape more closely:
+        venue truth is flat, the bulk open-order sweep returns nothing, targeted startup
+        queries prove the cached orders are missing, but later startup assembly still has
+        cache-restored open orders in memory. Cleanup should ignore only those proven
+        missing refs and still fail closed for any startup order that the venue reports.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        stale_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            order_side=OrderSide.SELL,
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-BINANCE-SPOT-STALE-003"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BINANCE-SPOT-STALE-003"),
+        )
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        cached_open_orders = []
+        for index in range(3):
+            cached_order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                order_side=OrderSide.BUY,
+                client_order_id=ClientOrderId(f"BINANCE-SPOT-MISSING-OPEN-{index:03d}"),
+            )
+            cached_order.apply(
+                TestEventStubs.order_submitted(
+                    cached_order,
+                    account_id=startup_account_id,
+                ),
+            )
+            cached_order.apply(
+                TestEventStubs.order_accepted(
+                    cached_order,
+                    account_id=startup_account_id,
+                    venue_order_id=VenueOrderId(f"BINANCE-SPOT-MISSING-VENUE-{index:03d}"),
+                ),
+            )
+            self.cache.add_order(cached_order)
+            cached_open_orders.append(cached_order)
+
+        missing_resolution_calls: list[ClientOrderId] = []
+
+        with patch.object(
+            self.exec_engine,
+            "_resolve_cached_order_missing_at_venue",
+            side_effect=lambda order, **_kwargs: missing_resolution_calls.append(order.client_order_id),
+        ):
+            result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert missing_resolution_calls == [
+            order.client_order_id for order in cached_open_orders
+        ]
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == []
+        assert [
+            self.cache.order(order.client_order_id).status
+            for order in cached_open_orders
+        ] == [OrderStatus.ACCEPTED, OrderStatus.ACCEPTED, OrderStatus.ACCEPTED]
 
     @pytest.mark.asyncio
     async def test_reconcile_execution_state_does_not_cleanup_startup_position_when_targeted_query_returns_none_but_bulk_open_order_report_exists(
