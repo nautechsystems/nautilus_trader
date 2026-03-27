@@ -184,8 +184,8 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Historical bars | ✓ | Second, minute, day, and week bars via the history plant. |
 | Internal bars | ✓ | Recommended live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
-| Historical quote ticks | - | Not currently implemented. |
-| Historical trade ticks | - | Not currently implemented. |
+| Historical quote ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
+| Historical trade ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
 | Live external bar subscriptions | - | Use internal aggregation from quote/trade feeds. |
 | Order book deltas / depth | Limited | Adapter hooks exist, but full depth support is not complete. |
 | Instrument status / close updates | - | No streaming venue path is exposed. |
