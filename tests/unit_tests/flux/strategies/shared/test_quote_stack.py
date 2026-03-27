@@ -334,6 +334,39 @@ def test_plan_quote_stack_keeps_full_depth_keep_bucket_widen_as_no_op() -> None:
     assert _action_tuples(result.actions) == []
 
 
+def test_plan_quote_stack_keeps_frontier_only_keep_bucket_drift_as_no_op() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("97"), Decimal("96")],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal(0)),
+            (Decimal("97"), Decimal("97"), Decimal(0)),
+            (Decimal("96"), Decimal("96"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert result.diagnostics.front_changed is False
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == []
+
+
+def test_plan_quote_stack_repairs_zero_overlap_full_depth_reprice() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("98"), Decimal("97")],
+        desired_levels=_desired_levels("100", "99"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "repair_hole"
+    assert result.diagnostics.depth_after == 1
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == [
+        ("cancel_repair", 0, None),
+    ]
+
+
 def test_plan_quote_stack_represents_temporary_n_plus_one_explicitly_for_inward_moves() -> None:
     result = _plan(
         side="buy",

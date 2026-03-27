@@ -349,6 +349,29 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
             ],
             "cancel_free_slot_for_missing_level",
         ),
+        (
+            [
+                SimpleNamespace(
+                    client_order_id="BUY-FRONT-REPAIR-1",
+                    side=OrderSide.BUY,
+                    price=Decimal("98.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-FRONT-REPAIR-2",
+                    side=OrderSide.BUY,
+                    price=Decimal("97.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+            ],
+            [
+                (Decimal("100.0"), Decimal("100.0")),
+                (Decimal("99.0"), Decimal("99.0")),
+            ],
+            "cancel_free_slot_for_missing_level",
+        ),
     ],
 )
 def test_refresh_quotes_rebalance_cancel_intents_emit_structured_reason_taxonomy(

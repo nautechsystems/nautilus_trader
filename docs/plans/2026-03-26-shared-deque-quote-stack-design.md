@@ -37,7 +37,7 @@ Cons:
 
 ### 2. Minimal patch to current bounded-convergence planner
 
-Keep the existing planner shape but remove `cancel_stale_order` and `cancel_free_slot_for_missing_level`, then trim the remaining action types down toward front/back-only behavior.
+Keep the existing planner shape but remove `cancel_stale_order` and trim the remaining action types down toward front/back-only behavior, except for explicit full-depth hole-repair cancels when a slot must be freed to restore the stack.
 
 Pros:
 
@@ -254,6 +254,7 @@ Minimal reason taxonomy for the new path:
 
 - `cancel_front_violation`
 - `cancel_back_excess`
+- `cancel_free_slot_for_missing_level` for exceptional full-depth hole repair
 - `place_front_improve`
 - `place_back_backfill`
 - `place_missing_hole_repair`

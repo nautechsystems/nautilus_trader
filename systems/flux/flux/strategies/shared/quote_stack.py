@@ -299,20 +299,18 @@ def _should_place_back_after_front_cancel(
 def _is_keep_bucket_widen(
     *,
     active_levels: Sequence[ActiveStackLevel],
-    desired_levels: Sequence[DesiredStackLevel],
     alignment: _Alignment,
+    interior_hole_count: int,
 ) -> bool:
-    if len(active_levels) != len(desired_levels):
+    if not active_levels or not alignment.unmatched_levels:
         return False
-    missing_count = len(alignment.missing_positions)
-    if missing_count == 0 or len(alignment.unmatched_levels) != missing_count:
+    if interior_hole_count > 0:
         return False
-    target_depth = len(desired_levels)
-    tail_suffix = tuple(range(target_depth - missing_count, target_depth))
-    if alignment.missing_positions != tail_suffix:
+    if len(alignment.unmatched_levels) >= len(active_levels):
         return False
-    unmatched_indexes = tuple(level.active_index for level in alignment.unmatched_levels)
-    front_prefix = tuple(level.active_index for level in active_levels[:missing_count])
+    unmatched_count = len(alignment.unmatched_levels)
+    unmatched_indexes = tuple(level.active_index for level in alignment.unmatched_levels[:unmatched_count])
+    front_prefix = tuple(level.active_index for level in active_levels[:unmatched_count])
     return unmatched_indexes == front_prefix
 
 
@@ -323,6 +321,8 @@ def _build_plan(
     depth_before: int,
     missing_level_count: int,
     interior_hole_count: int,
+    front_active_index: int | None = None,
+    back_active_index: int | None = None,
 ) -> StackPlan:
     current_depth = depth_before
     max_depth = depth_before
@@ -343,11 +343,13 @@ def _build_plan(
         interior_hole_count=interior_hole_count,
         front_changed=any(
             action.kind in {"cancel_front", "place_front"}
+            or (action.kind == "cancel_repair" and action.active_index == front_active_index)
             or (action.kind == "place_missing" and action.level_index == 0)
             for action in actions
         ),
         back_changed=any(
             action.kind in {"cancel_back", "place_back"}
+            or (action.kind == "cancel_repair" and action.active_index == back_active_index)
             or (action.kind == "place_missing" and action.level_index == depth_before)
             for action in actions
         ),
@@ -391,6 +393,8 @@ def plan_side_deque_actions(
         missing_positions=alignment.missing_positions,
     )
     frontier_missing_count = max(0, missing_level_count - interior_hole_count)
+    front_active_index = normalized_active_levels[0].active_index if normalized_active_levels else None
+    back_active_index = normalized_active_levels[-1].active_index if normalized_active_levels else None
 
     if _has_front_cancel_violation(
         side=normalized_side,
@@ -426,6 +430,8 @@ def plan_side_deque_actions(
                 depth_before=depth_before,
                 missing_level_count=missing_level_count,
                 interior_hole_count=interior_hole_count,
+                front_active_index=front_active_index,
+                back_active_index=back_active_index,
             )
 
         return _build_plan(
@@ -434,6 +440,8 @@ def plan_side_deque_actions(
             depth_before=depth_before,
             missing_level_count=missing_level_count,
             interior_hole_count=interior_hole_count,
+            front_active_index=front_active_index,
+            back_active_index=back_active_index,
         )
 
     if len(normalized_active_levels) > len(normalized_desired_levels):
@@ -448,6 +456,8 @@ def plan_side_deque_actions(
             depth_before=depth_before,
             missing_level_count=missing_level_count,
             interior_hole_count=interior_hole_count,
+            front_active_index=front_active_index,
+            back_active_index=back_active_index,
         )
 
     if _is_simple_inward_move(
@@ -467,14 +477,16 @@ def plan_side_deque_actions(
             depth_before=depth_before,
             missing_level_count=missing_level_count,
             interior_hole_count=interior_hole_count,
+            front_active_index=front_active_index,
+            back_active_index=back_active_index,
         )
 
     if alignment.missing_levels:
         if depth_before >= target_depth:
             if _is_keep_bucket_widen(
                 active_levels=normalized_active_levels,
-                desired_levels=normalized_desired_levels,
                 alignment=alignment,
+                interior_hole_count=interior_hole_count,
             ) or not alignment.unmatched_levels:
                 return _build_plan(
                     mode="no_op",
@@ -482,6 +494,8 @@ def plan_side_deque_actions(
                     depth_before=depth_before,
                     missing_level_count=missing_level_count,
                     interior_hole_count=interior_hole_count,
+                    front_active_index=front_active_index,
+                    back_active_index=back_active_index,
                 )
             cancel_candidate = alignment.unmatched_levels[0]
             cancel_kind: StackActionKind = (
@@ -500,6 +514,8 @@ def plan_side_deque_actions(
                 depth_before=depth_before,
                 missing_level_count=missing_level_count,
                 interior_hole_count=interior_hole_count,
+                front_active_index=front_active_index,
+                back_active_index=back_active_index,
             )
         mode: StackActionMode = (
             "repair_hole"
@@ -517,6 +533,8 @@ def plan_side_deque_actions(
             depth_before=depth_before,
             missing_level_count=missing_level_count,
             interior_hole_count=interior_hole_count,
+            front_active_index=front_active_index,
+            back_active_index=back_active_index,
         )
 
     return _build_plan(
@@ -525,6 +543,8 @@ def plan_side_deque_actions(
         depth_before=depth_before,
         missing_level_count=missing_level_count,
         interior_hole_count=interior_hole_count,
+        front_active_index=front_active_index,
+        back_active_index=back_active_index,
     )
 
 

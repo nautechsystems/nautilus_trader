@@ -132,6 +132,8 @@ def _bounded_depth_diagnostics(
     *,
     depth_before: int,
     actions: tuple[StackAction, ...],
+    front_active_index: int | None = None,
+    back_active_index: int | None = None,
 ) -> tuple[int, int, bool, bool]:
     current_depth = depth_before
     max_depth = depth_before
@@ -146,10 +148,14 @@ def _bounded_depth_diagnostics(
         max_depth = max(max_depth, current_depth)
 
         if action.kind in {"cancel_front", "place_front"} or (
+            action.kind == "cancel_repair" and action.active_index == front_active_index
+        ) or (
             action.kind == "place_missing" and action.level_index == 0
         ):
             front_changed = True
         if action.kind in {"cancel_back", "place_back"} or (
+            action.kind == "cancel_repair" and action.active_index == back_active_index
+        ) or (
             action.kind == "place_missing" and action.level_index == depth_before
         ):
             back_changed = True
@@ -466,6 +472,8 @@ def plan_side_bounded_convergence(
     depth_after, temporary_oversize_depth, front_changed, back_changed = _bounded_depth_diagnostics(
         depth_before=stack_plan.diagnostics.depth_before,
         actions=allowed_actions,
+        front_active_index=0 if active_prices else None,
+        back_active_index=len(active_prices) - 1 if active_prices else None,
     )
 
     diagnostics = ConvergenceDiagnostics(
