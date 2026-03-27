@@ -51,7 +51,11 @@ export function buildFluxboardChildRoutes(
   const routeElements: Record<string, RouteObject['element']> = {
     '/dashboard': (
       <Title title="Dashboard">
-        <DashboardLayout preset="default" allowedPanels={surface.allowedPanels} />
+        <DashboardLayout
+          preset="default"
+          allowedPanels={surface.allowedPanels}
+          storageScope={surface.profile}
+        />
       </Title>
     ),
     '/params': (

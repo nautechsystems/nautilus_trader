@@ -142,9 +142,11 @@ function filterCollapsedPanelsByAllowedPanels(
 function DesktopDashboardLayout({
   preset = 'default',
   allowedPanels = ALL_PANELS,
+  storageScope,
 }: {
   preset?: keyof typeof PRESETS | string;
   allowedPanels?: readonly PanelId[];
+  storageScope?: string;
 }) {
   const presetKey = String(preset);
   const allowedPanelIds = useMemo(() => {
@@ -157,12 +159,18 @@ function DesktopDashboardLayout({
   const lastSavedLayoutsRef = useRef<string>('');
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [layouts, setLayouts] = useState<Layouts>(() => {
-    const initial = filterLayoutsByAllowedPanels(normalizeLayouts(loadLayout(presetKey)), allowedPanelIdSet);
+    const initial = filterLayoutsByAllowedPanels(
+      normalizeLayouts(storageScope ? loadLayout(presetKey, storageScope) : loadLayout(presetKey)),
+      allowedPanelIdSet
+    );
     lastSavedLayoutsRef.current = JSON.stringify(initial);
     return initial;
   });
   const [collapsedPanels, setCollapsedPanels] = useState<Set<string>>(() =>
-    filterCollapsedPanelsByAllowedPanels(loadCollapsedPanels(), allowedPanelIdSet)
+    filterCollapsedPanelsByAllowedPanels(
+      storageScope ? loadCollapsedPanels(storageScope) : loadCollapsedPanels(),
+      allowedPanelIdSet
+    )
   );
   const [activeBreakpoint, setActiveBreakpoint] = useState<BreakpointKey>('lg');
   const [gridWidth, setGridWidth] = useState(() => {
@@ -197,15 +205,23 @@ function DesktopDashboardLayout({
     if (serializedFilteredLayouts !== JSON.stringify(layouts)) {
       setLayouts(filteredLayouts);
       lastSavedLayoutsRef.current = serializedFilteredLayouts;
-      saveLayout(presetKey, filteredLayouts);
+      if (storageScope) {
+        saveLayout(presetKey, filteredLayouts, storageScope);
+      } else {
+        saveLayout(presetKey, filteredLayouts);
+      }
     }
 
     const filteredCollapsedPanels = filterCollapsedPanelsByAllowedPanels(collapsedPanels, allowedPanelIdSet);
     if (filteredCollapsedPanels.size !== collapsedPanels.size) {
       setCollapsedPanels(filteredCollapsedPanels);
-      saveCollapsedPanels(filteredCollapsedPanels);
+      if (storageScope) {
+        saveCollapsedPanels(filteredCollapsedPanels, storageScope);
+      } else {
+        saveCollapsedPanels(filteredCollapsedPanels);
+      }
     }
-  }, [allowedPanelIdSet, collapsedPanels, layouts, presetKey]);
+  }, [allowedPanelIdSet, collapsedPanels, layouts, presetKey, storageScope]);
 
   const adjustedLayouts = useMemo(() => {
     const adjusted: Layouts = {};
@@ -246,7 +262,11 @@ function DesktopDashboardLayout({
       return;
     }
     lastSavedLayoutsRef.current = serialized;
-    saveLayout(presetKey, normalized);
+    if (storageScope) {
+      saveLayout(presetKey, normalized, storageScope);
+    } else {
+      saveLayout(presetKey, normalized);
+    }
   };
 
   const mergeLayoutsWithCollapsedHeights = (incoming: Layouts): Layouts => {
@@ -302,7 +322,11 @@ function DesktopDashboardLayout({
     setCollapsedPanels(prev => {
       const next = new Set(prev);
       next.delete(panelId);
-      saveCollapsedPanels(next);
+      if (storageScope) {
+        saveCollapsedPanels(next, storageScope);
+      } else {
+        saveCollapsedPanels(next);
+      }
       return next;
     });
   };
@@ -339,7 +363,11 @@ function DesktopDashboardLayout({
       } else {
         next.delete(panelId);
       }
-      saveCollapsedPanels(next);
+      if (storageScope) {
+        saveCollapsedPanels(next, storageScope);
+      } else {
+        saveCollapsedPanels(next);
+      }
       return next;
     });
   };
@@ -351,10 +379,18 @@ function DesktopDashboardLayout({
   const handleResetLayout = () => {
     const normalized = cloneLayouts(defaultLayouts);
     setLayouts(normalized);
-    saveLayout(presetKey, normalized);
+    if (storageScope) {
+      saveLayout(presetKey, normalized, storageScope);
+    } else {
+      saveLayout(presetKey, normalized);
+    }
     const empty = new Set<string>();
     setCollapsedPanels(empty);
-    saveCollapsedPanels(empty);
+    if (storageScope) {
+      saveCollapsedPanels(empty, storageScope);
+    } else {
+      saveCollapsedPanels(empty);
+    }
   };
 
   // Track the grid container width so ResponsiveGridLayout always receives
@@ -528,13 +564,15 @@ function DesktopDashboardLayout({
 export function DashboardLayout({
   preset = 'default',
   allowedPanels,
+  storageScope,
 }: {
   preset?: keyof typeof PRESETS | string;
   allowedPanels?: readonly PanelId[];
+  storageScope?: string;
 }) {
   const isMobile = useIsMobile();
   if (isMobile) {
     return <MobileDashboard />;
   }
-  return <DesktopDashboardLayout preset={preset} allowedPanels={allowedPanels} />;
+  return <DesktopDashboardLayout preset={preset} allowedPanels={allowedPanels} storageScope={storageScope} />;
 }

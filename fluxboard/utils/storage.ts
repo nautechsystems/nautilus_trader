@@ -7,6 +7,7 @@ import { SOUND } from '../constants';
 const LAYOUT_KEY_PREFIX = 'fluxboard:dashboard:layout';
 const COLLAPSE_KEY = 'fluxboard:dashboard:collapsed';
 const CURRENT_LAYOUT_VERSION = 2;
+const DEFAULT_STORAGE_SCOPE = 'default';
 
 type StoredLayouts = {
   version: number;
@@ -104,22 +105,38 @@ function presetLayoutsForAllBreakpointsFromArray(layout: Array<LayoutConfig | La
   return layouts;
 }
 
-function layoutStorageKey(preset: string): string {
+function normalizeStorageScope(scope?: string): string {
+  return String(scope || DEFAULT_STORAGE_SCOPE);
+}
+
+function usesLegacyScopeFallback(scope?: string): boolean {
+  return normalizeStorageScope(scope) === DEFAULT_STORAGE_SCOPE;
+}
+
+function layoutStorageKey(preset: string, scope?: string): string {
+  return `${LAYOUT_KEY_PREFIX}:${normalizeStorageScope(scope)}:${preset}`;
+}
+
+function legacyLayoutStorageKey(preset: string): string {
   return `${LAYOUT_KEY_PREFIX}:${preset}`;
+}
+
+function collapsedStorageKey(scope?: string): string {
+  return `${COLLAPSE_KEY}:${normalizeStorageScope(scope)}`;
 }
 
 export function createLayoutsFromPreset(preset: string): Layouts {
   return presetLayoutsForAllBreakpoints(preset);
 }
 
-export function saveLayout(preset: string, layouts: Layouts) {
+export function saveLayout(preset: string, layouts: Layouts, scope?: string) {
   try {
     const payload: StoredLayouts = {
       version: CURRENT_LAYOUT_VERSION,
       preset,
       layouts,
     };
-    localStorage.setItem(layoutStorageKey(preset), JSON.stringify(payload));
+    localStorage.setItem(layoutStorageKey(preset, scope), JSON.stringify(payload));
   } catch (e) {
     if (import.meta.env?.DEV) {
       console.warn('[storage] Failed to save layout:', e);
@@ -127,20 +144,28 @@ export function saveLayout(preset: string, layouts: Layouts) {
   }
 }
 
-export function loadLayout(preset: string): Layouts {
+export function loadLayout(preset: string, scope?: string): Layouts {
   try {
-    const namespaced = localStorage.getItem(layoutStorageKey(preset));
+    const namespaced = localStorage.getItem(layoutStorageKey(preset, scope));
     if (namespaced) {
       return ensureLayouts(JSON.parse(namespaced), preset);
     }
 
-    // Legacy fallback (pre-versioned key)
-    const legacy = localStorage.getItem(LAYOUT_KEY_PREFIX);
-    if (legacy) {
-      const layouts = ensureLayouts(JSON.parse(legacy), preset);
-      // Migrate immediately to namespaced key
-      saveLayout(preset, layouts);
-      return layouts;
+    if (usesLegacyScopeFallback(scope)) {
+      const legacyNamespaced = localStorage.getItem(legacyLayoutStorageKey(preset));
+      if (legacyNamespaced) {
+        const layouts = ensureLayouts(JSON.parse(legacyNamespaced), preset);
+        saveLayout(preset, layouts, scope);
+        return layouts;
+      }
+
+      // Legacy fallback (pre-versioned key)
+      const legacy = localStorage.getItem(LAYOUT_KEY_PREFIX);
+      if (legacy) {
+        const layouts = ensureLayouts(JSON.parse(legacy), preset);
+        saveLayout(preset, layouts, scope);
+        return layouts;
+      }
     }
   } catch (e) {
     if (import.meta.env?.DEV) {
@@ -150,9 +175,9 @@ export function loadLayout(preset: string): Layouts {
   return createLayoutsFromPreset(preset);
 }
 
-export function saveCollapsedPanels(panels: Set<string>) {
+export function saveCollapsedPanels(panels: Set<string>, scope?: string) {
   try {
-    localStorage.setItem(COLLAPSE_KEY, JSON.stringify(Array.from(panels)));
+    localStorage.setItem(collapsedStorageKey(scope), JSON.stringify(Array.from(panels)));
   } catch (e) {
     if (import.meta.env?.DEV) {
       console.warn('[storage] Failed to save collapsed panels:', e);
@@ -160,13 +185,25 @@ export function saveCollapsedPanels(panels: Set<string>) {
   }
 }
 
-export function loadCollapsedPanels(): Set<string> {
+export function loadCollapsedPanels(scope?: string): Set<string> {
   try {
-    const stored = localStorage.getItem(COLLAPSE_KEY);
+    const stored = localStorage.getItem(collapsedStorageKey(scope));
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
         return new Set(parsed);
+      }
+    }
+
+    if (usesLegacyScopeFallback(scope)) {
+      const legacy = localStorage.getItem(COLLAPSE_KEY);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed)) {
+          const panels = new Set(parsed);
+          saveCollapsedPanels(panels, scope);
+          return panels;
+        }
       }
     }
   } catch (e) {
