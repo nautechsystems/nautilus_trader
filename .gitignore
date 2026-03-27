@@ -106,6 +106,7 @@ GEMINI.md
 
 # Nautilus specific
 .ipynb_checkpoints/
+*.executed.ipynb
 /docs/getting_started/*.ipynb
 /docs/tutorials/*.ipynb
 bench_data/
