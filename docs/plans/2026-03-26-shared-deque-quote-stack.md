@@ -309,7 +309,7 @@ Make sure the MakerV3 intent publisher emits canonical reason codes for the new 
 
 - `cancel_front_violation`
 - `cancel_back_excess`
-- `cancel_free_slot_for_missing_level` for exceptional full-depth hole repair
+- `cancel_free_slot_for_missing_level` for full-depth hole repair blockers that are not the tail
 - `place_front_improve`
 - `place_back_backfill`
 - `place_missing_hole_repair`
