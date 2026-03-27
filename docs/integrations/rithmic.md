@@ -4,6 +4,11 @@
 across supported FCMs and exchanges. This integration supports live market data ingest, instrument
 loading, historical bar requests, and live order execution through NautilusTrader.
 
+:::warning Alpha Status
+The current Rithmic adapter is alpha software. It is still under active testing and development
+and should not be used for live trading.
+:::
+
 ## Overview
 
 This guide assumes a trader is setting up for both live market data feeds and trade execution.
