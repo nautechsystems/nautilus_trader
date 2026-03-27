@@ -110,6 +110,22 @@ def order_has_reconciliation_lineage(order: Any) -> bool:
     return False
 
 
+def position_has_reconciliation_lineage(position: Any) -> bool:
+    events = getattr(position, "events", None)
+    if not isinstance(events, Sequence):
+        return False
+
+    for event in events:
+        if is_synthetic_reconciliation_identifier(getattr(event, "venue_order_id", None)):
+            return True
+        if is_synthetic_reconciliation_identifier(getattr(event, "trade_id", None)):
+            return True
+        if bool(getattr(event, "reconciliation", False)):
+            return True
+
+    return False
+
+
 def report_has_synthetic_reconciliation_lineage(
     order_report: Any,
     fill_reports: Sequence[Any] | None = None,
@@ -141,19 +157,19 @@ def is_external_reconciliation_artifact_position(
     is_external = strategy_id == "EXTERNAL"
 
     if not callable(order_lookup):
-        return is_external
+        return is_external or position_has_reconciliation_lineage(position)
 
     position_id = _position_identifier(position)
     if position_id is None:
-        return is_external
+        return is_external or position_has_reconciliation_lineage(position)
 
     with suppress(Exception):
         orders = list(order_lookup(position_id) or [])
         if not orders:
-            return is_external
+            return is_external or position_has_reconciliation_lineage(position)
         return all(order_has_reconciliation_lineage(order) for order in orders)
 
-    return is_external
+    return is_external or position_has_reconciliation_lineage(position)
 
 
 def filter_external_reconciliation_artifacts(
