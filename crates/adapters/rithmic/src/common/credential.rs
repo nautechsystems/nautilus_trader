@@ -2,6 +2,9 @@
 
 use crate::error::{Result, RithmicError};
 
+const DEFAULT_APP_NAME: &str = "fufo:fund-forge";
+const DEFAULT_APP_VERSION: &str = "1.0";
+
 /// Rithmic API credentials.
 #[derive(Debug, Clone)]
 pub struct RithmicCredentials {
@@ -32,8 +35,8 @@ impl RithmicCredentials {
             username: username.into(),
             password: password.into(),
             system_name: system_name.into(),
-            app_name: "NautilusTrader".to_string(),
-            app_version: "1.0".to_string(),
+            app_name: DEFAULT_APP_NAME.to_string(),
+            app_version: DEFAULT_APP_VERSION.to_string(),
             fcm_id: None,
             ib_id: None,
         }
@@ -66,8 +69,9 @@ impl RithmicCredentials {
             password,
             system_name,
             app_name: std::env::var("RITHMIC_APP_NAME")
-                .unwrap_or_else(|_| "NautilusTrader".to_string()),
-            app_version: std::env::var("RITHMIC_APP_VERSION").unwrap_or_else(|_| "1.0".to_string()),
+                .unwrap_or_else(|_| DEFAULT_APP_NAME.to_string()),
+            app_version: std::env::var("RITHMIC_APP_VERSION")
+                .unwrap_or_else(|_| DEFAULT_APP_VERSION.to_string()),
             fcm_id: std::env::var("RITHMIC_FCM_ID").ok(),
             ib_id: std::env::var("RITHMIC_IB_ID").ok(),
         })

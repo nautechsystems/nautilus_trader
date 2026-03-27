@@ -116,7 +116,7 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
         Rithmic password.
     system_name : str
         System name for Rithmic connection.
-    app_name : str, default "NautilusTrader"
+    app_name : str, default built-in fallback
         Application name.
     app_version : str, default "1.0"
         Application version.
@@ -133,7 +133,7 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     username: str = ""
     password: str = ""
     system_name: str = ""
-    app_name: str = "NautilusTrader"
+    app_name: str = "fufo:fund-forge"
     app_version: str = "1.0"
     fcm_id: Optional[str] = None
     ib_id: Optional[str] = None
@@ -155,7 +155,7 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
         RITHMIC_SYSTEM_NAME : str
             System name (required).
         RITHMIC_APP_NAME : str
-            Application name. Default: NautilusTrader
+            Application name. Default: built-in fallback
         RITHMIC_APP_VERSION : str
             Application version. Default: 1.0
         RITHMIC_FCM_ID : str
@@ -175,7 +175,7 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
             username=_required_env("USERNAME", profile),
             password=_required_env("PASSWORD", profile),
             system_name=_required_env("SYSTEM_NAME", profile),
-            app_name=_optional_env("APP_NAME", profile) or "NautilusTrader",
+            app_name=_optional_env("APP_NAME", profile) or "fufo:fund-forge",
             app_version=_optional_env("APP_VERSION", profile) or "1.0",
             fcm_id=_optional_env("FCM_ID", profile),
             ib_id=_optional_env("IB_ID", profile),
@@ -198,7 +198,7 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
         System name for Rithmic connection.
     account_id : str
         Trading account ID.
-    app_name : str, default "NautilusTrader"
+    app_name : str, default built-in fallback
         Application name.
     app_version : str, default "1.0"
         Application version.
@@ -219,7 +219,7 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
     password: str = ""
     system_name: str = ""
     account_id: str = ""
-    app_name: str = "NautilusTrader"
+    app_name: str = "fufo:fund-forge"
     app_version: str = "1.0"
     fcm_id: Optional[str] = None
     ib_id: Optional[str] = None
@@ -244,7 +244,7 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
         RITHMIC_ACCOUNT_ID : str
             Trading account ID (required).
         RITHMIC_APP_NAME : str
-            Application name. Default: NautilusTrader
+            Application name. Default: built-in fallback
         RITHMIC_APP_VERSION : str
             Application version. Default: 1.0
         RITHMIC_FCM_ID : str
@@ -271,7 +271,7 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
             password=_required_env("PASSWORD", profile),
             system_name=_required_env("SYSTEM_NAME", profile),
             account_id=_required_env("ACCOUNT_ID", profile),
-            app_name=_optional_env("APP_NAME", profile) or "NautilusTrader",
+            app_name=_optional_env("APP_NAME", profile) or "fufo:fund-forge",
             app_version=_optional_env("APP_VERSION", profile) or "1.0",
             fcm_id=_optional_env("FCM_ID", profile),
             ib_id=_optional_env("IB_ID", profile),

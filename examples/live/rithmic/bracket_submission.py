@@ -32,6 +32,12 @@ Optional environment variables:
     RITHMIC_BRACKET_STOP_TICKS            Default: 10
     RITHMIC_BRACKET_HOLD_SECONDS          Default: 2
 
+Notes on app credentials:
+    If your credentials were not issued with app details, a temporary working
+    fallback is already available, so users do not need to run Rithmic
+    conformance themselves unless instructed otherwise.
+    For direct API onboarding later: https://www.rithmic.com/api-request
+
 WARNING:
     This sends a real native bracket request to the configured account.
     Use a demo account first.

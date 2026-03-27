@@ -21,6 +21,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, RithmicError};
 
+const DEFAULT_APP_NAME: &str = "fufo:fund-forge";
+const DEFAULT_APP_VERSION: &str = "1.0";
+
 /// Deprecated: Use [`RithmicEnv`] instead.
 ///
 /// This type alias is provided for backwards compatibility and will be removed
@@ -144,8 +147,8 @@ impl RithmicDataClientConfig {
             username: username.into(),
             password: password.into(),
             system_name: system_name.into(),
-            app_name: "NautilusTrader".to_string(),
-            app_version: "1.0".to_string(),
+            app_name: DEFAULT_APP_NAME.to_string(),
+            app_version: DEFAULT_APP_VERSION.to_string(),
             fcm_id: None,
             ib_id: None,
         }
@@ -168,9 +171,9 @@ impl RithmicDataClientConfig {
             password: required_env_var("PASSWORD", profile)?,
             system_name: required_env_var("SYSTEM_NAME", profile)?,
             app_name: optional_env_var("APP_NAME", profile)?
-                .unwrap_or_else(|| "NautilusTrader".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_NAME.to_string()),
             app_version: optional_env_var("APP_VERSION", profile)?
-                .unwrap_or_else(|| "1.0".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_VERSION.to_string()),
             fcm_id: optional_env_var("FCM_ID", profile)?,
             ib_id: optional_env_var("IB_ID", profile)?,
         })
@@ -238,8 +241,8 @@ impl RithmicExecClientConfig {
             username: username.into(),
             password: password.into(),
             system_name: system_name.into(),
-            app_name: "NautilusTrader".to_string(),
-            app_version: "1.0".to_string(),
+            app_name: DEFAULT_APP_NAME.to_string(),
+            app_version: DEFAULT_APP_VERSION.to_string(),
             fcm_id: None,
             ib_id: None,
             account_id: account_id.into(),
@@ -263,9 +266,9 @@ impl RithmicExecClientConfig {
             password: required_env_var("PASSWORD", profile)?,
             system_name: required_env_var("SYSTEM_NAME", profile)?,
             app_name: optional_env_var("APP_NAME", profile)?
-                .unwrap_or_else(|| "NautilusTrader".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_NAME.to_string()),
             app_version: optional_env_var("APP_VERSION", profile)?
-                .unwrap_or_else(|| "1.0".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_VERSION.to_string()),
             fcm_id: optional_env_var("FCM_ID", profile)?,
             ib_id: optional_env_var("IB_ID", profile)?,
             account_id: required_env_var("ACCOUNT_ID", profile)?,

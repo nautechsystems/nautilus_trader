@@ -29,6 +29,12 @@ Optional environment variables:
     RITHMIC_INITIAL_LIMIT_POINTS_BELOW_BID   Default: 20
     RITHMIC_MODIFIED_LIMIT_POINTS_BELOW_BID  Default: 10
 
+Notes on app credentials:
+    If your credentials were not issued with app details, a temporary working
+    fallback is already available, so users do not need to run Rithmic
+    conformance themselves unless instructed otherwise.
+    For direct API onboarding later: https://www.rithmic.com/api-request
+
 WARNING:
     This sends a real order to the configured account. Use a demo account first.
 """

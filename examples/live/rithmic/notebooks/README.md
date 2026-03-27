@@ -36,6 +36,13 @@ Execution-path cells also require:
 
 Profile-scoped variables also work through `RITHMIC_PROFILE` plus matching `RITHMIC_{PROFILE}_*` names.
 
+For `RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION`, a temporary working fallback is already available
+if your credentials were not issued with app details. Users do not currently need to complete
+Rithmic conformance themselves unless told otherwise.
+
+If you need your own issued app credentials later, start here:
+[Rithmic API Request](https://www.rithmic.com/api-request).
+
 `RITHMIC_PROFILE` is only a local namespace for those environment variables. The actual Rithmic
 connection values are still `SYSTEM_NAME`, `FCM_ID`, and `IB_ID`.
 

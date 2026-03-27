@@ -49,6 +49,9 @@ use rithmic_rs::{
 /// Maximum reconnection attempts before giving up.
 const MAX_RECONNECT_ATTEMPTS: u32 = 100;
 
+const DEFAULT_APP_NAME: &str = "fufo:fund-forge";
+const DEFAULT_APP_VERSION: &str = "1.0";
+
 /// Initial backoff duration for reconnection.
 const INITIAL_BACKOFF_MS: u64 = 1000;
 
@@ -112,8 +115,8 @@ impl GatewayConfig {
             username: username.into(),
             password: password.into(),
             system_name: system_name.into(),
-            app_name: "NautilusTrader".to_string(),
-            app_version: "1.0".to_string(),
+            app_name: DEFAULT_APP_NAME.to_string(),
+            app_version: DEFAULT_APP_VERSION.to_string(),
             fcm_id: fcm_id.into(),
             ib_id: ib_id.into(),
             account_id: account_id.into(),
@@ -156,9 +159,9 @@ impl GatewayConfig {
             password: required_env_var("PASSWORD", profile)?,
             system_name: required_env_var("SYSTEM_NAME", profile)?,
             app_name: optional_env_var("APP_NAME", profile)?
-                .unwrap_or_else(|| "NautilusTrader".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_NAME.to_string()),
             app_version: optional_env_var("APP_VERSION", profile)?
-                .unwrap_or_else(|| "1.0".to_string()),
+                .unwrap_or_else(|| DEFAULT_APP_VERSION.to_string()),
             fcm_id: optional_env_var("FCM_ID", profile)?.unwrap_or_default(),
             ib_id: optional_env_var("IB_ID", profile)?.unwrap_or_default(),
             account_id: required_env_var("ACCOUNT_ID", profile)?,
@@ -1904,8 +1907,8 @@ mod tests {
         assert!(!config.enable_order);
         assert!(config.enable_pnl);
         assert!(!config.enable_history);
-        assert_eq!(config.app_name, "NautilusTrader");
-        assert_eq!(config.app_version, "1.0");
+        assert_eq!(config.app_name, DEFAULT_APP_NAME);
+        assert_eq!(config.app_version, DEFAULT_APP_VERSION);
     }
 
     #[test]

@@ -376,6 +376,19 @@ Optional environment variables:
 - `RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS`
 - `RITHMIC_NATIVE_BRACKET_STATE_PATH`
 
+:::note
+`RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION` are not arbitrary local labels. To obtain valid values,
+you generally need to contact Rithmic, request API access, and complete their conformance process.
+At present, that conformance step is typically just connecting to the test API endpoint as directed
+by Rithmic support. The required details are provided by Rithmic during the API onboarding flow.
+
+Start here: [Rithmic API Request](https://www.rithmic.com/api-request).
+
+As a temporary fallback, NautilusTrader currently provides a working built-in app credential path.
+That means users do not currently need to complete Rithmic conformance themselves unless instructed
+otherwise.
+:::
+
 Example shell setup:
 
 ```bash

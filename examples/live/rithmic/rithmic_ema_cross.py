@@ -36,6 +36,12 @@ Optional environment variables:
     RITHMIC_APP_NAME
     RITHMIC_APP_VERSION
 
+Notes on app credentials:
+    If your credentials were not issued with app details, a temporary working
+    fallback is already available, so users do not need to run Rithmic
+    conformance themselves unless instructed otherwise.
+    For direct API onboarding later: https://www.rithmic.com/api-request
+
 Example configuration:
     Edit the constants below for product, exchange, bar type, EMA periods,
     trade size, warmup window, and optional auto-stop duration.
