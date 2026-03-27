@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +66,109 @@ def _install_strategy_spec(
         lambda _strategy_id, default=None: spec,
         raising=False,
     )
+
+
+def _install_grouped_strategy_specs(
+    monkeypatch,
+    strategy_cls: type[object],
+) -> None:
+    specs = {
+        "equities_maker": SimpleNamespace(
+            strategy_id="equities_maker",
+            strategy_cls=strategy_cls,
+            config_cls=EquitiesMakerStrategyConfig,
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+            profile_key="equities_maker",
+            capabilities=SimpleNamespace(
+                publishes_local_inventory=False,
+                uses_profile_account_projection=True,
+                supports_immediate_hedge=True,
+            ),
+        ),
+        "equities_taker": SimpleNamespace(
+            strategy_id="equities_taker",
+            strategy_cls=strategy_cls,
+            config_cls=EquitiesTakerStrategyConfig,
+            param_set="equities_taker",
+            strategy_family="equities_taker",
+            strategy_version="v1",
+            profile_key="equities_taker",
+            capabilities=SimpleNamespace(
+                publishes_local_inventory=False,
+                uses_profile_account_projection=True,
+                supports_immediate_hedge=True,
+            ),
+        ),
+    }
+
+    monkeypatch.setattr(
+        run_node,
+        "get_strategy_spec",
+        lambda name: specs[name],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_spec_for_strategy_id",
+        lambda strategy_id, default=None: specs[
+            "equities_taker" if strategy_id.endswith("_taker") else "equities_maker"
+        ],
+        raising=False,
+    )
+
+
+def _split_equities_config(
+    *,
+    strategy_id: str,
+    param_set: str,
+    trader_id: str,
+    portfolio_asset_id: str,
+    maker_instrument_id: str,
+    reference_instrument_id: str,
+    execution_account_scope_id: str,
+) -> dict[str, object]:
+    base_group_id = strategy_id.removesuffix("_maker").removesuffix("_taker")
+    maker_strategy_id = f"{base_group_id}_maker"
+    taker_strategy_id = f"{base_group_id}_taker"
+    return {
+        "flux": {"namespace": "flux", "schema_version": "v1"},
+        "identity": {
+            "strategy_id": strategy_id,
+            "external_strategy_id": strategy_id,
+            "trader_id": trader_id,
+        },
+        "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+        "node": {"enable_execution": True},
+        "portfolio": {"profile_owned_account_projections": True},
+        "strategy": {
+            "strategy_id": strategy_id,
+            "param_set": param_set,
+            "order_qty": "1",
+            "qty": "1",
+        },
+        "strategy_contracts": [
+            {
+                "strategy_id": maker_strategy_id,
+                "portfolio_asset_id": portfolio_asset_id,
+                "maker_instrument_id": maker_instrument_id,
+                "reference_instrument_id": reference_instrument_id,
+                "execution_account_scope_id": execution_account_scope_id,
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+            {
+                "strategy_id": taker_strategy_id,
+                "portfolio_asset_id": portfolio_asset_id,
+                "maker_instrument_id": maker_instrument_id,
+                "reference_instrument_id": reference_instrument_id,
+                "execution_account_scope_id": execution_account_scope_id,
+                "reference_account_scope_id": "ibkr.reference.main",
+                "hedge_account_scope_id": "ibkr.hedge.main",
+            },
+        ],
+    }
 
 
 def test_equities_startup_lock_uses_descriptor_specific_lock_dir(tmp_path: Path) -> None:
@@ -3197,6 +3301,356 @@ def test_build_node_filters_shared_external_orders_for_secondary_same_asset_vari
         maker_instrument_id,
         reference_instrument_id,
     ]
+
+
+def test_build_grouped_node_builds_one_shared_node_for_tradexyz_node_group(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {
+        "strategies": [],
+        "data_factories": [],
+        "exec_factories": [],
+    }
+    attach_calls = {
+        "runtime": [],
+        "inventory": [],
+        "projection": [],
+        "reference": [],
+    }
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["node_config"] = config
+            self.trader = SimpleNamespace(add_strategy=self._add_strategy)
+
+        def _add_strategy(self, strategy) -> None:
+            captured["strategies"].append(strategy)
+
+        def add_data_client_factory(self, venue, factory) -> None:
+            captured["data_factories"].append((venue, factory))
+
+        def add_exec_client_factory(self, venue, factory) -> None:
+            captured["exec_factories"].append((venue, factory))
+
+        def build(self) -> None:
+            captured["build_called"] = True
+
+    resolve_calls: list[dict[str, object]] = []
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **kwargs: resolve_calls.append(kwargs)
+        or SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+            data_clients={"HYPERLIQUID": object()},
+            exec_clients={"HYPERLIQUID": object()},
+            data_factories={"HYPERLIQUID": "data-factory"},
+            exec_factories={"HYPERLIQUID": "exec-factory"},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_register_cash_borrowing_venues", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        run_node,
+        "_attach_runtime_params_manager",
+        lambda **kwargs: attach_calls["runtime"].append(
+            (
+                kwargs["strategy"].config.external_strategy_id,
+                kwargs["strategy_spec"].strategy_id,
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_portfolio_inventory_feed",
+        lambda **kwargs: attach_calls["inventory"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_profile_account_projection_feed",
+        lambda **kwargs: attach_calls["projection"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_reference_balance_snapshot_provider",
+        lambda **kwargs: attach_calls["reference"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+
+    node = run_node.build_grouped_node(
+        (
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_maker",
+                param_set="equities_maker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_taker",
+                param_set="equities_taker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-TAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+        ),
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    assert node is not None
+    assert captured["build_called"] is True
+    assert len(resolve_calls) == 1
+    assert len(captured["strategies"]) == 2
+    assert {
+        strategy.config.external_strategy_id
+        for strategy in captured["strategies"]
+    } == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+    assert {
+        strategy.config.external_strategy_id: strategy.config.external_order_claims
+        for strategy in captured["strategies"]
+    } == {
+        "aapl_tradexyz_maker": [],
+        "aapl_tradexyz_taker": [],
+    }
+
+    node_config = captured["node_config"]
+    assert node_config.message_bus.streams_prefix == "flux:v1:in:stream:live:aapl_tradexyz"
+    assert node_config.exec_engine.reconciliation_instrument_ids == [
+        maker_instrument_id,
+        reference_instrument_id,
+    ]
+    assert captured["data_factories"] == [("HYPERLIQUID", "data-factory")]
+    assert captured["exec_factories"] == [("HYPERLIQUID", "exec-factory")]
+    assert attach_calls["runtime"] == [
+        ("aapl_tradexyz_maker", "equities_maker"),
+        ("aapl_tradexyz_taker", "equities_taker"),
+    ]
+    assert attach_calls["inventory"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert attach_calls["projection"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert attach_calls["reference"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+
+
+def test_build_grouped_node_keeps_binance_perp_hooks_strategy_scoped(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {"strategies": []}
+    attach_calls = {"runtime": [], "inventory": [], "projection": [], "reference": []}
+    maker_instrument_id = InstrumentId.from_str("AMZNUSDT-LINEAR.BINANCE")
+    reference_instrument_id = InstrumentId.from_str("AMZN.NASDAQ")
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["node_config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured["strategies"].append(strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            captured["build_called"] = True
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_register_cash_borrowing_venues", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        run_node,
+        "_attach_runtime_params_manager",
+        lambda **kwargs: attach_calls["runtime"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_portfolio_inventory_feed",
+        lambda **kwargs: attach_calls["inventory"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_profile_account_projection_feed",
+        lambda **kwargs: attach_calls["projection"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_attach_reference_balance_snapshot_provider",
+        lambda **kwargs: attach_calls["reference"].append(
+            kwargs["strategy"].config.external_strategy_id,
+        ),
+    )
+
+    run_node.build_grouped_node(
+        (
+            _split_equities_config(
+                strategy_id="amzn_binance_perp_maker",
+                param_set="equities_maker",
+                trader_id="EQUITIES-LIVE-AMZN-BINANCE-PERP-MAKER",
+                portfolio_asset_id="AMZN",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="binance.main",
+            ),
+            _split_equities_config(
+                strategy_id="amzn_binance_perp_taker",
+                param_set="equities_taker",
+                trader_id="EQUITIES-LIVE-AMZN-BINANCE-PERP-TAKER",
+                portfolio_asset_id="AMZN",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="binance.main",
+            ),
+        ),
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    assert captured["build_called"] is True
+    assert {
+        strategy.config.external_strategy_id
+        for strategy in captured["strategies"]
+    } == {"amzn_binance_perp_maker", "amzn_binance_perp_taker"}
+    assert captured["node_config"].message_bus.streams_prefix == (
+        "flux:v1:in:stream:live:amzn_binance_perp"
+    )
+    assert attach_calls["runtime"] == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+    ]
+    assert attach_calls["inventory"] == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+    ]
+    assert attach_calls["projection"] == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+    ]
+    assert attach_calls["reference"] == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+    ]
+
+
+def test_main_accepts_multi_strategy_config_paths_for_node_group(monkeypatch, tmp_path: Path) -> None:
+    config_paths = [
+        tmp_path / "aapl_tradexyz_maker.toml",
+        tmp_path / "aapl_tradexyz_taker.toml",
+    ]
+    shared_path = tmp_path / "shared.toml"
+    for path in config_paths:
+        path.write_text("[identity]\nstrategy_id='strategy_a'\n", encoding="utf-8")
+    shared_path.write_text("[redis]\nhost='127.0.0.1'\n", encoding="utf-8")
+
+    maker_config = _split_equities_config(
+        strategy_id="aapl_tradexyz_maker",
+        param_set="equities_maker",
+        trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER",
+        portfolio_asset_id="AAPL",
+        maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+        reference_instrument_id="AAPL.NASDAQ",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    taker_config = _split_equities_config(
+        strategy_id="aapl_tradexyz_taker",
+        param_set="equities_taker",
+        trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-TAKER",
+        portfolio_asset_id="AAPL",
+        maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+        reference_instrument_id="AAPL.NASDAQ",
+        execution_account_scope_id="hyperliquid.xyz.main",
+    )
+    loaded_configs = {
+        config_paths[0]: maker_config,
+        config_paths[1]: taker_config,
+    }
+    captured: dict[str, object] = {}
+
+    class _Node:
+        def run(self) -> None:
+            captured["ran"] = True
+
+        def dispose(self) -> None:
+            captured["disposed"] = True
+
+    @contextmanager
+    def _noop_lock(_config):
+        captured["lock_strategy_id"] = _config["identity"]["strategy_id"]
+        yield
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_node.py",
+            "--config",
+            str(config_paths[0]),
+            "--config",
+            str(config_paths[1]),
+            "--shared-config",
+            str(shared_path),
+        ],
+    )
+    monkeypatch.setattr(
+        run_node,
+        "_load_runtime_config",
+        lambda path, shared_config_path=None: loaded_configs[path],
+    )
+    monkeypatch.setattr(run_node, "_resolve_mode", lambda *_args, **_kwargs: "live")
+    def _build_grouped_node(configs, **_kwargs):
+        captured["build_configs"] = tuple(configs)
+        return _Node()
+
+    monkeypatch.setattr(run_node, "build_grouped_node", _build_grouped_node)
+    monkeypatch.setattr(run_node, "_strategy_startup_lock", _noop_lock)
+
+    run_node.main()
+
+    assert len(captured["build_configs"]) == 2
+    assert captured["build_configs"][0]["identity"]["external_strategy_id"] == "aapl_tradexyz_maker"
+    assert captured["build_configs"][1]["identity"]["external_strategy_id"] == "aapl_tradexyz_taker"
+    assert captured["lock_strategy_id"] == "aapl_tradexyz"
+    assert captured["ran"] is True
+    assert captured["disposed"] is True
 
 
 def test_main_exits_with_fatal_code_without_restartable_success(monkeypatch, tmp_path: Path) -> None:
