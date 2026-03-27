@@ -6,15 +6,17 @@ import pandas as pd
 import pytest
 
 from research.tokenmm.telemetry_helpers import compute_extended_markouts_from_fv_stream
+from research.tokenmm.telemetry_helpers import compute_fill_notional
 from research.tokenmm.telemetry_helpers import compute_fill_time_edge_rows
+from research.tokenmm.telemetry_helpers import enrich_fills
+from research.tokenmm.telemetry_helpers import extract_order_action_deque_audit
+from research.tokenmm.telemetry_helpers import extract_quote_cycle_deque_diagnostics
 from research.tokenmm.telemetry_helpers import lookup_benchmark_at_ts
+from research.tokenmm.telemetry_helpers import merge_fills_and_markouts
 from research.tokenmm.telemetry_helpers import parse_instrument_id
 from research.tokenmm.telemetry_helpers import summarize_markouts
 from research.tokenmm.telemetry_helpers import summarize_markouts_by_group
 from research.tokenmm.telemetry_helpers import summarize_markouts_by_side
-from research.tokenmm.telemetry_helpers import compute_fill_notional
-from research.tokenmm.telemetry_helpers import enrich_fills
-from research.tokenmm.telemetry_helpers import merge_fills_and_markouts
 
 
 def _sample_frames() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -212,6 +214,137 @@ def test_merge_fills_and_markouts_prefers_fill_context_quantities_over_raw_marko
 
     assert merged.loc[0, "fill_qty_num"] == pytest.approx(1000.0)
     assert merged.loc[0, "fill_notional"] == pytest.approx(12.736)
+
+
+def test_extract_quote_cycle_deque_diagnostics_flattens_side_payloads() -> None:
+    quote_cycles = pd.DataFrame(
+        [
+            {
+                "quote_cycle_id": "qc-1",
+                "quote_cycle_seq": 10,
+                "quote_cycle_event": "completed_rebalanced",
+                "reason_code": "completed_rebalanced",
+                "decision_context_json": {
+                    "bounded_convergence": {
+                        "BUY": {
+                            "stack_action_mode": "place_front_cancel_back",
+                            "front_changed": True,
+                            "back_changed": True,
+                            "depth_before": 3,
+                            "depth_after": 3,
+                            "missing_level_count": 0,
+                            "interior_hole_count": 0,
+                            "planned_cancel_count": 1,
+                            "executed_cancel_count": 1,
+                            "planned_place_count": 1,
+                            "executed_place_count": 1,
+                        },
+                        "SELL": "ignored",
+                    },
+                },
+                "ts_cycle_end_ns": 123,
+            },
+            {
+                "quote_cycle_id": "qc-2",
+                "quote_cycle_seq": 11,
+                "quote_cycle_event": "completed_rebalanced",
+                "reason_code": "completed_rebalanced",
+                "decision_context_json": '{"bounded_convergence":{"SELL":{"stack_action_mode":"no_op","front_changed":false,"back_changed":false,"depth_before":3,"depth_after":3,"missing_level_count":0,"interior_hole_count":0,"planned_cancel_count":0,"executed_cancel_count":0,"planned_place_count":0,"executed_place_count":0}}}',
+                "ts_cycle_end_ns": 456,
+            },
+        ],
+    )
+
+    diagnostics = extract_quote_cycle_deque_diagnostics(quote_cycles)
+    records = diagnostics.sort_values(["quote_cycle_id", "side"]).to_dict("records")
+
+    assert records == [
+        {
+            "quote_cycle_id": "qc-1",
+            "quote_cycle_seq": 10,
+            "quote_cycle_event": "completed_rebalanced",
+            "reason_code": "completed_rebalanced",
+            "side": "BUY",
+            "stack_action_mode": "place_front_cancel_back",
+            "front_changed": True,
+            "back_changed": True,
+            "depth_before": 3,
+            "depth_after": 3,
+            "missing_level_count": 0,
+            "interior_hole_count": 0,
+            "planned_cancel_count": 1,
+            "executed_cancel_count": 1,
+            "planned_place_count": 1,
+            "executed_place_count": 1,
+            "ts_cycle_end_ns": 123,
+        },
+        {
+            "quote_cycle_id": "qc-2",
+            "quote_cycle_seq": 11,
+            "quote_cycle_event": "completed_rebalanced",
+            "reason_code": "completed_rebalanced",
+            "side": "SELL",
+            "stack_action_mode": "no_op",
+            "front_changed": False,
+            "back_changed": False,
+            "depth_before": 3,
+            "depth_after": 3,
+            "missing_level_count": 0,
+            "interior_hole_count": 0,
+            "planned_cancel_count": 0,
+            "executed_cancel_count": 0,
+            "planned_place_count": 0,
+            "executed_place_count": 0,
+            "ts_cycle_end_ns": 456,
+        },
+    ]
+
+
+def test_extract_order_action_deque_audit_keeps_known_columns_and_filters_missing_reasons() -> None:
+    order_actions = pd.DataFrame(
+        [
+            {
+                "quote_cycle_id": "qc-1",
+                "reason_code": "place_front_improve",
+                "level_index": 0,
+                "client_order_id": "cid-1",
+                "order_status": "pending_submit",
+                "side": "BUY",
+                "ts_decision_ns": 10,
+                "ts_submit_local_ns": 11,
+                "ts_cancel_request_local_ns": None,
+                "ignored_column": "x",
+            },
+            {
+                "quote_cycle_id": "qc-2",
+                "reason_code": None,
+                "level_index": 1,
+                "client_order_id": "cid-2",
+                "order_status": "pending_cancel",
+                "side": "SELL",
+                "ts_decision_ns": 20,
+                "ts_submit_local_ns": None,
+                "ts_cancel_request_local_ns": 21,
+                "ignored_column": "y",
+            },
+        ],
+    )
+
+    audit = extract_order_action_deque_audit(order_actions)
+
+    assert audit.to_dict("records") == [
+        {
+            "quote_cycle_id": "qc-1",
+            "reason_code": "place_front_improve",
+            "level_index": 0,
+            "client_order_id": "cid-1",
+            "order_status": "pending_submit",
+            "side": "BUY",
+            "ts_decision_ns": 10,
+            "ts_submit_local_ns": 11,
+            "ts_cancel_request_local_ns": None,
+        },
+    ]
 
 
 def test_summarize_markouts_returns_fill_count_gross_notional_and_horizon_columns() -> None:

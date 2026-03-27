@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from contextlib import suppress
 import json
 import math
 import re
 import sqlite3
 from bisect import bisect_left
+from contextlib import suppress
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -14,9 +14,12 @@ import pandas as pd
 
 from flux.persistence.markouts.common import signed_markout
 
+
 FILL_ID_COLUMNS = ("trader_id", "event_id")
 INSTRUMENT_PRODUCTS = ("SPOT", "LINEAR", "PERP", "SWAP")
 NUMERIC_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
+AuditScalar = str | int | float | bool | None
+AuditRow = dict[str, AuditScalar]
 
 
 def load_sqlite_table(path: Path | str, table: str, limit: int | None = None) -> pd.DataFrame:
@@ -215,9 +218,9 @@ def enrich_markouts(markouts: pd.DataFrame) -> pd.DataFrame:
 
 
 def extract_quote_cycle_deque_diagnostics(quote_cycles: pd.DataFrame) -> pd.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for record in quote_cycles.to_dict(orient="records"):
-        decision_context = _json_mapping(record.get("decision_context_json"))
+    rows: list[AuditRow] = []
+    for record in quote_cycles.itertuples(index=False):
+        decision_context = _json_mapping(getattr(record, "decision_context_json", None))
         bounded = decision_context.get("bounded_convergence")
         if not isinstance(bounded, dict):
             continue
@@ -226,10 +229,10 @@ def extract_quote_cycle_deque_diagnostics(quote_cycles: pd.DataFrame) -> pd.Data
                 continue
             rows.append(
                 {
-                    "quote_cycle_id": record.get("quote_cycle_id"),
-                    "quote_cycle_seq": record.get("quote_cycle_seq"),
-                    "quote_cycle_event": record.get("quote_cycle_event"),
-                    "reason_code": record.get("reason_code"),
+                    "quote_cycle_id": getattr(record, "quote_cycle_id", None),
+                    "quote_cycle_seq": getattr(record, "quote_cycle_seq", None),
+                    "quote_cycle_event": getattr(record, "quote_cycle_event", None),
+                    "reason_code": getattr(record, "reason_code", None),
                     "side": str(side),
                     "stack_action_mode": side_payload.get("stack_action_mode"),
                     "front_changed": side_payload.get("front_changed"),
@@ -242,7 +245,7 @@ def extract_quote_cycle_deque_diagnostics(quote_cycles: pd.DataFrame) -> pd.Data
                     "executed_cancel_count": side_payload.get("executed_cancel_count"),
                     "planned_place_count": side_payload.get("planned_place_count"),
                     "executed_place_count": side_payload.get("executed_place_count"),
-                    "ts_cycle_end_ns": record.get("ts_cycle_end_ns"),
+                    "ts_cycle_end_ns": getattr(record, "ts_cycle_end_ns", None),
                 },
             )
     return pd.DataFrame.from_records(rows)
@@ -267,7 +270,7 @@ def extract_order_action_deque_audit(order_actions: pd.DataFrame) -> pd.DataFram
     frame = order_actions[columns].copy()
     if "reason_code" in frame.columns:
         frame = frame[frame["reason_code"].notna()]
-    return frame
+    return frame.convert_dtypes()
 
 
 def merge_fills_and_markouts(fills: pd.DataFrame, markouts: pd.DataFrame) -> pd.DataFrame:
