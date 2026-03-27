@@ -125,7 +125,8 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     ib_id : str, optional
         IB ID (Introducing Broker).
     server : str, optional
-        Named primary Rithmic server endpoint (for example, ``Chicago``).
+        Named primary Rithmic server route (for example, ``Chicago``). Defaults
+        to ``Chicago`` for demo/live and ``Test`` for test when omitted.
     alt_server : str, optional
         Named alternate Rithmic server endpoint.
     enable_history : bool, default True
@@ -169,7 +170,8 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
         RITHMIC_IB_ID : str
             IB ID (optional).
         RITHMIC_SERVER : str
-            Named primary server (optional).
+            Named primary server. Defaults to Chicago for demo/live and Test
+            for test when omitted.
         RITHMIC_ALT_SERVER : str
             Named alternate server (optional).
         RITHMIC_{PROFILE}_* : str
@@ -219,7 +221,8 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
     ib_id : str, optional
         IB ID (Introducing Broker).
     server : str, optional
-        Named primary Rithmic server endpoint (for example, ``Chicago``).
+        Named primary Rithmic server route (for example, ``Chicago``). Defaults
+        to ``Chicago`` for demo/live and ``Test`` for test when omitted.
     alt_server : str, optional
         Named alternate Rithmic server endpoint.
     execution_replay_lookback_secs : int, default 86400
@@ -270,7 +273,8 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
         RITHMIC_IB_ID : str
             IB ID (optional).
         RITHMIC_SERVER : str
-            Named primary server (optional).
+            Named primary server. Defaults to Chicago for demo/live and Test
+            for test when omitted.
         RITHMIC_ALT_SERVER : str
             Named alternate server (optional).
         RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS : str

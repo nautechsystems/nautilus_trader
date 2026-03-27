@@ -90,6 +90,13 @@ fn resolve_server_endpoint(server: &str) -> Result<&'static str> {
     }
 }
 
+fn default_server_name(env: RithmicEnv) -> &'static str {
+    match env {
+        RithmicEnv::Demo | RithmicEnv::Live => "Chicago",
+        RithmicEnv::Test => "Test",
+    }
+}
+
 /// Configuration for the Rithmic gateway.
 ///
 /// This unified configuration contains all credentials needed to connect
@@ -294,22 +301,16 @@ impl GatewayConfig {
             ),
         };
 
-        let named_url = self
-            .server
-            .as_deref()
-            .map(resolve_server_endpoint)
-            .transpose()?
-            .map(str::to_string);
+        let named_url = Some(resolve_server_endpoint(
+            self.server.as_deref().unwrap_or(default_server_name(env)),
+        )?
+        .to_string());
         let url = self
             .url_override
             .clone()
             .or_else(|| env::var(url_var).ok())
             .or(named_url)
-            .ok_or_else(|| {
-                RithmicError::Config(format!(
-                    "{url_var} not set and no named Rithmic primary server configured"
-                ))
-            })?;
+            .ok_or_else(|| RithmicError::Config(format!("{url_var} not set")))?;
 
         let named_beta_url = self
             .alt_server
@@ -1998,6 +1999,35 @@ mod tests {
         assert_eq!(rithmic.url, "ws://127.0.0.1:12345");
         assert_eq!(rithmic.beta_url, "ws://127.0.0.1:12346");
         assert_eq!(rithmic.system_name, "system");
+    }
+
+    #[test]
+    fn test_gateway_config_to_rithmic_config_defaults_primary_server() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous = [
+            ("RITHMIC_DEMO_URL", set_env("RITHMIC_DEMO_URL", None)),
+            (
+                "RITHMIC_DEMO_ALT_URL",
+                set_env("RITHMIC_DEMO_ALT_URL", None),
+            ),
+        ];
+
+        let config = GatewayConfig::new(
+            RithmicEnv::Demo,
+            "user",
+            "pass",
+            "system",
+            "fcm",
+            "ib",
+            "account",
+        );
+
+        let rithmic = config.to_rithmic_config().unwrap();
+
+        assert_eq!(rithmic.url, "wss://rprotocol.rithmic.com:443");
+        assert_eq!(rithmic.beta_url, "");
+
+        restore_env(&previous);
     }
 
     #[test]

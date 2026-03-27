@@ -34,10 +34,13 @@ Execution-path cells also require:
 
 - `RITHMIC_ACCOUNT_ID`
 
-Optional endpoint selection:
+Server selection:
 
 - `RITHMIC_SERVER`
 - `RITHMIC_ALT_SERVER`
+
+If `RITHMIC_SERVER` is omitted, the adapter defaults to `Chicago` for demo/live and `Test` for
+test environments.
 
 Profile-scoped variables also work through `RITHMIC_PROFILE` plus matching `RITHMIC_{PROFILE}_*` names.
 
