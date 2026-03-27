@@ -673,6 +673,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
     common_env = _read(repo_root / "deploy/tokenmm/systemd/common.env.example")
     sudoers = _read(repo_root / "deploy/tokenmm/systemd/flux-pulse.sudoers")
+    deploy_readme = _read(repo_root / "deploy/tokenmm/README.md")
 
     assert "EnvironmentFile=-/etc/flux/common.env" in service_template
     assert "EnvironmentFile=/etc/flux/%i.env" in service_template
@@ -687,6 +688,10 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "Wants=flux@tokenmm-api.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
+    assert "Wants=flux@tokenmm-prometheus.service" in target_unit
+    assert "Wants=flux@tokenmm-grafana.service" in target_unit
+    assert "Wants=flux@tokenmm-liquidity-exporter.service" in target_unit
+    assert "Wants=flux@tokenmm-markouts-exporter.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
@@ -718,6 +723,14 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "--strategy-id ${strategy_id}" in install_script
     assert "--all-strategies" not in install_script
     assert "run_tokenmm_telemetry_shipper.sh" in install_script
+    assert "render_prometheus_env()" in install_script
+    assert "render_grafana_env()" in install_script
+    assert "render_liquidity_exporter_env()" in install_script
+    assert "render_markouts_exporter_env()" in install_script
+    assert "install_monitoring_assets()" in install_script
+    assert "/etc/tokenmm-monitoring" in install_script
+    assert "/usr/local/bin/tokenmm-grafana-run.sh" in install_script
+    assert "/usr/local/bin/tokenmm-prometheus-run.sh" in install_script
     assert "tokenmm-telemetry-rds.env.example" in install_script
     assert "flux-tokenmm-telemetry-health.service" in install_script
     assert "flux-tokenmm-telemetry-health.timer" in install_script
@@ -733,6 +746,10 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
 
     assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
     assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-prometheus.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-grafana.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-liquidity-exporter.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-markouts-exporter.service" in sudoers
     assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
     assert (
         "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service"
@@ -751,8 +768,54 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
         in sudoers
     )
     assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-grafana.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-markouts-exporter.service" in sudoers
     assert "tokenmm-pulse.service" not in sudoers
     assert "flux@*" not in sudoers
+
+    assert "tokenmm-prometheus" in deploy_readme
+    assert "tokenmm-grafana" in deploy_readme
+    assert "tokenmm-liquidity-exporter" in deploy_readme
+    assert "tokenmm-markouts-exporter" in deploy_readme
+
+
+def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible() -> None:
+    repo_root = _repo_root()
+    install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    grafana_wrapper = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-grafana-run.sh")
+    prometheus_wrapper = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-prometheus-run.sh")
+    prometheus_config = _read(repo_root / "deploy/tokenmm/systemd/prometheus.yml")
+    grafana_datasources = _read(
+        repo_root / "monitoring/grafana/provisioning/datasources/datasources.yml",
+    )
+    dashboards_doc = _read(repo_root / "monitoring/DASHBOARDS.md")
+
+    assert "install -d /etc/tokenmm-monitoring" not in install_script
+    assert "tokenmm-monitoring" in install_script
+    assert "monitoring/grafana/dashboards" in install_script
+    assert "monitoring/grafana/provisioning/dashboards/dashboards.yml" in install_script
+    assert "monitoring/grafana/provisioning/datasources/datasources.yml" in install_script
+    assert "deploy/tokenmm/systemd/prometheus.yml" in install_script
+
+    assert "docker rm -f tokenmm-grafana" in grafana_wrapper
+    assert "--network host" in grafana_wrapper
+    assert "/etc/tokenmm-monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro" in grafana_wrapper
+    assert "grafana/grafana:10.2.3" in grafana_wrapper
+
+    assert "docker rm -f tokenmm-prometheus" in prometheus_wrapper
+    assert "--network host" in prometheus_wrapper
+    assert "/etc/tokenmm-monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in prometheus_wrapper
+    assert "prom/prometheus:v2.48.0" in prometheus_wrapper
+
+    assert 'targets: ["127.0.0.1:9108"]' in prometheus_config
+    assert 'targets: ["127.0.0.1:9109"]' in prometheus_config
+    assert 'targets: ["127.0.0.1:9090"]' in prometheus_config
+
+    assert "url: http://127.0.0.1:9090" in grafana_datasources
+    assert "url: http://prometheus:9090" not in grafana_datasources
+
+    assert "/etc/tokenmm-monitoring/grafana/dashboards" in dashboards_doc
+    assert "/etc/tokenmm-monitoring/prometheus/prometheus.yml" in dashboards_doc
 
 
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> (
@@ -855,6 +918,31 @@ def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instrum
     assert 'instrument_id = "PLUMEUSDT-PERP.BITGET"' in config
     assert 'instrument_id = "PLUMEUSDT.BITGET"' in config
     assert 'instrument_id = "PLUME-USDT-SWAP.OKX"' in config
+
+
+def test_tokenmm_telemetry_shipper_paths_parse_as_top_level_config() -> None:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    shipper = config["telemetry_shipper"]
+    benchmarks = shipper["markout_benchmarks"]
+
+    assert shipper["balance_snapshots_db_path"] == (
+        "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+    )
+    assert shipper["portfolio_inventory_db_path"] == (
+        "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
+    )
+    assert shipper["state_db_path"] == "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
+    assert shipper["poll_interval_ms"] == 1000
+    assert shipper["max_batch_size"] == 500
+    assert shipper["prune_retention_hours"] == 48
+    assert benchmarks[0] == {
+        "benchmark_name": "fv_market_mid",
+        "benchmark_field": "fv",
+    }
+    assert benchmarks[1] == {
+        "benchmark_name": "local_mkt_mid",
+        "benchmark_field": "maker_mid",
+    }
 
 
 def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
