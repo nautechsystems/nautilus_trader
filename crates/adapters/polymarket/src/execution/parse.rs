@@ -308,8 +308,8 @@ pub struct MarketPriceResult {
 /// Calculates the market-crossing price and expected base quantity by walking the order book.
 ///
 /// Sorts levels deterministically before walking:
-/// - BUY (asks): ascending by price — best (lowest) ask first
-/// - SELL (bids): descending by price — best (highest) bid first
+/// - BUY (asks): ascending by price, best (lowest) ask first
+/// - SELL (bids): descending by price, best (highest) bid first
 ///
 /// This ensures correct results regardless of the CLOB API's response ordering.
 ///
@@ -625,7 +625,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_market_price_buy_walks_multiple_levels() {
-        // Asks in arbitrary order — function sorts ascending for BUY
+        // Asks in arbitrary order, function sorts ascending for BUY
         let levels = vec![
             ClobBookLevel {
                 price: "0.55".to_string(),
@@ -650,7 +650,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_market_price_buy_small_order_uses_best_ask() {
-        // Asks in mixed order — function sorts to find best (0.20) first
+        // Asks in mixed order, function sorts to find best (0.20) first
         let levels = vec![
             ClobBookLevel {
                 price: "0.50".to_string(),
@@ -674,7 +674,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_market_price_sell_walks_levels() {
-        // Bids in ascending order — function sorts descending for SELL (best bid first)
+        // Bids in ascending order, function sorts descending for SELL (best bid first)
         let levels = vec![
             ClobBookLevel {
                 price: "0.48".to_string(),

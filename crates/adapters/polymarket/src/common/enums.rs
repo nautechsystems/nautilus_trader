@@ -270,7 +270,7 @@ impl From<PolymarketOrderStatus> for OrderStatus {
             PolymarketOrderStatus::Live => Self::Accepted,
             PolymarketOrderStatus::Delayed => Self::Accepted,
             PolymarketOrderStatus::Matched => Self::Filled,
-            // Placement failure (never became live) — treat as rejected
+            // Placement failure (never became live), treat as rejected
             PolymarketOrderStatus::Unmatched => Self::Rejected,
             PolymarketOrderStatus::Canceled => Self::Canceled,
             // Market resolved = order expired due to market settlement

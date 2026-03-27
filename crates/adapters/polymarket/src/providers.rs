@@ -170,7 +170,6 @@ impl PolymarketInstrumentProvider {
         self.http_client.request_tags().await
     }
 
-    /// Adds instruments to the store and token index.
     fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
         for inst in &instruments {
             self.token_index
@@ -413,7 +412,7 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
                 .await?;
             self.add_instruments(instruments);
         } else {
-            // Too many to batch — fall back to full load
+            // Too many to batch, fall back to full load
             self.load_all(filters).await?;
         }
 

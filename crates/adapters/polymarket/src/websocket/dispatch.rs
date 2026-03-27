@@ -14,6 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 //! WebSocket message dispatch for the Polymarket execution client.
+//!
+//! Routes user-channel WS messages (order updates and trades) into Nautilus
+//! order status reports and fill reports. Reports are emitted immediately if
+//! the order is already accepted, otherwise buffered until acceptance.
+//! Trade fills are deduped via a FIFO cache. Maker and taker fills are
+//! handled separately to account for multi-leg maker order matching.
 
 use std::sync::Mutex;
 
@@ -70,7 +76,7 @@ pub(crate) struct WsDispatchContext<'a> {
     pub user_api_key: &'a str,
 }
 
-/// Top-level router — synchronous, returns signal for async account refresh.
+/// Top-level router: synchronous, returns signal for async account refresh.
 pub(crate) fn dispatch_user_message(
     message: &UserWsMessage,
     ctx: &WsDispatchContext<'_>,
@@ -85,7 +91,6 @@ pub(crate) fn dispatch_user_message(
     }
 }
 
-/// Dispatches an order status update, emitting or buffering the report.
 fn dispatch_order_update(order: &PolymarketUserOrder, ctx: &WsDispatchContext<'_>) {
     let instrument = match ctx.token_instruments.get(&order.asset_id) {
         Some(i) => i,
@@ -135,7 +140,6 @@ fn dispatch_order_update(order: &PolymarketUserOrder, ctx: &WsDispatchContext<'_
     }
 }
 
-/// Dispatches a trade update with dedup, returning a refresh signal if finalized.
 fn dispatch_trade_update(
     trade: &PolymarketUserTrade,
     ctx: &WsDispatchContext<'_>,
@@ -187,7 +191,6 @@ fn dispatch_trade_update(
     }
 }
 
-/// Processes maker-side fills from a trade, one per matched maker order.
 fn dispatch_maker_fills(
     trade: &PolymarketUserTrade,
     ctx: &WsDispatchContext<'_>,
@@ -254,7 +257,6 @@ fn dispatch_maker_fills(
     }
 }
 
-/// Processes a taker-side fill from a trade.
 fn dispatch_taker_fill(
     trade: &PolymarketUserTrade,
     ctx: &WsDispatchContext<'_>,
@@ -297,7 +299,6 @@ fn dispatch_taker_fill(
     );
 }
 
-/// Builds an [`OrderStatusReport`] from a WS order update.
 fn build_ws_order_status_report(
     order: &PolymarketUserOrder,
     instrument: &InstrumentAny,
@@ -342,7 +343,6 @@ fn build_ws_order_status_report(
     report
 }
 
-/// Builds a [`FillReport`] from a WS taker trade update.
 fn build_ws_taker_fill_report(
     trade: &PolymarketUserTrade,
     instrument: &InstrumentAny,
@@ -392,7 +392,6 @@ fn build_ws_taker_fill_report(
     }
 }
 
-/// Emits an order report immediately if accepted, otherwise buffers it.
 fn emit_or_buffer_order_report(
     report: OrderStatusReport,
     venue_order_id: VenueOrderId,
@@ -412,7 +411,6 @@ fn emit_or_buffer_order_report(
     }
 }
 
-/// Emits a fill report immediately if accepted, otherwise buffers it.
 fn emit_or_buffer_fill_report(
     report: FillReport,
     venue_order_id: VenueOrderId,
@@ -589,7 +587,7 @@ mod tests {
         };
         assert_eq!(fills_count, 1);
 
-        // Second dispatch should be deduped — no additional fill
+        // Second dispatch should be deduped, no additional fill
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
         let fills_count_after = {
             let guard = pending_fills.lock().unwrap();

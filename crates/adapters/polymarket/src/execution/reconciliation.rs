@@ -48,7 +48,7 @@ pub(crate) struct FillContext<'a> {
     pub clock: &'static AtomicTime,
 }
 
-/// Converts trade reports into fill reports — single implementation of maker/taker
+/// Converts trade reports into fill reports: single implementation of maker/taker
 /// parsing used by both `generate_fill_reports()` and `generate_mass_status()`.
 pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],

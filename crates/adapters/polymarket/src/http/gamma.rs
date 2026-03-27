@@ -166,10 +166,6 @@ impl PolymarketGammaRawHttpClient {
     }
 }
 
-/// Parses a slice of [`GammaMarket`]s into Nautilus instruments.
-///
-/// Failures are logged and skipped so that one bad market does not
-/// prevent the remaining markets from being returned.
 fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
     let mut instruments = Vec::new();
     let mut skipped_empty = 0u32;
@@ -486,9 +482,9 @@ impl PolymarketGammaHttpClient {
     /// The `/events?slug=` response already includes the full markets array,
     /// so no second API call is needed. Sorting and truncation are applied
     /// client-side using fields from `GetGammaMarketsParams`:
-    /// - `order` — sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
-    /// - `ascending` — sort direction (default: descending)
-    /// - `max_markets` — truncate after sorting
+    /// - `order`: sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
+    /// - `ascending`: sort direction (default: descending)
+    /// - `max_markets`: truncate after sorting
     pub async fn request_instruments_by_event_query(
         &self,
         event_slug: &str,

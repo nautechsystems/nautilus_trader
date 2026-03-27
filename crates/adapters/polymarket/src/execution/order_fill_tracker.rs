@@ -177,7 +177,7 @@ impl OrderFillTrackerMap {
             let fill_px = Price::new(px, price_precision);
             let trade_id = TradeId::from(format!("{order_id:.27}-dust").as_str());
 
-            // Remove entry — order is settled, prevents duplicate dust fills
+            // Remove entry: order is settled, prevents duplicate dust fills
             guard.remove(venue_order_id);
 
             Some(FillReport {
@@ -357,7 +357,7 @@ mod tests {
             2,
         );
 
-        // Only half filled — residual = 50 >> 0.01
+        // Only half filled, residual = 50 >> 0.01
         tracker.record_fill(&vid, 50.0, 0.55, UnixNanos::from(1_000u64));
 
         let dust_fill = tracker.check_dust_and_build_fill(
@@ -407,7 +407,7 @@ mod tests {
                 &vid,
                 AccountId::from("POLY-001"),
                 "order-1",
-                0.50, // fallback — should NOT be used
+                0.50, // fallback, should NOT be used
                 usdc(),
                 UnixNanos::from(2_000u64),
             )
@@ -443,7 +443,7 @@ mod tests {
         );
         assert!(dust_fill.is_some());
 
-        // Entry should be removed — second check returns None (no duplicate)
+        // Entry should be removed, second check returns None (no duplicate)
         assert!(!tracker.contains(&vid));
         let dust_fill2 = tracker.check_dust_and_build_fill(
             &vid,

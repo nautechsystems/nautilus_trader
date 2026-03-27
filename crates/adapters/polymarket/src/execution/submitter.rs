@@ -16,7 +16,7 @@
 //! HTTP order submission and cancellation facade for the Polymarket execution client.
 //!
 //! Accepts Nautilus-native types, handles conversion to Polymarket types,
-//! order building, signing, and HTTP posting — following the dYdX OrderSubmitter pattern.
+//! order building, signing, and HTTP posting, following the dYdX OrderSubmitter pattern.
 //!
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).

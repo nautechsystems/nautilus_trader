@@ -79,7 +79,7 @@ struct CancelOrderBody<'a> {
 ///
 /// Handles HTTP transport, L2 HMAC-SHA256 auth signing, pagination, and raw
 /// API calls that closely match Polymarket endpoint specifications.
-/// Credential is always present — the CLOB API requires authentication.
+/// Credential is always present: the CLOB API requires authentication.
 #[derive(Debug, Clone)]
 pub struct PolymarketClobHttpClient {
     client: HttpClient,

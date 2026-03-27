@@ -628,7 +628,6 @@ impl PolymarketExecutionClient {
         }
     }
 
-    /// Builds the shared fill context from client state.
     fn fill_context(&self) -> FillContext<'_> {
         let user_address = self
             .secrets

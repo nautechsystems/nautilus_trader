@@ -208,7 +208,7 @@ impl InstrumentFilter for EventQueryFilter {
 
 /// Pure post-fetch filter that accepts/rejects instruments via a closure.
 ///
-/// Does not provide any slugs or query params — combine with source filters
+/// Does not provide any slugs or query params: combine with source filters
 /// via the provider's `with_filters()` or `add_filter()` methods.
 pub struct PredicateFilter {
     predicate: Box<dyn Fn(&InstrumentAny) -> bool + Send + Sync>,
@@ -523,8 +523,6 @@ mod tests {
         let filter = MarketSlugFilter::from_slugs(vec!["test".to_string()]);
         assert!(filter.accept(&yes_instrument)); // default impl returns true
     }
-
-    // --- accept_new_market tests ---
 
     fn stub_new_market(
         slug: &str,

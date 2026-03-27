@@ -21,6 +21,10 @@
 //! - EIP-712 signing
 //! - Maker/taker amount computation
 //!
+//! Amounts are converted from human-readable decimals to on-chain base units
+//! (USDC 10^6 / CTF shares 10^6) by truncating to `USDC_DECIMALS` (6) decimal
+//! places and extracting the mantissa as an integer.
+//!
 //! The builder produces signed [`PolymarketOrder`] structs ready for HTTP submission.
 
 use nautilus_model::{
@@ -236,10 +240,6 @@ impl PolymarketOrderBuilder {
     }
 }
 
-/// Converts a human-readable decimal to on-chain base units (USDC 10^6 / CTF shares 10^6).
-///
-/// Truncates to `USDC_DECIMALS` (6) decimal places, then extracts the mantissa
-/// to produce an integer Decimal (scale 0).
 fn to_fixed_decimal(d: Decimal) -> Decimal {
     let mantissa = d.normalize().trunc_with_scale(USDC_DECIMALS).mantissa();
     Decimal::from(mantissa)

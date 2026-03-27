@@ -167,7 +167,7 @@ impl PolymarketDataApiHttpClient {
                 let price = Price::new(t.price, price_precision);
                 let size = Quantity::new(t.size, size_precision);
                 let aggressor_side = AggressorSide::from(t.side);
-                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                // TradeId max length is 36; tx hash is 66 chars, take last 36
                 let hash = &t.transaction_hash;
                 let trade_id_str = if hash.len() > 36 {
                     &hash[hash.len() - 36..]
@@ -259,7 +259,7 @@ mod tests {
                 let price = Price::new(t.price, price_precision);
                 let size = Quantity::new(t.size, size_precision);
                 let aggressor_side = AggressorSide::from(t.side);
-                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                // TradeId max length is 36; tx hash is 66 chars, take last 36
                 let hash = &t.transaction_hash;
                 let trade_id_str = if hash.len() > 36 {
                     &hash[hash.len() - 36..]
@@ -303,7 +303,7 @@ mod tests {
                 let price = Price::new(t.price, 2);
                 let size = Quantity::new(t.size, 2);
                 let aggressor_side = AggressorSide::from(t.side);
-                // TradeId max length is 36; tx hash is 66 chars — take last 36
+                // TradeId max length is 36; tx hash is 66 chars, take last 36
                 let hash = &t.transaction_hash;
                 let trade_id_str = if hash.len() > 36 {
                     &hash[hash.len() - 36..]

@@ -777,7 +777,7 @@ impl DataClient for PolymarketDataClient {
         log::info!("Bootstrapping instruments from Gamma API...");
         self.bootstrap_instruments().await?;
         log::info!(
-            "Bootstrap complete — {} instruments loaded",
+            "Bootstrap complete, {} instruments loaded",
             self.instruments.load().len(),
         );
 
