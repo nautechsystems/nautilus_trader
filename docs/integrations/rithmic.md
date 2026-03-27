@@ -296,11 +296,30 @@ Example shell setup:
 export RITHMIC_ENV=demo
 export RITHMIC_USERNAME="your_username"
 export RITHMIC_PASSWORD="your_password"
-export RITHMIC_SYSTEM_NAME="your_system_name"
+export RITHMIC_SYSTEM_NAME="your_system_name"  # Exact System value from RTrader Pro > File > User Profile
 export RITHMIC_ACCOUNT_ID="your_account"
-export RITHMIC_FCM_ID="your_fcm_id"
-export RITHMIC_IB_ID="your_ib_id"
+export RITHMIC_FCM_ID="your_fcm_id"            # Exact FCM value from RTrader Pro > File > User Profile
+export RITHMIC_IB_ID="your_ib_id"              # Exact IB value from RTrader Pro > File > User Profile
 ```
+
+`RITHMIC_PROFILE` is only a local environment-variable namespace. The actual broker-facing values
+are `RITHMIC_*_SYSTEM_NAME`, `RITHMIC_*_FCM_ID`, and `RITHMIC_*_IB_ID`.
+
+:::note
+Do not guess the Rithmic `System`, `FCM`, or `IB` values from the broker or prop-firm brand
+name alone. Some connections use `paper_trading`, Apex uses `Apex`, and other Rithmic brokers may
+use non-obvious identifiers even on standard demo or live accounts.
+
+To find the correct values, sign in to the RTrader Pro desktop application and open
+`File > User Profile`, then copy `System`, `FCM`, and `IB` exactly as shown. Treat them as
+case-sensitive.
+:::
+
+Example screenshots (cropped/redacted):
+
+![RTrader Pro File menu showing the User Profile entry](./images/rtrader-user-profile-menu.png)
+
+![RTrader Pro User Profile showing the System, Gateway, FCM, and IB fields](./images/rtrader-user-profile-routing-fields.png)
 
 ### Data client configuration
 

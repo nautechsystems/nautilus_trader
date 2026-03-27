@@ -36,6 +36,15 @@ Execution-path cells also require:
 
 Profile-scoped variables also work through `RITHMIC_PROFILE` plus matching `RITHMIC_{PROFILE}_*` names.
 
+`RITHMIC_PROFILE` is only a local namespace for those environment variables. The actual Rithmic
+connection values are still `SYSTEM_NAME`, `FCM_ID`, and `IB_ID`.
+
+Do not guess those broker-facing values from the firm name alone. Some connections use
+`paper_trading`, Apex uses `Apex`, and other Rithmic brokers can use non-obvious identifiers on
+both prop-firm accounts and standard demo/live accounts. The source of truth is the RTrader Pro
+desktop application under `File > User Profile`, where you should copy `System`, `FCM`, and `IB`
+exactly as shown.
+
 ## Safety
 
 - The market-data and bars cells are enabled by default.
