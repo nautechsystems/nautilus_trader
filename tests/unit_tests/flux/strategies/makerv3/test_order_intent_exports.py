@@ -370,6 +370,37 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
                 (Decimal("100.0"), Decimal("100.0")),
                 (Decimal("99.0"), Decimal("99.0")),
             ],
+            "cancel_back_excess",
+        ),
+        (
+            [
+                SimpleNamespace(
+                    client_order_id="BUY-FRONT-REPAIR-1",
+                    side=OrderSide.BUY,
+                    price=Decimal("100.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-FRONT-REPAIR-2",
+                    side=OrderSide.BUY,
+                    price=Decimal("96.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-FRONT-REPAIR-3",
+                    side=OrderSide.BUY,
+                    price=Decimal("95.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+            ],
+            [
+                (Decimal("99.0"), Decimal("100.5")),
+                (Decimal("97.0"), Decimal("97.0")),
+                (Decimal("95.0"), Decimal("95.0")),
+            ],
             "cancel_free_slot_for_missing_level",
         ),
     ],

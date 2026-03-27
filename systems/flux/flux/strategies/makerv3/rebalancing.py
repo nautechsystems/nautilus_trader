@@ -163,6 +163,21 @@ def _bounded_depth_diagnostics(
     return current_depth, max_depth, front_changed, back_changed
 
 
+def _front_back_active_indexes(
+    *,
+    side: str,
+    active_prices: Sequence[Decimal],
+) -> tuple[int | None, int | None]:
+    if not active_prices:
+        return None, None
+    ordered = sorted(
+        enumerate(active_prices),
+        key=lambda item: item[1],
+        reverse=side == "buy",
+    )
+    return ordered[0][0], ordered[-1][0]
+
+
 def _filtered_stack_plan(
     *,
     stack_plan: StackPlan,
@@ -469,11 +484,15 @@ def plan_side_bounded_convergence(
         and planned_place_count > 0
         and stack_plan.diagnostics.missing_level_count > len(place_level_indices)
     )
+    front_active_index, back_active_index = _front_back_active_indexes(
+        side=side_norm,
+        active_prices=active_prices,
+    )
     depth_after, temporary_oversize_depth, front_changed, back_changed = _bounded_depth_diagnostics(
         depth_before=stack_plan.diagnostics.depth_before,
         actions=allowed_actions,
-        front_active_index=0 if active_prices else None,
-        back_active_index=len(active_prices) - 1 if active_prices else None,
+        front_active_index=front_active_index,
+        back_active_index=back_active_index,
     )
 
     diagnostics = ConvergenceDiagnostics(

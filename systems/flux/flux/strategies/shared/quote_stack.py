@@ -266,17 +266,19 @@ def _interior_hole_count(
 
 def _is_simple_inward_move(
     *,
+    side: Side,
     active_levels: Sequence[ActiveStackLevel],
     desired_levels: Sequence[DesiredStackLevel],
-    alignment: _Alignment,
 ) -> bool:
-    if len(active_levels) != len(desired_levels):
+    if len(active_levels) != len(desired_levels) or not active_levels or not desired_levels:
         return False
-    if alignment.missing_positions != (0,):
-        return False
-    if len(alignment.unmatched_levels) != 1:
-        return False
-    return alignment.unmatched_levels[0].active_index == active_levels[-1].active_index
+    desired_front = desired_levels[0]
+    return _is_more_aggressive(
+        side,
+        desired_front.place_price,
+        active_levels[0].price,
+        desired_front.match_tolerance,
+    )
 
 
 def _should_place_back_after_front_cancel(
@@ -298,6 +300,7 @@ def _should_place_back_after_front_cancel(
 
 def _is_keep_bucket_widen(
     *,
+    side: Side,
     active_levels: Sequence[ActiveStackLevel],
     alignment: _Alignment,
     interior_hole_count: int,
@@ -306,12 +309,20 @@ def _is_keep_bucket_widen(
         return False
     if interior_hole_count > 0:
         return False
-    if len(alignment.unmatched_levels) >= len(active_levels):
-        return False
     unmatched_count = len(alignment.unmatched_levels)
     unmatched_indexes = tuple(level.active_index for level in alignment.unmatched_levels[:unmatched_count])
     front_prefix = tuple(level.active_index for level in active_levels[:unmatched_count])
-    return unmatched_indexes == front_prefix
+    if unmatched_indexes != front_prefix or len(alignment.missing_levels) != unmatched_count:
+        return False
+    return all(
+        _is_more_aggressive(
+            side,
+            active_level.price,
+            missing_level.place_price,
+            missing_level.match_tolerance,
+        )
+        for active_level, missing_level in zip(alignment.unmatched_levels, alignment.missing_levels)
+    )
 
 
 def _build_plan(
@@ -461,9 +472,9 @@ def plan_side_deque_actions(
         )
 
     if _is_simple_inward_move(
+        side=normalized_side,
         active_levels=normalized_active_levels,
         desired_levels=normalized_desired_levels,
-        alignment=alignment,
     ):
         return _build_plan(
             mode="place_front_cancel_back",
@@ -484,6 +495,7 @@ def plan_side_deque_actions(
     if alignment.missing_levels:
         if depth_before >= target_depth:
             if _is_keep_bucket_widen(
+                side=normalized_side,
                 active_levels=normalized_active_levels,
                 alignment=alignment,
                 interior_hole_count=interior_hole_count,

@@ -60,7 +60,8 @@ Add red tests covering:
 - inward move => `place_front` then `cancel_back`
 - outward move => `cancel_front` then `place_back`
 - no middle cancel when the stack is otherwise valid
-- hole repair places a missing level without canceling another order
+- short-stack hole repair places a missing level without canceling another order
+- full-depth hole repair cancels the blocking order, then places the missing level on the next cycle
 - temporary `N+1` is represented explicitly for inward moves
 
 **Step 2: Run test to verify it fails**
@@ -127,7 +128,8 @@ Implement minimal helpers for:
 - detection of missing levels
 - detection of front cancel violation
 - depth overflow on the back
-- hole repair without paired repricing cancel
+- short-stack hole repair without paired repricing cancel
+- full-depth hole repair with explicit `cancel_free_slot_for_missing_level`
 - inward move represented as `place_front` then `cancel_back`
 - outward move represented as `cancel_front` then `place_back`
 

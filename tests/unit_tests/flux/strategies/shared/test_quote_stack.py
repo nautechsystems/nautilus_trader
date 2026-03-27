@@ -351,15 +351,51 @@ def test_plan_quote_stack_keeps_frontier_only_keep_bucket_drift_as_no_op() -> No
     assert _action_tuples(result.actions) == []
 
 
-def test_plan_quote_stack_repairs_zero_overlap_full_depth_reprice() -> None:
+def test_plan_quote_stack_advances_zero_overlap_full_depth_reprice_via_front_insert() -> None:
     result = _plan(
         side="buy",
         active_prices=[Decimal("98"), Decimal("97")],
         desired_levels=_desired_levels("100", "99"),
     )
 
+    assert result.diagnostics.stack_action_mode == "place_front_cancel_back"
+    assert result.diagnostics.depth_after == 2
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is True
+    assert _action_tuples(result.actions) == [
+        ("place_front", None, 0),
+        ("cancel_back", 1, None),
+    ]
+
+
+def test_plan_quote_stack_advances_mixed_frontier_tail_gap_via_front_insert() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("98"), Decimal("97"), Decimal("96")],
+        desired_levels=_desired_levels("99", "96", "95"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "place_front_cancel_back"
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is True
+    assert _action_tuples(result.actions) == [
+        ("place_front", None, 0),
+        ("cancel_back", 2, None),
+    ]
+
+
+def test_plan_quote_stack_marks_front_edge_for_front_targeted_repair_cancel() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("96"), Decimal("95")],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal(0)),
+            (Decimal("97"), Decimal("97"), Decimal(0)),
+            (Decimal("95"), Decimal("95"), Decimal(0)),
+        ],
+    )
+
     assert result.diagnostics.stack_action_mode == "repair_hole"
-    assert result.diagnostics.depth_after == 1
     assert result.diagnostics.front_changed is True
     assert result.diagnostics.back_changed is False
     assert _action_tuples(result.actions) == [

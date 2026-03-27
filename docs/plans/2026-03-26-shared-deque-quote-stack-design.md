@@ -116,7 +116,7 @@ Per side:
 4. If the stack is short, repair by placing the most aggressive missing desired level.
    - If the top is missing, place the top.
    - If the top is intact and only the tail is missing, place the tail.
-   - If there is a real interior hole from a fill or external disappearance, repair the most aggressive missing desired level, but never cancel another order to do it.
+   - If there is a real interior hole from a fill or external disappearance, repair the most aggressive missing desired level.
 5. If a more aggressive new front level is desired and placeable:
    - Place the new front level.
    - Allow temporary `N+1`.
@@ -131,7 +131,8 @@ Examples:
 - Bid stack moves inward: `place_front`, then `cancel_back`.
 - Bid stack moves outward: `cancel_front`, then `place_back`.
 - Stable fair value: `no_op`.
-- Missing level after fill: `place_level(missing_level_index)` with no paired repricing cancel.
+- Missing level after fill on a short stack: `place_level(missing_level_index)` with no paired repricing cancel.
+- Full-depth hole repair: cancel the unmatched resting order that blocks the missing level, then place the missing level on the next cycle.
 
 This preserves the desired visual behavior:
 
@@ -145,9 +146,10 @@ Normal repricing should never touch the middle, but production reality still nee
 
 If a fill, external cancel, or reconciliation event removes a level from the middle:
 
-- do not cancel a different resting order to make the stack look pretty
-- place the most aggressive missing desired level that restores the ordered stack
-- count this separately in telemetry as `repair_hole`
+- if the stack is short, place the most aggressive missing desired level that restores the ordered stack
+- if the stack is already full, cancel the unmatched resting order that blocks the repair, even if that order is not at the frontier
+- count the cancel separately in telemetry as `cancel_free_slot_for_missing_level`
+- count the follow-up place separately in telemetry as `repair_hole` / `place_missing_hole_repair`
 
 This allows the strategy to recover from real venue/counterparty events without reintroducing middle-of-stack repricing churn.
 
@@ -279,7 +281,7 @@ Rollout sequence:
 - Normal repricing never deliberately cancels a matched middle order.
 - Inward moves visibly behave as `place front, cancel back`.
 - Outward moves visibly behave as `cancel front, place back`.
-- Hole repair works without interior repricing cancels.
+- Hole repair is the only path allowed to cancel a matched non-frontier order.
 - `quote_cycle` explicitly records the deque action type.
 - `order_action` persists enough metadata to prove why each quote action happened.
 
