@@ -12,6 +12,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
 from flux.runners.equities.run_api import _build_contract_catalog
 from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
+from flux.runners.equities.run_api import _build_strategy_alerts_resolver
 from flux.runners.equities.run_api import _build_profile_strategy_maps
 from flux.runners.equities.run_api import _build_strategy_running_resolver
 from flux.runners.equities.run_api import _equities_profile_summary
@@ -21,25 +22,6 @@ from flux.runners.equities.run_api import _resolve_runtime_params_payloads
 from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
-
-LIVE_ENROLLED_ROUTE_IDS = (
-    "aapl_tradexyz",
-    "amd_tradexyz",
-    "amzn_tradexyz",
-    "googl_tradexyz",
-    "meta_tradexyz",
-    "msft_tradexyz",
-    "nvda_tradexyz",
-    "orcl_tradexyz",
-    "pltr_tradexyz",
-    "tsla_tradexyz",
-)
-LIVE_ENROLLED_STRATEGY_IDS = tuple(
-    f"{route_id}_{variant}"
-    for route_id in LIVE_ENROLLED_ROUTE_IDS
-    for variant in ("maker", "taker")
-)
-
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -68,8 +50,8 @@ def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_
 
     strategy_map, required_map = _build_profile_strategy_maps(config["api"])
 
-    assert strategy_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
-    assert required_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
+    assert strategy_map == {"equities": list(config["api"]["equities_strategy_ids"])}
+    assert required_map == {"equities": list(config["api"]["equities_required_strategy_ids"])}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:
@@ -261,6 +243,104 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_
         "equities-node-aapl_tradexyz_makerv4",
         "equities-node-meta_tradexyz_makerv4",
     ]
+
+
+def test_build_strategy_running_resolver_maps_grouped_pulse_status_to_external_strategy_ids() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_status(self, job_id: str) -> str:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz": "active",
+                "equities-node-amzn_binance_perp": "failed",
+            }[job_id]
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_running_resolver(pulse_control=pulse, cache_ttl_s=60.0)
+
+    running = resolver(
+        [
+            "aapl_tradexyz_maker",
+            "aapl_tradexyz_taker",
+            "amzn_binance_perp_maker",
+            "amzn_binance_perp_taker",
+        ],
+    )
+
+    assert running == {
+        "aapl_tradexyz_maker": True,
+        "aapl_tradexyz_taker": True,
+        "amzn_binance_perp_maker": False,
+        "amzn_binance_perp_taker": False,
+    }
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+    ]
+
+
+def test_build_strategy_alerts_resolver_maps_grouped_pulse_job_ids_without_leaking_node_groups() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_snapshot(self, job_id: str) -> dict[str, object] | None:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz": {
+                    "id": "equities-node-aapl_tradexyz",
+                    "status": "failed",
+                    "errors": {
+                        "preview": "reference feed stalled",
+                        "count": 2,
+                        "last_seen": "2026-03-27T00:00:01Z",
+                    },
+                },
+                "equities-node-amzn_binance_perp": {
+                    "id": "equities-node-amzn_binance_perp",
+                    "status": "restarting",
+                    "errors": {
+                        "preview": "gateway reconnect",
+                        "count": 1,
+                        "last_seen": "2026-03-27T00:00:02Z",
+                    },
+                },
+            }[job_id]
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_alerts_resolver(
+        pulse_control=pulse,
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_700_000_123_000,
+    )
+
+    alerts = resolver(
+        [
+            "aapl_tradexyz_maker",
+            "aapl_tradexyz_taker",
+            "amzn_binance_perp_maker",
+            "amzn_binance_perp_taker",
+        ],
+    )
+
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+    ]
+    assert [row["strategy_id"] for row in alerts["aapl_tradexyz_maker"]] == ["aapl_tradexyz_maker"]
+    assert [row["strategy_id"] for row in alerts["aapl_tradexyz_taker"]] == ["aapl_tradexyz_taker"]
+    assert [row["strategy_id"] for row in alerts["amzn_binance_perp_maker"]] == [
+        "amzn_binance_perp_maker",
+    ]
+    assert [row["strategy_id"] for row in alerts["amzn_binance_perp_taker"]] == [
+        "amzn_binance_perp_taker",
+    ]
+    assert alerts["aapl_tradexyz_maker"][0]["status"] == "failed"
+    assert alerts["amzn_binance_perp_taker"][0]["status"] == "restarting"
+    assert "job_id" not in alerts["aapl_tradexyz_maker"][0]
+    assert "job_id" not in alerts["amzn_binance_perp_taker"][0]
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

@@ -37,6 +37,7 @@ from flux.runners.shared.logging import emit_startup_banner
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.runners.equities.node_groups import derive_equities_node_group_id
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
 from flux.strategies import get_strategy_spec
 from flux.strategies.equities_maker.runtime_params import (
@@ -100,6 +101,32 @@ def _pulse_status_to_running(status: str) -> bool | None:
     return None
 
 
+def _equities_node_job_id_for_strategy(strategy_id: str) -> str:
+    strategy_text = _optional_text(strategy_id)
+    if strategy_text is None:
+        raise ValueError("strategy_id must be non-empty")
+    try:
+        return f"equities-node-{derive_equities_node_group_id(strategy_text)}"
+    except ValueError:
+        return f"equities-node-{strategy_text}"
+
+
+def _equities_node_jobs_for_strategy_ids(
+    strategy_ids: list[str] | tuple[str, ...],
+) -> tuple[dict[str, str], list[str]]:
+    job_id_by_strategy: dict[str, str] = {}
+    ordered_job_ids: list[str] = []
+    seen_job_ids: set[str] = set()
+    for strategy_id in strategy_ids:
+        job_id = _equities_node_job_id_for_strategy(strategy_id)
+        job_id_by_strategy[strategy_id] = job_id
+        if job_id in seen_job_ids:
+            continue
+        seen_job_ids.add(job_id)
+        ordered_job_ids.append(job_id)
+    return job_id_by_strategy, ordered_job_ids
+
+
 def _build_strategy_running_resolver(
     *,
     pulse_control: PulseControlPlane | None = None,
@@ -129,9 +156,13 @@ def _build_strategy_running_resolver(
         )
         if refresh_needed:
             next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_running)
+            job_id_by_strategy, ordered_job_ids = _equities_node_jobs_for_strategy_ids(deduped_ids)
+            status_by_job_id = {
+                job_id: _pulse_status_to_running(pulse.get_job_status(job_id))
+                for job_id in ordered_job_ids
+            }
             for strategy_id in deduped_ids:
-                status = pulse.get_job_status(f"equities-node-{strategy_id}")
-                next_cache[strategy_id] = _pulse_status_to_running(status)
+                next_cache[strategy_id] = status_by_job_id[job_id_by_strategy[strategy_id]]
             cached_running = next_cache
             cache_expires_at = time.monotonic() + ttl_s
 
@@ -174,7 +205,6 @@ def _pulse_snapshot_to_alert_rows(
                 "alert_key": "pulse_job_unknown",
                 "ts_ms": ts_ms,
                 "source": "pulse",
-                "job_id": job_id,
                 "status": "unknown",
                 "error_preview": None,
                 "error_count": 0,
@@ -219,7 +249,6 @@ def _pulse_snapshot_to_alert_rows(
             "alert_key": alert_key,
             "ts_ms": ts_ms,
             "source": "pulse",
-            "job_id": _optional_text(snapshot.get("id")) or job_id,
             "status": status,
             "error_preview": error_preview,
             "error_count": error_count,
@@ -260,28 +289,14 @@ def _build_strategy_alerts_resolver(
         if refresh_needed:
             next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_rows)
             now_ms_value = int(current_now_ms())
-            discover_services = getattr(pulse, "discover_services", None)
-            if callable(discover_services):
-                next_cache = {}
-                for service in discover_services():
-                    job_id = _optional_text(getattr(service, "job_id", None))
-                    if job_id is None or not job_id.startswith("equities-node-"):
-                        continue
-                    strategy_id = job_id.removeprefix("equities-node-").strip()
-                    if not strategy_id:
-                        continue
-                    snapshot = pulse.get_job_snapshot(job_id)
-                    next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
-                        strategy_id,
-                        job_id=job_id,
-                        snapshot=snapshot,
-                        now_ms_value=now_ms_value,
-                    )
+            job_id_by_strategy, ordered_job_ids = _equities_node_jobs_for_strategy_ids(deduped_ids)
+            snapshot_by_job_id = {
+                job_id: pulse.get_job_snapshot(job_id)
+                for job_id in ordered_job_ids
+            }
             for strategy_id in deduped_ids:
-                if strategy_id in next_cache:
-                    continue
-                job_id = f"equities-node-{strategy_id}"
-                snapshot = pulse.get_job_snapshot(job_id)
+                job_id = job_id_by_strategy[strategy_id]
+                snapshot = snapshot_by_job_id[job_id]
                 next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
                     strategy_id,
                     job_id=job_id,

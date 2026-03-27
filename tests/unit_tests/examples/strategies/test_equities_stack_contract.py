@@ -1296,8 +1296,12 @@ def test_equities_deploy_readme_uses_split_family_overnight_hedge_language() -> 
     assert "/api/v1/signals?profile=equities" in contract
     assert "/api/v1/params?profile=equities" in contract
     assert "/api/v1/param-schema?profile=equities&strategy=aapl_tradexyz_maker" in contract
+    assert "/api/v1/param-schema?profile=equities&strategy=amzn_binance_perp_taker" in contract
     assert "/api/v1/params?profile=equities&strategy=aapl_tradexyz_maker" in contract
     assert "trade[XYZ]" in contract
     assert "AAPL.NASDAQ" in contract
     assert "aapl_tradexyz_maker" in contract
     assert "aapl_tradexyz_taker" in contract
+    assert "Signals, params, param-schema, trades, and alerts remain keyed by external strategy ids" in contract
+    assert "Grouped node ids and grouped Pulse job ids are internal deploy details" in contract
+    assert "balances remains profile-scoped even when maker/taker siblings share a node" in contract

@@ -23,6 +23,9 @@ from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
 from nautilus_trader.flux.strategies.equities_maker.runtime_params import (
     EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
 )
+from nautilus_trader.flux.strategies.equities_taker.runtime_params import (
+    EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS,
+)
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4Strategy
 from nautilus_trader.flux.strategies.makerv4.strategy import MakerV4StrategyConfig
 from nautilus_trader.model.identifiers import InstrumentId
@@ -83,6 +86,30 @@ def _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_
     )
     redis_client.set_json(keys.balances_snapshot(), [])
     redis_client.add_stream_rows(keys.fv_stream(), [{"strategy_id": strategy_id, "fv": 100.0}])
+
+
+def _split_equities_metadata_for_strategy(strategy_id: str) -> app_module.StrategyMetadata:
+    if strategy_id.endswith("_maker"):
+        return app_module.StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset=strategy_id.split("_", maxsplit=1)[0].upper(),
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        )
+    if strategy_id.endswith("_taker"):
+        return app_module.StrategyMetadata(
+            strategy_class="equities_taker",
+            strategy_groups="equities",
+            base_asset=strategy_id.split("_", maxsplit=1)[0].upper(),
+            quote_asset="USD",
+            param_set="equities_taker",
+            strategy_family="equities_taker",
+            strategy_version="v1",
+        )
+    raise KeyError(strategy_id)
 
 
 def test_equities_contract_docs_define_shared_account_row_provenance() -> None:
@@ -1979,6 +2006,187 @@ def test_params_profile_equities_uses_per_strategy_param_contracts_for_split_fam
     assert rows_by_strategy[taker_id]["meta"]["param_set"] == "equities_taker"
     assert "bid_edge_take_bps" in rows_by_strategy[taker_id]["schema"]
     assert "n_orders1" not in rows_by_strategy[taker_id]["schema"]
+
+
+def test_signals_profile_equities_keeps_external_strategy_ids_for_grouped_pairs(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    strategy_ids = [
+        "aapl_tradexyz_maker",
+        "aapl_tradexyz_taker",
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
+    ]
+    for strategy_id in strategy_ids:
+        _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_id)
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(strategy_ids[0]),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": strategy_ids},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    rows_by_strategy = {row["id"]: row for row in body["data"]["strategies"]}
+    assert set(rows_by_strategy) == set(strategy_ids)
+    for strategy_id in strategy_ids:
+        row = rows_by_strategy[strategy_id]
+        assert row["meta"]["strategy_id"] == strategy_id
+        assert "node_group_id" not in row
+        assert "node_group_id" not in row["meta"]
+        assert "job_id" not in row
+
+
+def test_param_schema_profile_equities_strategy_id_selectors_remain_external_for_grouped_pairs(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    strategy_ids = ["aapl_tradexyz_maker", "amzn_binance_perp_taker"]
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(strategy_ids[0]),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": strategy_ids},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        maker_response = client.get(
+            "/api/v1/param-schema",
+            query_string={"profile": "equities", "strategy": "aapl_tradexyz_maker"},
+        )
+        maker_body = maker_response.get_json()
+        taker_response = client.get(
+            "/api/v1/param-schema",
+            query_string={"profile": "equities", "strategy": "amzn_binance_perp_taker"},
+        )
+        taker_body = taker_response.get_json()
+
+    assert maker_response.status_code == 200
+    assert maker_body["data"]["param_set"] == "equities_maker"
+    assert "n_orders1" in maker_body["data"]["params"]
+    assert "bid_edge_take_bps" not in maker_body["data"]["params"]
+    assert "node_group_id" not in maker_body["data"]
+
+    assert taker_response.status_code == 200
+    assert taker_body["data"]["param_set"] == "equities_taker"
+    assert "bid_edge_take_bps" in taker_body["data"]["params"]
+    assert taker_body["data"]["params_defaults"] == EQUITIES_TAKER_RUNTIME_PARAM_DEFAULTS
+    assert "node_group_id" not in taker_body["data"]
+
+
+def test_params_profile_equities_strategy_id_selectors_remain_external_for_grouped_pairs(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    maker_id = "aapl_tradexyz_maker"
+    taker_id = "amzn_binance_perp_taker"
+    maker_keys = FluxRedisKeys(
+        strategy_id=maker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id=taker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_hash_json(maker_keys.params_hash_key(), {"qty": "1.0", "n_orders1": "4"})
+    redis_client.set_hash_json(
+        taker_keys.params_hash_key(),
+        {"qty": "1.0", "bid_edge_take_bps": "7.25"},
+    )
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(maker_id),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": [maker_id, taker_id]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        maker_response = client.get(
+            "/api/v1/params",
+            query_string={"profile": "equities", "strategy": maker_id},
+        )
+        maker_body = maker_response.get_json()
+        taker_response = client.get(
+            "/api/v1/params",
+            query_string={"profile": "equities", "strategy": taker_id},
+        )
+        taker_body = taker_response.get_json()
+
+    assert maker_response.status_code == 200
+    assert [row["strategy_id"] for row in maker_body["data"]] == [maker_id]
+    assert maker_body["data"][0]["params"]["n_orders1"] == 4
+    assert "node_group_id" not in maker_body["data"][0]
+
+    assert taker_response.status_code == 200
+    assert [row["strategy_id"] for row in taker_body["data"]] == [taker_id]
+    assert taker_body["data"][0]["params"]["bid_edge_take_bps"] == 7.25
+    assert "job_id" not in taker_body["data"][0]
+
+
+def test_balances_profile_equities_keeps_profile_readiness_metadata_for_grouped_strategy_ids(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    strategy_ids = ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    for strategy_id in strategy_ids:
+        _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_id)
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(strategy_ids[0]),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": strategy_ids},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["degraded"] is False
+    assert body["data"]["missing_required"] == []
+    components_by_strategy = {row["strategy_id"]: row for row in body["data"]["components"]}
+    assert set(components_by_strategy) == set(strategy_ids)
+    for strategy_id in strategy_ids:
+        component = components_by_strategy[strategy_id]
+        assert component["required"] is True
+        assert component["missing"] is False
+        assert "node_group_id" not in component
+        assert "job_id" not in component
 
 
 def test_balances_profile_equities_aggregates_cash_and_positions(
@@ -4090,6 +4298,130 @@ def test_alerts_profile_equities_merges_synthetic_pulse_alerts_with_stream_rows(
         "a-primary",
     ]
     assert body["data"]["rows"][0]["source"] == "pulse"
+
+
+def test_trades_profile_equities_keeps_external_strategy_id_attribution_for_grouped_pairs(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    maker_id = "aapl_tradexyz_maker"
+    taker_id = "amzn_binance_perp_taker"
+    maker_keys = FluxRedisKeys(
+        strategy_id=maker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    taker_keys = FluxRedisKeys(
+        strategy_id=taker_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.add_stream_rows(
+        maker_keys.trades_stream(),
+        [
+            {
+                "strategy_id": maker_id,
+                "row_id": "trade-maker",
+                "qty": "1",
+                "price": "250.0",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+    redis_client.add_stream_rows(
+        taker_keys.trades_stream(),
+        [
+            {
+                "strategy_id": taker_id,
+                "row_id": "trade-taker",
+                "qty": "2",
+                "price": "208.0",
+                "ts_ms": 2_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(maker_id),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": [maker_id, taker_id]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/trades", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["trade-taker", "trade-maker"]
+    assert {row["strategy_id"] for row in body["data"]["rows"]} == {maker_id, taker_id}
+    for row in body["data"]["rows"]:
+        assert "node_group_id" not in row
+        assert "job_id" not in row
+
+
+def test_alerts_profile_equities_keeps_external_strategy_id_attribution_for_grouped_pairs(
+    flux_config,
+    redis_client,
+    contract_catalog,
+) -> None:
+    maker_id = "aapl_tradexyz_maker"
+    taker_id = "amzn_binance_perp_taker"
+    app = create_flux_api_app(
+        _compat_flux_config(flux_config),
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=_split_equities_metadata_for_strategy(maker_id),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": [maker_id, taker_id]},
+        params_schema=EQUITIES_MAKER_RUNTIME_PARAM_SCHEMA,
+        params_defaults=EQUITIES_MAKER_RUNTIME_PARAM_DEFAULTS,
+        param_set="equities_maker",
+        strategy_alerts_resolver=lambda strategy_ids: {
+            maker_id: [
+                {
+                    "strategy_id": maker_id,
+                    "row_id": "pulse-maker",
+                    "id": "pulse-maker",
+                    "level": "ERROR",
+                    "message": "Pulse runner failed",
+                    "alert_key": "pulse_job_failed",
+                    "ts_ms": 3_000,
+                    "source": "pulse",
+                },
+            ],
+            taker_id: [
+                {
+                    "strategy_id": taker_id,
+                    "row_id": "pulse-taker",
+                    "id": "pulse-taker",
+                    "level": "WARNING",
+                    "message": "Pulse runner restarting",
+                    "alert_key": "pulse_job_restarting",
+                    "ts_ms": 2_000,
+                    "source": "pulse",
+                },
+            ],
+        },
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["pulse-maker", "pulse-taker"]
+    assert {row["strategy_id"] for row in body["data"]["rows"]} == {maker_id, taker_id}
+    for row in body["data"]["rows"]:
+        assert row["source"] == "pulse"
+        assert "node_group_id" not in row
+        assert "job_id" not in row
 
 
 def test_trades_profile_equities_preserves_market_exit_rows(
