@@ -177,6 +177,7 @@ Canonical deque reason codes on the shared stack path are:
 
 - `cancel_front_violation`
 - `cancel_back_excess`
+- `cancel_free_slot_for_missing_level` for exceptional full-depth hole repair
 - `place_front_improve`
 - `place_back_backfill`
 - `place_missing_hole_repair`

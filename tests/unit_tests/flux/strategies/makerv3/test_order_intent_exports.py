@@ -318,6 +318,37 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
             ],
             "cancel_back_excess",
         ),
+        (
+            [
+                SimpleNamespace(
+                    client_order_id="BUY-MID-HOLE-1",
+                    side=OrderSide.BUY,
+                    price=Decimal("100.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-MID-HOLE-2",
+                    side=OrderSide.BUY,
+                    price=Decimal("99.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-MID-HOLE-3",
+                    side=OrderSide.BUY,
+                    price=Decimal("97.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+            ],
+            [
+                (Decimal("100.0"), Decimal("100.0")),
+                (Decimal("98.0"), Decimal("98.0")),
+                (Decimal("97.0"), Decimal("97.0")),
+            ],
+            "cancel_free_slot_for_missing_level",
+        ),
     ],
 )
 def test_refresh_quotes_rebalance_cancel_intents_emit_structured_reason_taxonomy(
@@ -345,6 +376,89 @@ def test_refresh_quotes_rebalance_cancel_intents_emit_structured_reason_taxonomy
     cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
     assert cancel_payloads
     assert any(payload["reason_code"] == expected_reason_code for payload in cancel_payloads)
+
+
+def test_refresh_quotes_repairs_full_depth_interior_gap_over_two_cycles(
+    clocked_strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
+    strategy._runtime_params["max_cancels_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_places_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_total_actions_per_cycle"] = 2
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="BUY-HOLE-1",
+            side=OrderSide.BUY,
+            price=Decimal("100.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+        SimpleNamespace(
+            client_order_id="BUY-HOLE-2",
+            side=OrderSide.BUY,
+            price=Decimal("99.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+        SimpleNamespace(
+            client_order_id="BUY-HOLE-3",
+            side=OrderSide.BUY,
+            price=Decimal("97.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+    ]
+    strategy.cancel_order = lambda _order: None
+
+    monkeypatch.setattr(
+        quote_engine_mod,
+        "build_ladder_place_cancel_levels_from_bps",
+        lambda **_kwargs: (
+            [
+                (Decimal("100.0"), Decimal("100.0")),
+                (Decimal("98.0"), Decimal("98.0")),
+                (Decimal("97.0"), Decimal("97.0")),
+            ],
+            [],
+        ),
+    )
+
+    payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:14")
+
+    cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
+    assert any(
+        payload["reason_code"] == "cancel_free_slot_for_missing_level"
+        for payload in cancel_payloads
+    )
+    assert _collect_order_intents(payloads, intent_type="PLACE") == []
+
+    strategy._clear_pending_cancel("BUY-HOLE-2")
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="BUY-HOLE-1",
+            side=OrderSide.BUY,
+            price=Decimal("100.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+        SimpleNamespace(
+            client_order_id="BUY-HOLE-3",
+            side=OrderSide.BUY,
+            price=Decimal("97.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+    ]
+    payloads.clear()
+
+    strategy._refresh_quotes(now_ns=1_001_000_000, quote_cycle_id="RUN-42:15")
+
+    place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
+    assert any(payload["reason_code"] == "place_missing_hole_repair" for payload in place_payloads)
 
 
 def test_refresh_quotes_emits_place_front_then_cancel_back_intents_with_deque_reason_codes(

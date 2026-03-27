@@ -135,6 +135,8 @@ Treat these as bugs or rollout blockers:
 - whole-side cancel bursts on ordinary moves
 - repeated `repair_hole` or `place_missing_hole_repair` on a seemingly stable
   book without corresponding fills/desync
+- repeated `cancel_free_slot_for_missing_level` rows without a matching repair
+  place on the following cycle
 - `cancel_front_violation` / `cancel_back_excess` rows that imply middle-stack
   mutation when joined back to the same `quote_cycle_id`
 - repeated cancel-reject cleanup on already-gone orders
@@ -176,6 +178,7 @@ FROM order_action
 WHERE reason_code IN (
   'cancel_front_violation',
   'cancel_back_excess',
+  'cancel_free_slot_for_missing_level',
   'place_front_improve',
   'place_back_backfill',
   'place_missing_hole_repair'

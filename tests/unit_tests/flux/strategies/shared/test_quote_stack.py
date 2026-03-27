@@ -299,6 +299,41 @@ def test_plan_quote_stack_cancels_tail_to_repair_full_depth_interior_gap() -> No
     ]
 
 
+def test_plan_quote_stack_cancels_unmatched_middle_level_for_full_depth_hole_repair() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("97")],
+        desired_levels=_desired_levels("100", "98", "97"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "repair_hole"
+    assert result.diagnostics.interior_hole_count == 1
+    assert result.diagnostics.depth_after == 2
+    assert result.diagnostics.front_changed is False
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == [
+        ("cancel_repair", 1, None),
+    ]
+
+
+def test_plan_quote_stack_keeps_full_depth_keep_bucket_widen_as_no_op() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal(0)),
+            (Decimal("98"), Decimal("99.5"), Decimal(0)),
+            (Decimal("97"), Decimal("98.5"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert result.diagnostics.depth_after == 3
+    assert result.diagnostics.front_changed is False
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == []
+
+
 def test_plan_quote_stack_represents_temporary_n_plus_one_explicitly_for_inward_moves() -> None:
     result = _plan(
         side="buy",

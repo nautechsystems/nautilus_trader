@@ -274,6 +274,32 @@ def test_bounded_side_planner_cancels_tail_for_full_depth_interior_gap() -> None
     assert _result_field(diagnostics, "total_missing_level_count") == 1
 
 
+def test_bounded_side_planner_cancels_unmatched_middle_level_for_hole_repair() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "98", "97"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (1, REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "repair_hole"
+    assert _result_field(diagnostics, "budget_limited") is False
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 0
+    assert _result_field(diagnostics, "interior_hole_count") == 1
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+    assert _result_field(diagnostics, "back_changed") is False
+
+
 def test_bounded_side_planner_keeps_short_tail_underfill_out_of_interior_hole_diagnostics() -> None:
     result = _bounded_side_plan(
         side="buy",
@@ -295,6 +321,57 @@ def test_bounded_side_planner_keeps_short_tail_underfill_out_of_interior_hole_di
     assert _result_field(diagnostics, "frontier_missing_level_count") == 2
     assert _result_field(diagnostics, "interior_hole_count") == 0
     assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
+def test_bounded_side_planner_keeps_full_depth_keep_bucket_widen_as_no_op() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal("0")),
+            (Decimal("98"), Decimal("99.5"), Decimal("0")),
+            (Decimal("97"), Decimal("98.5"), Decimal("0")),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "budget_limited") is False
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 1
+    assert _result_field(diagnostics, "interior_hole_count") == 0
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
+def test_bounded_side_planner_suppressed_hole_repair_keeps_filtered_diagnostics_consistent() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("98"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=0,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "depth_before") == 3
+    assert _result_field(diagnostics, "depth_after") == 3
+    assert _result_field(diagnostics, "temporary_oversize_depth") == 3
+    assert _result_field(diagnostics, "front_changed") is False
+    assert _result_field(diagnostics, "back_changed") is False
 
 
 def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:

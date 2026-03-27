@@ -95,7 +95,7 @@ class BoundedConvergencePlan:
     diagnostics: ConvergenceDiagnostics
 
 
-_CANCEL_ACTION_KINDS = frozenset({"cancel_back", "cancel_front"})
+_CANCEL_ACTION_KINDS = frozenset({"cancel_back", "cancel_front", "cancel_repair"})
 _PLACE_ACTION_KINDS = frozenset({"place_back", "place_front", "place_missing"})
 
 
@@ -104,6 +104,8 @@ def _reason_code_for_action(action: StackAction) -> str:
         return REASON_CANCEL_BACK_EXCESS
     if action.kind == "cancel_front":
         return REASON_CANCEL_FRONT_VIOLATION
+    if action.kind == "cancel_repair":
+        return REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
     raise ValueError(f"unsupported cancel action kind: {action.kind!r}")
 
 
@@ -119,9 +121,40 @@ def _mode_for_actions(actions: tuple[StackAction, ...]) -> StackActionMode:
         return "cancel_back"
     if kinds == ("cancel_front",):
         return "cancel_front"
+    if kinds == ("cancel_repair",):
+        return "repair_hole"
     if kinds == ("place_missing",):
         return "place_missing"
     return "repair_hole"
+
+
+def _bounded_depth_diagnostics(
+    *,
+    depth_before: int,
+    actions: tuple[StackAction, ...],
+) -> tuple[int, int, bool, bool]:
+    current_depth = depth_before
+    max_depth = depth_before
+    front_changed = False
+    back_changed = False
+
+    for action in actions:
+        if action.kind in _PLACE_ACTION_KINDS:
+            current_depth += 1
+        elif action.kind in _CANCEL_ACTION_KINDS:
+            current_depth -= 1
+        max_depth = max(max_depth, current_depth)
+
+        if action.kind in {"cancel_front", "place_front"} or (
+            action.kind == "place_missing" and action.level_index == 0
+        ):
+            front_changed = True
+        if action.kind in {"cancel_back", "place_back"} or (
+            action.kind == "place_missing" and action.level_index == depth_before
+        ):
+            back_changed = True
+
+    return current_depth, max_depth, front_changed, back_changed
 
 
 def _filtered_stack_plan(
@@ -430,6 +463,10 @@ def plan_side_bounded_convergence(
         and planned_place_count > 0
         and stack_plan.diagnostics.missing_level_count > len(place_level_indices)
     )
+    depth_after, temporary_oversize_depth, front_changed, back_changed = _bounded_depth_diagnostics(
+        depth_before=stack_plan.diagnostics.depth_before,
+        actions=allowed_actions,
+    )
 
     diagnostics = ConvergenceDiagnostics(
         stack_action_mode=_mode_for_actions(allowed_actions),
@@ -465,10 +502,10 @@ def plan_side_bounded_convergence(
         budget_limited=budget_limited,
         backlog_limited=backlog_mode_norm != "normal",
         depth_before=stack_plan.diagnostics.depth_before,
-        depth_after=stack_plan.diagnostics.depth_after,
-        temporary_oversize_depth=stack_plan.diagnostics.temporary_oversize_depth,
-        front_changed=stack_plan.diagnostics.front_changed,
-        back_changed=stack_plan.diagnostics.back_changed,
+        depth_after=depth_after,
+        temporary_oversize_depth=temporary_oversize_depth,
+        front_changed=front_changed,
+        back_changed=back_changed,
     )
     return BoundedConvergencePlan(
         cancel_actions=cancel_actions,

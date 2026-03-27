@@ -11,6 +11,7 @@ Side = Literal["buy", "sell"]
 StackActionKind = Literal[
     "cancel_back",
     "cancel_front",
+    "cancel_repair",
     "place_back",
     "place_front",
     "place_missing",
@@ -295,6 +296,26 @@ def _should_place_back_after_front_cancel(
     return remainder_alignment.missing_positions == (tail_position,)
 
 
+def _is_keep_bucket_widen(
+    *,
+    active_levels: Sequence[ActiveStackLevel],
+    desired_levels: Sequence[DesiredStackLevel],
+    alignment: _Alignment,
+) -> bool:
+    if len(active_levels) != len(desired_levels):
+        return False
+    missing_count = len(alignment.missing_positions)
+    if missing_count == 0 or len(alignment.unmatched_levels) != missing_count:
+        return False
+    target_depth = len(desired_levels)
+    tail_suffix = tuple(range(target_depth - missing_count, target_depth))
+    if alignment.missing_positions != tail_suffix:
+        return False
+    unmatched_indexes = tuple(level.active_index for level in alignment.unmatched_levels)
+    front_prefix = tuple(level.active_index for level in active_levels[:missing_count])
+    return unmatched_indexes == front_prefix
+
+
 def _build_plan(
     *,
     mode: StackActionMode,
@@ -309,7 +330,7 @@ def _build_plan(
     for action in actions:
         if action.kind in {"place_back", "place_front", "place_missing"}:
             current_depth += 1
-        elif action.kind in {"cancel_back", "cancel_front"}:
+        elif action.kind in {"cancel_back", "cancel_front", "cancel_repair"}:
             current_depth -= 1
         max_depth = max(max_depth, current_depth)
 
@@ -450,12 +471,30 @@ def plan_side_deque_actions(
 
     if alignment.missing_levels:
         if depth_before >= target_depth:
+            if _is_keep_bucket_widen(
+                active_levels=normalized_active_levels,
+                desired_levels=normalized_desired_levels,
+                alignment=alignment,
+            ) or not alignment.unmatched_levels:
+                return _build_plan(
+                    mode="no_op",
+                    actions=[],
+                    depth_before=depth_before,
+                    missing_level_count=missing_level_count,
+                    interior_hole_count=interior_hole_count,
+                )
+            cancel_candidate = alignment.unmatched_levels[0]
+            cancel_kind: StackActionKind = (
+                "cancel_back"
+                if cancel_candidate.active_index == normalized_active_levels[-1].active_index
+                else "cancel_repair"
+            )
             return _build_plan(
-                mode="cancel_back",
+                mode="cancel_back" if cancel_kind == "cancel_back" else "repair_hole",
                 actions=[
                     StackAction(
-                        kind="cancel_back",
-                        active_index=normalized_active_levels[-1].active_index,
+                        kind=cancel_kind,
+                        active_index=cancel_candidate.active_index,
                     ),
                 ],
                 depth_before=depth_before,
