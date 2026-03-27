@@ -1868,6 +1868,19 @@ class LiveExecutionEngine(ExecutionEngine):
             strategy_snapshots=self._startup_snapshot_strategy_entries(account_id, instrument_id),
         )
 
+    def _startup_missing_order_refs_for_instrument(
+        self,
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+    ) -> set[StartupOrderReference]:
+        matching_refs: set[StartupOrderReference] = set()
+        for (missing_account_id, missing_instrument_id), refs in self._startup_orders_missing_at_venue.items():
+            if missing_instrument_id != instrument_id:
+                continue
+            if account_id is None or missing_account_id in {account_id, None}:
+                matching_refs.update(refs)
+        return matching_refs
+
     @staticmethod
     def _signed_decimal_qty_for_fill_report(fill_report: FillReport) -> Decimal:
         signed_qty = fill_report.last_qty.as_decimal()
@@ -3647,9 +3660,9 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
-        startup_orders_missing_at_venue = self._startup_orders_missing_at_venue.get(
-            (account_id, instrument_id),
-            set(),
+        startup_orders_missing_at_venue = self._startup_missing_order_refs_for_instrument(
+            account_id=account_id,
+            instrument_id=instrument_id,
         )
         current_startup_open_orders = [
             order
