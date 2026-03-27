@@ -761,6 +761,7 @@ def test_signals_profile_equities_emits_makerv4_execution_mode_overnight_and_fee
             "maker_maker_fee_bps": 0.25,
             "assumed_hedge_fee_bps": 1.0,
         },
+        "hedge_backlog": None,
     }
 
 
@@ -3824,6 +3825,146 @@ def test_balances_profile_equities_overlay_marks_stale_shared_account_scope_stat
     assert stale_row["include_in_reconciliation"] is False
     assert healthy_row["stale"] is False
     assert healthy_row["include_in_reconciliation"] is True
+
+
+def test_balances_profile_equities_dedupes_same_ibkr_account_totals_across_reference_and_hedge_scopes(
+    monkeypatch,
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 1_700_000_000_200)
+    strategy_id = "aapl_tradexyz_maker"
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0", "bot_on": "0"})
+    redis_client.set_json(
+        keys.balances_snapshot(),
+        [
+            {
+                "strategy_id": strategy_id,
+                "exchange": "hyperliquid",
+                "account": "HYPERLIQUID-master",
+                "asset": "USDC",
+                "free": "1",
+                "total": "1",
+                "ts_ms": 1_700_000_000_150,
+            },
+        ],
+    )
+    for account_scope_id, account_name in (
+        ("ibkr.reference.main", "U10015777"),
+        ("ibkr.hedge.main", "IBKR-U10015777"),
+    ):
+        redis_client.set_json(
+            FluxRedisKeys.profile_account_projection(
+                profile_id="equities",
+                account_scope_id=account_scope_id,
+                namespace=flux_config.identity.namespace,
+                schema_version=flux_config.identity.schema_version,
+            ),
+            {
+                "profile_id": "equities",
+                "account_scope_ids": [account_scope_id],
+                "rows": [
+                    {
+                        "row_id": f"equities:shared:{account_scope_id}:cash:ibkr:{account_name}:USD",
+                        "exchange": "ibkr",
+                        "account": account_name,
+                        "asset": "USD",
+                        "free": "1000",
+                        "total": "1000",
+                        "ts_ms": 1_700_000_000_180,
+                        "source_scope": "shared_account",
+                        "account_scope_id": account_scope_id,
+                        "source_strategy_ids": [strategy_id],
+                        "stale": False,
+                        "include_in_reconciliation": True,
+                    },
+                ],
+                "totals": {
+                    "account_equity_raw": 1000.0,
+                    "withdrawable_raw": 250.0,
+                },
+                "scope_status": [
+                    {
+                        "account_scope_id": account_scope_id,
+                        "source_scope": "shared_account",
+                        "projection_status": {
+                            "healthy": True,
+                            "last_success_ts_ms": 1_700_000_000_180,
+                            "last_attempt_ts_ms": 1_700_000_000_180,
+                            "last_error_type": None,
+                            "last_error_message": None,
+                            "stale_after_ms": 15_000,
+                        },
+                    },
+                ],
+                "server_ts_ms": 1_700_000_000_180,
+            },
+        )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=app_module.StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        ),
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+        param_set="equities_maker",
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["totals"]["account_equity_raw"] == pytest.approx(1000.0)
+    assert body["data"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
+    ibkr_cash_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "ibkr" and row.get("asset") == "USD"
+    ]
+    assert len(ibkr_cash_rows) == 1
 
 
 def test_balances_profile_equities_preserves_shared_account_provenance_when_makerv3_and_makerv4_coexist(

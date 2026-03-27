@@ -465,7 +465,7 @@ def effective_venue_resolution_config(
         if scope is not None:
             if scope.ibg_host is not None:
                 ibkr_scope_overrides["ibg_host"] = scope.ibg_host
-            if scope.ibg_port is not None and scope.dockerized_gateway is None:
+            if scope.ibg_port is not None:
                 ibkr_scope_overrides["ibg_port"] = scope.ibg_port
             if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
                 ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id

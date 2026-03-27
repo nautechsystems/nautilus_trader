@@ -55,6 +55,7 @@ from flux.api.socketio import default_realtime_rollout
 from flux.api.socketio import normalize_profile
 from flux.common.config import FluxConfig
 from flux.common.config import validate_identifier_part
+from flux.common.account_projection import projection_totals_identity
 from flux.common.keys import FluxRedisKeys
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
@@ -858,6 +859,7 @@ class FluxApiStore:
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}
         scope_status: list[dict[str, Any]] = []
+        seen_total_identities: set[tuple[str, str]] = set()
         for key in projection_keys:
             payload = load_json(self._redis.get(key))
             if not isinstance(payload, Mapping):
@@ -867,12 +869,16 @@ class FluxApiStore:
             if isinstance(raw_rows, Sequence) and not isinstance(raw_rows, str | bytes):
                 rows.extend(dict(row) for row in raw_rows if isinstance(row, Mapping))
             raw_totals = payload.get("totals")
+            totals_identity = projection_totals_identity(raw_rows)
             if (
                 isinstance(raw_totals, Mapping)
                 and not _scope_status_entries_degraded(raw_scope_status)
                 and not _projection_rows_excluded_from_reconciliation(raw_rows)
             ):
-                totals = _merge_account_totals(totals, raw_totals)
+                if totals_identity is None or totals_identity not in seen_total_identities:
+                    totals = _merge_account_totals(totals, raw_totals)
+                    if totals_identity is not None:
+                        seen_total_identities.add(totals_identity)
             if isinstance(raw_scope_status, Sequence) and not isinstance(raw_scope_status, str | bytes):
                 scope_status.extend(
                     dict(item) for item in raw_scope_status if isinstance(item, Mapping)

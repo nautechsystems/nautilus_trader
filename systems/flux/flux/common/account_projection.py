@@ -38,6 +38,22 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _normalized_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalized_projection_account(*, exchange: str, account: Any) -> str:
+    normalized = _normalized_text(account).upper()
+    if exchange != "ibkr" or not normalized:
+        return normalized
+    for prefix in ("IBKR-", "IBKR:", "INTERACTIVE_BROKERS-", "INTERACTIVE_BROKERS:", "IB-", "IB:"):
+        if normalized.startswith(prefix):
+            stripped = normalized.removeprefix(prefix).strip()
+            if stripped:
+                return stripped
+    return normalized
+
+
 def _merge_projection_totals(
     current: dict[str, Any],
     incoming: Mapping[str, Any],
@@ -119,6 +135,25 @@ def _profile_account_row_id(
     if raw_row_id:
         return f"{profile_id}:shared:{account_scope_id}:{raw_row_id}"
     return f"{profile_id}:shared:{account_scope_id}:row:{row_index}"
+
+
+def projection_totals_identity(raw_rows: Any) -> tuple[str, str] | None:
+    if not isinstance(raw_rows, list):
+        return None
+    identities: set[tuple[str, str]] = set()
+    for row in raw_rows:
+        if not isinstance(row, Mapping):
+            continue
+        exchange = _normalized_text(row.get("exchange") or row.get("venue")).lower()
+        account = _normalized_projection_account(
+            exchange=exchange,
+            account=row.get("account") or row.get("account_id"),
+        )
+        if exchange and account:
+            identities.add((exchange, account))
+    if len(identities) != 1:
+        return None
+    return next(iter(identities))
 
 
 def build_profile_account_snapshot(
@@ -233,4 +268,5 @@ __all__ = (
     "build_profile_account_snapshot",
     "decode_profile_account_snapshot",
     "encode_profile_account_snapshot",
+    "projection_totals_identity",
 )

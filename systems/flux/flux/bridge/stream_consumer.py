@@ -28,6 +28,7 @@ from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.keys import FluxRedisKeys
 from flux.common.config import validate_identifier_part
 from flux.common.config import validate_schema_version
+from flux.events import TOPIC_EXECUTION_ALERT
 
 
 def _json_default(value: Any) -> Any:
@@ -501,6 +502,16 @@ class FluxBridgeStreamConsumer:
                 exc,
             )
 
+    def _can_skip_decode_failure(self, *, stream_key: str, error: Exception) -> bool:
+        coordinates = self._parse_stream_key(stream_key)
+        if coordinates is None:
+            return False
+        if self._strategy_ids is None or coordinates.strategy_id in self._strategy_ids:
+            return False
+        if coordinates.topic != TOPIC_EXECUTION_ALERT:
+            return False
+        return "recognized external strategy_id" in str(error)
+
     def _apply_write_ops(self, ops: list[WriteOp]) -> None:  # noqa: C901
         if not ops:
             return
@@ -609,6 +620,9 @@ class FluxBridgeStreamConsumer:
                                 entry_id,
                                 e,
                             )
+                            if self._can_skip_decode_failure(stream_key=stream_key, error=e):
+                                self._stream_ids[stream_key] = entry_id
+                                continue
                             batch_failed = True
                             break
                         if decoded is None:

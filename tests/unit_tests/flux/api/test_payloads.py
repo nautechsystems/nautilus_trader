@@ -2969,6 +2969,112 @@ def test_build_signals_payload_emits_shared_equities_arb_contract_for_equities_m
     assert "maker_v3" not in payload
 
 
+def test_build_signals_payload_preserves_explicit_equities_arb_quote_freshness_over_stale_legs() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.7,
+                "ask": 255.9,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.6,
+                "ask": 255.8,
+                "ts_ms": 1700000000001,
+            },
+        },
+        now_ms_value=1700000100000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_maker",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1700000099000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1700000099000,
+                    "effective_spread_bps": 6.5,
+                    "assumed_hedge_fee_bps": 1.0,
+                    "maker_leg": {
+                        "venue": "HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 255.7,
+                        "ask": 255.9,
+                        "ts_ms": 1700000099000,
+                        "age_ms": 0,
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "bid": 255.6,
+                        "ask": 255.8,
+                        "ts_ms": 1700000099001,
+                        "age_ms": 0,
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "SMART",
+                        "bid": 255.6,
+                        "ask": 255.8,
+                        "ts_ms": 1700000099001,
+                        "age_ms": 0,
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 255.8},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=legs,
+    )
+
+    maker_leg = payload["equities_arb"]["quote_snapshot"]["maker_leg"]
+    ref_leg = payload["equities_arb"]["quote_snapshot"]["ref_leg"]
+    assert maker_leg["ts_ms"] == 1700000099000
+    assert maker_leg["age_ms"] == 0
+    assert maker_leg["quote_state"] == "fresh"
+    assert ref_leg["ts_ms"] == 1700000099001
+    assert ref_leg["age_ms"] == 0
+    assert ref_leg["quote_state"] == "fresh"
+
+
 def test_build_signals_payload_emits_shared_equities_arb_contract_for_equities_taker() -> None:
     metadata = StrategyMetadata(
         strategy_class="equities_taker",

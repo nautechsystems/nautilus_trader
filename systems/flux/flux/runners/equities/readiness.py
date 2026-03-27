@@ -195,6 +195,7 @@ def _expected_projection_scope_ids(
     strategy_contracts: tuple[StrategyContractEntry, ...],
     account_scopes: tuple[AccountScopeConfig, ...],
     overrides: tuple[str, ...],
+    providers: frozenset[str] | None = None,
 ) -> list[str]:
     if overrides:
         return sorted(
@@ -204,10 +205,11 @@ def _expected_projection_scope_ids(
                 if scope_id
             },
         )
+    provider_filter = providers or PROJECTION_PROVIDERS
     configured_projection_scope_ids = {
         scope.scope_id
         for scope in account_scopes
-        if scope.provider.strip().lower() in PROJECTION_PROVIDERS
+        if scope.provider.strip().lower() in provider_filter
     }
     referenced_scope_ids = {
         scope_id
@@ -299,6 +301,19 @@ def _signal_leg_health(
     if age_ms is None or age_ms >= max_age_ms:
         return None, "old"
     return None, "fresh"
+
+
+def _quote_snapshot_leg_recovers_stale_marker(
+    *,
+    explicit_leg: Mapping[str, Any],
+    feed_state: str | None,
+    quote_state: str | None,
+) -> bool:
+    if not explicit_leg:
+        return False
+    if quote_state != "fresh":
+        return False
+    return feed_state in {None, "ok"}
 
 
 def _is_us_equities_regular_session(now_ms_value: int) -> bool:
@@ -514,13 +529,28 @@ def _build_signal_health_snapshot(
             leg_role="reference",
             max_age_ms=max_age_ms,
         )
-        candidate_stale_leg_ids = {maker_leg_id}
-        if reference_freshness_enforced:
-            candidate_stale_leg_ids.add(reference_leg_id)
+        candidate_stale_legs = [
+            (maker_leg_id, maker_feed_state, maker_quote_state),
+            (
+                reference_leg_id if reference_freshness_enforced else None,
+                reference_feed_state,
+                reference_quote_state,
+            ),
+        ]
         relevant_stale_legs = sorted(
             leg_id
-            for leg_id in candidate_stale_leg_ids
-            if leg_id is not None and leg_id in stale_legs
+            for leg_id, feed_state, quote_state in candidate_stale_legs
+            if leg_id is not None
+            and leg_id in stale_legs
+            and not _quote_snapshot_leg_recovers_stale_marker(
+                explicit_leg=(
+                    maker_snapshot_leg
+                    if leg_id == maker_leg_id
+                    else reference_snapshot_leg
+                ),
+                feed_state=feed_state,
+                quote_state=quote_state,
+            )
         )
         stale_signal_legs.update(relevant_stale_legs)
         old_legs_for_strategy: list[str] = []
@@ -675,10 +705,25 @@ def evaluate_equities_readiness(
         for scope in account_scopes
         if scope.provider.strip().lower() in PROJECTION_PROVIDERS
     }
+    configured_ibkr_projection_scope_ids = {
+        scope.scope_id
+        for scope in account_scopes
+        if scope.provider.strip().lower() == "ibkr"
+    }
     expected_projection_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
         overrides=active_thresholds.expected_projection_scope_ids,
+    )
+    expected_ibkr_projection_scope_ids = _expected_projection_scope_ids(
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        overrides=tuple(
+            scope_id
+            for scope_id in active_thresholds.expected_projection_scope_ids
+            if scope_id in configured_ibkr_projection_scope_ids
+        ),
+        providers=frozenset({"ibkr"}),
     )
     required_ids = tuple(required_strategy_ids)
 
@@ -732,6 +777,13 @@ def evaluate_equities_readiness(
         now_ms_value=now_ms_value,
     )
     projection_check = projection_snapshot.check
+    ibkr_projection_snapshot = _build_projection_health_snapshot(
+        expected_projection_scope_ids=expected_ibkr_projection_scope_ids,
+        configured_projection_scope_ids=configured_ibkr_projection_scope_ids,
+        projection_payloads_by_scope_id=projection_payloads_by_scope_id,
+        projection_max_age_ms=active_thresholds.projection_max_age_ms,
+        now_ms_value=now_ms_value,
+    )
 
     signal_snapshot = _build_signal_health_snapshot(
         strategy_contracts=strategy_contracts,
@@ -749,19 +801,19 @@ def evaluate_equities_readiness(
     ibkr_auth_check = ReadinessCheck(
         name="ibkr_auth",
         ok=(
-            projection_check.ok
+            ibkr_projection_snapshot.check.ok
             and not signal_snapshot.reference_unhealthy_strategy_ids
         ),
         summary=(
-            f"projection_scopes={len(expected_projection_scope_ids)} "
+            f"projection_scopes={len(expected_ibkr_projection_scope_ids)} "
             f"reference_unhealthy={len(signal_snapshot.reference_unhealthy_strategy_ids)}"
         ),
         details={
-            "expected_scope_ids": expected_projection_scope_ids,
-            "missing_config_scope_ids": projection_snapshot.missing_config_scope_ids,
-            "missing_scope_ids": projection_snapshot.missing_scope_ids,
-            "empty_scope_ids": projection_snapshot.empty_scope_ids,
-            "stale_scope_ids": projection_snapshot.stale_scope_ids,
+            "expected_scope_ids": expected_ibkr_projection_scope_ids,
+            "missing_config_scope_ids": ibkr_projection_snapshot.missing_config_scope_ids,
+            "missing_scope_ids": ibkr_projection_snapshot.missing_scope_ids,
+            "empty_scope_ids": ibkr_projection_snapshot.empty_scope_ids,
+            "stale_scope_ids": ibkr_projection_snapshot.stale_scope_ids,
             "unhealthy_strategy_ids": signal_snapshot.reference_unhealthy_strategy_ids,
             "regular_session_active": signals_check.details["regular_session_active"],
             "reference_freshness_enforced": signals_check.details["reference_freshness_enforced"],

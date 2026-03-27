@@ -591,12 +591,21 @@ def _build_ibkr_account_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=scope_config.ibg_host or "127.0.0.1",
             ibg_port=scope_config.ibg_port,
+            ibg_fallback_ports=scope_config.ibg_fallback_ports,
             ibg_client_id=(
                 1 if scope_config.ibg_client_id is None else scope_config.ibg_client_id
             ),
             dockerized_gateway=dockerized_gateway,
-            connection_timeout=300,
-            request_timeout_secs=60,
+            connection_timeout=(
+                scope_config.ibg_connection_timeout_secs
+                if scope_config.ibg_connection_timeout_secs is not None
+                else 300
+            ),
+            request_timeout_secs=(
+                scope_config.ibg_request_timeout_secs
+                if scope_config.ibg_request_timeout_secs is not None
+                else 60
+            ),
             account_id=scope_config.account_id,
         ),
     )

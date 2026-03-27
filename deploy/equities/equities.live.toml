@@ -151,8 +151,11 @@ scope_id = "ibkr.reference.main"
 provider = "ibkr"
 venue = "IBKR"
 ibg_host = "127.0.0.1"
-ibg_port = 4002
+ibg_port = 4001
+ibg_fallback_ports = [4002]
 ibg_client_id = 107
+ibg_connection_timeout_secs = 5
+ibg_request_timeout_secs = 10
 account_id = "U10015777"
 
 [account_scopes.dockerized_gateway]
@@ -171,6 +174,8 @@ venue = "IBKR"
 ibg_host = "127.0.0.1"
 ibg_port = 4002
 ibg_client_id = 908
+ibg_connection_timeout_secs = 5
+ibg_request_timeout_secs = 10
 account_id = "U10015777"
 
 [account_scopes.dockerized_gateway]

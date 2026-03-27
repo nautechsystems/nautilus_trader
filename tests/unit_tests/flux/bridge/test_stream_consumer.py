@@ -285,6 +285,46 @@ class _RunLoopRedis:
         return entry_id
 
 
+class _MultiStreamRunLoopRedis:
+    def __init__(
+        self,
+        streams: list[tuple[str, list[tuple[str, dict[Any, Any]]]]],
+    ) -> None:
+        self._streams = list(streams)
+        self.streams: dict[str, list[tuple[str, dict[Any, Any]]]] = {}
+        self._xadd_counter = 0
+
+    def xread(
+        self,
+        *,
+        streams: dict[str, str],
+        count: int,
+        block: int,
+    ) -> list[tuple[bytes, list[tuple[bytes, dict[Any, Any]]]]]:
+        _ = streams, count, block
+        return [
+            (
+                stream_key.encode(),
+                [(entry_id.encode(), fields) for entry_id, fields in entries],
+            )
+            for stream_key, entries in self._streams
+        ]
+
+    def xadd(
+        self,
+        key: str,
+        fields: dict[Any, Any],
+        *,
+        maxlen: int | None = None,
+        approximate: bool = True,
+    ) -> str:
+        _ = maxlen, approximate
+        self._xadd_counter += 1
+        entry_id = f"{self._xadd_counter}-0"
+        self.streams.setdefault(key, []).append((entry_id, dict(fields)))
+        return entry_id
+
+
 class _LegacyDisconnectPool:
     def __init__(self) -> None:
         self.disconnect_calls: list[bool] = []
@@ -437,6 +477,105 @@ def test_run_stops_processing_stream_batch_after_first_decode_failure() -> None:
 
     assert handled_entry_ids == []
     assert consumer._stream_ids[stream_key] == "$"
+
+
+def test_run_skips_grouped_execution_alert_decode_failure_and_continues_other_streams() -> None:
+    bad_alert_stream = "flux:v1:in:stream:live:nvda_tradexyz:flux.execution.alert"
+    good_state_stream = "flux:v1:in:stream:live:orcl_tradexyz:flux.makerv3.state"
+    bad_alert_entry_id = "1700000001000-0"
+    good_state_entry_id = "1700000001001-0"
+    bad_alert_fields = {
+        "payload": json.dumps(
+            {
+                "type": "FluxBusPayload",
+                "topic": "flux.execution.alert",
+                "payload": json.dumps(
+                    {
+                        "message": "grouped alert without external strategy id",
+                        "ts_ms": 1700000001000,
+                    },
+                ),
+                "ts_event": "0",
+                "ts_init": "0",
+            },
+        ),
+    }
+    handled_state_strategy_ids: list[str] = []
+    good_state_fields = {
+        "payload": json.dumps(
+            {
+                "type": "FluxBusPayload",
+                "topic": "flux.makerv3.state",
+                "payload": json.dumps(
+                    {
+                        "strategy_id": "orcl_tradexyz_taker",
+                        "state": "bot_off",
+                        "ts_ms": 1700000001001,
+                    },
+                ),
+                "ts_event": "0",
+                "ts_init": "0",
+            },
+        ),
+    }
+
+    def _state_handler(payload, context):
+        _ = payload
+        handled_state_strategy_ids.append(context.strategy_id)
+        consumer._running = False
+        return []
+
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_MultiStreamRunLoopRedis(
+            [
+                (bad_alert_stream, [(bad_alert_entry_id, bad_alert_fields)]),
+                (good_state_stream, [(good_state_entry_id, good_state_fields)]),
+            ],
+        ),
+        environment="live",
+        strategy_ids=[
+            "nvda_tradexyz_maker",
+            "nvda_tradexyz_taker",
+            "orcl_tradexyz_maker",
+            "orcl_tradexyz_taker",
+        ],
+        stream_strategy_ids=["nvda_tradexyz", "orcl_tradexyz"],
+        handlers={
+            "flux.execution.alert": lambda payload, context: [],
+            "flux.makerv3.state": _state_handler,
+        },
+        topics=["flux.execution.alert", "flux.makerv3.state"],
+    )
+    consumer._stream_ids = {
+        bad_alert_stream: "$",
+        good_state_stream: "$",
+    }
+    consumer._install_signals = lambda: None
+    consumer._refresh_streams = lambda *, force=False: None
+    original_xread = consumer._redis.xread
+    xread_calls = 0
+
+    def _xread_once_then_stop(*, streams, count, block):
+        nonlocal xread_calls
+        xread_calls += 1
+        if xread_calls > 1:
+            consumer._running = False
+            return []
+        return original_xread(streams=streams, count=count, block=block)
+
+    consumer._redis.xread = _xread_once_then_stop
+
+    consumer.run()
+
+    assert consumer._stream_ids[bad_alert_stream] == bad_alert_entry_id
+    assert consumer._stream_ids[good_state_stream] == good_state_entry_id
+    assert handled_state_strategy_ids == ["orcl_tradexyz_taker"]
+    alert_key = FluxRedisKeys(strategy_id="nvda_tradexyz").alerts()
+    assert len(consumer._redis.streams[alert_key]) == 1
+    alert_payload = json.loads(consumer._redis.streams[alert_key][0][1]["payload"])
+    assert alert_payload["alert_key"] == "bridge_decode_failed"
+    assert alert_payload["strategy_id"] == "nvda_tradexyz"
+    assert alert_payload["source_topic"] == "decode"
 
 
 def test_run_closes_redis_on_exit_with_legacy_disconnect_pool() -> None:

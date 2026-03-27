@@ -10,6 +10,7 @@ from typing import Any
 
 from flux.common.account_projection import build_profile_account_snapshot
 from flux.common.account_projection import encode_profile_account_snapshot
+from flux.common.account_projection import projection_totals_identity
 from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
 from flux.common.portfolio_inventory import aggregate_components
@@ -241,6 +242,7 @@ class StrategySetPortfolioAggregator:
         published_rows: list[dict[str, Any]] = []
         published_totals: dict[str, Any] = {}
         published_scope_status: list[dict[str, Any]] = []
+        seen_total_identities: set[tuple[str, str]] = set()
         for binding in getattr(self, "_profile_account_bindings", ()):
             provider = binding.provider
             if provider is None:
@@ -261,8 +263,12 @@ class StrategySetPortfolioAggregator:
                 ts_ms=now_ms_value,
             )
             snapshot_totals = snapshot.get("totals")
+            totals_identity = projection_totals_identity(snapshot.get("rows"))
             if isinstance(snapshot_totals, Mapping):
-                published_totals = _merge_account_totals(published_totals, snapshot_totals)
+                if totals_identity is None or totals_identity not in seen_total_identities:
+                    published_totals = _merge_account_totals(published_totals, snapshot_totals)
+                    if totals_identity is not None:
+                        seen_total_identities.add(totals_identity)
             snapshot_scope_status = snapshot.get("scope_status")
             if isinstance(snapshot_scope_status, list):
                 published_scope_status.extend(

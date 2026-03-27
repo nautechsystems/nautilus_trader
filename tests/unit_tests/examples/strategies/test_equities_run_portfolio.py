@@ -172,8 +172,11 @@ def _account_scopes() -> list[dict[str, object]]:
             "provider": "ibkr",
             "venue": "IBKR",
             "ibg_host": "127.0.0.1",
-            "ibg_port": 4002,
+            "ibg_port": 4001,
+            "ibg_fallback_ports": [4002],
             "ibg_client_id": 7,
+            "ibg_connection_timeout_secs": 5,
+            "ibg_request_timeout_secs": 10,
             "dockerized_gateway": {
                 "trading_mode": "live",
                 "read_only_api": True,
@@ -186,6 +189,8 @@ def _account_scopes() -> list[dict[str, object]]:
             "ibg_host": "127.0.0.1",
             "ibg_port": 4002,
             "ibg_client_id": 8,
+            "ibg_connection_timeout_secs": 5,
+            "ibg_request_timeout_secs": 10,
             "dockerized_gateway": {
                 "trading_mode": "live",
                 "read_only_api": True,
@@ -219,14 +224,14 @@ def test_equities_portfolio_allowlist_uses_shared_parser() -> None:
     ) == ["aapl_tradexyz_makerv4"]
 
 
-def test_equities_live_config_prunes_shared_portfolio_contracts_to_core_prod_basket() -> None:
+def test_equities_live_config_prunes_shared_portfolio_contracts_to_enrolled_prod_basket() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     allowlist = _equities_strategy_ids(config["api"])
     required = _required_strategy_ids(config["api"], fallback=allowlist)
     strategy_ids_by_asset = _strategy_ids_by_asset(config, allowlist=allowlist)
 
     assert required == allowlist
-    assert _portfolio_base_assets(config) == list(strategy_ids_by_asset)
+    assert set(_portfolio_base_assets(config)) == set(strategy_ids_by_asset)
     assert set(allowlist) == {
         strategy_id
         for strategy_ids in strategy_ids_by_asset.values()
@@ -425,11 +430,17 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     )
     assert len(captured_provider_configs) == 2
     assert captured_provider_configs[0].dockerized_gateway is not None
-    assert captured_provider_configs[0].ibg_port == 4002
+    assert captured_provider_configs[0].ibg_port == 4001
+    assert captured_provider_configs[0].ibg_fallback_ports == (4002,)
     assert captured_provider_configs[0].ibg_client_id == 7
+    assert captured_provider_configs[0].connection_timeout == 5
+    assert captured_provider_configs[0].request_timeout_secs == 10
     assert captured_provider_configs[1].dockerized_gateway is not None
     assert captured_provider_configs[1].ibg_port == 4002
+    assert captured_provider_configs[1].ibg_fallback_ports == ()
     assert captured_provider_configs[1].ibg_client_id == 8
+    assert captured_provider_configs[1].connection_timeout == 5
+    assert captured_provider_configs[1].request_timeout_secs == 10
 
 
 def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
@@ -1319,6 +1330,84 @@ def test_equities_portfolio_aggregator_publishes_shared_hyperliquid_cash_positio
     assert {row.get("kind") for row in hyperliquid_rows if row["asset"] == "NVDA"} == {"position"}
     assert snapshot["accounts"]["totals"]["account_equity_raw"] == pytest.approx(8314.466609)
     assert snapshot["accounts"]["totals"]["withdrawable_raw"] == pytest.approx(0.0)
+
+
+def test_equities_portfolio_aggregator_dedupes_duplicate_ibkr_account_totals_across_scopes() -> None:
+    now_ms_value = int(time.time() * 1000)
+    reference_provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "ibkr",
+                "account": "U10015777",
+                "asset": "USD",
+                "total": "1000",
+                "account_scope_id": "ibkr.reference.main",
+                "source_scope": "shared_account",
+                "ts_ms": now_ms_value,
+            },
+        ],
+        totals={
+            "account_equity_raw": 1000.0,
+            "withdrawable_raw": 250.0,
+        },
+    )
+    hedge_provider = _CountingAccountProjectionProvider(
+        rows=[
+            {
+                "exchange": "ibkr",
+                "account": "IBKR-U10015777",
+                "asset": "USD",
+                "total": "1000",
+                "account_scope_id": "ibkr.hedge.main",
+                "source_scope": "shared_account",
+                "ts_ms": now_ms_value,
+            },
+        ],
+        totals={
+            "account_equity_raw": 1000.0,
+            "withdrawable_raw": 250.0,
+        },
+    )
+    fake_redis = _FakeRedis()
+    aggregator = EquitiesPortfolioAggregator.__new__(EquitiesPortfolioAggregator)
+    aggregator._descriptor = get_strategy_set_descriptor("equities")
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "equities"
+    aggregator._stale_after_ms = 3_000
+    aggregator._aggregation_mode = "strict"
+    aggregator._strategy_ids = ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["AAPL"]
+    aggregator._strategy_ids_by_asset = {
+        "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
+    }
+    aggregator._shared_observation_group_by_strategy_id = {}
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator.account_scope_ids = ["ibkr.reference.main", "ibkr.hedge.main"]
+    aggregator._profile_account_bindings = (
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.reference.main",
+            source_strategy_ids=("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
+            provider=reference_provider,
+        ),
+        ProfileAccountProviderBinding(
+            account_scope_id="ibkr.hedge.main",
+            source_strategy_ids=("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
+            provider=hedge_provider,
+        ),
+    )
+
+    aggregator.recompute_once()
+
+    raw_snapshot = fake_redis.get(FluxRedisKeys.portfolio_snapshot(portfolio_id="equities"))
+    assert raw_snapshot is not None
+    snapshot = json.loads(raw_snapshot)
+
+    assert snapshot["accounts"]["totals"]["account_equity_raw"] == pytest.approx(1000.0)
+    assert snapshot["accounts"]["totals"]["withdrawable_raw"] == pytest.approx(250.0)
 
 
 def test_equities_portfolio_aggregator_run_closes_redis_on_exit_with_legacy_disconnect(

@@ -2758,7 +2758,7 @@ def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for
         "trading_mode": "live",
         "manage_container": False,
     }
-    assert "ibg_port" not in ibkr_cfg
+    assert ibkr_cfg["ibg_port"] == 4002
 
 
 def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_when_external_id_missing() -> None:
@@ -2823,6 +2823,7 @@ def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_wh
     ibkr_cfg = effective["node"]["venues"]["IBKR"]
     assert ibkr_cfg["execution"] is True
     assert ibkr_cfg["ibg_host"] == "127.0.0.1"
+    assert ibkr_cfg["ibg_port"] == 4002
     assert ibkr_cfg["ibg_client_id"] == 108
     assert ibkr_cfg["account_id"] == "U10015777"
     assert ibkr_cfg["dockerized_gateway"] == {

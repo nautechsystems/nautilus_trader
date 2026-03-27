@@ -655,23 +655,23 @@ def _normalize_v4_leg_snapshot(
         mid = _first_valid_float(leg.get("mid"))
         ts_ms = coerce_ts_ms(leg.get("ts_ms"))
         age_ms = safe_int(leg.get("age_ms"))
-        if venue:
+        if venue and not decode_text(payload.get("venue")).strip():
             payload["venue"] = venue
-        if route:
+        if route and not decode_text(payload.get("route")).strip():
             payload["route"] = route
-        if symbol:
+        if symbol and not decode_text(payload.get("symbol")).strip():
             payload["symbol"] = symbol
-        if instrument_id:
+        if instrument_id and not decode_text(payload.get("instrument_id")).strip():
             payload["instrument_id"] = instrument_id
-        if bid is not None:
+        if bid is not None and _first_valid_float(payload.get("bid")) is None:
             payload["bid"] = bid
-        if ask is not None:
+        if ask is not None and _first_valid_float(payload.get("ask")) is None:
             payload["ask"] = ask
-        if mid is not None:
+        if mid is not None and _first_valid_float(payload.get("mid")) is None:
             payload["mid"] = mid
-        if ts_ms is not None:
+        if ts_ms is not None and coerce_ts_ms(payload.get("ts_ms")) is None:
             payload["ts_ms"] = ts_ms
-        if age_ms is not None:
+        if age_ms is not None and safe_int(payload.get("age_ms")) is None:
             payload["age_ms"] = age_ms
     return payload
 
@@ -847,12 +847,46 @@ def _derive_makerv4_operator_payload(
     quote_fee_assumptions_map = (
         quote_fee_assumptions if isinstance(quote_fee_assumptions, Mapping) else {}
     )
+    maker_taker_fee_bps = _first_valid_float(
+        fee_assumptions_map.get("maker_taker_fee_bps"),
+        quote_fee_assumptions_map.get("maker_taker_fee_bps"),
+        fee_assumptions_map.get("hl_taker_fee_bps"),
+        quote_fee_assumptions_map.get("hl_taker_fee_bps"),
+    )
+    maker_maker_fee_bps = _first_valid_float(
+        fee_assumptions_map.get("maker_maker_fee_bps"),
+        quote_fee_assumptions_map.get("maker_maker_fee_bps"),
+        fee_assumptions_map.get("hl_maker_fee_bps"),
+        quote_fee_assumptions_map.get("hl_maker_fee_bps"),
+    )
     if "cancel_after_ms" in pending_hedge_map:
         cancel_after_ms = safe_int(pending_hedge_map.get("cancel_after_ms"))
     elif "cancel_after_ms" in hedge_policy_map:
         cancel_after_ms = safe_int(hedge_policy_map.get("cancel_after_ms"))
     else:
         cancel_after_ms = _first_valid_int(quote_snapshot.get("cancel_after_ms"))
+
+    fee_assumptions_payload = {
+        "ibkr_fee_plan": _first_valid_text(
+            fee_assumptions_map.get("ibkr_fee_plan"),
+            quote_fee_assumptions_map.get("ibkr_fee_plan"),
+        ),
+        "ibkr_fee_min_usd": _first_valid_float(
+            fee_assumptions_map.get("ibkr_fee_min_usd"),
+            quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
+        ),
+        "assumed_hedge_fee_bps": _first_valid_float(
+            fee_assumptions_map.get("assumed_hedge_fee_bps"),
+            quote_fee_assumptions_map.get("assumed_hedge_fee_bps"),
+            quote_snapshot.get("assumed_hedge_fee_bps"),
+        ),
+    }
+    if strategy_family in {"equities_maker", "equities_taker"}:
+        fee_assumptions_payload["hl_taker_fee_bps"] = maker_taker_fee_bps
+        fee_assumptions_payload["hl_maker_fee_bps"] = maker_maker_fee_bps
+    else:
+        fee_assumptions_payload["maker_taker_fee_bps"] = maker_taker_fee_bps
+        fee_assumptions_payload["maker_maker_fee_bps"] = maker_maker_fee_bps
 
     payload = {
         "execution_mode": execution_mode,
@@ -881,33 +915,8 @@ def _derive_makerv4_operator_payload(
             ),
             "cancel_after_ms": cancel_after_ms,
         },
-        "fee_assumptions": {
-            "ibkr_fee_plan": _first_valid_text(
-                fee_assumptions_map.get("ibkr_fee_plan"),
-                quote_fee_assumptions_map.get("ibkr_fee_plan"),
-            ),
-            "ibkr_fee_min_usd": _first_valid_float(
-                fee_assumptions_map.get("ibkr_fee_min_usd"),
-                quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
-            ),
-            "maker_taker_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("maker_taker_fee_bps"),
-                quote_fee_assumptions_map.get("maker_taker_fee_bps"),
-                fee_assumptions_map.get("hl_taker_fee_bps"),
-                quote_fee_assumptions_map.get("hl_taker_fee_bps"),
-            ),
-            "maker_maker_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("maker_maker_fee_bps"),
-                quote_fee_assumptions_map.get("maker_maker_fee_bps"),
-                fee_assumptions_map.get("hl_maker_fee_bps"),
-                quote_fee_assumptions_map.get("hl_maker_fee_bps"),
-            ),
-            "assumed_hedge_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("assumed_hedge_fee_bps"),
-                quote_fee_assumptions_map.get("assumed_hedge_fee_bps"),
-                quote_snapshot.get("assumed_hedge_fee_bps"),
-            ),
-        },
+        "fee_assumptions": fee_assumptions_payload,
+        "hedge_backlog": None,
     }
     if hedge_backlog_map:
         payload["hedge_backlog"] = {
