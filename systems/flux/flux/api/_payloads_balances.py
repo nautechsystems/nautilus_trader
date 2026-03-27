@@ -1209,6 +1209,8 @@ def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] 
         row_id = decode_text(row.get("row_id")).strip()
         return ("row_id", row_id) if row_id else None
     kind = decode_text(row.get("kind")).strip().lower() or "cash"
+    if kind == "cash" and account_scope_id:
+        return ("scope_cash", account_scope_id, asset, "")
     return (kind, exchange, account, asset)
 
 
@@ -1251,6 +1253,9 @@ def _default_portfolio_snapshot_row_id(
     if row_kind == "position" and len(identity) == 4:
         _kind, exchange, account, instrument = identity
         return f"{portfolio_id}:pos:{exchange}:{account}:{instrument}"
+    if row_kind == "scope_cash" and len(identity) == 4:
+        _kind, account_scope_id, asset, _unused = identity
+        return _portfolio_cash_row_id(portfolio_id, ("scope", account_scope_id, asset, ""))
     if len(identity) != 4:
         return None
     kind, exchange, account, asset = identity

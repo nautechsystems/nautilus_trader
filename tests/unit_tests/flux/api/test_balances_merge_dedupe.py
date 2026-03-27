@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from nautilus_trader.flux.api._payloads_balances import combine_portfolio_snapshot_rows
 from nautilus_trader.flux.api.payloads import collapse_balance_display_rows
 from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
 
@@ -244,6 +245,59 @@ def test_merge_portfolio_balances_rows_uses_account_scope_identity_for_shared_bi
         "plumeusdt_binance_perp_makerv3",
         "plumeusdt_binance_spot_makerv3",
     ]
+
+
+def test_combine_portfolio_snapshot_rows_uses_account_scope_identity_across_binance_product_scopes() -> None:
+    merged = combine_portfolio_snapshot_rows(
+        balance_rows=[
+            {
+                "row_id": "tokenmm:cash:binance_perp:binance.pm.main:USDT",
+                "exchange": "binance_perp",
+                "account": "binance.pm.main",
+                "account_id": "binance.pm.main",
+                "account_scope_id": "binance.pm.main",
+                "asset": "USDT",
+                "free": "1285.28070703",
+                "total": "1285.28070703",
+                "product_type": "perp",
+                "source_scope": "portfolio",
+                "ts_ms": 1_700_000_000_000,
+            },
+        ],
+        account_rows=[
+            {
+                "row_id": "tokenmm:shared:binance.pm.main:cash:binance_spot:BINANCE-main:USDT",
+                "exchange": "binance_spot",
+                "account": "BINANCE-main",
+                "account_id": "BINANCE-main",
+                "account_scope_id": "binance.pm.main",
+                "asset": "USDT",
+                "free": "910.24627913",
+                "total": "910.24627913",
+                "product_type": "spot",
+                "source_scope": "shared_account",
+                "source_strategy_ids": [
+                    "plumeusdt_binance_perp_makerv3",
+                    "plumeusdt_binance_spot_makerv3",
+                ],
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+        portfolio_id="tokenmm",
+    )
+
+    binance_rows = [
+        row
+        for row in merged
+        if row.get("account_scope_id") == "binance.pm.main" and row.get("asset") == "USDT"
+    ]
+
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["exchange"] == "binance_spot"
+    assert row["account"] == "BINANCE-main"
+    assert row["source_scope"] == "shared_account"
+    assert row["total"] == "910.24627913"
 
 
 def test_merge_portfolio_balances_rows_deduplicates_shared_position_snapshots_by_group() -> None:
