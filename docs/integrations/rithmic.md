@@ -315,12 +315,6 @@ To find the correct values, sign in to the RTrader Pro desktop application and o
 case-sensitive.
 :::
 
-Example screenshots (cropped/redacted):
-
-![RTrader Pro File menu showing the User Profile entry](./images/rtrader-user-profile-menu.png)
-
-![RTrader Pro User Profile showing the System, Gateway, FCM, and IB fields](./images/rtrader-user-profile-routing-fields.png)
-
 ### Data client configuration
 
 The most important data-client options are:
