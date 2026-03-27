@@ -939,13 +939,13 @@ class FluxApiStore:
 
         strings = getattr(self._redis, "strings", None)
         if isinstance(strings, dict):
-                for raw_key in strings:
-                    if len(projection_keys) >= max_items:
-                        break
-                    key = decode_text(raw_key).strip()
-                    if key.startswith(key_prefix) and key not in seen_keys:
-                        seen_keys.add(key)
-                        projection_keys.append(key)
+            for raw_key in strings:
+                if len(projection_keys) >= max_items:
+                    break
+                key = decode_text(raw_key).strip()
+                if key.startswith(key_prefix) and key not in seen_keys:
+                    seen_keys.add(key)
+                    projection_keys.append(key)
 
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}

@@ -465,6 +465,7 @@ def test_standard_contract_polling_only_transport_subscribes_and_receives_heartb
     assert ack["surface"] == "signal"
     assert ack["accepted_start_seq"] == 0
     assert ack["capabilities"]["recovery_mode"] == "invalidate_only"
+    assert emitter.has_standard_profile_subscribers("tokenmm") is True
 
     emitter.emit_once(profile="tokenmm")
     realtime_packets = _take_realtime_packets(client)
@@ -1577,6 +1578,7 @@ def test_standard_subscribe_priming_failure_releases_profile_and_subscription_st
     assert emitter._standard_subscriptions_by_sid == {}
     assert emitter._profile_refcounts.get("tokenmm", 0) == 0
     assert emitter._legacy_profile_refcounts.get("tokenmm", 0) == 0
+    assert emitter.has_standard_profile_subscribers("tokenmm") is False
     assert emitter._active_profiles() == []
 
 

@@ -863,6 +863,13 @@ export default function Trades({
     return nextState;
   }, [tradesStandardActiveView, tradesStandardEnabled]);
 
+  const enterRecoveryState = useCallback((reason: TradesRecoveryReason, prepare?: () => void) => {
+    setRecoveryReason(reason);
+    prepare?.();
+    catchingUpRef.current = true;
+    syncSurfaceState();
+  }, [setRecoveryReason, syncSurfaceState]);
+
   const clearManualRefreshRequired = useCallback(() => {
     manualRefreshRequiredRef.current = false;
     if (surfaceStateRef.current === RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED) {
@@ -1856,10 +1863,9 @@ export default function Trades({
         && (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
         && !matchesTradeStreamEpoch(currentStreamCursor, eventStreamId, eventSnapshotRevision);
       if (hasStreamMismatch) {
-        setRecoveryReason('snapshot_refresh');
-        catchingUpRef.current = true;
-        queueSnapshotRefreshRef.current?.(true);
-        syncSurfaceState();
+        enterRecoveryState('snapshot_refresh', () => {
+          queueSnapshotRefreshRef.current?.(true);
+        });
         return;
       }
       const hasExactCurrentEpoch =
@@ -1876,10 +1882,9 @@ export default function Trades({
         && hasExactCurrentEpoch
         && surfaceSeq > currentStreamCursor.lastSeq + 1;
       if (hasSeqGap) {
-        setRecoveryReason('seq_gap');
-        beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
-        catchingUpRef.current = true;
-        syncSurfaceState();
+        enterRecoveryState('seq_gap', () => {
+          beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
+        });
         schedulePoll();
         return;
       }
@@ -1890,10 +1895,9 @@ export default function Trades({
         && hasCompatibleRecoveryEpoch
         && surfaceSeq > currentStreamCursor.lastSeq;
       if (shouldDeferEventDuringRecovery) {
-        setRecoveryReason('seq_gap');
-        beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
-        catchingUpRef.current = true;
-        syncSurfaceState();
+        enterRecoveryState('seq_gap', () => {
+          beginGapRecovery(currentStreamCursor.lastSeq, surfaceSeq);
+        });
         schedulePoll();
         return;
       }
@@ -1963,7 +1967,7 @@ export default function Trades({
     } catch (err) {
       console.error('[trades] socket trade_update error', err);
     }
-  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery, setRecoveryReason]);
+  }, [applyControllerDelta, setUnread, advanceTradeReplayCursor, storeRows, syncSurfaceState, schedulePoll, reconcileGapRecoveryTarget, beginGapRecovery, enterRecoveryState]);
 
   useEffect(() => {
     const pending: any[] = [];
@@ -2075,10 +2079,9 @@ export default function Trades({
 
     if (event.kind === 'heartbeat') {
       if (hasEnvelopeSeqGap) {
-        setRecoveryReason('seq_gap');
-        beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
-        catchingUpRef.current = true;
-        syncSurfaceState();
+        enterRecoveryState('seq_gap', () => {
+          beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
+        });
         schedulePoll();
         return;
       }
@@ -2102,29 +2105,28 @@ export default function Trades({
 
     const trades = Array.isArray(event.payload?.trades) ? event.payload.trades : [];
     if (!trades.length && hasEnvelopeSeqGap) {
-      setRecoveryReason('seq_gap');
-      beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
-      catchingUpRef.current = true;
-      syncSurfaceState();
+      enterRecoveryState('seq_gap', () => {
+        beginGapRecovery(currentStreamCursor.lastSeq, eventSeq);
+      });
       schedulePoll();
       return;
     }
     catchingUpRef.current =
       standardSnapshotRecoveryInFlightRef.current
       || gapRecoveryTargetSeqRef.current != null;
-      for (const trade of trades) {
-        enqueueTradeMessageRef.current({
-          ...(trade ?? {}),
-          seq: (trade as any)?.seq ?? event.seq,
-          surface_seq: event.seq,
-          contract_version: event.contract_version,
-          stream_id: event.stream_id,
-          snapshot_revision: event.snapshot_revision,
+    for (const trade of trades) {
+      enqueueTradeMessageRef.current({
+        ...(trade ?? {}),
+        seq: (trade as any)?.seq ?? event.seq,
+        surface_seq: event.seq,
+        contract_version: event.contract_version,
+        stream_id: event.stream_id,
+        snapshot_revision: event.snapshot_revision,
         server_ts_ms: event.server_ts_ms,
       });
     }
     syncSurfaceState();
-  }, [beginGapRecovery, recoverStandardSnapshot, schedulePoll, setRecoveryReason, syncSurfaceState]);
+  }, [beginGapRecovery, enterRecoveryState, recoverStandardSnapshot, schedulePoll, syncSurfaceState]);
 
   useStandardWebSocketSubscription({
     enabled:
@@ -2192,8 +2194,7 @@ export default function Trades({
       }
       lastReconnectCatchupAtRef.current = now;
       reconnectCatchupInFlightRef.current = true;
-      setRecoveryReason('socket_reconnect');
-      catchingUpRef.current = true;
+      enterRecoveryState('socket_reconnect');
 
       const reconnectResyncId = useResyncStore.getState().resyncId;
       resyncIdRef.current = reconnectResyncId;
@@ -2229,7 +2230,7 @@ export default function Trades({
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, [fetchPage, setRecoveryReason, standardLineage, syncSurfaceState, tradesStandardActiveView]);
+  }, [enterRecoveryState, fetchPage, standardLineage, syncSurfaceState, tradesStandardActiveView]);
 
   useEffect(() => {
     isActiveRef.current = true;

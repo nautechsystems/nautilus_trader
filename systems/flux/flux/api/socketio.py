@@ -723,6 +723,7 @@ class FluxSocketEmitter:
         self._wake_event = Event()
         self._profile_refcounts: dict[str, int] = {}
         self._legacy_profile_refcounts: dict[str, int] = {}
+        self._standard_profile_refcounts: dict[str, int] = {}
         self._seq_by_profile: dict[str, int] = {}
         self._standard_seq_by_profile_surface: dict[tuple[str, str], int] = {}
         self._signal_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
@@ -741,6 +742,19 @@ class FluxSocketEmitter:
             "legacy_event_counts": {},
         }
         self._tokenmm_clean_trade_stream_signatures: dict[str, tuple[int, str]] = {}
+        self._tokenmm_trade_stream_requires_reset_resolver = getattr(
+            self._store,
+            "tokenmm_trade_stream_requires_reset",
+            None,
+        )
+        self._tokenmm_trade_stream_signature_resolver = getattr(
+            self._store,
+            "tokenmm_trade_stream_signature",
+            None,
+        )
+        self._store_supports_base_first_qty = (
+            "base_first_qty" in inspect.signature(self._store.load_trades_rows).parameters
+        )
         self._trade_poll_limit = SOCKETIO_TRADE_POLL_LIMIT
         self._trade_scan_limit = SOCKETIO_TRADE_SCAN_LIMIT
         self._alerts_preview_limit = SOCKETIO_ALERTS_PREVIEW_LIMIT
@@ -931,6 +945,11 @@ class FluxSocketEmitter:
         with self._lock:
             return self._legacy_profile_refcounts.get(normalized, 0) > 0
 
+    def has_standard_profile_subscribers(self, profile: Any) -> bool:
+        normalized = normalize_profile(profile)
+        with self._lock:
+            return self._standard_profile_refcounts.get(normalized, 0) > 0
+
     def _active_profiles(self) -> list[str]:
         with self._lock:
             return sorted(
@@ -943,6 +962,7 @@ class FluxSocketEmitter:
             if key[0] == profile:
                 self._standard_seq_by_profile_surface.pop(key, None)
         self._legacy_profile_refcounts.pop(profile, None)
+        self._standard_profile_refcounts.pop(profile, None)
         self._signal_by_profile.pop(profile, None)
         self._trade_cursor_by_profile.pop(profile, None)
         self._alerts_by_profile.pop(profile, None)
@@ -992,8 +1012,8 @@ class FluxSocketEmitter:
     def _tokenmm_trade_stream_requires_reset(self, strategy_id: str, metadata: Any) -> bool:
         if not _metadata_is_tokenmm(metadata):
             return False
-        stream_reset_resolver = getattr(self._store, "tokenmm_trade_stream_requires_reset", None)
-        signature_resolver = getattr(self._store, "tokenmm_trade_stream_signature", None)
+        stream_reset_resolver = self._tokenmm_trade_stream_requires_reset_resolver
+        signature_resolver = self._tokenmm_trade_stream_signature_resolver
         signature: tuple[int, str] | None = None
         if callable(signature_resolver):
             raw_signature = signature_resolver(strategy_id)
@@ -1117,6 +1137,12 @@ class FluxSocketEmitter:
                     released_profiles.append(subscription.profile)
                 if not surface_map:
                     self._standard_subscriptions_by_sid.pop(sid, None)
+            for profile in released_profiles:
+                next_count = self._standard_profile_refcounts.get(profile, 0) - 1
+                if next_count <= 0:
+                    self._standard_profile_refcounts.pop(profile, None)
+                else:
+                    self._standard_profile_refcounts[profile] = next_count
         for profile in released_profiles:
             self.release_profile(profile)
         self._refresh_active_standard_metrics()
@@ -1235,6 +1261,9 @@ class FluxSocketEmitter:
             with self._lock:
                 surface_map = self._standard_subscriptions_by_sid.setdefault(sid, {})
                 surface_map[normalized_surface] = subscription
+                self._standard_profile_refcounts[normalized_profile] = (
+                    self._standard_profile_refcounts.get(normalized_profile, 0) + 1
+                )
             subscription_registered = True
             profile_acquired = False
             if normalized_surface == "balances":
@@ -1397,18 +1426,12 @@ class FluxSocketEmitter:
             previous_balances_signature = self._balances_by_profile.get(profile)
             previous_legacy_recovery_signature = self._legacy_recovery_signature_by_profile.get(profile)
             legacy_profile_active = self._legacy_profile_refcounts.get(profile, 0) > 0
-            standard_profile_active = any(
-                subscription.profile == profile
-                for surface_map in self._standard_subscriptions_by_sid.values()
-                for subscription in surface_map.values()
-            )
+            standard_profile_active = self._standard_profile_refcounts.get(profile, 0) > 0
 
         next_trade_cursors = dict(trade_cursors)
         for current_strategy_id in strategy_ids:
             next_trade_cursors[current_strategy_id] = int(next_trade_cursors.get(current_strategy_id, 0))
 
-        load_trades_parameters = inspect.signature(self._store.load_trades_rows).parameters
-        supports_base_first_qty = "base_first_qty" in load_trades_parameters
         scanned_trade_entries: list[tuple[int, dict[str, Any]]] = []
         trade_gap = False
         trade_gap_reasons: set[str] = set()
@@ -1429,7 +1452,7 @@ class FluxSocketEmitter:
                 "since_seq": None,
                 "scan_limit": self._trade_scan_limit,
             }
-            if supports_base_first_qty:
+            if self._store_supports_base_first_qty:
                 load_trades_kwargs["base_first_qty"] = _metadata_is_tokenmm(current_metadata)
             strategy_rows = self._store.load_trades_rows(
                 current_strategy_id,

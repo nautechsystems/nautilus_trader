@@ -461,6 +461,13 @@ const hasCurrentResyncAckFromAllConsumers = (
   return requiredConsumers.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
 };
 
+const hasPendingResyncForConsumers = (
+  state: Pick<ResyncStore, 'isResyncing' | 'resyncId' | 'appliedBy'>,
+  requiredConsumers: string[],
+): boolean =>
+  state.isResyncing
+  && !hasCurrentResyncAckFromAllConsumers(state.resyncId, state.appliedBy, requiredConsumers);
+
 export const useResyncStore = create<ResyncStore>((set, get) => ({
   resyncId: 0,
   isResyncing: false,
@@ -497,14 +504,11 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
         [normalizedConsumer]: mountedCount + 1,
       };
       const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
-      const isResyncComplete = state.isResyncing
-        ? hasCurrentResyncAckFromAllConsumers(state.resyncId, state.appliedBy, requiredConsumers)
-        : state.isResyncing;
 
       return {
         mountedConsumers,
         requiredConsumers,
-        isResyncing: isResyncComplete ? false : state.isResyncing,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
       };
     }),
 
@@ -526,17 +530,12 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       } else {
         mountedConsumers[normalizedConsumer] = mountedCount - 1;
       }
+      const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
 
       return {
         mountedConsumers,
-        requiredConsumers: getResyncRequiredConsumers(mountedConsumers),
-        isResyncing: state.isResyncing
-          ? !hasCurrentResyncAckFromAllConsumers(
-              state.resyncId,
-              state.appliedBy,
-              getResyncRequiredConsumers(mountedConsumers),
-            )
-          : state.isResyncing,
+        requiredConsumers,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
       };
     }),
 
