@@ -111,7 +111,7 @@ grouped-node based under the Pulse-managed `flux@equities-node-*` services.
 ## Env conventions
 
 - Production node lifecycle is managed from Pulse via flux@ units.
-- Production secrets should be provided through `/etc/flux/common.env` plus `/etc/flux/equities-node-*.env`.
+- Production secrets should be provided through `/etc/flux/common.env` plus the grouped `/etc/flux/equities-node-*.env` files.
 - Required trade[XYZ] env vars are `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS`.
 - Optional vault routing env var is `TRADE_XYZ_VAULT_ADDRESS`.
 - Local smoke with the checked-in `node.venues.IBKR.dockerized_gateway` contract also requires `TWS_USERNAME` and `TWS_PASSWORD`.
@@ -120,6 +120,7 @@ grouped-node based under the Pulse-managed `flux@equities-node-*` services.
 - `deploy/equities/equities_stack.env` is for local paper/testnet smoke only.
 - Use the same `[flux].namespace` and `[flux].schema_version` as the shared API/bridge config.
 - Pulse-managed node services pass `--shared-config deploy/equities/equities.live.toml` so node runners inherit the shared `[redis]`, `[portfolio]`, `[[strategy_contracts]]`, and `[[account_scopes]]` contract tables.
+- Grouped node services may pass more than one `--config deploy/equities/strategies/<strategy_id>.toml` flag when maker/taker siblings share one node.
 
 Each file is a complete strategy-local config consumed by `python -m flux.runners.equities.run_node`
 alongside the shared `deploy/equities/equities.live.toml` contract. The runner may attach more than

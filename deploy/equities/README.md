@@ -182,8 +182,8 @@ Installer behavior:
 - rejects mutable git checkouts and requires a metadata-backed release root
 - writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
-- writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
-- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls every discovered equities node service
+- writes one `/etc/flux/equities-node-<node_group_id>.env` per grouped node, with one or two `--config` flags for the member strategy TOMLs
+- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the grouped `equities-node-*` service registry
 - when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
 - the pilot lane uses the loopback API port `127.0.0.1:5124`
 - when pilot and prod run concurrently on the same Redis host, keep the pilot lane on its own Redis DB (the default is `EQUITIES_REDIS_DB=1`) unless you are intentionally testing a shared-state scenario
@@ -210,7 +210,7 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-api.env`
 - `sed -n '1,120p' /etc/flux/equities-portfolio.env`
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
-- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_maker.env`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
 - `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
 - `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
@@ -221,7 +221,7 @@ Expected results:
 - the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected release root so the service-level provenance stays explicit even if `/etc/flux/common.env` still reflects an older host default
 - the generated env commands use the release-local `.venv/bin/python` instead of a floating system `python3`
 - equities API and node commands use `--mode live --confirm-live` for the production path
-- every generated `equities-node-*.env` is rewritten from the intended release root and live-mode flags, not just the active canary example
+- every generated `equities-node-*.env` is rewritten from the intended release root and live-mode flags, with grouped node envs carrying all member `--config` flags for that service
 - print and review every rendered `equities-node-*.env` contents before restart so stale release roots or paper-mode commands cannot hide behind a filename-only listing
 - on the shared `tokenmm-api` host, public `/equities` should emit `/static/fluxboard/assets/*`
 - `/tokenmm/assets/*` on the shared public `/equities` route is a failure
@@ -235,7 +235,7 @@ Shared-host recovery order after a repoint:
 1. Run `uv sync --all-groups --all-extras` in the selected immutable release root.
 2. Run `sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" EQUITIES_DEPLOY_LANE=prod ops/scripts/deploy/install_equities_systemd.sh`.
 3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
-4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-node-<strategy_id>.service`, and finally `flux@equities-api.service`.
+4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
 5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
 
 Primary operator surfaces:
@@ -315,6 +315,6 @@ Fluxboard contract reference:
 
 ## Rollback
 
-- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
+- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and restarting or stopping the corresponding grouped `flux@equities-node-<node_group_id>.service` units once membership is recomputed.
 - Roll back the AAPL canary to MakerV3 only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the active split family files from discovery for that symbol, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
 - `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry move with the file swap.

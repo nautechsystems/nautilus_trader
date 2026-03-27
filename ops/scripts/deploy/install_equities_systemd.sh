@@ -13,7 +13,7 @@ ENABLE_EXECUTION="${EQUITIES_ENABLE_EXECUTION:-0}"
 EQUITIES_API_PORT_OVERRIDE="${EQUITIES_API_PORT:-}"
 EQUITIES_LANE_REDIS_DB_OVERRIDE="${EQUITIES_LANE_REDIS_DB:-}"
 
-declare -a NODE_STRATEGIES=()
+declare -a NODE_GROUP_LINES=()
 
 STACK_SERVICE_PREFIX=""
 PULSE_GROUP_KEY=""
@@ -26,6 +26,7 @@ DEPLOY_ROOT=""
 SHARED_CONFIG=""
 STRATEGIES_DIR=""
 EQUITIES_PYTHON_BIN=""
+NODE_GROUP_HELPER=""
 
 build_stack_service_prefix() {
   if [[ "${DEPLOY_LANE}" == "prod" ]]; then
@@ -119,6 +120,7 @@ initialize_stack_context() {
   SHARED_CONFIG="${DEPLOY_ROOT}/deploy/equities/equities.live.toml"
   STRATEGIES_DIR="${DEPLOY_ROOT}/deploy/equities/strategies"
   EQUITIES_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"
+  NODE_GROUP_HELPER="${DEPLOY_ROOT}/ops/scripts/deploy/list_equities_node_groups.py"
 }
 
 require_sudo() {
@@ -139,12 +141,28 @@ require_project_python() {
 }
 
 discover_node_strategies() {
-  local discovered=""
-  discovered="$(strategy_stack_discover_strategy_ids "${STRATEGIES_DIR}" "equities.strategy.template.toml")"
-  if [[ -n "${discovered}" ]]; then
-    mapfile -t NODE_STRATEGIES <<< "${discovered}"
+  discover_node_groups
+}
+
+discover_node_groups() {
+  local discovered=()
+  local helper_path="${NODE_GROUP_HELPER}"
+  if [[ ! -f "${helper_path}" ]]; then
+    helper_path="${ROOT_DIR}/ops/scripts/deploy/list_equities_node_groups.py"
+  fi
+  if [[ ! -f "${helper_path}" ]]; then
+    echo "[equities-systemd] missing grouped-node helper at ${NODE_GROUP_HELPER}" >&2
+    exit 1
+  fi
+  mapfile -t discovered < <(
+    python3 "${helper_path}" \
+      --shared-config "${SHARED_CONFIG}" \
+      --strategies-dir "${STRATEGIES_DIR}"
+  )
+  if ((${#discovered[@]})); then
+    NODE_GROUP_LINES=("${discovered[@]}")
   else
-    NODE_STRATEGIES=()
+    NODE_GROUP_LINES=()
   fi
 }
 
@@ -157,9 +175,11 @@ build_target_service_ids() {
     "${STACK_SERVICE_PREFIX}-portfolio"
     "${STACK_SERVICE_PREFIX}-bridge"
   )
-  local strategy_id
-  for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    out_service_ids+=("${STACK_SERVICE_PREFIX}-node-${strategy_id}")
+  local group_line=""
+  local node_group_id=""
+  for group_line in "${NODE_GROUP_LINES[@]}"; do
+    IFS=$'\t' read -r node_group_id _ <<< "${group_line}"
+    out_service_ids+=("${STACK_SERVICE_PREFIX}-node-${node_group_id}")
   done
 }
 
@@ -238,16 +258,27 @@ render_bridge_env() {
 }
 
 render_node_envs() {
-  local strategy_id
-  for strategy_id in "${NODE_STRATEGIES[@]}"; do
-    local service_id="${STACK_SERVICE_PREFIX}-node-${strategy_id}"
-    local cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config ${STRATEGIES_DIR}/${strategy_id}.toml --shared-config ${SHARED_CONFIG} --mode live --confirm-live"
+  local group_line=""
+  local group_parts=()
+  local node_group_id=""
+  local cmd=""
+  local config_path=""
+  local service_id=""
+  for group_line in "${NODE_GROUP_LINES[@]}"; do
+    IFS=$'\t' read -r -a group_parts <<< "${group_line}"
+    node_group_id="${group_parts[0]}"
+    service_id="${STACK_SERVICE_PREFIX}-node-${node_group_id}"
+    cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node"
+    for config_path in "${group_parts[@]:1}"; do
+      cmd+=" --config ${config_path}"
+    done
+    cmd+=" --shared-config ${SHARED_CONFIG} --mode live --confirm-live"
     if [[ "${ENABLE_EXECUTION}" == "1" ]]; then
       cmd+=" --enable-execution"
     fi
     strategy_stack_write_env \
       "${ENV_DIR}/${service_id}.env" \
-      "Equities node ${strategy_id}" \
+      "Equities node ${node_group_id}" \
       "${PULSE_GROUP_KEY}" \
       "${PULSE_GROUP_LABEL}" \
       "${PULSE_GROUP_ORDER}" \
@@ -272,7 +303,7 @@ main() {
   initialize_stack_context
   require_sudo
   require_project_python
-  discover_node_strategies
+  discover_node_groups
   install_units
   cleanup_obsolete_envs
   render_target
