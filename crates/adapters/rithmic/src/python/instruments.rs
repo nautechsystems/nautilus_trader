@@ -16,7 +16,7 @@ use super::gateway::PyRithmicGateway;
 
 /// Python wrapper for RithmicInstrument.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicInstrument")]
+#[pyclass(name = "RithmicInstrument", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicInstrument {
     inner: RithmicInstrument,

@@ -7,7 +7,7 @@ use crate::common::enums::ConnectionState;
 use rithmic_rs::{OrderSide, OrderStatus, OrderType, TimeInForce};
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderSide")]
+#[pyclass(name = "OrderSide", from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderSide {
     inner: OrderSide,
@@ -38,7 +38,7 @@ impl From<PyOrderSide> for OrderSide {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderType")]
+#[pyclass(name = "OrderType", from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderType {
     inner: OrderType,
@@ -79,7 +79,7 @@ impl From<PyOrderType> for OrderType {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "TimeInForce")]
+#[pyclass(name = "TimeInForce", from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeInForce {
     inner: TimeInForce,
@@ -120,7 +120,7 @@ impl From<PyTimeInForce> for TimeInForce {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderStatus")]
+#[pyclass(name = "OrderStatus", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderStatus {
     inner: OrderStatus,
@@ -170,7 +170,7 @@ impl PyOrderStatus {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "ConnectionState")]
+#[pyclass(name = "ConnectionState", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyConnectionState {
     inner: ConnectionState,

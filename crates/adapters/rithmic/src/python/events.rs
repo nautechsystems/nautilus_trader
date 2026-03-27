@@ -19,7 +19,7 @@ use crate::providers::{AccountEvent, PositionEvent};
 
 /// Python wrapper for QuoteTick (best bid/offer update).
 #[cfg(feature = "python")]
-#[pyclass(name = "QuoteTick")]
+#[pyclass(name = "QuoteTick", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyQuoteTick {
     inner: QuoteTick,
@@ -97,7 +97,7 @@ impl From<QuoteTick> for PyQuoteTick {
 
 /// Python wrapper for TradeTick (last trade).
 #[cfg(feature = "python")]
-#[pyclass(name = "TradeTick")]
+#[pyclass(name = "TradeTick", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTradeTick {
     inner: TradeTick,
@@ -178,7 +178,7 @@ impl From<TradeTick> for PyTradeTick {
 
 /// Python wrapper for OrderSubmitted event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderSubmitted")]
+#[pyclass(name = "OrderSubmitted", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderSubmitted {
     inner: OrderSubmitted,
@@ -332,7 +332,7 @@ impl From<OrderSubmitted> for PyOrderSubmitted {
 
 /// Python wrapper for OrderAccepted event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderAccepted")]
+#[pyclass(name = "OrderAccepted", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderAccepted {
     inner: OrderAccepted,
@@ -471,7 +471,7 @@ impl From<OrderAccepted> for PyOrderAccepted {
 
 /// Python wrapper for OrderRejected event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderRejected")]
+#[pyclass(name = "OrderRejected", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderRejected {
     inner: OrderRejected,
@@ -550,7 +550,7 @@ impl From<OrderRejected> for PyOrderRejected {
 
 /// Python wrapper for OrderFilled event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderFilled")]
+#[pyclass(name = "OrderFilled", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderFilled {
     inner: OrderFilled,
@@ -674,7 +674,7 @@ impl From<OrderFilled> for PyOrderFilled {
 
 /// Python wrapper for OrderCancelled event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderCancelled")]
+#[pyclass(name = "OrderCancelled", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderCancelled {
     inner: OrderCancelled,
@@ -753,7 +753,7 @@ impl From<OrderCancelled> for PyOrderCancelled {
 
 /// Python wrapper for OrderModified event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderModified")]
+#[pyclass(name = "OrderModified", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderModified {
     inner: OrderModified,
@@ -848,7 +848,7 @@ impl From<OrderModified> for PyOrderModified {
 
 /// Python wrapper for MarketDataEvent (union type).
 #[cfg(feature = "python")]
-#[pyclass(name = "MarketDataEvent")]
+#[pyclass(name = "MarketDataEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyMarketDataEvent {
     inner: MarketDataEvent,
@@ -952,7 +952,7 @@ impl From<MarketDataEvent> for PyMarketDataEvent {
 
 /// Python wrapper for ExecutionEvent (union type).
 #[cfg(feature = "python")]
-#[pyclass(name = "ExecutionEvent")]
+#[pyclass(name = "ExecutionEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyExecutionEvent {
     inner: ExecutionEvent,
@@ -1105,7 +1105,7 @@ impl From<ExecutionEvent> for PyExecutionEvent {
 
 /// Python wrapper for AccountEvent.
 #[cfg(feature = "python")]
-#[pyclass(name = "AccountEvent")]
+#[pyclass(name = "AccountEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyAccountEvent {
     inner: AccountEvent,
@@ -1211,7 +1211,7 @@ impl From<AccountEvent> for PyAccountEvent {
 
 /// Python wrapper for PositionEvent.
 #[cfg(feature = "python")]
-#[pyclass(name = "PositionEvent")]
+#[pyclass(name = "PositionEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyPositionEvent {
     inner: PositionEvent,
@@ -1335,7 +1335,7 @@ impl From<PositionEvent> for PyPositionEvent {
 
 /// Python wrapper for Rithmic time bar data from history requests and live updates.
 #[cfg(feature = "python")]
-#[pyclass(name = "TimeBar")]
+#[pyclass(name = "TimeBar", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeBar {
     /// Instrument symbol.

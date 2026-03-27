@@ -7,7 +7,7 @@ use crate::config::{RithmicDataClientConfig, RithmicEnv, RithmicExecClientConfig
 
 /// Python wrapper for RithmicEnv.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicEnv")]
+#[pyclass(name = "RithmicEnv", from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicEnv {
     inner: RithmicEnv,
@@ -51,7 +51,7 @@ impl From<PyRithmicEnv> for RithmicEnv {
 /// This class is provided for backwards compatibility and will be removed
 /// in a future major version.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicEnvironment")]
+#[pyclass(name = "RithmicEnvironment", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicEnvironment {
     inner: RithmicEnv,
@@ -88,7 +88,7 @@ impl PyRithmicEnvironment {
 
 /// Python wrapper for RithmicDataClientConfig.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicDataClientConfig")]
+#[pyclass(name = "RithmicDataClientConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicDataClientConfig {
     pub(crate) inner: RithmicDataClientConfig,
@@ -162,7 +162,7 @@ impl PyRithmicDataClientConfig {
 
 /// Python wrapper for RithmicExecClientConfig.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicExecClientConfig")]
+#[pyclass(name = "RithmicExecClientConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicExecClientConfig {
     pub(crate) inner: RithmicExecClientConfig,
