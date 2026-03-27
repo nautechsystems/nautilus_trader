@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from flux.runners.equities import run_node as equities_run_node
 from flux.runners.tokenmm import run_node as tokenmm_run_node
 from flux.strategies.equities_maker import EquitiesMakerStrategyConfig
@@ -490,3 +492,24 @@ def test_equities_grouped_node_leaves_stray_external_orders_unclaimed_for_node_g
         "amzn_binance_perp_taker",
     ]
     assert _register_claims(strategies) == {}
+
+
+def test_grouped_node_duplicate_external_order_claims_still_raise() -> None:
+    shared_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    strategies = [
+        SimpleNamespace(
+            config=SimpleNamespace(
+                external_strategy_id="aapl_tradexyz_maker",
+                external_order_claims=[shared_instrument_id],
+            ),
+        ),
+        SimpleNamespace(
+            config=SimpleNamespace(
+                external_strategy_id="aapl_tradexyz_taker",
+                external_order_claims=[shared_instrument_id],
+            ),
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="duplicate external-order claim"):
+        _register_claims(strategies)
