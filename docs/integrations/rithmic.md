@@ -4,24 +4,10 @@
 across supported FCMs and exchanges. This integration supports live market data ingest, instrument
 loading, historical bar requests, and live order execution through NautilusTrader.
 
-## Examples
-
-Live example scripts are available [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/rithmic/).
-
-The Rithmic example set includes:
-
-- `rithmic_data_tester.py` for a standard Nautilus `TradingNode` data-client smoke run
-- `rithmic_exec_tester.py` for a standard Nautilus `TradingNode` execution smoke run
-- `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox
-- `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest
-- `order_submission.py` for a low-level safe working-order submit/modify/cancel flow
-- `bracket_submission.py` for a low-level native bracket smoke run
-- `oco_submission.py` for a low-level native OCO smoke run
-
 ## Overview
 
 This guide assumes a trader is setting up for both live market data feeds and trade execution.
-The Rithmic adapter includes multiple components which can be used together or separately
+The Rithmic adapter includes multiple components, which can be used together or separately
 depending on the use case.
 
 - `RithmicGateway`: Low-level gateway connectivity to the Rithmic plants.
@@ -38,15 +24,248 @@ Most users will define a live trading node configuration and will not need to wo
 the lower-level components directly.
 :::
 
+## Examples
+
+Live example scripts are available [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/rithmic/).
+
+The current Rithmic example set includes:
+
+- `rithmic_data_tester.py` for a standard Nautilus `TradingNode` data-client smoke run.
+- `rithmic_exec_tester.py` for a standard Nautilus `TradingNode` execution smoke run.
+- `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox.
+- `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest.
+- `order_submission.py` for a low-level safe working-order submit/modify/cancel flow.
+- `bracket_submission.py` for a low-level native bracket smoke run.
+- `oco_submission.py` for a low-level native OCO smoke run.
+
+## Products
+
+The current adapter is futures-focused.
+
+| Product Type | Supported | Notes |
+|--------------|-----------|-------|
+| Futures market data | ✓ | Quote ticks, trade ticks, instrument definitions, and historical bars. |
+| Futures execution | ✓ | Live order submission, reconciliation, native venue brackets, and OCO. |
+| Spot / cash products | - | Not exposed through the current adapter surface. |
+| Options workflows | Limited | The adapter does not currently provide a complete options-specific operator guide or examples. |
+
 ## Environments
 
 The adapter supports the following Rithmic environments:
 
-| Environment | Config value                       | Description |
-|-------------|------------------------------------|-------------|
-| Demo        | `RithmicEnvironment.DEMO`          | Demo / paper trading plants. |
-| Live        | `RithmicEnvironment.LIVE`          | Production trading plants. |
-| Test        | `RithmicEnvironment.TEST`          | Alternate test routing when provided by your setup. |
+| Environment | Config value | Description |
+|-------------|--------------|-------------|
+| Demo | `RithmicEnvironment.DEMO` | Demo / paper trading plants. |
+| Live | `RithmicEnvironment.LIVE` | Production trading plants. |
+| Test | `RithmicEnvironment.TEST` | Alternate test routing when provided by your setup. |
+
+## Symbology
+
+### Contract symbology
+
+Use native futures symbols together with the exchange in the Nautilus `InstrumentId` for
+unambiguous live instrument loading.
+
+```python
+from nautilus_trader.model.identifiers import InstrumentId
+
+instrument_id = InstrumentId.from_str("MNQM6.CME.RITHMIC")
+```
+
+The adapter normalizes the venue lookup symbol back to the Rithmic contract symbol (`MNQM6` in
+the example above), while preserving the exchange hint for instrument loads and historical bar
+requests.
+
+### Live front-month workflow
+
+The current adapter does **not** transparently rewrite a root alias such as `MNQ.CME.RITHMIC`
+into the active front-month contract inside live subscriptions or order submission calls.
+
+The supported live workflow today is:
+
+1. Start with a product root and exchange, such as `MNQ` and `CME`.
+2. Resolve the active contract through `load_front_month_async(...)`.
+3. Build the actual live `InstrumentId`, such as `MNQM6.CME.RITHMIC`.
+4. Use that resolved contract ID for live subscriptions, bar requests, and order submission.
+
+The notebook helpers under `examples/live/rithmic/notebooks/` follow this pattern.
+
+```python
+from nautilus_trader.adapters.rithmic import RITHMIC
+from nautilus_trader.adapters.rithmic.bindings import RithmicGateway
+from nautilus_trader.adapters.rithmic.bindings import (
+    RithmicInstrumentProvider as BindingInstrumentProvider,
+)
+from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
+from nautilus_trader.adapters.rithmic.config import to_binding_environment
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+async def resolve_front_month_instrument_id(
+    profile: str,
+    product: str,
+    exchange: str,
+) -> InstrumentId:
+    config = RithmicDataClientConfig.from_env(profile)
+    gateway = RithmicGateway(
+        environment=to_binding_environment(config.environment),
+        username=config.username,
+        password=config.password,
+        system_name=config.system_name,
+        app_name=config.app_name,
+        app_version=config.app_version,
+        fcm_id=config.fcm_id or "",
+        ib_id=config.ib_id or "",
+        account_id="",
+        enable_ticker=True,
+        enable_order=False,
+        enable_pnl=False,
+        enable_history=False,
+    )
+    provider = BindingInstrumentProvider(gateway)
+
+    await gateway.connect()
+    try:
+        contract = await provider.load_front_month_async(product, exchange)
+        resolved_exchange = getattr(contract, "exchange", None) or exchange
+        return InstrumentId.from_str(f"{contract.symbol}.{resolved_exchange}.{RITHMIC}")
+    finally:
+        await gateway.disconnect()
+```
+
+If you prefer operator shorthand such as `MNQ.CME.RITHMIC`, parse the root and exchange first,
+resolve the front month, then pass the resolved contract ID into the live node or strategy.
+
+### Backtest symbology
+
+Backtest and catalog flows are intentionally separate from live front-month resolution. Use the
+instrument IDs that exist in your local parquet/catalog data. If your local Rithmic dataset is
+stored under a chosen backtest symbol workflow, keep using that dataset directly rather than
+expecting the live adapter to rewrite it.
+
+### Futures month codes
+
+Rithmic futures symbols use standard month codes:
+
+- `F` = January
+- `G` = February
+- `H` = March
+- `J` = April
+- `K` = May
+- `M` = June
+- `N` = July
+- `Q` = August
+- `U` = September
+- `V` = October
+- `X` = November
+- `Z` = December
+
+### Common exchange hints
+
+The provider recognizes exchange hints in either filters or symbology suffixes. Common examples:
+
+- `CME`
+- `CBOT`
+- `NYMEX`
+- `COMEX`
+- `ICE`
+- `ICE_US`
+- `EUREX`
+- `MGEX`
+
+## Market data capability
+
+### Data surfaces
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Instrument definition loading | ✓ | Via `RithmicInstrumentProvider` and the live data client provider path. |
+| Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
+| Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
+| Historical bars | ✓ | Second, minute, day, and week bars via the history plant. |
+| Internal bars | ✓ | Recommended live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
+| Historical quote ticks | - | Not currently implemented. |
+| Historical trade ticks | - | Not currently implemented. |
+| Live external bar subscriptions | - | Use internal aggregation from quote/trade feeds. |
+| Order book deltas / depth | Limited | Adapter hooks exist, but full depth support is not complete. |
+| Instrument status / close updates | - | No streaming venue path is exposed. |
+| Funding, mark price, index price feeds | - | Not provided by the current adapter. |
+
+### Historical bar requests
+
+Historical bar requests require the history plant to be enabled on the data client:
+
+```python
+data_config = RithmicDataClientConfig(
+    ...,
+    enable_history=True,
+)
+```
+
+If `enable_history=False`, the live node can still stream quotes and trades, but `request_bars()`
+will be rejected. This is useful for live-only nodes that do not need the history plant.
+
+### Live strategy pattern
+
+For live strategies, the recommended pattern is:
+
+1. Resolve the active contract first.
+2. Subscribe to quote ticks and trade ticks for that contract.
+3. Use Nautilus internal aggregation to build bars locally.
+
+This is the pattern used in `examples/live/rithmic/notebooks/rithmic_live_strategy_sandbox.py`.
+
+## Execution capability
+
+### Order types
+
+| Order Type | Supported | Notes |
+|------------|-----------|-------|
+| `MARKET` | ✓ | Supported for direct order submission. |
+| `LIMIT` | ✓ | Supported for direct order submission and native bracket entry. |
+| `STOP_MARKET` | ✓ | Supported for direct order submission and native bracket stop legs. |
+| `STOP_LIMIT` | ✓ | Supported for direct order submission. |
+
+### Time in force
+
+| Time in Force | Supported |
+|---------------|-----------|
+| `DAY` | ✓ |
+| `GTC` | ✓ |
+| `IOC` | ✓ |
+| `FOK` | ✓ |
+
+### Order and reconciliation flows
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| Submit order | ✓ | Single-order submission through the execution client. |
+| Modify order | ✓ | Venue order ID required once the order is working. |
+| Cancel order | ✓ | Venue order ID required once the order is working. |
+| Cancel all orders | ✓ | Cancels all open orders for the configured account connection. |
+| Batch cancel | ✓ | Supported through `BatchCancelOrders`. |
+| Execution replay | ✓ | Bounded replay on connect for recent order/fill state. |
+| Open-order snapshot recovery | ✓ | Reconcile active working orders on connect. |
+| Account / PnL snapshots | ✓ | Primary account balances and positions are rebuilt from the PnL plant. |
+| Shared multi-account fan-out | - | Current adapter remains one execution client per configured Rithmic account. |
+
+### Native `SubmitOrderList` routing
+
+The adapter currently supports venue-native order-list routing for the following shapes:
+
+- 3-leg brackets with one `LIMIT` entry, one `LIMIT` take-profit, and one `STOP_MARKET` stop-loss.
+- 2-leg OCO pairs.
+
+General sequential `SubmitOrderList` fallback is intentionally not used. Unsupported list shapes
+should be decomposed by the strategy or submitted as individual orders.
+
+### Current execution boundaries
+
+- Adapter-created native brackets persist their child-ID mapping across process restart.
+- Reconnect logic can warn about active venue-native bracket parents that were not created and
+  persisted locally.
+- Venue-only child attribution for native brackets created outside the adapter remains limited by
+  available Rithmic metadata.
 
 ## Configuration
 
@@ -71,10 +290,6 @@ Optional environment variables:
 - `RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS`
 - `RITHMIC_NATIVE_BRACKET_STATE_PATH`
 
-Python `RithmicDataClientConfig` also supports `enable_history`. Keep this enabled for
-historical bar requests and disable it for live-only streaming nodes that do not need the
-history plant.
-
 Example shell setup:
 
 ```bash
@@ -87,63 +302,27 @@ export RITHMIC_FCM_ID="your_fcm_id"
 export RITHMIC_IB_ID="your_ib_id"
 ```
 
+### Data client configuration
+
+The most important data-client options are:
+
+- `enable_history`: enable this only when the node needs historical bar requests.
+- `instrument_provider.load_all`: preload the full instrument snapshot on connect.
+- `instrument_provider.load_ids`: preload a selected live contract set.
+- `instrument_provider.filters`: usually include the target futures exchange, such as `{"exchange": "CME"}`.
+
+### Execution client configuration
+
+The most important execution-client options are:
+
+- `account_id`: the Rithmic account this execution client is allowed to control.
+- `execution_replay_lookback_secs`: bounded replay window used during reconnect reconciliation.
+- `native_bracket_state_path`: optional override for the local persistence file used to recover
+  adapter-created native bracket child IDs across restart.
+
 Low-level Rust users can also override the primary and alternate WebSocket endpoints directly on
 `GatewayConfig` when targeting a non-standard route or a local test harness. Regular operator
 setups should continue to use the canonical `RITHMIC_*_URL` environment variables.
-
-## Symbology
-
-Use native futures symbols together with the exchange in the Nautilus `InstrumentId` for
-unambiguous live instrument loading.
-
-```python
-from nautilus_trader.model.identifiers import InstrumentId
-
-instrument_id = InstrumentId.from_str("MNQM6.CME.RITHMIC")
-```
-
-The adapter normalizes the venue lookup symbol back to the Rithmic contract symbol (`MNQM6` in
-the example above), while preserving the exchange hint for instrument loads and historical bar
-requests.
-
-## Market data capability
-
-The current Rithmic adapter supports:
-
-- Instrument definition loading through the provider path
-- Live quote tick subscriptions
-- Live trade tick subscriptions
-- Historical bar requests for supported time bars
-
-The following surfaces remain limited or unsupported:
-
-- Order book deltas and depth are not fully implemented
-- Historical quote tick and trade tick requests are not implemented
-- Streaming instrument status and close updates are not provided by the venue path
-- Funding, mark price, and index price feeds are not provided by the current adapter
-
-## Execution capability
-
-The current adapter supports:
-
-- `MARKET`
-- `LIMIT`
-- `STOP_MARKET`
-- `STOP_LIMIT`
-- Modify, cancel, cancel-all, and batch-cancel flows
-- Reconciliation with bounded execution replay plus open-order snapshot recovery
-
-Native `SubmitOrderList` routing is supported for the following venue-native shapes:
-
-- 3-leg brackets with a `LIMIT` entry, `LIMIT` take-profit, and `STOP_MARKET` stop-loss
-- 2-leg OCO pairs
-
-Current execution boundaries:
-
-- The adapter is still one configured execution client per Rithmic account
-- Adapter-created native brackets persist their child-ID mapping across process restart
-- Venue-only child attribution for native brackets created outside the adapter remains limited by
-  Rithmic metadata
 
 ## Trading node example
 
