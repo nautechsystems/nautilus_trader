@@ -877,6 +877,14 @@ def test_equities_active_split_strategies_publish_explicit_ibkr_quote_age_budget
         assert config["strategy"].get("max_ibkr_quote_age_ms") is not None, strategy_id
 
 
+def test_equities_active_binance_split_strategies_use_relaxed_maker_quote_budget() -> None:
+    repo_root = _repo_root()
+
+    for strategy_id in BINANCE_PERP_STRATEGY_IDS:
+        config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
+        assert config["strategy"].get("max_age_ms", 0) >= 30_000, strategy_id
+
+
 def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_ids() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")

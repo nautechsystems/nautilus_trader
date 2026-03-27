@@ -683,6 +683,33 @@ def _apply_quote_health_to_v4_leg(
     max_quote_age_ms: int,
 ) -> dict[str, Any]:
     normalized = dict(payload) if isinstance(payload, Mapping) else {}
+    explicit_feed_state = decode_text(normalized.get("feed_state")).strip().lower()
+    if explicit_feed_state not in {"ok", "degraded", "down", "unknown"}:
+        explicit_feed_state = ""
+    explicit_quote_state = decode_text(normalized.get("quote_state")).strip().lower()
+    if explicit_quote_state not in {"fresh", "old", "missing"}:
+        explicit_quote_state = ""
+    if explicit_feed_state or explicit_quote_state:
+        if explicit_feed_state:
+            normalized["feed_state"] = explicit_feed_state
+        else:
+            normalized.pop("feed_state", None)
+        if explicit_quote_state:
+            normalized["quote_state"] = explicit_quote_state
+        else:
+            normalized.pop("quote_state", None)
+
+        derived_usable: bool | None = None
+        if explicit_feed_state == "ok" and explicit_quote_state == "fresh":
+            derived_usable = True
+        elif explicit_feed_state in {"degraded", "down", "unknown"} or explicit_quote_state in {"old", "missing"}:
+            derived_usable = False
+
+        if normalized.get("pricing_usable") is None and derived_usable is not None:
+            normalized["pricing_usable"] = derived_usable
+        if normalized.get("hedge_usable") is None and derived_usable is not None:
+            normalized["hedge_usable"] = derived_usable
+        return normalized
     transport_connected = (
         True
         if normalized.get("ts_ms") is not None
