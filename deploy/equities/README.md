@@ -21,7 +21,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
 - Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
+- The checked-in active split maker/taker surface now includes the Tier 1 tradexyz core plus the enrolled Binance multivenue set. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
 - `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
@@ -43,7 +43,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 19, 2026 Split deploy contract
 
-- The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled Tier 1 strategy ids/service names are `*_maker` and `*_taker`.
+- The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled prod strategy ids/service names are `*_maker` and `*_taker`.
 - `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` remains available as rollback material, but it is not part of normal installer discovery.
 - `makerv4` / `maker_v4` is now a legacy compatibility surface only. Keep it disabled on the checked-in production contract, validate live split-family trading first, and do not re-enroll `makerv4` for new production rollout work.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
@@ -52,8 +52,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 13, 2026 Prod Hardening Universe Policy
 
-- The checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket.
-- Second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
+- The checked-in live config, strategy discovery, and checked-in service registry now include the Tier 1 tradexyz core basket plus the enrolled Binance multivenue set below.
+- Disabled second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
 
 ### Tier 1 Core Basket
 
@@ -77,6 +77,27 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `pltr_tradexyz_taker`
 - `tsla_tradexyz_maker`
 - `tsla_tradexyz_taker`
+
+### Enrolled Binance Multivenue Set
+
+- `amzn_binance_perp_maker`
+- `amzn_binance_perp_taker`
+- `coin_binance_perp_maker`
+- `coin_binance_perp_taker`
+- `crcl_binance_perp_maker`
+- `crcl_binance_perp_taker`
+- `ewy_binance_perp_maker`
+- `ewy_binance_perp_taker`
+- `hood_binance_perp_maker`
+- `hood_binance_perp_taker`
+- `intc_binance_perp_maker`
+- `intc_binance_perp_taker`
+- `mstr_binance_perp_maker`
+- `mstr_binance_perp_taker`
+- `pltr_binance_perp_maker`
+- `pltr_binance_perp_taker`
+- `tsla_binance_perp_maker`
+- `tsla_binance_perp_taker`
 
 ### Second-Wave Disabled Basket
 
@@ -108,13 +129,13 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## Split deploy contract
 
-- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "equities_maker"` provides the shared API bootstrap default, the equities allowlist points to the enrolled split strategy set, and the shared contract metadata publishes one Hyperliquid and one IBKR contract row per enrolled stock route.
+- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "equities_maker"` provides the shared API bootstrap default, the equities allowlist points to the enrolled split strategy set, and the shared contract metadata publishes one maker-venue contract row plus one IBKR contract row per enrolled stock route.
 - Each `[[strategy_contracts]]` row binds one strategy-local id to one canonical `portfolio_asset_id`, one Hyperliquid maker leg, one IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
 - Split variants may repeat `portfolio_asset_id` so `aapl_tradexyz_maker` and `aapl_tradexyz_taker` can share `portfolio_asset_id = "AAPL"` while remaining distinct strategy processes.
 - Each `[[account_scopes]]` row defines the shared provider config for one profile-owned account scope so the portfolio runner can build shared Hyperliquid/IBKR account projections without scraping one arbitrary node TOML.
 - The shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, and `[[account_scopes]]`, so active node settings live in `deploy/equities/strategies/*.toml` while canonical asset/account contracts stay centralized in `deploy/equities/equities.live.toml`.
-- The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
-- The same safety invariant still applies to the split rollout: each shared IBKR contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
+- The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each enrolled route must have matching maker-venue and IBKR contract catalog rows before it is added to the live set.
+- The same safety invariant still applies to the split rollout: each shared contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
 - The checked-in equities nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ` and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false`. `ibkr.reference.main` is the only equities IBKR gateway owner; enrolled nodes keep a non-owning `[node.venues.IBKR.dockerized_gateway]` block with `manage_container = false` so they connect to the shared gateway without starting or restarting it.
 - Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.

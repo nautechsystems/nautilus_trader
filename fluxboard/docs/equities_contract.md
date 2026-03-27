@@ -19,16 +19,16 @@ Required routes:
 | `/equities/trades` | required | Trades page |
 | `/equities/alerts` | required | Alerts page |
 
-The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"`.
+The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"` and also supports enrolled `BINANCE_PERP` multivenue routes on the shared equities surface.
 The reference venue for FV inputs is `IBKR`.
-The enrolled Tier 1 split rollout currently serves `AAPL`, `AMD`, `AMZN`, `GOOGL`, `META`, `MSFT`, `NVDA`, `ORCL`, `PLTR`, and `TSLA` through the shared equities control plane.
-Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID` and `AAPL.NASDAQ`.
+The enrolled split rollout currently serves `AAPL`, `AMD`, `AMZN`, `COIN`, `CRCL`, `EWY`, `GOOGL`, `HOOD`, `INTC`, `META`, `MSFT`, `MSTR`, `NVDA`, `ORCL`, `PLTR`, and `TSLA` through the shared equities control plane.
+Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `PLTRUSDT-PERP.BINANCE_PERP`, and `AAPL.NASDAQ`.
 
 ## Frozen Deploy Identity
 
 1. The intended active equities deploy contract is the split `equities_maker` plus `equities_taker` family pair via the enrolled stock allowlist in `api.equities_strategy_ids`.
-2. The enrolled Tier 1 strategy ids and service names use the `*_maker` and `*_taker` suffixes.
-3. Representative split strategy ids include `aapl_tradexyz_maker` and `aapl_tradexyz_taker`.
+2. The enrolled strategy ids and service names use the `*_maker` and `*_taker` suffixes across both tradexyz and Binance multivenue routes.
+3. Representative split strategy ids include `aapl_tradexyz_maker`, `aapl_tradexyz_taker`, `pltr_binance_perp_maker`, and `pltr_binance_perp_taker`.
 4. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback material, not the active contract.
 5. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
 6. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
