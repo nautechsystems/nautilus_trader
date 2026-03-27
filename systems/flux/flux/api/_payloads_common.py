@@ -16,11 +16,6 @@ from flux.common.quantity_units import DEGRADED_QTY_CONVERSION_STATUSES
 
 
 _STABLE_CASH_ASSETS = frozenset({"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"})
-_MAKERV4_REPLACEMENT = "equities_maker/equities_taker"
-_MAKERV4_DEPRECATION_NOTE = (
-    "Legacy compatibility only; use equities_maker/equities_taker "
-    "for new equities production enrollment."
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,20 +39,10 @@ class StrategyMetadata:
     strategy_family: str = ""
     strategy_version: str = ""
 
-    def _is_legacy_makerv4(self) -> bool:
-        strategy_class = self.strategy_class.strip().lower()
-        param_set = self.param_set.strip().lower()
-        strategy_family = self.strategy_family.strip().lower()
-        return (
-            strategy_class in {"maker_v4", "makerv4", "equity_perp_maker_v4"}
-            or param_set == "makerv4"
-            or strategy_family == "maker_v4"
-        )
-
-    def as_payload(self, *, strategy_id: str) -> dict[str, Any]:
+    def as_payload(self, *, strategy_id: str) -> dict[str, str]:
         """Serialize metadata into the stable API wire shape."""
 
-        payload: dict[str, Any] = {
+        payload = {
             "strategy_id": strategy_id,
             "class": self.strategy_class,
             "strategy_groups": self.strategy_groups,
@@ -70,10 +55,6 @@ class StrategyMetadata:
             payload["strategy_family"] = self.strategy_family
         if self.strategy_version:
             payload["strategy_version"] = self.strategy_version
-        if self._is_legacy_makerv4():
-            payload["deprecated"] = True
-            payload["replacement"] = _MAKERV4_REPLACEMENT
-            payload["deprecation_note"] = _MAKERV4_DEPRECATION_NOTE
         return payload
 
 
