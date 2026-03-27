@@ -31,6 +31,9 @@ from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
+from flux.strategies.makerv3.constants import REASON_PLACE_BACK_BACKFILL
+from flux.strategies.makerv3.constants import REASON_PLACE_FRONT_IMPROVE
+from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_HOLE_REPAIR
 from flux.strategies.makerv3.constants import REASON_SKIPPED_CANCEL_REJECT_COOLDOWN
 from flux.strategies.makerv3.constants import REASON_SKIPPED_PENDING_CANCELS
 from flux.strategies.makerv3.wire import QuoteCycleContext
@@ -218,7 +221,9 @@ def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -
         "backlog_mode": diagnostics.backlog_mode,
         "matched_level_count": diagnostics.matched_level_count,
         "keep_level_count": diagnostics.keep_level_count,
+        "missing_level_count": diagnostics.missing_level_count,
         "frontier_missing_level_count": diagnostics.frontier_missing_level_count,
+        "interior_hole_count": diagnostics.interior_hole_count,
         "planned_stale_replacement_count": diagnostics.planned_stale_replacement_count,
         "total_missing_level_count": diagnostics.total_missing_level_count,
         "excess_cancel_candidate_count": diagnostics.excess_cancel_candidate_count,
@@ -230,12 +235,22 @@ def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -
         "depth_before": diagnostics.depth_before,
         "depth_after": diagnostics.depth_after,
         "temporary_oversize_depth": diagnostics.temporary_oversize_depth,
+        "front_changed": diagnostics.front_changed,
+        "back_changed": diagnostics.back_changed,
         "planned_cancel_count": len(plan.cancel_actions),
         "planned_place_count": len(plan.place_level_indices),
         "executed_cancel_count": 0,
         "executed_place_count": 0,
         "cancel_reason_counts": cancel_reason_counts,
     }
+
+
+def _place_reason_code_for_mode(stack_action_mode: str) -> str:
+    if stack_action_mode == "place_front_cancel_back":
+        return REASON_PLACE_FRONT_IMPROVE
+    if stack_action_mode == "cancel_front_place_back":
+        return REASON_PLACE_BACK_BACKFILL
+    return REASON_PLACE_MISSING_HOLE_REPAIR
 
 
 def handle_stale_quote_block(
@@ -1043,6 +1058,7 @@ def refresh_quotes(  # noqa: C901
                 per_level_outcomes=per_level_outcomes,
                 level_indices=allowed_level_indices,
                 pending_backlog_mode=side_backlog_modes[side],
+                reason_code=_place_reason_code_for_mode(stack_action_mode),
             )
             bounded_convergence[side_name]["executed_place_count"] = side_place_count
             places += side_place_count
@@ -1086,7 +1102,12 @@ def refresh_quotes(  # noqa: C901
         if stack_action_mode == "place_front_cancel_back":
             continue
 
-        if side_backlog_modes[side] != "normal" or remaining_total_actions <= 0:
+        allow_same_cycle_backfill = (
+            stack_action_mode == "cancel_front_place_back" and side_cancel_count > 0
+        )
+        if remaining_total_actions <= 0:
+            continue
+        if not allow_same_cycle_backfill and side_backlog_modes[side] != "normal":
             continue
         if stack_action_mode == "cancel_front_place_back" and side_cancel_count <= 0:
             continue
@@ -1108,7 +1129,8 @@ def refresh_quotes(  # noqa: C901
             decision_context_json=decision_context_json,
             per_level_outcomes=per_level_outcomes,
             level_indices=allowed_level_indices,
-            pending_backlog_mode=side_backlog_modes[side],
+            pending_backlog_mode="normal" if allow_same_cycle_backfill else side_backlog_modes[side],
+            reason_code=_place_reason_code_for_mode(stack_action_mode),
         )
         bounded_convergence[side_name]["executed_place_count"] = (
             bounded_convergence[side_name]["executed_place_count"] + side_place_count

@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
+from flux.strategies.makerv3.constants import REASON_CANCEL_BACK_EXCESS
 from flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
+from flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
 from flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
@@ -69,7 +71,9 @@ class ConvergenceDiagnostics:
     backlog_mode: str
     matched_level_count: int
     keep_level_count: int
+    missing_level_count: int
     frontier_missing_level_count: int
+    interior_hole_count: int
     planned_stale_replacement_count: int
     total_missing_level_count: int
     excess_cancel_candidate_count: int
@@ -81,6 +85,8 @@ class ConvergenceDiagnostics:
     depth_before: int
     depth_after: int
     temporary_oversize_depth: int
+    front_changed: bool
+    back_changed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +102,9 @@ _PLACE_ACTION_KINDS = frozenset({"place_back", "place_front", "place_missing"})
 
 def _reason_code_for_action(action: StackAction) -> str:
     if action.kind == "cancel_back":
-        return REASON_CANCEL_EXCESS_LEVEL
+        return REASON_CANCEL_BACK_EXCESS
     if action.kind == "cancel_front":
-        return REASON_CANCEL_TOO_AGGRESSIVE
+        return REASON_CANCEL_FRONT_VIOLATION
     raise ValueError(f"unsupported cancel action kind: {action.kind!r}")
 
 
@@ -432,7 +438,9 @@ def plan_side_bounded_convergence(
             len(active_prices) - stack_plan.diagnostics.missing_level_count - len(cancel_actions),
         ),
         keep_level_count=max(0, len(active_prices) - len(cancel_actions)),
+        missing_level_count=stack_plan.diagnostics.missing_level_count,
         frontier_missing_level_count=stack_plan.diagnostics.missing_level_count,
+        interior_hole_count=stack_plan.diagnostics.interior_hole_count,
         planned_stale_replacement_count=0,
         total_missing_level_count=max(
             0,
@@ -455,6 +463,8 @@ def plan_side_bounded_convergence(
         depth_before=stack_plan.diagnostics.depth_before,
         depth_after=stack_plan.diagnostics.depth_after,
         temporary_oversize_depth=stack_plan.diagnostics.temporary_oversize_depth,
+        front_changed=stack_plan.diagnostics.front_changed,
+        back_changed=stack_plan.diagnostics.back_changed,
     )
     return BoundedConvergencePlan(
         cancel_actions=cancel_actions,

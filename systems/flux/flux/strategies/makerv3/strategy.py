@@ -47,7 +47,7 @@ from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_CANCEL_ON_STOP
 from flux.strategies.makerv3.constants import REASON_CANCEL_QUOTE_FAIL_CIRCUIT_BREAKER
 from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
-from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
+from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_HOLE_REPAIR
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
@@ -2838,6 +2838,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             per_level_outcomes: list[dict[str, Any]] | None = None,
             level_indices: tuple[int, ...] | list[int] | None = None,
             pending_backlog_mode: str | None = None,
+            reason_code: str = REASON_PLACE_MISSING_HOLE_REPAIR,
         ) -> int:
             if quote_cycle_id is None and quote_cycle is not None:
                 quote_cycle_id = quote_cycle.quote_cycle_id
@@ -2926,7 +2927,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     client_order_id=str(getattr(order, "client_order_id", "")),
                     quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
-                    reason_code=REASON_PLACE_MISSING_LEVEL,
+                    reason_code=reason_code,
                     side=side,
                     level_index=level_index,
                     target_px=target_px,
