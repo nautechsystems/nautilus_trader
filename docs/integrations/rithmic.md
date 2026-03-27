@@ -37,6 +37,7 @@ The current Rithmic example set includes:
 
 - `rithmic_data_tester.py` for a standard Nautilus `TradingNode` data-client smoke run.
 - `rithmic_exec_tester.py` for a standard Nautilus `TradingNode` execution smoke run.
+- `rithmic_ema_cross.py` for a full live `TradingNode` EMA-cross strategy on resolved front-month futures with internal bars.
 - `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox.
 - `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest.
 - `order_submission.py` for a low-level safe working-order submit/modify/cancel flow.
