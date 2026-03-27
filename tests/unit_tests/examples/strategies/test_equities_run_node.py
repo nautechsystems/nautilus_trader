@@ -3608,32 +3608,15 @@ def test_build_grouped_node_rejects_duplicate_member_suffixes_for_node_group(
         )
 
 
-def test_build_grouped_node_accepts_real_split_node_differences_for_node_group(
+def test_build_grouped_node_rejects_divergent_node_scoped_config_for_node_group(
     monkeypatch,
 ) -> None:
-    captured: dict[str, object] = {"strategies": []}
     maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
     reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
 
     class _CapturedStrategy:
         def __init__(self, *, config) -> None:
             self.config = config
-
-    class _CapturedNode:
-        def __init__(self, config) -> None:
-            captured["node_config"] = config
-            self.trader = SimpleNamespace(
-                add_strategy=lambda strategy: captured["strategies"].append(strategy),
-            )
-
-        def add_data_client_factory(self, _venue, _factory) -> None:
-            return None
-
-        def add_exec_client_factory(self, _venue, _factory) -> None:
-            return None
-
-        def build(self) -> None:
-            captured["build_called"] = True
 
     maker_config = _split_equities_config(
         strategy_id="aapl_tradexyz_maker",
@@ -3662,45 +3645,13 @@ def test_build_grouped_node_accepts_real_split_node_differences_for_node_group(
         "venues": {"IBKR": {"ibg_client_id": 30}},
     }
 
-    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
     _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
-    monkeypatch.setattr(
-        run_node,
-        "resolve_strategy_venues",
-        lambda **_kwargs: SimpleNamespace(
-            execution_instrument_id=maker_instrument_id,
-            reference_instrument_id=reference_instrument_id,
-            data_clients={},
-            exec_clients={},
-            data_factories={},
-            exec_factories={},
-        ),
-    )
-    monkeypatch.setattr(run_node, "_register_cash_borrowing_venues", lambda **_kwargs: None)
-    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
-    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
-    monkeypatch.setattr(
-        run_node,
-        "_attach_profile_account_projection_feed",
-        lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        run_node,
-        "_attach_reference_balance_snapshot_provider",
-        lambda **_kwargs: None,
-    )
-
-    run_node.build_grouped_node(
-        (maker_config, taker_config),
-        mode="live",
-        force_enable_execution=False,
-    )
-
-    assert captured["build_called"] is True
-    assert {
-        strategy.config.external_strategy_id
-        for strategy in captured["strategies"]
-    } == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+    with pytest.raises(ValueError, match="identical `node` tables"):
+        run_node.build_grouped_node(
+            (maker_config, taker_config),
+            mode="live",
+            force_enable_execution=False,
+        )
 
 
 def test_main_accepts_multi_strategy_config_paths_for_node_group(monkeypatch, tmp_path: Path) -> None:
