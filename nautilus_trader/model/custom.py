@@ -17,6 +17,7 @@ import json
 import sys
 from dataclasses import dataclass
 from typing import Any
+from typing import get_origin
 
 import msgspec
 import pyarrow as pa
@@ -87,16 +88,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
         if "to_dict" not in cls.__dict__:
 
             def to_dict(self) -> dict[str, Any]:
-                # Python 3.14+ uses PEP 649 lazy annotations
-                if (
-                    sys.version_info >= (3, 14)
-                    and hasattr(self.__class__, "__annotate__")
-                    and self.__class__.__annotate__
-                ):
-                    annotations = self.__class__.__annotate__(1)  # 1 = eval annotations
-                else:
-                    annotations = getattr(self.__class__, "__annotations__", {})
-
+                annotations = _get_annotations(self.__class__)
                 result = {attr: getattr(self, attr) for attr in annotations}
 
                 if hasattr(self, "instrument_id"):
@@ -114,11 +106,16 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
             @classmethod
             def from_dict(cls, data: dict[str, Any]) -> cls:
+                data = dict(data)
                 data.pop("type", None)
                 data.pop("data_type", None)
 
                 if "instrument_id" in data:
                     data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
+
+                for attr, annotation in _get_annotations(cls).items():
+                    if attr in data:
+                        data[attr] = _deserialize_field_value(annotation, data[attr])
 
                 return cls(**data)
 
@@ -142,7 +139,10 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
         if "to_arrow" not in cls.__dict__:
 
             def to_arrow(self) -> pa.RecordBatch:
-                return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
+                return pa.RecordBatch.from_pylist(
+                    [_arrow_dict_for_instance(self)],
+                    schema=cls._schema,
+                )
 
             cls.to_arrow = to_arrow
 
@@ -155,27 +155,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             cls.from_arrow = from_arrow
 
         if "_schema" not in cls.__dict__:
-            type_mapping = {
-                "InstrumentId": pa.string(),
-                "str": pa.string(),
-                "bool": pa.bool_(),
-                "float": pa.float64(),
-                "int": pa.int64(),
-                "bytes": pa.binary(),
-                "ndarray": pa.binary(),
-            }
-
-            cls._schema = pa.schema(
-                {
-                    attr: type_mapping[cls.__annotations__[attr].__name__]
-                    for attr in cls.__annotations__
-                }
-                | {
-                    "type": pa.string(),
-                    "ts_event": pa.int64(),
-                    "ts_init": pa.int64(),
-                },
-            )
+            cls._schema = _arrow_schema_for_class(cls)
 
         register_serializable_type(cls, cls.to_dict, cls.from_dict)
         register_arrow(cls, cls._schema, cls.to_arrow, cls.from_arrow)
@@ -238,7 +218,9 @@ def customdataclass_pyo3(*args, **kwargs):  # noqa: C901 (too complex)
                         "catalog can encode record batches."
                     )
                     raise AttributeError(msg)
-                dicts = [x.to_dict() for x in items]
+
+                dicts = [_arrow_dict_for_instance(x) for x in items]
+
                 return pa.RecordBatch.from_pylist(dicts, schema=self.__class__._schema)
 
             cls.encode_record_batch_py = encode_record_batch_py
@@ -257,3 +239,96 @@ def customdataclass_pyo3(*args, **kwargs):  # noqa: C901 (too complex)
         return wrapper(args[0])
 
     return wrapper
+
+
+def _arrow_schema_for_class(cls) -> pa.Schema:
+    type_mapping = {
+        "InstrumentId": pa.string(),
+        "str": pa.string(),
+        "bool": pa.bool_(),
+        "float": pa.float64(),
+        "int": pa.int64(),
+        "bytes": pa.binary(),
+        "ndarray": pa.binary(),
+        "dict": pa.string(),
+    }
+    annotations = _get_annotations(cls)
+    fields = {}
+
+    for attr, annotation in annotations.items():
+        annotation_name = _annotation_name(annotation)
+        if annotation_name not in type_mapping:
+            msg = (
+                f"Unsupported custom data field type for `{cls.__name__}.{attr}`: "
+                f"{annotation!r}. Supported types are: {', '.join(type_mapping)}"
+            )
+            raise TypeError(msg)
+
+        fields[attr] = type_mapping[annotation_name]
+
+    return pa.schema(
+        fields
+        | {
+            "type": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+    )
+
+
+def _annotation_name(annotation: Any) -> str:
+    if _is_dict_annotation(annotation):
+        return "dict"
+
+    if hasattr(annotation, "__name__"):
+        return annotation.__name__
+
+    origin = get_origin(annotation)
+    if origin is not None and hasattr(origin, "__name__"):
+        return origin.__name__
+
+    msg = f"Unsupported custom data annotation: {annotation!r}"
+
+    raise TypeError(msg)
+
+
+def _arrow_dict_for_instance(instance: Any) -> dict[str, Any]:
+    data = instance.to_dict().copy()
+    annotations = _get_annotations(instance.__class__)
+
+    for attr, annotation in annotations.items():
+        data[attr] = _serialize_field_value(annotation, data[attr])
+
+    return data
+
+
+def _serialize_field_value(annotation: Any, value: Any) -> Any:
+    if value is None:
+        return None
+
+    if _is_dict_annotation(annotation):
+        return json.dumps(value, sort_keys=True)
+
+    return value
+
+
+def _get_annotations(cls) -> dict[str, Any]:
+    # Python 3.14+ uses PEP 649 lazy annotations.
+    if sys.version_info >= (3, 14) and hasattr(cls, "__annotate__") and cls.__annotate__:
+        return cls.__annotate__(1)  # 1 = eval annotations
+
+    return getattr(cls, "__annotations__", {})
+
+
+def _deserialize_field_value(annotation: Any, value: Any) -> Any:
+    if value is None:
+        return None
+
+    if _is_dict_annotation(annotation) and isinstance(value, str):
+        return json.loads(value)
+
+    return value
+
+
+def _is_dict_annotation(annotation: Any) -> bool:
+    return annotation is dict or get_origin(annotation) is dict

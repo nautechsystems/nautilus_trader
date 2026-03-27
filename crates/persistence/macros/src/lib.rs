@@ -26,6 +26,8 @@ use proc_macro::TokenStream;
 /// CatalogPathPrefix, From/TryFrom for Data. Call `nautilus_serialization::ensure_custom_data_registered::<T>()`
 /// and (for Python) `nautilus_model::data::register_rust_extractor::<T>()` once per type.
 /// Requires fields to include `ts_event` and `ts_init` (e.g. `nautilus_core::UnixNanos`).
+/// Supported field types include InstrumentId, AccountId, Currency, BarType, Params, UnixNanos,
+/// f64, f32, bool, String, u64, i64, u32, i32, `Vec<f64>`, and `Vec<u8>`.
 ///
 /// Use `#[custom_data(pyo3)]` or `#[custom_data(python)]` to also generate Python bindings:
 /// `#[cfg_attr(feature = "python", pyo3::pyclass)]` on the struct and a `#[pymethods]` impl with

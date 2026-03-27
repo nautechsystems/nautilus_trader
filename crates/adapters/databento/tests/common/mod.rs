@@ -85,12 +85,12 @@ pub fn create_test_handler_with_config(
 }
 
 fn str_to_cchar_array<const N: usize>(s: &str) -> [c_char; N] {
-    let mut arr = [0i8; N];
+    let mut arr = [0 as c_char; N];
     for (i, byte) in s.bytes().enumerate() {
         if i >= N - 1 {
             break;
         }
-        arr[i] = byte as i8;
+        arr[i] = byte as c_char;
     }
     arr
 }
@@ -325,12 +325,12 @@ pub fn statistics_msg(instrument_id: u32) -> StatMsg {
 }
 
 pub fn error_msg(message: &str) -> ErrorMsg {
-    let mut err = [0i8; 302];
+    let mut err = [0 as c_char; 302];
     for (i, byte) in message.bytes().enumerate() {
         if i >= 301 {
             break;
         }
-        err[i] = byte as i8;
+        err[i] = byte as c_char;
     }
     ErrorMsg {
         hd: RecordHeader::new::<ErrorMsg>(rtype::ERROR, 0, 0, 1_000_000_000),
@@ -341,12 +341,12 @@ pub fn error_msg(message: &str) -> ErrorMsg {
 }
 
 pub fn system_msg(message: &str, code: u8) -> SystemMsg {
-    let mut msg_bytes = [0i8; 303];
+    let mut msg_bytes = [0 as c_char; 303];
     for (i, byte) in message.bytes().enumerate() {
         if i >= 302 {
             break;
         }
-        msg_bytes[i] = byte as i8;
+        msg_bytes[i] = byte as c_char;
     }
     SystemMsg {
         hd: RecordHeader::new::<SystemMsg>(rtype::SYSTEM, 0, 0, 1_000_000_000),

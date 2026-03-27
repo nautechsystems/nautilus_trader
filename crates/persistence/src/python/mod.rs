@@ -38,8 +38,10 @@ use pyo3::prelude::*;
 pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     ensure_custom_data_registered::<crate::test_data::RustTestCustomData>();
     ensure_custom_data_registered::<crate::test_data::MacroYieldCurveData>();
+    ensure_custom_data_registered::<crate::test_data::RustTestParamsCustomData>();
     let _ = ensure_rust_extractor_registered::<crate::test_data::RustTestCustomData>();
     let _ = ensure_rust_extractor_registered::<crate::test_data::MacroYieldCurveData>();
+    let _ = ensure_rust_extractor_registered::<crate::test_data::RustTestParamsCustomData>();
 
     // Test/example types (RustTestCustomData, MacroYieldCurveData) are exposed so Python tests
     // and examples can use them; they are not gated behind cfg(test) to keep the extension build simple.
@@ -55,5 +57,6 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     m.add_class::<crate::test_data::RustTestCustomData>()?;
     m.add_class::<crate::test_data::MacroYieldCurveData>()?;
+    m.add_class::<crate::test_data::RustTestParamsCustomData>()?;
     Ok(())
 }

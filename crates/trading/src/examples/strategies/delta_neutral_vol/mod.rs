@@ -13,12 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example trading strategies for backtesting and demonstration.
+//! Delta-neutral short volatility hedger.
+//!
+//! Tracks a short OTM call and put (strangle) on a configurable option
+//! family and delta-hedges the net Greek exposure with the underlying
+//! perpetual swap. Rehedges when portfolio delta exceeds a configurable
+//! threshold or on a periodic timer.
+//!
+//! This strategy subscribes to venue-provided Greeks via
+//! `subscribe_option_greeks` and uses them to track portfolio delta.
+//! Strike selection uses a simple strike-percentile heuristic at startup.
 
-pub mod delta_neutral_vol;
-pub mod ema_cross;
-pub mod grid_mm;
+pub mod config;
+pub mod strategy;
 
-pub use delta_neutral_vol::{DeltaNeutralVol, DeltaNeutralVolConfig};
-pub use ema_cross::EmaCross;
-pub use grid_mm::{GridMarketMaker, GridMarketMakerConfig};
+#[cfg(test)]
+mod tests;
+
+pub use config::DeltaNeutralVolConfig;
+pub use strategy::DeltaNeutralVol;

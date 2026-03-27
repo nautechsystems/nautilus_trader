@@ -182,3 +182,95 @@ fn test_bearish_crossover_after_bullish() {
     assert_eq!(strategy.prev_fast_above, Some(false));
     assert!(strategy.ema_fast.value() < strategy.ema_slow.value());
 }
+
+#[rstest]
+fn test_multiple_crossovers_in_sequence() {
+    let mut strategy = create_strategy(2, 5);
+    register_strategy(&mut strategy);
+
+    warm_up(&mut strategy, "1.00000", 5);
+
+    // Push up for bullish crossover
+    for i in 0..5 {
+        let q = quote("1.01000", "1.01000", (10 + i) as u64);
+        let _ = strategy.on_quote(&q);
+    }
+    assert_eq!(strategy.prev_fast_above, Some(true));
+
+    // Push down for bearish crossover
+    for i in 0..10 {
+        let q = quote("0.99000", "0.99000", (20 + i) as u64);
+        let _ = strategy.on_quote(&q);
+    }
+    assert_eq!(strategy.prev_fast_above, Some(false));
+
+    // Push up again for second bullish crossover
+    for i in 0..10 {
+        let q = quote("1.02000", "1.02000", (30 + i) as u64);
+        let _ = strategy.on_quote(&q);
+    }
+    assert_eq!(strategy.prev_fast_above, Some(true));
+}
+
+#[rstest]
+fn test_fast_period_must_be_less_than_slow() {
+    let strategy = create_strategy(3, 10);
+    assert!(strategy.ema_fast.period < strategy.ema_slow.period);
+}
+
+#[rstest]
+fn test_ema_values_diverge_on_trend() {
+    let mut strategy = create_strategy(2, 5);
+    register_strategy(&mut strategy);
+
+    warm_up(&mut strategy, "1.00000", 5);
+
+    // Trending up: fast EMA rises faster than slow
+    for i in 0..5 {
+        let price = format!("{:.5}", 1.0 + 0.001 * (i + 1) as f64);
+        let q = quote(&price, &price, (10 + i) as u64);
+        strategy.on_quote(&q).unwrap();
+    }
+
+    assert!(strategy.ema_fast.value() > strategy.ema_slow.value());
+}
+
+#[rstest]
+fn test_ema_values_converge_on_flat_after_trend() {
+    let mut strategy = create_strategy(2, 5);
+    register_strategy(&mut strategy);
+
+    // Trend up
+    for i in 0..10 {
+        let price = format!("{:.5}", 1.0 + 0.001 * i as f64);
+        let q = quote(&price, &price, (i + 1) as u64);
+        strategy.on_quote(&q).unwrap();
+    }
+
+    let gap_before = (strategy.ema_fast.value() - strategy.ema_slow.value()).abs();
+
+    // Flat at final price: EMAs converge
+    for i in 0..20 {
+        let q = quote("1.00900", "1.00900", (20 + i) as u64);
+        strategy.on_quote(&q).unwrap();
+    }
+
+    let gap_after = (strategy.ema_fast.value() - strategy.ema_slow.value()).abs();
+    assert!(gap_after < gap_before);
+}
+
+#[rstest]
+fn test_on_quote_does_not_signal_before_slow_initialized() {
+    let mut strategy = create_strategy(2, 10);
+    register_strategy(&mut strategy);
+
+    // Feed 5 quotes (fast initialized at 2, slow needs 10)
+    for i in 0..5 {
+        let q = quote("1.00000", "1.00000", (i + 1) as u64);
+        strategy.on_quote(&q).unwrap();
+    }
+
+    assert!(strategy.ema_fast.initialized());
+    assert!(!strategy.ema_slow.initialized());
+    assert!(strategy.prev_fast_above.is_none());
+}
