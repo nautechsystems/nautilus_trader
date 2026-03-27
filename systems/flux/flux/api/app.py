@@ -2039,6 +2039,18 @@ def create_flux_api_app(  # noqa: C901
     def _profile_supports_account_projections(profile: str) -> bool:
         return normalize_profile(profile) in {"equities", "tokenmm"}
 
+    def _strategy_allowlist_for_profile(profile: str) -> list[str] | None:
+        normalized = normalize_profile(profile)
+        strategy_ids = _strategy_ids_for_profile(normalized)
+        if strategy_ids:
+            return strategy_ids
+        descriptor = _descriptor_for_profile(normalized)
+        if descriptor is not None and descriptor.allow_discovery_without_allowlist:
+            discovered = store.discover_strategy_ids_from_params()
+            if discovered:
+                return discovered
+        return None
+
     def _shared_position_groups_for_profile(profile: str) -> dict[str, str]:
         normalized = normalize_profile(profile)
         cached = shared_position_groups_cache.get(normalized)
@@ -2046,7 +2058,7 @@ def create_flux_api_app(  # noqa: C901
             return cached
         shared_groups = shared_observation_group_by_strategy_id(
             strategy_contracts or (),
-            allowlist=_strategy_ids_for_profile(normalized),
+            allowlist=_strategy_allowlist_for_profile(normalized),
         )
         shared_position_groups_cache[normalized] = shared_groups
         return shared_groups
@@ -2056,12 +2068,13 @@ def create_flux_api_app(  # noqa: C901
         cached = profile_projection_scope_ids_cache.get(normalized)
         if cached is not None:
             return cached
-        allowlist = set(_strategy_ids_for_profile(normalized))
-        use_allowlist = bool(allowlist)
+        allowlist = _strategy_allowlist_for_profile(normalized)
+        allowlist_set = set(allowlist or ())
+        use_allowlist = allowlist is not None
         scope_ids: list[str] = []
         seen: set[str] = set()
         for contract in decode_strategy_contracts(strategy_contracts or ()):
-            if use_allowlist and contract.strategy_id not in allowlist:
+            if use_allowlist and contract.strategy_id not in allowlist_set:
                 continue
             for scope_id in (
                 contract.execution_account_scope_id,
@@ -2083,7 +2096,7 @@ def create_flux_api_app(  # noqa: C901
             return cached
         result = execution_account_scope_by_strategy_id(
             strategy_contracts or (),
-            allowlist=_strategy_ids_for_profile(normalized),
+            allowlist=_strategy_allowlist_for_profile(normalized),
         )
         execution_account_scope_cache[normalized] = result
         return result
