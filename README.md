@@ -102,8 +102,8 @@ and data providers by translating their raw APIs into a unified interface and no
 
 The following integrations are currently supported; see [docs/integrations/](https://nautilustrader.io/docs/latest/integrations/) for details:
 
-| Name                                                                         | ID                    | Type                    | Status                                               | Docs                                       |
-| :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :----------------------------------------------------| :----------------------------------------- |
+| Name                                                                         | ID                    | Type                    | Status                                                | Docs                                       |
+| :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :---------------------------------------------------- | :----------------------------------------- |
 | [AX Exchange](https://architect.exchange)                                    | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/beta-yellow)  | [Guide](docs/integrations/architect_ax.md) |
 | [Architect](https://architect.co)                                            | `ARCHITECT`           | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/planned-gray) | -                                          |
 | [Betfair](https://betfair.com)                                               | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/betfair.md)      |
@@ -118,7 +118,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Kraken](https://kraken.com)                                                 | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/kraken.md)       |
 | [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/okx.md)          |
 | [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/polymarket.md)   |
-| [Rithmic](https://www.rithmic.com)                                           | `RITHMIC`             | Futures Execution/Data  | ![status](https://img.shields.io/badge/beta-yellow)  | [Guide](docs/integrations/rithmic.md)      |
+| [Rithmic](https://www.rithmic.com)                                           | `RITHMIC`             | Futures Execution/Data  | ![status](https://img.shields.io/badge/alpha-orange) | [Guide](docs/integrations/rithmic.md)      |
 | [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/tardis.md)       |
 
 - **ID**: The default client ID for the integrations adapter clients.
@@ -128,6 +128,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 
 - `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
+- `alpha`: Early-stage integration under active development and testing.
 - `beta`: Completed to a minimally working state and in a beta testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
