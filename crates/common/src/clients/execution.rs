@@ -15,6 +15,8 @@
 
 //! Execution client trait definition.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -23,6 +25,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
+    instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -252,5 +255,14 @@ pub trait ExecutionClient {
         _ts_init: UnixNanos,
     ) {
         // Default no-op implementation
+    }
+
+    /// Returns a callback for instrument updates, if the client needs them.
+    ///
+    /// Exec clients that need live instrument updates (e.g. for internal maps)
+    /// can override this to provide a callback. The `DataEngine` will invoke it
+    /// synchronously during `handle_instrument()` for the client's venue.
+    fn instrument_update_callback(&self) -> Option<Arc<dyn Fn(InstrumentAny) + Send + Sync>> {
+        None
     }
 }

@@ -275,6 +275,15 @@ impl LiveNodeBuilder {
                 let client = factory.create(&name, config.as_ref(), kernel.cache())?;
                 let client_id = client.client_id();
 
+                // Register instrument subscriber if the client provides one
+                if let Some(callback) = client.instrument_update_callback() {
+                    let venue = client.venue();
+                    kernel
+                        .data_engine
+                        .borrow_mut()
+                        .register_instrument_subscriber(venue, callback);
+                }
+
                 kernel.exec_engine.borrow_mut().register_client(client)?;
 
                 log::info!("Registered ExecutionClient-{client_id}");

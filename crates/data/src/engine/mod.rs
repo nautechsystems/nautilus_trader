@@ -42,6 +42,7 @@ use std::{
     fmt::{Debug, Display},
     num::NonZeroUsize,
     rc::Rc,
+    sync::Arc,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -169,6 +170,15 @@ impl Debug for BarAggregatorSubscription {
     }
 }
 
+/// Callback wrapper for instrument updates dispatched to execution clients.
+pub struct InstrumentCallback(pub Arc<dyn Fn(InstrumentAny) + Send + Sync>);
+
+impl Debug for InstrumentCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("InstrumentCallback(..)")
+    }
+}
+
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -194,6 +204,7 @@ pub struct DataEngine {
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
+    instrument_subscribers: AHashMap<Venue, InstrumentCallback>,
     pub(crate) msgbus_priority: u8,
     pub(crate) config: DataEngineConfig,
     #[cfg(feature = "defi")]
@@ -246,6 +257,7 @@ impl DataEngine {
             _synthetic_quote_feeds: AHashMap::new(),
             _synthetic_trade_feeds: AHashMap::new(),
             buffered_deltas_map: AHashMap::new(),
+            instrument_subscribers: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             config,
             #[cfg(feature = "defi")]
@@ -427,6 +439,25 @@ impl DataEngine {
 
         self.default_client = Some(client);
         log::debug!("Registered default client {client_id}");
+    }
+
+    /// Registers an instrument subscriber callback for a venue.
+    ///
+    /// The `DataEngine` will invoke this callback synchronously during
+    /// `handle_instrument()` for every instrument matching the venue.
+    pub fn register_instrument_subscriber(
+        &mut self,
+        venue: Venue,
+        callback: Arc<dyn Fn(InstrumentAny) + Send + Sync>,
+    ) {
+        if self
+            .instrument_subscribers
+            .insert(venue, InstrumentCallback(callback))
+            .is_some()
+        {
+            log::warn!("Replaced existing instrument subscriber for venue {venue}");
+        }
+        log::info!("Registered instrument subscriber for venue {venue}");
     }
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
@@ -983,6 +1014,11 @@ impl DataEngine {
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
         msgbus::publish_any(topic, instrument);
+
+        let venue = instrument.id().venue;
+        if let Some(cb) = self.instrument_subscribers.get(&venue) {
+            (cb.0)(instrument.clone());
+        }
 
         self.update_option_chains(instrument);
     }

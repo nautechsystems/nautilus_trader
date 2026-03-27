@@ -4430,3 +4430,58 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
         "No quote subscriptions before forward price bootstrap"
     );
 }
+
+#[rstest]
+fn test_instrument_subscriber_receives_instrument_on_process(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    use std::sync::{Arc, Mutex};
+
+    let venue = data_client.venue.unwrap();
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let received: Arc<Mutex<Vec<InstrumentAny>>> = Arc::new(Mutex::new(Vec::new()));
+    let received_clone = received.clone();
+    let callback: Arc<dyn Fn(InstrumentAny) + Send + Sync> =
+        Arc::new(move |inst| received_clone.lock().unwrap().push(inst));
+
+    data_engine
+        .borrow_mut()
+        .register_instrument_subscriber(venue, callback);
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.borrow_mut().process(&instrument as &dyn Any);
+
+    let items = received.lock().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id(), instrument.id());
+}
+
+#[rstest]
+fn test_instrument_subscriber_ignores_other_venue(
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    use std::sync::{Arc, Mutex};
+
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    // Subscribe to a different venue than the instrument's venue
+    let other_venue = Venue::new("OTHER");
+    let received: Arc<Mutex<Vec<InstrumentAny>>> = Arc::new(Mutex::new(Vec::new()));
+    let received_clone = received.clone();
+    let callback: Arc<dyn Fn(InstrumentAny) + Send + Sync> =
+        Arc::new(move |inst| received_clone.lock().unwrap().push(inst));
+
+    data_engine
+        .borrow_mut()
+        .register_instrument_subscriber(other_venue, callback);
+
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim());
+    data_engine.borrow_mut().process(&audusd as &dyn Any);
+
+    // Callback should not have been called — instrument venue doesn't match subscriber venue
+    assert!(received.lock().unwrap().is_empty());
+}
