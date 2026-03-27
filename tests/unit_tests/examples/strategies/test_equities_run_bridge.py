@@ -9,7 +9,9 @@ from flux.runners.equities.run_bridge import FULL_TO_SUFFIX_TOPICS
 from flux.runners.equities.run_bridge import _build_handlers
 from flux.runners.equities.run_bridge import _load_config
 from flux.runners.equities.run_bridge import _parse_args
+from flux.runners.equities.run_bridge import _resolve_stream_strategy_ids
 from flux.runners.equities.run_bridge import _resolve_strategy_ids
+from flux.runners.equities.run_bridge import main
 from nautilus_trader.flux.events import TOPIC_EXECUTION_ALERT
 
 
@@ -77,6 +79,76 @@ def test_resolve_strategy_ids_all_strategies_returns_none() -> None:
     resolved = _resolve_strategy_ids(config, args)
 
     assert resolved is None
+
+
+def test_resolve_stream_strategy_ids_collapses_grouped_equities_ids() -> None:
+    resolved = _resolve_stream_strategy_ids(
+        [
+            "aapl_tradexyz_maker",
+            "aapl_tradexyz_taker",
+            "amzn_binance_perp_maker",
+            "amzn_binance_perp_taker",
+        ],
+    )
+
+    assert resolved == ["aapl_tradexyz", "amzn_binance_perp"]
+
+
+def test_main_passes_grouped_stream_scope_to_consumer(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "equities-bridge.toml"
+    config_path.write_text(
+        """
+[flux]
+namespace = "flux"
+schema_version = "v1"
+mode = "paper"
+
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+ssl = false
+
+[bridge]
+log_level = "INFO"
+
+[api]
+equities_strategy_ids = ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    class _FakeConsumer:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def run(self) -> None:
+            captured["ran"] = True
+
+    monkeypatch.setattr(
+        "flux.runners.equities.run_bridge._parse_args",
+        lambda: Namespace(
+            config=config_path,
+            mode=None,
+            confirm_live=False,
+            strategy_id=None,
+            all_strategies=False,
+            topic=[],
+            log_level=None,
+        ),
+    )
+    monkeypatch.setattr("flux.runners.equities.run_bridge.configure_python_logging", lambda **_: None)
+    monkeypatch.setattr("flux.runners.equities.run_bridge.redis.Redis", lambda **_: object())
+    monkeypatch.setattr("flux.runners.equities.run_bridge.FluxBridgeStreamConsumer", _FakeConsumer)
+
+    main()
+
+    assert captured["strategy_ids"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+    assert captured["stream_strategy_ids"] == ["aapl_tradexyz"]
+    assert captured["ran"] is True
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

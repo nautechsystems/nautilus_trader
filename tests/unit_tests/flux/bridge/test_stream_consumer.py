@@ -164,6 +164,63 @@ def test_decode_entry_extracts_ts_ms_from_flux_bus_rows_payload() -> None:
     assert context.ts_ms == 1700000022000
 
 
+def test_decode_entry_routes_grouped_streams_to_payload_strategy_id() -> None:
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_FakeRedis(),
+        environment="live",
+        strategy_ids=["aapl_tradexyz_maker", "aapl_tradexyz_taker"],
+        stream_strategy_ids=["aapl_tradexyz"],
+    )
+    fields = {
+        "payload": json.dumps(
+            {
+                "strategy_id": "aapl_tradexyz_taker",
+                "ready": True,
+                "ts_ms": 1700000022000,
+            },
+        ),
+    }
+
+    decoded = consumer._decode_entry(
+        stream_key="flux:v1:in:stream:live:aapl_tradexyz:state",
+        entry_id="1700000001000-0",
+        fields=fields,
+    )
+
+    assert decoded is not None
+    payload, context = decoded
+    assert payload["strategy_id"] == "aapl_tradexyz_taker"
+    assert context.strategy_id == "aapl_tradexyz_taker"
+    assert context.topic == "state"
+
+
+def test_decode_entry_preserves_stream_key_strategy_for_non_grouped_streams() -> None:
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_FakeRedis(),
+        environment="paper",
+        strategy_ids=["strategy_01"],
+        stream_strategy_ids=["strategy_01"],
+    )
+    fields = {
+        "payload": json.dumps(
+            {
+                "strategy_id": "strategy_02",
+                "ts_ms": 1700000022000,
+            },
+        ),
+    }
+
+    decoded = consumer._decode_entry(
+        stream_key="flux:v1:in:stream:paper:strategy_01:event",
+        entry_id="1700000001000-0",
+        fields=fields,
+    )
+
+    assert decoded is not None
+    _payload, context = decoded
+    assert context.strategy_id == "strategy_01"
+
+
 def test_decode_entry_fails_fast_for_missing_parseable_timestamp() -> None:
     consumer = _consumer()
     fields = {"payload": "{this-is-not-json"}
