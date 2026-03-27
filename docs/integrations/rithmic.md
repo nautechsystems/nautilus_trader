@@ -187,8 +187,8 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Instrument definition loading | ✓ | Via `RithmicInstrumentProvider` and the live data client provider path. |
 | Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
-| Historical bars | ✓ | Second, minute, day, and week bars via the history plant. |
-| Live external bar subscriptions | ✓ | Time-based `LAST` bars via the history plant when `enable_history=True`. |
+| Historical bars | ✓ | Time bars plus `1-TICK` replay via the history plant. Native `N-TICK` replay exists in the Rithmic protocol but is not yet exposed by the current `rithmic-rs` request helper used here. |
+| Live external bar subscriptions | ✓ | Time bars and tick bars via the history plant when `enable_history=True`. |
 | Internal bars | ✓ | Still the simplest live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
 | Historical quote ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
 | Historical trade ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
@@ -211,17 +211,39 @@ If `enable_history=False`, the live node can still stream quotes and trades, but
 `request_bars()` and live external `subscribe_bars()` calls will be rejected. This is useful for
 live-only nodes that do not need the history plant.
 
+Current historical external bar limits:
+
+- only `EXTERNAL` bars are supported
+- only `LAST` price bars are supported
+- supported time aggregations are `SECOND`, `MINUTE`, `DAY`, and `WEEK`
+- supported historical tick aggregation is currently `1-TICK` only
+
+The `1-TICK` limit is intentional. The adapter does not locally re-aggregate raw ticks into larger
+tick bars outside Nautilus aggregators. The Rithmic protocol defines native tick-bar replay, but
+the current `rithmic-rs` history request helper still hardcodes the replay specifier to `1`, so the
+adapter rejects `>1-TICK` historical requests instead of faking them.
+
+Planned completion:
+
+- once upstream `rithmic-rs` exposes native parameterized tick-bar replay, the adapter should pass
+  historical `N-TICK` replay through directly
+- no adapter-side tick-bar re-aggregation is planned as part of that follow-up
+
+Rithmic history requests can also be truncated venue-side. If a response returns a round-number bar
+count such as `10000`, or the returned bars do not cover the requested window, retry with smaller
+time windows. Rithmic documents a `request_key`/resume flow for this case, but the adapter does not
+yet auto-resume history requests.
+
 ### Live external bars
 
-The adapter now supports venue-fed live time bars through Nautilus `subscribe_bars()`, with the
-same history-plant dependency as historical bar requests.
+The adapter now supports venue-fed live time bars and tick bars through Nautilus
+`subscribe_bars()`, with the same history-plant dependency as historical bar requests.
 
 Current live external bar limits:
 
 - only `EXTERNAL` bars are supported
 - only `LAST` price bars are supported
-- only time bars are supported
-- supported aggregations are `SECOND`, `MINUTE`, `DAY`, and `WEEK`
+- supported aggregations are `SECOND`, `MINUTE`, `DAY`, `WEEK`, and `TICK`
 
 Example:
 
@@ -230,6 +252,16 @@ from nautilus_trader.model.data import BarType
 
 
 bar_type = BarType.from_str("MNQM6.RITHMIC-1-MINUTE-LAST-EXTERNAL")
+strategy.subscribe_bars(bar_type, params={"exchange": "CME"})
+```
+
+Tick-bar example:
+
+```python
+from nautilus_trader.model.data import BarType
+
+
+bar_type = BarType.from_str("MNQM6.RITHMIC-233-TICK-LAST-EXTERNAL")
 strategy.subscribe_bars(bar_type, params={"exchange": "CME"})
 ```
 

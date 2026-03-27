@@ -6,7 +6,7 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use crate::data::{MarketDataEvent, QuoteTick, TimeBar as LiveTimeBar, TradeTick};
+use crate::data::{MarketDataEvent, QuoteTick, RithmicBarType, TimeBar as LiveTimeBar, TradeTick};
 use crate::execution::{
     ExecutionEvent, OrderAccepted, OrderCancelled, OrderFilled, OrderModified, OrderRejected,
     OrderSubmitted,
@@ -1381,7 +1381,7 @@ impl PyTimeBar {
 
 impl PyTimeBar {
     /// Creates a PyTimeBar from a Rithmic ResponseTimeBarReplay message.
-    pub fn from_response(bar: &rithmic_rs::rti::ResponseTimeBarReplay) -> Self {
+    pub fn from_time_response(bar: &rithmic_rs::rti::ResponseTimeBarReplay) -> Self {
         let marker = bar.marker.map(i64::from);
         let ts_event = marker
             .filter(|value| *value > 0)
@@ -1399,23 +1399,46 @@ impl PyTimeBar {
             high_price: bar.high_price.unwrap_or(0.0),
             low_price: bar.low_price.unwrap_or(0.0),
             close_price: bar.close_price.unwrap_or(0.0),
-            volume: bar.volume.unwrap_or(0) as i64,
+            volume: volume_to_i64(bar.volume.unwrap_or(0)),
             period: bar.period.clone().unwrap_or_default(),
-            bar_kind: match bar
+            bar_kind: bar
                 .r#type
-                .and_then(|value| crate::TimeBarType::try_from(value).ok())
-                .unwrap_or(crate::TimeBarType::MinuteBar)
-            {
-                crate::TimeBarType::SecondBar => "SecondBar".to_string(),
-                crate::TimeBarType::MinuteBar => "MinuteBar".to_string(),
-                crate::TimeBarType::DailyBar => "DailyBar".to_string(),
-                crate::TimeBarType::WeeklyBar => "WeeklyBar".to_string(),
-            },
+                .and_then(time_replay_bar_type)
+                .unwrap_or(RithmicBarType::MinuteBar)
+                .as_str()
+                .to_string(),
             bar_period: bar
                 .period
                 .as_deref()
                 .and_then(|value| value.parse::<i32>().ok())
                 .unwrap_or_default(),
+            marker,
+            ts_event,
+            ts_init: ts_event,
+        }
+    }
+
+    /// Creates a PyTimeBar from a Rithmic ResponseTickBarReplay message.
+    pub fn from_tick_response(bar: &rithmic_rs::rti::ResponseTickBarReplay) -> Self {
+        let marker = bar.data_bar_ssboe.last().copied().map(i64::from);
+        let ts_event = tick_timestamp_nanos(&bar.data_bar_ssboe, &bar.data_bar_usecs);
+
+        Self {
+            open_price: bar.open_price.unwrap_or(0.0),
+            high_price: bar.high_price.unwrap_or(0.0),
+            low_price: bar.low_price.unwrap_or(0.0),
+            close_price: bar.close_price.unwrap_or(0.0),
+            volume: volume_to_i64(bar.volume.unwrap_or(0)),
+            period: bar
+                .type_specifier
+                .clone()
+                .unwrap_or_else(|| "1".to_string()),
+            bar_kind: "TickBar".to_string(),
+            bar_period: bar
+                .type_specifier
+                .as_deref()
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(1),
             marker,
             ts_event,
             ts_init: ts_event,
@@ -1432,17 +1455,31 @@ impl From<LiveTimeBar> for PyTimeBar {
             close_price: bar.close_price,
             volume: bar.volume as i64,
             period: bar.bar_period.to_string(),
-            bar_kind: match bar.bar_type {
-                crate::TimeBarType::SecondBar => "SecondBar".to_string(),
-                crate::TimeBarType::MinuteBar => "MinuteBar".to_string(),
-                crate::TimeBarType::DailyBar => "DailyBar".to_string(),
-                crate::TimeBarType::WeeklyBar => "WeeklyBar".to_string(),
-            },
+            bar_kind: bar.bar_type.as_str().to_string(),
             bar_period: bar.bar_period,
             marker: bar.marker,
             ts_event: bar.ts_event,
             ts_init: bar.ts_init,
         }
+    }
+}
+
+fn volume_to_i64(value: u64) -> i64 {
+    value.min(i64::MAX as u64) as i64
+}
+
+fn tick_timestamp_nanos(ssboe: &[i32], usecs: &[i32]) -> u64 {
+    let secs = ssboe.last().copied().unwrap_or_default() as u64;
+    let micros = usecs.last().copied().unwrap_or_default() as u64;
+    secs * 1_000_000_000 + micros * 1_000
+}
+
+fn time_replay_bar_type(value: i32) -> Option<RithmicBarType> {
+    match crate::TimeBarType::try_from(value).ok()? {
+        crate::TimeBarType::SecondBar => Some(RithmicBarType::SecondBar),
+        crate::TimeBarType::MinuteBar => Some(RithmicBarType::MinuteBar),
+        crate::TimeBarType::DailyBar => Some(RithmicBarType::DailyBar),
+        crate::TimeBarType::WeeklyBar => Some(RithmicBarType::WeeklyBar),
     }
 }
 

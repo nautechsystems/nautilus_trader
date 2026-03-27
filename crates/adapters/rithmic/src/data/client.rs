@@ -14,6 +14,39 @@ use crate::{
     gateway::RithmicGateway,
 };
 
+/// Rithmic history-plant bar types supported by the adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RithmicBarType {
+    SecondBar,
+    MinuteBar,
+    DailyBar,
+    WeeklyBar,
+    TickBar,
+}
+
+impl RithmicBarType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SecondBar => "SecondBar",
+            Self::MinuteBar => "MinuteBar",
+            Self::DailyBar => "DailyBar",
+            Self::WeeklyBar => "WeeklyBar",
+            Self::TickBar => "TickBar",
+        }
+    }
+}
+
+impl From<TimeBarType> for RithmicBarType {
+    fn from(value: TimeBarType) -> Self {
+        match value {
+            TimeBarType::SecondBar => Self::SecondBar,
+            TimeBarType::MinuteBar => Self::MinuteBar,
+            TimeBarType::DailyBar => Self::DailyBar,
+            TimeBarType::WeeklyBar => Self::WeeklyBar,
+        }
+    }
+}
+
 /// Quote tick data.
 #[derive(Debug, Clone)]
 pub struct QuoteTick {
@@ -56,15 +89,15 @@ pub struct TradeTick {
     pub ts_init: UnixNanos,
 }
 
-/// Live time bar data.
+/// Live history-plant bar data.
 #[derive(Debug, Clone)]
 pub struct TimeBar {
     /// Instrument symbol.
     pub symbol: RithmicSymbol,
     /// Exchange.
     pub exchange: ExchangeId,
-    /// Rithmic time bar type.
-    pub bar_type: TimeBarType,
+    /// Rithmic bar type.
+    pub bar_type: RithmicBarType,
     /// The bar period/step (for example `1` for a 1-minute bar).
     pub bar_period: i32,
     /// Open price.

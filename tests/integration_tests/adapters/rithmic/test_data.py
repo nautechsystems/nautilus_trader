@@ -241,6 +241,39 @@ class TestRithmicLiveDataClient:
         assert client._bar_subscriptions == {}
 
     @pytest.mark.asyncio
+    async def test_subscribe_bars_registers_live_tick_subscription(self):
+        instrument = _make_instrument("ESZ4.RITHMIC")
+
+        class _FakeRustClient:
+            def __init__(self):
+                self.calls = []
+
+            async def subscribe_bars(self, symbol, exchange, bar_type_name, bar_period):
+                self.calls.append(("subscribe", symbol, exchange, bar_type_name, bar_period))
+
+            async def unsubscribe_bars(self, symbol, exchange, bar_type_name, bar_period):
+                self.calls.append(("unsubscribe", symbol, exchange, bar_type_name, bar_period))
+
+        client = _DummyDataClient(cache=_FakeCache({instrument.id: instrument}))
+        client._rust_client = _FakeRustClient()
+        command = SimpleNamespace(
+            bar_type=BarType.from_str("ESZ4.RITHMIC-233-TICK-LAST-EXTERNAL"),
+            params={"exchange": "CME"},
+        )
+
+        await client._subscribe_bars(command)
+
+        assert client._rust_client.calls == [("subscribe", "ESZ4", "CME", "TickBar", 233)]
+        assert client._bar_subscriptions == {
+            ("ESZ4", "CME", "TickBar", 233): command.bar_type,
+        }
+
+        await client._unsubscribe_bars(command)
+
+        assert client._rust_client.calls[-1] == ("unsubscribe", "ESZ4", "CME", "TickBar", 233)
+        assert client._bar_subscriptions == {}
+
+    @pytest.mark.asyncio
     async def test_request_quote_ticks_warns_when_unsupported(self):
         client = _DummyDataClient()
 
@@ -255,6 +288,7 @@ class TestRithmicLiveDataClient:
             (BarAggregation.MINUTE, "MinuteBar"),
             (BarAggregation.DAY, "DailyBar"),
             (BarAggregation.WEEK, "WeeklyBar"),
+            (BarAggregation.TICK, "TickBar"),
         ],
     )
     def test_resolve_bar_type_name_supported_aggregations(self, aggregation, expected):
@@ -325,6 +359,19 @@ class TestRithmicLiveDataClient:
 
         assert ts == 5 * 1_000_000_000
         assert client._log.warnings == ["Could not parse bar period 'not-a-number' as timestamp"]
+
+    def test_bar_timestamp_from_response_prefers_ts_event(self):
+        client = _DummyDataClient()
+        bar_type = _make_bar_type(BarAggregation.TICK, step=1)
+        response = SimpleNamespace(
+            ts_event=1_700_000_000_123_000_000,
+            marker=1_700_000_000,
+            period="1",
+        )
+
+        ts = client._bar_timestamp_from_response(response, bar_type)
+
+        assert ts == 1_700_000_000_123_000_000
 
     def test_handle_quote_tick_uses_default_precision_without_instrument(self):
         client = _DummyDataClient()
@@ -498,6 +545,114 @@ class TestRithmicLiveDataClient:
         assert float(bar.close) == 10.5
         assert float(bar.volume) == 7.0
         assert bar.ts_event == 100 * 1_000_000_000
+
+    @pytest.mark.asyncio
+    async def test_request_bars_rejects_tick_history_above_one_tick(self):
+        client = _DummyDataClient()
+        client._rust_client = object()
+        request = SimpleNamespace(
+            bar_type=BarType.from_str("ESZ4.RITHMIC-5-TICK-LAST-EXTERNAL"),
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=1),
+            params={"exchange": "CME"},
+            id="req-tick-unsupported",
+        )
+
+        with pytest.raises(NotImplementedError, match="Historical TickBar replay with period > 1"):
+            await client._request_bars(request)
+
+    @pytest.mark.asyncio
+    async def test_request_bars_converts_one_tick_responses(self):
+        instrument = _make_instrument("ESZ4.RITHMIC")
+
+        def load_callback(_instrument_id, _filters):
+            provider._instruments[instrument.id] = instrument
+
+        provider = _FakeProvider({}, load_callback=load_callback)
+
+        class _FakeRustClient:
+            def __init__(self, responses):
+                self._responses = responses
+                self.calls = []
+
+            async def request_bars(self, symbol, exchange, bar_type_name, bar_period, start_sec, end_sec):
+                self.calls.append((symbol, exchange, bar_type_name, bar_period, start_sec, end_sec))
+                return self._responses
+
+        responses = [
+            SimpleNamespace(
+                open_price=10.0,
+                high_price=10.5,
+                low_price=9.5,
+                close_price=10.25,
+                volume=3,
+                period="1",
+                ts_event=1_700_000_000_123_000_000,
+            )
+        ]
+
+        client = _DummyDataClient(cache=_FakeCache({}), instrument_provider=provider)
+        client._rust_client = _FakeRustClient(responses)
+
+        request = SimpleNamespace(
+            bar_type=BarType.from_str("ESZ4.RITHMIC-1-TICK-LAST-EXTERNAL"),
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=30),
+            params={"exchange": "CME"},
+            id="req-tick-1",
+            start_time=None,
+            end_time=None,
+        )
+
+        await client._request_bars(request)
+
+        assert client._rust_client.calls == [
+            ("ESZ4", "CME", "TickBar", 1, 1704067200, 1704067230),
+        ]
+        _, published_bar_type, bars = client.handled[-1]
+        assert published_bar_type == request.bar_type
+        assert len(bars) == 1
+        bar = bars[0]
+        assert float(bar.open) == 10.0
+        assert float(bar.high) == 10.5
+        assert float(bar.low) == 9.5
+        assert float(bar.close) == 10.25
+        assert float(bar.volume) == 3.0
+        assert bar.ts_event == 1_700_000_000_123_000_000
+
+    @pytest.mark.asyncio
+    async def test_request_bars_warns_when_history_may_be_truncated(self):
+        instrument = _make_instrument("ESZ4.RITHMIC")
+
+        def load_callback(_instrument_id, _filters):
+            provider._instruments[instrument.id] = instrument
+
+        provider = _FakeProvider({}, load_callback=load_callback)
+
+        class _FakeRustClient:
+            async def request_bars(self, *_args):
+                return [object()] * 10_000
+
+        client = _DummyDataClient(cache=_FakeCache({}), instrument_provider=provider)
+        client._rust_client = _FakeRustClient()
+        client._convert_time_bars = lambda *_args, **_kwargs: []
+
+        request = SimpleNamespace(
+            bar_type=_make_bar_type(BarAggregation.MINUTE, step=1),
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=30),
+            params={"exchange": "CME"},
+            id="req-truncated-warning",
+            start_time=None,
+            end_time=None,
+        )
+
+        await client._request_bars(request)
+
+        assert client._log.warnings == [
+            "Rithmic history replay may have been truncated at a venue-side bar limit; "
+            "the adapter does not auto-resume via request_key yet."
+        ]
 
     # Integration tests would look like:
     #

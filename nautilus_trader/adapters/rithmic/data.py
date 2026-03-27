@@ -253,7 +253,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         self._handle_data(nautilus_tick)
 
     def _handle_live_bar(self, tick) -> None:
-        """Convert a live Rithmic time bar update into a Nautilus bar."""
+        """Convert a live Rithmic bar update into a Nautilus bar."""
         key = self._bar_subscription_key(
             tick.symbol,
             tick.exchange,
@@ -433,9 +433,12 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 f"Cannot subscribe to {bar_type}: only LAST price bars are supported",
             )
             return
-        if not bar_type.spec.is_time_aggregated():
+        if (
+            bar_type.spec.aggregation != BarAggregation.TICK
+            and not bar_type.spec.is_time_aggregated()
+        ):
             self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are supported",
+                f"Cannot subscribe to {bar_type}: only time and tick bars are supported",
             )
             return
 
@@ -555,7 +558,10 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             return
 
         bar_type = command.bar_type
-        if not bar_type.spec.is_time_aggregated():
+        if (
+            bar_type.spec.aggregation != BarAggregation.TICK
+            and not bar_type.spec.is_time_aggregated()
+        ):
             return
 
         instrument_id = bar_type.instrument_id
@@ -675,6 +681,24 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             if request.start >= request.end:
                 raise ValueError("Start must be earlier than end for bar requests")
 
+            if not request.bar_type.is_externally_aggregated():
+                raise ValueError(
+                    f"Cannot request {request.bar_type}: only EXTERNAL bars are supported",
+                )
+            if request.bar_type.spec.price_type != PriceType.LAST:
+                raise ValueError(
+                    f"Cannot request {request.bar_type}: only LAST price bars are supported",
+                )
+            if (
+                request.bar_type.spec.aggregation == BarAggregation.TICK
+                and int(request.bar_type.spec.step) != 1
+            ):
+                raise NotImplementedError(
+                    "Historical TickBar replay with period > 1 is not exposed by the current "
+                    "rithmic-rs history API. The adapter intentionally avoids local re-aggregation "
+                    "outside Nautilus aggregators.",
+                )
+
             await self._ensure_instrument_loaded(instrument_id, exchange)
 
             bar_type_name = self._resolve_bar_type_name(request.bar_type)
@@ -690,6 +714,12 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 start_time_sec,
                 end_time_sec,
             )
+
+            if responses and len(responses) % 10_000 == 0:
+                self._log.warning(
+                    "Rithmic history replay may have been truncated at a venue-side bar limit; "
+                    "the adapter does not auto-resume via request_key yet."
+                )
 
             bars = self._convert_time_bars(
                 request.bar_type,
@@ -778,6 +808,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             return "DailyBar"
         if aggregation == BarAggregation.WEEK:
             return "WeeklyBar"
+        if aggregation == BarAggregation.TICK:
+            return "TickBar"
 
         raise ValueError(f"Unsupported bar aggregation: {aggregation}")
 
@@ -850,6 +882,13 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         epoch-based marker in seconds. Fall back to parsing `period` only when
         `marker` is unavailable.
         """
+        ts_event = getattr(response, "ts_event", None)
+        if ts_event:
+            try:
+                return int(ts_event)
+            except (TypeError, ValueError):
+                self._log.warning(f"Could not parse bar ts_event '{ts_event}' as timestamp")
+
         marker = getattr(response, "marker", None)
         if marker:
             try:
@@ -871,6 +910,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
     def _fallback_bar_timestamp(self, bar_type: BarType) -> int:
         step = bar_type.spec.step
         aggregation = bar_type.spec.aggregation
+        if aggregation == BarAggregation.TICK:
+            return 0
         if aggregation == BarAggregation.SECOND:
             return step * 1_000_000_000
         if aggregation == BarAggregation.MINUTE:

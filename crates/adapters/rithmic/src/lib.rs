@@ -45,7 +45,7 @@ pub mod python;
 pub use config::{
     RithmicDataClientConfig, RithmicEnv, RithmicEnvironment, RithmicExecClientConfig,
 };
-pub use data::RithmicDataClient;
+pub use data::{RithmicBarType, RithmicDataClient};
 pub use error::{Result, RithmicError, RithmicWsError, WsResult};
 pub use execution::RithmicExecutionClient;
 pub use gateway::{GatewayConfig, InstrumentInfo, PnlEvent, RithmicGateway};

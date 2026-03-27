@@ -27,7 +27,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     common::enums::ConnectionState,
     config::{RithmicEnv, optional_env_var, parse_rithmic_env, required_env_var},
-    data::MarketDataEvent,
+    data::{MarketDataEvent, RithmicBarType},
     error::{Result, RithmicError},
     execution::{ExecutionEvent, ExecutionHandler, RithmicExecutionClient},
     providers::{AccountEvent, PositionEvent},
@@ -1505,6 +1505,27 @@ fn time_bar_timestamp_to_nanos(marker: Option<i32>, period: Option<&str>) -> u64
 }
 
 #[inline]
+fn tick_bar_marker(data_bar_ssboe: &[i32]) -> Option<i64> {
+    data_bar_ssboe.last().copied().map(i64::from)
+}
+
+#[inline]
+fn tick_bar_timestamp_to_nanos(data_bar_ssboe: &[i32], data_bar_usecs: &[i32]) -> u64 {
+    let secs = data_bar_ssboe.last().copied().unwrap_or_default() as u64;
+    let micros = data_bar_usecs.last().copied().unwrap_or_default() as u64;
+    secs * 1_000_000_000 + micros * 1_000
+}
+
+#[inline]
+fn live_tick_bar_type_to_bar_type(value: i32) -> Option<RithmicBarType> {
+    match rithmic_rs::rti::tick_bar::BarType::try_from(value).ok()? {
+        rithmic_rs::rti::tick_bar::BarType::TickBar => Some(RithmicBarType::TickBar),
+        rithmic_rs::rti::tick_bar::BarType::RangeBar
+        | rithmic_rs::rti::tick_bar::BarType::VolumeBar => None,
+    }
+}
+
+#[inline]
 fn bbo_side_updated(bits: Option<u32>, bit: u32, price: Option<f64>, size: Option<i32>) -> bool {
     match bits {
         Some(bits) => bits & bit != 0,
@@ -1531,7 +1552,7 @@ fn transform_history_market_data(response: &RithmicResponse) -> Option<MarketDat
         RithmicMessage::TimeBar(bar) => {
             let symbol = bar.symbol.as_ref()?;
             let exchange = bar.exchange.as_ref()?;
-            let bar_type = live_bar_type_to_replay(bar.r#type?)?;
+            let bar_type = RithmicBarType::from(live_bar_type_to_replay(bar.r#type?)?);
             let bar_period = bar.period.as_ref()?.parse::<i32>().ok()?;
             let ts_event = time_bar_timestamp_to_nanos(bar.marker, bar.period.as_deref());
             let ts_init = now_nanos();
@@ -1547,6 +1568,29 @@ fn transform_history_market_data(response: &RithmicResponse) -> Option<MarketDat
                 close_price: bar.close_price.unwrap_or(0.0),
                 volume: bar.volume.unwrap_or(0) as f64,
                 marker: bar.marker.map(i64::from),
+                ts_event,
+                ts_init,
+            }))
+        }
+        RithmicMessage::TickBar(bar) => {
+            let symbol = bar.symbol.as_ref()?;
+            let exchange = bar.exchange.as_ref()?;
+            let bar_type = live_tick_bar_type_to_bar_type(bar.r#type?)?;
+            let bar_period = bar.type_specifier.as_deref()?.parse::<i32>().ok()?;
+            let ts_event = tick_bar_timestamp_to_nanos(&bar.data_bar_ssboe, &bar.data_bar_usecs);
+            let ts_init = now_nanos();
+
+            Some(MarketDataEvent::Bar(crate::data::TimeBar {
+                symbol: symbol.clone(),
+                exchange: exchange.clone(),
+                bar_type,
+                bar_period,
+                open_price: bar.open_price.unwrap_or(0.0),
+                high_price: bar.high_price.unwrap_or(0.0),
+                low_price: bar.low_price.unwrap_or(0.0),
+                close_price: bar.close_price.unwrap_or(0.0),
+                volume: bar.volume.unwrap_or(0) as f64,
+                marker: tick_bar_marker(&bar.data_bar_ssboe),
                 ts_event,
                 ts_init,
             }))

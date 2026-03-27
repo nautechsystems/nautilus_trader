@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use crate::TimeBarType;
 use crate::data::MarketDataEvent;
 use crate::gateway::RithmicGateway;
-use rithmic_rs::rti::messages::RithmicMessage;
+use rithmic_rs::rti::{messages::RithmicMessage, request_tick_bar_update};
 
 use super::events::{PyMarketDataEvent, PyQuoteTick, PyTimeBar, PyTradeTick};
 use super::gateway::PyRithmicGateway;
@@ -49,6 +49,28 @@ pub struct PyRithmicDataClient {
     event_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
     shutdown_tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
 }
+
+#[derive(Clone, Copy)]
+enum ParsedBarType {
+    Time(TimeBarType),
+    Tick,
+}
+
+impl ParsedBarType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Time(TimeBarType::SecondBar) => "SecondBar",
+            Self::Time(TimeBarType::MinuteBar) => "MinuteBar",
+            Self::Time(TimeBarType::DailyBar) => "DailyBar",
+            Self::Time(TimeBarType::WeeklyBar) => "WeeklyBar",
+            Self::Tick => "TickBar",
+        }
+    }
+}
+
+const TICK_BAR_HISTORY_NOT_EXPOSED: &str = "Historical TickBar replay with period > 1 is not exposed by the current \
+     rithmic-rs history API. The adapter intentionally avoids local re-aggregation \
+     outside Nautilus aggregators.";
 
 #[cfg(feature = "python")]
 #[pymethods]
@@ -282,7 +304,7 @@ impl PyRithmicDataClient {
         self.subscribe_quotes(py, symbol, exchange)
     }
 
-    /// Subscribes to live time bars on the history plant.
+    /// Subscribes to live bars on the history plant.
     ///
     /// This is an async method.
     fn subscribe_bars<'py>(
@@ -294,25 +316,56 @@ impl PyRithmicDataClient {
         bar_period: i32,
     ) -> PyResult<Bound<'py, PyAny>> {
         Self::validate_symbol_exchange(&symbol, &exchange)?;
-        let bar_type = Self::parse_time_bar_type(&bar_type)?;
+        let bar_type = Self::parse_bar_type(&bar_type)?;
 
         let gateway = Arc::clone(&self.gateway);
         let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
-        let key =
-            Self::bar_subscription_key(&symbol, &exchange, &format!("{:?}", bar_type), bar_period);
+        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type.as_str(), bar_period);
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            gw.subscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
-                .await
-                .map(|_| {
-                    bar_subscriptions.lock().insert(key);
-                })
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Live bar subscription failed: {e}"
-                    ))
-                })
+            match bar_type {
+                ParsedBarType::Time(bar_type) => gw
+                    .subscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
+                    .await
+                    .map_err(|e| {
+                        pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "Live bar subscription failed: {e}"
+                        ))
+                    })?,
+                ParsedBarType::Tick => {
+                    let handle = gw.history_handle().ok_or_else(|| {
+                        pyo3::exceptions::PyRuntimeError::new_err(
+                            "History plant not connected".to_string(),
+                        )
+                    })?;
+
+                    let response = handle
+                        .subscribe_tick_bar_updates(
+                            &symbol,
+                            &exchange,
+                            request_tick_bar_update::BarType::TickBar,
+                            request_tick_bar_update::BarSubType::Regular,
+                            &bar_period.to_string(),
+                            request_tick_bar_update::Request::Subscribe,
+                        )
+                        .await
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Live bar subscription failed: {e}"
+                            ))
+                        })?;
+
+                    if let Some(error) = response.error {
+                        return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "Live bar subscription failed: {error}"
+                        )));
+                    }
+                }
+            }
+
+            bar_subscriptions.lock().insert(key);
+            Ok(())
         })
     }
 
@@ -346,7 +399,7 @@ impl PyRithmicDataClient {
         })
     }
 
-    /// Unsubscribes from live time bars on the history plant.
+    /// Unsubscribes from live bars on the history plant.
     fn unsubscribe_bars<'py>(
         &self,
         py: Python<'py>,
@@ -356,25 +409,56 @@ impl PyRithmicDataClient {
         bar_period: i32,
     ) -> PyResult<Bound<'py, PyAny>> {
         Self::validate_symbol_exchange(&symbol, &exchange)?;
-        let bar_type = Self::parse_time_bar_type(&bar_type)?;
+        let bar_type = Self::parse_bar_type(&bar_type)?;
 
         let gateway = Arc::clone(&self.gateway);
         let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
-        let key =
-            Self::bar_subscription_key(&symbol, &exchange, &format!("{:?}", bar_type), bar_period);
+        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type.as_str(), bar_period);
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            gw.unsubscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
-                .await
-                .map(|_| {
-                    bar_subscriptions.lock().remove(&key);
-                })
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Live bar unsubscribe failed: {e}"
-                    ))
-                })
+            match bar_type {
+                ParsedBarType::Time(bar_type) => gw
+                    .unsubscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
+                    .await
+                    .map_err(|e| {
+                        pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "Live bar unsubscribe failed: {e}"
+                        ))
+                    })?,
+                ParsedBarType::Tick => {
+                    let handle = gw.history_handle().ok_or_else(|| {
+                        pyo3::exceptions::PyRuntimeError::new_err(
+                            "History plant not connected".to_string(),
+                        )
+                    })?;
+
+                    let response = handle
+                        .subscribe_tick_bar_updates(
+                            &symbol,
+                            &exchange,
+                            request_tick_bar_update::BarType::TickBar,
+                            request_tick_bar_update::BarSubType::Regular,
+                            &bar_period.to_string(),
+                            request_tick_bar_update::Request::Unsubscribe,
+                        )
+                        .await
+                        .map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "Live bar unsubscribe failed: {e}"
+                            ))
+                        })?;
+
+                    if let Some(error) = response.error {
+                        return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "Live bar unsubscribe failed: {error}"
+                        )));
+                    }
+                }
+            }
+
+            bar_subscriptions.lock().remove(&key);
+            Ok(())
         })
     }
 
@@ -384,7 +468,7 @@ impl PyRithmicDataClient {
         self.bar_subscriptions.lock().clear();
     }
 
-    /// Requests historical time bars via the history plant.
+    /// Requests historical bars via the history plant.
     ///
     /// This is an async method - use `await client.request_bars(...)`.
     #[allow(clippy::too_many_arguments)]
@@ -405,20 +489,44 @@ impl PyRithmicDataClient {
         let gateway = Arc::clone(&self.gateway);
 
         future_into_py(py, async move {
-            let bar_type = Self::parse_time_bar_type(&bar_type)?;
-
+            let bar_type = Self::parse_bar_type(&bar_type)?;
             let gw = gateway.read().await;
-            let responses = gw
-                .request_bars(
-                    &symbol,
-                    &exchange,
-                    bar_type,
-                    bar_period,
-                    start_time_sec,
-                    end_time_sec,
-                )
-                .await
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            let responses = match bar_type {
+                ParsedBarType::Time(bar_type) => gw
+                    .request_bars(
+                        &symbol,
+                        &exchange,
+                        bar_type,
+                        bar_period,
+                        start_time_sec,
+                        end_time_sec,
+                    )
+                    .await
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?,
+                ParsedBarType::Tick => {
+                    if bar_period != 1 {
+                        return Err(pyo3::exceptions::PyNotImplementedError::new_err(
+                            TICK_BAR_HISTORY_NOT_EXPOSED,
+                        ));
+                    }
+
+                    let handle = gw.history_handle().ok_or_else(|| {
+                        pyo3::exceptions::PyRuntimeError::new_err(
+                            "History plant not connected".to_string(),
+                        )
+                    })?;
+
+                    handle
+                        .load_ticks(
+                            symbol.clone(),
+                            exchange.clone(),
+                            start_time_sec,
+                            end_time_sec,
+                        )
+                        .await
+                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                }
+            };
 
             let mut bars = Vec::new();
             for response in responses {
@@ -426,8 +534,14 @@ impl PyRithmicDataClient {
                     return Err(pyo3::exceptions::PyRuntimeError::new_err(error.clone()));
                 }
 
-                if let RithmicMessage::ResponseTimeBarReplay(bar) = response.message {
-                    bars.push(PyTimeBar::from_response(&bar));
+                match response.message {
+                    RithmicMessage::ResponseTimeBarReplay(bar) => {
+                        bars.push(PyTimeBar::from_time_response(&bar));
+                    }
+                    RithmicMessage::ResponseTickBarReplay(bar) => {
+                        bars.push(PyTimeBar::from_tick_response(&bar));
+                    }
+                    _ => {}
                 }
             }
 
@@ -461,14 +575,15 @@ impl PyRithmicDataClient {
         Ok(())
     }
 
-    fn parse_time_bar_type(bar_type: &str) -> PyResult<TimeBarType> {
+    fn parse_bar_type(bar_type: &str) -> PyResult<ParsedBarType> {
         match bar_type {
-            "SecondBar" => Ok(TimeBarType::SecondBar),
-            "MinuteBar" => Ok(TimeBarType::MinuteBar),
-            "DailyBar" => Ok(TimeBarType::DailyBar),
-            "WeeklyBar" => Ok(TimeBarType::WeeklyBar),
+            "SecondBar" => Ok(ParsedBarType::Time(TimeBarType::SecondBar)),
+            "MinuteBar" => Ok(ParsedBarType::Time(TimeBarType::MinuteBar)),
+            "DailyBar" => Ok(ParsedBarType::Time(TimeBarType::DailyBar)),
+            "WeeklyBar" => Ok(ParsedBarType::Time(TimeBarType::WeeklyBar)),
+            "TickBar" => Ok(ParsedBarType::Tick),
             _ => Err(pyo3::exceptions::PyValueError::new_err(
-                "Unsupported bar type. Valid values: SecondBar, MinuteBar, DailyBar, WeeklyBar",
+                "Unsupported bar type. Valid values: SecondBar, MinuteBar, DailyBar, WeeklyBar, TickBar",
             )),
         }
     }
