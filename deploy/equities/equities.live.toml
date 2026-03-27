@@ -151,7 +151,7 @@ scope_id = "ibkr.reference.main"
 provider = "ibkr"
 venue = "IBKR"
 ibg_host = "127.0.0.1"
-ibg_port = 4001
+ibg_port = 4002
 ibg_client_id = 107
 account_id = "U10015777"
 
@@ -169,8 +169,8 @@ scope_id = "ibkr.hedge.main"
 provider = "ibkr"
 venue = "IBKR"
 ibg_host = "127.0.0.1"
-ibg_port = 4001
-ibg_client_id = 208
+ibg_port = 4002
+ibg_client_id = 908
 account_id = "U10015777"
 
 [account_scopes.dockerized_gateway]
