@@ -118,7 +118,7 @@ def test_refresh_quotes_emits_place_order_intent_payloads_with_runtime_strategy_
     assert place_payload["external_strategy_id"] == strategy._external_strategy_id
     assert place_payload["run_id"]
     assert place_payload["quote_cycle_id"] == "RUN-42:7"
-    assert place_payload["reason_code"] == "place_missing_level"
+    assert place_payload["reason_code"] == "place_missing_hole_repair"
     assert place_payload["level_index"] == 0
     assert place_payload["target_px"]
     assert place_payload["cancel_px"]
@@ -252,7 +252,7 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
                 ),
             ],
             [(Decimal("99.9"), Decimal("100.5"))],
-            "cancel_excess_level",
+            "cancel_back_excess",
         ),
         (
             [
@@ -265,7 +265,7 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
                 ),
             ],
             [(Decimal("99.9"), Decimal("99.95"))],
-            "cancel_too_aggressive",
+            "cancel_front_violation",
         ),
         (
             [
@@ -285,7 +285,7 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
                 ),
             ],
             [(Decimal("101.0"), Decimal("101.0")), (Decimal("100.0"), Decimal("100.0"))],
-            "cancel_excess_level",
+            "cancel_back_excess",
         ),
     ],
 )
@@ -314,3 +314,103 @@ def test_refresh_quotes_rebalance_cancel_intents_emit_structured_reason_taxonomy
     cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
     assert cancel_payloads
     assert any(payload["reason_code"] == expected_reason_code for payload in cancel_payloads)
+
+
+def test_refresh_quotes_emits_place_front_then_cancel_back_intents_with_deque_reason_codes(
+    clocked_strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
+    strategy._runtime_params["max_cancels_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_places_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_total_actions_per_cycle"] = 2
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="BUY-1",
+            side=OrderSide.BUY,
+            price=Decimal("99.8"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+        SimpleNamespace(
+            client_order_id="BUY-2",
+            side=OrderSide.BUY,
+            price=Decimal("99.7"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+    ]
+    strategy.cancel_order = lambda _order: None
+
+    monkeypatch.setattr(
+        quote_engine_mod,
+        "build_ladder_place_cancel_levels_from_bps",
+        lambda **_kwargs: (
+            [
+                (Decimal("99.9"), Decimal("99.95")),
+                (Decimal("99.8"), Decimal("99.85")),
+            ],
+            [],
+        ),
+    )
+
+    payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:11")
+
+    place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
+    cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
+
+    assert any(payload["reason_code"] == "place_front_improve" for payload in place_payloads)
+    assert any(payload["reason_code"] == "cancel_back_excess" for payload in cancel_payloads)
+
+
+def test_refresh_quotes_emits_cancel_front_then_place_back_intents_with_deque_reason_codes(
+    clocked_strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = _make_refresh_strategy(clocked_strategy_factory, monkeypatch)
+    strategy._runtime_params["max_cancels_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_places_per_side_per_cycle"] = 1
+    strategy._runtime_params["max_total_actions_per_cycle"] = 2
+    strategy._managed_orders = lambda: [
+        SimpleNamespace(
+            client_order_id="BUY-1",
+            side=OrderSide.BUY,
+            price=Decimal("100.0"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+        SimpleNamespace(
+            client_order_id="BUY-2",
+            side=OrderSide.BUY,
+            price=Decimal("99.9"),
+            quantity=Decimal("1"),
+            ts_init=1_000_000_000,
+        ),
+    ]
+    strategy.cancel_order = lambda _order: None
+
+    monkeypatch.setattr(
+        quote_engine_mod,
+        "build_ladder_place_cancel_levels_from_bps",
+        lambda **_kwargs: (
+            [
+                (Decimal("99.9"), Decimal("99.95")),
+                (Decimal("99.8"), Decimal("99.85")),
+            ],
+            [],
+        ),
+    )
+
+    payloads: list[tuple[str, dict[str, Any] | list[dict[str, Any]]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._refresh_quotes(now_ns=1_000_000_000, quote_cycle_id="RUN-42:12")
+
+    place_payloads = _collect_order_intents(payloads, intent_type="PLACE")
+    cancel_payloads = _collect_order_intents(payloads, intent_type="CANCEL")
+
+    assert any(payload["reason_code"] == "cancel_front_violation" for payload in cancel_payloads)
+    assert any(payload["reason_code"] == "place_back_backfill" for payload in place_payloads)
