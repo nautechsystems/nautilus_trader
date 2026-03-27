@@ -244,10 +244,23 @@ def _interior_hole_count(
     desired_levels: Sequence[DesiredStackLevel],
     missing_positions: Sequence[int],
 ) -> int:
-    if len(desired_levels) < 3:
+    if len(desired_levels) < 3 or not missing_positions:
         return 0
-    tail_position = len(desired_levels) - 1
-    return sum(1 for position in missing_positions if 0 < position < tail_position)
+    missing_position_set = set(missing_positions)
+    matched_positions = [
+        position
+        for position in range(len(desired_levels))
+        if position not in missing_position_set
+    ]
+    if len(matched_positions) < 2:
+        return 0
+    leftmost_matched = matched_positions[0]
+    rightmost_matched = matched_positions[-1]
+    return sum(
+        1
+        for position in missing_positions
+        if leftmost_matched < position < rightmost_matched
+    )
 
 
 def _is_simple_inward_move(
@@ -438,8 +451,13 @@ def plan_side_deque_actions(
     if alignment.missing_levels:
         if depth_before >= target_depth:
             return _build_plan(
-                mode="no_op",
-                actions=[],
+                mode="cancel_back",
+                actions=[
+                    StackAction(
+                        kind="cancel_back",
+                        active_index=normalized_active_levels[-1].active_index,
+                    ),
+                ],
                 depth_before=depth_before,
                 missing_level_count=missing_level_count,
                 interior_hole_count=interior_hole_count,

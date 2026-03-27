@@ -242,10 +242,27 @@ def test_plan_quote_stack_treats_short_tail_underfill_as_place_missing_not_hole_
     )
 
     assert result.diagnostics.stack_action_mode == "place_missing"
+    assert result.diagnostics.interior_hole_count == 0
     assert result.diagnostics.front_changed is False
     assert result.diagnostics.back_changed is True
     assert _action_tuples(result.actions) == [
         ("place_missing", None, 1),
+    ]
+
+
+def test_plan_quote_stack_treats_empty_stack_as_frontier_underfill_not_hole_repair() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[],
+        desired_levels=_desired_levels("100", "99", "98"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "place_missing"
+    assert result.diagnostics.interior_hole_count == 0
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is True
+    assert _action_tuples(result.actions) == [
+        ("place_missing", None, 0),
     ]
 
 
@@ -264,17 +281,22 @@ def test_plan_quote_stack_marks_front_changed_when_short_stack_is_missing_top_le
     ]
 
 
-def test_plan_quote_stack_does_not_overfill_when_full_depth_stack_has_interior_gap() -> None:
+def test_plan_quote_stack_cancels_tail_to_repair_full_depth_interior_gap() -> None:
     result = _plan(
         side="buy",
         active_prices=[Decimal("100"), Decimal("98"), Decimal("97")],
         desired_levels=_desired_levels("100", "99", "98"),
     )
 
-    assert result.diagnostics.stack_action_mode == "no_op"
-    assert result.diagnostics.depth_after == 3
+    assert result.diagnostics.stack_action_mode == "cancel_back"
+    assert result.diagnostics.interior_hole_count == 1
+    assert result.diagnostics.depth_after == 2
     assert result.diagnostics.temporary_oversize_depth == 3
-    assert _action_tuples(result.actions) == []
+    assert result.diagnostics.front_changed is False
+    assert result.diagnostics.back_changed is True
+    assert _action_tuples(result.actions) == [
+        ("cancel_back", 2, None),
+    ]
 
 
 def test_plan_quote_stack_represents_temporary_n_plus_one_explicitly_for_inward_moves() -> None:

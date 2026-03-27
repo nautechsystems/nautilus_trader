@@ -287,6 +287,37 @@ def test_enforce_stale_market_data_emits_book_unavailable_cancel_reason_taxonomy
             [(Decimal("101.0"), Decimal("101.0")), (Decimal("100.0"), Decimal("100.0"))],
             "cancel_back_excess",
         ),
+        (
+            [
+                SimpleNamespace(
+                    client_order_id="BUY-HOLE-1",
+                    side=OrderSide.BUY,
+                    price=Decimal("100.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-HOLE-2",
+                    side=OrderSide.BUY,
+                    price=Decimal("98.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+                SimpleNamespace(
+                    client_order_id="BUY-HOLE-3",
+                    side=OrderSide.BUY,
+                    price=Decimal("97.0"),
+                    quantity=Decimal("1"),
+                    ts_init=1_000_000_000,
+                ),
+            ],
+            [
+                (Decimal("100.0"), Decimal("100.0")),
+                (Decimal("99.0"), Decimal("99.0")),
+                (Decimal("98.0"), Decimal("98.0")),
+            ],
+            "cancel_back_excess",
+        ),
     ],
 )
 def test_refresh_quotes_rebalance_cancel_intents_emit_structured_reason_taxonomy(

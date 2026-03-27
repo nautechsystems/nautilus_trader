@@ -423,9 +423,11 @@ def plan_side_bounded_convergence(
         for action in allowed_actions
         if action.kind in _PLACE_ACTION_KINDS and action.level_index is not None
     )
+    planned_place_count = sum(1 for action in stack_plan.actions if action.kind in _PLACE_ACTION_KINDS)
     budget_limited = budget_cut or (
         backlog_mode_norm == "normal"
         and not suppressed_keep_bucket
+        and planned_place_count > 0
         and stack_plan.diagnostics.missing_level_count > len(place_level_indices)
     )
 
