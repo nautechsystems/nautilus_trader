@@ -37,7 +37,7 @@ The current Rithmic example set includes:
 
 - `rithmic_data_tester.py` for a standard Nautilus `TradingNode` data-client smoke run.
 - `rithmic_exec_tester.py` for a standard Nautilus `TradingNode` execution smoke run.
-- `rithmic_ema_cross.py` for a full live `TradingNode` EMA-cross strategy on resolved front-month futures with internal bars.
+- `rithmic_ema_cross.py` for a full live `TradingNode` EMA-cross strategy on resolved front-month futures with native 15-second external bars and bounded historical warmup by default. The example uses environment variables only for Rithmic credentials and profile selection; strategy settings are configured in the file.
 - `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox.
 - `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest.
 - `order_submission.py` for a low-level safe working-order submit/modify/cancel flow.
@@ -69,8 +69,8 @@ The adapter supports the following Rithmic environments:
 
 ### Contract symbology
 
-Use native futures symbols together with the exchange in the Nautilus `InstrumentId` for
-unambiguous live instrument loading.
+Use an exchange-qualified futures symbol together with the Rithmic venue for unambiguous live
+instrument loading.
 
 ```python
 from nautilus_trader.model.identifiers import InstrumentId
@@ -78,9 +78,14 @@ from nautilus_trader.model.identifiers import InstrumentId
 instrument_id = InstrumentId.from_str("MNQM6.CME.RITHMIC")
 ```
 
-The adapter normalizes the venue lookup symbol back to the Rithmic contract symbol (`MNQM6` in
-the example above), while preserving the exchange hint for instrument loads and historical bar
-requests.
+This is still a standard Nautilus `{symbol.venue}` identifier:
+
+- symbol: `MNQM6.CME`
+- venue: `RITHMIC`
+
+The extra `.CME` remains part of the symbol so the adapter can route instrument loads, historical
+bars, and order submission to the exact exchange. The venue-native contract code is still preserved
+as the instrument `raw_symbol` (`MNQM6` in this example).
 
 ### Live front-month workflow
 
@@ -140,7 +145,8 @@ async def resolve_front_month_instrument_id(
 ```
 
 If you prefer operator shorthand such as `MNQ.CME.RITHMIC`, parse the root and exchange first,
-resolve the front month, then pass the resolved contract ID into the live node or strategy.
+resolve the front month, then pass the resolved exchange-qualified contract ID into the live node
+or strategy.
 
 ### Backtest symbology
 
@@ -211,6 +217,8 @@ data_config = RithmicDataClientConfig(
 If `enable_history=False`, the live node can still stream quotes and trades, but both
 `request_bars()` and live external `subscribe_bars()` calls will be rejected. This is useful for
 live-only nodes that do not need the history plant.
+
+Custom second-bar resolutions such as `15-SECOND-LAST-EXTERNAL` are supported through this path.
 
 :::warning
 Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are

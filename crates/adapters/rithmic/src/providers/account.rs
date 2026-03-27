@@ -18,6 +18,8 @@ use crate::gateway::{PnlEvent, RithmicGateway};
 /// Account balance information.
 #[derive(Debug, Clone)]
 pub struct AccountBalance {
+    /// Whether the source notification was a Rithmic snapshot payload.
+    pub is_snapshot: bool,
     /// Account ID.
     pub account_id: RithmicAccountId,
     /// Currency.
@@ -251,6 +253,7 @@ mod tests {
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");
 
         let balance = AccountBalance {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             currency: "USD".to_string(),
             total: 100000.0,
@@ -274,6 +277,7 @@ mod tests {
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");
 
         let balance = AccountBalance {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             currency: "USD".to_string(),
             total: 75000.0,
@@ -301,6 +305,7 @@ mod tests {
 
         // Update balance for a different account
         let balance = AccountBalance {
+            is_snapshot: false,
             account_id: "OTHER_ACCOUNT".to_string(),
             currency: "USD".to_string(),
             total: 50000.0,

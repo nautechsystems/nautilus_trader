@@ -7,8 +7,7 @@ use rithmic_rs::{
     rti::{
         ExchangeOrderNotification, RithmicOrderNotification,
         exchange_order_notification::BracketType as ExchangeBracketType,
-        exchange_order_notification::NotifyType as ExchangeNotifyType,
-        messages::RithmicMessage,
+        exchange_order_notification::NotifyType as ExchangeNotifyType, messages::RithmicMessage,
         rithmic_order_notification::BracketType as RithmicBracketType,
         rithmic_order_notification::NotifyType as RithmicNotifyType,
     },
@@ -45,6 +44,7 @@ fn exchange_bracket_type_text(value: Option<i32>) -> Option<String> {
 
 fn rithmic_order_context(notif: &RithmicOrderNotification) -> OrderContext {
     OrderContext {
+        is_snapshot: notif.is_snapshot.unwrap_or(false),
         symbol: notif.symbol.clone(),
         exchange: notif.exchange.clone(),
         side: notif
@@ -70,6 +70,7 @@ fn rithmic_order_context(notif: &RithmicOrderNotification) -> OrderContext {
 
 fn exchange_order_context(notif: &ExchangeOrderNotification) -> OrderContext {
     OrderContext {
+        is_snapshot: notif.is_snapshot.unwrap_or(false),
         symbol: notif.symbol.clone(),
         exchange: notif.exchange.clone(),
         side: notif
@@ -380,6 +381,7 @@ mod tests {
         notif.user_tag = Some("C1".to_string());
         notif.basket_id = Some("B1".to_string());
         notif.account_id = Some("ACCT".to_string());
+        notif.is_snapshot = Some(true);
         notif.symbol = Some("ESZ4".to_string());
         notif.exchange = Some("CME".to_string());
         notif.transaction_type = Some(1);
@@ -404,6 +406,7 @@ mod tests {
                 assert_eq!(s.ts_event, rithmic_to_unix_nanos(1, 2));
                 assert_eq!(s.context.symbol.as_deref(), Some("ESZ4"));
                 assert_eq!(s.context.exchange.as_deref(), Some("CME"));
+                assert!(s.context.is_snapshot);
                 assert_eq!(s.context.quantity, Some(3.0));
                 assert_eq!(s.context.price, Some(5025.25));
                 assert_eq!(s.context.leaves_qty, Some(3.0));
@@ -418,6 +421,7 @@ mod tests {
         notif.notify_type = Some(ExchangeNotifyType::Fill as i32);
         notif.user_tag = Some("C2".to_string());
         notif.basket_id = Some("B2".to_string());
+        notif.is_snapshot = Some(true);
         notif.symbol = Some("ESZ4".to_string());
         notif.exchange = Some("CME".to_string());
         notif.transaction_type = Some(1);
@@ -447,6 +451,7 @@ mod tests {
                 assert_eq!(f.ts_event, rithmic_to_unix_nanos(10, 20));
                 assert_eq!(f.trade_id.as_deref(), Some("FILL1"));
                 assert_eq!(f.currency.as_deref(), Some("USD"));
+                assert!(f.context.is_snapshot);
                 assert_eq!(f.context.symbol.as_deref(), Some("ESZ4"));
                 assert_eq!(f.context.exchange.as_deref(), Some("CME"));
                 assert_eq!(f.context.quantity, Some(5.0));

@@ -1760,6 +1760,7 @@ fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
 
             Some(PnlEvent::Account(AccountEvent::BalanceUpdate(
                 AccountBalance {
+                    is_snapshot: update.is_snapshot.unwrap_or(false),
                     account_id,
                     currency: "USD".to_string(), // Futures typically USD
                     total,
@@ -1799,6 +1800,7 @@ fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
             );
 
             Some(PnlEvent::Position(PositionEvent::Updated(Position {
+                is_snapshot: update.is_snapshot.unwrap_or(false),
                 account_id,
                 symbol,
                 exchange,

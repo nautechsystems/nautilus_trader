@@ -24,6 +24,10 @@
 # Note:
 # - Rithmic historical quote and trade tick requests are not implemented yet in this adapter.
 # - This sandbox therefore backtests from historical 1-minute bars requested through `request_bars`.
+# - On basic Rithmic plans, historical API usage is typically capped at 20 GB per month.
+# - Rithmic sends warning emails to the registered account email address as usage approaches the
+#   limit or when their access rules are being breached. Ignoring those warnings can trigger
+#   automatic temporary restrictions.
 
 # %% [markdown]
 # Note: Use the jupytext python package to open this file as a notebook in Jupyter.
@@ -404,6 +408,11 @@ if SCRIPT_MODE:
 # ## Download Historical 1-Minute Bars Through The Adapter
 #
 # If Rithmic returns an empty response on a fresh session, rerun this cell once.
+#
+# Keep history requests measured. On basic Rithmic plans, historical API usage is typically capped
+# at 20 GB per month, and Rithmic sends warning emails to the registered account email address when
+# usage approaches the limit or their access rules are being breached. Ignoring those warnings can
+# result in automatically triggered temporary restrictions.
 
 # %%
 window_start, window_end, bar_type = download_bars_to_catalog(

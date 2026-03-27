@@ -14,12 +14,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Example: run the built-in EMACross strategy live on Rithmic internal bars.
+Example: run the built-in EMACross strategy live on Rithmic bars.
 
 This example:
 1. Resolves the current front-month contract for a Rithmic product root
 2. Builds a standard Nautilus live node with both data and execution clients
-3. Subscribes to live internal bars (15-second trade bars by default)
+3. Subscribes to live 15-second Rithmic bars by default
 4. Runs the existing EMACross strategy against the resolved futures contract
 
 Required environment variables:
@@ -35,22 +35,19 @@ Optional environment variables:
     RITHMIC_IB_ID
     RITHMIC_APP_NAME
     RITHMIC_APP_VERSION
-    RITHMIC_EMA_ROOT                    Default: MNQ
-    RITHMIC_EMA_EXCHANGE                Default: CME
-    RITHMIC_EMA_BAR_SPEC                Default: 15-SECOND-LAST-INTERNAL
-    RITHMIC_EMA_TRADE_SIZE              Default: 1
-    RITHMIC_EMA_FAST_PERIOD             Default: 10
-    RITHMIC_EMA_SLOW_PERIOD             Default: 20
-    RITHMIC_EMA_RUN_SECONDS             Default: 0 (run until interrupted)
+
+Example configuration:
+    Edit the constants below for product, exchange, bar type, EMA periods,
+    trade size, warmup window, and optional auto-stop duration.
 
 Warning:
     This example can submit live orders to the configured account.
     Use a demo account first.
 
 Notes:
-    Internal bars are consolidated inside Nautilus from the live tick stream.
-    Historical warmup is disabled for this example, so the EMAs warm up from
-    live bars only.
+    External Rithmic bars can be warmed from historical history-plant data.
+    Internal bars remain available, but historical warmup is currently disabled
+    for that path in this example.
 """
 
 from __future__ import annotations
@@ -58,7 +55,9 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
+from datetime import timedelta
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.rithmic import RITHMIC
 from nautilus_trader.adapters.rithmic import RithmicDataClientConfig
@@ -70,6 +69,9 @@ from nautilus_trader.adapters.rithmic.bindings import (
     RithmicInstrumentProvider as BindingInstrumentProvider,
 )
 from nautilus_trader.adapters.rithmic.config import to_binding_environment
+from nautilus_trader.adapters.rithmic.providers import (
+    RithmicInstrumentProvider as AdapterInstrumentProvider,
+)
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -82,13 +84,19 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
-DEFAULT_PRODUCT = "MNQ"
-DEFAULT_EXCHANGE = "CME"
-DEFAULT_BAR_SPEC = "15-SECOND-LAST-INTERNAL"
-DEFAULT_TRADE_SIZE = 1
-DEFAULT_FAST_PERIOD = 10
-DEFAULT_SLOW_PERIOD = 20
-DEFAULT_RUN_SECONDS = 0
+if TYPE_CHECKING:
+    from nautilus_trader.model.instruments import Instrument
+
+
+# Edit these example settings directly instead of exporting per-run strategy env vars.
+PRODUCT = "MNQ"
+EXCHANGE = "CME"
+BAR_SPEC = "15-SECOND-LAST-EXTERNAL"
+TRADE_SIZE = 1
+FAST_EMA_PERIOD = 10
+SLOW_EMA_PERIOD = 20
+WARMUP_MINUTES = 30
+RUN_SECONDS = 0
 
 
 def build_gateway(config: RithmicDataClientConfig) -> RithmicGateway:
@@ -109,14 +117,15 @@ def build_gateway(config: RithmicDataClientConfig) -> RithmicGateway:
     )
 
 
-async def resolve_front_month_instrument_id(
+async def resolve_front_month_instrument(
     profile: str | None,
     product: str,
     exchange: str,
-) -> tuple[InstrumentId, str]:
+) -> tuple[Instrument, str]:
     config = RithmicDataClientConfig.from_env(profile)
     gateway = build_gateway(config)
     provider = BindingInstrumentProvider(gateway)
+    converter = AdapterInstrumentProvider(config)
 
     await gateway.connect()
     try:
@@ -125,8 +134,7 @@ async def resolve_front_month_instrument_id(
         await gateway.disconnect()
 
     resolved_exchange = getattr(contract, "exchange", None) or exchange
-    instrument_id = InstrumentId.from_str(f"{contract.symbol}.{resolved_exchange}.{RITHMIC}")
-    return instrument_id, resolved_exchange
+    return converter._convert_instrument(contract), resolved_exchange
 
 
 def build_provider_config(
@@ -144,6 +152,7 @@ def build_data_client_config(
     profile: str | None,
     instrument_id: InstrumentId,
     exchange: str,
+    enable_history: bool,
 ) -> RithmicDataClientConfig:
     base = RithmicDataClientConfig.from_env(profile)
     return RithmicDataClientConfig(
@@ -155,7 +164,7 @@ def build_data_client_config(
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
-        enable_history=False,
+        enable_history=enable_history,
         instrument_provider=build_provider_config(instrument_id, exchange),
     )
 
@@ -182,6 +191,57 @@ def build_exec_client_config(
     )
 
 
+class LiveRithmicEMACross(EMACross):
+    def __init__(self, config: EMACrossConfig, warmup_minutes: int, exchange: str) -> None:
+        super().__init__(config)
+        self._exchange = exchange
+        self._warmup_minutes = warmup_minutes
+        self._started = False
+
+    def on_start(self) -> None:
+        self.instrument = self.cache.instrument(self.config.instrument_id)
+        if self.instrument is None:
+            self.log.warning(
+                f"Instrument {self.config.instrument_id} not yet cached; requesting definition",
+            )
+            self.request_instrument(
+                self.config.instrument_id,
+                params={"exchange": self._exchange},
+            )
+            return
+
+        self._start_strategy()
+
+    def on_instrument(self, instrument) -> None:
+        if instrument.id != self.config.instrument_id or self._started:
+            return
+
+        self.instrument = instrument
+        self._start_strategy()
+
+    def _start_strategy(self) -> None:
+        if self._started or self.instrument is None:
+            return
+
+        self._started = True
+
+        self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
+        self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
+
+        if self.config.request_bars and self._warmup_minutes > 0:
+            self.request_bars(
+                self.config.bar_type,
+                start=self._clock.utc_now() - timedelta(minutes=self._warmup_minutes),
+            )
+
+        self.subscribe_bars(self.config.bar_type)
+
+        if self.config.subscribe_quote_ticks:
+            self.subscribe_quote_ticks(self.config.instrument_id)
+        if self.config.subscribe_trade_ticks:
+            self.subscribe_trade_ticks(self.config.instrument_id)
+
+
 def schedule_stop(node: TradingNode, run_seconds: int) -> threading.Timer | None:
     if run_seconds <= 0:
         return None
@@ -201,27 +261,36 @@ def schedule_stop(node: TradingNode, run_seconds: int) -> threading.Timer | None
 
 def main() -> None:
     profile = os.environ.get("RITHMIC_PROFILE")
-    product = os.environ.get("RITHMIC_EMA_ROOT", DEFAULT_PRODUCT).strip().upper()
-    exchange = os.environ.get("RITHMIC_EMA_EXCHANGE", DEFAULT_EXCHANGE).strip().upper()
-    bar_spec = os.environ.get("RITHMIC_EMA_BAR_SPEC", DEFAULT_BAR_SPEC).strip().upper()
-    trade_size = Decimal(os.environ.get("RITHMIC_EMA_TRADE_SIZE", str(DEFAULT_TRADE_SIZE)))
-    fast_period = int(os.environ.get("RITHMIC_EMA_FAST_PERIOD", str(DEFAULT_FAST_PERIOD)))
-    slow_period = int(os.environ.get("RITHMIC_EMA_SLOW_PERIOD", str(DEFAULT_SLOW_PERIOD)))
-    run_seconds = int(os.environ.get("RITHMIC_EMA_RUN_SECONDS", str(DEFAULT_RUN_SECONDS)))
+    product = PRODUCT.strip().upper()
+    exchange = EXCHANGE.strip().upper()
+    bar_spec = BAR_SPEC.strip().upper()
+    trade_size = Decimal(str(TRADE_SIZE))
+    fast_period = int(FAST_EMA_PERIOD)
+    slow_period = int(SLOW_EMA_PERIOD)
+    warmup_minutes = int(WARMUP_MINUTES)
+    run_seconds = int(RUN_SECONDS)
 
     if trade_size <= 0:
-        raise ValueError("RITHMIC_EMA_TRADE_SIZE must be positive")
+        raise ValueError("TRADE_SIZE must be positive")
+    if warmup_minutes < 0:
+        raise ValueError("WARMUP_MINUTES cannot be negative")
     if run_seconds < 0:
-        raise ValueError("RITHMIC_EMA_RUN_SECONDS cannot be negative")
-    if not bar_spec.endswith("-INTERNAL"):
-        raise ValueError("RITHMIC_EMA_BAR_SPEC must end with '-INTERNAL' for this example")
+        raise ValueError("RUN_SECONDS cannot be negative")
 
-    instrument_id, instrument_exchange = asyncio.run(
-        resolve_front_month_instrument_id(profile, product, exchange),
+    instrument, instrument_exchange = asyncio.run(
+        resolve_front_month_instrument(profile, product, exchange),
     )
+    instrument_id = instrument.id
     bar_type = BarType.from_str(f"{instrument_id}-{bar_spec}")
+    use_history = bar_type.is_externally_aggregated()
+    request_bars = use_history and warmup_minutes > 0
 
-    data_config = build_data_client_config(profile, instrument_id, instrument_exchange)
+    data_config = build_data_client_config(
+        profile,
+        instrument_id,
+        instrument_exchange,
+        enable_history=use_history,
+    )
     exec_config = build_exec_client_config(profile, instrument_id, instrument_exchange)
 
     config_node = TradingNodeConfig(
@@ -242,7 +311,7 @@ def main() -> None:
         timeout_shutdown=2.0,
     )
 
-    strategy = EMACross(
+    strategy = LiveRithmicEMACross(
         config=EMACrossConfig(
             instrument_id=instrument_id,
             external_order_claims=[instrument_id],
@@ -252,12 +321,15 @@ def main() -> None:
             slow_ema_period=slow_period,
             subscribe_quote_ticks=False,
             subscribe_trade_ticks=False,
-            request_bars=False,
+            request_bars=request_bars,
             order_id_tag="rithmic-ema",
         ),
+        warmup_minutes=warmup_minutes,
+        exchange=instrument_exchange,
     )
 
     node = TradingNode(config=config_node)
+    node.cache.add_instrument(instrument)
     node.trader.add_strategy(strategy)
     node.add_data_client_factory(RITHMIC, RithmicLiveDataClientFactory)
     node.add_exec_client_factory(RITHMIC, RithmicLiveExecClientFactory)
@@ -271,6 +343,10 @@ def main() -> None:
     print(f"Bar type: {bar_type}")
     print(f"Trade size: {trade_size}")
     print(f"Fast/slow EMA periods: {fast_period}/{slow_period}")
+    if request_bars:
+        print(f"Historical warmup: {warmup_minutes} minutes")
+    else:
+        print("Historical warmup: disabled")
     if run_seconds > 0:
         print(f"Auto-stop after: {run_seconds} seconds")
     else:
@@ -278,7 +354,12 @@ def main() -> None:
     print()
     print("WARNING: this example can submit live orders to the configured account.")
     print("Use a demo account first.")
-    print("EMAs warm up from live internal bars only; no historical warmup is requested.")
+    if request_bars:
+        print("EMAs warm up from native Rithmic historical bars before live execution begins.")
+    elif use_history:
+        print("Live native Rithmic bars enabled with no historical warmup.")
+    else:
+        print("EMAs warm up from live internal bars only; no historical warmup is requested.")
 
     stop_timer = schedule_stop(node, run_seconds)
 

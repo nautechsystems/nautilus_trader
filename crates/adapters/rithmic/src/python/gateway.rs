@@ -7,6 +7,8 @@ use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use std::sync::Arc;
+
+use nautilus_common::live::get_runtime;
 use tokio::sync::{RwLock, oneshot};
 use tokio::task::JoinHandle;
 
@@ -224,7 +226,7 @@ impl PyRithmicGateway {
         let task_slot = Arc::clone(&self.pnl_task);
 
         // Spawn async task
-        let handle = tokio::spawn(async move {
+        let handle = get_runtime().spawn(async move {
             let mut gw = inner.write().await;
             let mut rx = match gw.take_pnl_receiver() {
                 Some(rx) => rx,

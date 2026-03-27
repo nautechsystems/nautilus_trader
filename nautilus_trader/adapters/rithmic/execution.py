@@ -6,69 +6,63 @@ import asyncio
 import json
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
+from typing import Optional
 
-from nautilus_trader.execution.messages import (
-    BatchCancelOrders,
-    CancelAllOrders,
-    CancelOrder,
-    ModifyOrder,
-    SubmitOrder,
-    SubmitOrderList,
-)
-from nautilus_trader.execution.reports import (
-    FillReport,
-    OrderStatusReport,
-    PositionStatusReport,
-)
-from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.enums import (
-    AccountType,
-    ContingencyType,
-    LiquiditySide,
-    OmsType,
-    OrderSide,
-    OrderStatus,
-    OrderType,
-    PositionSide,
-    TimeInForce,
-    TriggerType,
-)
-from nautilus_trader.model.identifiers import (
-    AccountId,
-    ClientId,
-    ClientOrderId,
-    InstrumentId,
-    TradeId,
-    Venue,
-    VenueOrderId,
-)
-from nautilus_trader.model.objects import Currency, Money, Price, Quantity
-from nautilus_trader.model.objects import AccountBalance as NautilusAccountBalance
-from nautilus_trader.common.providers import InstrumentProvider
-
-from nautilus_trader.adapters.rithmic.bindings import (
-    AccountEvent,
-    OrderSide as RithmicOrderSide,
-    OrderType as RithmicOrderType,
-    PositionEvent,
-    RithmicExecutionClient,
-    RithmicGateway,
-    TimeInForce as RithmicTimeInForce,
-)
+from nautilus_trader.adapters.rithmic.bindings import AccountEvent
+from nautilus_trader.adapters.rithmic.bindings import OrderSide as RithmicOrderSide
+from nautilus_trader.adapters.rithmic.bindings import OrderType as RithmicOrderType
+from nautilus_trader.adapters.rithmic.bindings import PositionEvent
+from nautilus_trader.adapters.rithmic.bindings import RithmicExecutionClient
+from nautilus_trader.adapters.rithmic.bindings import RithmicGateway
+from nautilus_trader.adapters.rithmic.bindings import TimeInForce as RithmicTimeInForce
 from nautilus_trader.adapters.rithmic.config import RithmicExecClientConfig
 from nautilus_trader.adapters.rithmic.config import to_binding_environment
+from nautilus_trader.adapters.rithmic.providers import normalize_rithmic_symbol
+from nautilus_trader.adapters.rithmic.providers import resolve_exchange_hint
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance as NautilusAccountBalance
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+
 
 if TYPE_CHECKING:
     from nautilus_trader.cache import Cache
     from nautilus_trader.common.component import MessageBus
-    from nautilus_trader.execution.messages import (
-        GenerateFillReports,
-        GenerateOrderStatusReport,
-        GenerateOrderStatusReports,
-        GeneratePositionStatusReports,
-    )
+    from nautilus_trader.execution.messages import GenerateFillReports
+    from nautilus_trader.execution.messages import GenerateOrderStatusReport
+    from nautilus_trader.execution.messages import GenerateOrderStatusReports
+    from nautilus_trader.execution.messages import GeneratePositionStatusReports
     from nautilus_trader.execution.reports import ExecutionMassStatus
 
 
@@ -346,6 +340,102 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             return int(value.timestamp() * 1_000_000_000)
         return None
 
+    def _build_order_status_report(
+        self,
+        state: dict,
+        *,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
+        instrument_id = state.get("instrument_id") or instrument_id
+        venue_order_id = state.get("venue_order_id") or venue_order_id
+        if instrument_id is None or venue_order_id is None:
+            return None
+
+        quantity = self._to_decimal(state.get("quantity", 0))
+        if quantity is None or quantity <= 0:
+            return None
+        filled_qty = self._to_decimal(state.get("filled_qty", 0)) or Decimal("0")
+
+        return OrderStatusReport(
+            account_id=self._require_account_id(),
+            instrument_id=instrument_id,
+            venue_order_id=venue_order_id,
+            order_side=state.get("order_side", OrderSide.NO_ORDER_SIDE),
+            order_type=state.get("order_type", OrderType.MARKET),
+            time_in_force=state.get("time_in_force", TimeInForce.DAY),
+            order_status=self._order_status(state.get("status")),
+            quantity=self._to_quantity(quantity),
+            filled_qty=self._to_quantity(filled_qty),
+            report_id=UUID4(),
+            ts_accepted=state.get("ts_accepted", 0),
+            ts_last=state.get("ts_last", state.get("ts_init", 0)),
+            ts_init=self._clock.timestamp_ns(),
+            client_order_id=state.get("client_order_id"),
+            order_list_id=state.get("order_list_id"),
+            linked_order_ids=state.get("linked_order_ids"),
+            parent_order_id=state.get("parent_order_id"),
+            contingency_type=state.get("contingency_type", ContingencyType.NO_CONTINGENCY),
+            expire_time=state.get("expire_time"),
+            price=self._to_price(state.get("price")),
+            trigger_price=self._to_price(state.get("trigger_price")),
+            trigger_type=state.get("trigger_type", TriggerType.NO_TRIGGER),
+            avg_px=state.get("avg_px"),
+            display_qty=state.get("display_qty"),
+            post_only=state.get("post_only", False),
+            reduce_only=state.get("reduce_only", False),
+            cancel_reason=state.get("cancel_reason"),
+        )
+
+    def _build_fill_report(self, fill: dict) -> FillReport | None:
+        instrument_id = fill.get("instrument_id")
+        venue_order_id = fill.get("venue_order_id")
+        client_order_id = fill.get("client_order_id")
+        if instrument_id is None or venue_order_id is None or client_order_id is None:
+            return None
+
+        quantity = self._to_decimal(fill.get("qty"))
+        if quantity is None or quantity <= 0:
+            return None
+
+        currency = self._to_currency(fill.get("currency", "USD"))
+        side = fill.get("side", OrderSide.BUY)
+        trade_id = fill.get("trade_id")
+
+        return FillReport(
+            account_id=self._require_account_id(),
+            instrument_id=instrument_id,
+            venue_order_id=VenueOrderId(str(venue_order_id)),
+            trade_id=TradeId(str(trade_id or UUID4())),
+            order_side=side,
+            last_qty=self._to_quantity(quantity),
+            last_px=self._to_price(fill["price"]),
+            commission=Money(float(fill.get("commission", 0.0)), currency),
+            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+            report_id=UUID4(),
+            ts_event=fill.get("ts_event", 0),
+            ts_init=fill.get("ts_init", self._clock.timestamp_ns()),
+            client_order_id=ClientOrderId(str(client_order_id)),
+            venue_position_id=None,
+        )
+
+    def _build_position_status_report(self, pos: dict) -> PositionStatusReport | None:
+        instrument_id = pos.get("instrument_id")
+        if instrument_id is None:
+            return None
+
+        quantity = self._to_decimal(pos.get("quantity", 0)) or Decimal("0")
+        return PositionStatusReport(
+            account_id=AccountId(pos.get("account_id", "RITHMIC")),
+            instrument_id=instrument_id,
+            position_side=self._position_side(quantity),
+            quantity=self._to_quantity(abs(quantity)),
+            report_id=UUID4(),
+            ts_last=pos.get("ts_event", 0),
+            ts_init=self._clock.timestamp_ns(),
+            avg_px_open=self._to_decimal(pos.get("avg_price")),
+        )
+
     def _find_order_state(
         self,
         client_order_id: ClientOrderId | None = None,
@@ -364,6 +454,18 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             if isinstance(existing, VenueOrderId) and existing == venue_order_id:
                 return state
         return None
+
+    def _has_open_order_for_instrument(self, instrument_id: InstrumentId) -> bool:
+        for state in self._orders.values():
+            state_instrument_id = state.get("instrument_id")
+            if state_instrument_id != instrument_id:
+                continue
+
+            status = self._order_status(state.get("status"))
+            if self._is_open_order_status(status):
+                return True
+
+        return False
 
     def _tracked_venue_order_id(self, client_order_id: str) -> VenueOrderId | None:
         if not self._client or not hasattr(self._client, "get_order"):
@@ -397,7 +499,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             "quantity": quantity,
             "filled_qty": Decimal("0"),
             "leaves_qty": quantity,
-            "price": str(getattr(order, "price", None)) if getattr(order, "price", None) is not None else None,
+            "price": str(getattr(order, "price", None))
+            if getattr(order, "price", None) is not None
+            else None,
             "trigger_price": (
                 str(getattr(order, "trigger_price", None))
                 if getattr(order, "trigger_price", None) is not None
@@ -413,7 +517,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             "reduce_only": bool(getattr(order, "reduce_only", False)),
             "status": status,
             "ts_accepted": 0,
-            "ts_last": 0 if status in {OrderStatus.INITIALIZED, OrderStatus.SUBMITTED} else getattr(order, "ts_init", now_ns),
+            "ts_last": 0
+            if status in {OrderStatus.INITIALIZED, OrderStatus.SUBMITTED}
+            else getattr(order, "ts_init", now_ns),
             "ts_init": getattr(order, "ts_init", now_ns),
             "venue_order_id": venue_order_id or getattr(order, "venue_order_id", None),
         }
@@ -437,8 +543,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
     @staticmethod
     def _safe_state_path_token(value: str) -> str:
         token = "".join(
-            char if char.isalnum() or char in {"-", "_"} else "_"
-            for char in str(value)
+            char if char.isalnum() or char in {"-", "_"} else "_" for char in str(value)
         )
         return token or "default"
 
@@ -566,7 +671,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                         "target_client_order_id": registry.get("target_client_order_id"),
                         "parent_venue_order_id": registry.get("parent_venue_order_id"),
                         "order_seeds": {
-                            client_order_id: self._native_bracket_order_seeds.get(client_order_id, {})
+                            client_order_id: self._native_bracket_order_seeds.get(
+                                client_order_id, {}
+                            )
                             for client_order_id in (
                                 parent_client_order_id,
                                 registry.get("stop_client_order_id"),
@@ -581,9 +688,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
             temp_path.replace(path)
         except (OSError, TypeError, ValueError) as exc:
-            self._log.warning(
-                f"Failed to persist native bracket state to {path}: {exc}"
-            )
+            self._log.warning(f"Failed to persist native bracket state to {path}: {exc}")
 
     def _load_native_bracket_state(self) -> None:
         path = self._native_bracket_state_path()
@@ -625,7 +730,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
 
             parent_venue_order_id = registry.get("parent_venue_order_id")
             if parent_venue_order_id:
-                self._native_brackets_by_parent_venue_id[parent_venue_order_id] = parent_client_order_id
+                self._native_brackets_by_parent_venue_id[parent_venue_order_id] = (
+                    parent_client_order_id
+                )
 
             order_seeds = entry.get("order_seeds", {})
             if isinstance(order_seeds, dict):
@@ -751,9 +858,15 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             "target_client_order_id": target_order.client_order_id.value,
             "parent_venue_order_id": parent_venue_order_id,
         }
-        self._native_bracket_order_seeds[parent_client_order_id] = self._serialize_native_bracket_order_seed(parent_order)
-        self._native_bracket_order_seeds[stop_order.client_order_id.value] = self._serialize_native_bracket_order_seed(stop_order)
-        self._native_bracket_order_seeds[target_order.client_order_id.value] = self._serialize_native_bracket_order_seed(target_order)
+        self._native_bracket_order_seeds[parent_client_order_id] = (
+            self._serialize_native_bracket_order_seed(parent_order)
+        )
+        self._native_bracket_order_seeds[stop_order.client_order_id.value] = (
+            self._serialize_native_bracket_order_seed(stop_order)
+        )
+        self._native_bracket_order_seeds[target_order.client_order_id.value] = (
+            self._serialize_native_bracket_order_seed(target_order)
+        )
         if parent_venue_order_id:
             self._native_brackets_by_parent_venue_id[parent_venue_order_id] = parent_client_order_id
         self._save_native_bracket_state()
@@ -822,13 +935,52 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             return None
         return provider.find(instrument_id)
 
+    def _resolve_rithmic_symbol(self, instrument_id: InstrumentId) -> str:
+        instrument = self._find_instrument(instrument_id)
+        if instrument is not None:
+            raw_symbol = getattr(getattr(instrument, "raw_symbol", None), "value", None)
+            if raw_symbol:
+                return raw_symbol
+
+        return normalize_rithmic_symbol(instrument_id.symbol.value)
+
+    def _resolve_rithmic_exchange(
+        self,
+        instrument_id: InstrumentId,
+        state: dict | None = None,
+    ) -> str:
+        if state is not None:
+            exchange = state.get("exchange")
+            if exchange:
+                return exchange
+
+        instrument = self._find_instrument(instrument_id)
+        if instrument is not None:
+            exchange = getattr(instrument, "exchange", None)
+            if exchange:
+                return exchange
+
+            info = getattr(instrument, "info", None)
+            if isinstance(info, dict):
+                exchange = info.get("exchange")
+                if exchange:
+                    return exchange
+
+        exchange = resolve_exchange_hint(instrument_id.symbol.value)
+        if exchange:
+            return exchange
+
+        raise ValueError(f"Unable to resolve Rithmic exchange for {instrument_id}")
+
     @classmethod
     def _tick_distance(cls, reference_price, other_price, price_increment, label: str) -> int:
         reference = cls._to_decimal(reference_price)
         other = cls._to_decimal(other_price)
         increment = cls._to_decimal(price_increment)
         if reference is None or other is None or increment is None or increment <= 0:
-            raise ValueError(f"Cannot compute {label} ticks without reference prices and price_increment")
+            raise ValueError(
+                f"Cannot compute {label} ticks without reference prices and price_increment"
+            )
 
         delta = other - reference
         if delta <= 0:
@@ -870,18 +1022,31 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         return mapping.get(value)
 
     @staticmethod
-    def _event_instrument_id(symbol: str | None) -> InstrumentId | None:
+    def _event_instrument_id(
+        symbol: str | None, exchange: str | None = None
+    ) -> InstrumentId | None:
         if not symbol:
             return None
-        return InstrumentId.from_str(f"{symbol}.{RITHMIC_VENUE.value}")
+
+        normalized_symbol = normalize_rithmic_symbol(symbol)
+        resolved_exchange = exchange or resolve_exchange_hint(symbol)
+        if resolved_exchange:
+            return InstrumentId.from_str(
+                f"{normalized_symbol}.{resolved_exchange}.{RITHMIC_VENUE.value}",
+            )
+
+        return InstrumentId.from_str(f"{normalized_symbol}.{RITHMIC_VENUE.value}")
 
     @classmethod
     def _apply_execution_context(cls, state: dict, payload) -> None:
-        instrument_id = cls._event_instrument_id(getattr(payload, "symbol", None))
+        exchange = getattr(payload, "exchange", None)
+        instrument_id = cls._event_instrument_id(
+            getattr(payload, "symbol", None),
+            exchange,
+        )
         if instrument_id is not None:
             state["instrument_id"] = instrument_id
 
-        exchange = getattr(payload, "exchange", None)
         if exchange:
             state["exchange"] = exchange
 
@@ -941,7 +1106,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         )
 
     def _latest_execution_ts_ns(self) -> int:
-        latest_order = max((int(state.get("ts_last", 0) or 0) for state in self._orders.values()), default=0)
+        latest_order = max(
+            (int(state.get("ts_last", 0) or 0) for state in self._orders.values()), default=0
+        )
         latest_fill = max((int(fill.get("ts_event", 0) or 0) for fill in self._fills), default=0)
         return max(latest_order, latest_fill)
 
@@ -951,7 +1118,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         if latest_ns > 0:
             start_sec = max(0, int(latest_ns // 1_000_000_000) - 1)
         else:
-            start_sec = max(0, int(now_ns // 1_000_000_000) - self._config.execution_replay_lookback_secs)
+            start_sec = max(
+                0, int(now_ns // 1_000_000_000) - self._config.execution_replay_lookback_secs
+            )
         finish_sec = max(start_sec, int(now_ns // 1_000_000_000) + 1)
         return start_sec, finish_sec
 
@@ -981,14 +1150,18 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         if not self._client:
             raise RuntimeError("Execution client not connected")
 
-        if not hasattr(self._client, "show_brackets") or not hasattr(self._client, "show_bracket_stops"):
+        if not hasattr(self._client, "show_brackets") or not hasattr(
+            self._client, "show_bracket_stops"
+        ):
             return []
 
         try:
             bracket_rows = await self._client.show_brackets()
             stop_rows = await self._client.show_bracket_stops()
         except Exception as exc:
-            self._log.debug(f"Failed to query venue-native bracket metadata during reconcile: {exc}")
+            self._log.debug(
+                f"Failed to query venue-native bracket metadata during reconcile: {exc}"
+            )
             return []
 
         active_parent_venue_ids = set()
@@ -1021,13 +1194,15 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             raise RuntimeError("Execution client not connected")
 
         instrument_id = order.instrument_id
+        symbol = self._resolve_rithmic_symbol(instrument_id)
+        exchange = self._resolve_rithmic_exchange(instrument_id)
         price = getattr(order, "price", None)
         trigger_price = getattr(order, "trigger_price", None)
         trailing_offset = getattr(order, "trailing_offset", None)
 
         await self._client.submit_order(
-            symbol=instrument_id.symbol,
-            exchange=instrument_id.venue.value,
+            symbol=symbol,
+            exchange=exchange,
             side=self._to_rithmic_side(order.side),
             order_type=self._to_rithmic_order_type(order.order_type),
             quantity=int(float(order.quantity)),
@@ -1035,7 +1210,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             price=float(price) if price is not None else None,
             stop_price=float(trigger_price) if trigger_price is not None else None,
             time_in_force=self._to_rithmic_tif(order.time_in_force),
-            trailing_stop_ticks=int(float(trailing_offset)) if trailing_offset is not None else None,
+            trailing_stop_ticks=int(float(trailing_offset))
+            if trailing_offset is not None
+            else None,
         )
         venue_order_id = self._tracked_venue_order_id(order.client_order_id.value)
         self._seed_order_state(order, status=OrderStatus.SUBMITTED, venue_order_id=venue_order_id)
@@ -1049,12 +1226,18 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             raise ValueError("Native Rithmic bracket submission requires exactly 3 orders")
 
         parents = [order for order in orders if getattr(order, "parent_order_id", None) is None]
-        children = [order for order in orders if getattr(order, "parent_order_id", None) is not None]
+        children = [
+            order for order in orders if getattr(order, "parent_order_id", None) is not None
+        ]
         if len(parents) != 1 or len(children) != 2:
-            raise ValueError("Bracket order list must contain one parent entry and two child exit orders")
+            raise ValueError(
+                "Bracket order list must contain one parent entry and two child exit orders"
+            )
 
         parent = parents[0]
-        if any(getattr(order, "parent_order_id", None) != parent.client_order_id for order in children):
+        if any(
+            getattr(order, "parent_order_id", None) != parent.client_order_id for order in children
+        ):
             raise ValueError("Bracket child orders must reference the parent client_order_id")
         child_map = {order.order_type: order for order in children}
         stop_order = child_map.get(OrderType.STOP_MARKET)
@@ -1077,11 +1260,20 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         parent_quantity = self._to_decimal(parent.quantity)
         stop_quantity = self._to_decimal(stop_order.quantity)
         target_quantity = self._to_decimal(target_order.quantity)
-        if parent_quantity is None or stop_quantity != parent_quantity or target_quantity != parent_quantity:
+        if (
+            parent_quantity is None
+            or stop_quantity != parent_quantity
+            or target_quantity != parent_quantity
+        ):
             raise ValueError("Bracket child quantities must match the parent entry quantity")
 
-        if stop_order.time_in_force != parent.time_in_force or target_order.time_in_force != parent.time_in_force:
-            raise ValueError("Native Rithmic brackets require entry and child orders to share the same time_in_force")
+        if (
+            stop_order.time_in_force != parent.time_in_force
+            or target_order.time_in_force != parent.time_in_force
+        ):
+            raise ValueError(
+                "Native Rithmic brackets require entry and child orders to share the same time_in_force"
+            )
 
         if getattr(stop_order, "post_only", False) or getattr(target_order, "post_only", False):
             raise ValueError("Native Rithmic brackets do not support post_only child orders")
@@ -1096,18 +1288,30 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         target_price = getattr(target_order, "price", None)
         stop_trigger_price = getattr(stop_order, "trigger_price", None)
         if entry_price is None or target_price is None or stop_trigger_price is None:
-            raise ValueError("Native Rithmic brackets require explicit entry, target, and stop prices")
+            raise ValueError(
+                "Native Rithmic brackets require explicit entry, target, and stop prices"
+            )
 
         if parent_side == OrderSide.BUY:
-            profit_ticks = self._tick_distance(entry_price, target_price, instrument.price_increment, "Take-profit")
-            stop_ticks = self._tick_distance(stop_trigger_price, entry_price, instrument.price_increment, "Stop-loss")
+            profit_ticks = self._tick_distance(
+                entry_price, target_price, instrument.price_increment, "Take-profit"
+            )
+            stop_ticks = self._tick_distance(
+                stop_trigger_price, entry_price, instrument.price_increment, "Stop-loss"
+            )
         else:
-            profit_ticks = self._tick_distance(target_price, entry_price, instrument.price_increment, "Take-profit")
-            stop_ticks = self._tick_distance(entry_price, stop_trigger_price, instrument.price_increment, "Stop-loss")
+            profit_ticks = self._tick_distance(
+                target_price, entry_price, instrument.price_increment, "Take-profit"
+            )
+            stop_ticks = self._tick_distance(
+                entry_price, stop_trigger_price, instrument.price_increment, "Stop-loss"
+            )
 
+        symbol = self._resolve_rithmic_symbol(parent.instrument_id)
+        exchange = self._resolve_rithmic_exchange(parent.instrument_id)
         await self._client.submit_bracket_order(
-            symbol=parent.instrument_id.symbol,
-            exchange=parent.instrument_id.venue.value,
+            symbol=symbol,
+            exchange=exchange,
             side=self._to_rithmic_side(parent.side),
             order_type=self._to_rithmic_order_type(parent.order_type),
             quantity=int(float(parent.quantity)),
@@ -1119,7 +1323,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         )
 
         parent_venue_order_id = self._tracked_venue_order_id(parent.client_order_id.value)
-        self._seed_order_state(parent, status=OrderStatus.SUBMITTED, venue_order_id=parent_venue_order_id)
+        self._seed_order_state(
+            parent, status=OrderStatus.SUBMITTED, venue_order_id=parent_venue_order_id
+        )
         self._seed_order_state(stop_order, status=OrderStatus.INITIALIZED)
         self._seed_order_state(target_order, status=OrderStatus.INITIALIZED)
         self._register_native_bracket(
@@ -1138,8 +1344,12 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             raise ValueError("Native Rithmic OCO submission requires exactly 2 orders")
 
         first_order, second_order = orders
-        linked_first = {linked.value for linked in getattr(first_order, "linked_order_ids", None) or []}
-        linked_second = {linked.value for linked in getattr(second_order, "linked_order_ids", None) or []}
+        linked_first = {
+            linked.value for linked in getattr(first_order, "linked_order_ids", None) or []
+        }
+        linked_second = {
+            linked.value for linked in getattr(second_order, "linked_order_ids", None) or []
+        }
         if (
             getattr(first_order, "contingency_type", None) != ContingencyType.OCO
             or getattr(second_order, "contingency_type", None) != ContingencyType.OCO
@@ -1150,9 +1360,13 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         ):
             raise ValueError("Order list is not a supported native OCO pair")
 
+        leg1_symbol = self._resolve_rithmic_symbol(first_order.instrument_id)
+        leg1_exchange = self._resolve_rithmic_exchange(first_order.instrument_id)
+        leg2_symbol = self._resolve_rithmic_symbol(second_order.instrument_id)
+        leg2_exchange = self._resolve_rithmic_exchange(second_order.instrument_id)
         await self._client.submit_oco_order(
-            leg1_symbol=first_order.instrument_id.symbol,
-            leg1_exchange=first_order.instrument_id.venue.value,
+            leg1_symbol=leg1_symbol,
+            leg1_exchange=leg1_exchange,
             leg1_side=self._to_rithmic_side(first_order.side),
             leg1_order_type=self._to_rithmic_order_type(first_order.order_type),
             leg1_quantity=int(float(first_order.quantity)),
@@ -1168,8 +1382,8 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 else None
             ),
             leg1_time_in_force=self._to_rithmic_tif(first_order.time_in_force),
-            leg2_symbol=second_order.instrument_id.symbol,
-            leg2_exchange=second_order.instrument_id.venue.value,
+            leg2_symbol=leg2_symbol,
+            leg2_exchange=leg2_exchange,
             leg2_side=self._to_rithmic_side(second_order.side),
             leg2_order_type=self._to_rithmic_order_type(second_order.order_type),
             leg2_quantity=int(float(second_order.quantity)),
@@ -1289,10 +1503,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
 
             if event.is_rejected():
                 rejected = event.as_rejected()
+                is_snapshot = bool(getattr(rejected, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(rejected)
-                self._log.warning(
-                    f"Order rejected: {client_order_id} reason={rejected.reason}"
-                )
+                self._log.warning(f"Order rejected: {client_order_id} reason={rejected.reason}")
                 state = self._orders.setdefault(client_order_id, {})
                 self._apply_native_bracket_order_seed(client_order_id, state)
                 state.setdefault("client_order_id", ClientOrderId(client_order_id))
@@ -1303,7 +1516,13 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 state["status"] = OrderStatus.REJECTED
                 state["cancel_reason"] = rejected.reason
                 state["ts_last"] = rejected.ts_event
-                if client_order_id in self._native_brackets and self._native_bracket_role(getattr(rejected, "bracket_type", None)) is None:
+                report = self._build_order_status_report(state)
+                if report is not None and not is_snapshot:
+                    self._send_order_status_report(report)
+                if (
+                    client_order_id in self._native_brackets
+                    and self._native_bracket_role(getattr(rejected, "bracket_type", None)) is None
+                ):
                     self._propagate_native_bracket_parent_terminal(
                         client_order_id,
                         status=OrderStatus.REJECTED,
@@ -1315,6 +1534,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
 
             if event.is_submitted():
                 submitted = event.as_submitted()
+                is_snapshot = bool(getattr(submitted, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(submitted)
                 self._log.debug(
                     f"Order submitted: {client_order_id} venue_id={submitted.venue_order_id}"
@@ -1327,12 +1547,23 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                     return
                 self._apply_execution_context(state, submitted)
                 state["status"] = OrderStatus.SUBMITTED
+                state["filled_qty"] = Decimal("0")
+                quantity = self._to_decimal(state.get("quantity"))
+                if quantity is not None:
+                    state["leaves_qty"] = quantity
+                state.pop("avg_px", None)
                 state["ts_last"] = submitted.ts_event
-                self._update_native_bracket_parent_venue_id(client_order_id, submitted.venue_order_id)
+                report = self._build_order_status_report(state)
+                if report is not None and not is_snapshot:
+                    self._send_order_status_report(report)
+                self._update_native_bracket_parent_venue_id(
+                    client_order_id, submitted.venue_order_id
+                )
                 return
 
             if event.is_accepted():
                 accepted = event.as_accepted()
+                is_snapshot = bool(getattr(accepted, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(accepted)
                 self._log.debug(
                     f"Order accepted: {client_order_id} venue_id={accepted.venue_order_id}"
@@ -1345,14 +1576,25 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                     return
                 self._apply_execution_context(state, accepted)
                 state["status"] = OrderStatus.ACCEPTED
+                state["filled_qty"] = Decimal("0")
+                quantity = self._to_decimal(state.get("quantity"))
+                if quantity is not None:
+                    state["leaves_qty"] = quantity
+                state.pop("avg_px", None)
                 state["ts_accepted"] = accepted.ts_event
                 state["ts_last"] = accepted.ts_event
+                report = self._build_order_status_report(state)
+                if report is not None and not is_snapshot:
+                    self._send_order_status_report(report)
                 if self._native_bracket_role(getattr(accepted, "bracket_type", None)) is None:
-                    self._update_native_bracket_parent_venue_id(client_order_id, accepted.venue_order_id)
+                    self._update_native_bracket_parent_venue_id(
+                        client_order_id, accepted.venue_order_id
+                    )
                 return
 
             if event.is_filled():
                 filled = event.as_filled()
+                is_snapshot = bool(getattr(filled, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(filled)
                 self._log.debug(
                     f"Order filled: {client_order_id} qty={filled.fill_qty} price={filled.fill_price}"
@@ -1372,12 +1614,16 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 state.setdefault("ts_init", filled.ts_event)
                 stale = self._is_stale_order_event(state, filled.ts_event)
                 self._apply_execution_context(state, filled)
-                filled_qty = (state.get("filled_qty") or Decimal("0")) + Decimal(str(filled.fill_qty))
+                filled_qty = (state.get("filled_qty") or Decimal("0")) + Decimal(
+                    str(filled.fill_qty)
+                )
                 leaves_qty = Decimal(str(filled.leaves_qty))
                 if not stale:
                     state.update(
                         {
-                            "status": OrderStatus.PARTIALLY_FILLED if filled.leaves_qty > 0 else OrderStatus.FILLED,
+                            "status": OrderStatus.PARTIALLY_FILLED
+                            if filled.leaves_qty > 0
+                            else OrderStatus.FILLED,
                             "filled_qty": filled_qty,
                             "leaves_qty": leaves_qty,
                             "avg_px": Decimal(str(filled.fill_price)),
@@ -1404,26 +1650,38 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                         or self._balances.get(self._config.account_id, {}).get("currency", "USD"),
                     }
                 )
+                fill_report = self._build_fill_report(self._fills[-1])
+                if fill_report is not None and not is_snapshot:
+                    self._send_fill_report(fill_report)
 
                 # Derive positions locally only if PnL events are not available.
                 if instrument_id and side and not self._pnl_live and not stale:
                     account_id = self._require_account_id()
                     key = f"{account_id.value}:{instrument_id.value}"
-                    pos = self._positions.get(key, {
-                        "account_id": account_id.value,
-                        "instrument_id": instrument_id,
-                        "quantity": Decimal("0"),
-                        "avg_price": Decimal("0"),
-                        "currency": "USD",
-                    })
+                    pos = self._positions.get(
+                        key,
+                        {
+                            "account_id": account_id.value,
+                            "instrument_id": instrument_id,
+                            "quantity": Decimal("0"),
+                            "avg_price": Decimal("0"),
+                            "currency": "USD",
+                        },
+                    )
 
-                    signed_qty = Decimal(str(filled.fill_qty)) if side == OrderSide.BUY else -Decimal(str(filled.fill_qty))
+                    signed_qty = (
+                        Decimal(str(filled.fill_qty))
+                        if side == OrderSide.BUY
+                        else -Decimal(str(filled.fill_qty))
+                    )
                     new_qty = pos["quantity"] + signed_qty
 
                     # Weighted average price if position remains open and same direction
                     if new_qty != 0:
                         prev_notional = pos["avg_price"] * pos["quantity"]
-                        new_notional = prev_notional + (Decimal(str(filled.fill_price)) * signed_qty)
+                        new_notional = prev_notional + (
+                            Decimal(str(filled.fill_price)) * signed_qty
+                        )
                         pos["avg_price"] = new_notional / new_qty
                     else:
                         pos["avg_price"] = Decimal("0")
@@ -1436,6 +1694,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
 
             if event.is_cancelled():
                 cancelled = event.as_cancelled()
+                is_snapshot = bool(getattr(cancelled, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(cancelled)
                 self._log.debug(
                     f"Order cancelled: {client_order_id} venue_id={cancelled.venue_order_id}"
@@ -1455,7 +1714,13 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                         "ts_last": cancelled.ts_event,
                     }
                 )
-                if client_order_id in self._native_brackets and self._native_bracket_role(getattr(cancelled, "bracket_type", None)) is None:
+                report = self._build_order_status_report(state)
+                if report is not None and not is_snapshot:
+                    self._send_order_status_report(report)
+                if (
+                    client_order_id in self._native_brackets
+                    and self._native_bracket_role(getattr(cancelled, "bracket_type", None)) is None
+                ):
                     self._propagate_native_bracket_parent_terminal(
                         client_order_id,
                         status=OrderStatus.CANCELED,
@@ -1466,6 +1731,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
 
             if event.is_modified():
                 modified = event.as_modified()
+                is_snapshot = bool(getattr(modified, "is_snapshot", False))
                 client_order_id = self._resolve_event_client_order_id(modified)
                 self._log.debug(
                     f"Order modified: {client_order_id} price={modified.new_price} qty={modified.new_qty}"
@@ -1483,6 +1749,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                     state["leaves_qty"] = Decimal(str(modified.new_qty))
                 state["status"] = OrderStatus.PENDING_UPDATE
                 state["ts_last"] = modified.ts_event
+                report = self._build_order_status_report(state)
+                if report is not None and not is_snapshot:
+                    self._send_order_status_report(report)
         except _HANDLER_EXCEPTIONS as exc:
             self._log.error(f"Error handling execution event: {exc}")
 
@@ -1500,8 +1769,10 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                     "total": self._to_decimal(getattr(event, "total", 0.0)) or Decimal("0"),
                     "available": self._to_decimal(getattr(event, "available", 0.0)) or Decimal("0"),
                     "locked": self._to_decimal(getattr(event, "locked", 0.0)) or Decimal("0"),
-                    "unrealized_pnl": self._to_decimal(getattr(event, "unrealized_pnl", 0.0)) or Decimal("0"),
-                    "realized_pnl": self._to_decimal(getattr(event, "realized_pnl", 0.0)) or Decimal("0"),
+                    "unrealized_pnl": self._to_decimal(getattr(event, "unrealized_pnl", 0.0))
+                    or Decimal("0"),
+                    "realized_pnl": self._to_decimal(getattr(event, "realized_pnl", 0.0))
+                    or Decimal("0"),
                 }
                 if account_id == self._config.account_id:
                     ts_event = getattr(event, "ts_event", self._clock.timestamp_ns())
@@ -1530,8 +1801,10 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 if not symbol:
                     return
 
-                instrument_id = InstrumentId.from_str(f"{symbol}.{RITHMIC_VENUE.value}")
                 exchange = getattr(event, "exchange", None)
+                instrument_id = self._event_instrument_id(symbol, exchange)
+                if instrument_id is None:
+                    return
                 account = self._require_account_id()
                 key = f"{account.value}:{instrument_id.value}"
                 currency = self._balances.get(account_id, {}).get("currency", "USD")
@@ -1547,8 +1820,10 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                     "exchange": exchange,
                     "quantity": quantity,
                     "avg_price": self._to_decimal(getattr(event, "avg_price", 0.0)) or Decimal("0"),
-                    "unrealized_pnl": self._to_decimal(getattr(event, "unrealized_pnl", 0.0)) or Decimal("0"),
-                    "realized_pnl": self._to_decimal(getattr(event, "realized_pnl", 0.0)) or Decimal("0"),
+                    "unrealized_pnl": self._to_decimal(getattr(event, "unrealized_pnl", 0.0))
+                    or Decimal("0"),
+                    "realized_pnl": self._to_decimal(getattr(event, "realized_pnl", 0.0))
+                    or Decimal("0"),
                     "currency": currency,
                     "ts_event": getattr(event, "ts_event", 0),
                 }
@@ -1614,10 +1889,14 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         if venue_order_id is None:
             raise RuntimeError("Cannot modify order without venue_order_id")
 
+        instrument_id = state.get("instrument_id") if state else None
+        if instrument_id is None:
+            instrument_id = command.instrument_id
+
         await self._client.modify_order(
             venue_order_id=venue_order_id.value,
-            symbol=command.instrument_id.symbol,
-            exchange=command.instrument_id.venue.value,
+            symbol=self._resolve_rithmic_symbol(instrument_id),
+            exchange=self._resolve_rithmic_exchange(instrument_id, state),
             new_qty=int(float(command.quantity)) if command.quantity is not None else None,
             new_price=float(command.price) if command.price is not None else None,
             order_type=None,  # keep existing unless price type changes
@@ -1707,35 +1986,10 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             return None
         if venue_order_id is None:
             return None
-
-        return OrderStatusReport(
-            account_id=self._require_account_id(),
+        return self._build_order_status_report(
+            state,
             instrument_id=instrument_id,
             venue_order_id=venue_order_id,
-            order_side=state.get("order_side", OrderSide.NO_ORDER_SIDE),
-            order_type=state.get("order_type", OrderType.MARKET),
-            time_in_force=state.get("time_in_force", TimeInForce.DAY),
-            order_status=self._order_status(state.get("status")),
-            quantity=self._to_quantity(state.get("quantity", 0)),
-            filled_qty=self._to_quantity(state.get("filled_qty", 0)),
-            report_id=UUID4(),
-            ts_accepted=state.get("ts_accepted", 0),
-            ts_last=state.get("ts_last", state.get("ts_init", 0)),
-            ts_init=self._clock.timestamp_ns(),
-            client_order_id=state.get("client_order_id", command.client_order_id),
-            order_list_id=state.get("order_list_id"),
-            linked_order_ids=state.get("linked_order_ids"),
-            parent_order_id=state.get("parent_order_id"),
-            contingency_type=state.get("contingency_type", ContingencyType.NO_CONTINGENCY),
-            expire_time=state.get("expire_time"),
-            price=self._to_price(state.get("price")),
-            trigger_price=self._to_price(state.get("trigger_price")),
-            trigger_type=state.get("trigger_type", TriggerType.NO_TRIGGER),
-            avg_px=state.get("avg_px"),
-            display_qty=state.get("display_qty"),
-            post_only=state.get("post_only", False),
-            reduce_only=state.get("reduce_only", False),
-            cancel_reason=state.get("cancel_reason"),
         )
 
     async def generate_order_status_reports(
@@ -1774,37 +2028,13 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             if end_ns is not None and ts_last > end_ns:
                 continue
 
-            reports.append(
-                OrderStatusReport(
-                    account_id=self._require_account_id(),
-                    instrument_id=instrument_id,
-                    venue_order_id=venue_order_id,
-                    order_side=state.get("order_side", OrderSide.NO_ORDER_SIDE),
-                    order_type=state.get("order_type", OrderType.MARKET),
-                    time_in_force=state.get("time_in_force", TimeInForce.DAY),
-                    order_status=status,
-                    quantity=self._to_quantity(state.get("quantity", 0)),
-                    filled_qty=self._to_quantity(state.get("filled_qty", 0)),
-                    report_id=UUID4(),
-                    ts_accepted=state.get("ts_accepted", 0),
-                    ts_last=ts_last,
-                    ts_init=self._clock.timestamp_ns(),
-                    client_order_id=state.get("client_order_id"),
-                    order_list_id=state.get("order_list_id"),
-                    linked_order_ids=state.get("linked_order_ids"),
-                    parent_order_id=state.get("parent_order_id"),
-                    contingency_type=state.get("contingency_type", ContingencyType.NO_CONTINGENCY),
-                    expire_time=state.get("expire_time"),
-                    price=self._to_price(state.get("price")),
-                    trigger_price=self._to_price(state.get("trigger_price")),
-                    trigger_type=state.get("trigger_type", TriggerType.NO_TRIGGER),
-                    avg_px=state.get("avg_px"),
-                    display_qty=state.get("display_qty"),
-                    post_only=state.get("post_only", False),
-                    reduce_only=state.get("reduce_only", False),
-                    cancel_reason=state.get("cancel_reason"),
-                )
+            report = self._build_order_status_report(
+                state,
+                instrument_id=instrument_id,
+                venue_order_id=venue_order_id,
             )
+            if report is not None:
+                reports.append(report)
 
         return reports
 
@@ -1836,7 +2066,10 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 continue
             if command.instrument_id is not None and instrument_id != command.instrument_id:
                 continue
-            if command.venue_order_id is not None and venue_order_id != command.venue_order_id.value:
+            if (
+                command.venue_order_id is not None
+                and venue_order_id != command.venue_order_id.value
+            ):
                 continue
             ts_event = fill.get("ts_event", 0)
             if start_ns is not None and ts_event < start_ns:
@@ -1844,28 +2077,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             if end_ns is not None and ts_event > end_ns:
                 continue
 
-            currency = self._to_currency(fill.get("currency", "USD"))
-            side = fill.get("side", OrderSide.BUY)
-            trade_id = fill.get("trade_id")
-
-            reports.append(
-                FillReport(
-                    account_id=self._require_account_id(),
-                    instrument_id=instrument_id,
-                    venue_order_id=VenueOrderId(venue_order_id),
-                    trade_id=TradeId(str(trade_id or UUID4())),
-                    order_side=side,
-                    last_qty=self._to_quantity(fill["qty"]),
-                    last_px=self._to_price(fill["price"]),
-                    commission=Money(float(fill.get("commission", 0.0)), currency),
-                    liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-                    report_id=UUID4(),
-                    ts_event=ts_event,
-                    ts_init=fill.get("ts_init", self._clock.timestamp_ns()),
-                    client_order_id=ClientOrderId(fill["client_order_id"]),
-                    venue_position_id=None,
-                )
-            )
+            report = self._build_fill_report(fill)
+            if report is not None:
+                reports.append(report)
 
         return reports
 
@@ -1895,6 +2109,8 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 continue
             if command.instrument_id is not None and instrument_id != command.instrument_id:
                 continue
+            if self._has_open_order_for_instrument(instrument_id):
+                continue
             ts_last = pos.get("ts_event", 0)
             if start_ns is not None and ts_last < start_ns:
                 continue
@@ -1905,18 +2121,9 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
             if position_side == PositionSide.FLAT:
                 continue
 
-            reports.append(
-                PositionStatusReport(
-                    account_id=AccountId(pos.get("account_id", "RITHMIC")),
-                    instrument_id=instrument_id,
-                    position_side=position_side,
-                    quantity=self._to_quantity(abs(quantity)),
-                    report_id=UUID4(),
-                    ts_last=ts_last,
-                    ts_init=self._clock.timestamp_ns(),
-                    avg_px_open=self._to_decimal(pos.get("avg_price")),
-                )
-            )
+            report = self._build_position_status_report(pos)
+            if report is not None and report.position_side != PositionSide.FLAT:
+                reports.append(report)
 
         return reports
 

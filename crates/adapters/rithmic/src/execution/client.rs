@@ -118,6 +118,8 @@ pub struct OrderModified {
 /// Venue order context used to rebuild Python-side order state after reconnect.
 #[derive(Debug, Clone, Default)]
 pub struct OrderContext {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    pub is_snapshot: bool,
     /// Instrument symbol.
     pub symbol: Option<String>,
     /// Exchange code.

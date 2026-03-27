@@ -876,9 +876,7 @@ impl PyRithmicExecutionClient {
             })?;
 
             let responses = handle.show_bracket_stops().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Show bracket stops failed: {e}"
-                ))
+                pyo3::exceptions::PyRuntimeError::new_err(format!("Show bracket stops failed: {e}"))
             })?;
 
             if let Some(error) = first_response_error(&responses) {

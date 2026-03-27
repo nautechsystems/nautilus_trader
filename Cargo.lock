@@ -6097,6 +6097,7 @@ dependencies = [
  "arc-swap",
  "dashmap",
  "futures-util",
+ "nautilus-common",
  "parking_lot",
  "prost 0.14.3",
  "pyo3",

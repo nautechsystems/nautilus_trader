@@ -34,6 +34,9 @@ from nautilus_trader.test_kit.strategies.tester_data import DataTesterConfig
 
 # *** THIS IS A TEST ACTOR WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+# *** request_bars=True uses the Rithmic historical API. On basic plans, historical usage is   ***
+# *** typically capped at 20 GB per month. Watch the registered Rithmic email inbox for usage  ***
+# *** warnings because ignoring them can trigger automatic temporary restrictions.              ***
 
 PROFILE = os.environ.get("RITHMIC_PROFILE")
 SYMBOL = os.environ.get("RITHMIC_DATA_SYMBOL", "MNQM6")

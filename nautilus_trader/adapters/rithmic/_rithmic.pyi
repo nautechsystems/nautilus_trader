@@ -61,16 +61,35 @@ class TradeTick:
     ts_init: int
 
 
+class TimeBar:
+    symbol: str
+    exchange: str
+    open_price: float
+    high_price: float
+    low_price: float
+    close_price: float
+    volume: int
+    period: str
+    bar_kind: str
+    bar_period: int
+    marker: int | None
+    ts_event: int
+    ts_init: int
+
+
 class MarketDataEvent:
     def is_quote(self) -> bool: ...
     def is_trade(self) -> bool: ...
+    def is_bar(self) -> bool: ...
     def is_error(self) -> bool: ...
     def as_quote(self) -> QuoteTick: ...
     def as_trade(self) -> TradeTick: ...
+    def as_bar(self) -> TimeBar: ...
     def as_error(self) -> str: ...
 
 
 class OrderSubmitted:
+    is_snapshot: bool
     client_order_id: str
     venue_order_id: str | None
     account_id: str
@@ -92,6 +111,7 @@ class OrderSubmitted:
 
 
 class OrderAccepted:
+    is_snapshot: bool
     client_order_id: str
     venue_order_id: str
     account_id: str
@@ -113,6 +133,7 @@ class OrderAccepted:
 
 
 class OrderRejected:
+    is_snapshot: bool
     client_order_id: str
     reason: str
     symbol: str | None
@@ -124,6 +145,7 @@ class OrderRejected:
 
 
 class OrderFilled:
+    is_snapshot: bool
     client_order_id: str
     venue_order_id: str
     fill_price: float
@@ -142,6 +164,7 @@ class OrderFilled:
 
 
 class OrderCancelled:
+    is_snapshot: bool
     client_order_id: str
     venue_order_id: str
     symbol: str | None
@@ -153,6 +176,7 @@ class OrderCancelled:
 
 
 class OrderModified:
+    is_snapshot: bool
     client_order_id: str
     venue_order_id: str
     new_price: float | None
@@ -183,6 +207,7 @@ class ExecutionEvent:
 
 
 class AccountEvent:
+    is_snapshot: bool
     account_id: str
     currency: str
     total: float
@@ -193,6 +218,7 @@ class AccountEvent:
 
 
 class PositionEvent:
+    is_snapshot: bool
     account_id: str
     symbol: str
     exchange: str

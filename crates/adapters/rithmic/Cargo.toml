@@ -29,6 +29,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
 ahash = { workspace = true }
 rithmic-rs = { git = "https://github.com/pbeets/rithmic-rs", features = ["serde"] }
 tokio = { workspace = true, features = ["full"] }

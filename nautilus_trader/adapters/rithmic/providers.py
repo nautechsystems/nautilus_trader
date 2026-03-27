@@ -280,7 +280,12 @@ class RithmicInstrumentProvider(InstrumentProvider):
         return resolve_exchange_hint(symbol, filters)
 
     def _convert_instrument(self, instrument) -> FuturesContract:
-        instrument_id = InstrumentId.from_str(f"{instrument.symbol}.{RITHMIC_VENUE.value}")
+        if instrument.exchange:
+            instrument_id = InstrumentId.from_str(
+                f"{instrument.symbol}.{instrument.exchange}.{RITHMIC_VENUE.value}"
+            )
+        else:
+            instrument_id = InstrumentId.from_str(f"{instrument.symbol}.{RITHMIC_VENUE.value}")
         raw_symbol = Symbol(instrument.symbol)
         asset_class = self._infer_asset_class(instrument.product_code, instrument.description)
         currency = Currency.from_str(instrument.currency)

@@ -190,7 +190,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
     def _handle_quote_tick(self, tick) -> None:
         """Convert Rust QuoteTick to Nautilus QuoteTick and publish."""
-        instrument_id = InstrumentId.from_str(f"{tick.symbol}.{RITHMIC_VENUE.value}")
+        instrument_id = self._event_instrument_id(tick.symbol, getattr(tick, "exchange", None))
 
         # Get instrument for precision info
         instrument = self._lookup_instrument(instrument_id)
@@ -218,7 +218,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         """Convert Rust TradeTick to Nautilus TradeTick and publish."""
         from nautilus_trader.model.enums import AggressorSide
 
-        instrument_id = InstrumentId.from_str(f"{tick.symbol}.{RITHMIC_VENUE.value}")
+        instrument_id = self._event_instrument_id(tick.symbol, getattr(tick, "exchange", None))
 
         # Get instrument for precision info
         instrument = self._lookup_instrument(instrument_id)
@@ -779,6 +779,20 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 return instrument
 
         return None
+
+    @staticmethod
+    def _event_instrument_id(
+        symbol: str,
+        exchange: str | None = None,
+    ) -> InstrumentId:
+        normalized_symbol = normalize_rithmic_symbol(symbol)
+        resolved_exchange = exchange or resolve_exchange_hint(symbol)
+        if resolved_exchange:
+            return InstrumentId.from_str(
+                f"{normalized_symbol}.{resolved_exchange}.{RITHMIC_VENUE.value}",
+            )
+
+        return InstrumentId.from_str(f"{normalized_symbol}.{RITHMIC_VENUE.value}")
 
     def _resolve_rithmic_symbol(self, instrument_id: InstrumentId) -> str:
         return normalize_rithmic_symbol(instrument_id.symbol.value)

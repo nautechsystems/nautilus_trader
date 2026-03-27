@@ -202,6 +202,12 @@ fn time_in_force_text(time_in_force: Option<rithmic_rs::TimeInForce>) -> Option<
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderSubmitted {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -335,6 +341,12 @@ pub struct PyOrderAccepted {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderAccepted {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -468,6 +480,12 @@ pub struct PyOrderRejected {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderRejected {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -541,6 +559,12 @@ pub struct PyOrderFilled {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderFilled {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -659,6 +683,12 @@ pub struct PyOrderCancelled {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderCancelled {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -732,6 +762,12 @@ pub struct PyOrderModified {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyOrderModified {
+    /// Whether the source notification was a Rithmic snapshot/replay payload.
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        self.inner.context.is_snapshot
+    }
+
     /// Client order ID.
     #[getter]
     fn client_order_id(&self) -> &str {
@@ -1079,6 +1115,15 @@ pub struct PyAccountEvent {
 #[pymethods]
 impl PyAccountEvent {
     #[getter]
+    fn is_snapshot(&self) -> bool {
+        match &self.inner {
+            AccountEvent::BalanceUpdate(balance) => balance.is_snapshot,
+            AccountEvent::MarginWarning { .. } => false,
+            AccountEvent::Error(_) => false,
+        }
+    }
+
+    #[getter]
     fn account_id(&self) -> &str {
         match &self.inner {
             AccountEvent::BalanceUpdate(b) => &b.account_id,
@@ -1175,6 +1220,17 @@ pub struct PyPositionEvent {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyPositionEvent {
+    #[getter]
+    fn is_snapshot(&self) -> bool {
+        match &self.inner {
+            PositionEvent::Updated(position) | PositionEvent::Opened(position) => {
+                position.is_snapshot
+            }
+            PositionEvent::Closed { .. } => false,
+            PositionEvent::Error(_) => false,
+        }
+    }
+
     #[getter]
     fn account_id(&self) -> &str {
         match &self.inner {
@@ -1282,6 +1338,10 @@ impl From<PositionEvent> for PyPositionEvent {
 #[pyclass(name = "TimeBar")]
 #[derive(Clone)]
 pub struct PyTimeBar {
+    /// Instrument symbol.
+    pub symbol: String,
+    /// Exchange.
+    pub exchange: String,
     /// Open price.
     pub open_price: f64,
     /// High price.
@@ -1309,6 +1369,16 @@ pub struct PyTimeBar {
 #[cfg(feature = "python")]
 #[pymethods]
 impl PyTimeBar {
+    #[getter]
+    fn symbol(&self) -> &str {
+        &self.symbol
+    }
+
+    #[getter]
+    fn exchange(&self) -> &str {
+        &self.exchange
+    }
+
     #[getter]
     fn open_price(&self) -> f64 {
         self.open_price
@@ -1366,7 +1436,9 @@ impl PyTimeBar {
 
     fn __repr__(&self) -> String {
         format!(
-            "TimeBar(type={}, period={}, marker={:?}, o={:.2}, h={:.2}, l={:.2}, c={:.2}, v={})",
+            "TimeBar({}:{} type={}, period={}, marker={:?}, o={:.2}, h={:.2}, l={:.2}, c={:.2}, v={})",
+            self.exchange,
+            self.symbol,
             self.bar_kind,
             self.bar_period,
             self.marker,
@@ -1395,6 +1467,8 @@ impl PyTimeBar {
             .unwrap_or(0);
 
         Self {
+            symbol: bar.symbol.clone().unwrap_or_default(),
+            exchange: bar.exchange.clone().unwrap_or_default(),
             open_price: bar.open_price.unwrap_or(0.0),
             high_price: bar.high_price.unwrap_or(0.0),
             low_price: bar.low_price.unwrap_or(0.0),
@@ -1424,6 +1498,8 @@ impl PyTimeBar {
         let ts_event = tick_timestamp_nanos(&bar.data_bar_ssboe, &bar.data_bar_usecs);
 
         Self {
+            symbol: bar.symbol.clone().unwrap_or_default(),
+            exchange: bar.exchange.clone().unwrap_or_default(),
             open_price: bar.open_price.unwrap_or(0.0),
             high_price: bar.high_price.unwrap_or(0.0),
             low_price: bar.low_price.unwrap_or(0.0),
@@ -1449,6 +1525,8 @@ impl PyTimeBar {
 impl From<LiveTimeBar> for PyTimeBar {
     fn from(bar: LiveTimeBar) -> Self {
         Self {
+            symbol: bar.symbol,
+            exchange: bar.exchange,
             open_price: bar.open_price,
             high_price: bar.high_price,
             low_price: bar.low_price,

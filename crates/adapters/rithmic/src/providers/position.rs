@@ -19,6 +19,8 @@ use crate::{
 /// Position information.
 #[derive(Debug, Clone)]
 pub struct Position {
+    /// Whether the source notification was a Rithmic snapshot payload.
+    pub is_snapshot: bool,
     /// Account ID.
     pub account_id: RithmicAccountId,
     /// Instrument symbol.
@@ -342,6 +344,7 @@ mod tests {
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
 
         let position = Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "ESZ4".to_string(),
             exchange: "CME".to_string(),
@@ -363,6 +366,7 @@ mod tests {
     #[test]
     fn test_position_states() {
         let mut pos = Position {
+            is_snapshot: false,
             account_id: "ACC".to_string(),
             symbol: "ES".to_string(),
             exchange: "CME".to_string(),
@@ -394,6 +398,7 @@ mod tests {
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
 
         let position = Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "NQZ4".to_string(),
             exchange: "CME".to_string(),
@@ -422,6 +427,7 @@ mod tests {
 
         // Open position
         let position = Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "ESZ4".to_string(),
             exchange: "CME".to_string(),
@@ -441,6 +447,7 @@ mod tests {
 
         // Close position (flat)
         let flat_position = Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "ESZ4".to_string(),
             exchange: "CME".to_string(),
@@ -465,6 +472,7 @@ mod tests {
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
 
         let position = Position {
+            is_snapshot: false,
             account_id: "OTHER_ACCOUNT".to_string(),
             symbol: "ESZ4".to_string(),
             exchange: "CME".to_string(),
@@ -489,6 +497,7 @@ mod tests {
 
         // Long ES position
         provider.update_position(Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "ESZ4".to_string(),
             exchange: "CME".to_string(),
@@ -501,6 +510,7 @@ mod tests {
 
         // Short NQ position
         provider.update_position(Position {
+            is_snapshot: false,
             account_id: "ACCOUNT123".to_string(),
             symbol: "NQZ4".to_string(),
             exchange: "CME".to_string(),
