@@ -1961,6 +1961,50 @@ class TestReconciliationEdgeCases:
         assert order.filled_qty == Quantity.from_int(100)  # No inferred fill
 
     @pytest.mark.asyncio
+    async def test_reconcile_order_report_does_not_warn_for_unfilled_report_without_avg_px(
+        self,
+        live_exec_engine,
+        capfd,
+    ):
+        """
+        Test that unfilled order reports without avg_px do not emit a spurious warning.
+        """
+        # Arrange
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        order = TestExecStubs.limit_order(instrument=instrument)
+        self.cache.add_order(order)
+
+        report = OrderStatusReport(
+            instrument_id=instrument.id,
+            account_id=TestIdStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("V-1"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.SUBMITTED,
+            price=Price.from_str("1.0"),
+            quantity=Quantity.from_int(100),
+            filled_qty=Quantity.from_int(0),
+            avg_px=None,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Act
+        result = live_exec_engine._reconcile_order_report(report, trades=[])
+        captured = capfd.readouterr()
+
+        # Assert
+        assert result is True
+        log_output = captured.out + captured.err
+        assert "report.avg_px was `None` when a value was expected" not in log_output
+
+    @pytest.mark.asyncio
     async def test_reconcile_order_report_with_missing_instrument_defers(
         self,
         live_exec_engine,

@@ -2977,7 +2977,7 @@ class LiveExecutionEngine(ExecutionEngine):
         for trade in trades:
             self._reconcile_fill_report(order, trade, instrument)
 
-        if report.avg_px is None:
+        if report.avg_px is None and report.filled_qty > order.filled_qty:
             self._log.warning("report.avg_px was `None` when a value was expected")
 
         # Handle fill quantity mismatches
