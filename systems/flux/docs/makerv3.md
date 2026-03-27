@@ -38,6 +38,8 @@ Canonical exports:
 2. **Stale-data behavior:** stale or unavailable market data triggers one safety cancel + blocked transition per episode.
    - Stale cancel is cooldown-deduped to avoid cancel bursts.
 3. **Determinism and idempotency:** repeated quote cycles with unchanged inputs should not generate repeated churn.
+   - Normal repricing is deque-style per side: inward moves place at the front then trim the back, outward moves cancel the front then backfill the tail, and deliberate middle-of-stack modification is reserved for true hole repair only.
+   - Resting-order age is not a normal repricing signal; `max_age_ms` is market-data freshness only.
 4. **Runtime params bounds:** depth/ladder-sensitive params are validated and bounded; unsafe updates are rejected.
 5. **Stop behavior:** `on_stop` converges to quiescence by canceling managed orders and is idempotent.
 
@@ -51,6 +53,7 @@ MakerV3 runtime params are backed by the canonical registry:
 Operational expectations:
 
 - Raw/reference FV remains the market-derived anchor used by the strategy.
+- `max_age_ms` gates market-data freshness and stale-data blocks only; it does not refresh otherwise-valid resting orders on age alone.
 - Signed skew and offsets do not mutate that raw/reference FV estimator; they adjust quoted FV / quote placement relative to the reference market.
 - Signed skew convention is canonical across strategy, API, and UI:
   - positive values raise our quoted FV / quote richer,
@@ -152,6 +155,16 @@ Quote-cycle events use an envelope with:
 - `cancel_count`, `place_count`
 - optional `decision_context_json` for blocked/completed or action-taking cycles
 
+For deque-audit workflows, operators should query the nested per-side
+`decision_context_json.bounded_convergence` fields:
+
+- `stack_action_mode`
+- `front_changed`, `back_changed`
+- `depth_before`, `depth_after`
+- `missing_level_count`, `interior_hole_count`
+- `planned_cancel_count`, `executed_cancel_count`
+- `planned_place_count`, `executed_place_count`
+
 Order-intent payloads carry:
 
 - `intent_type`: `PLACE` or `CANCEL`
@@ -159,6 +172,14 @@ Order-intent payloads carry:
 - local decision timestamps such as `ts_decision_ns`, `ts_submit_local_ns`,
   `ts_cancel_request_local_ns`
 - trigger timestamps `ts_market_data_event_ns` and `ts_market_data_recv_ns`
+
+Canonical deque reason codes on the shared stack path are:
+
+- `cancel_front_violation`
+- `cancel_back_excess`
+- `place_front_improve`
+- `place_back_backfill`
+- `place_missing_hole_repair`
 
 Clock-domain note:
 
@@ -196,7 +217,8 @@ Not safe in v1 without explicit clock normalization:
 2. **Unexpected cancellation scope**
    - Verify `cancel_all_instrument_orders` is not enabled unless explicitly intended.
 3. **Quote churn**
-   - Check requote throttle (`INTERNAL_REQUOTE_THROTTLE_MS`) and runtime ladder params.
+   - Check `quote_cycle.decision_context_json.bounded_convergence.<side>.stack_action_mode` plus `front_changed` / `back_changed`.
+   - Check persisted `order_action.reason_code`, `order_action.level_index`, and `order_action.quote_cycle_id` to confirm front/back-only mutation.
    - Ensure reference feed is not intermittently stale (would cause repeated block episodes).
 4. **Runtime params not taking effect**
    - Confirm a params manager is wired (manager instance or factory) and strategy identity matches Redis keyspace.

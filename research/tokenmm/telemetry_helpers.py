@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
+import json
 import math
 import re
 import sqlite3
@@ -34,6 +36,17 @@ def load_sqlite_query(path: Path | str, query: str) -> pd.DataFrame:
         raise FileNotFoundError(db_path)
     with sqlite3.connect(db_path) as conn:
         return pd.read_sql_query(query, conn)
+
+
+def _json_mapping(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        with suppress(ValueError, json.JSONDecodeError):
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+    return {}
 
 
 def numeric(series: pd.Series) -> pd.Series:
@@ -198,6 +211,62 @@ def enrich_markouts(markouts: pd.DataFrame) -> pd.DataFrame:
     if "order_side" in frame.columns:
         frame["order_side"] = frame["order_side"].astype(str).str.upper()
     frame["fill_key"] = _build_fill_key(frame)
+    return frame
+
+
+def extract_quote_cycle_deque_diagnostics(quote_cycles: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for record in quote_cycles.to_dict(orient="records"):
+        decision_context = _json_mapping(record.get("decision_context_json"))
+        bounded = decision_context.get("bounded_convergence")
+        if not isinstance(bounded, dict):
+            continue
+        for side, side_payload in bounded.items():
+            if not isinstance(side_payload, dict):
+                continue
+            rows.append(
+                {
+                    "quote_cycle_id": record.get("quote_cycle_id"),
+                    "quote_cycle_seq": record.get("quote_cycle_seq"),
+                    "quote_cycle_event": record.get("quote_cycle_event"),
+                    "reason_code": record.get("reason_code"),
+                    "side": str(side),
+                    "stack_action_mode": side_payload.get("stack_action_mode"),
+                    "front_changed": side_payload.get("front_changed"),
+                    "back_changed": side_payload.get("back_changed"),
+                    "depth_before": side_payload.get("depth_before"),
+                    "depth_after": side_payload.get("depth_after"),
+                    "missing_level_count": side_payload.get("missing_level_count"),
+                    "interior_hole_count": side_payload.get("interior_hole_count"),
+                    "planned_cancel_count": side_payload.get("planned_cancel_count"),
+                    "executed_cancel_count": side_payload.get("executed_cancel_count"),
+                    "planned_place_count": side_payload.get("planned_place_count"),
+                    "executed_place_count": side_payload.get("executed_place_count"),
+                    "ts_cycle_end_ns": record.get("ts_cycle_end_ns"),
+                },
+            )
+    return pd.DataFrame.from_records(rows)
+
+
+def extract_order_action_deque_audit(order_actions: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        column
+        for column in (
+            "quote_cycle_id",
+            "reason_code",
+            "level_index",
+            "client_order_id",
+            "order_status",
+            "side",
+            "ts_decision_ns",
+            "ts_submit_local_ns",
+            "ts_cancel_request_local_ns",
+        )
+        if column in order_actions.columns
+    ]
+    frame = order_actions[columns].copy()
+    if "reason_code" in frame.columns:
+        frame = frame[frame["reason_code"].notna()]
     return frame
 
 
