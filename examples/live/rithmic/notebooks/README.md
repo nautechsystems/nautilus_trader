@@ -73,6 +73,9 @@ That explicit history gateway matters because `RithmicGateway.from_env(...)` lea
 
 Additional adapter caveats:
 
+- historical API usage is plan-limited; on basic Rithmic plans, historical downloads are typically capped at `20 GB` per month
+- Rithmic sends warning emails to the registered account email address when API usage approaches the limit or when their access rules are being breached
+- ignoring those warning emails can lead to automatically triggered temporary restrictions, so monitor the registered inbox during large backfills
 - live external bar subscriptions can use history-plant time bars or tick bars
 - historical tick-bar replay is currently limited to `1-TICK`; the adapter will reject larger historical tick-bar requests rather than re-aggregate locally
 - native historical `N-TICK` replay is expected to land later via upstream `rithmic-rs` support, at which point the adapter should pass it through unchanged

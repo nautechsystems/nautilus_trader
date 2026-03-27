@@ -212,6 +212,17 @@ If `enable_history=False`, the live node can still stream quotes and trades, but
 `request_bars()` and live external `subscribe_bars()` calls will be rejected. This is useful for
 live-only nodes that do not need the history plant.
 
+:::warning
+Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are
+typically capped at **20 GB per month**. Rithmic sends warning emails to the account's registered
+email address when API usage approaches that limit or when their access rules are being breached.
+Do not ignore those emails. Temporary restrictions can be applied automatically if usage continues
+after warnings are sent.
+
+If you are downloading large windows, prefer smaller batched requests and monitor the registered
+email inbox for notices from Rithmic.
+:::
+
 Current historical external bar limits:
 
 - only `EXTERNAL` bars are supported
