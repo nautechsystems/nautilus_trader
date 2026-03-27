@@ -51,7 +51,7 @@ def evaluate_quote_health(
         transport_connected=transport_connected,
         subscription_healthy=subscription_healthy,
     )
-    has_quote = bid is not None and ask is not None and ask > bid
+    has_quote = bid is not None and ask is not None and ask >= bid
     normalized_age_ms = max(0, int(quote_age_ms)) if quote_age_ms is not None else None
 
     if has_quote:

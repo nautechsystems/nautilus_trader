@@ -864,6 +864,19 @@ def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
     assert len(client_ids) == len(set(client_ids))
 
 
+def test_equities_active_split_strategies_publish_explicit_ibkr_quote_age_budget() -> None:
+    repo_root = _repo_root()
+
+    for path in sorted((repo_root / "deploy/equities/strategies").glob("*.toml")):
+        if path.name == "equities.strategy.template.toml":
+            continue
+        config = _load_toml(path)
+        strategy_id = config["strategy"]["strategy_id"]
+        if not (strategy_id.endswith("_maker") or strategy_id.endswith("_taker")):
+            continue
+        assert config["strategy"].get("max_ibkr_quote_age_ms") is not None, strategy_id
+
+
 def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_ids() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")

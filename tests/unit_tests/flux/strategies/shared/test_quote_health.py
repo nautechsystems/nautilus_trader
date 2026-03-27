@@ -74,3 +74,21 @@ def test_evaluate_quote_health_marks_fresh_quote_as_usable() -> None:
     assert health.usable_for_pricing is True
     assert health.usable_for_hedging is True
     assert health.reason_code is None
+
+
+def test_evaluate_quote_health_treats_locked_quote_as_present() -> None:
+    health = evaluate_quote_health(
+        leg_role="reference",
+        bid=Decimal("145.10"),
+        ask=Decimal("145.10"),
+        quote_age_ms=0,
+        max_quote_age_ms=1_000,
+        transport_connected=True,
+        subscription_healthy=True,
+    )
+
+    assert health.feed_state == "ok"
+    assert health.quote_state == "fresh"
+    assert health.usable_for_pricing is True
+    assert health.usable_for_hedging is True
+    assert health.reason_code is None
