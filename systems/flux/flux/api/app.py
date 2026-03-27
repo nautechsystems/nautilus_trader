@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import math
@@ -59,6 +60,8 @@ from flux.common.keys import FluxRedisKeys
 from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_REGISTRY
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
+from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.common.strategy_contracts import shared_observation_group_by_strategy_id
 from flux.params.manager import FluxParamsManager
 from flux.runners.shared.strategy_set import StrategySetDescriptor
 from flux.runners.shared.strategy_set import get_strategy_set_descriptors
@@ -283,6 +286,13 @@ class ReadinessSnapshot:
     schema_ready: bool
 
 
+@dataclass(frozen=True)
+class ParamsContract:
+    schema: dict[str, dict[str, Any]]
+    defaults: dict[str, Any]
+    param_set: str
+
+
 class FluxApiStore:
     def __init__(
         self,
@@ -296,6 +306,7 @@ class FluxApiStore:
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
+        params_contract_resolver: Callable[[str], ParamsContract] | None = None,
         required_readiness_keys: Sequence[str] | None = None,
     ) -> None:
         if not contract_catalog:
@@ -309,17 +320,23 @@ class FluxApiStore:
 
         self._config = flux_config
         self._redis = redis_client
-        self._params_schema = _ordered_params_schema(params_schema)
-        self._param_set = param_set.strip()
-        self._params_defaults = FluxParamsManager(
+        default_schema = _ordered_params_schema(params_schema)
+        default_param_set = param_set.strip()
+        default_defaults = FluxParamsManager(
             redis_client=self._redis,
             strategy_id=self._config.identity.strategy_id,
             namespace=self._config.identity.namespace,
             schema_version=self._config.identity.schema_version,
-            schema=self._params_schema,
+            schema=default_schema,
             defaults=params_defaults,
-            param_set=self._param_set,
+            param_set=default_param_set,
         ).defaults
+        self._default_params_contract = ParamsContract(
+            schema=default_schema,
+            defaults=default_defaults,
+            param_set=default_param_set,
+        )
+        self._params_contract_resolver = params_contract_resolver
         self._contract_specs = self._validate_contract_catalog(contract_catalog)
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
         self._contract_catalog_resolver = contract_catalog_resolver
@@ -376,15 +393,21 @@ class FluxApiStore:
     def _contracts_for_strategy(self, strategy_id: str) -> tuple[ContractCatalogEntry, ...]:
         return tuple(spec[0] for spec in self._contract_specs_for_strategy(strategy_id))
 
+    def params_contract(self, strategy_id: str) -> ParamsContract:
+        if self._params_contract_resolver is None:
+            return self._default_params_contract
+        return self._params_contract_resolver(strategy_id)
+
     def _params_manager(self, strategy_id: str) -> FluxParamsManager:
+        contract = self.params_contract(strategy_id)
         return FluxParamsManager(
             redis_client=self._redis,
             strategy_id=strategy_id,
             namespace=self._config.identity.namespace,
             schema_version=self._config.identity.schema_version,
-            schema=self._params_schema,
-            defaults=self._params_defaults,
-            param_set=self._param_set,
+            schema=contract.schema,
+            defaults=contract.defaults,
+            param_set=contract.param_set,
         )
 
     def _validate_contract_catalog(
@@ -851,6 +874,7 @@ class FluxApiStore:
         self,
         profile_id: str,
         *,
+        account_scope_ids: Sequence[str] | None = None,
         limit: int = 200,
     ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
         max_items = max(1, min(2_000, int(limit)))
@@ -858,18 +882,34 @@ class FluxApiStore:
             f"{self._config.identity.namespace}:{self._config.identity.schema_version}:"
             f"profile:account_projection:{validate_identifier_part(profile_id, 'profile_id')}:"
         )
-        projection_keys: set[str] = set()
+        projection_keys: list[str] = []
+        seen_keys: set[str] = set()
+
+        for account_scope_id in account_scope_ids or ():
+            key = FluxRedisKeys.profile_account_projection(
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                namespace=self._config.identity.namespace,
+                schema_version=self._config.identity.schema_version,
+            )
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            projection_keys.append(key)
+            if len(projection_keys) >= max_items:
+                break
 
         scan_fn = getattr(self._redis, "scan_iter", None)
         scan_succeeded = False
-        if callable(scan_fn):
+        if not projection_keys and callable(scan_fn):
             try:
                 for raw_key in scan_fn(match=f"{key_prefix}*"):
                     if len(projection_keys) >= max_items:
                         break
                     key = decode_text(raw_key).strip()
-                    if key.startswith(key_prefix):
-                        projection_keys.add(key)
+                    if key.startswith(key_prefix) and key not in seen_keys:
+                        seen_keys.add(key)
+                        projection_keys.append(key)
                 scan_succeeded = True
             except Exception as e:
                 _LOG.debug(
@@ -880,14 +920,15 @@ class FluxApiStore:
                 )
 
         keys_fn = getattr(self._redis, "keys", None)
-        if not scan_succeeded and callable(keys_fn):
+        if not projection_keys and not scan_succeeded and callable(keys_fn):
             try:
                 for raw_key in keys_fn(f"{key_prefix}*"):
                     if len(projection_keys) >= max_items:
                         break
                     key = decode_text(raw_key).strip()
-                    if key.startswith(key_prefix):
-                        projection_keys.add(key)
+                    if key.startswith(key_prefix) and key not in seen_keys:
+                        seen_keys.add(key)
+                        projection_keys.append(key)
             except Exception as e:
                 _LOG.debug(
                     "Profile-account projection discovery via redis.keys() failed prefix=%s error=%s",
@@ -898,17 +939,18 @@ class FluxApiStore:
 
         strings = getattr(self._redis, "strings", None)
         if isinstance(strings, dict):
-            for raw_key in strings:
-                if len(projection_keys) >= max_items:
-                    break
-                key = decode_text(raw_key).strip()
-                if key.startswith(key_prefix):
-                    projection_keys.add(key)
+                for raw_key in strings:
+                    if len(projection_keys) >= max_items:
+                        break
+                    key = decode_text(raw_key).strip()
+                    if key.startswith(key_prefix) and key not in seen_keys:
+                        seen_keys.add(key)
+                        projection_keys.append(key)
 
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}
         scope_status: list[dict[str, Any]] = []
-        for key in sorted(projection_keys):
+        for key in projection_keys:
             payload = load_json(self._redis.get(key))
             if not isinstance(payload, Mapping):
                 continue
@@ -1715,6 +1757,7 @@ def create_flux_api_app(  # noqa: C901
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
     profile_required_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
+    strategy_contracts: Sequence[Mapping[str, Any]] | None = None,
     params_schema: Mapping[str, Mapping[str, Any]] | None = None,
     params_defaults: Mapping[str, Any] | None = None,
     param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -1735,6 +1778,88 @@ def create_flux_api_app(  # noqa: C901
 
     schema = params_schema or DEFAULT_PARAMS_SCHEMA
     defaults = params_defaults or DEFAULT_PARAMS_DEFAULTS
+    default_param_set = param_set.strip()
+    from flux.strategies.registry import get_strategy_spec
+    from flux.strategies.registry import resolve_strategy_spec_for_strategy_id
+
+    try:
+        default_strategy_spec = get_strategy_spec(default_param_set)
+    except Exception:
+        default_strategy_spec = None
+
+    default_params_contract = ParamsContract(
+        schema=_ordered_params_schema(schema),
+        defaults=FluxParamsManager(
+            redis_client=redis_client,
+            strategy_id=flux_config.identity.strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+            schema=schema,
+            defaults=defaults,
+            param_set=default_param_set,
+        ).defaults,
+        param_set=default_param_set,
+    )
+
+    params_contract_cache: dict[str, ParamsContract] = {}
+
+    def _metadata_for_contract(strategy_id: str) -> StrategyMetadata:
+        metadata = strategy_metadata
+        if strategy_metadata_resolver is not None:
+            try:
+                metadata = strategy_metadata_resolver(strategy_id)
+            except LookupError:
+                metadata = strategy_metadata
+        return metadata
+
+    def _runtime_params_contract_for_param_set(resolved_param_set: str) -> ParamsContract:
+        cached = params_contract_cache.get(resolved_param_set)
+        if cached is not None:
+            return cached
+        if resolved_param_set == default_params_contract.param_set:
+            params_contract_cache[resolved_param_set] = default_params_contract
+            return default_params_contract
+
+        module = importlib.import_module(f"flux.strategies.{resolved_param_set}.runtime_params")
+        runtime_schema = getattr(module, "RUNTIME_PARAM_SCHEMA", None)
+        runtime_defaults = getattr(module, "RUNTIME_PARAM_DEFAULTS", None)
+        runtime_param_set = str(getattr(module, "PARAM_SET", resolved_param_set)).strip()
+        if not isinstance(runtime_schema, Mapping) or not isinstance(runtime_defaults, Mapping):
+            raise ValueError(
+                f"Runtime params module for {resolved_param_set!r} did not expose schema/defaults",
+            )
+        contract = ParamsContract(
+            schema=_ordered_params_schema(runtime_schema),
+            defaults=FluxParamsManager(
+                redis_client=redis_client,
+                strategy_id=flux_config.identity.strategy_id,
+                namespace=flux_config.identity.namespace,
+                schema_version=flux_config.identity.schema_version,
+                schema=runtime_schema,
+                defaults=runtime_defaults,
+                param_set=runtime_param_set,
+            ).defaults,
+            param_set=runtime_param_set,
+        )
+        params_contract_cache[resolved_param_set] = contract
+        return contract
+
+    def _params_contract_for_strategy(strategy_id: str) -> ParamsContract:
+        metadata = _metadata_for_contract(strategy_id)
+        resolved_param_set = decode_text(getattr(metadata, "param_set", "")).strip()
+        if not resolved_param_set:
+            try:
+                resolved_spec = resolve_strategy_spec_for_strategy_id(
+                    strategy_id,
+                    default=default_strategy_spec,
+                )
+                resolved_param_set = resolved_spec.param_set
+            except Exception:
+                resolved_param_set = default_params_contract.param_set
+        if not resolved_param_set:
+            return default_params_contract
+        return _runtime_params_contract_for_param_set(resolved_param_set)
+
     store = FluxApiStore(
         flux_config=flux_config,
         redis_client=redis_client,
@@ -1745,6 +1870,7 @@ def create_flux_api_app(  # noqa: C901
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
+        params_contract_resolver=_params_contract_for_strategy,
         required_readiness_keys=required_readiness_keys,
     )
     default_strategy_id = flux_config.identity.strategy_id
@@ -1905,6 +2031,46 @@ def create_flux_api_app(  # noqa: C901
         normalized = normalize_profile(profile)
         return _coerce_strategy_ids(resolved_profile_strategy_map.get(normalized))
 
+    shared_position_groups_cache: dict[str, dict[str, str]] = {}
+    profile_projection_scope_ids_cache: dict[str, tuple[str, ...]] = {}
+
+    def _shared_position_groups_for_profile(profile: str) -> dict[str, str]:
+        normalized = normalize_profile(profile)
+        cached = shared_position_groups_cache.get(normalized)
+        if cached is not None:
+            return cached
+        shared_groups = shared_observation_group_by_strategy_id(
+            strategy_contracts or (),
+            allowlist=_strategy_ids_for_profile(normalized),
+        )
+        shared_position_groups_cache[normalized] = shared_groups
+        return shared_groups
+
+    def _profile_projection_scope_ids_for_profile(profile: str) -> tuple[str, ...]:
+        normalized = normalize_profile(profile)
+        cached = profile_projection_scope_ids_cache.get(normalized)
+        if cached is not None:
+            return cached
+        allowlist = set(_strategy_ids_for_profile(normalized))
+        use_allowlist = bool(allowlist)
+        scope_ids: list[str] = []
+        seen: set[str] = set()
+        for contract in decode_strategy_contracts(strategy_contracts or ()):
+            if use_allowlist and contract.strategy_id not in allowlist:
+                continue
+            for scope_id in (
+                contract.execution_account_scope_id,
+                contract.reference_account_scope_id,
+                contract.hedge_account_scope_id,
+            ):
+                if scope_id is None or scope_id in seen:
+                    continue
+                seen.add(scope_id)
+                scope_ids.append(scope_id)
+        result = tuple(scope_ids)
+        profile_projection_scope_ids_cache[normalized] = result
+        return result
+
     def _required_strategy_ids_for_profile(
         profile: str,
         *,
@@ -1925,6 +2091,17 @@ def create_flux_api_app(  # noqa: C901
             return default_strategy_id
         return None
 
+    def _profile_param_sets(profile: str) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in _strategy_ids_for_profile(profile):
+            resolved_param_set = decode_text(store.params_contract(strategy_id).param_set).strip()
+            if not resolved_param_set or resolved_param_set in seen:
+                continue
+            seen.add(resolved_param_set)
+            out.append(resolved_param_set)
+        return out
+
     def _default_strategy_for_unscoped_request() -> str:
         if default_unscoped_descriptor is None:
             return default_strategy_id
@@ -1933,7 +2110,11 @@ def create_flux_api_app(  # noqa: C901
             return strategy_ids[0]
         return default_strategy_id
 
-    def _resolve_strategy_id_for_request(*, field_name: str = "strategy") -> str:
+    def _resolve_strategy_id_for_request(
+        *,
+        field_name: str = "strategy",
+        require_unambiguous_profile: bool = False,
+    ) -> str:
         strategy_raw = request.args.get("strategy")
         strategy_text = decode_text(strategy_raw).strip()
         if strategy_text:
@@ -1941,6 +2122,22 @@ def create_flux_api_app(  # noqa: C901
 
         profile_text = decode_text(request.args.get("profile")).strip()
         if profile_text:
+            if require_unambiguous_profile:
+                profile_param_sets = _profile_param_sets(profile_text)
+                if len(profile_param_sets) > 1:
+                    raise ApiEnvelopeError(
+                        status=400,
+                        code="ambiguous_strategy_target",
+                        message=(
+                            "Profile-scoped params requests require an explicit `strategy` "
+                            "when the profile spans multiple param sets."
+                        ),
+                        details={
+                            "profile": profile_text,
+                            "strategy_ids": _strategy_ids_for_profile(profile_text),
+                            "param_sets": profile_param_sets,
+                        },
+                    )
             resolved_strategy = _strategy_for_profile(profile_text)
             if resolved_strategy:
                 return _resolve_strategy_id(resolved_strategy, field_name=field_name, explicit=False)
@@ -2321,8 +2518,19 @@ def create_flux_api_app(  # noqa: C901
 
     @app.get("/api/v1/param-schema")
     def api_param_schema() -> Response:
-        ordered_schema = _ordered_params_schema(schema)
-        return _ok(data={"params": ordered_schema, "deprecated": {}})
+        strategy_id = _resolve_strategy_id_for_request(
+            field_name="strategy",
+            require_unambiguous_profile=True,
+        )
+        contract = store.params_contract(strategy_id)
+        return _ok(
+            data={
+                "params": _ordered_params_schema(contract.schema),
+                "deprecated": {},
+                "params_defaults": dict(contract.defaults),
+                "param_set": contract.param_set,
+            },
+        )
 
     @app.get("/api/v1/params")
     def api_params() -> Response:
@@ -2347,6 +2555,7 @@ def create_flux_api_app(  # noqa: C901
                     message=str(e),
                     details={"strategy_id": strategy_id},
                 )
+            contract = store.params_contract(strategy_id)
             state_summary = store.load_state_summary(strategy_id)
             state_ts_ms = safe_int(state_summary.get("state_ts_ms"))
             if (
@@ -2358,10 +2567,12 @@ def create_flux_api_app(  # noqa: C901
             payload = build_params_payload(
                 strategy_id=strategy_id,
                 params=params,
-                schema=_ordered_params_schema(schema),
+                schema=_ordered_params_schema(contract.schema),
                 running=running_states.get(strategy_id),
                 metadata=_metadata_for_strategy(strategy_id),
             )
+            payload["params_defaults"] = dict(contract.defaults)
+            payload["param_set"] = contract.param_set
             payload["persisted_bot_on"] = (
                 state_summary.get("persisted_bot_on")
                 if "persisted_bot_on" in state_summary
@@ -2524,7 +2735,10 @@ def create_flux_api_app(  # noqa: C901
                 errors=errors,
             )
         else:
-            strategy_id = _resolve_strategy_id_for_request(field_name="strategy")
+            strategy_id = _resolve_strategy_id_for_request(
+                field_name="strategy",
+                require_unambiguous_profile=True,
+            )
             updates = _params_request_payload()
             if not updates:
                 return _error(
@@ -2631,7 +2845,14 @@ def create_flux_api_app(  # noqa: C901
                 message=str(e),
                 details={"strategy_id": sid},
             )
-        payload = {"strategy_id": sid, "params": params, "schema": _ordered_params_schema(schema)}
+        contract = store.params_contract(sid)
+        payload = {
+            "strategy_id": sid,
+            "params": params,
+            "schema": _ordered_params_schema(contract.schema),
+            "params_defaults": dict(contract.defaults),
+            "param_set": contract.param_set,
+        }
         return _ok(data=payload)
 
     @app.post("/api/v1/strategies/<string:strategy_id>/parameters")
@@ -2662,11 +2883,14 @@ def create_flux_api_app(  # noqa: C901
                 message=str(e),
                 details={"strategy_id": sid},
             )
+        contract = store.params_contract(sid)
         payload = {
             "strategy_id": sid,
             "updated": result["updated"],
             "params": result["params"],
-            "schema": _ordered_params_schema(schema),
+            "schema": _ordered_params_schema(contract.schema),
+            "params_defaults": dict(contract.defaults),
+            "param_set": contract.param_set,
         }
         return _ok(data=payload)
 
@@ -2702,6 +2926,7 @@ def create_flux_api_app(  # noqa: C901
                     projection_scope_status,
                 ) = store.load_profile_account_projection_rows(
                     profile_normalized,
+                    account_scope_ids=_profile_projection_scope_ids_for_profile(profile_normalized),
                 )
             portfolio_snapshot = (
                 store.load_portfolio_snapshot(profile_normalized)
@@ -2959,6 +3184,11 @@ def create_flux_api_app(  # noqa: C901
                 rows_by_strategy=rows_by_strategy,
                 portfolio_id=profile_normalized,
                 preserve_product_scope_cash=True,
+                shared_position_groups_by_strategy=(
+                    _shared_position_groups_for_profile(profile_normalized)
+                    if profile_normalized == "equities"
+                    else None
+                ),
             )
             if profile_normalized == "equities":
                 if projection_rows:

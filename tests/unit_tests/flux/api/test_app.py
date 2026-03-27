@@ -143,6 +143,27 @@ def test_response_encoding_sanitizes_non_finite_values(
     assert body["data"] == {"bad": None, "nested": [None, {"x": None}]}
 
 
+def test_create_flux_api_app_accepts_strategy_contracts_kwarg(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_contracts=[],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    assert app is not None
+
+
 def test_readyz_returns_503_with_missing_flux_schema_keys(
     flux_config,
     redis_client,

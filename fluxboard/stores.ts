@@ -1161,6 +1161,68 @@ const normalizeSignalStrategy = (strategy: SignalStrategy): SignalStrategy => {
   };
 };
 
+function mergeNestedRecord<T extends Record<string, any> | null | undefined>(
+  prev: T,
+  next: T,
+): T {
+  if (next === undefined) return prev;
+  if (next === null) return next;
+  if (prev === null || prev === undefined) return { ...next } as T;
+  return { ...prev, ...next } as T;
+}
+
+function mergeArbSignalPayload<
+  T extends {
+    operator?: Record<string, any> | null;
+    quote_snapshot?: Record<string, any> | null;
+  } | null | undefined,
+>(prev: T, next: T): T {
+  if (next === undefined) return prev;
+  if (next === null) return next;
+  if (prev === null || prev === undefined) {
+    return {
+      ...next,
+      operator: mergeNestedRecord(undefined, next.operator),
+      quote_snapshot: next.quote_snapshot
+        ? {
+            ...next.quote_snapshot,
+            maker_leg: mergeNestedRecord(undefined, next.quote_snapshot.maker_leg as any),
+            hedge_leg: mergeNestedRecord(undefined, next.quote_snapshot.hedge_leg as any),
+            ref_leg: mergeNestedRecord(undefined, next.quote_snapshot.ref_leg as any),
+          }
+        : next.quote_snapshot,
+    } as T;
+  }
+  const nextQuoteSnapshot = next.quote_snapshot;
+  const prevQuoteSnapshot = prev.quote_snapshot;
+  return {
+    ...prev,
+    ...next,
+    operator: mergeNestedRecord(
+      prev.operator,
+      next.operator
+        ? {
+            ...next.operator,
+            hedge_policy: mergeNestedRecord(prev.operator?.hedge_policy, next.operator.hedge_policy),
+            fee_assumptions: mergeNestedRecord(prev.operator?.fee_assumptions, next.operator.fee_assumptions),
+            hedge_backlog: mergeNestedRecord(prev.operator?.hedge_backlog, next.operator.hedge_backlog),
+          }
+        : next.operator,
+    ),
+    quote_snapshot: mergeNestedRecord(
+      prevQuoteSnapshot,
+      nextQuoteSnapshot
+        ? {
+            ...nextQuoteSnapshot,
+            maker_leg: mergeNestedRecord(prevQuoteSnapshot?.maker_leg as any, nextQuoteSnapshot.maker_leg as any),
+            hedge_leg: mergeNestedRecord(prevQuoteSnapshot?.hedge_leg as any, nextQuoteSnapshot.hedge_leg as any),
+            ref_leg: mergeNestedRecord(prevQuoteSnapshot?.ref_leg as any, nextQuoteSnapshot.ref_leg as any),
+          }
+        : nextQuoteSnapshot,
+    ),
+  } as T;
+}
+
 const mergeSignalStrategyRows = (
   rows: SignalStrategy[],
   newStrategy: SignalStrategy,
@@ -1208,6 +1270,8 @@ const mergeSignalStrategyRows = (
         prev.pricing_adjustments,
         normalizedIncoming.pricing_adjustments
       ),
+      equities_arb: mergeArbSignalPayload(prev.equities_arb, normalizedIncoming.equities_arb),
+      maker_v4: mergeArbSignalPayload(prev.maker_v4, normalizedIncoming.maker_v4),
     };
 
     // Recompute edge2_bps to maintain invariant: edge2 = decision_edge - required_edge
@@ -1707,6 +1771,8 @@ const createDefaultColumnPrefsByProfile = (): ParamsColumnPrefsByProfile => ({
   taker: createDefaultColumnPrefs(),
   maker_v2: createDefaultColumnPrefs(),
   maker_v3: createDefaultColumnPrefs(),
+  equities_maker: createDefaultColumnPrefs(),
+  equities_taker: createDefaultColumnPrefs(),
   maker_v4: createDefaultColumnPrefs(),
 });
 
@@ -1714,6 +1780,8 @@ function normalizeParamsProfileId(value: unknown): ParamsProfileId {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'maker_v2') return 'maker_v2';
   if (normalized === 'maker_v3') return 'maker_v3';
+  if (normalized === 'equities_maker') return 'equities_maker';
+  if (normalized === 'equities_taker') return 'equities_taker';
   if (normalized === 'maker_v4') return 'maker_v4';
   return 'taker';
 }
@@ -1733,6 +1801,8 @@ const normalizeColumnPrefsByProfile = (
         : takerLegacy,
     maker_v2: normalizeColumnPrefs(prefs?.maker_v2 ?? defaults.maker_v2),
     maker_v3: normalizeColumnPrefs(prefs?.maker_v3 ?? defaults.maker_v3),
+    equities_maker: normalizeColumnPrefs(prefs?.equities_maker ?? defaults.equities_maker),
+    equities_taker: normalizeColumnPrefs(prefs?.equities_taker ?? defaults.equities_taker),
     maker_v4: normalizeColumnPrefs(prefs?.maker_v4 ?? defaults.maker_v4),
   };
 };
@@ -1823,7 +1893,7 @@ export const useParamsStore = create<ParamsStore>()(
     }),
     {
       name: PARAMS_UI_STORAGE_KEY,
-      version: 3,
+      version: 4,
       migrate: (persistedState: any, version: number) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
@@ -1852,9 +1922,32 @@ export const useParamsStore = create<ParamsStore>()(
           normalizedPrefsByProfile.taker = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v2 = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v3 = cloneLegacyPrefs();
+          normalizedPrefsByProfile.equities_maker = cloneLegacyPrefs();
+          normalizedPrefsByProfile.equities_taker = cloneLegacyPrefs();
           normalizedPrefsByProfile.maker_v4 = cloneLegacyPrefs();
         }
-        const activeProfile = normalizeParamsProfileId(
+        if (version < 4) {
+          const legacyMakerV4Prefs = normalizeColumnPrefs(normalizedPrefsByProfile.maker_v4);
+          const hasEquitiesMakerPrefs =
+            normalizedPrefsByProfile.equities_maker.order.length > 0
+            || Object.keys(normalizedPrefsByProfile.equities_maker.visibility).length > 0;
+          const hasEquitiesTakerPrefs =
+            normalizedPrefsByProfile.equities_taker.order.length > 0
+            || Object.keys(normalizedPrefsByProfile.equities_taker.visibility).length > 0;
+          if (!hasEquitiesMakerPrefs) {
+            normalizedPrefsByProfile.equities_maker = {
+              order: [...legacyMakerV4Prefs.order],
+              visibility: { ...legacyMakerV4Prefs.visibility },
+            };
+          }
+          if (!hasEquitiesTakerPrefs) {
+            normalizedPrefsByProfile.equities_taker = {
+              order: [...legacyMakerV4Prefs.order],
+              visibility: { ...legacyMakerV4Prefs.visibility },
+            };
+          }
+        }
+        let activeProfile = normalizeParamsProfileId(
           version < 3
             ? String(persistedState.activeProfile || '')
                 .trim()
@@ -1862,6 +1955,9 @@ export const useParamsStore = create<ParamsStore>()(
                 .replace('taker_task', 'taker')
             : persistedState.activeProfile,
         );
+        if (activeProfile === 'maker_v4') {
+          activeProfile = 'equities_maker';
+        }
         const activePrefs = normalizedPrefsByProfile[activeProfile] || createDefaultColumnPrefs();
 
         return {

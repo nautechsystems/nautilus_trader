@@ -5,6 +5,12 @@ import Trades from '../Trades';
 import { api } from '../api';
 import { markGlobalResyncApplied, useResyncStore, useTradesStore } from '../stores';
 
+const { realtimeFlags } = vi.hoisted(() => ({
+  realtimeFlags: {
+    trades: false,
+  },
+}));
+
 vi.mock('../api', () => ({
   api: {
     getTrades: vi.fn(),
@@ -18,7 +24,18 @@ vi.mock('../sockets', () => ({
     off: vi.fn(),
     connected: true,
   },
+  standardSocketClient: {
+    subscribe: vi.fn(() => () => undefined),
+  },
 }));
+
+vi.mock('../config/featureFlags', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    isRealtimeStandardEnabled: (surface: string) => surface === 'trades' && realtimeFlags.trades,
+  };
+});
 
 vi.mock('../stores', async (importOriginal) => {
   const mod = await importOriginal<any>();
@@ -39,6 +56,16 @@ vi.mock('../components/trades/TradesTable', () => ({
 const mockGetTrades = vi.mocked(api.getTrades);
 const mockGetTradesDelta = vi.mocked(api.getTradesDelta);
 const mockMarkGlobalResyncApplied = vi.mocked(markGlobalResyncApplied);
+
+const standardRealtimeLineage = {
+  contract_version: 2,
+  surface: 'trades',
+  profile: 'tokenmm',
+  surface_query_key: 'tokenmm.trades',
+  stream_id: 'trades-main',
+  snapshot_revision: 'snap-1',
+  last_seq: 0,
+};
 
 function setupTradesStore() {
   const setSnapshot = vi.fn().mockReturnValue({
@@ -79,6 +106,7 @@ function setupTradesStore() {
 describe('Trades resync clearing behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    realtimeFlags.trades = true;
     mockGetTrades.mockReset();
     mockGetTradesDelta.mockReset();
     mockMarkGlobalResyncApplied.mockReset();
@@ -95,6 +123,7 @@ describe('Trades resync clearing behavior', () => {
       last_seq: 0,
       has_more: false,
       next_cursor: null,
+      realtime: standardRealtimeLineage,
     });
     mockGetTradesDelta.mockResolvedValue({
       rows: [],
@@ -111,7 +140,7 @@ describe('Trades resync clearing behavior', () => {
     cleanup();
   });
 
-  it('marks reconnect resync as applied on successful empty delta poll', async () => {
+  it('marks reconnect resync as applied when an empty delta replay advances last_seq', async () => {
     const view = render(<Trades />);
 
     await act(async () => {
@@ -134,13 +163,12 @@ describe('Trades resync clearing behavior', () => {
     });
 
     expect(mockGetTradesDelta).toHaveBeenCalled();
-
     expect(mockMarkGlobalResyncApplied).toHaveBeenCalledWith('trades', reconnectResyncId);
     view.unmount();
     expect(useResyncStore.getState().mountedConsumers.trades).toBeUndefined();
   });
 
-  it('does not mark reconnect resync as applied when empty delta poll omits last_seq', async () => {
+  it('does not mark reconnect resync as applied when a no-op replay omits last_seq', async () => {
     mockGetTradesDelta.mockResolvedValue({
       rows: [],
       reset_required: false,
