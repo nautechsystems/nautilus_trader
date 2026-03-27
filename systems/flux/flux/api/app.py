@@ -149,6 +149,7 @@ class RedisClientProtocol(Protocol):
 
 
 StrategyRunningResolver = Callable[[Sequence[str]], Mapping[str, bool | None]]
+StrategyAlertsResolver = Callable[[Sequence[str]], Mapping[str, Sequence[Mapping[str, Any]]]]
 
 
 class ParamsStoreValidationError(ValueError):
@@ -246,6 +247,7 @@ class FluxApiStore:
         contract_catalog: Sequence[ContractCatalogEntry],
         contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
         strategy_running_resolver: StrategyRunningResolver | None = None,
+        strategy_alerts_resolver: StrategyAlertsResolver | None = None,
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -284,6 +286,7 @@ class FluxApiStore:
         self._contracts = tuple(spec[0] for spec in self._contract_specs)
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
+        self._strategy_alerts_resolver = strategy_alerts_resolver
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
         self._required_readiness_keys = tuple(
@@ -1252,17 +1255,31 @@ class FluxApiStore:
         fetch_count = max(1, min(2_000, limit * 2))
         entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
         rows = extract_stream_rows(entries)
-        return build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
+        stream_rows = build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
+        synthetic_rows = self._load_synthetic_alert_rows((strategy_id,)).get(strategy_id, [])
+        return self._merge_alert_rows(
+            strategy_id,
+            stream_rows=stream_rows,
+            synthetic_rows=synthetic_rows,
+            limit=limit,
+        )
 
     def load_all_alerts_rows(self, strategy_id: str) -> list[dict[str, Any]]:
         keys = self._keys_for_strategy(strategy_id)
         entries = self._redis.xrevrange(keys.alerts())
         rows = extract_stream_rows(entries)
         filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
-        return build_alerts_rows(
+        stream_rows = build_alerts_rows(
             rows=filtered,
             strategy_id=strategy_id,
             limit=max(1, len(filtered)),
+        )
+        synthetic_rows = self._load_synthetic_alert_rows((strategy_id,)).get(strategy_id, [])
+        return self._merge_alert_rows(
+            strategy_id,
+            stream_rows=stream_rows,
+            synthetic_rows=synthetic_rows,
+            limit=None,
         )
 
     def trades_stream_len(self, strategy_id: str) -> int | None:
@@ -1324,6 +1341,59 @@ class FluxApiStore:
             return 1 if removed_rows else 0
 
         return 0
+
+    def _load_synthetic_alert_rows(
+        self,
+        strategy_ids: Sequence[str],
+    ) -> dict[str, list[dict[str, Any]]]:
+        if self._strategy_alerts_resolver is None:
+            return {}
+
+        resolved = self._strategy_alerts_resolver(strategy_ids)
+        normalized: dict[str, list[dict[str, Any]]] = {}
+        for strategy_id in strategy_ids:
+            rows = resolved.get(strategy_id, ()) if isinstance(resolved, Mapping) else ()
+            if not isinstance(rows, Sequence) or isinstance(rows, str | bytes):
+                normalized[strategy_id] = []
+                continue
+            normalized[strategy_id] = [
+                self._normalize_synthetic_alert_row(strategy_id, row)
+                for row in rows
+                if isinstance(row, Mapping)
+            ]
+        return normalized
+
+    def _normalize_synthetic_alert_row(
+        self,
+        strategy_id: str,
+        row: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        normalized = {str(key): _strict_json_value(value) for key, value in row.items()}
+        normalized.setdefault("strategy_id", strategy_id)
+        row_id = decode_text(normalized.get("row_id") or normalized.get("id")).strip()
+        if row_id:
+            normalized.setdefault("row_id", row_id)
+            normalized.setdefault("id", row_id)
+        return normalized
+
+    def _merge_alert_rows(
+        self,
+        strategy_id: str,
+        *,
+        stream_rows: Sequence[Mapping[str, Any]],
+        synthetic_rows: Sequence[Mapping[str, Any]],
+        limit: int | None,
+    ) -> list[dict[str, Any]]:
+        merged = [dict(row) for row in stream_rows]
+        merged.extend(
+            self._normalize_synthetic_alert_row(strategy_id, row)
+            for row in synthetic_rows
+            if isinstance(row, Mapping)
+        )
+        merged.sort(key=_alert_sort_key, reverse=True)
+        if limit is None:
+            return merged
+        return merged[: max(1, limit)]
 
 
 def _request_id() -> str:
@@ -1482,6 +1552,15 @@ def _extract_last_seq(rows: Sequence[Mapping[str, Any]], *, fallback: int = 0) -
     return best
 
 
+def _alert_sort_key(row: Mapping[str, Any]) -> tuple[int, str, str, str]:
+    return (
+        coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or 0,
+        decode_text(row.get("row_id") or row.get("id")).strip(),
+        decode_text(row.get("strategy_id")).strip(),
+        decode_text(row.get("source")).strip(),
+    )
+
+
 def _trade_replay_cursor(row: Mapping[str, Any]) -> tuple[int, str, int] | None:
     ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp"))
     row_id = decode_text(row.get("row_id")).strip()
@@ -1593,6 +1672,7 @@ def create_flux_api_app(  # noqa: C901
     contract_catalog: Sequence[ContractCatalogEntry],
     contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
     strategy_running_resolver: StrategyRunningResolver | None = None,
+    strategy_alerts_resolver: StrategyAlertsResolver | None = None,
     strategy_metadata: StrategyMetadata,
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
@@ -1706,6 +1786,7 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog=contract_catalog,
         contract_catalog_resolver=contract_catalog_resolver,
         strategy_running_resolver=strategy_running_resolver,
+        strategy_alerts_resolver=strategy_alerts_resolver,
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
