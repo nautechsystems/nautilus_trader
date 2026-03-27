@@ -5260,6 +5260,11 @@ mod tests {
         rc.borrow_mut().prepare_for_timer_mode(&rc);
         rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
 
+        for event in clock.borrow_mut().advance_time(UnixNanos::from(0), true) {
+            rc.borrow_mut().on_timer_fire(event.ts_event);
+        }
+        assert_eq!(handler.lock().expect(MUTEX_POISONED).len(), 0);
+
         let ts1 = UnixNanos::from(1_000_000_000);
         rc.borrow_mut().handle_quote_tick(QuoteTick::new(
             leg1,
@@ -5280,18 +5285,24 @@ mod tests {
             ts1,
         ));
 
+        for event in clock.borrow_mut().advance_time(ts1, true) {
+            rc.borrow_mut().on_timer_fire(event.ts_event);
+        }
+
+        {
+            let quotes = handler.lock().expect(MUTEX_POISONED);
+            assert_eq!(quotes.len(), 1);
+            assert_eq!(quotes[0].ts_event, ts1);
+            assert_eq!(quotes[0].ts_init, ts1);
+        }
+
         let ts2 = UnixNanos::from(2_000_000_000);
-        let mut clock_guard = clock.borrow_mut();
-        let events = clock_guard.advance_time(ts2, true);
-        drop(clock_guard);
-        for event in events {
+        for event in clock.borrow_mut().advance_time(ts2, true) {
             rc.borrow_mut().on_timer_fire(event.ts_event);
         }
 
         let quotes = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0].ts_event, ts2);
-        assert_eq!(quotes[0].ts_init, ts2);
     }
 
     #[rstest]
