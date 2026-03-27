@@ -54,6 +54,9 @@ const INITIAL_BACKOFF_MS: u64 = 1000;
 /// Maximum backoff duration for reconnection.
 const MAX_BACKOFF_MS: u64 = 30000;
 
+/// Maximum time to wait for an individual plant logout before aborting it.
+const DISCONNECT_TIMEOUT_SECS: u64 = 3;
+
 /// Configuration for the Rithmic gateway.
 ///
 /// This unified configuration contains all credentials needed to connect
@@ -988,29 +991,81 @@ impl RithmicGateway {
         // from the plants to call disconnect and close the connections cleanly.
         if let Some(plant) = self.ticker_plant.take() {
             let handle = plant.get_handle();
-            if let Err(e) = handle.disconnect().await {
-                warn!("Error disconnecting ticker plant: {e}");
+            match tokio::time::timeout(
+                Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                handle.disconnect(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    warn!("Error disconnecting ticker plant: {e}; aborting plant");
+                    handle.abort();
+                }
+                Err(_) => {
+                    warn!("Timed out disconnecting ticker plant; aborting plant");
+                    handle.abort();
+                }
             }
         }
 
         if let Some(plant) = self.order_plant.take() {
             let handle = plant.get_handle();
-            if let Err(e) = handle.disconnect().await {
-                warn!("Error disconnecting order plant: {e}");
+            match tokio::time::timeout(
+                Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                handle.disconnect(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    warn!("Error disconnecting order plant: {e}; aborting plant");
+                    handle.abort();
+                }
+                Err(_) => {
+                    warn!("Timed out disconnecting order plant; aborting plant");
+                    handle.abort();
+                }
             }
         }
 
         if let Some(plant) = self.pnl_plant.take() {
             let handle = plant.get_handle();
-            if let Err(e) = handle.disconnect().await {
-                warn!("Error disconnecting PnL plant: {e}");
+            match tokio::time::timeout(
+                Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                handle.disconnect(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    warn!("Error disconnecting PnL plant: {e}; aborting plant");
+                    handle.abort();
+                }
+                Err(_) => {
+                    warn!("Timed out disconnecting PnL plant; aborting plant");
+                    handle.abort();
+                }
             }
         }
 
         if let Some(plant) = self.history_plant.take() {
             let handle = plant.get_handle();
-            if let Err(e) = handle.disconnect().await {
-                warn!("Error disconnecting history plant: {e}");
+            match tokio::time::timeout(
+                Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+                handle.disconnect(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    warn!("Error disconnecting history plant: {e}; aborting plant");
+                    handle.abort();
+                }
+                Err(_) => {
+                    warn!("Timed out disconnecting history plant; aborting plant");
+                    handle.abort();
+                }
             }
         }
 

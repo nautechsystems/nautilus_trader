@@ -12,6 +12,8 @@ The Rithmic example set includes:
 
 - `rithmic_data_tester.py` for a standard Nautilus `TradingNode` data-client smoke run
 - `rithmic_exec_tester.py` for a standard Nautilus `TradingNode` execution smoke run
+- `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox
+- `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest
 - `order_submission.py` for a low-level safe working-order submit/modify/cancel flow
 - `bracket_submission.py` for a low-level native bracket smoke run
 - `oco_submission.py` for a low-level native OCO smoke run
@@ -68,6 +70,10 @@ Optional environment variables:
 - `RITHMIC_APP_VERSION`
 - `RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS`
 - `RITHMIC_NATIVE_BRACKET_STATE_PATH`
+
+Python `RithmicDataClientConfig` also supports `enable_history`. Keep this enabled for
+historical bar requests and disable it for live-only streaming nodes that do not need the
+history plant.
 
 Example shell setup:
 

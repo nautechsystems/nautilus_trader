@@ -68,11 +68,13 @@ class _DummyDataClient:
     _handle_trade_tick = RithmicLiveDataClient._handle_trade_tick
     _request_bars = RithmicLiveDataClient._request_bars
 
-    def __init__(self, cache=None, instrument_provider=None):
+    def __init__(self, cache=None, instrument_provider=None, config=None):
         self._cache = cache or _FakeCache({})
         self._instrument_provider = instrument_provider or _FakeProvider({})
         self.handled = []
         self._log = _FakeLog()
+        self._config = config or SimpleNamespace(enable_history=True)
+        self._rust_client = None
 
     def _handle_data(self, data):
         self.handled.append(data)
@@ -335,6 +337,20 @@ class TestRithmicLiveDataClient:
         )
 
         with pytest.raises(ValueError, match="Start must be earlier than end"):
+            await client._request_bars(request)
+
+    @pytest.mark.asyncio
+    async def test_request_bars_requires_history_enabled(self):
+        client = _DummyDataClient(config=SimpleNamespace(enable_history=False))
+        request = SimpleNamespace(
+            bar_type=_make_bar_type(),
+            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=1),
+            params={"exchange": "CME"},
+            id="req-history-disabled",
+        )
+
+        with pytest.raises(RuntimeError, match="history is disabled"):
             await client._request_bars(request)
 
     @pytest.mark.asyncio

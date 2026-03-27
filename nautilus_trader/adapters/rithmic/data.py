@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -12,6 +13,7 @@ from nautilus_trader.model.identifiers import ClientId, InstrumentId, TradeId, V
 from nautilus_trader.model.objects import Price, Quantity
 
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
+from nautilus_trader.adapters.rithmic.config import to_binding_environment
 from nautilus_trader.adapters.rithmic.providers import normalize_rithmic_symbol, resolve_exchange_hint
 
 if TYPE_CHECKING:
@@ -69,6 +71,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         self._config = config
         self._gateway = None
         self._rust_client = None
+        self._subscription_channels: dict[tuple[str, str], set[str]] = {}
+        self._subscription_mode: dict[tuple[str, str], str] = {}
 
     @property
     def venue(self) -> Venue:
@@ -77,9 +81,6 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         """Connect to the Rithmic ticker plant."""
-        await self._instrument_provider.initialize()
-        self._send_all_instruments_to_data_engine()
-
         try:
             from nautilus_trader.adapters.rithmic.bindings import RithmicDataClient
             from nautilus_trader.adapters.rithmic.bindings import RithmicGateway
@@ -90,7 +91,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
         # Create gateway from config
         self._gateway = RithmicGateway(
-            environment=self._config.environment,
+            environment=to_binding_environment(self._config.environment),
             username=self._config.username,
             password=self._config.password,
             system_name=self._config.system_name,
@@ -102,11 +103,18 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             enable_ticker=True,
             enable_order=False,
             enable_pnl=False,
-            enable_history=True,
+            enable_history=self._config.enable_history,
         )
 
         # Connect gateway
         await self._gateway.connect()
+
+        bind_gateway = getattr(self._instrument_provider, "bind_gateway", None)
+        if bind_gateway is not None:
+            bind_gateway(self._gateway)
+
+        await self._instrument_provider.initialize()
+        self._send_all_instruments_to_data_engine()
 
         # Create data client
         self._rust_client = RithmicDataClient(self._gateway)
@@ -141,10 +149,21 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             self._rust_client.clear_data_callback()
             self._rust_client.unsubscribe_all()
             self._rust_client = None
+            self._subscription_channels.clear()
+            self._subscription_mode.clear()
 
         if self._gateway:
-            await self._gateway.disconnect()
+            clear_binding = getattr(self._instrument_provider, "clear_gateway_binding", None)
+            if clear_binding is not None:
+                clear_binding()
+            gateway = self._gateway
             self._gateway = None
+            try:
+                await asyncio.wait_for(gateway.disconnect(), timeout=3.0)
+            except asyncio.TimeoutError:
+                self._log.warning(
+                    "Timed out waiting for Rithmic gateway disconnect; continuing local shutdown",
+                )
 
         self._log.info("Disconnected from Rithmic ticker plant")
 
@@ -160,8 +179,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             elif event.is_error():
                 error = event.as_error()
                 self._log.error(f"Market data error: {error}")
-        except _HANDLER_EXCEPTIONS:
-            self._log.exception("Error handling market data event")
+        except _HANDLER_EXCEPTIONS as e:
+            self._log.exception("Error handling market data event", e)
 
     def _handle_quote_tick(self, tick) -> None:
         """Convert Rust QuoteTick to Nautilus QuoteTick and publish."""
@@ -213,17 +232,26 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         else:
             aggressor_side = AggressorSide.NO_AGGRESSOR
 
+        fallback_trade_id = tick.trade_id or format(tick.ts_event, "x")
+
         nautilus_tick = NautilusTradeTick(
             instrument_id=instrument_id,
             price=Price(tick.price, price_precision),
             size=Quantity(tick.size, size_precision),
             aggressor_side=aggressor_side,
-            trade_id=TradeId(tick.trade_id),
+            trade_id=TradeId(fallback_trade_id),
             ts_event=tick.ts_event,
             ts_init=tick.ts_init,
         )
 
         self._handle_data(nautilus_tick)
+
+    def _subscription_key(self, symbol: str, exchange: str) -> tuple[str, str]:
+        return (symbol, exchange)
+
+    def _logical_subscriptions_for(self, symbol: str, exchange: str) -> set[str]:
+        key = self._subscription_key(symbol, exchange)
+        return self._subscription_channels.setdefault(key, set())
 
     async def _subscribe_order_book_deltas(self, command) -> None:
         """Subscribe to order book deltas."""
@@ -266,7 +294,17 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             raise ValueError(f"Missing exchange for instrument {instrument_id}")
 
         await self._ensure_instrument_loaded(instrument_id, exchange)
+        logical = self._logical_subscriptions_for(symbol, exchange)
+        if "quotes" in logical:
+            return
+        if self._subscription_mode.get(self._subscription_key(symbol, exchange)) == "trades":
+            logical.add("quotes")
+            self._log.info(f"Reusing trade subscription for quotes on {symbol} ({exchange})")
+            return
+
         await self._rust_client.subscribe_quotes(symbol, exchange)
+        logical.add("quotes")
+        self._subscription_mode[self._subscription_key(symbol, exchange)] = "quotes"
         self._log.info(f"Subscribed to quotes for {symbol} on {exchange}")
 
     async def _subscribe_trade_ticks(self, command) -> None:
@@ -281,8 +319,22 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             raise ValueError(f"Missing exchange for instrument {instrument_id}")
 
         await self._ensure_instrument_loaded(instrument_id, exchange)
+        logical = self._logical_subscriptions_for(symbol, exchange)
+        if "trades" in logical:
+            return
+        mode = self._subscription_mode.get(self._subscription_key(symbol, exchange))
+        if mode == "quotes":
+            logical.add("trades")
+            self._log.warning(
+                f"Trade subscription requested after quote subscription for {symbol} on {exchange}; "
+                "keeping existing venue subscription",
+            )
+            return
+
         # Rithmic sends both quotes and trades with single subscription
         await self._rust_client.subscribe_trades(symbol, exchange)
+        logical.add("trades")
+        self._subscription_mode[self._subscription_key(symbol, exchange)] = "trades"
         self._log.info(f"Subscribed to trades for {symbol} on {exchange}")
 
     async def _subscribe_mark_prices(self, command) -> None:
@@ -340,7 +392,18 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         if exchange is None:
             return
 
+        key = self._subscription_key(symbol, exchange)
+        logical = self._subscription_channels.get(key)
+        if logical is None or "quotes" not in logical:
+            return
+
+        logical.discard("quotes")
+        if logical:
+            return
+
         await self._rust_client.unsubscribe(symbol, exchange)
+        self._subscription_channels.pop(key, None)
+        self._subscription_mode.pop(key, None)
         self._log.info(f"Unsubscribed from quotes for {symbol} on {exchange}")
 
     async def _unsubscribe_trade_ticks(self, command) -> None:
@@ -354,7 +417,18 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         if exchange is None:
             return
 
+        key = self._subscription_key(symbol, exchange)
+        logical = self._subscription_channels.get(key)
+        if logical is None or "trades" not in logical:
+            return
+
+        logical.discard("trades")
+        if logical:
+            return
+
         await self._rust_client.unsubscribe(symbol, exchange)
+        self._subscription_channels.pop(key, None)
+        self._subscription_mode.pop(key, None)
         self._log.info(f"Unsubscribed from trades for {symbol} on {exchange}")
 
     async def _unsubscribe_mark_prices(self, command) -> None:
@@ -452,49 +526,58 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
     async def _request_bars(self, request) -> None:
         """Request historical bars."""
+        if not self._config.enable_history:
+            raise RuntimeError("Historical bars requested, but Rithmic history is disabled")
+
+        temporary_connection = False
         if not self._rust_client:
-            raise RuntimeError("Not connected")
+            await self._connect()
+            temporary_connection = True
 
-        instrument_id = request.bar_type.instrument_id
-        exchange = self._resolve_exchange(instrument_id, request.params)
-        if exchange is None:
-            raise ValueError(f"Missing exchange for instrument {instrument_id}")
+        try:
+            instrument_id = request.bar_type.instrument_id
+            exchange = self._resolve_exchange(instrument_id, request.params)
+            if exchange is None:
+                raise ValueError(f"Missing exchange for instrument {instrument_id}")
 
-        if request.start is None or request.end is None:
-            raise ValueError("Both start and end must be provided for bar requests")
+            if request.start is None or request.end is None:
+                raise ValueError("Both start and end must be provided for bar requests")
 
-        if request.start >= request.end:
-            raise ValueError("Start must be earlier than end for bar requests")
+            if request.start >= request.end:
+                raise ValueError("Start must be earlier than end for bar requests")
 
-        await self._ensure_instrument_loaded(instrument_id, exchange)
+            await self._ensure_instrument_loaded(instrument_id, exchange)
 
-        bar_type_name = self._resolve_bar_type_name(request.bar_type)
-        bar_period = int(request.bar_type.spec.step)
-        start_time_sec = int(request.start.timestamp())
-        end_time_sec = int(request.end.timestamp())
+            bar_type_name = self._resolve_bar_type_name(request.bar_type)
+            bar_period = int(request.bar_type.spec.step)
+            start_time_sec = int(request.start.timestamp())
+            end_time_sec = int(request.end.timestamp())
 
-        responses = await self._rust_client.request_bars(
-            self._resolve_rithmic_symbol(instrument_id),
-            exchange,
-            bar_type_name,
-            bar_period,
-            start_time_sec,
-            end_time_sec,
-        )
+            responses = await self._rust_client.request_bars(
+                self._resolve_rithmic_symbol(instrument_id),
+                exchange,
+                bar_type_name,
+                bar_period,
+                start_time_sec,
+                end_time_sec,
+            )
 
-        bars = self._convert_time_bars(
-            request.bar_type,
-            responses,
-            instrument_id,
-        )
-        self._handle_bars(
-            request.bar_type,
-            bars,
-            request.id,
-            request.start,
-            request.end,
-            request.params,
-        )
+            bars = self._convert_time_bars(
+                request.bar_type,
+                responses,
+                instrument_id,
+            )
+            self._handle_bars(
+                request.bar_type,
+                bars,
+                request.id,
+                request.start,
+                request.end,
+                request.params,
+            )
+        finally:
+            if temporary_connection:
+                await self._disconnect()
 
     async def _request_funding_rates(self, request) -> None:
         """Request funding rates."""
@@ -584,6 +667,11 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             low_price = response.low_price or open_price
             close_price = response.close_price or open_price
             volume = response.volume or 0
+
+            if not response.period and not any(
+                (open_price, high_price, low_price, close_price, volume)
+            ):
+                continue
 
             ts_event = self._bar_timestamp_from_response(response, bar_type)
             ts_init = ts_event

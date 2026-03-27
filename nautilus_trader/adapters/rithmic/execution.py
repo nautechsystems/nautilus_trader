@@ -58,6 +58,7 @@ from nautilus_trader.adapters.rithmic.bindings import (
     TimeInForce as RithmicTimeInForce,
 )
 from nautilus_trader.adapters.rithmic.config import RithmicExecClientConfig
+from nautilus_trader.adapters.rithmic.config import to_binding_environment
 
 if TYPE_CHECKING:
     from nautilus_trader.cache import Cache
@@ -1204,7 +1205,7 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         self._primary_balance_event.clear()
         self._accessible_accounts = []
         self._gateway = RithmicGateway(
-            environment=self._config.environment,
+            environment=to_binding_environment(self._config.environment),
             username=self._config.username,
             password=self._config.password,
             system_name=self._config.system_name,

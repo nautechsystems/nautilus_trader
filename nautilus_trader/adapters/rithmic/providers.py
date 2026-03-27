@@ -12,6 +12,7 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.objects import Currency, Price, Quantity
 
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
+from nautilus_trader.adapters.rithmic.config import to_binding_environment
 
 if TYPE_CHECKING:
     from nautilus_trader.model.instruments import Instrument
@@ -89,6 +90,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
         self._config = config
         self._gateway = None
         self._provider = None
+        self._uses_external_gateway = False
 
     @property
     def venue(self) -> Venue:
@@ -205,6 +207,28 @@ class RithmicInstrumentProvider(InstrumentProvider):
         """
         return self._instruments.copy()
 
+    def bind_gateway(self, gateway) -> None:
+        """Bind the provider to an existing connected gateway owned elsewhere."""
+        try:
+            from nautilus_trader.adapters.rithmic.bindings import (
+                RithmicInstrumentProvider as RustInstrumentProvider,
+            )
+        except ImportError as e:
+            raise ImportError(
+                "Failed to import Rust bindings. Make sure the native extension is built."
+            ) from e
+
+        self._gateway = gateway
+        self._provider = RustInstrumentProvider(gateway)
+        self._uses_external_gateway = True
+
+    def clear_gateway_binding(self) -> None:
+        """Clear any externally managed gateway binding."""
+        if self._uses_external_gateway:
+            self._gateway = None
+            self._provider = None
+            self._uses_external_gateway = False
+
     async def _ensure_provider_connected(self) -> None:
         if self._gateway is None:
             try:
@@ -218,7 +242,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
                 ) from e
 
             self._gateway = RithmicGateway(
-                environment=self._config.environment,
+                environment=to_binding_environment(self._config.environment),
                 username=self._config.username,
                 password=self._config.password,
                 system_name=self._config.system_name,
@@ -233,8 +257,11 @@ class RithmicInstrumentProvider(InstrumentProvider):
                 enable_history=False,
             )
             self._provider = RustInstrumentProvider(self._gateway)
+            self._uses_external_gateway = False
 
         if not self._gateway.is_connected():
+            if self._uses_external_gateway:
+                raise RuntimeError("Bound Rithmic gateway is not connected")
             await self._gateway.connect()
 
     def _cache_instrument(self, instrument: "Instrument") -> None:

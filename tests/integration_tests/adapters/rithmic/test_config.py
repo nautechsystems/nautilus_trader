@@ -53,6 +53,7 @@ class TestRithmicDataClientConfig:
         assert config.app_version == "1.0"
         assert config.fcm_id is None
         assert config.ib_id is None
+        assert config.enable_history is True
 
     def test_create_config_with_optional_fields(self):
         config = RithmicDataClientConfig(
@@ -64,11 +65,13 @@ class TestRithmicDataClientConfig:
             app_version="2.0",
             fcm_id="FCM001",
             ib_id="IB001",
+            enable_history=False,
         )
         assert config.app_name == "MyApp"
         assert config.app_version == "2.0"
         assert config.fcm_id == "FCM001"
         assert config.ib_id == "IB001"
+        assert config.enable_history is False
 
     def test_from_env(self):
         env_vars = {
@@ -83,6 +86,7 @@ class TestRithmicDataClientConfig:
             assert config.username == "env_user"
             assert config.password == "env_pass"
             assert config.system_name == "env_system"
+            assert config.enable_history is True
 
     def test_from_env_profile(self):
         env_vars = {

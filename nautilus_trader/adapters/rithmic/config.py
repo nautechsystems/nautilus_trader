@@ -84,6 +84,24 @@ class RithmicEnvironment(Enum):
             raise ValueError(f"Invalid environment: {value}")
 
 
+def to_binding_environment(environment):
+    """Convert a Python config enum into the PyO3 RithmicEnv type."""
+    from nautilus_trader.core import nautilus_pyo3
+
+    binding_env = getattr(nautilus_pyo3.rithmic, "RithmicEnv", None)
+    if binding_env is None:
+        raise RuntimeError("RithmicEnv binding is not available")
+
+    if isinstance(environment, binding_env):
+        return environment
+
+    name = getattr(environment, "name", None)
+    if name is None:
+        raise TypeError(f"Cannot convert Rithmic environment {environment!r}")
+
+    return getattr(binding_env, name)
+
+
 class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for Rithmic data clients.
@@ -106,6 +124,9 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
         FCM ID (Futures Commission Merchant).
     ib_id : str, optional
         IB ID (Introducing Broker).
+    enable_history : bool, default True
+        Whether the client should connect the Rithmic history plant. Disable
+        this for live-only streaming sessions that do not request bars.
     """
 
     environment: RithmicEnvironment = RithmicEnvironment.DEMO
@@ -116,6 +137,7 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     app_version: str = "1.0"
     fcm_id: Optional[str] = None
     ib_id: Optional[str] = None
+    enable_history: bool = True
 
     @classmethod
     def from_env(cls, profile: str | None = None) -> "RithmicDataClientConfig":
