@@ -1,0 +1,51 @@
+[package]
+name = "nautilus-rithmic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Rithmic futures integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_rithmic"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+python = ["pyo3", "pyo3-async-runtimes"]
+extension-module = ["python", "pyo3/extension-module"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+ahash = { workspace = true }
+rithmic-rs = { git = "https://github.com/pbeets/rithmic-rs", features = ["serde"] }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = "0.1"
+dashmap = { workspace = true }
+arc-swap = { workspace = true }
+parking_lot = "0.12"
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+
+[dev-dependencies]
+futures-util = { workspace = true }
+prost = { version = "0.14.3", default-features = false, features = ["std"] }
+tokio-tungstenite = { workspace = true }
+tokio-test = "0.4"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
