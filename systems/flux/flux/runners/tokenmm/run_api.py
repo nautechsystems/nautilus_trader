@@ -340,7 +340,9 @@ def _maybe_inject_equities_runtime_config(response: Response) -> Response:
     response.set_data(
         _inject_fluxboard_runtime_config(
             html,
-            socket_paths={"equities": EQUITIES_PUBLIC_SOCKET_PATH},
+            # The public /equities surface should stay on the shared same-origin
+            # Socket.IO endpoint and select the equities stream via profile.
+            socket_paths={"equities": "/socket.io"},
         ),
     )
     return response

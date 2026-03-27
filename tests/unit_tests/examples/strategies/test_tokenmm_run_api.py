@@ -352,7 +352,7 @@ def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch
     body = response.get_data(as_text=True)
     assert "equities" in body
     assert "window.__FLUXBOARD_RUNTIME_CONFIG__" in body
-    assert '"socketPaths":{"equities":"/equities/socket.io"}' in body
+    assert '"socketPaths":{"equities":"/socket.io"}' in body
     assert captured["url"] == "http://127.0.0.1:5024/equities"
     assert captured["method"] == "GET"
 

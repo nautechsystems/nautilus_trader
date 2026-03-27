@@ -159,7 +159,7 @@ describe('sockets status state machine', () => {
     (window.location as any).pathname = '/equities/signal';
     (window as any).__FLUXBOARD_RUNTIME_CONFIG__ = {
       socketPaths: {
-        equities: '/equities/socket.io',
+        equities: '/socket.io',
       },
     };
     const sockets = await import('./sockets');
@@ -168,7 +168,7 @@ describe('sockets status state machine', () => {
 
     expect(ioMock).toHaveBeenCalledTimes(1);
     expect(ioCalls[0].url).toBe('');
-    expect(ioCalls[0].options.path).toBe('/equities/socket.io');
+    expect(ioCalls[0].options.path).toBe('/socket.io');
     expect(ioCalls[0].options.query?.profile).toBe('equities');
   });
 
