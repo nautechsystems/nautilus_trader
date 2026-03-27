@@ -64,8 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use EventSlugFilter to load only instruments for this event
     let event_slugs = vec!["presidential-election-winner-2028".to_string()];
-    let data_filter = EventSlugFilter::from_slugs(event_slugs.clone());
-    let exec_filter = EventSlugFilter::from_slugs(event_slugs);
+    let data_filter = EventSlugFilter::from_slugs(event_slugs);
 
     let data_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(data_filter)],
@@ -78,7 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
-        filters: vec![Arc::new(exec_filter)],
         ..Default::default()
     };
     let exec_factory = PolymarketExecutionClientFactory;

@@ -129,7 +129,6 @@ fn create_test_exec_config(addr: SocketAddr) -> PolymarketExecClientConfig {
         funder: None,
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
-        base_url_gamma: Some(format!("http://{addr}")),
         http_timeout_secs: 5,
         max_retries: 0,
         ..PolymarketExecClientConfig::default()

@@ -183,11 +183,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
             cache,
         );
 
-        let mut client = PolymarketExecutionClient::new(core, polymarket_config.clone())?;
-
-        for filter in &polymarket_config.filters {
-            client.add_instrument_filter(Arc::clone(filter));
-        }
+        let client = PolymarketExecutionClient::new(core, polymarket_config)?;
 
         Ok(Box::new(client))
     }
