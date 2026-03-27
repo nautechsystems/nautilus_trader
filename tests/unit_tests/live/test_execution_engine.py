@@ -1987,6 +1987,94 @@ class TestLiveExecutionEngine:
             is True
         )
 
+    def test_reconcile_position_report_netting_startup_cleanup_uses_captured_snapshot_for_accountless_reports(
+        self,
+    ):
+        stale_position_order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100),
+        )
+        self.cache.add_order(stale_position_order)
+        stale_position_order.apply(
+            TestEventStubs.order_accepted(
+                stale_position_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-CAPTURED-POSITION-001"),
+            ),
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=self.client.account_id,
+            position_id=PositionId("P-STARTUP-CAPTURED-ACCOUNTLESS-001"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("T-STARTUP-CAPTURED-ACCOUNTLESS-001"),
+        )
+        stale_position_order.apply(stale_position_fill)
+        self.cache.update_order(stale_position_order)
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        startup_open_order = self.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(25),
+            price=Price.from_str("1.00000"),
+        )
+        self.cache.add_order(startup_open_order)
+        startup_open_order.apply(
+            TestEventStubs.order_submitted(
+                startup_open_order,
+                account_id=self.client.account_id,
+            ),
+        )
+        startup_open_order.apply(
+            TestEventStubs.order_accepted(
+                startup_open_order,
+                account_id=self.client.account_id,
+                venue_order_id=VenueOrderId("V-STARTUP-CAPTURED-MISSING-001"),
+            ),
+        )
+        self.cache.update_order(startup_open_order)
+
+        startup_ref = StartupOrderReference(
+            client_order_id=startup_open_order.client_order_id,
+            venue_order_id=startup_open_order.venue_order_id,
+        )
+        self.exec_engine._capture_startup_reconciliation_snapshot()
+        self.exec_engine._startup_orders_missing_at_venue[
+            (self.client.account_id, AUDUSD_SIM.id)
+        ] = {startup_ref}
+
+        cleanup_calls: list[dict[str, object]] = []
+        report = PositionStatusReport(
+            account_id=None,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.FLAT,
+            quantity=Quantity.zero(),
+            report_id=UUID4(),
+            ts_last=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        with patch.object(
+            self.exec_engine,
+            "_cleanup_stale_startup_netting_positions",
+            side_effect=lambda **kwargs: cleanup_calls.append(kwargs) or True,
+        ):
+            result = self.exec_engine._reconcile_position_report_netting(
+                report,
+                allow_startup_external_cleanup=True,
+            )
+
+        assert result is True
+        assert len(cleanup_calls) == 1
+        assert cleanup_calls[0]["stale_positions"] == [stale_position]
+        assert cleanup_calls[0]["raw_qty"] == Decimal("100")
+        assert cleanup_calls[0]["effective_qty"] == Decimal("0")
+
     def test_reconcile_position_report_netting_startup_cleanup_uses_matching_account_scope(
         self,
     ):

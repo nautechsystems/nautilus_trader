@@ -1834,15 +1834,20 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
+        if account_id is None:
+            return tuple(
+                snapshot
+                for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
+                self._startup_reconciliation_snapshot.items()
+                if snapshot_instrument_id == instrument_id
+            )
+
         exact_entries = tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
-
-        if account_id is None:
-            return exact_entries
 
         exact_strategy_ids = {snapshot.strategy_id for snapshot in exact_entries}
         unscoped_entries = tuple(
