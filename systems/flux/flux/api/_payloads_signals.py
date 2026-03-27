@@ -655,23 +655,25 @@ def _normalize_v4_leg_snapshot(
         mid = _first_valid_float(leg.get("mid"))
         ts_ms = coerce_ts_ms(leg.get("ts_ms"))
         age_ms = safe_int(leg.get("age_ms"))
-        if venue and not decode_text(payload.get("venue")).strip():
+        existing_ts_ms = coerce_ts_ms(payload.get("ts_ms"))
+        prefer_live_market = ts_ms is not None and (existing_ts_ms is None or ts_ms >= existing_ts_ms)
+        if venue and (prefer_live_market or not decode_text(payload.get("venue")).strip()):
             payload["venue"] = venue
-        if route and not decode_text(payload.get("route")).strip():
+        if route and (prefer_live_market or not decode_text(payload.get("route")).strip()):
             payload["route"] = route
-        if symbol and not decode_text(payload.get("symbol")).strip():
+        if symbol and (prefer_live_market or not decode_text(payload.get("symbol")).strip()):
             payload["symbol"] = symbol
-        if instrument_id and not decode_text(payload.get("instrument_id")).strip():
+        if instrument_id and (prefer_live_market or not decode_text(payload.get("instrument_id")).strip()):
             payload["instrument_id"] = instrument_id
-        if bid is not None and _first_valid_float(payload.get("bid")) is None:
+        if bid is not None and (prefer_live_market or _first_valid_float(payload.get("bid")) is None):
             payload["bid"] = bid
-        if ask is not None and _first_valid_float(payload.get("ask")) is None:
+        if ask is not None and (prefer_live_market or _first_valid_float(payload.get("ask")) is None):
             payload["ask"] = ask
-        if mid is not None and _first_valid_float(payload.get("mid")) is None:
+        if mid is not None and (prefer_live_market or _first_valid_float(payload.get("mid")) is None):
             payload["mid"] = mid
-        if ts_ms is not None and coerce_ts_ms(payload.get("ts_ms")) is None:
+        if ts_ms is not None and (prefer_live_market or coerce_ts_ms(payload.get("ts_ms")) is None):
             payload["ts_ms"] = ts_ms
-        if age_ms is not None and safe_int(payload.get("age_ms")) is None:
+        if age_ms is not None and (prefer_live_market or safe_int(payload.get("age_ms")) is None):
             payload["age_ms"] = age_ms
     return payload
 
@@ -683,6 +685,22 @@ def _apply_quote_health_to_v4_leg(
     max_quote_age_ms: int,
 ) -> dict[str, Any]:
     normalized = dict(payload) if isinstance(payload, Mapping) else {}
+    transport_connected = (
+        True
+        if normalized.get("ts_ms") is not None
+        or normalized.get("bid") is not None
+        or normalized.get("ask") is not None
+        else None
+    )
+    quote_health = evaluate_quote_health(
+        leg_role=leg_role,
+        bid=_first_valid_float(normalized.get("bid")),
+        ask=_first_valid_float(normalized.get("ask")),
+        quote_age_ms=safe_int(normalized.get("age_ms")),
+        max_quote_age_ms=max_quote_age_ms,
+        transport_connected=transport_connected,
+        subscription_healthy=transport_connected,
+    )
     explicit_feed_state = decode_text(normalized.get("feed_state")).strip().lower()
     if explicit_feed_state not in {"ok", "degraded", "down", "unknown"}:
         explicit_feed_state = ""
@@ -690,6 +708,25 @@ def _apply_quote_health_to_v4_leg(
     if explicit_quote_state not in {"fresh", "old", "missing"}:
         explicit_quote_state = ""
     if explicit_feed_state or explicit_quote_state:
+        optimistic_explicit = explicit_feed_state == "ok" and explicit_quote_state == "fresh"
+        conservative_explicit = (
+            explicit_feed_state in {"degraded", "down", "unknown"}
+            or explicit_quote_state in {"old", "missing"}
+        )
+        explicit_hard_cap_ms = max(max_quote_age_ms, 30_000)
+        live_age_ms = safe_int(normalized.get("age_ms"))
+        explicit_stale_override = live_age_ms is not None and live_age_ms > explicit_hard_cap_ms
+        if not conservative_explicit and (not optimistic_explicit or explicit_stale_override):
+            normalized["feed_state"] = quote_health.feed_state
+            normalized["quote_state"] = quote_health.quote_state
+            normalized["pricing_usable"] = quote_health.usable_for_pricing
+            normalized["hedge_usable"] = quote_health.usable_for_hedging
+            if quote_health.reason_code is not None:
+                normalized["reason_code"] = quote_health.reason_code
+            else:
+                normalized.pop("reason_code", None)
+            return normalized
+
         if explicit_feed_state:
             normalized["feed_state"] = explicit_feed_state
         else:
@@ -710,28 +747,14 @@ def _apply_quote_health_to_v4_leg(
         if normalized.get("hedge_usable") is None and derived_usable is not None:
             normalized["hedge_usable"] = derived_usable
         return normalized
-    transport_connected = (
-        True
-        if normalized.get("ts_ms") is not None
-        or normalized.get("bid") is not None
-        or normalized.get("ask") is not None
-        else None
-    )
-    quote_health = evaluate_quote_health(
-        leg_role=leg_role,
-        bid=_first_valid_float(normalized.get("bid")),
-        ask=_first_valid_float(normalized.get("ask")),
-        quote_age_ms=safe_int(normalized.get("age_ms")),
-        max_quote_age_ms=max_quote_age_ms,
-        transport_connected=transport_connected,
-        subscription_healthy=transport_connected,
-    )
     normalized["feed_state"] = quote_health.feed_state
     normalized["quote_state"] = quote_health.quote_state
     normalized["pricing_usable"] = quote_health.usable_for_pricing
     normalized["hedge_usable"] = quote_health.usable_for_hedging
     if quote_health.reason_code is not None:
         normalized["reason_code"] = quote_health.reason_code
+    else:
+        normalized.pop("reason_code", None)
     return normalized
 
 
@@ -767,7 +790,6 @@ def _derive_quote_snapshot_v4(
         or safe_int(params.get("max_ibkr_quote_age_ms"))
         or 1_000
     )
-    quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
     quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
@@ -834,8 +856,27 @@ def _derive_quote_snapshot_v4(
                 ref_symbol = decode_text(ref_snapshot.get("symbol")).strip()
                 if ref_venue and "venue" not in hedge_snapshot:
                     hedge_snapshot["venue"] = ref_venue
-                if ref_symbol and "symbol" not in hedge_snapshot:
-                    hedge_snapshot["symbol"] = ref_symbol
+            if ref_symbol and "symbol" not in hedge_snapshot:
+                hedge_snapshot["symbol"] = ref_symbol
+    live_quote_ts_ms = max(
+        (
+            candidate
+            for candidate in (
+                coerce_ts_ms(quote_snapshot["maker_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("maker_leg"), Mapping)
+                else None,
+                coerce_ts_ms(quote_snapshot["hedge_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("hedge_leg"), Mapping)
+                else None,
+                coerce_ts_ms(quote_snapshot["ref_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("ref_leg"), Mapping)
+                else None,
+            )
+            if candidate is not None
+        ),
+        default=None,
+    )
+    quote_snapshot["ts_ms"] = coerce_ts_ms(live_quote_ts_ms or quote_snapshot.get("ts_ms") or ts_ms)
     return quote_snapshot
 
 

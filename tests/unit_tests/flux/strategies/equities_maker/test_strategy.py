@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -60,6 +61,39 @@ def _fill(
         price=Decimal(px),
         ts_ms=ts_ms,
     )
+
+
+def _instrument(*, raw_symbol: str, multiplier: str = "1") -> SimpleNamespace:
+    return SimpleNamespace(
+        raw_symbol=raw_symbol,
+        price_precision=2,
+        price_increment=Decimal("0.01"),
+        base_currency=SimpleNamespace(code="AAPL"),
+        quote_currency=SimpleNamespace(code="USD"),
+        settlement_currency=SimpleNamespace(code="USD"),
+        multiplier=Decimal(multiplier),
+        is_inverse=False,
+        make_qty=lambda value: Decimal(str(value)),
+        make_price=lambda value: Decimal(str(value)),
+        calculate_base_exposure_qty=lambda qty, _price=None: Decimal(str(qty)),
+    )
+
+
+def _configure_strategy_for_quotes(strategy: EquitiesMakerStrategy) -> tuple[InstrumentId, InstrumentId]:
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    strategy._runtime_params.update({"bot_on": False})
+    strategy._instruments = {
+        maker_id: _instrument(raw_symbol="AAPL/USD"),
+        ref_id: _instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+    )
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    return maker_id, ref_id
 
 
 def test_canonical_strategy_exports_match_root_surface() -> None:
@@ -152,3 +186,45 @@ def test_equities_maker_seeds_runtime_params_from_config() -> None:
     assert strategy._runtime_params["ask_edge1"] == 8.0
     assert strategy._runtime_params["place_edge1"] == 0.5
     assert strategy._runtime_params["n_orders1"] == 2
+
+
+def test_equities_maker_timer_resubscribes_stalled_quotes(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quotes(strategy)
+
+    class _FakeClock:
+        def __init__(self) -> None:
+            self.now = 10_000_000_000
+
+        def timestamp_ns(self) -> int:
+            return self.now
+
+    fake_clock = _FakeClock()
+    subscribed: list[InstrumentId] = []
+    unsubscribed: list[InstrumentId] = []
+
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    monkeypatch.setattr(
+        strategy,
+        "subscribe_quote_ticks",
+        lambda *, instrument_id, client_id=None: subscribed.append(instrument_id),
+    )
+    monkeypatch.setattr(
+        strategy,
+        "unsubscribe_quote_ticks",
+        lambda *, instrument_id, client_id=None: unsubscribed.append(instrument_id),
+    )
+    strategy._publish_balances_if_due = lambda: None
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 3_000
+    strategy._runtime_params["quote_liveness_recover_after_ms"] = 900
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("190.00"), "ask": Decimal("190.02"), "ts_ns": 1_000_000_000},
+        ref_id: {"bid": Decimal("189.90"), "ask": Decimal("189.92"), "ts_ns": 1_000_000_000},
+    }
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+
+    assert unsubscribed == [maker_id, ref_id]
+    assert subscribed == [maker_id, ref_id]

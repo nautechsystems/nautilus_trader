@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict
+from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -106,6 +107,7 @@ class MakerV4Strategy(Strategy):
 
     BALANCES_PUBLISH_INTERVAL_MS = 10_000
     PARAMS_REFRESH_INTERVAL_MS = 500
+    QUOTE_LIVENESS_TIMER_INTERVAL_MS = 1_000
 
     def __init__(self, config: MakerV4StrategyConfig) -> None:
         super().__init__(config)
@@ -158,6 +160,8 @@ class MakerV4Strategy(Strategy):
         self._take_take_fill_accumulators: dict[str, dict[str, Any]] = {}
         self._take_take_residual_base_fill: dict[str, Any] | None = None
         self._last_runtime_params_refresh_ns = 0
+        self._liveness_timer_name = f"{self.runtime_strategy_id}-quote-liveness"
+        self._last_quote_liveness_resubscribe_ns = 0
         self._last_actionable_alert_ns: dict[str, int] = {}
         self._last_actionable_alert_transition: dict[str, str] = {}
 
@@ -369,6 +373,72 @@ class MakerV4Strategy(Strategy):
 
         if bot_on_before and not self._effective_bot_on():
             self._cancel_managed_maker_orders()
+
+    def _tracked_quote_instrument_ids(self) -> tuple[Any, ...]:
+        tracked: list[Any] = []
+        for instrument_id in (
+            self.config.maker_instrument_id,
+            self.config.reference_instrument_id,
+        ):
+            if instrument_id in tracked:
+                continue
+            tracked.append(instrument_id)
+        return tuple(tracked)
+
+    def _quote_liveness_retry_interval_ns(self) -> int:
+        stall_after_ms = max(
+            0,
+            int(self._runtime_params.get("quote_liveness_stall_after_ms", 0) or 0),
+        )
+        recover_after_ms = max(
+            0,
+            int(self._runtime_params.get("quote_liveness_recover_after_ms", 0) or 0),
+        )
+        return max(stall_after_ms, recover_after_ms) * 1_000_000
+
+    def _stalled_quote_instrument_ids(self, *, now_ns: int) -> list[Any]:
+        stall_after_ms = max(
+            0,
+            int(self._runtime_params.get("quote_liveness_stall_after_ms", 0) or 0),
+        )
+        if stall_after_ms <= 0:
+            return []
+
+        stalled: list[Any] = []
+        for instrument_id in self._tracked_quote_instrument_ids():
+            snapshot = self._latest_quotes.get(instrument_id)
+            if not isinstance(snapshot, Mapping):
+                stalled.append(instrument_id)
+                continue
+            ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
+            if ts_ns <= 0:
+                stalled.append(instrument_id)
+                continue
+            age_ms = max(0, (int(now_ns) - ts_ns) // 1_000_000)
+            if age_ms >= stall_after_ms:
+                stalled.append(instrument_id)
+        return stalled
+
+    def _resubscribe_stalled_quote_ticks(self, *, now_ns: int) -> None:
+        stalled = self._stalled_quote_instrument_ids(now_ns=now_ns)
+        if not stalled:
+            return
+
+        retry_interval_ns = self._quote_liveness_retry_interval_ns()
+        if (
+            retry_interval_ns > 0
+            and self._last_quote_liveness_resubscribe_ns > 0
+            and now_ns - self._last_quote_liveness_resubscribe_ns < retry_interval_ns
+        ):
+            return
+
+        for instrument_id in stalled:
+            with suppress(Exception):
+                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+            self._prime_cached_quote(instrument_id)
+            with suppress(Exception):
+                self.subscribe_quote_ticks(instrument_id=instrument_id)
+        self._last_quote_liveness_resubscribe_ns = now_ns
 
     def _effective_bot_on(self) -> bool:
         bot_on = self._runtime_params.get("bot_on", getattr(self.config, "bot_on", False))
@@ -2602,6 +2672,11 @@ class MakerV4Strategy(Strategy):
             self.config.maker_instrument_id: maker_instrument,
             self.config.reference_instrument_id: reference_instrument,
         }
+        self.clock.set_timer(
+            name=self._liveness_timer_name,
+            interval=timedelta(milliseconds=self.QUOTE_LIVENESS_TIMER_INTERVAL_MS),
+            callback=self.on_time_event,
+        )
         subscribed_instrument_ids: list[Any] = []
         self._last_market_bbo_publish_ns = {}
         for instrument_id in (
@@ -2629,6 +2704,14 @@ class MakerV4Strategy(Strategy):
 
     def on_stop(self) -> None:
         self._cancel_managed_maker_orders()
+        timer_names: set[str] = set()
+        try:
+            timer_names = set(self.clock.timer_names)
+        except Exception:
+            timer_names = set()
+        if self._liveness_timer_name in timer_names:
+            with suppress(Exception):
+                self.clock.cancel_timer(self._liveness_timer_name)
         unsubscribed_instrument_ids: list[Any] = []
         for instrument_id in (
             self.config.maker_instrument_id,
@@ -2644,6 +2727,15 @@ class MakerV4Strategy(Strategy):
             with suppress(Exception):
                 provider_stop()
         self._publish_state_snapshot(state_override="on_stop")
+
+    def on_time_event(self, event: Any) -> None:
+        if getattr(event, "name", "") != self._liveness_timer_name:
+            return
+
+        now_ns = int(self.clock.timestamp_ns())
+        self._refresh_runtime_params_if_due(now_ns=now_ns)
+        self._resubscribe_stalled_quote_ticks(now_ns=now_ns)
+        self._publish_balances_if_due()
 
     def on_market_exit(self) -> None:
         now_ns = int(self.clock.timestamp_ns())

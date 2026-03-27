@@ -3075,6 +3075,122 @@ def test_build_signals_payload_preserves_explicit_equities_arb_quote_freshness_o
     assert ref_leg["quote_state"] == "fresh"
 
 
+def test_build_signals_payload_prefers_live_equities_arb_leg_quotes_over_stale_state_snapshot() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 255.70,
+                "ask": 255.90,
+                "ts_ms": 1700000099900,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 255.60,
+                "ask": 255.80,
+                "ts_ms": 1700000099950,
+            },
+        },
+        now_ms_value=1700000100000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_maker",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1700000000000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "AAPL.NASDAQ",
+                "hedge_leg": "AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1700000000000,
+                    "maker_leg": {
+                        "venue": "HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 250.10,
+                        "ask": 250.20,
+                        "ts_ms": 1700000000000,
+                        "age_ms": 100000,
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "bid": 250.00,
+                        "ask": 250.10,
+                        "ts_ms": 1700000000000,
+                        "age_ms": 100000,
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "SMART",
+                        "bid": 250.00,
+                        "ask": 250.10,
+                        "ts_ms": 1700000000000,
+                        "age_ms": 100000,
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 255.75},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=legs,
+    )
+
+    quote_snapshot = payload["equities_arb"]["quote_snapshot"]
+    maker_leg = quote_snapshot["maker_leg"]
+    ref_leg = quote_snapshot["ref_leg"]
+    hedge_leg = quote_snapshot["hedge_leg"]
+
+    assert maker_leg["bid"] == 255.70
+    assert maker_leg["ask"] == 255.90
+    assert maker_leg["ts_ms"] == 1700000099900
+    assert maker_leg["age_ms"] == 100
+    assert ref_leg["bid"] == 255.60
+    assert ref_leg["ask"] == 255.80
+    assert ref_leg["ts_ms"] == 1700000099950
+    assert ref_leg["age_ms"] == 50
+    assert hedge_leg["route"] == "SMART"
+    assert hedge_leg["bid"] == 255.60
+    assert hedge_leg["ask"] == 255.80
+    assert hedge_leg["ts_ms"] == 1700000099950
+    assert hedge_leg["age_ms"] == 50
+    assert quote_snapshot["ts_ms"] == 1700000099950
+    assert payload["ts_ms"] == 1700000099950
+
+
 def test_build_signals_payload_preserves_explicit_ibkr_quote_health_without_runtime_budget() -> None:
     metadata = StrategyMetadata(
         strategy_class="equities_maker",
@@ -3185,6 +3301,118 @@ def test_build_signals_payload_preserves_explicit_ibkr_quote_health_without_runt
     assert ref_leg["age_ms"] == 1500
     assert ref_leg["quote_state"] == "fresh"
     assert ref_leg["pricing_usable"] is True
+
+
+def test_build_signals_payload_overrides_explicit_fresh_ibkr_health_when_live_age_is_grossly_stale() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="HOOD",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="binance_perp",
+                symbol="HOODUSDT",
+                instrument_id="HOODUSDT-PERP.BINANCE_PERP",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="HOOD/USD",
+                instrument_id="HOOD.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "binance_perp:HOODUSDT-PERP.BINANCE_PERP": {
+                "exchange": "binance_perp",
+                "symbol": "HOODUSDT",
+                "instrument_id": "HOODUSDT-PERP.BINANCE_PERP",
+                "bid": 66.53,
+                "ask": 66.54,
+                "ts_ms": 1700000051000,
+            },
+            "ibkr:HOOD.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "HOOD/USD",
+                "instrument_id": "HOOD.NASDAQ",
+                "bid": 66.49,
+                "ask": 66.51,
+                "ts_ms": 1700000050500,
+            },
+        },
+        now_ms_value=1700000100000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="hood_binance_perp_maker",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "bot_off",
+            "ts_ms": 1700000099000,
+            "maker_role_map": {
+                "maker_leg": "binance_perp:HOODUSDT-PERP.BINANCE_PERP",
+                "ref_leg": "HOOD.NASDAQ",
+                "hedge_leg": "HOOD.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1700000099000,
+                    "maker_leg": {
+                        "venue": "BINANCE_PERP",
+                        "instrument_id": "HOODUSDT-PERP.BINANCE_PERP",
+                        "bid": 66.53,
+                        "ask": 66.54,
+                        "ts_ms": 1700000051000,
+                        "age_ms": 49000,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "HOOD.NASDAQ",
+                        "bid": 66.49,
+                        "ask": 66.51,
+                        "ts_ms": 1700000050500,
+                        "age_ms": 49500,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "HOOD.NASDAQ",
+                        "route": "SMART",
+                        "bid": 66.49,
+                        "ask": 66.51,
+                        "ts_ms": 1700000050500,
+                        "age_ms": 49500,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 66.50},
+        params={"qty": 1.0, "max_age_ms": 30_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=legs,
+    )
+
+    maker_leg = payload["equities_arb"]["quote_snapshot"]["maker_leg"]
+    ref_leg = payload["equities_arb"]["quote_snapshot"]["ref_leg"]
+    hedge_leg = payload["equities_arb"]["quote_snapshot"]["hedge_leg"]
+
+    assert maker_leg["quote_state"] == "old"
+    assert maker_leg["pricing_usable"] is False
+    assert ref_leg["quote_state"] == "old"
+    assert ref_leg["pricing_usable"] is False
+    assert hedge_leg["quote_state"] == "old"
+    assert hedge_leg["hedge_usable"] is False
 
 
 def test_build_signals_payload_preserves_partial_explicit_ibkr_quote_state() -> None:
