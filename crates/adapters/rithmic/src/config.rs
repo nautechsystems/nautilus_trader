@@ -13,7 +13,7 @@
 //! - `RITHMIC_IB_ID`: IB ID (optional)
 //! - `RITHMIC_ACCOUNT_ID`: Trading account ID (for execution)
 //! - `RITHMIC_ENV`: Environment (demo, live, test)
-//! - `RITHMIC_SERVER`: Named primary server (optional)
+//! - `RITHMIC_SERVER`: Named primary server (defaults to Chicago on demo/live, Test on test)
 //! - `RITHMIC_ALT_SERVER`: Named alternate server (optional)
 
 use std::env;

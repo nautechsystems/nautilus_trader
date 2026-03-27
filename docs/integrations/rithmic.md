@@ -383,7 +383,6 @@ Optional environment variables:
 - `RITHMIC_ENV`
 - `RITHMIC_FCM_ID`
 - `RITHMIC_IB_ID`
-- `RITHMIC_SERVER`
 - `RITHMIC_ALT_SERVER`
 - `RITHMIC_APP_NAME`
 - `RITHMIC_APP_VERSION`
@@ -413,8 +412,8 @@ export RITHMIC_SYSTEM_NAME="your_system_name"  # Exact System value from RTrader
 export RITHMIC_ACCOUNT_ID="your_account"
 export RITHMIC_FCM_ID="your_fcm_id"            # Exact FCM value from RTrader Pro > File > User Profile
 export RITHMIC_IB_ID="your_ib_id"              # Exact IB value from RTrader Pro > File > User Profile
-export RITHMIC_SERVER="Chicago"                # Optional named primary route
-export RITHMIC_ALT_SERVER="Sydney"             # Optional named alternate route
+export RITHMIC_SERVER="Chicago"
+export RITHMIC_ALT_SERVER="Sydney"             # Secondary route if you want one
 ```
 
 `RITHMIC_PROFILE` is only a local environment-variable namespace. The actual broker-facing values
@@ -432,42 +431,34 @@ case-sensitive.
 
 ### Server endpoint selection
 
-For most setups, prefer named server selection through `RITHMIC_SERVER` and `RITHMIC_ALT_SERVER`
-or the equivalent `server=` / `alt_server=` config fields. The adapter resolves the following
-server names case-insensitively:
+Use named server selection through `RITHMIC_SERVER` and `RITHMIC_ALT_SERVER` or the equivalent
+`server=` / `alt_server=` config fields. Server names are matched case-insensitively.
 
-| Server | WebSocket URL |
-| :----- | :------------ |
-| Chicago | `wss://rprotocol.rithmic.com:443` |
-| Sydney | `wss://rprotocol-au.rithmic.com:443` |
-| Sao Paulo | `wss://rprotocol-br.rithmic.com:443` |
-| Colo75 | `wss://protocol-colo75.rithmic.com:443` |
-| Frankfurt | `wss://rprotocol-de.rithmic.com:443` |
-| Hong Kong | `wss://rprotocol-hk.rithmic.com:443` |
-| Ireland | `wss://rprotocol-ie.rithmic.com:443` |
-| Mumbai | `wss://rprotocol-in.rithmic.com:443` |
-| Seoul | `wss://rprotocol-kr.rithmic.com:443` |
-| Cape Town | `wss://rprotocol-za.rithmic.com:443` |
-| Tokyo | `wss://rprotocol-jp.rithmic.com:443` |
-| Singapore | `wss://rprotocol-sg.rithmic.com:443` |
-| Test | `wss://rituz00100.rithmic.com:443` |
+If `RITHMIC_SERVER` is omitted, the adapter defaults the primary route to `Chicago` for demo/live
+and `Test` for test environments.
 
-If you need an exact URL instead of a named route, the low-level gateway still honors the canonical
-environment-specific URL overrides, for example:
+Supported server names:
 
-```bash
-export RITHMIC_DEMO_URL="wss://rprotocol-au.rithmic.com:443"
-export RITHMIC_DEMO_ALT_URL="wss://rprotocol.rithmic.com:443"
-```
-
-Exact URL overrides take precedence over named server selection.
+- `Chicago`
+- `Sydney`
+- `Sao Paulo`
+- `Colo75`
+- `Frankfurt`
+- `Hong Kong`
+- `Ireland`
+- `Mumbai`
+- `Seoul`
+- `Cape Town`
+- `Tokyo`
+- `Singapore`
+- `Test`
 
 ### Data client configuration
 
 The most important data-client options are:
 
 - `enable_history`: enable this only when the node needs historical bar requests.
-- `server`: optional named primary route such as `Chicago`.
+- `server`: primary route name. Defaults to `Chicago` for demo/live and `Test` for test.
 - `alt_server`: optional named alternate route.
 - `instrument_provider.load_all`: preload the full instrument snapshot on connect.
 - `instrument_provider.load_ids`: preload a selected live contract set.
@@ -478,16 +469,13 @@ The most important data-client options are:
 The most important execution-client options are:
 
 - `account_id`: the Rithmic account this execution client is allowed to control.
-- `server`: optional named primary route such as `Chicago`.
+- `server`: primary route name. Defaults to `Chicago` for demo/live and `Test` for test.
 - `alt_server`: optional named alternate route.
 - `execution_replay_lookback_secs`: bounded replay window used during reconnect reconciliation.
 - `native_bracket_state_path`: optional override for the local persistence file used to recover
   adapter-created native bracket child IDs across restart.
 
-Low-level Rust users can also override the primary and alternate WebSocket endpoints directly on
-`GatewayConfig` when targeting a non-standard route or a local test harness. Regular operator
-setups can use named `server` / `alt_server` selection and only fall back to canonical
-`RITHMIC_*_URL` environment variables when an exact endpoint override is required.
+Regular operator setups should use named `server` / `alt_server` selection.
 
 ## Trading node example
 
