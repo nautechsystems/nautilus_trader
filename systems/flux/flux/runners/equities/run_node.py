@@ -79,6 +79,9 @@ MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 MakerV4Strategy = _MAKERV4_SPEC.strategy_cls
 MakerV4StrategyConfig = _MAKERV4_SPEC.config_cls
 _GROUPED_MEMBER_SUFFIXES = ("_maker", "_taker")
+_GROUPED_NODE_IGNORED_VENUE_FIELDS: dict[str, frozenset[str]] = {
+    "IBKR": frozenset({"ibg_client_id"}),
+}
 
 
 def _repo_root() -> Path:
@@ -390,11 +393,38 @@ def _validate_grouped_shared_tables(configs: Sequence[dict[str, Any]]) -> dict[s
     )
     for config in configs[1:]:
         for table_name in shared_table_names:
-            if config.get(table_name) != primary_config.get(table_name):
+            primary_table = primary_config.get(table_name)
+            candidate_table = config.get(table_name)
+            if table_name == "node":
+                primary_table = _normalized_grouped_node_table(primary_table)
+                candidate_table = _normalized_grouped_node_table(candidate_table)
+            if candidate_table != primary_table:
                 raise ValueError(
                     f"Grouped equities node configs must share identical `{table_name}` tables",
                 )
     return primary_config
+
+
+def _normalized_grouped_node_table(node_cfg: Any) -> Any:
+    if not isinstance(node_cfg, dict):
+        return node_cfg
+
+    normalized_node_cfg = dict(node_cfg)
+    venues_cfg = node_cfg.get("venues")
+    if not isinstance(venues_cfg, dict):
+        return normalized_node_cfg
+
+    normalized_venues: dict[str, Any] = {}
+    for venue_name, venue_cfg in venues_cfg.items():
+        if not isinstance(venue_cfg, dict):
+            normalized_venues[venue_name] = venue_cfg
+            continue
+        normalized_venue_cfg = dict(venue_cfg)
+        for field_name in _GROUPED_NODE_IGNORED_VENUE_FIELDS.get(str(venue_name).upper(), ()):
+            normalized_venue_cfg.pop(field_name, None)
+        normalized_venues[venue_name] = normalized_venue_cfg
+    normalized_node_cfg["venues"] = normalized_venues
+    return normalized_node_cfg
 
 
 def _node_identity_config(
