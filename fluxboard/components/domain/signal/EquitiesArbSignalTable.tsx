@@ -5,6 +5,7 @@ import { DataTable } from '@/components/ui/table/DataTable';
 import { SimpleTooltip } from '@/components/ui/tooltip/Tooltip';
 import { StatusPill } from '@/components/shared/StatusPill';
 import { deriveStrategyProfile } from '@/config/paramsProfiles';
+import { useViewportClock } from '@/hooks/useViewportClock';
 import { colors } from '@/lib/tokens';
 import { fmtAgeSec, fmtPriceSignal } from '@/utils';
 import { formatLocal } from '@/utils/time';
@@ -160,7 +161,15 @@ function deriveLastUpdateMs(snapshot: MakerV4QuoteSnapshot | null): number | nul
   return Math.max(...candidates);
 }
 
-function deriveLastAgeMs(snapshot: MakerV4QuoteSnapshot | null, lastUpdateMs: number | null): number | null {
+function deriveLastAgeMs(
+  snapshot: MakerV4QuoteSnapshot | null,
+  lastUpdateMs: number | null,
+  nowMs: number,
+): number | null {
+  if (lastUpdateMs != null) {
+    return Math.max(0, nowMs - lastUpdateMs);
+  }
+
   const snapshotAges = [
     coerceNumber(snapshot?.maker_leg?.age_ms),
     coerceNumber(snapshot?.hedge_leg?.age_ms),
@@ -169,8 +178,7 @@ function deriveLastAgeMs(snapshot: MakerV4QuoteSnapshot | null, lastUpdateMs: nu
   if (snapshotAges.length > 0) {
     return Math.min(...snapshotAges);
   }
-  if (lastUpdateMs == null) return null;
-  return Math.max(0, Date.now() - lastUpdateMs);
+  return null;
 }
 
 function formatLegLine(leg: MakerV4LegSnapshot | null | undefined): string {
@@ -271,14 +279,20 @@ export function ArbSignalTable({
   emptyMessage = 'No Maker V4 strategies found',
 }: ArbSignalTableProps) {
   const sourceRows = rows ?? strategies ?? [];
+  const clockTick = useViewportClock({
+    clockKey: 'signal:equities-arb-table',
+    intervalMs: 1_000,
+    active: true,
+  });
+  const nowMs = useMemo(() => nowProvider(), [clockTick, nowProvider]);
   const data = useMemo<MakerV4DisplayRow[]>(() => {
     const enriched = sourceRows.map((row) => {
       const payload = resolvePayload(row, payloadKey);
       const quoteSnapshot = payload?.quote_snapshot ?? null;
       const lastUpdateMs = deriveLastUpdateMs(quoteSnapshot);
-      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs) ?? (lastUpdateMs != null ? Math.max(0, nowProvider() - lastUpdateMs) : null);
+      const lastAgeMs = deriveLastAgeMs(quoteSnapshot, lastUpdateMs, nowMs);
       const status = deriveStrategyStatus({
-        running: resolveSignalRunning(row, nowProvider()),
+        running: resolveSignalRunning(row, nowMs),
         trading: row.params?.bot_on,
         blocked: Boolean(row.blocked) || quoteSnapshot?.hedge_ready === false,
       });
@@ -308,7 +322,7 @@ export function ArbSignalTable({
       if (variantCompare !== 0) return variantCompare;
       return left.id.localeCompare(right.id, undefined, { sensitivity: 'base' });
     });
-  }, [nowProvider, payloadKey, showVariantColumn, sourceRows]);
+  }, [nowMs, payloadKey, showVariantColumn, sourceRows]);
 
   const columns = useMemo<ColumnDef<MakerV4DisplayRow>[]>(() => {
     const baseColumns: ColumnDef<MakerV4DisplayRow>[] = [

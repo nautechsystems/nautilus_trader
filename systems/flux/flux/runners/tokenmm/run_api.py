@@ -59,6 +59,7 @@ from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_PULSE_BASE_PATH = "/pulse"
 DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
+EQUITIES_PUBLIC_SOCKET_PATH = "/equities/socket.io"
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 DEFAULT_TOKENMM_BASE_PATH = TOKENMM_DESCRIPTOR.base_path
 TOKENMM_ALIAS_BASE_PATH = TOKENMM_DESCRIPTOR.route_aliases[0]
@@ -308,7 +309,44 @@ def _resolve_surface_proxy_backends() -> dict[str, str]:
     return resolve_surface_backends(SURFACE_PROXY_DESCRIPTORS)
 
 
-def _proxy_request_to_backend(backend_url: str) -> Response:
+def _inject_fluxboard_runtime_config(
+    html: str,
+    *,
+    socket_paths: dict[str, str] | None = None,
+) -> str:
+    runtime_config: dict[str, Any] = {}
+    if socket_paths:
+        runtime_config["socketPaths"] = socket_paths
+    if not runtime_config:
+        return html
+
+    script = (
+        "<script>"
+        f"window.__FLUXBOARD_RUNTIME_CONFIG__={json.dumps(runtime_config, separators=(',', ':'))};"
+        "</script>"
+    )
+    if "</head>" in html:
+        return html.replace("</head>", f"{script}</head>", 1)
+    if "</body>" in html:
+        return html.replace("</body>", f"{script}</body>", 1)
+    return f"{html}{script}"
+
+
+def _maybe_inject_equities_runtime_config(response: Response) -> Response:
+    content_type = (response.headers.get("Content-Type") or "").lower()
+    if "text/html" not in content_type:
+        return response
+    html = response.get_data(as_text=True)
+    response.set_data(
+        _inject_fluxboard_runtime_config(
+            html,
+            socket_paths={"equities": EQUITIES_PUBLIC_SOCKET_PATH},
+        ),
+    )
+    return response
+
+
+def _proxy_request_to_backend(backend_url: str, *, path_override: str | None = None) -> Response:
     incoming = urlsplit(request.url)
     backend = urlsplit(backend_url)
     query = urlencode(list(request.args.items(multi=True)), doseq=True)
@@ -316,7 +354,7 @@ def _proxy_request_to_backend(backend_url: str) -> Response:
         (
             backend.scheme,
             backend.netloc,
-            request.path,
+            path_override or request.path,
             query,
             "",
         ),
@@ -358,8 +396,25 @@ def _proxy_request_to_backend(backend_url: str) -> Response:
 
 
 def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) -> None:
+    equities_backend = surface_backends.get("equities")
+
+    if equities_backend:
+        @app.route(EQUITIES_PUBLIC_SOCKET_PATH, methods=["GET", "POST", "OPTIONS"])
+        @app.route(f"{EQUITIES_PUBLIC_SOCKET_PATH}/", defaults={"subpath": ""}, methods=["GET", "POST", "OPTIONS"])
+        @app.route(f"{EQUITIES_PUBLIC_SOCKET_PATH}/<path:subpath>", methods=["GET", "POST", "OPTIONS"])
+        def _proxy_equities_socketio(subpath: str = "") -> Response:
+            normalized_subpath = subpath.strip().lstrip("/")
+            suffix = f"/{normalized_subpath}" if normalized_subpath else "/"
+            return _proxy_request_to_backend(
+                equities_backend,
+                path_override=f"/socket.io{suffix}",
+            )
+
     @app.before_request
     def _proxy_surface_requests() -> Response | None:
+        if request.path == EQUITIES_PUBLIC_SOCKET_PATH or request.path.startswith(f"{EQUITIES_PUBLIC_SOCKET_PATH}/"):
+            return None
+
         descriptor = resolve_surface_proxy_descriptor(
             path=request.path,
             profile=_optional_text(request.args.get("profile")),
@@ -372,7 +427,10 @@ def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) 
         if not backend_url:
             return None
 
-        return _proxy_request_to_backend(backend_url)
+        response = _proxy_request_to_backend(backend_url)
+        if descriptor.surface == "equities" and request.path.startswith("/equities"):
+            return _maybe_inject_equities_runtime_config(response)
+        return response
 
 
 def _enveloped_json_response(

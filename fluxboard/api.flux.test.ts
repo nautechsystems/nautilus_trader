@@ -1203,6 +1203,73 @@ describe('profile-scoped read APIs', () => {
     expect((payload.totals as any).withdrawable_raw).toBe(0);
   });
 
+  it('keeps equities balances rows when scope status metadata is present', async () => {
+    setPathname('/equities/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            row_id: 'equities:shared:hyperliquid.xyz.main:pos:hyperliquid:HYPERLIQUID-master:XYZ:NVDA-USD-PERP.HYPERLIQUID',
+            exchange: 'hyperliquid',
+            account: 'HYPERLIQUID-master',
+            kind: 'position',
+            instrument_id: 'XYZ:NVDA-USD-PERP.HYPERLIQUID',
+            asset: 'NVDA',
+            signed_qty: '-5.12',
+            quantity: '5.12',
+            product_type: 'perp',
+            contract_type: 'perp',
+            mark_raw: 172.335,
+            mv_raw: -882.3552,
+            ts_ms: 1774568169291331377,
+            source_scope: 'shared_account',
+            account_scope_id: 'hyperliquid.xyz.main',
+            source_strategy_ids: ['nvda_tradexyz_maker', 'nvda_tradexyz_taker'],
+          },
+        ],
+        total: 1,
+        totals: {
+          net_mv_raw: -882.3552,
+          net_mv_display: '-$882.36',
+        },
+        scope_status: [
+          {
+            account_scope_id: 'hyperliquid.xyz.main',
+            source_scope: 'shared_account',
+            projection_status: {
+              healthy: false,
+              last_success_ts_ms: 1774568169291331377,
+              last_attempt_ts_ms: 1774568179291331377,
+              last_error_type: 'projection_timeout',
+              last_error_message: 'projection lagged behind account snapshot',
+              stale_after_ms: 3000,
+            },
+          },
+        ],
+      },
+    });
+
+    const payload = await api.getBalances({ contractVersion: 2 });
+
+    expect(payload.rows).toHaveLength(1);
+    expect(payload.rows[0]?.canonical).toBe('NVDA');
+    expect(payload.scope_status).toEqual([
+      {
+        account_scope_id: 'hyperliquid.xyz.main',
+        source_scope: 'shared_account',
+        projection_status: {
+          healthy: false,
+          last_success_ts_ms: 1774568169291,
+          last_attempt_ts_ms: 1774568179291,
+          last_error_type: 'projection_timeout',
+          last_error_message: 'projection lagged behind account snapshot',
+          stale_after_ms: 3000,
+        },
+      },
+    ]);
+  });
+
   it('preserves alerts pagination metadata on getAlerts while keeping array return shape', async () => {
     fetchJSONMock.mockResolvedValueOnce({
       ok: true,

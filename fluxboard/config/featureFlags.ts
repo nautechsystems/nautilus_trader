@@ -75,7 +75,7 @@ function defaultRealtimeStandardForCurrentPath(surface: RealtimeSurface | 'globa
   if (profile !== 'equities') {
     return false;
   }
-  return surface === 'global' || surface === 'signal' || surface === 'balances' || surface === 'trades';
+  return surface === 'global' || surface === 'balances' || surface === 'trades';
 }
 
 function resolveBooleanFlag({

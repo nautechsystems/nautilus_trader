@@ -333,7 +333,7 @@ def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch
         captured["method"] = req.get_method()
         return _FakeResponse(
             status=200,
-            body=b"<html>equities</html>",
+            body=b"<html><head></head><body>equities</body></html>",
             headers={"Content-Type": "text/html"},
         )
 
@@ -349,7 +349,10 @@ def test_attach_profile_router_proxy_forwards_equities_page_requests(monkeypatch
     response = client.get("/equities")
 
     assert response.status_code == 200
-    assert response.get_data(as_text=True) == "<html>equities</html>"
+    body = response.get_data(as_text=True)
+    assert "equities" in body
+    assert "window.__FLUXBOARD_RUNTIME_CONFIG__" in body
+    assert '"socketPaths":{"equities":"/equities/socket.io"}' in body
     assert captured["url"] == "http://127.0.0.1:5024/equities"
     assert captured["method"] == "GET"
 
@@ -446,6 +449,51 @@ def test_attach_profile_router_proxy_forwards_equities_socketio_requests(monkeyp
     assert captured["url"] == "http://127.0.0.1:5024/socket.io/?profile=equities&EIO=4&transport=polling"
     assert captured["method"] == "POST"
     assert captured["body"] == b"40"
+
+
+def test_attach_profile_router_proxy_forwards_equities_socketio_path_requests(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        def __init__(self, *, status: int, body: bytes, headers: dict[str, str]) -> None:
+            self.status = status
+            self._body = body
+            self.headers = headers
+
+        def read(self) -> bytes:
+            return self._body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def _fake_urlopen(req, timeout: float):
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        captured["body"] = req.data
+        return _FakeResponse(
+            status=200,
+            body=b"0{\"sid\":\"abc\"}",
+            headers={"Content-Type": "text/plain"},
+        )
+
+    monkeypatch.setattr("flux.runners.tokenmm.run_api.urllib_request.urlopen", _fake_urlopen)
+
+    app = Flask(__name__)
+    _attach_profile_router_proxy(
+        app,
+        surface_backends={"equities": "http://127.0.0.1:5024"},
+    )
+    client = app.test_client()
+
+    response = client.get("/equities/socket.io/?EIO=4&transport=polling")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == '0{"sid":"abc"}'
+    assert captured["url"] == "http://127.0.0.1:5024/socket.io/?EIO=4&transport=polling"
+    assert captured["method"] == "GET"
 
 
 def test_attach_profile_router_proxy_leaves_tokenmm_requests_unhandled() -> None:

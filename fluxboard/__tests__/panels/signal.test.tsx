@@ -772,6 +772,40 @@ describe('SignalTable Behavioral Tests', () => {
       vi.useRealTimers();
     });
 
+    it('does not schedule recovery snapshots for changed-id equities market_update payloads on the legacy signal stream', async () => {
+      vi.useFakeTimers();
+      (socket as any).connected = true;
+
+      renderSignalTable('/equities');
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      const marketUpdateHandler = (socket.on as any).mock.calls.find(
+        (call: any[]) => call[0] === 'market_update'
+      )?.[1];
+      expect(typeof marketUpdateHandler).toBe('function');
+
+      act(() => {
+        marketUpdateHandler({
+          profile: 'equities',
+          strategies: {
+            changed: ['aapl_tradexyz_maker', 'aapl_tradexyz_taker'],
+          },
+          server_time: '2024-01-01T12:00:01Z',
+          server_ts_ms: 1_700_000_000_001,
+        });
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
     it('resets recovery backoff after a successful invalidate-driven snapshot recovery', async () => {
       vi.useFakeTimers();
       (socket as any).connected = true;
@@ -1209,6 +1243,94 @@ describe('SignalTable Behavioral Tests', () => {
       });
     });
 
+    it('recovers from a stream rollover subscribe rejection by refreshing lineage instead of failing closed', async () => {
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+      setNextSubscribeAck({
+        accepted: false,
+        contract_version: 2,
+        surface: 'signal',
+        profile: 'default',
+        surface_query_key: 'signal|profile=default',
+        stream_id: 'signal-main',
+        snapshot_revision: 'signal-snap-1',
+        requested_resume_from_seq: 0,
+        reason: 'stream_rollover',
+      });
+
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: 1_700_000_000_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 0,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'streaming_only',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:05',
+          server_ts_ms: 1_700_000_005_000,
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main-rollover',
+            snapshot_revision: 'signal-snap-2',
+            last_seq: 9,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'streaming_only',
+            },
+          },
+        });
+
+      renderSignalTable('/signal');
+
+      await waitFor(() => expect((socket as any).emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({
+          surface: 'signal',
+          profile: 'default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+        }),
+        expect.any(Function),
+      ));
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+      });
+      await flushAsyncRender();
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+      expect(screen.queryByText('Refresh required')).not.toBeInTheDocument();
+
+      await waitFor(() => expect((socket as any).emit).toHaveBeenCalledWith(
+        'subscribe',
+        expect.objectContaining({
+          surface: 'signal',
+          profile: 'default',
+          stream_id: 'signal-main-rollover',
+          snapshot_revision: 'signal-snap-2',
+          resume_from_seq: 9,
+        }),
+        expect.any(Function),
+      ));
+    });
+
     it('fails closed into manual refresh required on mid-session capability withdrawal', async () => {
       realtimeFlags.signal = true;
       (socket as any).connected = true;
@@ -1490,6 +1612,23 @@ describe('SignalTable Behavioral Tests', () => {
         expect.anything(),
         expect.any(Function),
       );
+      expect(socket.on).toHaveBeenCalledWith('market_update', expect.any(Function));
+      expect(socket.on).toHaveBeenCalledWith('signal_delta', expect.any(Function));
+    });
+
+    it('keeps the equities signal surface on legacy realtime even when the standard signal flag is enabled', async () => {
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      renderSignalTable('/equities');
+      await flushAsyncRender();
+
+      expect((socket as any).emit).not.toHaveBeenCalledWith(
+        'subscribe',
+        expect.anything(),
+        expect.any(Function),
+      );
+      expect((standardSocketClient as any).subscribe).not.toHaveBeenCalled();
       expect(socket.on).toHaveBeenCalledWith('market_update', expect.any(Function));
       expect(socket.on).toHaveBeenCalledWith('signal_delta', expect.any(Function));
     });

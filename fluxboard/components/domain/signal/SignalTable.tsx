@@ -38,7 +38,7 @@ import { usePolling } from '@/hooks';
 import { ChevronDown, Info } from 'lucide-react';
 import { useSignalStore, selectSignalRows } from '@/stores';
 import shallow from 'zustand/shallow';
-import { socket } from '@/sockets';
+import { socket, type StandardSocketFailure } from '@/sockets';
 import { fmtPriceSignal, fmtPriceTooltip, fmtAgeSec } from '@/utils';
 import { computeStrategyAge } from '@/utils/age';
 import { buildLegDeltaPatch, getLegForSlot, getOrderedLegEntries, resolveRoleSlot } from '@/utils/signalLegs';
@@ -1948,7 +1948,11 @@ export default function SignalTable({
   const setRows = useSignalStore(s => s.setRows);
   const mergeStrategy = useSignalStore(s => s.mergeStrategy);
   const mergeStrategies = useSignalStore(s => s.mergeStrategies);
-  const signalStandardEnabled = useMemo(() => isRealtimeStandardEnabled('signal'), []);
+  const signalStandardEnabled = useMemo(() => {
+    // Equities signal stays on the proven legacy realtime path until the
+    // backend exposes true streaming semantics instead of polling-only lineage.
+    return pathProfile !== 'equities' && isRealtimeStandardEnabled('signal');
+  }, [pathProfile]);
   const [loading, setLoading] = useState(true);
   const [serverTime, setServerTime] = useState<string | null>(null);
   // Keep a ref for serverTime to avoid effect re-subscriptions on each tick
@@ -1963,9 +1967,13 @@ export default function SignalTable({
     signalStandardEnabled ? RealtimeSurfaceState.SYNCING : RealtimeSurfaceState.LIVE
   ));
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
-  const signalStandardPollingEnabled = signalStandardEnabled
-    && standardLineage?.capabilities?.transport_mode === 'polling_only'
-    && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED;
+  const signalStandardPollingEnabled = pathProfile === 'equities'
+    ? signalStandardEnabled
+    : (
+        signalStandardEnabled
+        && standardLineage?.capabilities?.transport_mode === 'polling_only'
+        && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED
+      );
   const [showQuoted, setShowQuoted] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   // Track lastUpdate via ref to avoid resubscribing effects when checking staleness
@@ -2436,14 +2444,24 @@ export default function SignalTable({
     }
   }, [advanceStandardCursor, applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
 
+  const handleStandardRealtimeFailure = useCallback((failure: StandardSocketFailure) => {
+    if (failure.type === 'lineage_mismatch') {
+      scheduleInvalidation(`realtime_failure.lineage_mismatch:${failure.reason}`);
+      return;
+    }
+    if (failure.type === 'subscribe_rejected' && failure.reason === 'stream_rollover') {
+      scheduleInvalidation(`realtime_failure.subscribe_rejected:${failure.reason}`);
+      return;
+    }
+    requireManualRefresh();
+  }, [requireManualRefresh, scheduleInvalidation]);
+
   useStandardWebSocketSubscription({
     enabled: signalStandardEnabled && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED,
     lineage: signalStandardEnabled ? standardLineage : null,
     resumeFromSeq: () => standardCursorSeqRef.current,
     onEvent: handleStandardRealtimeEvent,
-    onFailure: () => {
-      requireManualRefresh();
-    },
+    onFailure: handleStandardRealtimeFailure,
     onSubscribed: (ack) => {
       if (typeof ack.last_seq === 'number' && Number.isFinite(ack.last_seq)) {
         standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(ack.last_seq));
@@ -2505,6 +2523,9 @@ export default function SignalTable({
           : [];
         if (changed.length > 0) {
           syncRealtimeEnvelope(data);
+          if (pathProfile === 'equities' && !signalStandardEnabled) {
+            return;
+          }
           scheduleInvalidation('market_update.invalidate');
         }
 

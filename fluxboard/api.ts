@@ -466,6 +466,11 @@ function normalizeBalanceScopeStatus(scopeStatus: unknown): BalanceScopeStatus[]
     .filter((entry) => entry.account_scope_id);
 }
 
+function coerceOptionalText(value: unknown): string | undefined {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+}
+
 function toFiniteOptionalNumber(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;

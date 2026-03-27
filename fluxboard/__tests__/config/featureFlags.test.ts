@@ -99,7 +99,7 @@ describe('featureFlags', () => {
       expect(isRealtimeStandardEnabled('signal')).toBe(false);
     });
 
-    it('defaults equities signal, balances, and trades realtime standard on for the /equities surface', async () => {
+    it('defaults equities balances and trades realtime standard on but leaves signal on the legacy transport for the /equities surface', async () => {
       Object.defineProperty(window, 'location', {
         value: new URL('http://localhost/equities'),
         configurable: true,
@@ -111,10 +111,10 @@ describe('featureFlags', () => {
       } = await loadFeatureFlagsModule();
 
       expect(featureFlags.realtimeStandard.global).toBe(true);
-      expect(featureFlags.realtimeStandard.signal).toBe(true);
+      expect(featureFlags.realtimeStandard.signal).toBe(false);
       expect(featureFlags.realtimeStandard.balances).toBe(true);
       expect(featureFlags.realtimeStandard.trades).toBe(true);
-      expect(isRealtimeStandardEnabled('signal')).toBe(true);
+      expect(isRealtimeStandardEnabled('signal')).toBe(false);
       expect(isRealtimeStandardEnabled('balances')).toBe(true);
       expect(isRealtimeStandardEnabled('trades')).toBe(true);
     });

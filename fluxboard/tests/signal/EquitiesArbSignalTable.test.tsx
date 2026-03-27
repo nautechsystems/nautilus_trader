@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import EquitiesArbSignalTable from '@/components/domain/signal/EquitiesArbSignalTable';
+import { __resetViewportClockRegistryForTests } from '@/hooks/useViewportClock';
 import type { SignalStrategy } from '@/types';
 
 function buildEquitiesStrategy(
@@ -111,6 +112,15 @@ function buildEquitiesStrategy(
 }
 
 describe('EquitiesArbSignalTable', () => {
+  beforeEach(() => {
+    __resetViewportClockRegistryForTests();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    __resetViewportClockRegistryForTests();
+  });
+
   it('renders one shared equities table with visible variant labels sorted by symbol then variant', () => {
     render(
       <EquitiesArbSignalTable
@@ -236,5 +246,47 @@ describe('EquitiesArbSignalTable', () => {
       'aapl_aaa_taker',
     ]);
     expect(screen.getByText('Taker')).toBeInTheDocument();
+  });
+
+  it('ticks the last-updated age label on the shared equities surface', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_001_500);
+
+    const strategy = buildEquitiesStrategy('aapl_tradexyz_maker', 'equities_maker', 'Maker');
+    strategy.equities_arb = {
+      ...strategy.equities_arb,
+      quote_snapshot: {
+        ...strategy.equities_arb?.quote_snapshot,
+        maker_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.maker_leg,
+          age_ms: 1_000,
+          ts_ms: 1_700_000_000_500,
+        },
+        hedge_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.hedge_leg,
+          age_ms: 1_000,
+          ts_ms: 1_700_000_000_500,
+        },
+        ref_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.ref_leg,
+          age_ms: 1_000,
+          ts_ms: 1_700_000_000_500,
+        },
+      },
+    };
+
+    render(
+      <EquitiesArbSignalTable
+        rows={[strategy]}
+      />,
+    );
+
+    expect(screen.getByText(/\(1s ago\)/)).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(screen.getByText(/\(6s ago\)/)).toBeInTheDocument();
   });
 });

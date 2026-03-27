@@ -106,6 +106,7 @@ function createFakeSocket(): FakeSocketControl {
 beforeEach(() => {
   vi.unstubAllEnvs();
   (window.location as any).pathname = '/';
+  delete (window as any).__FLUXBOARD_RUNTIME_CONFIG__;
   vi.resetModules();
   ioMock.mockReset();
   ioCalls.length = 0;
@@ -151,6 +152,23 @@ describe('sockets status state machine', () => {
 
     expect(ioMock).toHaveBeenCalledTimes(1);
     expect(ioCalls[0].url).toBe('');
+    expect(ioCalls[0].options.query?.profile).toBe('equities');
+  });
+
+  it('uses runtime-configured equities socket path override when path is equities surface', async () => {
+    (window.location as any).pathname = '/equities/signal';
+    (window as any).__FLUXBOARD_RUNTIME_CONFIG__ = {
+      socketPaths: {
+        equities: '/equities/socket.io',
+      },
+    };
+    const sockets = await import('./sockets');
+
+    sockets.getSocket();
+
+    expect(ioMock).toHaveBeenCalledTimes(1);
+    expect(ioCalls[0].url).toBe('');
+    expect(ioCalls[0].options.path).toBe('/equities/socket.io');
     expect(ioCalls[0].options.query?.profile).toBe('equities');
   });
 
