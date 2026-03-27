@@ -22,7 +22,6 @@
 # - Run a simple EMA-cross backtest from that catalog to validate the historical bar path.
 #
 # Note:
-# - Rithmic historical quote and trade tick requests are not implemented yet in this adapter.
 # - This sandbox therefore backtests from historical 1-minute bars requested through `request_bars`.
 # - On basic Rithmic plans, historical API usage is typically capped at 20 GB per month.
 # - Rithmic sends warning emails to the registered account email address as usage approaches the

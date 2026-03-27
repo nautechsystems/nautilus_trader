@@ -197,11 +197,9 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Instrument definition loading | ✓ | Via `RithmicInstrumentProvider` and the live data client provider path. |
 | Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
-| Historical bars | ✓ | Time bars plus `1-TICK` replay via the history plant. Native `N-TICK` replay exists in the Rithmic protocol but is not yet exposed by the current `rithmic-rs` request helper used here. |
+| Historical bars | ✓ | TimeBar and TickBar requests via the history plant. Historical TickBar requests are currently limited to `1-TICK`; native `N-TICK` support is not yet exposed by the current `rithmic-rs` request helper used here. |
 | Live external bar subscriptions | ✓ | Time bars and tick bars via the history plant when `enable_history=True`. |
 | Internal bars | ✓ | Still the simplest live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
-| Historical quote ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
-| Historical trade ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
 | Order book deltas / depth | Limited | Adapter hooks exist, but full depth support is not complete. |
 | Instrument status / close updates | - | No streaming venue path is exposed. |
 | Funding, mark price, index price feeds | - | Not provided by the current adapter. |
@@ -239,18 +237,19 @@ Current historical external bar limits:
 - only `EXTERNAL` bars are supported
 - only `LAST` price bars are supported
 - supported time aggregations are `SECOND`, `MINUTE`, `DAY`, and `WEEK`
-- supported historical tick aggregation is currently `1-TICK` only
+- supported historical `TickBar` aggregation is currently `1-TICK` only
 
-The `1-TICK` limit is intentional. The adapter does not locally re-aggregate raw ticks into larger
-tick bars outside Nautilus aggregators. The Rithmic protocol defines native tick-bar replay, but
-the current `rithmic-rs` history request helper still hardcodes the replay specifier to `1`, so the
-adapter rejects `>1-TICK` historical requests instead of faking them.
+The `1-TICK` limit is intentional. The adapter does not locally re-aggregate historical `TickBar`
+responses into larger `TickBar` windows outside Nautilus aggregators. The Rithmic protocol defines
+native parameterized `TickBar` replay, but the current `rithmic-rs` history request helper still
+hardcodes the bar specifier to `1`, so the adapter rejects `>1-TICK` historical `TickBar`
+requests instead of faking them.
 
 Planned completion:
 
-- once upstream `rithmic-rs` exposes native parameterized tick-bar replay, the adapter should pass
-  historical `N-TICK` replay through directly
-- no adapter-side tick-bar re-aggregation is planned as part of that follow-up
+- once upstream `rithmic-rs` exposes native parameterized `TickBar` replay, the adapter should
+  pass historical `N-TICK` `TickBar` requests through directly
+- no adapter-side `TickBar` re-aggregation is planned as part of that follow-up
 
 Rithmic history requests can also be truncated venue-side. A large date-range request is not
 guaranteed to return the full requested window in a single response; the vendor may return only a

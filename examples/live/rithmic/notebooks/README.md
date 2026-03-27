@@ -84,6 +84,6 @@ Additional adapter caveats:
 - Rithmic sends warning emails to the registered account email address when API usage approaches the limit or when their access rules are being breached
 - ignoring those warning emails can lead to automatically triggered temporary restrictions, so monitor the registered inbox during large backfills
 - live external bar subscriptions can use history-plant time bars or tick bars
-- historical tick-bar replay is currently limited to `1-TICK`; the adapter will reject larger historical tick-bar requests rather than re-aggregate locally
-- native historical `N-TICK` replay is expected to land later via upstream `rithmic-rs` support, at which point the adapter should pass it through unchanged
+- historical `TickBar` requests are currently limited to `1-TICK`; the adapter will reject larger historical `TickBar` requests rather than re-aggregate locally
+- native historical `N-TICK` `TickBar` support is expected to land later via upstream `rithmic-rs` support, at which point the adapter should pass it through unchanged
 - history replies can be truncated venue-side; treat each reply as a partial page, verify that the last returned bar actually reaches your requested end time, and if not, continue requesting from the last returned bar onward because the adapter does not auto-resume via `request_key` yet
