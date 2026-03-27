@@ -148,7 +148,8 @@ If a fill, external cancel, or reconciliation event removes a level from the mid
 
 - if the stack is short, place the most aggressive missing desired level that restores the ordered stack
 - if the stack is already full, cancel the unmatched resting order that blocks the repair, even if that order is not at the frontier
-- count the cancel separately in telemetry as `cancel_free_slot_for_missing_level`
+- count the cancel separately in telemetry as `cancel_back_excess` for tail blockers or
+  `cancel_free_slot_for_missing_level` for non-frontier blockers
 - count the follow-up place separately in telemetry as `repair_hole` / `place_missing_hole_repair`
 
 This allows the strategy to recover from real venue/counterparty events without reintroducing middle-of-stack repricing churn.

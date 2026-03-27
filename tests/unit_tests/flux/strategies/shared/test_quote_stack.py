@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from decimal import Decimal
 import inspect
+from decimal import Decimal
 
 
 def _desired_levels(*prices: str) -> list[tuple[Decimal, Decimal, Decimal]]:
@@ -351,11 +351,45 @@ def test_plan_quote_stack_keeps_frontier_only_keep_bucket_drift_as_no_op() -> No
     assert _action_tuples(result.actions) == []
 
 
+def test_plan_quote_stack_keeps_sell_frontier_only_keep_bucket_drift_as_no_op() -> None:
+    result = _plan(
+        side="sell",
+        active_prices=[Decimal("100"), Decimal("103"), Decimal("104")],
+        desired_levels=[
+            (Decimal("101"), Decimal("99.5"), Decimal(0)),
+            (Decimal("103"), Decimal("103"), Decimal(0)),
+            (Decimal("104"), Decimal("104"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "no_op"
+    assert result.diagnostics.front_changed is False
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == []
+
+
 def test_plan_quote_stack_advances_zero_overlap_full_depth_reprice_via_front_insert() -> None:
     result = _plan(
         side="buy",
         active_prices=[Decimal("98"), Decimal("97")],
         desired_levels=_desired_levels("100", "99"),
+    )
+
+    assert result.diagnostics.stack_action_mode == "place_front_cancel_back"
+    assert result.diagnostics.depth_after == 2
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is True
+    assert _action_tuples(result.actions) == [
+        ("place_front", None, 0),
+        ("cancel_back", 1, None),
+    ]
+
+
+def test_plan_quote_stack_advances_sell_inward_reprice_via_front_insert() -> None:
+    result = _plan(
+        side="sell",
+        active_prices=[Decimal("102"), Decimal("103")],
+        desired_levels=_desired_levels("101", "102"),
     )
 
     assert result.diagnostics.stack_action_mode == "place_front_cancel_back"
@@ -392,6 +426,46 @@ def test_plan_quote_stack_marks_front_edge_for_front_targeted_repair_cancel() ->
             (Decimal("99"), Decimal("100.5"), Decimal(0)),
             (Decimal("97"), Decimal("97"), Decimal(0)),
             (Decimal("95"), Decimal("95"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "repair_hole"
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == [
+        ("cancel_repair", 0, None),
+    ]
+
+
+def test_plan_quote_stack_cancels_front_blocker_before_inward_move_when_interior_hole_exists() -> None:
+    result = _plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("95"), Decimal("94")],
+        desired_levels=[
+            (Decimal("101"), Decimal("101"), Decimal(0)),
+            (Decimal("99"), Decimal("99"), Decimal(0)),
+            (Decimal("97"), Decimal("97"), Decimal(0)),
+            (Decimal("95"), Decimal("95"), Decimal(0)),
+        ],
+    )
+
+    assert result.diagnostics.stack_action_mode == "repair_hole"
+    assert result.diagnostics.interior_hole_count == 1
+    assert result.diagnostics.front_changed is True
+    assert result.diagnostics.back_changed is False
+    assert _action_tuples(result.actions) == [
+        ("cancel_repair", 0, None),
+    ]
+
+
+def test_plan_quote_stack_marks_sell_front_edge_for_front_targeted_repair_cancel() -> None:
+    result = _plan(
+        side="sell",
+        active_prices=[Decimal("100"), Decimal("104"), Decimal("105")],
+        desired_levels=[
+            (Decimal("101"), Decimal("99.5"), Decimal(0)),
+            (Decimal("103"), Decimal("103"), Decimal(0)),
+            (Decimal("105"), Decimal("105"), Decimal(0)),
         ],
     )
 

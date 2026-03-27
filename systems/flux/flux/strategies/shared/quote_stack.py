@@ -269,8 +269,11 @@ def _is_simple_inward_move(
     side: Side,
     active_levels: Sequence[ActiveStackLevel],
     desired_levels: Sequence[DesiredStackLevel],
+    interior_hole_count: int,
 ) -> bool:
     if len(active_levels) != len(desired_levels) or not active_levels or not desired_levels:
+        return False
+    if interior_hole_count > 0:
         return False
     desired_front = desired_levels[0]
     return _is_more_aggressive(
@@ -475,6 +478,7 @@ def plan_side_deque_actions(
         side=normalized_side,
         active_levels=normalized_active_levels,
         desired_levels=normalized_desired_levels,
+        interior_hole_count=interior_hole_count,
     ):
         return _build_plan(
             mode="place_front_cancel_back",

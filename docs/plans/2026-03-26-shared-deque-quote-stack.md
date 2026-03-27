@@ -129,7 +129,7 @@ Implement minimal helpers for:
 - detection of front cancel violation
 - depth overflow on the back
 - short-stack hole repair without paired repricing cancel
-- full-depth hole repair with explicit `cancel_free_slot_for_missing_level`
+- full-depth hole repair with explicit cancel telemetry
 - inward move represented as `place_front` then `cancel_back`
 - outward move represented as `cancel_front` then `place_back`
 
