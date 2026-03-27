@@ -2443,7 +2443,7 @@ def test_publish_portfolio_inventory_component_uses_shared_account_projection_wh
     assert component.local_position_qty_base == Decimal("-6")
 
 
-def test_publish_portfolio_inventory_component_uses_projection_snapshot_timestamp(
+def test_publish_portfolio_inventory_component_uses_publish_timestamp_for_fresh_projection_inventory(
     clocked_strategy_factory,
 ) -> None:
     maker_instrument_id = InstrumentId.from_str("XYZ:GOOGL-USD-PERP.HYPERLIQUID")
@@ -2524,7 +2524,7 @@ def test_publish_portfolio_inventory_component_uses_projection_snapshot_timestam
 
     assert component is not None
     assert component.local_qty_base == Decimal("-6")
-    assert component.ts_ms == 1_700_000_010_000
+    assert component.ts_ms == 1_700_000_010_500
 
 
 def test_compute_inventory_skew_uses_partial_shared_portfolio_global_qty_when_enabled(
