@@ -73,12 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = DatabentoDataClientFactory::new();
 
     let client_id = ClientId::new("DATABENTO");
-    let instrument_ids = vec![InstrumentId::from("ESZ6.XCME")];
+    let instrument_ids = vec![InstrumentId::from("ESM6.XCME")];
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .with_load_state(false)
         .with_save_state(false)
+        .with_delay_post_stop_secs(2)
         .add_data_client(None, Box::new(client_factory), Box::new(databento_config))?
         .build()?;
 
@@ -175,14 +176,7 @@ impl DataActor for DatabentoSubscriberActor {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        let instrument_ids = self.config.instrument_ids.clone();
-        let client_id = self.config.client_id;
-
-        for instrument_id in instrument_ids {
-            self.unsubscribe_quotes(instrument_id, Some(client_id), None);
-            self.unsubscribe_trades(instrument_id, Some(client_id), None);
-        }
-
+        // Databento does not support granular unsubscribing
         Ok(())
     }
 

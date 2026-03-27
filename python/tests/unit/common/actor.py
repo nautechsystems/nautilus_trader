@@ -12,3 +12,34 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Minimal test fixtures for LiveNode from_config registration tests.
+
+PyO3 #[new] maps to __new__, not __init__. Subclasses inherit the base constructor
+automatically and should not define __init__.
+
+"""
+
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import DataActorConfig
+from nautilus_trader.trading import Strategy
+
+
+class TestActorConfig(DataActorConfig):
+    pass
+
+
+class TestActor(DataActor):
+    pass
+
+
+class TestStrategy(Strategy):
+    pass
+
+
+class TestExecAlgorithmConfig(DataActorConfig):
+    pass
+
+
+class TestExecAlgorithm(DataActor):
+    pass

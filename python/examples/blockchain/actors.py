@@ -15,18 +15,18 @@
 
 from dataclasses import dataclass
 
-from nautilus_trader.common import DataActor  # type: ignore[attr-defined]
-from nautilus_trader.common import DataActorConfig  # type: ignore[attr-defined]
-from nautilus_trader.common import LogColor  # type: ignore[attr-defined]
-from nautilus_trader.model import ActorId  # type: ignore[attr-defined]
-from nautilus_trader.model import Block  # type: ignore[attr-defined]
-from nautilus_trader.model import Chain  # type: ignore[attr-defined]
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import DataActorConfig
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import ActorId
+from nautilus_trader.model import Block
+from nautilus_trader.model import Chain
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.model import PoolFeeCollect  # type: ignore[attr-defined]
-from nautilus_trader.model import PoolFlash  # type: ignore[attr-defined]
-from nautilus_trader.model import PoolLiquidityUpdate  # type: ignore[attr-defined]
-from nautilus_trader.model import PoolSwap  # type: ignore[attr-defined]
+from nautilus_trader.model import PoolFeeCollect
+from nautilus_trader.model import PoolFlash
+from nautilus_trader.model import PoolLiquidityUpdate
+from nautilus_trader.model import PoolSwap
 
 
 @dataclass

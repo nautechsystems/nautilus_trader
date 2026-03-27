@@ -133,7 +133,10 @@ class ParquetDataCatalogV2:
     ) -> str: ...
     def write_instruments(self, data: typing.Any) -> list[str]: ...
     def instruments(
-        self, instrument_ids: typing.Sequence[str] | None = None
+        self,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[typing.Any]: ...
     def extend_file_name(
         self, data_cls: str, instrument_id: str | None, start: int, end: int

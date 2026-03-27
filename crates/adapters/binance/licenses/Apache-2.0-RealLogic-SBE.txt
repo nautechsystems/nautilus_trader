@@ -2,8 +2,12 @@ Apache License
 Version 2.0, January 2004
 http://www.apache.org/licenses/
 
-APPLICABLE WORK: Real Logic Limited's Simple Binary Encoding (SBE) code
-generator, used to produce Binance Spot SBE codecs in this crate.
+APPLICABLE WORK: Simple Binary Encoding (SBE) code generator from the
+`aeron-io/simple-binary-encoding` repository, used to produce Binance Spot SBE
+codecs in this crate.
+
+ATTRIBUTION: Copyright 2013-2025 Real Logic Limited.
+Copyright 2017 MarketFactory Inc.
 
 TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 

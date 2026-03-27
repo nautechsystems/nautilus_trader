@@ -9,6 +9,7 @@ from nautilus_trader import model
 
 __all__ = [
     "ForexSession",
+    "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
     "Strategy",
     "StrategyConfig",
@@ -18,6 +19,16 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
+
+@typing.final
+class ImportableExecAlgorithmConfig:
+    def __init__(self, exec_algorithm_path: str, config_path: str, config: dict) -> None: ...
+    @property
+    def exec_algorithm_path(self) -> str: ...
+    @property
+    def config_path(self) -> str: ...
+    @property
+    def config(self) -> dict: ...
 
 @typing.final
 class ImportableStrategyConfig:

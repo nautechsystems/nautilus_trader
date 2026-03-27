@@ -6,6 +6,7 @@ pub enum SelfTradePreventionMode {
     ExpireMaker = 0x3_u8,
     ExpireBoth = 0x4_u8,
     Decrement = 0x5_u8,
+    Transfer = 0x6_u8,
     NonRepresentable = 0xfe_u8,
     #[default]
     NullVal = 0xff_u8,
@@ -19,6 +20,7 @@ impl From<u8> for SelfTradePreventionMode {
             0x3_u8 => Self::ExpireMaker,
             0x4_u8 => Self::ExpireBoth,
             0x5_u8 => Self::Decrement,
+            0x6_u8 => Self::Transfer,
             0xfe_u8 => Self::NonRepresentable,
             _ => Self::NullVal,
         }
@@ -33,6 +35,7 @@ impl From<SelfTradePreventionMode> for u8 {
             SelfTradePreventionMode::ExpireMaker => 0x3_u8,
             SelfTradePreventionMode::ExpireBoth => 0x4_u8,
             SelfTradePreventionMode::Decrement => 0x5_u8,
+            SelfTradePreventionMode::Transfer => 0x6_u8,
             SelfTradePreventionMode::NonRepresentable => 0xfe_u8,
             SelfTradePreventionMode::NullVal => 0xff_u8,
         }
@@ -49,6 +52,7 @@ impl core::str::FromStr for SelfTradePreventionMode {
             "ExpireMaker" => Ok(Self::ExpireMaker),
             "ExpireBoth" => Ok(Self::ExpireBoth),
             "Decrement" => Ok(Self::Decrement),
+            "Transfer" => Ok(Self::Transfer),
             "NonRepresentable" => Ok(Self::NonRepresentable),
             _ => Ok(Self::NullVal),
         }
@@ -63,6 +67,7 @@ impl core::fmt::Display for SelfTradePreventionMode {
             Self::ExpireMaker => write!(f, "ExpireMaker"),
             Self::ExpireBoth => write!(f, "ExpireBoth"),
             Self::Decrement => write!(f, "Decrement"),
+            Self::Transfer => write!(f, "Transfer"),
             Self::NonRepresentable => write!(f, "NonRepresentable"),
             Self::NullVal => write!(f, "NullVal"),
         }

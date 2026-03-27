@@ -414,6 +414,13 @@ impl HyperliquidHttpClient {
         })
     }
 
+    /// Request order status reports for a user.
+    ///
+    /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
+    /// This method requires instruments to be added to the client cache via `cache_instrument()`.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
+    /// will be created automatically.
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,

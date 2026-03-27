@@ -98,7 +98,8 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 
 - Name test functions after what they exercise; you do not need to encode the expected assertions in the name.
 - Add docstrings when they clarify setup, scenarios, or expectations.
-- Prefer pytest-style free functions for Python tests instead of test classes with setup methods.
+- Use pytest-style free functions and fixtures for Python tests under `python/tests/`.
+  Do not use test classes.
 - **Group assertions** when possible: perform all setup/act steps first, then assert together to avoid the act-assert-act smell.
 - Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and conciseness matter more than defensive error handling here.
 - Do not capture log output to assert on log messages. Log capture in tests is fragile because

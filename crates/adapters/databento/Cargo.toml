@@ -88,7 +88,9 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bin]]
 name = "databento-sandbox"
@@ -101,3 +103,8 @@ name = "databento-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["live"]
 doc = false
+
+[[test]]
+name = "feed_handler"
+path = "tests/feed_handler.rs"
+required-features = ["live"]
