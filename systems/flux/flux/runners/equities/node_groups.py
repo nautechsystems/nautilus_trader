@@ -32,6 +32,13 @@ def derive_equities_node_group_id(strategy_id: str) -> str:
     raise ValueError(f"Unsupported split equities strategy id: {strategy_id}")
 
 
+def _split_suffix_for_strategy(strategy_id: str) -> str:
+    for suffix in _SPLIT_SUFFIXES:
+        if strategy_id.endswith(suffix):
+            return suffix.removeprefix("_")
+    raise ValueError(f"Unsupported split equities strategy id: {strategy_id}")
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
@@ -107,6 +114,21 @@ def load_equities_node_groups(
 
         entry["strategy_ids"].append(strategy_id)
         entry["config_paths"].append(config_path_for_strategy)
+
+    for node_group_id, entry in grouped_rows.items():
+        strategy_ids = entry["strategy_ids"]
+        if len(strategy_ids) > len(_SPLIT_SUFFIXES):
+            raise ValueError(
+                f"Grouped node {node_group_id} must contain at most one maker plus one taker",
+            )
+        seen_members: set[str] = set()
+        for strategy_id in strategy_ids:
+            member = _split_suffix_for_strategy(strategy_id)
+            if member in seen_members:
+                raise ValueError(
+                    f"Grouped node {node_group_id} has duplicate {member} member",
+                )
+            seen_members.add(member)
 
     return tuple(
         EquitiesNodeGroup(
