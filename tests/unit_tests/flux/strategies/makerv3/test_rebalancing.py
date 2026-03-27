@@ -6,7 +6,9 @@ from typing import Any
 import pytest
 
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_BACK_EXCESS
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
@@ -133,7 +135,7 @@ def test_bounded_side_planner_peels_passive_tail_incrementally_for_single_missin
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (5, REASON_CANCEL_EXCESS_LEVEL),
+        (5, REASON_CANCEL_BACK_EXCESS),
     ]
     assert list(_result_field(result, "place_level_indices")) == [0]
 
@@ -161,9 +163,9 @@ def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_rep
     aggressive_reprice_cancels = [
         cancel_action
         for cancel_action in cancel_actions
-        if cancel_action[1] == REASON_CANCEL_TOO_AGGRESSIVE
+        if cancel_action[1] == REASON_CANCEL_FRONT_VIOLATION
     ]
-    assert aggressive_reprice_cancels == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
+    assert aggressive_reprice_cancels == [(0, REASON_CANCEL_FRONT_VIOLATION)]
     assert all(cancel_action[1] != REASON_CANCEL_STALE_ORDER for cancel_action in cancel_actions)
     assert len(cancel_actions) == 1
     assert list(_result_field(result, "place_level_indices")) == [4]
@@ -243,7 +245,7 @@ def test_bounded_side_planner_reports_deque_front_back_mode_without_room_candida
         for _index, reason_code in cancel_actions
     }
     assert {reason_code for _index, reason_code in cancel_actions} == {
-        REASON_CANCEL_TOO_AGGRESSIVE,
+        REASON_CANCEL_FRONT_VIOLATION,
     }
 
 
@@ -347,7 +349,7 @@ def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (5, REASON_CANCEL_EXCESS_LEVEL),
+        (5, REASON_CANCEL_BACK_EXCESS),
     ]
 
 
@@ -371,7 +373,7 @@ def test_bounded_side_planner_reports_zero_remaining_missing_after_planned_one_s
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (0, REASON_CANCEL_TOO_AGGRESSIVE),
+        (0, REASON_CANCEL_FRONT_VIOLATION),
     ]
     assert list(_result_field(result, "place_level_indices")) == [4]
     diagnostics = _result_field(result, "diagnostics")
