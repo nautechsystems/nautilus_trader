@@ -65,6 +65,8 @@ order_qty = "1000"
 qty = "1000"
 qty_unit = "base"
 bot_on = false
+# Market-data freshness budget only. Normal quote maintenance no longer uses
+# this as a resting-order TTL / refresh trigger.
 max_age_ms = 10000
 max_cancels_per_side_per_cycle = 1
 max_places_per_side_per_cycle = 2
