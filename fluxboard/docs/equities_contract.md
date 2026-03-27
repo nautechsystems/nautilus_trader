@@ -57,7 +57,7 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 
 ## Strategy and Deploy Identity
 
-1. One stock can run both `*_maker` and `*_taker`; each variant uses its own strategy file and node process.
+1. One stock can run both `*_maker` and `*_taker`; grouped nodes are an internal deploy detail and do not change the outer strategy-level operator surface.
 2. The live allowlist is `api.equities_strategy_ids`.
 3. Required portfolio readiness is `api.equities_required_strategy_ids`.
 4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per enrolled strategy variant as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, venue instrument ids, and shared account scopes.
@@ -66,6 +66,7 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 7. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
 8. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
 9. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
+10. realtime behavior remains part of the external contract even if node topology changes behind `/equities`.
 
 ## Response Expectations
 

@@ -6,7 +6,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 - `equities.live.toml`: shared Redis, portfolio, bridge, API, and contract metadata plus the canonical equities allowlist.
 - `equities_stack.env.example`: local paper/testnet smoke environment template for `ops/scripts/deploy/equities_stack.sh`.
-- `strategies/`: one complete node TOML per enrolled strategy variant, named by exact strategy ID.
+- `strategies/`: one strategy TOML per enrolled strategy variant, named by exact strategy ID.
 - Runtime services:
   - `flux.runners.equities.run_node`
   - `flux.runners.equities.run_portfolio`
@@ -19,7 +19,10 @@ This directory is the deploy root for the dedicated `equities` stack.
 ## Intent
 
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
-- Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
+- The split allowlist still exposes `38` external strategy IDs, but the production target is 19 grouped node services.
+- Each grouped node is keyed by symbol plus maker venue, for example `aapl_tradexyz` or `amzn_binance_perp`.
+- The production shape is one grouped node per symbol plus maker venue.
+- Strategy TOMLs remain strategy-local inputs; grouped nodes are an internal deploy detail.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
 - The checked-in active split maker/taker surface now includes the Tier 1 tradexyz core plus the enrolled Binance multivenue set. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
 - `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.

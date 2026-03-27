@@ -1114,6 +1114,26 @@ def test_equities_strategy_readme_freezes_prod_baskets() -> None:
     )
 
 
+def test_equities_docs_describe_grouped_nodes_not_one_process_per_strategy() -> None:
+    repo_root = _repo_root()
+    readme = _read(repo_root / "deploy/equities/README.md")
+    strategies_readme = _read(repo_root / "deploy/equities/strategies/README.md")
+    contract = _read(repo_root / "fluxboard/docs/equities_contract.md")
+
+    assert "one strategy file and one node process" not in readme
+    assert "19 grouped node services" in readme
+    assert "one grouped node per symbol plus maker venue" in readme
+
+    assert "This directory holds one TOML file per equities node process" not in strategies_readme
+    assert "Each enrolled variant uses one strategy file and one node process" not in strategies_readme
+    assert "one TOML file per enrolled strategy" in strategies_readme
+    assert "grouped node service" in strategies_readme
+
+    assert "each variant uses its own strategy file and node process" not in contract
+    assert "grouped nodes are an internal deploy detail" in contract
+    assert "realtime behavior remains part of the external contract" in contract
+
+
 def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
     common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")

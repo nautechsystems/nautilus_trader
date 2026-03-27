@@ -1,13 +1,14 @@
 # Equities `strategies` contract
 
-This directory holds one TOML file per equities node process enrolled into the Pulse-managed
-`flux@equities-node-*` services.
+This directory holds one TOML file per enrolled strategy. The production service registry is
+grouped-node based under the Pulse-managed `flux@equities-node-*` services.
 
 ## File naming
 
 - Use the exact Flux strategy ID as the file name: `<flux_strategy_id>.toml`.
 - Recommended naming patterns for enrolled Tier 1 names are now `<stock>_tradexyz_maker.toml` and `<stock>_tradexyz_taker.toml`.
-- Each enrolled variant uses one strategy file and one node process; the same stock may run both variants concurrently.
+- Each enrolled variant keeps its own strategy file, but paired `maker` / `taker` variants now share one grouped node service per symbol plus maker venue.
+- Representative grouped node service ids are `equities-node-aapl_tradexyz` and `equities-node-amzn_binance_perp`.
 - Keep the active enrolled set aligned with `deploy/equities/equities.live.toml`.
 - Disabled configs should use the `.toml.disabled` suffix until they are re-enrolled.
 - The intended active target after the March 13, 2026 admission freeze is the split `maker` plus `taker` rollout on the Tier 1 core basket below. Second-wave and decommissioned names should stay disabled until a later re-admission or removal task says otherwise.
@@ -76,7 +77,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 ## Required TOML keys per file
 
 - `[identity].strategy_id` and `[identity].strategy_instance_id` stay aligned to the file name.
-- `[strategy].strategy_id` stays descriptive and unique across node processes.
+- `[strategy].strategy_id` stays descriptive and unique across enrolled strategies.
 - `[strategy].strategy_groups` stays `equities`.
 - `[strategy].param_set = "equities_maker"` or `"equities_taker"` stays explicit for the intended active equities rollout.
 - `[strategy].manage_stop = false` stays explicit in the checked-in live equities configs; flatten-on-stop is opt-in only and must be set per strategy when explicitly desired.
@@ -120,5 +121,7 @@ This directory holds one TOML file per equities node process enrolled into the P
 - Use the same `[flux].namespace` and `[flux].schema_version` as the shared API/bridge config.
 - Pulse-managed node services pass `--shared-config deploy/equities/equities.live.toml` so node runners inherit the shared `[redis]`, `[portfolio]`, `[[strategy_contracts]]`, and `[[account_scopes]]` contract tables.
 
-Each file is a complete node config consumed directly by `python -m flux.runners.equities.run_node`.
+Each file is a complete strategy-local config consumed by `python -m flux.runners.equities.run_node`
+alongside the shared `deploy/equities/equities.live.toml` contract. The runner may attach more than
+one enrolled strategy file to a single grouped node service.
 Start from `equities.strategy.template.toml`.
