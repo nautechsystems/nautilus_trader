@@ -54,9 +54,33 @@ def merge_shared_tables(
     shared_config: dict[str, Any],
     table_names: Iterable[str],
 ) -> dict[str, Any]:
+    def _merge_missing_shared_values(current: Any, shared: Any) -> Any:
+        if isinstance(current, dict) and isinstance(shared, dict):
+            merged_dict = dict(current)
+            for key, shared_value in shared.items():
+                if key not in merged_dict:
+                    if isinstance(shared_value, dict):
+                        merged_dict[key] = _merge_missing_shared_values({}, shared_value)
+                    elif isinstance(shared_value, list):
+                        merged_dict[key] = [
+                            dict(row) if isinstance(row, dict) else row
+                            for row in shared_value
+                        ]
+                    else:
+                        merged_dict[key] = shared_value
+                    continue
+                merged_dict[key] = _merge_missing_shared_values(merged_dict[key], shared_value)
+            return merged_dict
+        return current
+
     merged = dict(config)
     for table_name in table_names:
         if table_name in merged:
+            if isinstance(merged[table_name], dict) and isinstance(shared_config.get(table_name), dict):
+                merged[table_name] = _merge_missing_shared_values(
+                    merged[table_name],
+                    shared_config[table_name],
+                )
             continue
         value = shared_config.get(table_name)
         if isinstance(value, dict):

@@ -847,6 +847,46 @@ hedge_account_scope_id = "ibkr.hedge.main"
     assert merged["strategy_contracts"][1]["maker_symbol"] == "AMZNUSDT"
 
 
+def test_load_runtime_config_merges_missing_portfolio_keys_from_shared_config(
+    tmp_path: Path,
+) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "makerv3"
+external_strategy_id = "aapl_tradexyz_maker"
+
+[portfolio]
+portfolio_id = "equities"
+
+[strategy]
+strategy_id = "aapl_tradexyz_maker"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[portfolio]
+inventory_stale_after_ms = 30000
+allow_partial_global_risk = true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["portfolio"]["portfolio_id"] == "equities"
+    assert merged["portfolio"]["inventory_stale_after_ms"] == 30000
+    assert merged["portfolio"]["allow_partial_global_risk"] is True
+
+
 def test_optional_strategy_config_kwargs_injects_shared_contract_identity_fields(
     tmp_path: Path,
 ) -> None:
