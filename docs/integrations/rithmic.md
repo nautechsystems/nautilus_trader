@@ -188,10 +188,10 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Historical bars | ✓ | Second, minute, day, and week bars via the history plant. |
-| Internal bars | ✓ | Recommended live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
+| Live external bar subscriptions | ✓ | Time-based `LAST` bars via the history plant when `enable_history=True`. |
+| Internal bars | ✓ | Still the simplest live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
 | Historical quote ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
 | Historical trade ticks | - | Not exposed through the current Rithmic API path used by this adapter. |
-| Live external bar subscriptions | - | Use internal aggregation from quote/trade feeds. |
 | Order book deltas / depth | Limited | Adapter hooks exist, but full depth support is not complete. |
 | Instrument status / close updates | - | No streaming venue path is exposed. |
 | Funding, mark price, index price feeds | - | Not provided by the current adapter. |
@@ -207,8 +207,35 @@ data_config = RithmicDataClientConfig(
 )
 ```
 
-If `enable_history=False`, the live node can still stream quotes and trades, but `request_bars()`
-will be rejected. This is useful for live-only nodes that do not need the history plant.
+If `enable_history=False`, the live node can still stream quotes and trades, but both
+`request_bars()` and live external `subscribe_bars()` calls will be rejected. This is useful for
+live-only nodes that do not need the history plant.
+
+### Live external bars
+
+The adapter now supports venue-fed live time bars through Nautilus `subscribe_bars()`, with the
+same history-plant dependency as historical bar requests.
+
+Current live external bar limits:
+
+- only `EXTERNAL` bars are supported
+- only `LAST` price bars are supported
+- only time bars are supported
+- supported aggregations are `SECOND`, `MINUTE`, `DAY`, and `WEEK`
+
+Example:
+
+```python
+from nautilus_trader.model.data import BarType
+
+
+bar_type = BarType.from_str("MNQM6.RITHMIC-1-MINUTE-LAST-EXTERNAL")
+strategy.subscribe_bars(bar_type, params={"exchange": "CME"})
+```
+
+Use this path when you specifically want venue-fed candles. For many live strategies, internal bars
+from quote/trade ticks are still the more robust default because they do not depend on the history
+plant being enabled or permissioned on the venue side.
 
 ### Live strategy pattern
 
@@ -216,7 +243,9 @@ For live strategies, the recommended pattern is:
 
 1. Resolve the active contract first.
 2. Subscribe to quote ticks and trade ticks for that contract.
-3. Use Nautilus internal aggregation to build bars locally.
+3. Choose one of:
+   - use Nautilus internal aggregation to build bars locally
+   - subscribe to live external `LAST` bars with `enable_history=True`
 
 This is the pattern used in `examples/live/rithmic/notebooks/rithmic_live_strategy_sandbox.py`.
 

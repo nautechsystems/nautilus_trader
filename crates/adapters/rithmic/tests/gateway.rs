@@ -84,6 +84,18 @@ async fn request_bars_requires_connected_history_plant() {
 }
 
 #[tokio::test]
+async fn subscribe_time_bars_requires_connected_history_plant() {
+    let gateway = test_gateway();
+
+    let err = gateway
+        .subscribe_time_bars("ESM6", "CME", TimeBarType::MinuteBar, 1)
+        .await
+        .unwrap_err();
+
+    assert_connection_error(err, "History plant not connected");
+}
+
+#[tokio::test]
 async fn list_accounts_connected_path_authenticates_and_collects_multi_response_accounts() {
     let server = MockOrderPlant::start().await;
     let config = test_order_only_gateway_config(&server.url);

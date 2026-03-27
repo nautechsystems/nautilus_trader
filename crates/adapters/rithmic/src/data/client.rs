@@ -3,6 +3,8 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 
+use rithmic_rs::rti::request_time_bar_replay::BarType as TimeBarType;
+
 use crate::{
     common::{
         enums::ConnectionState,
@@ -54,6 +56,35 @@ pub struct TradeTick {
     pub ts_init: UnixNanos,
 }
 
+/// Live time bar data.
+#[derive(Debug, Clone)]
+pub struct TimeBar {
+    /// Instrument symbol.
+    pub symbol: RithmicSymbol,
+    /// Exchange.
+    pub exchange: ExchangeId,
+    /// Rithmic time bar type.
+    pub bar_type: TimeBarType,
+    /// The bar period/step (for example `1` for a 1-minute bar).
+    pub bar_period: i32,
+    /// Open price.
+    pub open_price: f64,
+    /// High price.
+    pub high_price: f64,
+    /// Low price.
+    pub low_price: f64,
+    /// Close price.
+    pub close_price: f64,
+    /// Trade volume.
+    pub volume: f64,
+    /// Rithmic bar marker, typically epoch seconds for the bar close.
+    pub marker: Option<i64>,
+    /// Event timestamp in nanoseconds.
+    pub ts_event: UnixNanos,
+    /// Initialization timestamp in nanoseconds.
+    pub ts_init: UnixNanos,
+}
+
 /// Market data event emitted by the data client.
 #[derive(Debug, Clone)]
 pub enum MarketDataEvent {
@@ -61,6 +92,8 @@ pub enum MarketDataEvent {
     Quote(QuoteTick),
     /// Trade tick (last trade).
     Trade(TradeTick),
+    /// Time bar update.
+    Bar(TimeBar),
     /// Connection state change.
     ConnectionState(ConnectionState),
     /// Successfully reconnected after disconnect.
@@ -116,6 +149,9 @@ pub struct RithmicDataClient {
     /// Tracks which instruments have active subscriptions.
     /// Key: "EXCHANGE:SYMBOL" (e.g., "CME:ESZ4")
     subscriptions: DashMap<String, InstrumentSubscription>,
+    /// Tracks live bar subscriptions.
+    /// Key: "EXCHANGE:SYMBOL:BarType:Period" (e.g., "CME:ESZ4:MinuteBar:1")
+    bar_subscriptions: DashMap<String, ()>,
 }
 
 impl RithmicDataClient {
@@ -126,6 +162,7 @@ impl RithmicDataClient {
         Self {
             gateway,
             subscriptions: DashMap::new(),
+            bar_subscriptions: DashMap::new(),
         }
     }
 
@@ -278,6 +315,31 @@ impl RithmicDataClient {
         Ok(())
     }
 
+    /// Subscribes to live time bars for an instrument through the history plant.
+    pub async fn subscribe_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: TimeBarType,
+        bar_period: i32,
+    ) -> Result<()> {
+        if !self.is_connected() {
+            return Err(RithmicError::Connection("Not connected".to_string()));
+        }
+
+        let key = bar_subscription_key(symbol, exchange, bar_type, bar_period);
+        if self.bar_subscriptions.contains_key(&key) {
+            return Ok(());
+        }
+
+        self.gateway
+            .subscribe_time_bars(symbol, exchange, bar_type, bar_period)
+            .await?;
+        self.bar_subscriptions.insert(key, ());
+
+        Ok(())
+    }
+
     /// Unsubscribes from quotes for an instrument (local tracking only).
     ///
     /// This method only updates local subscription tracking. It does **not**
@@ -326,6 +388,7 @@ impl RithmicDataClient {
     /// requests to the venue.
     pub fn unsubscribe_all(&self) {
         self.subscriptions.clear();
+        self.bar_subscriptions.clear();
     }
 
     /// Unsubscribes from market data and notifies the venue.
@@ -339,6 +402,21 @@ impl RithmicDataClient {
         self.gateway.unsubscribe_market_data(symbol, exchange).await
     }
 
+    /// Unsubscribes from live time bars and notifies the venue.
+    pub async fn unsubscribe_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: TimeBarType,
+        bar_period: i32,
+    ) -> Result<()> {
+        let key = bar_subscription_key(symbol, exchange, bar_type, bar_period);
+        self.bar_subscriptions.remove(&key);
+        self.gateway
+            .unsubscribe_time_bars(symbol, exchange, bar_type, bar_period)
+            .await
+    }
+
     /// Returns the number of active subscriptions.
     pub fn subscription_count(&self) -> usize {
         self.subscriptions.len()
@@ -347,6 +425,19 @@ impl RithmicDataClient {
     /// Returns all active subscription keys in "EXCHANGE:SYMBOL" format.
     pub fn subscriptions(&self) -> Vec<String> {
         self.subscriptions.iter().map(|r| r.key().clone()).collect()
+    }
+
+    /// Returns the number of active live bar subscriptions.
+    pub fn bar_subscription_count(&self) -> usize {
+        self.bar_subscriptions.len()
+    }
+
+    /// Returns all active live bar subscription keys.
+    pub fn bar_subscriptions(&self) -> Vec<String> {
+        self.bar_subscriptions
+            .iter()
+            .map(|r| r.key().clone())
+            .collect()
     }
 
     /// Returns true if subscribed to quotes for the given instrument.
@@ -366,6 +457,18 @@ impl RithmicDataClient {
             .map(|s| s.trades)
             .unwrap_or(false)
     }
+
+    /// Returns true if subscribed to live bars for the given symbol/bar shape.
+    pub fn is_subscribed_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: TimeBarType,
+        bar_period: i32,
+    ) -> bool {
+        let key = bar_subscription_key(symbol, exchange, bar_type, bar_period);
+        self.bar_subscriptions.contains_key(&key)
+    }
 }
 
 impl std::fmt::Debug for RithmicDataClient {
@@ -373,8 +476,25 @@ impl std::fmt::Debug for RithmicDataClient {
         f.debug_struct("RithmicDataClient")
             .field("connection_state", &self.connection_state())
             .field("subscriptions", &self.subscription_count())
+            .field("bar_subscriptions", &self.bar_subscription_count())
             .finish()
     }
+}
+
+fn bar_subscription_key(
+    symbol: &str,
+    exchange: &str,
+    bar_type: TimeBarType,
+    bar_period: i32,
+) -> String {
+    let bar_type = match bar_type {
+        TimeBarType::SecondBar => "SecondBar",
+        TimeBarType::MinuteBar => "MinuteBar",
+        TimeBarType::DailyBar => "DailyBar",
+        TimeBarType::WeeklyBar => "WeeklyBar",
+    };
+
+    format!("{exchange}:{symbol}:{bar_type}:{bar_period}")
 }
 
 #[cfg(test)]
@@ -402,6 +522,7 @@ mod tests {
         let client = RithmicDataClient::new(gateway);
         assert_eq!(client.connection_state(), ConnectionState::Disconnected);
         assert_eq!(client.subscription_count(), 0);
+        assert_eq!(client.bar_subscription_count(), 0);
     }
 
     #[test]
@@ -459,11 +580,16 @@ mod tests {
                 trades: false,
             },
         );
+        client
+            .bar_subscriptions
+            .insert("CME:ESZ4:MinuteBar:1".to_string(), ());
 
         assert_eq!(client.subscription_count(), 2);
+        assert_eq!(client.bar_subscription_count(), 1);
 
         client.unsubscribe_all();
         assert_eq!(client.subscription_count(), 0);
+        assert_eq!(client.bar_subscription_count(), 0);
     }
 
     #[test]
@@ -490,5 +616,22 @@ mod tests {
         assert_eq!(subs.len(), 2);
         assert!(subs.contains(&"CME:ESZ4".to_string()));
         assert!(subs.contains(&"NYMEX:CLZ4".to_string()));
+    }
+
+    #[test]
+    fn test_bar_subscriptions_list() {
+        let gateway = create_test_gateway();
+        let client = RithmicDataClient::new(gateway);
+
+        client
+            .bar_subscriptions
+            .insert("CME:ESZ4:MinuteBar:1".to_string(), ());
+
+        assert!(client.is_subscribed_bars("ESZ4", "CME", TimeBarType::MinuteBar, 1));
+        assert_eq!(client.bar_subscription_count(), 1);
+        assert_eq!(
+            client.bar_subscriptions(),
+            vec!["CME:ESZ4:MinuteBar:1".to_string()],
+        );
     }
 }

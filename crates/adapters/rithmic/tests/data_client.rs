@@ -23,6 +23,7 @@ mod common;
 
 use std::sync::Arc;
 
+use nautilus_rithmic::TimeBarType;
 use nautilus_rithmic::common::enums::ConnectionState;
 use nautilus_rithmic::data::MarketDataEvent;
 use tokio::time::{Duration, timeout};
@@ -67,6 +68,20 @@ async fn subscribe_combined_requires_connected_gateway_without_mutating_tracking
     assert_connection_error(err, "Not connected");
     assert_eq!(client.subscription_count(), 0);
     assert!(client.subscriptions().is_empty());
+}
+
+#[tokio::test]
+async fn subscribe_bars_requires_connected_gateway_without_mutating_tracking() {
+    let client = test_data_client();
+
+    let err = client
+        .subscribe_bars("ESM6", "CME", TimeBarType::MinuteBar, 1)
+        .await
+        .unwrap_err();
+
+    assert_connection_error(err, "Not connected");
+    assert_eq!(client.bar_subscription_count(), 0);
+    assert!(!client.is_subscribed_bars("ESM6", "CME", TimeBarType::MinuteBar, 1));
 }
 
 #[tokio::test]
@@ -152,6 +167,56 @@ async fn subscribe_quotes_then_trades_uses_single_connected_market_data_subscrip
     assert!(client.is_subscribed_trades("ESM6", "CME"));
     assert_eq!(client.subscription_count(), 1);
     assert_eq!(server.subscribe_requests(), 1);
+
+    drop(client);
+    let mut gateway = Arc::try_unwrap(gateway).unwrap();
+    gateway.disconnect().await.unwrap();
+    server.wait().await;
+}
+
+#[tokio::test]
+async fn subscribe_bars_connected_path_emits_live_bar_updates() {
+    let server = crate::common::MockHistoryPlant::start().await;
+    let config = crate::common::test_history_only_gateway_config(&server.url);
+    let mut gateway = nautilus_rithmic::RithmicGateway::new(config);
+    let mut rx = gateway.take_market_data_receiver().unwrap();
+
+    gateway.connect().await.unwrap();
+    expect_authenticated(&mut rx).await;
+
+    let gateway = Arc::new(gateway);
+    let client = nautilus_rithmic::RithmicDataClient::new(Arc::clone(&gateway));
+
+    client
+        .subscribe_bars("ESM6", "CME", TimeBarType::MinuteBar, 1)
+        .await
+        .unwrap();
+
+    assert!(client.is_subscribed_bars("ESM6", "CME", TimeBarType::MinuteBar, 1));
+    assert_eq!(client.bar_subscription_count(), 1);
+    assert_eq!(server.live_bar_subscriptions(), 1);
+
+    let event = next_market_data_event(&mut rx).await;
+    match event {
+        MarketDataEvent::Bar(bar) => {
+            assert_eq!(bar.symbol, "ESM6");
+            assert_eq!(bar.exchange, "CME");
+            assert_eq!(bar.bar_type, TimeBarType::MinuteBar);
+            assert_eq!(bar.bar_period, 1);
+            assert_eq!(bar.open_price, 4500.75);
+            assert_eq!(bar.close_price, 4501.25);
+            assert_eq!(bar.volume, 110.0);
+            assert_eq!(bar.marker, Some(1_700_000_120));
+            assert_eq!(bar.ts_event, 1_700_000_120_000_000_000);
+        }
+        other => panic!("unexpected market data event {other:?}"),
+    }
+
+    client
+        .unsubscribe_bars("ESM6", "CME", TimeBarType::MinuteBar, 1)
+        .await
+        .unwrap();
+    assert!(!client.is_subscribed_bars("ESM6", "CME", TimeBarType::MinuteBar, 1));
 
     drop(client);
     let mut gateway = Arc::try_unwrap(gateway).unwrap();

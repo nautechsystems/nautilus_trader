@@ -58,7 +58,9 @@ class _DummyDataClient:
     _send_all_instruments_to_data_engine = RithmicLiveDataClient._send_all_instruments_to_data_engine
     _ensure_instrument_loaded = RithmicLiveDataClient._ensure_instrument_loaded
     _warn_unsupported = RithmicLiveDataClient._warn_unsupported
+    _bar_subscription_key = RithmicLiveDataClient._bar_subscription_key
     _subscribe_bars = RithmicLiveDataClient._subscribe_bars
+    _unsubscribe_bars = RithmicLiveDataClient._unsubscribe_bars
     _request_quote_ticks = RithmicLiveDataClient._request_quote_ticks
     _resolve_bar_type_name = RithmicLiveDataClient._resolve_bar_type_name
     _convert_time_bars = RithmicLiveDataClient._convert_time_bars
@@ -66,6 +68,7 @@ class _DummyDataClient:
     _fallback_bar_timestamp = RithmicLiveDataClient._fallback_bar_timestamp
     _handle_quote_tick = RithmicLiveDataClient._handle_quote_tick
     _handle_trade_tick = RithmicLiveDataClient._handle_trade_tick
+    _handle_live_bar = RithmicLiveDataClient._handle_live_bar
     _request_bars = RithmicLiveDataClient._request_bars
 
     def __init__(self, cache=None, instrument_provider=None, config=None):
@@ -75,6 +78,7 @@ class _DummyDataClient:
         self._log = _FakeLog()
         self._config = config or SimpleNamespace(enable_history=True)
         self._rust_client = None
+        self._bar_subscriptions = {}
 
     def _handle_data(self, data):
         self.handled.append(data)
@@ -192,12 +196,49 @@ class TestRithmicLiveDataClient:
         assert client.handled == [instrument]
 
     @pytest.mark.asyncio
-    async def test_subscribe_bars_warns_when_unsupported(self):
-        client = _DummyDataClient()
+    async def test_subscribe_bars_requires_history_enabled(self):
+        client = _DummyDataClient(config=SimpleNamespace(enable_history=False))
+        client._rust_client = object()
+        command = SimpleNamespace(
+            bar_type=BarType.from_str("ESZ4.RITHMIC-1-MINUTE-LAST-EXTERNAL"),
+            params={"exchange": "CME"},
+        )
 
-        await client._subscribe_bars(object())
+        with pytest.raises(RuntimeError, match="history is disabled"):
+            await client._subscribe_bars(command)
 
-        assert client._log.warnings == ["Live bar subscriptions not implemented for Rithmic"]
+    @pytest.mark.asyncio
+    async def test_subscribe_bars_registers_live_subscription(self):
+        instrument = _make_instrument("ESZ4.RITHMIC")
+
+        class _FakeRustClient:
+            def __init__(self):
+                self.calls = []
+
+            async def subscribe_bars(self, symbol, exchange, bar_type_name, bar_period):
+                self.calls.append(("subscribe", symbol, exchange, bar_type_name, bar_period))
+
+            async def unsubscribe_bars(self, symbol, exchange, bar_type_name, bar_period):
+                self.calls.append(("unsubscribe", symbol, exchange, bar_type_name, bar_period))
+
+        client = _DummyDataClient(cache=_FakeCache({instrument.id: instrument}))
+        client._rust_client = _FakeRustClient()
+        command = SimpleNamespace(
+            bar_type=BarType.from_str("ESZ4.RITHMIC-1-MINUTE-LAST-EXTERNAL"),
+            params={"exchange": "CME"},
+        )
+
+        await client._subscribe_bars(command)
+
+        assert client._rust_client.calls == [("subscribe", "ESZ4", "CME", "MinuteBar", 1)]
+        assert client._bar_subscriptions == {
+            ("ESZ4", "CME", "MinuteBar", 1): command.bar_type,
+        }
+
+        await client._unsubscribe_bars(command)
+
+        assert client._rust_client.calls[-1] == ("unsubscribe", "ESZ4", "CME", "MinuteBar", 1)
+        assert client._bar_subscriptions == {}
 
     @pytest.mark.asyncio
     async def test_request_quote_ticks_warns_when_unsupported(self):
@@ -266,6 +307,15 @@ class TestRithmicLiveDataClient:
 
         assert ts == 7 * 1_000_000_000
 
+    def test_bar_timestamp_from_response_prefers_marker(self):
+        client = _DummyDataClient()
+        bar_type = _make_bar_type(BarAggregation.MINUTE, step=1)
+        response = SimpleNamespace(marker=1_700_000_000, period="1")
+
+        ts = client._bar_timestamp_from_response(response, bar_type)
+
+        assert ts == 1_700_000_000 * 1_000_000_000
+
     def test_bar_timestamp_from_response_falls_back_on_parse_error(self):
         client = _DummyDataClient()
         bar_type = _make_bar_type(BarAggregation.SECOND, step=5)
@@ -322,6 +372,39 @@ class TestRithmicLiveDataClient:
         assert float(published.size) == 3.0
         assert published.aggressor_side.name == "SELLER"
         assert client._log.warnings == []
+
+    def test_handle_live_bar_publishes_matching_bar(self):
+        instrument = _make_instrument("ESZ4.RITHMIC")
+        cache = _FakeCache({instrument.id: instrument})
+        client = _DummyDataClient(cache=cache)
+        bar_type = BarType.from_str("ESZ4.RITHMIC-1-MINUTE-LAST-EXTERNAL")
+        client._bar_subscriptions[("ESZ4", "CME", "MinuteBar", 1)] = bar_type
+
+        client._handle_live_bar(
+            SimpleNamespace(
+                symbol="ESZ4",
+                exchange="CME",
+                bar_kind="MinuteBar",
+                bar_period=1,
+                open_price=4300.0,
+                high_price=4301.0,
+                low_price=4299.5,
+                close_price=4300.5,
+                volume=12,
+                ts_event=1_700_000_000_000_000_000,
+                ts_init=1_700_000_000_100_000_000,
+            )
+        )
+
+        published = client.handled[0]
+        assert published.bar_type == bar_type
+        assert float(published.open) == 4300.0
+        assert float(published.high) == 4301.0
+        assert float(published.low) == 4299.5
+        assert float(published.close) == 4300.5
+        assert float(published.volume) == 12.0
+        assert published.ts_event == 1_700_000_000_000_000_000
+        assert published.ts_init == 1_700_000_000_100_000_000
 
     @pytest.mark.asyncio
     async def test_request_bars_requires_start_before_end(self):

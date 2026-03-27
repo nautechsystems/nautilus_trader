@@ -9,6 +9,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar, BarAggregation, BarType
 from nautilus_trader.model.data import QuoteTick as NautilusQuoteTick
 from nautilus_trader.model.data import TradeTick as NautilusTradeTick
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId, InstrumentId, TradeId, Venue
 from nautilus_trader.model.objects import Price, Quantity
 
@@ -73,6 +74,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         self._rust_client = None
         self._subscription_channels: dict[tuple[str, str], set[str]] = {}
         self._subscription_mode: dict[tuple[str, str], str] = {}
+        self._bar_subscriptions: dict[tuple[str, str, str, int], BarType] = {}
 
     @property
     def venue(self) -> Venue:
@@ -151,6 +153,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             self._rust_client = None
             self._subscription_channels.clear()
             self._subscription_mode.clear()
+            self._bar_subscriptions.clear()
 
         if self._gateway:
             clear_binding = getattr(self._instrument_provider, "clear_gateway_binding", None)
@@ -176,6 +179,9 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             elif event.is_trade():
                 trade = event.as_trade()
                 self._handle_trade_tick(trade)
+            elif event.is_bar():
+                bar = event.as_bar()
+                self._handle_live_bar(bar)
             elif event.is_error():
                 error = event.as_error()
                 self._log.error(f"Market data error: {error}")
@@ -246,12 +252,71 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
         self._handle_data(nautilus_tick)
 
+    def _handle_live_bar(self, tick) -> None:
+        """Convert a live Rithmic time bar update into a Nautilus bar."""
+        key = self._bar_subscription_key(
+            tick.symbol,
+            tick.exchange,
+            tick.bar_kind,
+            tick.bar_period,
+        )
+        bar_type = self._bar_subscriptions.get(key)
+        if bar_type is None:
+            self._log.warning(
+                "Received live Rithmic bar with no matching subscription: "
+                f"{tick.exchange}:{tick.symbol} {tick.bar_kind}/{tick.bar_period}"
+            )
+            return
+
+        instrument = self._lookup_instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.warning(f"Instrument not loaded for live bar {bar_type.instrument_id}")
+            return
+
+        open_price = tick.open_price or 0.0
+        high_price = tick.high_price or open_price
+        low_price = tick.low_price or open_price
+        close_price = tick.close_price or open_price
+
+        if high_price < low_price:
+            high_price, low_price = low_price, high_price
+        if high_price < open_price:
+            high_price = open_price
+        if high_price < close_price:
+            high_price = close_price
+        if low_price > open_price:
+            low_price = open_price
+        if low_price > close_price:
+            low_price = close_price
+
+        self._handle_data(
+            Bar(
+                bar_type=bar_type,
+                open=Price(open_price, instrument.price_precision),
+                high=Price(high_price, instrument.price_precision),
+                low=Price(low_price, instrument.price_precision),
+                close=Price(close_price, instrument.price_precision),
+                volume=Quantity(tick.volume, instrument.size_precision),
+                ts_event=tick.ts_event,
+                ts_init=tick.ts_init,
+            )
+        )
+
     def _subscription_key(self, symbol: str, exchange: str) -> tuple[str, str]:
         return (symbol, exchange)
 
     def _logical_subscriptions_for(self, symbol: str, exchange: str) -> set[str]:
         key = self._subscription_key(symbol, exchange)
         return self._subscription_channels.setdefault(key, set())
+
+    def _bar_subscription_key(
+        self,
+        symbol: str,
+        exchange: str,
+        bar_type_name: str,
+        bar_period: int,
+    ) -> tuple[str, str, str, int]:
+        return (symbol, exchange, bar_type_name, bar_period)
 
     async def _subscribe_order_book_deltas(self, command) -> None:
         """Subscribe to order book deltas."""
@@ -351,7 +416,48 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, command) -> None:
         """Subscribe to live bars."""
-        self._warn_unsupported("Live bar subscriptions")
+        if not self._rust_client:
+            raise RuntimeError("Not connected")
+        if not self._config.enable_history:
+            raise RuntimeError("Live bars requested, but Rithmic history is disabled")
+
+        bar_type = command.bar_type
+        if not bar_type.is_externally_aggregated():
+            self._log.error(
+                f"Cannot subscribe to {bar_type}: only EXTERNAL bars are supported, "
+                "use INTERNAL aggregation instead",
+            )
+            return
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(
+                f"Cannot subscribe to {bar_type}: only LAST price bars are supported",
+            )
+            return
+        if not bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot subscribe to {bar_type}: only time bars are supported",
+            )
+            return
+
+        instrument_id = bar_type.instrument_id
+        symbol = self._resolve_rithmic_symbol(instrument_id)
+        exchange = self._resolve_exchange(instrument_id, getattr(command, "params", None))
+        if exchange is None:
+            raise ValueError(f"Missing exchange for instrument {instrument_id}")
+
+        await self._ensure_instrument_loaded(instrument_id, exchange)
+
+        bar_type_name = self._resolve_bar_type_name(bar_type)
+        bar_period = int(bar_type.spec.step)
+        key = self._bar_subscription_key(symbol, exchange, bar_type_name, bar_period)
+        if key in self._bar_subscriptions:
+            return
+
+        await self._rust_client.subscribe_bars(symbol, exchange, bar_type_name, bar_period)
+        self._bar_subscriptions[key] = bar_type
+        self._log.info(
+            f"Subscribed to live {bar_type_name} bars(period={bar_period}) for {symbol} on {exchange}"
+        )
 
     async def _subscribe_instrument_status(self, command) -> None:
         """Subscribe to instrument status updates."""
@@ -445,7 +551,30 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_bars(self, command) -> None:
         """Unsubscribe from live bars."""
-        self._warn_unsupported("Live bar unsubscriptions")
+        if not self._rust_client:
+            return
+
+        bar_type = command.bar_type
+        if not bar_type.spec.is_time_aggregated():
+            return
+
+        instrument_id = bar_type.instrument_id
+        symbol = self._resolve_rithmic_symbol(instrument_id)
+        exchange = self._resolve_exchange(instrument_id, getattr(command, "params", None))
+        if exchange is None:
+            return
+
+        bar_type_name = self._resolve_bar_type_name(bar_type)
+        bar_period = int(bar_type.spec.step)
+        key = self._bar_subscription_key(symbol, exchange, bar_type_name, bar_period)
+        if key not in self._bar_subscriptions:
+            return
+
+        await self._rust_client.unsubscribe_bars(symbol, exchange, bar_type_name, bar_period)
+        self._bar_subscriptions.pop(key, None)
+        self._log.info(
+            f"Unsubscribed from live {bar_type_name} bars(period={bar_period}) for {symbol} on {exchange}"
+        )
 
     async def _unsubscribe_instrument_status(self, command) -> None:
         """Unsubscribe from instrument status."""
@@ -717,10 +846,17 @@ class RithmicLiveDataClient(LiveMarketDataClient):
     def _bar_timestamp_from_response(self, response, bar_type: BarType) -> int:
         """Extract bar timestamp from Rithmic response.
 
-        The Rithmic API returns `period` as a string containing the bar's
-        Unix timestamp in seconds. We convert to nanoseconds for NautilusTrader.
-        Falls back to computing from bar_type if period is missing or invalid.
+        Prefer the Rithmic `marker` field when present, which is the bar's
+        epoch-based marker in seconds. Fall back to parsing `period` only when
+        `marker` is unavailable.
         """
+        marker = getattr(response, "marker", None)
+        if marker:
+            try:
+                return int(marker) * 1_000_000_000
+            except (TypeError, ValueError):
+                self._log.warning(f"Could not parse bar marker '{marker}' as timestamp")
+
         if response.period:
             try:
                 seconds = int(response.period)

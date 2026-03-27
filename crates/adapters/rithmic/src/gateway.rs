@@ -42,6 +42,7 @@ use rithmic_rs::{
     plants::ticker_plant::{RithmicTickerPlant, RithmicTickerPlantHandle},
     rti::messages::RithmicMessage,
     rti::request_time_bar_replay::BarType as TimeBarType,
+    rti::request_time_bar_update::{BarType as LiveTimeBarType, Request as LiveTimeBarRequest},
     ws::ConnectStrategy,
 };
 
@@ -672,6 +673,80 @@ impl RithmicGateway {
         Ok(responses)
     }
 
+    /// Subscribes to live time-bar updates on the history plant.
+    pub async fn subscribe_time_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: TimeBarType,
+        bar_period: i32,
+    ) -> Result<()> {
+        let handle = self
+            .history_handle
+            .as_ref()
+            .ok_or_else(|| RithmicError::Connection("History plant not connected".to_string()))?;
+
+        let response = handle
+            .subscribe_time_bar_updates(
+                symbol,
+                exchange,
+                replay_bar_type_to_live(bar_type),
+                bar_period,
+                LiveTimeBarRequest::Subscribe,
+            )
+            .await
+            .map_err(|e| RithmicError::Api(format!("Live bar subscription failed: {e}")))?;
+
+        if let Some(error) = response.error {
+            return Err(RithmicError::Api(format!(
+                "Live bar subscription failed: {error}"
+            )));
+        }
+
+        debug!(
+            "Subscribed to live {:?} bars(period={}) for {} on {}",
+            bar_type, bar_period, symbol, exchange
+        );
+        Ok(())
+    }
+
+    /// Unsubscribes from live time-bar updates on the history plant.
+    pub async fn unsubscribe_time_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: TimeBarType,
+        bar_period: i32,
+    ) -> Result<()> {
+        let handle = self
+            .history_handle
+            .as_ref()
+            .ok_or_else(|| RithmicError::Connection("History plant not connected".to_string()))?;
+
+        let response = handle
+            .subscribe_time_bar_updates(
+                symbol,
+                exchange,
+                replay_bar_type_to_live(bar_type),
+                bar_period,
+                LiveTimeBarRequest::Unsubscribe,
+            )
+            .await
+            .map_err(|e| RithmicError::Api(format!("Live bar unsubscribe failed: {e}")))?;
+
+        if let Some(error) = response.error {
+            return Err(RithmicError::Api(format!(
+                "Live bar unsubscribe failed: {error}"
+            )));
+        }
+
+        debug!(
+            "Unsubscribed from live {:?} bars(period={}) for {} on {}",
+            bar_type, bar_period, symbol, exchange
+        );
+        Ok(())
+    }
+
     /// Returns true if the history plant is connected.
     ///
     /// Use this to check before calling `request_bars`.
@@ -960,7 +1035,15 @@ impl RithmicGateway {
             self.task_handles.push(task);
         }
 
-        // Note: History plant doesn't need a processor - it's request/response based
+        if let Some(handle) = self.history_handle.clone() {
+            let event_tx = self.market_data_tx.clone();
+            let connection_state = Arc::clone(&self.connection_state);
+
+            let task = tokio::spawn(async move {
+                history_processor(handle, event_tx, connection_state).await;
+            });
+            self.task_handles.push(task);
+        }
     }
 
     /// Disconnects from all Rithmic plants.
@@ -1218,6 +1301,46 @@ async fn ticker_processor(
     debug!("Ticker processor stopped");
 }
 
+/// Background task that processes history-plant subscription updates.
+async fn history_processor(
+    mut handle: RithmicHistoryPlantHandle,
+    event_tx: mpsc::UnboundedSender<MarketDataEvent>,
+    connection_state: Arc<ArcSwap<ConnectionState>>,
+) {
+    debug!("History processor started");
+
+    loop {
+        match handle.subscription_receiver.recv().await {
+            Ok(response) => {
+                if is_connection_issue(&response) {
+                    warn!("History plant connection issue detected");
+                    connection_state.store(Arc::new(ConnectionState::Reconnecting));
+                    let _ = event_tx.send(MarketDataEvent::ConnectionState(
+                        ConnectionState::Reconnecting,
+                    ));
+                    break;
+                }
+
+                if let Some(error) = &response.error {
+                    warn!("History plant error: {error}");
+                    let _ = event_tx.send(MarketDataEvent::Error(error.clone()));
+                    continue;
+                }
+
+                if let Some(event) = transform_history_market_data(&response) {
+                    let _ = event_tx.send(event);
+                }
+            }
+            Err(e) => {
+                error!("History processor receive error: {e}");
+                break;
+            }
+        }
+    }
+
+    debug!("History processor stopped");
+}
+
 /// Background task that processes order plant messages.
 async fn order_processor(
     mut handle: RithmicOrderPlantHandle,
@@ -1350,6 +1473,38 @@ fn now_nanos() -> u64 {
 }
 
 #[inline]
+fn replay_bar_type_to_live(bar_type: TimeBarType) -> LiveTimeBarType {
+    match bar_type {
+        TimeBarType::SecondBar => LiveTimeBarType::SecondBar,
+        TimeBarType::MinuteBar => LiveTimeBarType::MinuteBar,
+        TimeBarType::DailyBar => LiveTimeBarType::DailyBar,
+        TimeBarType::WeeklyBar => LiveTimeBarType::WeeklyBar,
+    }
+}
+
+#[inline]
+fn live_bar_type_to_replay(value: i32) -> Option<TimeBarType> {
+    match LiveTimeBarType::try_from(value).ok()? {
+        LiveTimeBarType::SecondBar => Some(TimeBarType::SecondBar),
+        LiveTimeBarType::MinuteBar => Some(TimeBarType::MinuteBar),
+        LiveTimeBarType::DailyBar => Some(TimeBarType::DailyBar),
+        LiveTimeBarType::WeeklyBar => Some(TimeBarType::WeeklyBar),
+    }
+}
+
+#[inline]
+fn time_bar_timestamp_to_nanos(marker: Option<i32>, period: Option<&str>) -> u64 {
+    if let Some(marker) = marker.filter(|value| *value > 0) {
+        return marker as u64 * 1_000_000_000;
+    }
+
+    period
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
+        * 1_000_000_000
+}
+
+#[inline]
 fn bbo_side_updated(bits: Option<u32>, bit: u32, price: Option<f64>, size: Option<i32>) -> bool {
     match bits {
         Some(bits) => bits & bit != 0,
@@ -1369,6 +1524,39 @@ fn transform_market_data(
     quote_state: &mut AHashMap<String, crate::data::QuoteTick>,
 ) -> Option<MarketDataEvent> {
     transform_market_data_message(&response.message, _instruments, quote_state)
+}
+
+fn transform_history_market_data(response: &RithmicResponse) -> Option<MarketDataEvent> {
+    match &response.message {
+        RithmicMessage::TimeBar(bar) => {
+            let symbol = bar.symbol.as_ref()?;
+            let exchange = bar.exchange.as_ref()?;
+            let bar_type = live_bar_type_to_replay(bar.r#type?)?;
+            let bar_period = bar.period.as_ref()?.parse::<i32>().ok()?;
+            let ts_event = time_bar_timestamp_to_nanos(bar.marker, bar.period.as_deref());
+            let ts_init = now_nanos();
+
+            Some(MarketDataEvent::Bar(crate::data::TimeBar {
+                symbol: symbol.clone(),
+                exchange: exchange.clone(),
+                bar_type,
+                bar_period,
+                open_price: bar.open_price.unwrap_or(0.0),
+                high_price: bar.high_price.unwrap_or(0.0),
+                low_price: bar.low_price.unwrap_or(0.0),
+                close_price: bar.close_price.unwrap_or(0.0),
+                volume: bar.volume.unwrap_or(0) as f64,
+                marker: bar.marker.map(i64::from),
+                ts_event,
+                ts_init,
+            }))
+        }
+        RithmicMessage::ForcedLogout(_) => {
+            warn!("Forced logout from history plant");
+            Some(MarketDataEvent::Error("Forced logout".to_string()))
+        }
+        _ => None,
+    }
 }
 
 fn transform_market_data_message(
@@ -1948,48 +2136,48 @@ mod tests {
         let mut quote_state = AHashMap::new();
 
         let initial = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some((PresenceBits::Bid as u32) | (PresenceBits::Ask as u32)),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(6619.00),
-                bid_size: Some(9),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(6619.50),
-                ask_size: Some(6),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(1),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some((PresenceBits::Bid as u32) | (PresenceBits::Ask as u32)),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(6619.00),
+            bid_size: Some(9),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(6619.50),
+            ask_size: Some(6),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(1),
+            usecs: Some(0),
+        });
 
         let partial = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some(PresenceBits::Ask as u32),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(0.0),
-                bid_size: Some(0),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(6619.50),
-                ask_size: Some(5),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(2),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some(PresenceBits::Ask as u32),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(0.0),
+            bid_size: Some(0),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(6619.50),
+            ask_size: Some(5),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(2),
+            usecs: Some(0),
+        });
 
         let _ = transform_market_data_for_test(initial, &instruments, &mut quote_state);
         let event = transform_market_data_for_test(partial, &instruments, &mut quote_state);
@@ -2014,48 +2202,48 @@ mod tests {
         let mut quote_state = AHashMap::new();
 
         let initial = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some((PresenceBits::Bid as u32) | (PresenceBits::Ask as u32)),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(6617.00),
-                bid_size: Some(3),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(6617.25),
-                ask_size: Some(1),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(1),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some((PresenceBits::Bid as u32) | (PresenceBits::Ask as u32)),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(6617.00),
+            bid_size: Some(3),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(6617.25),
+            ask_size: Some(1),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(1),
+            usecs: Some(0),
+        });
 
         let bid_only = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some(PresenceBits::Bid as u32),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(6616.75),
-                bid_size: Some(10),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(0.0),
-                ask_size: Some(0),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(2),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some(PresenceBits::Bid as u32),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(6616.75),
+            bid_size: Some(10),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(0.0),
+            ask_size: Some(0),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(2),
+            usecs: Some(0),
+        });
 
         let _ = transform_market_data_for_test(initial, &instruments, &mut quote_state);
         let event = transform_market_data_for_test(bid_only, &instruments, &mut quote_state);
@@ -2080,48 +2268,48 @@ mod tests {
         let mut quote_state = AHashMap::new();
 
         let ask_only = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some(PresenceBits::Ask as u32),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(0.0),
-                bid_size: Some(0),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(6617.25),
-                ask_size: Some(1),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(1),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some(PresenceBits::Ask as u32),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(0.0),
+            bid_size: Some(0),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(6617.25),
+            ask_size: Some(1),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(1),
+            usecs: Some(0),
+        });
 
         let bid_only = RithmicMessage::BestBidOffer(BestBidOffer {
-                template_id: 150,
-                symbol: Some("ESM6".to_string()),
-                exchange: Some("CME".to_string()),
-                presence_bits: Some(PresenceBits::Bid as u32),
-                clear_bits: None,
-                is_snapshot: Some(false),
-                bid_price: Some(6617.00),
-                bid_size: Some(3),
-                bid_orders: None,
-                bid_implicit_size: None,
-                bid_time: None,
-                ask_price: Some(0.0),
-                ask_size: Some(0),
-                ask_orders: None,
-                ask_implicit_size: None,
-                ask_time: None,
-                lean_price: None,
-                ssboe: Some(2),
-                usecs: Some(0),
-            });
+            template_id: 150,
+            symbol: Some("ESM6".to_string()),
+            exchange: Some("CME".to_string()),
+            presence_bits: Some(PresenceBits::Bid as u32),
+            clear_bits: None,
+            is_snapshot: Some(false),
+            bid_price: Some(6617.00),
+            bid_size: Some(3),
+            bid_orders: None,
+            bid_implicit_size: None,
+            bid_time: None,
+            ask_price: Some(0.0),
+            ask_size: Some(0),
+            ask_orders: None,
+            ask_implicit_size: None,
+            ask_time: None,
+            lean_price: None,
+            ssboe: Some(2),
+            usecs: Some(0),
+        });
 
         let first = transform_market_data_for_test(ask_only, &instruments, &mut quote_state);
         assert!(first.is_none());

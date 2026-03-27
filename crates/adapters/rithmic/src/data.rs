@@ -7,4 +7,4 @@ mod client;
 mod handler;
 mod parse;
 
-pub use client::{MarketDataEvent, QuoteTick, RithmicDataClient, TradeTick};
+pub use client::{MarketDataEvent, QuoteTick, RithmicDataClient, TimeBar, TradeTick};

@@ -6,7 +6,7 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-use crate::data::{MarketDataEvent, QuoteTick, TradeTick};
+use crate::data::{MarketDataEvent, QuoteTick, TimeBar as LiveTimeBar, TradeTick};
 use crate::execution::{
     ExecutionEvent, OrderAccepted, OrderCancelled, OrderFilled, OrderModified, OrderRejected,
     OrderSubmitted,
@@ -831,6 +831,11 @@ impl PyMarketDataEvent {
         matches!(self.inner, MarketDataEvent::Trade(_))
     }
 
+    /// Returns true if this is a live time-bar event.
+    fn is_bar(&self) -> bool {
+        matches!(self.inner, MarketDataEvent::Bar(_))
+    }
+
     /// Returns true if this is a connection state event.
     fn is_connection_state(&self) -> bool {
         matches!(self.inner, MarketDataEvent::ConnectionState(_))
@@ -853,6 +858,14 @@ impl PyMarketDataEvent {
     fn as_trade(&self) -> Option<PyTradeTick> {
         match &self.inner {
             MarketDataEvent::Trade(t) => Some(PyTradeTick::from(t.clone())),
+            _ => None,
+        }
+    }
+
+    /// Get the time bar if this is a bar event.
+    fn as_bar(&self) -> Option<PyTimeBar> {
+        match &self.inner {
+            MarketDataEvent::Bar(bar) => Some(PyTimeBar::from(bar.clone())),
             _ => None,
         }
     }
@@ -881,6 +894,10 @@ impl PyMarketDataEvent {
             MarketDataEvent::Trade(t) => {
                 format!("MarketDataEvent::Trade({}:{})", t.symbol, t.exchange)
             }
+            MarketDataEvent::Bar(bar) => format!(
+                "MarketDataEvent::Bar({}:{} {:?}/{})",
+                bar.symbol, bar.exchange, bar.bar_type, bar.bar_period
+            ),
             MarketDataEvent::ConnectionState(s) => {
                 format!("MarketDataEvent::ConnectionState({:?})", s)
             }
@@ -1260,7 +1277,7 @@ impl From<PositionEvent> for PyPositionEvent {
 // Time Bar Data
 // ============================================================================
 
-/// Python wrapper for time bar data from history requests.
+/// Python wrapper for Rithmic time bar data from history requests and live updates.
 #[cfg(feature = "python")]
 #[pyclass(name = "TimeBar")]
 #[derive(Clone)]
@@ -1275,8 +1292,18 @@ pub struct PyTimeBar {
     pub close_price: f64,
     /// Volume.
     pub volume: i64,
-    /// Bar timestamp (period) as string.
+    /// Raw Rithmic period field.
     pub period: String,
+    /// Parsed Rithmic bar type name.
+    pub bar_kind: String,
+    /// Parsed Rithmic bar period/step.
+    pub bar_period: i32,
+    /// Raw Rithmic bar marker.
+    pub marker: Option<i64>,
+    /// Event timestamp in nanoseconds.
+    pub ts_event: u64,
+    /// Initialization timestamp in nanoseconds.
+    pub ts_init: u64,
 }
 
 #[cfg(feature = "python")]
@@ -1312,10 +1339,37 @@ impl PyTimeBar {
         &self.period
     }
 
+    #[getter]
+    fn bar_kind(&self) -> &str {
+        &self.bar_kind
+    }
+
+    #[getter]
+    fn bar_period(&self) -> i32 {
+        self.bar_period
+    }
+
+    #[getter]
+    fn marker(&self) -> Option<i64> {
+        self.marker
+    }
+
+    #[getter]
+    fn ts_event(&self) -> u64 {
+        self.ts_event
+    }
+
+    #[getter]
+    fn ts_init(&self) -> u64 {
+        self.ts_init
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "TimeBar(period={}, o={:.2}, h={:.2}, l={:.2}, c={:.2}, v={})",
-            self.period,
+            "TimeBar(type={}, period={}, marker={:?}, o={:.2}, h={:.2}, l={:.2}, c={:.2}, v={})",
+            self.bar_kind,
+            self.bar_period,
+            self.marker,
             self.open_price,
             self.high_price,
             self.low_price,
@@ -1328,6 +1382,18 @@ impl PyTimeBar {
 impl PyTimeBar {
     /// Creates a PyTimeBar from a Rithmic ResponseTimeBarReplay message.
     pub fn from_response(bar: &rithmic_rs::rti::ResponseTimeBarReplay) -> Self {
+        let marker = bar.marker.map(i64::from);
+        let ts_event = marker
+            .filter(|value| *value > 0)
+            .map(|value| value as u64 * 1_000_000_000)
+            .or_else(|| {
+                bar.period
+                    .as_deref()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .map(|value| value * 1_000_000_000)
+            })
+            .unwrap_or(0);
+
         Self {
             open_price: bar.open_price.unwrap_or(0.0),
             high_price: bar.high_price.unwrap_or(0.0),
@@ -1335,6 +1401,47 @@ impl PyTimeBar {
             close_price: bar.close_price.unwrap_or(0.0),
             volume: bar.volume.unwrap_or(0) as i64,
             period: bar.period.clone().unwrap_or_default(),
+            bar_kind: match bar
+                .r#type
+                .and_then(|value| crate::TimeBarType::try_from(value).ok())
+                .unwrap_or(crate::TimeBarType::MinuteBar)
+            {
+                crate::TimeBarType::SecondBar => "SecondBar".to_string(),
+                crate::TimeBarType::MinuteBar => "MinuteBar".to_string(),
+                crate::TimeBarType::DailyBar => "DailyBar".to_string(),
+                crate::TimeBarType::WeeklyBar => "WeeklyBar".to_string(),
+            },
+            bar_period: bar
+                .period
+                .as_deref()
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or_default(),
+            marker,
+            ts_event,
+            ts_init: ts_event,
+        }
+    }
+}
+
+impl From<LiveTimeBar> for PyTimeBar {
+    fn from(bar: LiveTimeBar) -> Self {
+        Self {
+            open_price: bar.open_price,
+            high_price: bar.high_price,
+            low_price: bar.low_price,
+            close_price: bar.close_price,
+            volume: bar.volume as i64,
+            period: bar.bar_period.to_string(),
+            bar_kind: match bar.bar_type {
+                crate::TimeBarType::SecondBar => "SecondBar".to_string(),
+                crate::TimeBarType::MinuteBar => "MinuteBar".to_string(),
+                crate::TimeBarType::DailyBar => "DailyBar".to_string(),
+                crate::TimeBarType::WeeklyBar => "WeeklyBar".to_string(),
+            },
+            bar_period: bar.bar_period,
+            marker: bar.marker,
+            ts_event: bar.ts_event,
+            ts_init: bar.ts_init,
         }
     }
 }

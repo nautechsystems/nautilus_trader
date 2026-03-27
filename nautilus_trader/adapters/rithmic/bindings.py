@@ -23,6 +23,7 @@ RithmicExecutionClient = _rithmic.RithmicExecutionClient
 RithmicGateway = _rithmic.RithmicGateway
 RithmicInstrument = _rithmic.RithmicInstrument
 RithmicInstrumentProvider = _rithmic.RithmicInstrumentProvider
+TimeBar = _rithmic.TimeBar
 TimeInForce = _rithmic.TimeInForce
 TradeTick = _rithmic.TradeTick
 
@@ -57,6 +58,7 @@ __all__ = [
     "RithmicGateway",
     "RithmicInstrument",
     "RithmicInstrumentProvider",
+    "TimeBar",
     "TimeInForce",
     "TradeTick",
 ]

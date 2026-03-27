@@ -27,13 +27,14 @@ use rithmic_rs::rti::{
     AccountPnLPositionUpdate, BestBidOffer, InstrumentPnLPositionUpdate, LastTrade, MessageType,
     RequestAccountList, RequestLogin, RequestLogout, RequestMarketDataUpdate,
     RequestPnLPositionSnapshot, RequestPnLPositionUpdates, RequestSubscribeForOrderUpdates,
-    RequestTimeBarReplay, ResponseAccountList, ResponseLogin, ResponseLogout,
+    RequestTimeBarReplay, RequestTimeBarUpdate, ResponseAccountList, ResponseLogin, ResponseLogout,
     ResponseMarketDataUpdate, ResponsePnLPositionSnapshot, ResponsePnLPositionUpdates,
-    ResponseSubscribeForOrderUpdates, ResponseTimeBarReplay,
+    ResponseSubscribeForOrderUpdates, ResponseTimeBarReplay, ResponseTimeBarUpdate, TimeBar,
     best_bid_offer::PresenceBits,
     request_market_data_update::{Request as MarketDataRequest, UpdateBits},
     request_pn_l_position_updates::Request as PnlPositionRequest,
     request_time_bar_replay::BarType as TimeBarReplayType,
+    request_time_bar_update::{BarType as TimeBarUpdateType, Request as TimeBarUpdateRequest},
 };
 use tokio::{net::TcpListener, task::JoinHandle};
 use tokio_tungstenite::{WebSocketStream, accept_async, tungstenite::Message};
@@ -592,6 +593,7 @@ impl MockPnlPlant {
 pub struct MockHistoryPlant {
     pub url: String,
     bar_requests: Arc<AtomicUsize>,
+    live_bar_subscriptions: Arc<AtomicUsize>,
     handle: JoinHandle<()>,
 }
 
@@ -601,6 +603,8 @@ impl MockHistoryPlant {
         let address = listener.local_addr().unwrap();
         let bar_requests = Arc::new(AtomicUsize::new(0));
         let bar_requests_task = Arc::clone(&bar_requests);
+        let live_bar_subscriptions = Arc::new(AtomicUsize::new(0));
+        let live_bar_subscriptions_task = Arc::clone(&live_bar_subscriptions);
 
         let handle = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
@@ -691,6 +695,71 @@ impl MockHistoryPlant {
                                 )
                                 .await;
                             }
+                            200 => {
+                                let request = RequestTimeBarUpdate::decode(payload).unwrap();
+                                let request_id = request.user_msg.first().cloned().unwrap();
+
+                                assert_eq!(request.symbol.as_deref(), Some("ESM6"));
+                                assert_eq!(request.exchange.as_deref(), Some("CME"));
+                                assert_eq!(
+                                    request.bar_type,
+                                    Some(TimeBarUpdateType::MinuteBar as i32)
+                                );
+                                assert_eq!(request.bar_type_period, Some(1));
+
+                                if request.request == Some(TimeBarUpdateRequest::Subscribe as i32) {
+                                    live_bar_subscriptions_task.fetch_add(1, Ordering::SeqCst);
+
+                                    send_protobuf(
+                                        &mut ws,
+                                        ResponseTimeBarUpdate {
+                                            template_id: 201,
+                                            user_msg: vec![request_id],
+                                            rp_code: vec![],
+                                        },
+                                    )
+                                    .await;
+
+                                    send_protobuf(
+                                        &mut ws,
+                                        TimeBar {
+                                            template_id: 250,
+                                            symbol: Some("ESM6".to_string()),
+                                            exchange: Some("CME".to_string()),
+                                            r#type: Some(TimeBarUpdateType::MinuteBar as i32),
+                                            period: Some("1".to_string()),
+                                            marker: Some(1_700_000_120),
+                                            num_trades: Some(14),
+                                            volume: Some(110),
+                                            bid_volume: Some(50),
+                                            ask_volume: Some(60),
+                                            open_price: Some(4500.75),
+                                            close_price: Some(4501.25),
+                                            high_price: Some(4501.50),
+                                            low_price: Some(4500.50),
+                                            settlement_price: None,
+                                            has_settlement_price: Some(false),
+                                            must_clear_settlement_price: Some(false),
+                                        },
+                                    )
+                                    .await;
+                                } else {
+                                    assert_eq!(
+                                        request.request,
+                                        Some(TimeBarUpdateRequest::Unsubscribe as i32)
+                                    );
+
+                                    send_protobuf(
+                                        &mut ws,
+                                        ResponseTimeBarUpdate {
+                                            template_id: 201,
+                                            user_msg: vec![request_id],
+                                            rp_code: vec![],
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
                             12 => {
                                 let request = RequestLogout::decode(payload).unwrap();
                                 let request_id = request.user_msg.first().cloned().unwrap();
@@ -714,12 +783,17 @@ impl MockHistoryPlant {
         Self {
             url: format!("ws://{address}"),
             bar_requests,
+            live_bar_subscriptions,
             handle,
         }
     }
 
     pub fn bar_requests(&self) -> usize {
         self.bar_requests.load(Ordering::SeqCst)
+    }
+
+    pub fn live_bar_subscriptions(&self) -> usize {
+        self.live_bar_subscriptions.load(Ordering::SeqCst)
     }
 
     pub async fn wait(self) {

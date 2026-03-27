@@ -22,7 +22,7 @@ use super::gateway::PyRithmicGateway;
 /// Python wrapper for RithmicDataClient.
 ///
 /// The data client manages market data subscriptions and receives
-/// quotes and trades from the Rithmic ticker plant.
+/// quotes/trades from the ticker plant plus live time bars from the history plant.
 ///
 /// Example
 /// -------
@@ -42,6 +42,8 @@ pub struct PyRithmicDataClient {
     /// Local subscription tracking (mirrors the Rust client).
     /// Uses Arc so it can be shared with async futures.
     subscriptions: Arc<parking_lot::Mutex<std::collections::HashSet<String>>>,
+    /// Local live bar subscription tracking.
+    bar_subscriptions: Arc<parking_lot::Mutex<std::collections::HashSet<String>>>,
     /// Python callback for market data events.
     data_callback: Arc<parking_lot::Mutex<Option<Py<PyAny>>>>,
     event_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
@@ -62,6 +64,7 @@ impl PyRithmicDataClient {
         Self {
             gateway: Arc::clone(&gateway.inner),
             subscriptions: Arc::new(parking_lot::Mutex::new(std::collections::HashSet::new())),
+            bar_subscriptions: Arc::new(parking_lot::Mutex::new(std::collections::HashSet::new())),
             data_callback: Arc::new(parking_lot::Mutex::new(None)),
             event_task: Arc::new(parking_lot::Mutex::new(None)),
             shutdown_tx: Arc::new(parking_lot::Mutex::new(None)),
@@ -88,16 +91,39 @@ impl PyRithmicDataClient {
         self.subscriptions.lock().iter().cloned().collect()
     }
 
+    /// Returns the number of active live bar subscriptions.
+    #[getter]
+    fn bar_subscription_count(&self) -> usize {
+        self.bar_subscriptions.lock().len()
+    }
+
+    /// Returns all active live bar subscription keys.
+    fn bar_subscriptions(&self) -> Vec<String> {
+        self.bar_subscriptions.lock().iter().cloned().collect()
+    }
+
     /// Returns true if subscribed to quotes for the given instrument.
     fn is_subscribed(&self, symbol: &str, exchange: &str) -> bool {
         let key = format!("{exchange}:{symbol}");
         self.subscriptions.lock().contains(&key)
     }
 
+    /// Returns true if subscribed to the given live time-bar stream.
+    fn is_subscribed_bars(
+        &self,
+        symbol: &str,
+        exchange: &str,
+        bar_type: String,
+        bar_period: i32,
+    ) -> bool {
+        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type, bar_period);
+        self.bar_subscriptions.lock().contains(&key)
+    }
+
     /// Sets the callback for market data events.
     ///
     /// The callback will be called with each market data event (quotes, trades,
-    /// connection state changes, etc.).
+    /// live bars, connection state changes, etc.).
     ///
     /// Parameters
     /// ----------
@@ -256,6 +282,40 @@ impl PyRithmicDataClient {
         self.subscribe_quotes(py, symbol, exchange)
     }
 
+    /// Subscribes to live time bars on the history plant.
+    ///
+    /// This is an async method.
+    fn subscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        exchange: String,
+        bar_type: String,
+        bar_period: i32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        Self::validate_symbol_exchange(&symbol, &exchange)?;
+        let bar_type = Self::parse_time_bar_type(&bar_type)?;
+
+        let gateway = Arc::clone(&self.gateway);
+        let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
+        let key =
+            Self::bar_subscription_key(&symbol, &exchange, &format!("{:?}", bar_type), bar_period);
+
+        future_into_py(py, async move {
+            let gw = gateway.read().await;
+            gw.subscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
+                .await
+                .map(|_| {
+                    bar_subscriptions.lock().insert(key);
+                })
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "Live bar subscription failed: {e}"
+                    ))
+                })
+        })
+    }
+
     /// Unsubscribes from market data for an instrument.
     ///
     /// This is an async method.
@@ -286,9 +346,42 @@ impl PyRithmicDataClient {
         })
     }
 
+    /// Unsubscribes from live time bars on the history plant.
+    fn unsubscribe_bars<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: String,
+        exchange: String,
+        bar_type: String,
+        bar_period: i32,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        Self::validate_symbol_exchange(&symbol, &exchange)?;
+        let bar_type = Self::parse_time_bar_type(&bar_type)?;
+
+        let gateway = Arc::clone(&self.gateway);
+        let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
+        let key =
+            Self::bar_subscription_key(&symbol, &exchange, &format!("{:?}", bar_type), bar_period);
+
+        future_into_py(py, async move {
+            let gw = gateway.read().await;
+            gw.unsubscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
+                .await
+                .map(|_| {
+                    bar_subscriptions.lock().remove(&key);
+                })
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "Live bar unsubscribe failed: {e}"
+                    ))
+                })
+        })
+    }
+
     /// Unsubscribes from all market data (local tracking only).
     fn unsubscribe_all(&self) {
         self.subscriptions.lock().clear();
+        self.bar_subscriptions.lock().clear();
     }
 
     /// Requests historical time bars via the history plant.
@@ -312,17 +405,7 @@ impl PyRithmicDataClient {
         let gateway = Arc::clone(&self.gateway);
 
         future_into_py(py, async move {
-            let bar_type = match bar_type.as_str() {
-                "SecondBar" => TimeBarType::SecondBar,
-                "MinuteBar" => TimeBarType::MinuteBar,
-                "DailyBar" => TimeBarType::DailyBar,
-                "WeeklyBar" => TimeBarType::WeeklyBar,
-                _ => {
-                    return Err(pyo3::exceptions::PyValueError::new_err(
-                        "Unsupported bar type. Valid values: SecondBar, MinuteBar, DailyBar, WeeklyBar",
-                    ));
-                }
-            };
+            let bar_type = Self::parse_time_bar_type(&bar_type)?;
 
             let gw = gateway.read().await;
             let responses = gw
@@ -354,9 +437,10 @@ impl PyRithmicDataClient {
 
     fn __repr__(&self) -> String {
         format!(
-            "RithmicDataClient(connected={}, subscriptions={})",
+            "RithmicDataClient(connected={}, subscriptions={}, bar_subscriptions={})",
             self.is_connected(),
-            self.subscription_count()
+            self.subscription_count(),
+            self.bar_subscription_count()
         )
     }
 }
@@ -375,6 +459,27 @@ impl PyRithmicDataClient {
             ));
         }
         Ok(())
+    }
+
+    fn parse_time_bar_type(bar_type: &str) -> PyResult<TimeBarType> {
+        match bar_type {
+            "SecondBar" => Ok(TimeBarType::SecondBar),
+            "MinuteBar" => Ok(TimeBarType::MinuteBar),
+            "DailyBar" => Ok(TimeBarType::DailyBar),
+            "WeeklyBar" => Ok(TimeBarType::WeeklyBar),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(
+                "Unsupported bar type. Valid values: SecondBar, MinuteBar, DailyBar, WeeklyBar",
+            )),
+        }
+    }
+
+    fn bar_subscription_key(
+        symbol: &str,
+        exchange: &str,
+        bar_type: &str,
+        bar_period: i32,
+    ) -> String {
+        format!("{exchange}:{symbol}:{bar_type}:{bar_period}")
     }
 
     /// Event processing loop that runs in a spawned task.
