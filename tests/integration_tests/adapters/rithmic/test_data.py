@@ -62,7 +62,6 @@ class _DummyDataClient:
     _bar_subscription_key = RithmicLiveDataClient._bar_subscription_key
     _subscribe_bars = RithmicLiveDataClient._subscribe_bars
     _unsubscribe_bars = RithmicLiveDataClient._unsubscribe_bars
-    _request_quote_ticks = RithmicLiveDataClient._request_quote_ticks
     _resolve_bar_type_name = RithmicLiveDataClient._resolve_bar_type_name
     _convert_time_bars = RithmicLiveDataClient._convert_time_bars
     _bar_timestamp_from_response = RithmicLiveDataClient._bar_timestamp_from_response
@@ -273,14 +272,6 @@ class TestRithmicLiveDataClient:
 
         assert client._rust_client.calls[-1] == ("unsubscribe", "ESZ4", "CME", "TickBar", 233)
         assert client._bar_subscriptions == {}
-
-    @pytest.mark.asyncio
-    async def test_request_quote_ticks_warns_when_unsupported(self):
-        client = _DummyDataClient()
-
-        await client._request_quote_ticks(object())
-
-        assert client._log.warnings == ["Historical quote tick requests not implemented for Rithmic"]
 
     @pytest.mark.parametrize(
         ("aggregation", "expected"),

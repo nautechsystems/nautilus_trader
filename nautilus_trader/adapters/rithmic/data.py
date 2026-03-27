@@ -653,14 +653,6 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             request.params,
         )
 
-    async def _request_quote_ticks(self, request) -> None:
-        """Request historical quote ticks."""
-        self._warn_unsupported("Historical quote tick requests")
-
-    async def _request_trade_ticks(self, request) -> None:
-        """Request historical trade ticks."""
-        self._warn_unsupported("Historical trade tick requests")
-
     async def _request_bars(self, request) -> None:
         """Request historical bars."""
         if not self._config.enable_history:
