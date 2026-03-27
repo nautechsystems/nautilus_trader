@@ -697,16 +697,32 @@ jobs:
         with:
           persist-credentials: false
 
+      # Requires admin access to modify; does not widen attack surface.
+      # See .github/OVERVIEW.md "Security gate override" for rationale.
+      - name: Check security gate override
+        id: gate
+        run: |
+          override="${{ vars.SECURITY_GATE_OVERRIDE }}"
+          if [ -n "$override" ] && [ "$(date -u +%s)" -lt "$(date -u -d "$override" +%s 2>/dev/null || echo 0)" ]; then
+            echo "::warning::Security gate override active until $override"
+            echo "override_active=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "override_active=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install cargo-audit
+        if: steps.gate.outputs.override_active != 'true'
         uses: ./.github/actions/cargo-tool-install
         with:
           tool-name: cargo-audit
 
       - name: Run cargo-audit (fail on vulnerabilities)
-        run: cargo audit --deny unsound --deny yanked
+        if: steps.gate.outputs.override_active != 'true'
+        run: cargo audit --deny unsound
 
       - name: Run osv-scanner
         id: osv-scan
+        if: steps.gate.outputs.override_active != 'true'
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@c5996e0193a3df57d695c1b8a1dec2a4c62e8730 # v2.3.3
         with:
@@ -719,7 +735,7 @@ jobs:
             --lockfile=python/uv.lock
 
       - name: Check OSV severity (fail on critical/high only)
-        if: steps.osv-scan.outcome == 'failure'
+        if: steps.osv-scan.outcome == 'failure' && steps.gate.outputs.override_active != 'true'
         run: bash scripts/ci/osv-severity-gate.sh osv-results.json
 
   publish-wheels-nightly:

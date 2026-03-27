@@ -70,6 +70,32 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
   run with read-only permissions and no access to secrets, so audit mode is safe.
 
+### Security gate override
+
+The `security-gate-nightly` job runs `cargo audit` and `osv-scanner` to catch vulnerabilities
+before publishing. Occasionally, upstream events outside our control (transitive dependency
+advisories, crate yanks for non-security reasons) can block the nightly pipeline with no
+actionable fix on our side.
+
+The repo-scoped variable `SECURITY_GATE_OVERRIDE` holds an ISO 8601 UTC timestamp
+(e.g. `2026-03-28T02:00:00Z`). When the current time is before the timestamp, the security
+gate is skipped. When the timestamp passes, the gate re-enables automatically with no manual
+reset. The variable will be left unset for normal operations.
+
+A repo admin will thoroughly assess all flagged items before setting the timestamp, and will
+scope it to the minimum window needed for the blocked build to complete:
+
+```
+date -u -d '+2 hours' --iso-8601=seconds  # e.g. 2 hour window
+```
+
+Modifying repo variables requires admin access. An attacker with that level of access can
+already disable workflows or push directly, so the override does not widen the attack surface.
+
+`cargo audit` catches CVEs and unsound code advisories independent of yank status. A crate
+yanked for non-security reasons (MSRV mistakes, broken builds, accidental publishes) produces
+a warning but does not indicate a vulnerability.
+
 ### Allowed network endpoints
 
 The `step-security/harden-runner` action restricts network access to approved endpoints.
