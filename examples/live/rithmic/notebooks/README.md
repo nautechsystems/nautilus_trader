@@ -34,6 +34,11 @@ Execution-path cells also require:
 
 - `RITHMIC_ACCOUNT_ID`
 
+Optional endpoint selection:
+
+- `RITHMIC_SERVER`
+- `RITHMIC_ALT_SERVER`
+
 Profile-scoped variables also work through `RITHMIC_PROFILE` plus matching `RITHMIC_{PROFILE}_*` names.
 
 For `RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION`, a temporary working fallback is already available

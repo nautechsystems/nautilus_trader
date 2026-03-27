@@ -102,6 +102,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             fcm_id=self._config.fcm_id or "",
             ib_id=self._config.ib_id or "",
             account_id="",  # Data client doesn't need account
+            server=self._config.server,
+            alt_server=self._config.alt_server,
             enable_ticker=True,
             enable_order=False,
             enable_pnl=False,

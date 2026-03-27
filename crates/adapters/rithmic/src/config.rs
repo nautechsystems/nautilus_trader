@@ -13,6 +13,8 @@
 //! - `RITHMIC_IB_ID`: IB ID (optional)
 //! - `RITHMIC_ACCOUNT_ID`: Trading account ID (for execution)
 //! - `RITHMIC_ENV`: Environment (demo, live, test)
+//! - `RITHMIC_SERVER`: Named primary server (optional)
+//! - `RITHMIC_ALT_SERVER`: Named alternate server (optional)
 
 use std::env;
 
@@ -132,6 +134,10 @@ pub struct RithmicDataClientConfig {
     pub fcm_id: Option<String>,
     /// IB ID (Introducing Broker).
     pub ib_id: Option<String>,
+    /// Named primary server override.
+    pub server: Option<String>,
+    /// Named alternate server override.
+    pub alt_server: Option<String>,
 }
 
 impl RithmicDataClientConfig {
@@ -151,6 +157,8 @@ impl RithmicDataClientConfig {
             app_version: DEFAULT_APP_VERSION.to_string(),
             fcm_id: None,
             ib_id: None,
+            server: None,
+            alt_server: None,
         }
     }
 
@@ -176,6 +184,8 @@ impl RithmicDataClientConfig {
                 .unwrap_or_else(|| DEFAULT_APP_VERSION.to_string()),
             fcm_id: optional_env_var("FCM_ID", profile)?,
             ib_id: optional_env_var("IB_ID", profile)?,
+            server: optional_env_var("SERVER", profile)?,
+            alt_server: optional_env_var("ALT_SERVER", profile)?,
         })
     }
 
@@ -225,6 +235,10 @@ pub struct RithmicExecClientConfig {
     pub ib_id: Option<String>,
     /// Trading account ID.
     pub account_id: String,
+    /// Named primary server override.
+    pub server: Option<String>,
+    /// Named alternate server override.
+    pub alt_server: Option<String>,
 }
 
 impl RithmicExecClientConfig {
@@ -246,6 +260,8 @@ impl RithmicExecClientConfig {
             fcm_id: None,
             ib_id: None,
             account_id: account_id.into(),
+            server: None,
+            alt_server: None,
         }
     }
 
@@ -272,6 +288,8 @@ impl RithmicExecClientConfig {
             fcm_id: optional_env_var("FCM_ID", profile)?,
             ib_id: optional_env_var("IB_ID", profile)?,
             account_id: required_env_var("ACCOUNT_ID", profile)?,
+            server: optional_env_var("SERVER", profile)?,
+            alt_server: optional_env_var("ALT_SERVER", profile)?,
         })
     }
 

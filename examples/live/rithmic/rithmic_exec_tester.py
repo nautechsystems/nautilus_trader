@@ -65,6 +65,8 @@ def build_data_client_config() -> RithmicDataClientConfig:
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
+        server=base.server,
+        alt_server=base.alt_server,
         instrument_provider=build_provider_config(),
     )
 
@@ -81,6 +83,8 @@ def build_exec_client_config() -> RithmicExecClientConfig:
         app_version=base.app_version,
         fcm_id=base.fcm_id,
         ib_id=base.ib_id,
+        server=base.server,
+        alt_server=base.alt_server,
         execution_replay_lookback_secs=base.execution_replay_lookback_secs,
         native_bracket_state_path=base.native_bracket_state_path,
         instrument_provider=build_provider_config(),

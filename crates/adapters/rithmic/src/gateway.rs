@@ -61,6 +61,35 @@ const MAX_BACKOFF_MS: u64 = 30000;
 /// Maximum time to wait for an individual plant logout before aborting it.
 const DISCONNECT_TIMEOUT_SECS: u64 = 3;
 
+fn normalize_server_name(server: &str) -> String {
+    server
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+fn resolve_server_endpoint(server: &str) -> Result<&'static str> {
+    match normalize_server_name(server).as_str() {
+        "chicago" => Ok("wss://rprotocol.rithmic.com:443"),
+        "sydney" => Ok("wss://rprotocol-au.rithmic.com:443"),
+        "saopaulo" => Ok("wss://rprotocol-br.rithmic.com:443"),
+        "colo75" => Ok("wss://protocol-colo75.rithmic.com:443"),
+        "frankfurt" => Ok("wss://rprotocol-de.rithmic.com:443"),
+        "hongkong" => Ok("wss://rprotocol-hk.rithmic.com:443"),
+        "ireland" => Ok("wss://rprotocol-ie.rithmic.com:443"),
+        "mumbai" => Ok("wss://rprotocol-in.rithmic.com:443"),
+        "seoul" => Ok("wss://rprotocol-kr.rithmic.com:443"),
+        "capetown" => Ok("wss://rprotocol-za.rithmic.com:443"),
+        "tokyo" => Ok("wss://rprotocol-jp.rithmic.com:443"),
+        "singapore" => Ok("wss://rprotocol-sg.rithmic.com:443"),
+        "test" => Ok("wss://rituz00100.rithmic.com:443"),
+        _ => Err(RithmicError::Config(format!(
+            "Unknown Rithmic server {server:?}. Expected one of: Chicago, Sydney, Sao Paulo, Colo75, Frankfurt, Hong Kong, Ireland, Mumbai, Seoul, Cape Town, Tokyo, Singapore, Test"
+        ))),
+    }
+}
+
 /// Configuration for the Rithmic gateway.
 ///
 /// This unified configuration contains all credentials needed to connect
@@ -85,6 +114,10 @@ pub struct GatewayConfig {
     pub ib_id: String,
     /// Trading account ID.
     pub account_id: String,
+    /// Optional named primary Rithmic server.
+    pub server: Option<String>,
+    /// Optional named alternate Rithmic server.
+    pub alt_server: Option<String>,
     /// Optional primary WebSocket URL override.
     pub url_override: Option<String>,
     /// Optional alternate WebSocket URL override.
@@ -120,6 +153,8 @@ impl GatewayConfig {
             fcm_id: fcm_id.into(),
             ib_id: ib_id.into(),
             account_id: account_id.into(),
+            server: None,
+            alt_server: None,
             url_override: None,
             beta_url_override: None,
             enable_ticker: true,
@@ -165,6 +200,8 @@ impl GatewayConfig {
             fcm_id: optional_env_var("FCM_ID", profile)?.unwrap_or_default(),
             ib_id: optional_env_var("IB_ID", profile)?.unwrap_or_default(),
             account_id: required_env_var("ACCOUNT_ID", profile)?,
+            server: optional_env_var("SERVER", profile)?,
+            alt_server: optional_env_var("ALT_SERVER", profile)?,
             url_override: None,
             beta_url_override: None,
             enable_ticker: true,
@@ -210,6 +247,18 @@ impl GatewayConfig {
         self
     }
 
+    /// Sets the named primary Rithmic server.
+    pub fn with_server(mut self, server: impl Into<String>) -> Self {
+        self.server = Some(server.into());
+        self
+    }
+
+    /// Sets the named alternate Rithmic server.
+    pub fn with_alt_server(mut self, alt_server: impl Into<String>) -> Self {
+        self.alt_server = Some(alt_server.into());
+        self
+    }
+
     /// Sets the primary WebSocket URL override.
     pub fn with_url_override(mut self, url: impl Into<String>) -> Self {
         self.url_override = Some(url.into());
@@ -245,16 +294,35 @@ impl GatewayConfig {
             ),
         };
 
+        let named_url = self
+            .server
+            .as_deref()
+            .map(resolve_server_endpoint)
+            .transpose()?
+            .map(str::to_string);
         let url = self
             .url_override
             .clone()
             .or_else(|| env::var(url_var).ok())
-            .ok_or_else(|| RithmicError::Config(format!("{url_var} not set")))?;
+            .or(named_url)
+            .ok_or_else(|| {
+                RithmicError::Config(format!(
+                    "{url_var} not set and no named Rithmic primary server configured"
+                ))
+            })?;
 
+        let named_beta_url = self
+            .alt_server
+            .as_deref()
+            .map(resolve_server_endpoint)
+            .transpose()?
+            .map(str::to_string);
         let beta_url = self
             .beta_url_override
             .clone()
-            .unwrap_or_else(|| env::var(beta_url_var).unwrap_or_else(|_| "".to_string()));
+            .or_else(|| env::var(beta_url_var).ok())
+            .or(named_beta_url)
+            .unwrap_or_default();
 
         let mut builder = RithmicConfig::builder(env)
             .account_id(self.account_id.clone())
@@ -1933,6 +2001,26 @@ mod tests {
     }
 
     #[test]
+    fn test_gateway_config_to_rithmic_config_resolves_named_servers() {
+        let config = GatewayConfig::new(
+            RithmicEnv::Demo,
+            "user",
+            "pass",
+            "system",
+            "fcm",
+            "ib",
+            "account",
+        )
+        .with_server("Chicago")
+        .with_alt_server("Sydney");
+
+        let rithmic = config.to_rithmic_config().unwrap();
+
+        assert_eq!(rithmic.url, "wss://rprotocol.rithmic.com:443");
+        assert_eq!(rithmic.beta_url, "wss://rprotocol-au.rithmic.com:443");
+    }
+
+    #[test]
     fn test_gateway_config_from_env_uses_canonical_vars() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -1963,6 +2051,11 @@ mod tests {
                 "RITHMIC_ACCOUNT_ID",
                 set_env("RITHMIC_ACCOUNT_ID", Some("account")),
             ),
+            ("RITHMIC_SERVER", set_env("RITHMIC_SERVER", Some("Chicago"))),
+            (
+                "RITHMIC_ALT_SERVER",
+                set_env("RITHMIC_ALT_SERVER", Some("Sydney")),
+            ),
         ];
 
         let config = GatewayConfig::from_env().unwrap();
@@ -1976,6 +2069,8 @@ mod tests {
         assert_eq!(config.fcm_id, "fcm");
         assert_eq!(config.ib_id, "ib");
         assert_eq!(config.account_id, "account");
+        assert_eq!(config.server.as_deref(), Some("Chicago"));
+        assert_eq!(config.alt_server.as_deref(), Some("Sydney"));
 
         restore_env(&previous);
     }
@@ -1998,6 +2093,8 @@ mod tests {
             ("RITHMIC_APP_VERSION", set_env("RITHMIC_APP_VERSION", None)),
             ("RITHMIC_FCM_ID", set_env("RITHMIC_FCM_ID", None)),
             ("RITHMIC_IB_ID", set_env("RITHMIC_IB_ID", None)),
+            ("RITHMIC_SERVER", set_env("RITHMIC_SERVER", None)),
+            ("RITHMIC_ALT_SERVER", set_env("RITHMIC_ALT_SERVER", None)),
             (
                 "RITHMIC_ACCOUNT_ID",
                 set_env("RITHMIC_ACCOUNT_ID", Some("account")),
@@ -2042,6 +2139,10 @@ mod tests {
                 "RITHMIC_APEX_FCM_ID",
                 set_env("RITHMIC_APEX_FCM_ID", Some("fcm")),
             ),
+            (
+                "RITHMIC_APEX_SERVER",
+                set_env("RITHMIC_APEX_SERVER", Some("Frankfurt")),
+            ),
         ];
 
         let config = GatewayConfig::from_env_with_profile(Some("Apex")).unwrap();
@@ -2052,6 +2153,7 @@ mod tests {
         assert_eq!(config.system_name, "Apex");
         assert_eq!(config.account_id, "account");
         assert_eq!(config.fcm_id, "fcm");
+        assert_eq!(config.server.as_deref(), Some("Frankfurt"));
 
         restore_env(&previous);
     }
