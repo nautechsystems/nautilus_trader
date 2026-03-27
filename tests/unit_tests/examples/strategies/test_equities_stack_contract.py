@@ -513,7 +513,7 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
         assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["manage_container"] is False
         if "_binance_perp_" in entry["strategy_id"]:
-            assert config["node"]["venues"]["IBKR"]["ibg_port"] == 4002
+            assert config["node"]["venues"]["IBKR"]["ibg_port"] == 4001
         else:
             assert "ibg_port" not in config["node"]["venues"]["IBKR"]
         assert (
@@ -865,6 +865,23 @@ def test_equities_shared_gateway_owner_is_configured_once() -> None:
     ]
 
     assert owners == []
+
+
+def test_equities_live_ibkr_scopes_use_primary_gateway_port() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    ibkr_scopes = [row for row in config["account_scopes"] if row.get("provider") == "ibkr"]
+
+    assert ibkr_scopes
+    assert {row["ibg_port"] for row in ibkr_scopes} == {4001}
+
+
+def test_equities_binance_split_strategies_use_primary_gateway_port() -> None:
+    repo_root = _repo_root()
+    primary_port = 4001
+
+    for strategy_id in BINANCE_PERP_STRATEGY_IDS:
+        config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
+        assert config["node"]["venues"]["IBKR"]["ibg_port"] == primary_port
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:

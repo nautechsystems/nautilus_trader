@@ -504,19 +504,11 @@ def _ibkr_exec_venue_cfg(
             raw_exec_client_id,
             field_name=f"node.venues.{venue_name}.exec_ibg_client_id",
         )
-        return exec_venue_cfg
-
-    if not data_enabled:
-        return exec_venue_cfg
-
-    raw_client_id = exec_venue_cfg.get("ibg_client_id")
-    if raw_client_id is None:
-        return exec_venue_cfg
-
-    exec_venue_cfg["ibg_client_id"] = _positive_int(
-        raw_client_id,
-        field_name=f"node.venues.{venue_name}.ibg_client_id",
-    ) + 1000
+    elif data_enabled and exec_venue_cfg.get("ibg_client_id") is not None:
+        exec_venue_cfg["ibg_client_id"] = _positive_int(
+            exec_venue_cfg["ibg_client_id"],
+            field_name=f"node.venues.{venue_name}.ibg_client_id",
+        )
     return exec_venue_cfg
 
 
