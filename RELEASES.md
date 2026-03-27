@@ -181,6 +181,9 @@ Released on TBD (UTC).
 - Improved Databento live price precision handling with maps populated from instrument definitions
 - Improved Polymarket Rust adapter (#3726), thanks @filipmacek
 - Improved Polymarket execution client (#3734), thanks @filipmacek
+- Improved Polymarket adapter in Rust (#3760), thanks @filipmacek
+- Refined `SpreadQuoteAggregator` transition from historical to live mode (#3759), thanks @faysou
+- Refined handling of instruments in catalog (#3761), thanks @faysou
 - Refined `AtomicTime` mode switching and datetime panics
 - Refined base catalog interface (#3703), thanks @faysou
 - Refined IB option symbols to be OCC compliant (#3731), thanks @faysou

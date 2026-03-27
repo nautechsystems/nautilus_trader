@@ -786,10 +786,6 @@ criteria = "safe-to-deploy"
 version = "0.1.13"
 criteria = "safe-to-deploy"
 
-[[exemptions.ctrlc]]
-version = "3.5.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.curve25519-dalek]]
 version = "4.1.3"
 criteria = "safe-to-deploy"
@@ -1008,10 +1004,6 @@ criteria = "safe-to-run"
 
 [[exemptions.digest]]
 version = "0.9.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.dispatch2]]
-version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.dotenvy]]
@@ -1646,10 +1638,6 @@ criteria = "safe-to-deploy"
 version = "0.54.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.nix]]
-version = "0.31.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.ntapi]]
 version = "0.4.3"
 criteria = "safe-to-deploy"
@@ -1684,10 +1672,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.nybbles]]
 version = "0.4.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.objc2]]
-version = "0.6.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.objc2-io-kit]]
