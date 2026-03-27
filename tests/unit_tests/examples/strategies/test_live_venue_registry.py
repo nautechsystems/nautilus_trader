@@ -465,10 +465,11 @@ def test_resolve_strategy_venues_supports_ibkr_reference_exec_client() -> None:
     assert set(resolved.exec_clients) == {HYPERLIQUID, "IBKR"}
     assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
     assert isinstance(resolved.exec_clients["IBKR"], InteractiveBrokersExecClientConfig)
+    assert resolved.data_clients["IBKR"].ibg_client_id == 23
     assert resolved.exec_clients[HYPERLIQUID].routing.default is False
     assert resolved.exec_clients["IBKR"].routing.default is False
     assert resolved.exec_clients["IBKR"].ibg_port == 4001
-    assert resolved.exec_clients["IBKR"].ibg_client_id == 23
+    assert resolved.exec_clients["IBKR"].ibg_client_id == 1023
     assert resolved.exec_clients["IBKR"].account_id == "U1234567"
 
 

@@ -491,6 +491,35 @@ def _build_client_config(
     return config_cls(**kwargs)
 
 
+def _ibkr_exec_venue_cfg(
+    *,
+    venue_name: str,
+    venue_cfg: dict[str, Any],
+    data_enabled: bool,
+) -> dict[str, Any]:
+    exec_venue_cfg = dict(venue_cfg)
+    raw_exec_client_id = exec_venue_cfg.get("exec_ibg_client_id")
+    if raw_exec_client_id is not None:
+        exec_venue_cfg["ibg_client_id"] = _positive_int(
+            raw_exec_client_id,
+            field_name=f"node.venues.{venue_name}.exec_ibg_client_id",
+        )
+        return exec_venue_cfg
+
+    if not data_enabled:
+        return exec_venue_cfg
+
+    raw_client_id = exec_venue_cfg.get("ibg_client_id")
+    if raw_client_id is None:
+        return exec_venue_cfg
+
+    exec_venue_cfg["ibg_client_id"] = _positive_int(
+        raw_client_id,
+        field_name=f"node.venues.{venue_name}.ibg_client_id",
+    ) + 1000
+    return exec_venue_cfg
+
+
 def _legacy_node_venues(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     node_cfg = config.get("node", {})
     if not isinstance(node_cfg, dict):
@@ -620,7 +649,8 @@ def resolve_strategy_venues(
     )
 
     for venue_name, venue_cfg, spec, instrument_id, venue_execution_enabled in venue_records:
-        if _bool_value(venue_cfg.get("data"), default=True):
+        data_enabled = _bool_value(venue_cfg.get("data"), default=True)
+        if data_enabled:
             data_clients[venue_name] = _build_client_config(
                 spec=spec,
                 config_cls=spec.data_config_cls,
@@ -638,11 +668,20 @@ def resolve_strategy_venues(
                 raise ValueError(
                     f"Adapter {adapter_id!r} does not support execution for node.venues.{venue_name}",
                 )
+            exec_venue_cfg = (
+                _ibkr_exec_venue_cfg(
+                    venue_name=venue_name,
+                    venue_cfg=venue_cfg,
+                    data_enabled=data_enabled,
+                )
+                if spec.adapter_id == "interactive_brokers"
+                else venue_cfg
+            )
             exec_clients[venue_name] = _build_client_config(
                 spec=spec,
                 config_cls=spec.exec_config_cls,
                 venue_name=venue_name,
-                venue_cfg=venue_cfg,
+                venue_cfg=exec_venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
                 default_routing=(
