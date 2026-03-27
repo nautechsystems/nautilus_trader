@@ -27,10 +27,10 @@
 
 | Task | Status | Owner | Depends On | Write Scope | Lane Branch | Worktree Path | Commit / Diff | Verification | Notes / Last Update |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers | not_started | unassigned | none | `deploy/tokenmm/tokenmm.live.toml`, `tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows | not_started | unassigned | Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers | `systems/flux/flux/common/strategy_contracts.py`, `systems/flux/flux/common/portfolio_snapshot.py`, `systems/flux/flux/api/_payloads_balances.py`, `systems/flux/flux/runners/tokenmm/run_portfolio.py`, `tests/unit_tests/flux/common/test_portfolio_snapshot.py`, `tests/unit_tests/flux/api/test_balances_merge_dedupe.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 3: Add authoritative Binance shared-account projection and overlay it into TokenMM balances | not_started | unassigned | Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers, Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows | `systems/flux/flux/runners/shared/profile_accounts.py`, `systems/flux/flux/runners/tokenmm/run_api.py`, `systems/flux/flux/api/app.py`, `tests/unit_tests/flux/common/test_account_projection.py`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/flux/runners/shared/test_profile_accounts.py` | `shared` | `shared` | none | not_run | Plan created |
-| Task 4: Auto-repair the live Binance spot stale-startup cache shape without weakening strict guards | not_started | unassigned | none | `nautilus_trader/live/execution_engine.py`, `tests/unit_tests/live/test_execution_recon.py`, `tests/unit_tests/live/test_execution_engine.py` | `shared` | `shared` | none | not_run | Plan created |
+| Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers | completed | main | none | `deploy/tokenmm/tokenmm.live.toml`, `tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py` | `lanes/task-1-tokenmm-contracts` | `/home/ubuntu/nautilus_trader/.worktrees/task-1-tokenmm-contracts` | `473f56cbb44ec59abc8d0f1ae94ceae12c5c313d` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py -k "shared_account_scope or strategy_contract" PASS; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_stack_contract.py -> 3 unrelated FAIL` | 2026-03-27: quality review passed; controller branch already matched the approved manifest diff, and targeted verification passed locally |
+| Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows | completed | main | Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers | `systems/flux/flux/common/strategy_contracts.py`, `systems/flux/flux/common/portfolio_snapshot.py`, `systems/flux/flux/api/_payloads_balances.py`, `systems/flux/flux/runners/tokenmm/run_portfolio.py`, `systems/flux/flux/runners/shared/portfolio_runner.py`, `tests/unit_tests/flux/common/test_portfolio_snapshot.py`, `tests/unit_tests/flux/api/test_balances_merge_dedupe.py` | `shared` | `shared` | `e21b069367` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/api/test_balances_merge_dedupe.py -k "binance and account_scope" PASS; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/common/test_portfolio_snapshot.py -k "tokenmm and shared_account and binance" PASS` | 2026-03-27: controller committed scope plumbing through merge/snapshot path |
+| Task 3: Add authoritative Binance shared-account projection and overlay it into TokenMM balances | completed | main | Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers, Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows | `systems/flux/flux/runners/shared/profile_accounts.py`, `systems/flux/flux/runners/tokenmm/run_api.py`, `systems/flux/flux/api/app.py`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/flux/runners/shared/test_profile_accounts.py`, `tests/unit_tests/examples/strategies/test_tokenmm_run_api.py` | `shared` | `shared` | `a221724720` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p pytest_asyncio.plugin -q tests/unit_tests/flux/runners/shared/test_profile_accounts.py PASS; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/api/test_app.py -k "discovers_strategy_ids_before_shared_account_overlay or tokenmm and binance and shared_account" PASS; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_api.py -k strategy_contracts PASS` | 2026-03-27: quality review passed after projection-health and ISOLATED_MARGIN guard follow-up |
+| Task 4: Auto-repair the live Binance spot stale-startup cache shape without weakening strict guards | in_review_quality | quality-reviewer | none | `nautilus_trader/live/execution_engine.py`, `tests/unit_tests/live/test_execution_recon.py`, `tests/unit_tests/live/test_execution_engine.py` | `lanes/task-4-binance-startup` | `/home/ubuntu/nautilus_trader/.worktrees/task-4-binance-startup` | `5388b8212e` | `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p pytest_asyncio.plugin -q tests/unit_tests/live/test_execution_engine.py -k "mass_status_account_for_accountless_reports or accountless_reports or startup and cleanup or matching_account_scope" PASS; PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p pytest_asyncio.plugin -q tests/unit_tests/live/test_execution_recon.py -k "binance_spot and startup" PASS` | 2026-03-27: reviewer-driven fallback-account fix applied; final quality re-review pending |
 | Task 5: Verify in dev, deploy to pilot, validate, then promote the tested release to prod | not_started | unassigned | Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows, Task 3: Add authoritative Binance shared-account projection and overlay it into TokenMM balances, Task 4: Auto-repair the live Binance spot stale-startup cache shape without weakening strict guards | `deploy/tokenmm/README.md`, `docs/fluxboard/tokenmm_runbook.md`, `docs/plans/2026-03-27-tokenmm-binance-shared-account-reconciliation.md` | `shared` | `shared` | none | not_run | Plan created |
 
 ---
@@ -91,12 +91,13 @@ git commit -m "feat(tokenmm): declare shared account contracts for binance"
 - Modify: `systems/flux/flux/common/portfolio_snapshot.py`
 - Modify: `systems/flux/flux/api/_payloads_balances.py`
 - Modify: `systems/flux/flux/runners/tokenmm/run_portfolio.py`
+- Modify: `systems/flux/flux/runners/shared/portfolio_runner.py`
 - Modify: `tests/unit_tests/flux/common/test_portfolio_snapshot.py`
 - Modify: `tests/unit_tests/flux/api/test_balances_merge_dedupe.py`
 
 **Dependencies:** `Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers`
 
-**Write Scope:** `systems/flux/flux/common/strategy_contracts.py`, `systems/flux/flux/common/portfolio_snapshot.py`, `systems/flux/flux/api/_payloads_balances.py`, `systems/flux/flux/runners/tokenmm/run_portfolio.py`, `tests/unit_tests/flux/common/test_portfolio_snapshot.py`, `tests/unit_tests/flux/api/test_balances_merge_dedupe.py`
+**Write Scope:** `systems/flux/flux/common/strategy_contracts.py`, `systems/flux/flux/common/portfolio_snapshot.py`, `systems/flux/flux/api/_payloads_balances.py`, `systems/flux/flux/runners/tokenmm/run_portfolio.py`, `systems/flux/flux/runners/shared/portfolio_runner.py`, `tests/unit_tests/flux/common/test_portfolio_snapshot.py`, `tests/unit_tests/flux/api/test_balances_merge_dedupe.py`
 
 **Verification Commands:**
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/common/test_portfolio_snapshot.py -k "tokenmm and shared_account"`
@@ -132,7 +133,7 @@ Expected: PASS, with TokenMM merged cash rows now carrying the metadata needed f
 **Step 5: Commit**
 
 ```bash
-git add systems/flux/flux/common/strategy_contracts.py systems/flux/flux/common/portfolio_snapshot.py systems/flux/flux/api/_payloads_balances.py systems/flux/flux/runners/tokenmm/run_portfolio.py tests/unit_tests/flux/common/test_portfolio_snapshot.py tests/unit_tests/flux/api/test_balances_merge_dedupe.py
+git add systems/flux/flux/common/strategy_contracts.py systems/flux/flux/common/portfolio_snapshot.py systems/flux/flux/api/_payloads_balances.py systems/flux/flux/runners/tokenmm/run_portfolio.py systems/flux/flux/runners/shared/portfolio_runner.py tests/unit_tests/flux/common/test_portfolio_snapshot.py tests/unit_tests/flux/api/test_balances_merge_dedupe.py
 git commit -m "feat(tokenmm): carry shared account scope metadata into portfolio rows"
 ```
 
@@ -144,31 +145,32 @@ git commit -m "feat(tokenmm): carry shared account scope metadata into portfolio
 - Modify: `systems/flux/flux/runners/shared/profile_accounts.py`
 - Modify: `systems/flux/flux/runners/tokenmm/run_api.py`
 - Modify: `systems/flux/flux/api/app.py`
-- Modify: `tests/unit_tests/flux/common/test_account_projection.py`
 - Modify: `tests/unit_tests/flux/api/test_app.py`
 - Create: `tests/unit_tests/flux/runners/shared/test_profile_accounts.py`
+- Modify: `tests/unit_tests/examples/strategies/test_tokenmm_run_api.py`
 
 **Dependencies:** `Task 1: Declare TokenMM shared-account contracts for Binance and portfolio consumers`, `Task 2: Thread TokenMM account-scope metadata through merged portfolio balance rows`
 
-**Write Scope:** `systems/flux/flux/runners/shared/profile_accounts.py`, `systems/flux/flux/runners/tokenmm/run_api.py`, `systems/flux/flux/api/app.py`, `tests/unit_tests/flux/common/test_account_projection.py`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/flux/runners/shared/test_profile_accounts.py`
+**Write Scope:** `systems/flux/flux/runners/shared/profile_accounts.py`, `systems/flux/flux/runners/tokenmm/run_api.py`, `systems/flux/flux/api/app.py`, `tests/unit_tests/flux/api/test_app.py`, `tests/unit_tests/flux/runners/shared/test_profile_accounts.py`, `tests/unit_tests/examples/strategies/test_tokenmm_run_api.py`
 
 **Verification Commands:**
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/common/test_account_projection.py -k "binance"`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/runners/shared/test_profile_accounts.py -k "binance"`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p pytest_asyncio.plugin -q tests/unit_tests/flux/runners/shared/test_profile_accounts.py`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/api/test_app.py -k "tokenmm and binance and shared_account"`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_api.py -k strategy_contracts`
 
 **Step 1: Write the failing projection and API tests**
 
 Add focused tests that reproduce the current production symptom:
 - two Binance strategy cash snapshots with different raw `account_id`s must resolve to one authoritative shared Binance USDT row once a fresh TokenMM portfolio snapshot includes account projections
+- the live fallback path must use shared-account projection rows plus strategy-contract scope mapping when no fresh portfolio snapshot is available
 - the shared row must keep `source_scope="shared_account"` and the correct `account_scope_id`
 - TokenMM `global_qty_base` and component completeness must not change just because stable cash rows are canonicalized
 
 **Step 2: Run the tests to verify they fail**
 
 Run:
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/common/test_account_projection.py -k "binance"`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/api/test_app.py -k "tokenmm and binance and shared_account"`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_api.py -k strategy_contracts`
 Expected: FAIL because TokenMM currently does not publish a Binance shared-account projection and the TokenMM API snapshot path does not combine `balances.rows` with `accounts.rows`.
 
 **Step 3: Implement the minimal authoritative projection path**
@@ -178,19 +180,20 @@ Make the following changes and nothing broader:
 - keep the provider output explicitly tagged as `shared_account`
 - pass `strategy_contracts=config.get("strategy_contracts")` from `tokenmm/run_api.py` into `create_flux_api_app`
 - update the TokenMM fresh-snapshot branch in `api/app.py` to mirror the equities overlay path: combine `portfolio_snapshot["balances"]["rows"]` with `portfolio_snapshot["accounts"]["rows"]`, preserve shared-account rows, and compute totals/risk groups from the combined reconciliation rows
+- update the TokenMM live fallback branch in `api/app.py` to combine merged strategy rows with shared-account projection rows and to derive `account_scope_id` from strategy contracts before the merge
 
 **Step 4: Run the focused tests to verify they pass**
 
 Run:
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/common/test_account_projection.py -k "binance"`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/runners/shared/test_profile_accounts.py -k "binance"`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p pytest_asyncio.plugin -q tests/unit_tests/flux/runners/shared/test_profile_accounts.py`
 - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/flux/api/test_app.py -k "tokenmm and binance and shared_account"`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/unit_tests/examples/strategies/test_tokenmm_run_api.py -k strategy_contracts`
 Expected: PASS, with one shared Binance USDT row in the TokenMM snapshot-backed response.
 
 **Step 5: Commit**
 
 ```bash
-git add systems/flux/flux/runners/shared/profile_accounts.py systems/flux/flux/runners/tokenmm/run_api.py systems/flux/flux/api/app.py tests/unit_tests/flux/common/test_account_projection.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/runners/shared/test_profile_accounts.py
+git add systems/flux/flux/runners/shared/profile_accounts.py systems/flux/flux/runners/tokenmm/run_api.py systems/flux/flux/api/app.py tests/unit_tests/flux/api/test_app.py tests/unit_tests/flux/runners/shared/test_profile_accounts.py tests/unit_tests/examples/strategies/test_tokenmm_run_api.py
 git commit -m "fix(tokenmm): overlay authoritative binance shared balances"
 ```
 
