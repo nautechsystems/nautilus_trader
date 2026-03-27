@@ -340,9 +340,7 @@ def _maybe_inject_equities_runtime_config(response: Response) -> Response:
     response.set_data(
         _inject_fluxboard_runtime_config(
             html,
-            # The public /equities surface should stay on the shared same-origin
-            # Socket.IO endpoint and select the equities stream via profile.
-            socket_paths={"equities": "/socket.io"},
+            socket_paths={"equities": EQUITIES_PUBLIC_SOCKET_PATH},
         ),
     )
     return response
@@ -414,8 +412,16 @@ def _attach_profile_router_proxy(app: Any, *, surface_backends: dict[str, str]) 
 
     @app.before_request
     def _proxy_surface_requests() -> Response | None:
-        if request.path == EQUITIES_PUBLIC_SOCKET_PATH or request.path.startswith(f"{EQUITIES_PUBLIC_SOCKET_PATH}/"):
-            return None
+        if equities_backend and (
+            request.path == EQUITIES_PUBLIC_SOCKET_PATH
+            or request.path.startswith(f"{EQUITIES_PUBLIC_SOCKET_PATH}/")
+        ):
+            normalized_subpath = request.path.removeprefix(EQUITIES_PUBLIC_SOCKET_PATH).strip().lstrip("/")
+            suffix = f"/{normalized_subpath}" if normalized_subpath else "/"
+            return _proxy_request_to_backend(
+                equities_backend,
+                path_override=f"/socket.io{suffix}",
+            )
 
         descriptor = resolve_surface_proxy_descriptor(
             path=request.path,
