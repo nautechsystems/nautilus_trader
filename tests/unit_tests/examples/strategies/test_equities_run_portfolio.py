@@ -539,6 +539,100 @@ def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
     assert hedge_binding.provider is not None
 
 
+def test_build_profile_account_provider_bindings_preserves_binance_private_api_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from flux.common.account_scopes import AccountScopeConfig
+    from flux.runners.shared import profile_accounts as profile_accounts_mod
+    from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
+
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    captured: dict[str, Any] = {}
+
+    class _FakeBinanceProvider:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+
+    monkeypatch.setattr(
+        profile_accounts_mod,
+        "BinanceFuturesAccountProjectionProvider",
+        _FakeBinanceProvider,
+    )
+
+    provider = profile_accounts_mod._build_binance_futures_account_provider(
+        scope_config=AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+            api_key_env="EQUITIES_BINANCE_API_KEY",
+            api_secret_env="EQUITIES_BINANCE_API_SECRET",
+            account_type="USDT_FUTURES",
+            private_api_family="PORTFOLIO_MARGIN",
+        ),
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_maker", "pltr_binance_perp_taker"),
+    )
+
+    assert provider is not None
+    assert captured["config"].private_api_family == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+
+
+def test_build_profile_account_provider_bindings_routes_binance_portfolio_margin_to_private_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from flux.common.account_scopes import AccountScopeConfig
+    from flux.runners.shared import profile_accounts as profile_accounts_mod
+    from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
+
+    monkeypatch.setenv("EQUITIES_BINANCE_API_KEY", "binance-key")
+    monkeypatch.setenv("EQUITIES_BINANCE_API_SECRET", "binance-secret")
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        pass
+
+    def _fake_cached_binance_http_client(**kwargs):
+        captured["base_url"] = kwargs["base_url"]
+        captured["environment"] = kwargs["environment"]
+        return _FakeClient()
+
+    class _FakeAccountHttpAPI:
+        def __init__(self, **kwargs) -> None:
+            captured["private_api_family"] = kwargs["private_api_family"]
+
+    monkeypatch.setattr(
+        profile_accounts_mod,
+        "get_cached_binance_http_client",
+        _fake_cached_binance_http_client,
+    )
+    monkeypatch.setattr(
+        profile_accounts_mod,
+        "BinanceFuturesAccountHttpAPI",
+        _FakeAccountHttpAPI,
+    )
+
+    provider = profile_accounts_mod._build_binance_futures_account_provider(
+        scope_config=AccountScopeConfig(
+            scope_id="binance.futures.main",
+            provider="binance",
+            venue="BINANCE_PERP",
+            api_key_env="EQUITIES_BINANCE_API_KEY",
+            api_secret_env="EQUITIES_BINANCE_API_SECRET",
+            account_type="USDT_FUTURES",
+            private_api_family="PORTFOLIO_MARGIN",
+        ),
+        account_scope_id="binance.futures.main",
+        source_strategy_ids=("pltr_binance_perp_maker", "pltr_binance_perp_taker"),
+    )
+
+    assert provider is not None
+    assert captured["base_url"] == "https://papi.binance.com"
+    assert captured["private_api_family"] == BinancePrivateApiFamily.PORTFOLIO_MARGIN
+
+
 def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_client_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
