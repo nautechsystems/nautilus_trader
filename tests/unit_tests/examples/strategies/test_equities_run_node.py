@@ -3572,6 +3572,42 @@ def test_build_grouped_node_keeps_binance_perp_hooks_strategy_scoped(
     ]
 
 
+def test_build_grouped_node_rejects_duplicate_member_suffixes_for_node_group(
+    monkeypatch,
+) -> None:
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+    _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
+
+    with pytest.raises(ValueError, match="duplicate maker member"):
+        run_node.build_grouped_node(
+            (
+                _split_equities_config(
+                    strategy_id="aapl_tradexyz_maker",
+                    param_set="equities_maker",
+                    trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER-A",
+                    portfolio_asset_id="AAPL",
+                    maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    reference_instrument_id="AAPL.NASDAQ",
+                    execution_account_scope_id="hyperliquid.xyz.main",
+                ),
+                _split_equities_config(
+                    strategy_id="aapl_tradexyz_maker",
+                    param_set="equities_maker",
+                    trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER-B",
+                    portfolio_asset_id="AAPL",
+                    maker_instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    reference_instrument_id="AAPL.NASDAQ",
+                    execution_account_scope_id="hyperliquid.xyz.main",
+                ),
+            ),
+            mode="live",
+            force_enable_execution=False,
+        )
+
+
 def test_main_accepts_multi_strategy_config_paths_for_node_group(monkeypatch, tmp_path: Path) -> None:
     config_paths = [
         tmp_path / "aapl_tradexyz_maker.toml",

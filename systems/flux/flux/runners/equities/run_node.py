@@ -78,6 +78,7 @@ MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
 MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 MakerV4Strategy = _MAKERV4_SPEC.strategy_cls
 MakerV4StrategyConfig = _MAKERV4_SPEC.config_cls
+_GROUPED_MEMBER_SUFFIXES = ("_maker", "_taker")
 
 
 def _repo_root() -> Path:
@@ -346,6 +347,31 @@ def _resolve_grouped_node_id(configs: Sequence[dict[str, Any]]) -> str:
     if len(node_group_ids) != 1:
         raise ValueError("Grouped equities configs must resolve to exactly one node group id")
     return next(iter(node_group_ids))
+
+
+def _validate_grouped_member_composition(
+    configs: Sequence[dict[str, Any]],
+    *,
+    node_group_id: str,
+) -> None:
+    if len(configs) > len(_GROUPED_MEMBER_SUFFIXES):
+        raise ValueError(
+            f"Grouped node {node_group_id} must contain at most one maker plus one taker",
+        )
+
+    seen_members: set[str] = set()
+    for config in configs:
+        strategy_id = _resolve_external_strategy_id(config)
+        member = None
+        for suffix in _GROUPED_MEMBER_SUFFIXES:
+            if strategy_id.endswith(suffix):
+                member = suffix.removeprefix("_")
+                break
+        if member is None:
+            raise ValueError(f"Unsupported grouped equities strategy id: {strategy_id}")
+        if member in seen_members:
+            raise ValueError(f"Grouped node {node_group_id} has duplicate {member} member")
+        seen_members.add(member)
 
 
 def _validate_grouped_shared_tables(configs: Sequence[dict[str, Any]]) -> dict[str, Any]:
@@ -842,6 +868,7 @@ def build_grouped_node(
     """
     _validate_grouped_shared_tables(configs)
     node_group_id = _resolve_grouped_node_id(configs)
+    _validate_grouped_member_composition(configs, node_group_id=node_group_id)
     return _build_node_for_configs(
         tuple(configs),
         mode=mode,
