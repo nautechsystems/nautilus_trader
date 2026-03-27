@@ -59,7 +59,7 @@ const INITIAL_BACKOFF_MS: u64 = 1000;
 const MAX_BACKOFF_MS: u64 = 30000;
 
 /// Maximum time to wait for an individual plant logout before aborting it.
-const DISCONNECT_TIMEOUT_SECS: u64 = 3;
+const DISCONNECT_TIMEOUT_SECS: u64 = 5;
 
 fn normalize_server_name(server: &str) -> String {
     server
