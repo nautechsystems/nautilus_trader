@@ -238,6 +238,8 @@ Shared-host recovery order after a repoint:
 4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
 5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
 
+For the full grouped-node prod migration procedure, use [`docs/runbooks/equities-shared-node-cutover.md`](../../docs/runbooks/equities-shared-node-cutover.md). That runbook captures the mandatory live baseline, restart order, readiness gate, and rollback steps.
+
 Primary operator surfaces:
 
 - `http://<host>:5022/pulse`

@@ -10,6 +10,7 @@ from flask import Flask
 import flux.runners.equities.run_api as run_api
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
+from flux.runners.equities.run_api import _attach_equities_readiness_route
 from flux.runners.equities.run_api import _build_contract_catalog
 from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
 from flux.runners.equities.run_api import _build_strategy_alerts_resolver
@@ -216,6 +217,91 @@ def test_equities_run_api_defaults_makerv3_qty_to_one() -> None:
 
     assert schema["qty"]["type"] == "number"
     assert defaults["qty"] == pytest.approx(1.0)
+
+
+def test_attach_equities_readiness_route_returns_enveloped_readiness_payload() -> None:
+    captured: dict[str, bool] = {}
+
+    def _fake_readiness_loader() -> dict[str, object]:
+        captured["called"] = True
+        return {
+            "ok": False,
+            "summary": {
+                "profile_id": "equities",
+                "failed_checks": ["signals"],
+            },
+            "checks": {
+                "signals": {
+                    "ok": False,
+                    "summary": "required=38 healthy=0 stale_legs=38 unhealthy=38",
+                },
+            },
+        }
+
+    app = Flask(__name__)
+    _attach_equities_readiness_route(app, readiness_loader=_fake_readiness_loader)
+    client = app.test_client()
+
+    response = client.get("/api/v1/readiness?profile=equities")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["data"]["ok"] is False
+    assert payload["data"]["summary"]["profile_id"] == "equities"
+    assert captured["called"] is True
+
+
+def test_equities_run_api_main_registers_readiness_route(monkeypatch) -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    args = Namespace(
+        config=Path("deploy/equities/equities.live.toml"),
+        mode="live",
+        confirm_live=True,
+        log_level=None,
+        host="127.0.0.1",
+        port=5024,
+        serve_fluxboard=False,
+        fluxboard_dist=None,
+        serve_pulse=False,
+        pulse_dist=None,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(run_api, "_parse_args", lambda: args)
+    monkeypatch.setattr(run_api, "_load_config", lambda path: config)
+    monkeypatch.setattr(run_api, "_resolve_mode", lambda cfg, parsed: "live")
+    monkeypatch.setattr(run_api, "configure_python_logging", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "emit_startup_banner", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "_build_strategy_running_resolver", lambda: (lambda ids: {}))
+    monkeypatch.setattr(run_api, "_build_strategy_alerts_resolver", lambda: (lambda ids: {}))
+    monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
+
+    class _FakePulse:
+        def register_routes(self, app) -> None:
+            captured["pulse_app"] = app
+
+    monkeypatch.setattr(run_api, "PulseControlPlane", lambda: _FakePulse())
+    monkeypatch.setattr(
+        run_api,
+        "_run_with_socketio_if_available",
+        lambda app, *, host, port: captured.update({"app": app, "host": host, "port": port}),
+    )
+
+    monkeypatch.setattr(
+        run_api,
+        "_attach_equities_readiness_route",
+        lambda app, *, readiness_loader: captured.update(
+            {"readiness_app": app, "readiness_loader": readiness_loader},
+        ),
+    )
+
+    monkeypatch.setattr(run_api, "create_flux_api_app", lambda *args, **kwargs: Flask(__name__))
+
+    run_api.main()
+
+    assert captured["readiness_app"] is captured["pulse_app"]
+    assert callable(captured["readiness_loader"])
 
 
 def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_ids() -> None:

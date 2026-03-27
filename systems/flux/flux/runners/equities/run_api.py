@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 import tomllib
+import uuid
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -14,13 +16,19 @@ from typing import Any
 from typing import cast
 
 import redis
+from flask import Response
 from flask import abort
+from flask import request
 from flask import send_from_directory
 
 from flux.api import ContractCatalogEntry
 from flux.api import StrategyMetadata
 from flux.api import create_flux_api_app
 from flux.api.app import RedisClientProtocol
+from flux.api.payloads import build_envelope
+from flux.api.payloads import build_error
+from flux.api.payloads import now_ms
+from flux.common.account_scopes import decode_account_scopes
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.config import FluxConfig
@@ -32,8 +40,15 @@ from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.pulse import PulseControlPlane
+from flux.runners.equities.readiness import EquitiesReadinessThresholds
+from flux.runners.equities.readiness import _collect_component_payloads
+from flux.runners.equities.readiness import _collect_projection_payloads
+from flux.runners.equities.readiness import _expected_projection_scope_ids
+from flux.runners.equities.readiness import evaluate_equities_readiness
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
+from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
+from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -67,6 +82,7 @@ EQUITIES_ALIAS_BASE_PATH = (
 )
 DEFAULT_PULSE_BASE_PATH = "/pulse"
 DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
+EQUITIES_READINESS_PATH = "/api/v1/readiness"
 
 
 def _repo_root() -> Path:
@@ -88,6 +104,35 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _enveloped_json_response(
+    *,
+    ok: bool,
+    data: Any,
+    error: dict[str, Any] | None,
+    status: int,
+) -> Response:
+    body = build_envelope(
+        ok=ok,
+        api_version=FLUX_SCHEMA_VERSION,
+        request_id=uuid.uuid4().hex,
+        timestamp_ms=now_ms(),
+        data=data,
+        error=error,
+    )
+    return Response(
+        json.dumps(body, separators=(",", ":"), sort_keys=False, allow_nan=False),
+        status=status,
+        mimetype="application/json",
+    )
+
+
+def _equities_profile_name_for_request() -> str:
+    profile = (_optional_text(request.args.get("profile")) or EQUITIES_DESCRIPTOR.profile).lower()
+    if profile not in {EQUITIES_DESCRIPTOR.profile, *EQUITIES_DESCRIPTOR.aliases}:
+        raise ValueError(f"Unsupported equities readiness profile: {profile}")
+    return EQUITIES_DESCRIPTOR.profile
 
 
 def _pulse_status_to_running(status: str) -> bool | None:
@@ -774,6 +819,130 @@ def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
         return _serve_index()
 
 
+def _load_equities_readiness(
+    *,
+    app: Any,
+    config: dict[str, Any],
+    redis_client: RedisClientProtocol,
+) -> dict[str, Any]:
+    profile_id = _equities_profile_name_for_request()
+    api_cfg = _table(config, "api")
+    portfolio_cfg = _table(config, "portfolio")
+    flux_cfg = _table(config, "flux")
+    strategy_ids = parse_strategy_ids(api_cfg, descriptor=EQUITIES_DESCRIPTOR)
+    required_strategy_ids = tuple(
+        parse_required_strategy_ids(
+            api_cfg,
+            descriptor=EQUITIES_DESCRIPTOR,
+            fallback=strategy_ids,
+        ),
+    )
+    strategy_id_set = set(strategy_ids)
+    strategy_contracts = tuple(
+        contract
+        for contract in decode_strategy_contracts(config.get("strategy_contracts") or [])
+        if contract.strategy_id in strategy_id_set
+    )
+    account_scopes = decode_account_scopes(config.get("account_scopes") or [])
+    portfolio_id = (
+        _optional_text(portfolio_cfg.get("portfolio_id"))
+        or EQUITIES_DESCRIPTOR.default_portfolio_id
+    )
+    thresholds = EquitiesReadinessThresholds(
+        ignore_reference_freshness_outside_regular_session=True,
+    )
+    expected_scope_ids = _expected_projection_scope_ids(
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        overrides=thresholds.expected_projection_scope_ids,
+    )
+    projection_payloads = _collect_projection_payloads(
+        redis_client=redis_client,
+        profile_id=profile_id,
+        scope_ids=expected_scope_ids,
+        namespace=_optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
+        schema_version=_optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION,
+    )
+    component_payloads = _collect_component_payloads(
+        redis_client=redis_client,
+        strategy_contracts=strategy_contracts,
+        portfolio_id=portfolio_id,
+        namespace=_optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
+        schema_version=_optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION,
+    )
+    with app.test_client() as client:
+        balances_response = client.get("/api/v1/balances", query_string={"profile": profile_id})
+        signals_response = client.get(
+            "/api/v1/signals",
+            query_string={"contract_version": 2, "profile": profile_id},
+        )
+    if balances_response.status_code != 200:
+        raise RuntimeError("Equities balances snapshot is unavailable for readiness evaluation")
+    if signals_response.status_code != 200:
+        raise RuntimeError("Equities signals snapshot is unavailable for readiness evaluation")
+    balances_payload = (balances_response.get_json(silent=True) or {}).get("data")
+    signals_payload = (signals_response.get_json(silent=True) or {}).get("data")
+    result = evaluate_equities_readiness(
+        profile_id=profile_id,
+        portfolio_id=portfolio_id,
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=required_strategy_ids,
+        balances_payload=balances_payload if isinstance(balances_payload, dict) else None,
+        signals_payload=signals_payload if isinstance(signals_payload, dict) else None,
+        projection_payloads_by_scope_id=projection_payloads,
+        component_payloads_by_strategy_id=component_payloads,
+        now_ms_value=now_ms(),
+        thresholds=thresholds,
+    )
+    return result.as_dict()
+
+
+def _attach_equities_readiness_route(
+    app: Any,
+    *,
+    readiness_loader: Callable[[], dict[str, Any]],
+) -> None:
+    @app.get(EQUITIES_READINESS_PATH)
+    def _equities_readiness() -> Response:
+        try:
+            payload = readiness_loader()
+        except ValueError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="invalid_readiness_request",
+                    message=str(exc),
+                ),
+                status=400,
+            )
+        except redis.RedisError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="store_unavailable",
+                    message="Data store unavailable.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=503,
+            )
+        except Exception as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="readiness_probe_failed",
+                    message="Equities readiness evaluation failed.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=500,
+            )
+
+        return _enveloped_json_response(ok=True, data=payload, error=None, status=200)
+
+
 def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
     socket_server = app.extensions.get("flux_socket_server")
     socketio = getattr(socket_server, "socketio", None)
@@ -869,6 +1038,14 @@ def main() -> None:
         params_schema=params_schema,
         params_defaults=params_defaults,
         param_set=strategy_spec.param_set,
+    )
+    _attach_equities_readiness_route(
+        app,
+        readiness_loader=lambda: _load_equities_readiness(
+            app=app,
+            config=config,
+            redis_client=cast(RedisClientProtocol, redis_client),
+        ),
     )
     PulseControlPlane().register_routes(app)
 
