@@ -356,6 +356,18 @@ def _grouped_node_trader_id(node_group_id: str) -> str:
     return f"EQUITIES-LIVE-{node_group_id.replace('_', '-').upper()}"
 
 
+def _grouped_member_sort_key(config: dict[str, Any]) -> tuple[int, str]:
+    strategy_id = _resolve_external_strategy_id(config)
+    for rank, suffix in enumerate(_GROUPED_MEMBER_SUFFIXES):
+        if strategy_id.endswith(suffix):
+            return (rank, strategy_id)
+    raise ValueError(f"Unsupported grouped equities strategy id: {strategy_id}")
+
+
+def _canonicalize_grouped_configs(configs: Sequence[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(sorted(configs, key=_grouped_member_sort_key))
+
+
 def _validate_grouped_member_composition(
     configs: Sequence[dict[str, Any]],
     *,
@@ -908,6 +920,7 @@ def build_grouped_node(
     """
     Build and return one shared TradingNode for a grouped Equities maker/taker pair.
     """
+    configs = _canonicalize_grouped_configs(configs)
     _validate_grouped_shared_tables(configs)
     node_group_id = _resolve_grouped_node_id(configs)
     _validate_grouped_member_composition(configs, node_group_id=node_group_id)
@@ -942,6 +955,8 @@ def main() -> None:
         )
         lock_config = config
     else:
+        configs = _canonicalize_grouped_configs(configs)
+        config = configs[0]
         node_group_id = _resolve_grouped_node_id(configs)
         node_trader_id = _grouped_node_trader_id(node_group_id)
         node = build_grouped_node(

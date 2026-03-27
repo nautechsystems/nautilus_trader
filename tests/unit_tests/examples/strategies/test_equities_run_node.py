@@ -3721,7 +3721,15 @@ def test_build_grouped_node_allows_sibling_specific_ibkr_client_ids(
     monkeypatch.setattr(
         run_node,
         "resolve_strategy_venues",
-        lambda **_kwargs: SimpleNamespace(
+        lambda **_kwargs: captured.update(
+            {
+                "resolved_strategy_id": _kwargs["config"]["identity"]["external_strategy_id"],
+                "resolved_ibkr_client_id": _kwargs["config"]["node"]["venues"]["IBKR"][
+                    "ibg_client_id"
+                ],
+            },
+        )
+        or SimpleNamespace(
             execution_instrument_id=maker_instrument_id,
             reference_instrument_id=reference_instrument_id,
             data_clients={},
@@ -3745,13 +3753,15 @@ def test_build_grouped_node_allows_sibling_specific_ibkr_client_ids(
     )
 
     node = run_node.build_grouped_node(
-        (maker_config, taker_config),
+        (taker_config, maker_config),
         mode="live",
         force_enable_execution=False,
     )
 
     assert node is not None
     assert captured["build_called"] is True
+    assert captured["resolved_strategy_id"] == "aapl_tradexyz_maker"
+    assert captured["resolved_ibkr_client_id"] == 7
     assert {
         strategy.config.external_strategy_id
         for strategy in captured["strategies"]
