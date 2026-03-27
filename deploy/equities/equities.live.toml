@@ -124,7 +124,7 @@ equities_required_strategy_ids = [
 
 [portfolio]
 portfolio_id = "equities"
-inventory_stale_after_ms = 3000
+inventory_stale_after_ms = 30000
 
 [[account_scopes]]
 scope_id = "hyperliquid.xyz.main"
