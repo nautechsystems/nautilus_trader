@@ -2309,6 +2309,97 @@ class TestReconciliationEdgeCases:
         assert generated_order.venue_order_id == report.venue_order_id
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_mass_status_replace_current_lifecycle_synthetic_report_does_not_rebind_real_cached_order(
+        self,
+        live_exec_engine,
+    ):
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        existing_order = TestExecStubs.limit_order(
+            instrument=instrument,
+            strategy_id=StrategyId("S-OWNED"),
+        )
+        self.cache.add_order(existing_order)
+        existing_order.apply(
+            TestEventStubs.order_submitted(
+                existing_order,
+                account_id=TestIdStubs.account_id(),
+            ),
+        )
+        existing_order.apply(
+            TestEventStubs.order_accepted(
+                existing_order,
+                account_id=TestIdStubs.account_id(),
+                venue_order_id=VenueOrderId("V-REAL-001"),
+            ),
+        )
+        self.cache.update_order(existing_order)
+
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=None,
+            venue_order_id=VenueOrderId("V-REAL-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.FILLED,
+            quantity=Quantity.from_int(31_000),
+            filled_qty=Quantity.from_int(31_000),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=1,
+            ts_last=1,
+            ts_init=1,
+        )
+        fill = FillReport(
+            client_order_id=None,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId("S-RECON-TRADE-REUSE-001"),
+            account_id=report.account_id,
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(31_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=report.account_id,
+            report_id=UUID4(),
+            ts_init=1,
+        )
+        mass_status.add_order_reports([report])
+        mass_status.add_fill_reports([fill])
+
+        orders_before = len(self.cache.orders())
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
+
+        assert result is True
+        cached_real_order = self.cache.order(existing_order.client_order_id)
+        assert cached_real_order is not None
+        assert cached_real_order.strategy_id.value == "S-OWNED"
+        assert cached_real_order.filled_qty == Quantity.zero(existing_order.quantity.precision)
+        assert len(self.cache.orders()) == orders_before + 1
+
+        reconciliation_orders = [
+            order
+            for order in self.cache.orders()
+            if order.client_order_id != existing_order.client_order_id
+            and order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+        ]
+        assert len(reconciliation_orders) == 1
+        assert reconciliation_orders[0].venue_order_id == report.venue_order_id
+
+    @pytest.mark.asyncio
     async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
         self,
         live_exec_engine,

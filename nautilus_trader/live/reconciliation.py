@@ -92,38 +92,45 @@ def is_synthetic_reconciliation_identifier(value: Any) -> bool:
     return _stringify_identifier(value).strip().upper().startswith("S-")
 
 
+def _event_has_reconciliation_lineage(event: Any) -> bool:
+    if bool(getattr(event, "reconciliation", False)):
+        return True
+    if is_synthetic_reconciliation_identifier(getattr(event, "venue_order_id", None)):
+        return True
+    if is_synthetic_reconciliation_identifier(getattr(event, "trade_id", None)):
+        return True
+    return False
+
+
+def _relevant_lineage_events(events: Any) -> list[Any]:
+    if not isinstance(events, Sequence):
+        return []
+    return [
+        event
+        for event in events
+        if getattr(event, "venue_order_id", None) is not None
+        or getattr(event, "trade_id", None) is not None
+        or bool(getattr(event, "reconciliation", False))
+    ]
+
+
 def order_has_reconciliation_lineage(order: Any) -> bool:
     if order_has_reconciliation_tag(order):
         return True
 
-    if is_synthetic_reconciliation_identifier(getattr(order, "venue_order_id", None)):
-        return True
+    relevant_events = _relevant_lineage_events(getattr(order, "events", None))
+    if relevant_events:
+        return all(_event_has_reconciliation_lineage(event) for event in relevant_events)
 
-    events = getattr(order, "events", None)
-    if isinstance(events, Sequence):
-        for event in events:
-            if is_synthetic_reconciliation_identifier(getattr(event, "venue_order_id", None)):
-                return True
-            if is_synthetic_reconciliation_identifier(getattr(event, "trade_id", None)):
-                return True
-
-    return False
+    return is_synthetic_reconciliation_identifier(getattr(order, "venue_order_id", None))
 
 
 def position_has_reconciliation_lineage(position: Any) -> bool:
-    events = getattr(position, "events", None)
-    if not isinstance(events, Sequence):
+    relevant_events = _relevant_lineage_events(getattr(position, "events", None))
+    if not relevant_events:
         return False
 
-    for event in events:
-        if is_synthetic_reconciliation_identifier(getattr(event, "venue_order_id", None)):
-            return True
-        if is_synthetic_reconciliation_identifier(getattr(event, "trade_id", None)):
-            return True
-        if bool(getattr(event, "reconciliation", False)):
-            return True
-
-    return False
+    return all(_event_has_reconciliation_lineage(event) for event in relevant_events)
 
 
 def report_has_synthetic_reconciliation_lineage(

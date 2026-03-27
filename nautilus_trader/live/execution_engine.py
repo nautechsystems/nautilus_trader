@@ -2952,6 +2952,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Also check by venue_order_id if client_order_id lookup failed or wasn't provided
             if order_report.venue_order_id is not None and order_report.client_order_id is None:
+                if report_has_synthetic_reconciliation_lineage(
+                    order_report,
+                    mass_status._fill_reports.get(venue_order_id, []),
+                ):
+                    continue
+
                 cached_client_id = self._cache.client_order_id(order_report.venue_order_id)
                 if cached_client_id is not None:
                     cached_order = self._cache.order(cached_client_id)
@@ -4406,7 +4412,10 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
-        client_order_id = self._resolve_client_order_id(report)
+        client_order_id = self._resolve_client_order_id(
+            report,
+            bind_cached_venue_order_id=is_external,
+        )
 
         # Reset retry count
         self._clear_recon_tracking(client_order_id)
@@ -4468,29 +4477,35 @@ class LiveExecutionEngine(ExecutionEngine):
         # Handle fill quantity mismatches
         return self._handle_fill_quantity_mismatch(order, report, instrument, client_order_id)
 
-    def _resolve_client_order_id(self, report: OrderStatusReport) -> ClientOrderId:
+    def _resolve_client_order_id(
+        self,
+        report: OrderStatusReport,
+        *,
+        bind_cached_venue_order_id: bool = True,
+    ) -> ClientOrderId:
         client_order_id: ClientOrderId | None = report.client_order_id
         if client_order_id is None:
-            client_order_id = self._cache.client_order_id(report.venue_order_id)
-            if client_order_id is None and report.venue_order_id is not None:
-                # Check if an external order with this venue_order_id already exists
-                # by searching cached orders (handles cases where index might not be built yet)
-                cached_order = self._find_order_by_venue_order_id(
-                    venue_order_id=report.venue_order_id,
-                    instrument_id=report.instrument_id,
-                    order_side=report.order_side,
-                )
-                if cached_order is not None:
-                    client_order_id = cached_order.client_order_id
-                    self._log.debug(
-                        f"Found existing external order {client_order_id} by venue_order_id "
-                        f"{report.venue_order_id}, reusing",
-                    )
-                    # Ensure mapping is indexed
-                    self._ensure_venue_order_id_indexed(
-                        client_order_id=client_order_id,
+            if bind_cached_venue_order_id:
+                client_order_id = self._cache.client_order_id(report.venue_order_id)
+                if client_order_id is None and report.venue_order_id is not None:
+                    # Check if an external order with this venue_order_id already exists
+                    # by searching cached orders (handles cases where index might not be built yet)
+                    cached_order = self._find_order_by_venue_order_id(
                         venue_order_id=report.venue_order_id,
+                        instrument_id=report.instrument_id,
+                        order_side=report.order_side,
                     )
+                    if cached_order is not None:
+                        client_order_id = cached_order.client_order_id
+                        self._log.debug(
+                            f"Found existing external order {client_order_id} by venue_order_id "
+                            f"{report.venue_order_id}, reusing",
+                        )
+                        # Ensure mapping is indexed
+                        self._ensure_venue_order_id_indexed(
+                            client_order_id=client_order_id,
+                            venue_order_id=report.venue_order_id,
+                        )
 
             if client_order_id is None:
                 # Generate external client order ID
