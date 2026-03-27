@@ -1,14 +1,24 @@
-# TokenMM MakerV3 Bounded-Convergence Rollout
+# TokenMM MakerV3 Shared Deque Rollout
 
-This runbook covers the bounded-convergence rollout for the supported TokenMM
-perp core:
+This runbook covers the shared deque quote-stack rollout for the supported
+TokenMM perp core:
 
 - `plumeusdt_bybit_perp_makerv3`
 - `plumeusdt_okx_perp_makerv3`
 - `plumeusdt_bitget_perp_makerv3`
 
-The goal is to keep deep ladders stable under venue rate limits by converging
-incrementally instead of refreshing whole sides in one quote cycle.
+The goal is to keep deep ladders stable under venue rate limits while making
+normal repricing visually deterministic:
+
+- inward moves: place front, then cancel back
+- outward moves: cancel front, then place back
+- steady FV: no churn
+- middle-of-stack changes: allowed only for true hole repair after fills or
+  desync
+
+The older bounded-convergence budgets still exist as safety rails, but the
+live stack-management policy is now the shared deque planner rather than a
+general middle-repricing convergence engine.
 
 ## Initial venue defaults
 
@@ -53,6 +63,14 @@ Primary signals:
 
 - `quote_cycle` payload `backlog_mode`
 - `decision_context_json.bounded_convergence`
+- `decision_context_json.bounded_convergence.<side>.stack_action_mode`
+- `decision_context_json.bounded_convergence.<side>.front_changed`
+- `decision_context_json.bounded_convergence.<side>.back_changed`
+- `decision_context_json.bounded_convergence.<side>.missing_level_count`
+- `decision_context_json.bounded_convergence.<side>.interior_hole_count`
+- persisted `order_action.reason_code`
+- persisted `order_action.level_index`
+- persisted `order_action.quote_cycle_id`
 - `managed_orders` and per-side open depth
 - venue-protection alerts
 - cancel reject reasons by venue
@@ -62,6 +80,10 @@ Healthy steady-state behavior:
 - `backlog_mode = normal` almost all the time
 - `bounded_convergence.*.budget_limited = true` can be normal on deep ladders
 - `bounded_convergence.*.backlog_limited = false` in steady state
+- `stack_action_mode` is usually `no_op` and, when rebalanced, is dominated by
+  `place_front_cancel_back`, `cancel_front_place_back`, or `place_missing`
+- `front_changed` and `back_changed` match the expected deque transition for the
+  side that moved
 - `planned_cancel_count` and `executed_cancel_count` stay small and bounded
 - the ladder changes from the edge and tail, not by broad side replacement
 
@@ -111,5 +133,56 @@ before it is fully ideal. For deep books, treat these as healthy:
 Treat these as bugs or rollout blockers:
 
 - whole-side cancel bursts on ordinary moves
+- repeated `repair_hole` or `place_missing_hole_repair` on a seemingly stable
+  book without corresponding fills/desync
+- repeated `cancel_free_slot_for_missing_level` rows without a matching repair
+  place on the following cycle
+- `cancel_front_violation` / `cancel_back_excess` rows that imply middle-stack
+  mutation when joined back to the same `quote_cycle_id`
 - repeated cancel-reject cleanup on already-gone orders
 - loss of terminal blocked state in API/Signal surfaces
+
+## SQLite audit queries
+
+Use these checks against the live telemetry DBs when validating the rollout.
+
+Recent quote-cycle deque transitions:
+
+```sql
+SELECT
+  quote_cycle_id,
+  reason_code,
+  json_extract(decision_context_json, '$.bounded_convergence.buy.stack_action_mode') AS buy_mode,
+  json_extract(decision_context_json, '$.bounded_convergence.buy.front_changed') AS buy_front_changed,
+  json_extract(decision_context_json, '$.bounded_convergence.buy.back_changed') AS buy_back_changed,
+  json_extract(decision_context_json, '$.bounded_convergence.sell.stack_action_mode') AS sell_mode,
+  json_extract(decision_context_json, '$.bounded_convergence.sell.front_changed') AS sell_front_changed,
+  json_extract(decision_context_json, '$.bounded_convergence.sell.back_changed') AS sell_back_changed
+FROM quote_cycle
+WHERE reason_code = 'completed_rebalanced'
+ORDER BY ts_cycle_end_ns DESC
+LIMIT 50;
+```
+
+Recent order-action deque intents:
+
+```sql
+SELECT
+  quote_cycle_id,
+  reason_code,
+  level_index,
+  client_order_id,
+  order_status,
+  ts_decision_ns
+FROM order_action
+WHERE reason_code IN (
+  'cancel_front_violation',
+  'cancel_back_excess',
+  'cancel_free_slot_for_missing_level',
+  'place_front_improve',
+  'place_back_backfill',
+  'place_missing_hole_repair'
+)
+ORDER BY ts_decision_ns DESC
+LIMIT 100;
+```

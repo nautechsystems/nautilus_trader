@@ -39,6 +39,9 @@ REASON_COMPLETED_NO_ACTIONS = "completed_no_actions"
 REASON_COMPLETED_REBALANCED = "completed_rebalanced"
 
 REASON_PLACE_MISSING_LEVEL = "place_missing_level"
+REASON_PLACE_FRONT_IMPROVE = "place_front_improve"
+REASON_PLACE_BACK_BACKFILL = "place_back_backfill"
+REASON_PLACE_MISSING_HOLE_REPAIR = "place_missing_hole_repair"
 
 REASON_CANCEL_BOT_OFF = "cancel_bot_off"
 REASON_CANCEL_BOT_OFF_FLIP = "cancel_bot_off_flip"
@@ -50,6 +53,8 @@ REASON_CANCEL_ON_STOP = "cancel_on_stop"
 REASON_CANCEL_QUOTE_FAIL_CIRCUIT_BREAKER = "cancel_quote_fail_circuit_breaker"
 REASON_CANCEL_EXCESS_LEVEL = "cancel_excess_level"
 REASON_CANCEL_TOO_AGGRESSIVE = "cancel_too_aggressive"
+REASON_CANCEL_BACK_EXCESS = "cancel_back_excess"
+REASON_CANCEL_FRONT_VIOLATION = "cancel_front_violation"
 REASON_CANCEL_STALE_ORDER = "cancel_stale_order"
 REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL = "cancel_free_slot_for_missing_level"
 

@@ -47,7 +47,7 @@ from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_CANCEL_ON_STOP
 from flux.strategies.makerv3.constants import REASON_CANCEL_QUOTE_FAIL_CIRCUIT_BREAKER
 from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
-from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_LEVEL
+from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_HOLE_REPAIR
 from flux.strategies.makerv3.constants import TOPIC_FV
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3.constants import TOPIC_TRADE
@@ -258,7 +258,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
         STALE_CANCEL_COOLDOWN_MS = 1_000
         CANCEL_REJECT_RETRY_COOLDOWN_MS = 1_000
         BALANCES_PUBLISH_INTERVAL_MS = 10_000
-        STALE_CANCELS_PER_SIDE_PER_CYCLE = 1
         PARAMS_REFRESH_INTERVAL_MS = 500
         MARKET_BBO_HEARTBEAT_MS = 1_000
         INVENTORY_SKEW_CACHE_TTL_MS = 100
@@ -2602,6 +2601,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             intent_type: str,
             client_order_id: str,
+            quote_cycle: QuoteCycleContext | None = None,
             quote_cycle_id: str | None,
             reason_code: str,
             side: OrderSide | str | None,
@@ -2614,6 +2614,8 @@ if _NAUTILUS_IMPORT_ERROR is None:
             ts_cancel_request_local_ns: int | None = None,
             decision_context_json: dict[str, Any] | None = None,
         ) -> None:
+            if quote_cycle_id is None and quote_cycle is not None:
+                quote_cycle_id = quote_cycle.quote_cycle_id
             payload: dict[str, Any] = {
                 "strategy_id": self.runtime_strategy_id,
                 "external_strategy_id": self._external_strategy_id,
@@ -2627,6 +2629,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 "target_px": None if target_px is None else str(target_px),
                 "cancel_px": None if cancel_px is None else str(cancel_px),
                 "match_tol": None if match_tol is None else str(match_tol),
+                "ts_market_data_event_ns": (
+                    None if quote_cycle is None else quote_cycle.trigger_md_ts_event_ns
+                ),
+                "ts_market_data_recv_ns": (
+                    None if quote_cycle is None else quote_cycle.trigger_md_ts_init_ns
+                ),
                 "ts_decision_ns": int(ts_decision_ns),
                 "ts_submit_local_ns": ts_submit_local_ns,
                 "ts_cancel_request_local_ns": ts_cancel_request_local_ns,
@@ -2709,10 +2717,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
             *,
             max_age_ms: int | None = None,
         ) -> bool:
-            age_ms = self._runtime_int("max_age_ms") if max_age_ms is None else int(max_age_ms)
-            max_age_ns = age_ms * 1_000_000
-            ts_init = int(getattr(order, "ts_init", 0))
-            return ts_init > 0 and now_ns - ts_init >= max_age_ns
+            # Resting-order TTL refresh is retired from normal quote maintenance.
+            # Keep the helper surface as a compatibility no-op while `max_age_ms`
+            # remains the market-data freshness budget.
+            _ = (order, now_ns, max_age_ms)
+            return False
 
         def _rebalance_side(
             self,
@@ -2747,16 +2756,12 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if cancel_actions is None:
                 side_name = "buy" if side == OrderSide.BUY else "sell"
                 active_prices = [_price_to_decimal(order.price) for order in active_orders]
-                active_stale = [
-                    self._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-                    for order in active_orders
-                ]
                 plan = rebalancing_mod.plan_side_bounded_convergence(
                     side=side_name,
                     active_prices=active_prices,
-                    active_stale=active_stale,
+                    active_stale=[False] * len(active_orders),
                     desired_levels=desired_dec,
-                    stale_cancel_budget=self.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+                    stale_cancel_budget=0,
                     max_reprice_cancel_actions=max(
                         0,
                         int(max_reprice_cancel_actions or 0),
@@ -2800,6 +2805,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="CANCEL",
                     client_order_id=str(getattr(order, "client_order_id", "")),
+                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
                     reason_code=cancel_action.reason_code,
                     side=side,
@@ -2809,7 +2815,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     match_tol=match_tol,
                     ts_decision_ns=now_ns,
                     ts_cancel_request_local_ns=now_ns,
-                    decision_context_json=decision_context_json,
+                    decision_context_json=None,
                 )
                 self.cancel_order(order)
                 self._track_pending_cancel(getattr(order, "client_order_id", None), now_ns=now_ns)
@@ -2832,6 +2838,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             per_level_outcomes: list[dict[str, Any]] | None = None,
             level_indices: tuple[int, ...] | list[int] | None = None,
             pending_backlog_mode: str | None = None,
+            reason_code: str = REASON_PLACE_MISSING_HOLE_REPAIR,
         ) -> int:
             if quote_cycle_id is None and quote_cycle is not None:
                 quote_cycle_id = quote_cycle.quote_cycle_id
@@ -2918,8 +2925,9 @@ if _NAUTILUS_IMPORT_ERROR is None:
                 self._publish_order_intent(
                     intent_type="PLACE",
                     client_order_id=str(getattr(order, "client_order_id", "")),
+                    quote_cycle=quote_cycle,
                     quote_cycle_id=quote_cycle_id,
-                    reason_code=REASON_PLACE_MISSING_LEVEL,
+                    reason_code=reason_code,
                     side=side,
                     level_index=level_index,
                     target_px=target_px,
@@ -2927,7 +2935,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     match_tol=match_tol,
                     ts_decision_ns=now_ns,
                     ts_submit_local_ns=now_ns,
-                    decision_context_json=decision_context_json,
+                    decision_context_json=None,
                 )
                 places += 1
                 active_orders.append(order)
@@ -3005,6 +3013,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     self._publish_order_intent(
                         intent_type="CANCEL",
                         client_order_id=str(getattr(order, "client_order_id", "")),
+                        quote_cycle=quote_cycle,
                         quote_cycle_id=quote_cycle_id,
                         reason_code=cancel_reason_code,
                         side=getattr(order, "side", None),
@@ -3014,7 +3023,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
                         match_tol=None,
                         ts_decision_ns=cancel_request_ns,
                         ts_cancel_request_local_ns=cancel_request_ns,
-                        decision_context_json=decision_context_json,
+                        decision_context_json=None,
                     )
 
             def _cancel_order(order: Order) -> None:

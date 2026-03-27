@@ -35,6 +35,7 @@ from nautilus_trader.flux.strategies.makerv3 import failures as failures_mod
 from nautilus_trader.flux.strategies.makerv3 import MakerV3Strategy
 from nautilus_trader.flux.strategies.makerv3 import MakerV3StrategyConfig
 from nautilus_trader.flux.strategies.makerv3 import publisher as publisher_mod
+from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
@@ -338,6 +339,80 @@ def test_quote_cycle_completed_event_exports_cycle_timing(
     assert quote_cycle_events[0]["ts_cycle_start_ns"] <= quote_cycle_events[0]["ts_cycle_end_ns"]
     decision_context = _json_mapping(quote_cycle_events[0]["decision_context_json"])
     assert decision_context["pricing"]["maker_top_bid"] == "100"
+
+
+def test_quote_cycle_completed_event_exports_deque_diagnostics(
+    clocked_strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000, 1_000_000_001, 1_000_000_002])
+    strategy._publish_event = MakerV3Strategy._publish_event.__get__(strategy, MakerV3Strategy)
+    strategy._maker_instrument = SimpleNamespace(
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+    )
+    strategy._order_qty = object()
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 999_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = 999_000_000
+    strategy._managed_orders = lambda: []
+    strategy._rebalance_side = lambda **_kwargs: 0
+    strategy._place_missing_levels = lambda **_kwargs: 0
+
+    def _plan_side_bounded_convergence(**_kwargs):
+        return rebalancing_mod.BoundedConvergencePlan(
+            cancel_actions=(),
+            place_level_indices=(),
+            diagnostics=rebalancing_mod.ConvergenceDiagnostics(
+                stack_action_mode="repair_hole",
+                backlog_mode="normal",
+                matched_level_count=1,
+                keep_level_count=1,
+                frontier_missing_level_count=1,
+                planned_stale_replacement_count=0,
+                total_missing_level_count=1,
+                excess_cancel_candidate_count=0,
+                aggressive_cancel_candidate_count=0,
+                stale_cancel_candidate_count=0,
+                room_cancel_candidate_count=0,
+                budget_limited=False,
+                backlog_limited=False,
+                depth_before=2,
+                depth_after=2,
+                temporary_oversize_depth=2,
+                missing_level_count=1,
+                interior_hole_count=1,
+                front_changed=True,
+                back_changed=False,
+            ),
+        )
+
+    monkeypatch.setattr(
+        rebalancing_mod,
+        "plan_side_bounded_convergence",
+        _plan_side_bounded_convergence,
+    )
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._refresh_quotes(now_ns=1_000_000_000)
+
+    quote_cycle_events = [
+        payload
+        for topic, payload in payloads
+        if topic == TOPIC_EVENT and payload.get("event") == "quote_cycle"
+    ]
+    assert len(quote_cycle_events) == 1
+    decision_context = _json_mapping(quote_cycle_events[0]["decision_context_json"])
+    buy = decision_context["bounded_convergence"]["buy"]
+    assert buy["stack_action_mode"] == "repair_hole"
+    assert buy["front_changed"] is True
+    assert buy["back_changed"] is False
+    assert buy["depth_before"] == 2
+    assert buy["depth_after"] == 2
+    assert buy["missing_level_count"] == 1
+    assert buy["interior_hole_count"] == 1
 
 
 def test_on_order_filled_releases_cached_place_intent_after_trade_publish(

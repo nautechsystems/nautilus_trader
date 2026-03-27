@@ -18,23 +18,26 @@ from flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_LIVENESS_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
-from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_BOOK_UNAVAILABLE
-from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_MD_STALE
-from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
-from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
-from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PENDING_CANCEL
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_BOOK_UNAVAILABLE
+from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
+from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
+from flux.strategies.makerv3.constants import REASON_PLACE_BACK_BACKFILL
+from flux.strategies.makerv3.constants import REASON_PLACE_FRONT_IMPROVE
+from flux.strategies.makerv3.constants import REASON_PLACE_MISSING_HOLE_REPAIR
 from flux.strategies.makerv3.constants import REASON_SKIPPED_CANCEL_REJECT_COOLDOWN
 from flux.strategies.makerv3.constants import REASON_SKIPPED_PENDING_CANCELS
 from flux.strategies.makerv3.wire import QuoteCycleContext
-from flux.strategies.shared.quote_health import evaluate_quote_health
+from flux.strategies.shared.quote_health import evaluate_quote_health as _evaluate_quote_health
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 
@@ -52,6 +55,7 @@ _apply_inventory_skew_to_edges = pricing_mod.apply_inventory_skew_to_edges
 build_ladder_place_cancel_levels_from_bps = pricing_mod.build_ladder_place_cancel_levels_from_bps
 
 _decimal_to_json_str = publisher_mod.decimal_to_json_str
+evaluate_quote_health = _evaluate_quote_health
 
 _BACKLOG_MODE_RANK = {
     "normal": 0,
@@ -214,10 +218,13 @@ def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -
 
     diagnostics = plan.diagnostics
     return {
+        "stack_action_mode": diagnostics.stack_action_mode,
         "backlog_mode": diagnostics.backlog_mode,
         "matched_level_count": diagnostics.matched_level_count,
         "keep_level_count": diagnostics.keep_level_count,
+        "missing_level_count": diagnostics.missing_level_count,
         "frontier_missing_level_count": diagnostics.frontier_missing_level_count,
+        "interior_hole_count": diagnostics.interior_hole_count,
         "planned_stale_replacement_count": diagnostics.planned_stale_replacement_count,
         "total_missing_level_count": diagnostics.total_missing_level_count,
         "excess_cancel_candidate_count": diagnostics.excess_cancel_candidate_count,
@@ -226,12 +233,36 @@ def _bounded_convergence_summary(plan: rebalancing_mod.BoundedConvergencePlan) -
         "room_cancel_candidate_count": diagnostics.room_cancel_candidate_count,
         "budget_limited": diagnostics.budget_limited,
         "backlog_limited": diagnostics.backlog_limited,
+        "depth_before": diagnostics.depth_before,
+        "depth_after": diagnostics.depth_after,
+        "temporary_oversize_depth": diagnostics.temporary_oversize_depth,
+        "front_changed": diagnostics.front_changed,
+        "back_changed": diagnostics.back_changed,
         "planned_cancel_count": len(plan.cancel_actions),
         "planned_place_count": len(plan.place_level_indices),
         "executed_cancel_count": 0,
         "executed_place_count": 0,
         "cancel_reason_counts": cancel_reason_counts,
     }
+
+
+def _place_reason_code_for_mode(
+    stack_action_mode: str,
+    *,
+    front_changed: bool,
+    back_changed: bool,
+) -> str:
+    if stack_action_mode == "place_front_cancel_back":
+        return REASON_PLACE_FRONT_IMPROVE
+    if stack_action_mode == "cancel_front_place_back":
+        return REASON_PLACE_BACK_BACKFILL
+    if stack_action_mode == "repair_hole":
+        return REASON_PLACE_MISSING_HOLE_REPAIR
+    if front_changed:
+        return REASON_PLACE_FRONT_IMPROVE
+    if back_changed:
+        return REASON_PLACE_BACK_BACKFILL
+    return REASON_PLACE_MISSING_HOLE_REPAIR
 
 
 def handle_stale_quote_block(
@@ -249,6 +280,29 @@ def handle_stale_quote_block(
     Cancel managed quotes once per cooldown and publish a blocked state/event.
     """
     managed_orders = strategy._managed_orders()
+    if quote_cycle is None:
+        trigger_instrument_id = None
+        if cancel_reason in {"maker_book_unavailable", "maker_md_stale"}:
+            trigger_instrument_id = strategy.config.maker_instrument_id
+        elif cancel_reason == "reference_md_stale":
+            trigger_instrument_id = strategy.config.reference_instrument_id
+        quote_cycle = strategy._quote_cycle_context_from_id(
+            now_ns=now_ns,
+            quote_cycle_id=quote_cycle_id or strategy._next_quote_cycle_id(now_ns=now_ns),
+            trigger_source="stale_market_data_guard",
+            trigger_instrument_id=trigger_instrument_id,
+            trigger_md_ts_event_ns=(
+                None
+                if trigger_instrument_id is None
+                else int(strategy._last_bbo_event_ts_ns.get(trigger_instrument_id, 0) or 0)
+            ),
+            trigger_md_ts_init_ns=(
+                None
+                if trigger_instrument_id is None
+                else int(strategy._last_bbo_init_ts_ns.get(trigger_instrument_id, 0) or 0)
+            ),
+        )
+        quote_cycle_id = quote_cycle.quote_cycle_id
     cooldown_ns = strategy.STALE_CANCEL_COOLDOWN_MS * 1_000_000
     if (
         strategy._last_stale_cancel_ns <= 0
@@ -265,9 +319,7 @@ def handle_stale_quote_block(
                 "maker_md_stale": REASON_CANCEL_MAKER_MD_STALE,
                 "reference_md_stale": REASON_CANCEL_REFERENCE_MD_STALE,
             }.get(cancel_reason),
-            decision_context_json=strategy._quote_cycle_decision_context(
-                managed_orders=managed_orders,
-            ),
+            decision_context_json=None,
         )
         strategy._last_stale_cancel_ns = now_ns
     from_state = getattr(strategy, "_last_state_name", None)
@@ -974,22 +1026,59 @@ def refresh_quotes(  # noqa: C901
             for target_price, cancel_px, match_tol in desired_levels
         ]
         active_prices = [_price_to_decimal(order.price) for order in side_active_orders]
-        active_stale = [
-            strategy._is_stale_order(order, now_ns, max_age_ms=max_age_ms)
-            for order in side_active_orders
-        ]
         side_plan = rebalancing_mod.plan_side_bounded_convergence(
             side="buy" if side == OrderSide.BUY else "sell",
             active_prices=active_prices,
-            active_stale=active_stale,
+            active_stale=[False] * len(side_active_orders),
             desired_levels=desired_dec,
-            stale_cancel_budget=strategy.STALE_CANCELS_PER_SIDE_PER_CYCLE,
+            stale_cancel_budget=0,
             max_reprice_cancel_actions=max_reprice_cancel_actions,
             max_place_actions=max_place_actions,
             max_total_actions=side_total_actions,
             backlog_mode=backlog_mode,
         )
         bounded_convergence[side_name] = _bounded_convergence_summary(side_plan)
+        stack_action_mode = bounded_convergence[side_name]["stack_action_mode"]
+        allowed_level_indices = tuple(
+            int(level_index)
+            for level_index in side_plan.place_level_indices[:remaining_total_actions]
+        )
+
+        side_place_count = 0
+        if (
+            stack_action_mode == "place_front_cancel_back"
+            and allowed_level_indices
+            and side_backlog_modes[side] == "normal"
+            and not any(
+                strategy._is_cancel_reject_retry_blocked(
+                    getattr(side_active_orders[action.index], "client_order_id", None),
+                    now_ns=now_ns,
+                )
+                for action in side_plan.cancel_actions
+            )
+        ):
+            side_place_count = strategy._place_missing_levels(
+                side=side,
+                active_orders=side_active_orders,
+                desired_levels=desired_levels,
+                best_bid_px=best_bid_px,
+                best_ask_px=best_ask_px,
+                now_ns=now_ns,
+                quote_cycle=quote_cycle,
+                quote_cycle_id=quote_cycle_id,
+                decision_context_json=decision_context_json,
+                per_level_outcomes=per_level_outcomes,
+                level_indices=allowed_level_indices,
+                pending_backlog_mode=side_backlog_modes[side],
+                reason_code=_place_reason_code_for_mode(
+                    stack_action_mode,
+                    front_changed=side_plan.diagnostics.front_changed,
+                    back_changed=side_plan.diagnostics.back_changed,
+                ),
+            )
+            bounded_convergence[side_name]["executed_place_count"] = side_place_count
+            places += side_place_count
+            remaining_total_actions = max(0, remaining_total_actions - side_place_count)
 
         side_cancel_count = strategy._rebalance_side(
             side=side,
@@ -1001,7 +1090,7 @@ def refresh_quotes(  # noqa: C901
             max_place_actions=max_place_actions,
             max_total_actions=side_total_actions,
             backlog_mode=backlog_mode,
-            cancel_actions=side_plan.cancel_actions,
+            cancel_actions=side_plan.cancel_actions if side_place_count or stack_action_mode != "place_front_cancel_back" else (),
             quote_cycle=quote_cycle,
             quote_cycle_id=quote_cycle_id,
             decision_context_json=decision_context_json,
@@ -1026,13 +1115,14 @@ def refresh_quotes(  # noqa: C901
                 blocked_after_actions = True
                 break
 
-        if (
-            side_cancel_count > 0
-            or side_backlog_modes[side] != "normal"
-            or remaining_total_actions <= 0
-        ):
+        if stack_action_mode == "place_front_cancel_back":
             continue
-
+        if stack_action_mode == "cancel_front_place_back":
+            continue
+        if remaining_total_actions <= 0:
+            continue
+        if side_backlog_modes[side] != "normal":
+            continue
         allowed_level_indices = tuple(
             int(level_index)
             for level_index in side_plan.place_level_indices[:remaining_total_actions]
@@ -1052,8 +1142,15 @@ def refresh_quotes(  # noqa: C901
             per_level_outcomes=per_level_outcomes,
             level_indices=allowed_level_indices,
             pending_backlog_mode=side_backlog_modes[side],
+            reason_code=_place_reason_code_for_mode(
+                stack_action_mode,
+                front_changed=side_plan.diagnostics.front_changed,
+                back_changed=side_plan.diagnostics.back_changed,
+            ),
         )
-        bounded_convergence[side_name]["executed_place_count"] = side_place_count
+        bounded_convergence[side_name]["executed_place_count"] = (
+            bounded_convergence[side_name]["executed_place_count"] + side_place_count
+        )
         places += side_place_count
         remaining_total_actions = max(0, remaining_total_actions - side_place_count)
 

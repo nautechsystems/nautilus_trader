@@ -18,6 +18,26 @@ This directory is the notebook root for the optional localhost-only `flux@tokenm
   - optional balance / portfolio snapshot tables for directional context
 - Optional fill-time edge and extended-horizon sections activate only when a frozen FV extract exists at `research/tokenmm/data/tokenmm_fv_extract.csv`.
 
+## Deque audit helpers
+
+`research/tokenmm/telemetry_helpers.py` now includes helpers for the shared
+deque rollout audit path:
+
+- `extract_quote_cycle_deque_diagnostics(...)` flattens
+  `decision_context_json.bounded_convergence.<side>` into one row per
+  `quote_cycle_id` and side.
+- `extract_order_action_deque_audit(...)` narrows `order_action` rows to the
+  correlation and reason fields operators typically inspect first.
+
+For TokenMM quote-stack audits, focus on:
+
+- `quote_cycle_id`
+- `stack_action_mode`
+- `front_changed`, `back_changed`
+- `missing_level_count`, `interior_hole_count`
+- `order_action.reason_code`
+- `order_action.level_index`
+
 ## Quantity semantics
 
 - Research helpers treat explicit base-quantity fill fields as canonical when they are present:

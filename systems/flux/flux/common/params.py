@@ -662,7 +662,7 @@ _MAKERV3_RUNTIME_PARAM_SPECS: Final[tuple[RuntimeParamSpec, ...]] = (
         name="max_age_ms",
         schema_type="integer",
         default=10_000,
-        description="Replace managed orders older than this age.",
+        description="Maximum market-data freshness age for quoting and stale-data blocks.",
         minimum=1,
         maximum=60_000,
     ),
