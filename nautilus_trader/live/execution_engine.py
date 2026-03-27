@@ -1834,20 +1834,15 @@ class LiveExecutionEngine(ExecutionEngine):
         account_id: AccountId | None,
         instrument_id: InstrumentId,
     ) -> tuple[StartupStrategyCacheSnapshot, ...]:
-        if account_id is None:
-            return tuple(
-                snapshot
-                for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
-                self._startup_reconciliation_snapshot.items()
-                if snapshot_instrument_id == instrument_id
-            )
-
         exact_entries = tuple(
             snapshot
             for (snapshot_account_id, snapshot_instrument_id, _strategy_id), snapshot in
             self._startup_reconciliation_snapshot.items()
             if snapshot_instrument_id == instrument_id and snapshot_account_id == account_id
         )
+
+        if account_id is None:
+            return exact_entries
 
         exact_strategy_ids = {snapshot.strategy_id for snapshot in exact_entries}
         unscoped_entries = tuple(
@@ -2249,6 +2244,42 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         return [synthetic_report] if synthetic_report is not None else []
 
+    @staticmethod
+    def _position_report_with_account_scope(
+        report: PositionStatusReport,
+        account_id: AccountId | None,
+    ) -> PositionStatusReport:
+        if report.account_id is not None or account_id is None:
+            return report
+
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=report.instrument_id,
+            position_side=report.position_side,
+            quantity=report.quantity,
+            report_id=report.id,
+            ts_last=report.ts_last,
+            ts_init=report.ts_init,
+            venue_position_id=report.venue_position_id,
+            avg_px_open=report.avg_px_open,
+        )
+
+    def _normalize_mass_status_position_report_account_scopes(
+        self,
+        mass_status: ExecutionMassStatus,
+    ) -> None:
+        fallback_account_id = mass_status.account_id
+        if fallback_account_id is None:
+            return
+
+        mass_status._position_reports = {
+            instrument_id: [
+                self._position_report_with_account_scope(report, fallback_account_id)
+                for report in position_reports
+            ]
+            for instrument_id, position_reports in mass_status._position_reports.items()
+        }
+
     async def reconcile_execution_state(
         self,
         timeout_secs: float = 10.0,
@@ -2636,6 +2667,8 @@ class LiveExecutionEngine(ExecutionEngine):
             f"Reconciling ExecutionMassStatus for {mass_status.venue}",
             color=LogColor.BLUE,
         )
+
+        self._normalize_mass_status_position_report_account_scopes(mass_status)
 
         # Adjust fills for instruments with incomplete first lifecycles
         self._adjust_mass_status_fills(

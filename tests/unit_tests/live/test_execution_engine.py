@@ -1987,9 +1987,12 @@ class TestLiveExecutionEngine:
             is True
         )
 
-    def test_reconcile_position_report_netting_startup_cleanup_uses_captured_snapshot_for_accountless_reports(
+    def test_reconcile_execution_mass_status_startup_cleanup_uses_mass_status_account_for_accountless_reports(
         self,
     ):
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.filter_position_reports = False
+
         stale_position_order = self.order_factory.market(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -2016,6 +2019,34 @@ class TestLiveExecutionEngine:
         self.cache.update_order(stale_position_order)
         stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
         self.cache.add_position(stale_position, OmsType.NETTING)
+
+        other_account_id = AccountId("OTHER-ACCOUNT-001")
+        other_position_order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(50),
+        )
+        self.cache.add_order(other_position_order)
+        other_position_order.apply(
+            TestEventStubs.order_accepted(
+                other_position_order,
+                account_id=other_account_id,
+                venue_order_id=VenueOrderId("V-OTHER-ACCOUNT-POSITION-001"),
+            ),
+        )
+        other_position_fill = TestEventStubs.order_filled(
+            other_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=other_account_id,
+            position_id=PositionId("P-OTHER-ACCOUNT-001"),
+            last_qty=Quantity.from_int(50),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("T-OTHER-ACCOUNT-001"),
+        )
+        other_position_order.apply(other_position_fill)
+        self.cache.update_order(other_position_order)
+        other_position = Position(instrument=AUDUSD_SIM, fill=other_position_fill)
+        self.cache.add_position(other_position, OmsType.NETTING)
 
         startup_open_order = self.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -2048,32 +2079,42 @@ class TestLiveExecutionEngine:
             (self.client.account_id, AUDUSD_SIM.id)
         ] = {startup_ref}
 
-        cleanup_calls: list[dict[str, object]] = []
-        report = PositionStatusReport(
-            account_id=None,
-            instrument_id=AUDUSD_SIM.id,
-            position_side=PositionSide.FLAT,
-            quantity=Quantity.zero(),
+        mass_status = ExecutionMassStatus(
+            client_id=self.client.id,
+            venue=self.client.venue,
+            account_id=self.client.account_id,
             report_id=UUID4(),
-            ts_last=self.clock.timestamp_ns(),
             ts_init=self.clock.timestamp_ns(),
         )
+        mass_status.add_position_reports(
+            [
+                PositionStatusReport(
+                    account_id=None,
+                    instrument_id=AUDUSD_SIM.id,
+                    position_side=PositionSide.FLAT,
+                    quantity=Quantity.zero(),
+                    report_id=UUID4(),
+                    ts_last=self.clock.timestamp_ns(),
+                    ts_init=self.clock.timestamp_ns(),
+                ),
+            ],
+        )
 
+        cleanup_calls: list[dict[str, object]] = []
         with patch.object(
             self.exec_engine,
             "_cleanup_stale_startup_netting_positions",
             side_effect=lambda **kwargs: cleanup_calls.append(kwargs) or True,
         ):
-            result = self.exec_engine._reconcile_position_report_netting(
-                report,
+            result = self.exec_engine._reconcile_execution_mass_status(
+                mass_status,
                 allow_startup_external_cleanup=True,
             )
 
         assert result is True
         assert len(cleanup_calls) == 1
         assert cleanup_calls[0]["stale_positions"] == [stale_position]
-        assert cleanup_calls[0]["raw_qty"] == Decimal("100")
-        assert cleanup_calls[0]["effective_qty"] == Decimal("0")
+        assert self.cache.is_position_open(other_position.id) is True
 
     def test_reconcile_position_report_netting_startup_cleanup_uses_matching_account_scope(
         self,
