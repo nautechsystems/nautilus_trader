@@ -128,7 +128,6 @@ The following integrations are currently supported; see [docs/integrations/](htt
 
 - `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
-- `alpha`: Early-stage integration under active development and testing.
 - `beta`: Completed to a minimally working state and in a beta testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
