@@ -10,7 +10,6 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from decimal import Decimal
 import json
-import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -116,8 +115,6 @@ class ControllerIntentCommand:
 
 
 class ControllerStateFeedBridge:
-    POLL_INTERVAL_SECS = 0.1
-
     def __init__(
         self,
         *,
@@ -134,8 +131,6 @@ class ControllerStateFeedBridge:
         self.schema_version = str(schema_version)
         self._lifecycle_callback = None
         self._canonical_state_callback = None
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
         self._last_lifecycle_payload: bytes | None = None
         self._last_canonical_state_payload: bytes | None = None
 
@@ -232,31 +227,10 @@ class ControllerStateFeedBridge:
             self._last_canonical_state_payload = canonical_fingerprint
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"controller-state-feed:{self.controller_scope_id}:{self.strategy_id}",
-            daemon=True,
-        )
-        self._thread.start()
+        return None
 
     def stop(self) -> None:
-        thread = self._thread
-        if thread is None:
-            return
-        self._stop_event.set()
-        if thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=max(self.POLL_INTERVAL_SECS * 2, 1.0))
-        if not thread.is_alive():
-            self._thread = None
-
-    def _run(self) -> None:
-        while not self._stop_event.is_set():
-            with suppress(Exception):
-                self.sync_once()
-            self._stop_event.wait(self.POLL_INTERVAL_SECS)
+        return None
 
     def publish_lifecycle_event(self, event: ExecutionLifecycleEvent) -> None:
         if callable(self._lifecycle_callback):
@@ -3185,7 +3159,6 @@ class MakerV4Strategy(Strategy):
 
         if self._controller_canonical_state_feed is not None:
             self._controller_canonical_state_feed.sync_once()
-            self._controller_canonical_state_feed.start()
         if not self._controller_managed_mode():
             self._reclaim_managed_maker_orders_from_cache()
         self._publish_balances()
@@ -3193,8 +3166,6 @@ class MakerV4Strategy(Strategy):
 
     def on_stop(self) -> None:
         self._cancel_managed_maker_orders()
-        if self._controller_canonical_state_feed is not None:
-            self._controller_canonical_state_feed.stop()
         unsubscribed_instrument_ids: list[Any] = []
         for instrument_id in (
             self.config.maker_instrument_id,

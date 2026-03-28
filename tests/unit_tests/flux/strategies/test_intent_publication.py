@@ -387,7 +387,7 @@ def test_makerv4_controller_feed_bridge_sync_once_applies_redis_updates() -> Non
     assert strategy._controller_canonical_state["authority_state"] == "controller"
 
 
-def test_makerv4_on_start_skips_cache_reclaim_for_controller_managed_lane() -> None:
+def test_makerv4_on_start_hydrates_controller_state_without_background_feed_start() -> None:
     strategy = MakerV4Strategy(config=_config())
     redis_client = _FakeRedis()
     strategy.configure_controller_intent_publisher(
@@ -422,8 +422,10 @@ def test_makerv4_on_start_skips_cache_reclaim_for_controller_managed_lane() -> N
     redis_client.payloads[feed.canonical_state_key()] = json.dumps(
         _canonical_state_payload(client_order_id="managed-buy-start", quantity="5"),
     ).encode("utf-8")
+    feed.start = lambda: pytest.fail(
+        "controller-managed startup should not start a background feed worker",
+    )
 
     strategy.on_start()
 
     assert strategy._managed_maker_orders["BUY"].quantity == Decimal("5")
-    feed.stop()
