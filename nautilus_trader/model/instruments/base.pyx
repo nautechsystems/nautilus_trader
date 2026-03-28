@@ -43,6 +43,7 @@ from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 from nautilus_trader.model.instruments.perpetual_contract cimport PerpetualContract
+from nautilus_trader.model.instruments.tokenized_asset cimport TokenizedAsset
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
@@ -874,6 +875,8 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
             instruments.append(OptionSpread.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.PerpetualContract):
             instruments.append(PerpetualContract.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.TokenizedAsset):
+            instruments.append(TokenizedAsset.from_pyo3_c(pyo3_instrument))
         else:
             raise RuntimeError(f"Instrument {pyo3_instrument} not supported")
 

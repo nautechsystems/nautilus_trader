@@ -25,13 +25,13 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AggressorSide, BarAggregation, ContingencyType, LiquiditySide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
+        AggressorSide, AssetClass, BarAggregation, ContingencyType, LiquiditySide, OrderStatus,
+        OrderType, PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{
         Instrument, any::InstrumentAny, crypto_perpetual::CryptoPerpetual,
-        currency_pair::CurrencyPair,
+        currency_pair::CurrencyPair, tokenized_asset::TokenizedAsset,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
@@ -242,6 +242,92 @@ pub fn parse_spot_instrument(
     );
 
     Ok(InstrumentAny::CurrencyPair(instrument))
+}
+
+/// Parses a Kraken tokenized asset pair into a Nautilus tokenized asset instrument.
+///
+/// Tokenized assets (xStocks) use the same API schema as spot pairs but represent
+/// real-world equities, ETFs, or other tokenized securities.
+///
+/// # Errors
+///
+/// Returns an error if tick size, order minimum, or fee fields cannot be parsed.
+pub fn parse_tokenized_instrument(
+    pair_name: &str,
+    definition: &AssetPairInfo,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let symbol_str = definition.wsname.as_ref().unwrap_or(&definition.altname);
+    let normalized_symbol = normalize_spot_symbol(symbol_str);
+    let instrument_id = InstrumentId::new(Symbol::new(&normalized_symbol), *KRAKEN_VENUE);
+    let raw_symbol = Symbol::new(pair_name);
+
+    let base_currency = get_currency(definition.base.as_str());
+    let quote_currency = get_currency(definition.quote.as_str());
+
+    let price_increment = parse_price(
+        definition
+            .tick_size
+            .as_ref()
+            .context("tick_size is required")?,
+        "tick_size",
+    )?;
+
+    let size_precision = definition.lot_decimals;
+    let size_increment = Quantity::new(10.0_f64.powi(-(size_precision as i32)), size_precision);
+
+    let min_quantity = definition
+        .ordermin
+        .as_ref()
+        .map(|s| parse_quantity(s, "ordermin"))
+        .transpose()?;
+
+    let taker_fee = definition
+        .fees
+        .first()
+        .map(|(_, fee)| Decimal::try_from(*fee))
+        .transpose()
+        .context("failed to parse taker fee")?
+        .map(|f| f / dec!(100));
+
+    let maker_fee = definition
+        .fees_maker
+        .first()
+        .map(|(_, fee)| Decimal::try_from(*fee))
+        .transpose()
+        .context("failed to parse maker fee")?
+        .map(|f| f / dec!(100));
+
+    let instrument = TokenizedAsset::new(
+        instrument_id,
+        raw_symbol,
+        AssetClass::Equity,
+        base_currency,
+        quote_currency,
+        None, // isin
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        None,
+        None,
+        None,
+        min_quantity,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        maker_fee,
+        taker_fee,
+        None,
+        ts_event,
+        ts_init,
+    );
+
+    Ok(InstrumentAny::TokenizedAsset(instrument))
 }
 
 /// Parses a Kraken futures instrument definition into a Nautilus crypto perpetual instrument.
@@ -712,6 +798,7 @@ pub fn parse_fill_report(
     let quote_currency = match instrument {
         InstrumentAny::CurrencyPair(pair) => pair.quote_currency,
         InstrumentAny::CryptoPerpetual(perp) => perp.quote_currency,
+        InstrumentAny::TokenizedAsset(ta) => ta.quote_currency,
         _ => anyhow::bail!("Unsupported instrument type for fill report"),
     };
 
@@ -1793,6 +1880,88 @@ mod tests {
         let result = truncate_cl_ord_id(&id);
         assert_eq!(result.len(), 18);
         assert!(result.starts_with('O'));
+    }
+
+    #[rstest]
+    fn test_parse_tokenized_instrument() {
+        let json = load_test_json("http_asset_pairs_tokenized.json");
+        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = wrapper.get("result").unwrap();
+        let pairs: AssetPairsResponse = serde_json::from_value(result.clone()).unwrap();
+
+        let (pair_name, definition) = pairs.iter().next().unwrap();
+
+        let instrument = parse_tokenized_instrument(pair_name, definition, TS, TS).unwrap();
+
+        match instrument {
+            InstrumentAny::TokenizedAsset(ta) => {
+                assert_eq!(ta.id.symbol.as_str(), "AAPLx/USD");
+                assert_eq!(ta.id.venue.as_str(), "KRAKEN");
+                assert_eq!(ta.raw_symbol.as_str(), "AAPLxUSD");
+                assert_eq!(ta.asset_class, AssetClass::Equity);
+                assert_eq!(ta.base_currency.code.as_str(), "AAPLx");
+                assert_eq!(ta.quote_currency.code.as_str(), "ZUSD");
+                assert_eq!(ta.price_precision, 2);
+                assert_eq!(ta.size_precision, 8);
+                assert!(ta.price_increment.as_f64() > 0.0);
+                assert!(ta.size_increment.as_f64() > 0.0);
+                assert!(ta.min_quantity.is_some());
+                assert_eq!(ta.maker_fee, dec!(-0.0002));
+                assert_eq!(ta.taker_fee, dec!(0.001));
+            }
+            _ => panic!("Expected TokenizedAsset, received {instrument:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_fill_report_tokenized_asset() {
+        let json = load_test_json("http_trades_history.json");
+        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let result = wrapper.get("result").unwrap();
+        let trades_map = result.get("trades").unwrap();
+        let trades: IndexMap<String, SpotTrade> =
+            serde_json::from_value(trades_map.clone()).unwrap();
+
+        let account_id = AccountId::new("KRAKEN-001");
+        let instrument_id = InstrumentId::new(Symbol::new("AAPLx/USD"), *KRAKEN_VENUE);
+        let instrument = InstrumentAny::TokenizedAsset(TokenizedAsset::new(
+            instrument_id,
+            Symbol::new("AAPLxUSD"),
+            AssetClass::Equity,
+            Currency::get_or_create_crypto("AAPLx"),
+            Currency::USD(),
+            None,
+            2,
+            8,
+            Price::from("0.01"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            TS,
+            TS,
+        ));
+
+        let (trade_id, trade) = trades.iter().next().unwrap();
+
+        let report = parse_fill_report(trade_id, trade, &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.trade_id.to_string(), *trade_id);
+        assert!(report.last_qty.as_f64() > 0.0);
+        assert!(report.last_px.as_f64() > 0.0);
+        assert_eq!(report.commission.currency, Currency::USD());
     }
 
     #[rstest]

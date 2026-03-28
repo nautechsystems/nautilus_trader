@@ -161,8 +161,12 @@ async fn mock_system_status() -> Response {
         .unwrap()
 }
 
-async fn mock_asset_pairs() -> Response {
-    let data = load_test_data("http_asset_pairs.json");
+async fn mock_asset_pairs(aclass_base: Option<&str>) -> Response {
+    let filename = match aclass_base {
+        Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
+        _ => "http_asset_pairs.json",
+    };
+    let data = load_test_data(filename);
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
@@ -452,7 +456,12 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
     match path {
         "/0/public/Time" => mock_server_time().await,
         "/0/public/SystemStatus" => mock_system_status().await,
-        "/0/public/AssetPairs" => mock_asset_pairs().await,
+        "/0/public/AssetPairs" => {
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
+            let aclass_base = query.get("aclass_base").map(|s| s.as_str());
+            mock_asset_pairs(aclass_base).await
+        }
         "/0/public/Ticker" => mock_ticker().await,
         "/0/public/OHLC" => {
             let query =
@@ -584,12 +593,50 @@ async fn test_spot_raw_get_asset_pairs() {
     )
     .unwrap();
 
-    let result = client.get_asset_pairs(None).await;
+    let result = client.get_asset_pairs(None, None).await;
     assert!(result.is_ok(), "Failed to get asset pairs: {result:?}");
 
     let pairs = result.unwrap();
     assert!(!pairs.is_empty());
     assert!(pairs.contains_key("XBTUSDT"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_asset_pairs_tokenized() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        Some(10),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let result = client.get_asset_pairs(None, Some("tokenized_asset")).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get tokenized asset pairs: {result:?}"
+    );
+
+    let pairs = result.unwrap();
+    assert!(!pairs.is_empty());
+    assert!(pairs.contains_key("AAPLxUSD"));
 }
 
 #[rstest]
@@ -624,6 +671,16 @@ async fn test_spot_domain_request_instruments() {
 
     let instruments: Vec<InstrumentAny> = result.unwrap();
     assert!(!instruments.is_empty());
+
+    let has_currency_pair = instruments
+        .iter()
+        .any(|i| matches!(i, InstrumentAny::CurrencyPair(_)));
+    let has_tokenized = instruments
+        .iter()
+        .any(|i| matches!(i, InstrumentAny::TokenizedAsset(_)));
+
+    assert!(has_currency_pair, "Expected at least one CurrencyPair");
+    assert!(has_tokenized, "Expected at least one TokenizedAsset");
 }
 
 #[rstest]

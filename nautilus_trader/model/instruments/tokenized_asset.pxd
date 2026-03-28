@@ -13,23 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Final
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
 
-from nautilus_trader.core import nautilus_pyo3
 
+cdef class TokenizedAsset(Instrument):
+    cdef readonly Currency base_currency
+    """The base currency (the tokenized asset).\n\n:returns: `Currency`"""
+    cdef readonly str isin
+    """The ISIN of the underlying asset.\n\n:returns: `str` or ``None``"""
 
-KrakenInstrument = (
-    nautilus_pyo3.CurrencyPair | nautilus_pyo3.CryptoPerpetual | nautilus_pyo3.TokenizedAsset
-)
+    @staticmethod
+    cdef TokenizedAsset from_dict_c(dict values)
 
-KRAKEN_INSTRUMENT_TYPES: Final[
-    tuple[
-        type[nautilus_pyo3.CurrencyPair],
-        type[nautilus_pyo3.CryptoPerpetual],
-        type[nautilus_pyo3.TokenizedAsset],
-    ]
-] = (
-    nautilus_pyo3.CurrencyPair,
-    nautilus_pyo3.CryptoPerpetual,
-    nautilus_pyo3.TokenizedAsset,
-)
+    @staticmethod
+    cdef dict to_dict_c(TokenizedAsset obj)
+
+    @staticmethod
+    cdef TokenizedAsset from_pyo3_c(pyo3_instrument)

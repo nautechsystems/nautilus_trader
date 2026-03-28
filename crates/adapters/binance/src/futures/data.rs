@@ -292,9 +292,13 @@ impl BinanceFuturesDataClient {
             BinanceFuturesWsStreamsMessage::MarkPrice(ref mark_msg) => {
                 if let Some(instrument) = cache.get(&mark_msg.symbol) {
                     match parse_mark_price(mark_msg, instrument, ts_init) {
-                        Ok((mark_update, index_update, _funding_update)) => {
+                        Ok((mark_update, index_update, funding_update)) => {
                             Self::send_data(data_sender, Data::MarkPriceUpdate(mark_update));
                             Self::send_data(data_sender, Data::IndexPriceUpdate(index_update));
+                            if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
+                            {
+                                log::error!("Failed to emit funding rate: {e}");
+                            }
                         }
                         Err(e) => log::warn!("Failed to parse mark price: {e}"),
                     }
@@ -309,9 +313,23 @@ impl BinanceFuturesDataClient {
                     }
                 }
             }
-            BinanceFuturesWsStreamsMessage::ForceOrder(_)
-            | BinanceFuturesWsStreamsMessage::Ticker(_) => {
-                log::debug!("Unhandled market data message type");
+            BinanceFuturesWsStreamsMessage::ForceOrder(ref liq_msg) => {
+                log::info!(
+                    "Liquidation: {} {:?} {:?} qty={} at price={}",
+                    liq_msg.order.symbol,
+                    liq_msg.order.side,
+                    liq_msg.order.status,
+                    liq_msg.order.original_qty,
+                    liq_msg.order.average_price,
+                );
+            }
+            BinanceFuturesWsStreamsMessage::Ticker(ref ticker_msg) => {
+                log::debug!(
+                    "Ticker: {} last={} vol={}",
+                    ticker_msg.symbol,
+                    ticker_msg.last_price,
+                    ticker_msg.volume,
+                );
             }
             // Execution messages ignored by data client
             BinanceFuturesWsStreamsMessage::AccountUpdate(_)
@@ -1265,13 +1283,40 @@ impl DataClient for BinanceFuturesDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, _cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
-        // FundingRateUpdate is not a variant of the Data enum, so we cannot emit funding rates
-        // through the standard data channel. This requires custom data handling.
-        anyhow::bail!(
-            "Funding rate subscriptions are not yet supported for Binance Futures. \
-            The Data enum does not have a FundingRateUpdate variant."
-        )
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        let should_subscribe = {
+            let prev = self
+                .mark_price_refs
+                .load()
+                .get(&instrument_id)
+                .copied()
+                .unwrap_or(0);
+            self.mark_price_refs.rcu(|m| {
+                let count = m.entry(instrument_id).or_insert(0);
+                *count += 1;
+            });
+            prev == 0
+        };
+
+        if should_subscribe {
+            let ws = self.ws_client.clone();
+            let stream = format!(
+                "{}@markPrice@1s",
+                format_binance_stream_symbol(&instrument_id)
+            );
+
+            self.spawn_ws(
+                async move {
+                    ws.subscribe(vec![stream])
+                        .await
+                        .context("funding rates subscription")
+                },
+                "funding rates subscription",
+            );
+        }
+        Ok(())
     }
 
     fn subscribe_instrument_status(
@@ -1462,8 +1507,46 @@ impl DataClient for BinanceFuturesDataClient {
         Ok(())
     }
 
-    fn unsubscribe_funding_rates(&mut self, _cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        // Funding rate subscriptions are not supported (see subscribe_funding_rates)
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        let should_unsubscribe = {
+            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+            match prev {
+                Some(count) if count <= 1 => {
+                    self.mark_price_refs.remove(&instrument_id);
+                    true
+                }
+                Some(_) => {
+                    self.mark_price_refs.rcu(|m| {
+                        if let Some(count) = m.get_mut(&instrument_id) {
+                            *count = count.saturating_sub(1);
+                        }
+                    });
+                    false
+                }
+                None => false,
+            }
+        };
+
+        if should_unsubscribe {
+            let ws = self.ws_client.clone();
+            let symbol_lower = format_binance_stream_symbol(&instrument_id);
+            let streams = vec![
+                format!("{symbol_lower}@markPrice"),
+                format!("{symbol_lower}@markPrice@1s"),
+                format!("{symbol_lower}@markPrice@3s"),
+            ];
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe(streams)
+                        .await
+                        .context("funding rates unsubscribe")
+                },
+                "funding rates unsubscribe",
+            );
+        }
         Ok(())
     }
 

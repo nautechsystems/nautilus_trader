@@ -1047,6 +1047,7 @@ impl ParquetDataCatalog {
             InstrumentAny::OptionContract(_) => "OptionContract",
             InstrumentAny::OptionSpread(_) => "OptionSpread",
             InstrumentAny::PerpetualContract(_) => "PerpetualContract",
+            InstrumentAny::TokenizedAsset(_) => "TokenizedAsset",
         }
     }
 

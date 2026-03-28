@@ -366,6 +366,10 @@ async def test_submit_market_order(exec_client_builder, monkeypatch, instrument)
 
         # Assert - Bybit uses WebSocket for order submission, not HTTP
         ws_trade_client.submit_order.assert_awaited_once()
+        kwargs = ws_trade_client.submit_order.call_args.kwargs
+        assert isinstance(kwargs["order_side"], nautilus_pyo3.OrderSide)
+        assert isinstance(kwargs["order_type"], nautilus_pyo3.OrderType)
+        assert isinstance(kwargs["time_in_force"], nautilus_pyo3.TimeInForce)
     finally:
         await client._disconnect()
 
@@ -410,6 +414,10 @@ async def test_submit_limit_order(exec_client_builder, monkeypatch, instrument):
 
         # Assert - Bybit uses WebSocket for order submission
         ws_trade_client.submit_order.assert_awaited_once()
+        kwargs = ws_trade_client.submit_order.call_args.kwargs
+        assert isinstance(kwargs["order_side"], nautilus_pyo3.OrderSide)
+        assert isinstance(kwargs["order_type"], nautilus_pyo3.OrderType)
+        assert isinstance(kwargs["time_in_force"], nautilus_pyo3.TimeInForce)
     finally:
         await client._disconnect()
 
@@ -455,6 +463,9 @@ async def test_submit_stop_market_order(exec_client_builder, monkeypatch, instru
 
         # Assert - Bybit uses WebSocket for order submission
         ws_trade_client.submit_order.assert_awaited_once()
+        kwargs = ws_trade_client.submit_order.call_args.kwargs
+        assert isinstance(kwargs["order_side"], nautilus_pyo3.OrderSide)
+        assert isinstance(kwargs["order_type"], nautilus_pyo3.OrderType)
     finally:
         await client._disconnect()
 

@@ -19,7 +19,13 @@ import pytest
 
 from nautilus_trader.cache.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.transformers import transform_instrument_to_pyo3
+from nautilus_trader.cache.transformers import transform_order_to_pyo3
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -27,7 +33,16 @@ from nautilus_trader.model.instruments import PerpetualContract
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitIfTouchedOrder
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import MarketToLimitOrder
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 def _perpetual_contract() -> PerpetualContract:
@@ -112,3 +127,102 @@ class TestTransformInstrumentToPyo3:
     def test_from_pyo3_unknown_type_raises(self):
         with pytest.raises(ValueError, match="Unknown instrument type"):
             transform_instrument_from_pyo3("not_an_instrument")
+
+
+_INSTRUMENT_ID = InstrumentId(Symbol("BTC-USD-PERP"), Venue("SIM"))
+
+
+def _make_order(order_type_name, **kwargs):
+    common = {
+        "trader_id": TestIdStubs.trader_id(),
+        "strategy_id": TestIdStubs.strategy_id(),
+        "instrument_id": _INSTRUMENT_ID,
+        "client_order_id": ClientOrderId("O-001"),
+        "order_side": OrderSide.BUY,
+        "quantity": Quantity.from_str("1.0"),
+        "init_id": TestIdStubs.uuid(),
+        "ts_init": 0,
+    }
+    common.update(kwargs)
+    return {
+        "Market": lambda: MarketOrder(**common),
+        "Limit": lambda: LimitOrder(**{**common, "price": Price.from_str("50000.0")}),
+        "StopMarket": lambda: StopMarketOrder(
+            **{
+                **common,
+                "trigger_price": Price.from_str("49000.0"),
+                "trigger_type": TriggerType.LAST_PRICE,
+            },
+        ),
+        "StopLimit": lambda: StopLimitOrder(
+            **{
+                **common,
+                "price": Price.from_str("50000.0"),
+                "trigger_price": Price.from_str("49000.0"),
+                "trigger_type": TriggerType.LAST_PRICE,
+            },
+        ),
+        "LimitIfTouched": lambda: LimitIfTouchedOrder(
+            **{
+                **common,
+                "price": Price.from_str("51000.0"),
+                "trigger_price": Price.from_str("50000.0"),
+                "trigger_type": TriggerType.LAST_PRICE,
+            },
+        ),
+        "MarketToLimit": lambda: MarketToLimitOrder(**common),
+        "TrailingStopMarket": lambda: TrailingStopMarketOrder(
+            **{
+                **common,
+                "trigger_price": Price.from_str("49000.0"),
+                "trigger_type": TriggerType.LAST_PRICE,
+                "trailing_offset": Decimal("100.0"),
+                "trailing_offset_type": TrailingOffsetType.PRICE,
+            },
+        ),
+        "TrailingStopLimit": lambda: TrailingStopLimitOrder(
+            **{
+                **common,
+                "price": Price.from_str("50000.0"),
+                "trigger_price": Price.from_str("49000.0"),
+                "trigger_type": TriggerType.LAST_PRICE,
+                "trailing_offset": Decimal("100.0"),
+                "trailing_offset_type": TrailingOffsetType.PRICE,
+                "limit_offset": Decimal("50.0"),
+            },
+        ),
+    }[order_type_name]()
+
+
+ORDER_TYPE_PARAMS = [
+    pytest.param("Market", nautilus_pyo3.MarketOrder, id="Market"),
+    pytest.param("Limit", nautilus_pyo3.LimitOrder, id="Limit"),
+    pytest.param("StopMarket", nautilus_pyo3.StopMarketOrder, id="StopMarket"),
+    pytest.param("StopLimit", nautilus_pyo3.StopLimitOrder, id="StopLimit"),
+    pytest.param("LimitIfTouched", nautilus_pyo3.LimitIfTouchedOrder, id="LimitIfTouched"),
+    pytest.param("MarketToLimit", nautilus_pyo3.MarketToLimitOrder, id="MarketToLimit"),
+    pytest.param(
+        "TrailingStopMarket",
+        nautilus_pyo3.TrailingStopMarketOrder,
+        id="TrailingStopMarket",
+    ),
+    pytest.param(
+        "TrailingStopLimit",
+        nautilus_pyo3.TrailingStopLimitOrder,
+        id="TrailingStopLimit",
+    ),
+]
+
+
+class TestTransformOrderToPyo3:
+    @pytest.mark.parametrize(("order_type_name", "expected_pyo3_type"), ORDER_TYPE_PARAMS)
+    def test_converts_to_correct_pyo3_type(self, order_type_name, expected_pyo3_type):
+        order = _make_order(order_type_name)
+        result = transform_order_to_pyo3(order)
+        assert isinstance(result, expected_pyo3_type)
+
+    @pytest.mark.parametrize(("order_type_name", "expected_pyo3_type"), ORDER_TYPE_PARAMS)
+    def test_not_cython_type(self, order_type_name, expected_pyo3_type):
+        order = _make_order(order_type_name)
+        result = transform_order_to_pyo3(order)
+        assert type(result).__module__.startswith("nautilus_trader.core.nautilus_pyo3")

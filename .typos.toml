@@ -23,6 +23,7 @@ ot = "ot" # Order tag variable naming convention
 HIGHTER = "HIGHTER" # Binance API error code (their official typo)
 cummulative = "cummulative" # Binance API: cummulativeQuoteQty field (their official typo)
 cummulativeQuoteQty = "cummulativeQuoteQty" # Binance API field name
+SETTELMENT = "SETTELMENT" # Binance API: DELIVERED_SETTELMENT income type (their official typo)
 Alo = "Alo" # Hyperliquid API: Add Liquidity Only (post-only TIF)
 BadAloPx = "BadAloPx" # Hyperliquid API: rejection code for post-only orders
 

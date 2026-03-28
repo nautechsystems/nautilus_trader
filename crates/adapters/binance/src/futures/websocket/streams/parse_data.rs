@@ -464,11 +464,14 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::BinanceTradingStatus,
+            enums::{BinanceOrderStatus, BinanceSide, BinanceTradingStatus},
             parse::parse_usdm_instrument,
             testing::{load_fixture_string, load_json_fixture},
         },
-        futures::http::models::BinanceFuturesUsdSymbol,
+        futures::{
+            http::models::BinanceFuturesUsdSymbol,
+            websocket::streams::messages::{BinanceFuturesLiquidationMsg, BinanceFuturesTickerMsg},
+        },
     };
 
     const PRICE_PRECISION: u8 = 8;
@@ -671,6 +674,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_mark_price_funding_rate_fields() {
+        let instrument = sample_instrument();
+        let msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let (_mark, _index, funding) = parse_mark_price(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(funding.instrument_id, instrument.id());
+        assert_eq!(funding.rate.to_string(), "0.00038167");
+        assert!(funding.interval.is_none());
+        assert_eq!(
+            funding.next_funding_ns,
+            Some(UnixNanos::from(1_562_306_400_000_000_000u64))
+        );
+        assert_eq!(
+            funding.ts_event,
+            UnixNanos::from(1_562_305_380_000_000_000u64)
+        );
+        assert_eq!(funding.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_deserialize_liquidation_msg() {
+        let msg: BinanceFuturesLiquidationMsg = load_market_fixture("liquidation_stream.json");
+
+        assert_eq!(msg.event_type, "forceOrder");
+        assert_eq!(msg.event_time, 1_568_014_460_893);
+        assert_eq!(msg.order.symbol, Ustr::from("BTCUSDT"));
+        assert_eq!(msg.order.side, BinanceSide::Sell);
+        assert_eq!(msg.order.original_qty, "0.014");
+        assert_eq!(msg.order.average_price, "9910.12345678");
+        assert_eq!(msg.order.status, BinanceOrderStatus::Filled);
+        assert_eq!(msg.order.accumulated_qty, "0.014");
+        assert_eq!(msg.order.trade_time, 1_568_014_460_893);
+    }
+
+    #[rstest]
+    fn test_deserialize_ticker_msg() {
+        let msg: BinanceFuturesTickerMsg = load_market_fixture("ticker_stream.json");
+
+        assert_eq!(msg.event_type, "24hrTicker");
+        assert_eq!(msg.symbol, Ustr::from("BTCUSDT"));
+        assert_eq!(msg.price_change, "-131.40000000");
+        assert_eq!(msg.price_change_percent, "-0.786");
+        assert_eq!(msg.weighted_avg_price, "16628.97377498");
+        assert_eq!(msg.last_price, "16584.60000000");
+        assert_eq!(msg.open_price, "16716.00000000");
+        assert_eq!(msg.high_price, "16764.89000000");
+        assert_eq!(msg.low_price, "16456.51000000");
+        assert_eq!(msg.volume, "122474.816");
+        assert_eq!(msg.quote_volume, "2036102085.69746400");
+        assert_eq!(msg.num_trades, 142853);
+    }
+
+    #[rstest]
     fn test_extract_symbol() {
         let json = load_json_fixture("futures/market_data_json/book_ticker_stream.json");
 
@@ -686,5 +744,23 @@ mod tests {
         let event_type = extract_event_type(&json);
 
         assert_eq!(event_type, Some(BinanceWsEventType::MarkPriceUpdate));
+    }
+
+    #[rstest]
+    fn test_extract_event_type_force_order() {
+        let json = load_json_fixture("futures/market_data_json/liquidation_stream.json");
+
+        let event_type = extract_event_type(&json);
+
+        assert_eq!(event_type, Some(BinanceWsEventType::ForceOrder));
+    }
+
+    #[rstest]
+    fn test_extract_event_type_ticker() {
+        let json = load_json_fixture("futures/market_data_json/ticker_stream.json");
+
+        let event_type = extract_event_type(&json);
+
+        assert_eq!(event_type, Some(BinanceWsEventType::Ticker24Hr));
     }
 }

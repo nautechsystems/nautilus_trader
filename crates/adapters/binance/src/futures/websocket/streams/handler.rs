@@ -37,9 +37,10 @@ use super::{
     messages::{
         BinanceFuturesAccountConfigMsg, BinanceFuturesAccountUpdateMsg, BinanceFuturesAggTradeMsg,
         BinanceFuturesAlgoUpdateMsg, BinanceFuturesBookTickerMsg, BinanceFuturesDepthUpdateMsg,
-        BinanceFuturesKlineMsg, BinanceFuturesListenKeyExpiredMsg, BinanceFuturesMarginCallMsg,
-        BinanceFuturesMarkPriceMsg, BinanceFuturesOrderUpdateMsg, BinanceFuturesTradeMsg,
-        BinanceFuturesWsErrorMsg, BinanceFuturesWsErrorResponse, BinanceFuturesWsStreamsCommand,
+        BinanceFuturesKlineMsg, BinanceFuturesLiquidationMsg, BinanceFuturesListenKeyExpiredMsg,
+        BinanceFuturesMarginCallMsg, BinanceFuturesMarkPriceMsg, BinanceFuturesOrderUpdateMsg,
+        BinanceFuturesTickerMsg, BinanceFuturesTradeMsg, BinanceFuturesWsErrorMsg,
+        BinanceFuturesWsErrorResponse, BinanceFuturesWsStreamsCommand,
         BinanceFuturesWsStreamsMessage, BinanceFuturesWsSubscribeRequest,
         BinanceFuturesWsSubscribeResponse,
     },
@@ -333,10 +334,20 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::ForceOrder => {
-                Some(BinanceFuturesWsStreamsMessage::ForceOrder(json.clone()))
+                serde_json::from_value::<BinanceFuturesLiquidationMsg>(json.clone())
+                    .map(BinanceFuturesWsStreamsMessage::ForceOrder)
+                    .map_err(|e| log::warn!("Failed to parse force order: {e}"))
+                    .ok()
             }
-            BinanceWsEventType::Ticker24Hr | BinanceWsEventType::MiniTicker24Hr => {
-                Some(BinanceFuturesWsStreamsMessage::Ticker(json.clone()))
+            BinanceWsEventType::Ticker24Hr => {
+                serde_json::from_value::<BinanceFuturesTickerMsg>(json.clone())
+                    .map(BinanceFuturesWsStreamsMessage::Ticker)
+                    .map_err(|e| log::warn!("Failed to parse ticker: {e}"))
+                    .ok()
+            }
+            BinanceWsEventType::MiniTicker24Hr => {
+                log::debug!("Mini ticker not yet supported, skipping");
+                None
             }
             BinanceWsEventType::AccountUpdate => {
                 serde_json::from_value::<BinanceFuturesAccountUpdateMsg>(json.clone())

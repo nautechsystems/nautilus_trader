@@ -21,12 +21,12 @@ use std::str::FromStr;
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::OptionKind,
+    enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoOption,
         CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument,
-        InstrumentAny, OptionContract, OptionSpread, PerpetualContract,
+        InstrumentAny, OptionContract, OptionSpread, PerpetualContract, TokenizedAsset,
     },
     types::{Currency, Money, Price, Quantity},
 };
@@ -83,6 +83,9 @@ pub struct PerpetualContractModel(pub PerpetualContract);
 
 #[derive(Debug)]
 pub struct OptionSpreadModel(pub OptionSpread);
+
+#[derive(Debug)]
+pub struct TokenizedAssetModel(pub TokenizedAsset);
 
 impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -144,6 +147,10 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
         } else if kind == "PERPETUAL_CONTRACT" {
             Ok(Self(InstrumentAny::PerpetualContract(
                 PerpetualContractModel::from_row(row).unwrap().0,
+            )))
+        } else if kind == "TOKENIZED_ASSET" {
+            Ok(Self(InstrumentAny::TokenizedAsset(
+                TokenizedAssetModel::from_row(row).unwrap().0,
             )))
         } else {
             Err(sqlx::Error::Decode(
@@ -1397,5 +1404,112 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
 impl<'r> FromRow<'r, PgRow> for OptionSpreadModel {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for OptionSpread")
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for TokenizedAssetModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let asset_class = row.try_get::<String, _>("asset_class").and_then(|res| {
+            AssetClass::from_str(res.as_str()).map_err(|e| {
+                sqlx::Error::Decode(format!("Invalid asset class '{res}': {e}").into())
+            })
+        })?;
+        // Tokenized base currencies (e.g. AAPLx) are not in the static currency
+        // map, so use get_or_create_crypto which registers them dynamically.
+        let base_currency = row
+            .try_get::<String, _>("base_currency")
+            .map(|code| Currency::get_or_create_crypto(&code))?;
+        let quote_currency = row
+            .try_get::<String, _>("quote_currency")
+            .map(Currency::from)?;
+        let isin = row
+            .try_get::<Option<String>, _>("isin")
+            .ok()
+            .and_then(|res| res.map(|s| Ustr::from(s.as_str())));
+        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_increment = row
+            .try_get::<String, _>("price_increment")
+            .map(|res| Price::from(res.as_str()))?;
+        let size_increment = row
+            .try_get::<String, _>("size_increment")
+            .map(|res| Quantity::from(res.as_str()))?;
+        let multiplier = row
+            .try_get::<Option<String>, _>("multiplier")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let lot_size = row
+            .try_get::<Option<String>, _>("lot_size")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let max_quantity = row
+            .try_get::<Option<String>, _>("max_quantity")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let min_quantity = row
+            .try_get::<Option<String>, _>("min_quantity")
+            .ok()
+            .and_then(|res| res.map(|res| Quantity::from(res.as_str())));
+        let max_notional = row
+            .try_get::<Option<String>, _>("max_notional")
+            .ok()
+            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+        let min_notional = row
+            .try_get::<Option<String>, _>("min_notional")
+            .ok()
+            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+        let max_price = row
+            .try_get::<Option<String>, _>("max_price")
+            .ok()
+            .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let min_price = row
+            .try_get::<Option<String>, _>("min_price")
+            .ok()
+            .and_then(|res| res.map(|res| Price::from(res.as_str())));
+        let margin_init = row
+            .try_get::<String, _>("margin_init")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let margin_maint = row
+            .try_get::<String, _>("margin_maint")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let maker_fee = row
+            .try_get::<String, _>("maker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let taker_fee = row
+            .try_get::<String, _>("taker_fee")
+            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+
+        let inst = TokenizedAsset::new(
+            id,
+            raw_symbol,
+            asset_class,
+            base_currency,
+            quote_currency,
+            isin,
+            price_precision as u8,
+            size_precision as u8,
+            price_increment,
+            size_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            None,
+            ts_event,
+            ts_init,
+        );
+        Ok(Self(inst))
     }
 }

@@ -21,7 +21,7 @@ use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use crate::instruments::{
     BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoPerpetual, CurrencyPair,
     Equity, FuturesContract, FuturesSpread, IndexInstrument, InstrumentAny, OptionContract,
-    OptionSpread, PerpetualContract, crypto_option::CryptoOption,
+    OptionSpread, PerpetualContract, TokenizedAsset, crypto_option::CryptoOption,
 };
 
 pub mod betting;
@@ -40,6 +40,7 @@ pub mod option_contract;
 pub mod option_spread;
 pub mod perpetual_contract;
 pub mod synthetic;
+pub mod tokenized_asset;
 
 /// Converts an [`InstrumentAny`] into a Python object.
 ///
@@ -63,6 +64,7 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::OptionContract(inst) => inst.into_py_any(py),
         InstrumentAny::OptionSpread(inst) => inst.into_py_any(py),
         InstrumentAny::PerpetualContract(inst) => inst.into_py_any(py),
+        InstrumentAny::TokenizedAsset(inst) => inst.into_py_any(py),
     }
 }
 
@@ -114,6 +116,9 @@ pub fn pyobject_to_instrument_any(py: Python, instrument: Py<PyAny>) -> PyResult
         )),
         stringify!(PerpetualContract) => Ok(InstrumentAny::PerpetualContract(
             instrument.extract::<PerpetualContract>(py)?,
+        )),
+        stringify!(TokenizedAsset) => Ok(InstrumentAny::TokenizedAsset(
+            instrument.extract::<TokenizedAsset>(py)?,
         )),
         _ => Err(to_pyvalue_err(
             "Error in conversion from `Py<PyAny>` to `InstrumentAny`",

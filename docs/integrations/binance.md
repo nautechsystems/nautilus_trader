@@ -179,13 +179,24 @@ Binance Futures can trigger exchange-generated orders in response to risk events
 - **ADL (Auto-Deleveraging)**: When the insurance fund is depleted, Binance closes profitable positions to cover losses. These orders use client ID `adl_autoclose`.
 - **Settlements**: Quarterly contract deliveries use client IDs starting with `settlement_autoclose-`.
 
-The adapter detects these special order types via their client ID patterns and execution type (`CALCULATED`), then:
+The adapter detects these special order types via their client ID patterns
+(checked before the execution type), then:
 
 1. Logs a warning with order details for monitoring.
-2. Generates an `OrderStatusReport` to seed the cache.
-3. Generates a `FillReport` with correct fill details and TAKER liquidity side.
+2. Generates a `FillReport` with correct fill details and TAKER liquidity side.
+3. Generates an `OrderStatusReport` for reconciliation.
 
-This ensures liquidation and ADL events are properly reflected in portfolio state and PnL calculations.
+The fill report is sent before the status report. This prevents the
+reconciliation engine from synthesizing an inferred fill (from the Filled
+status) that would shadow the real fill with its trade ID and commission.
+
+:::warning
+Exchange-generated orders that arrive before any cache entry (the typical
+case for a live liquidation) require engine-level support for creating
+orders from runtime status reports. Until that is implemented, these events
+are logged but do not update portfolio state. Orders that are already cached
+(e.g. from startup reconciliation) are handled correctly.
+:::
 
 ### Order querying
 
@@ -423,9 +434,9 @@ and `ts_init` are identical).
 You can subscribe to Binance-specific data streams as they become available.
 
 :::note
-Bars are not Binance-specific and can be subscribed to in the normal way.
-As more adapters add mark price and funding rate support, these methods may
-become first-class (not requiring custom/generic subscriptions as below).
+Bars, mark prices, index prices, and funding rates can be subscribed to in the
+normal way via the Rust adapter. The custom data subscriptions below are for
+the Python adapter.
 :::
 
 ### `BinanceFuturesMarkPriceUpdate`
@@ -459,10 +470,17 @@ def on_data(self, data: Data):
 
 ## Funding rates
 
-The adapter subscribes to funding rate data through the
+The Rust adapter emits `FundingRateUpdate` as a first-class data type through
+`subscribe_funding_rates`. The data comes from the
 [Mark Price Stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream)
 WebSocket endpoint, which provides the current funding rate and next funding
-time.
+time alongside mark and index prices. All three subscriptions
+(`subscribe_mark_prices`, `subscribe_index_prices`, `subscribe_funding_rates`)
+share a single `@markPrice@1s` stream with ref-counted subscription management.
+
+The Python adapter exposes funding rate data through
+`BinanceFuturesMarkPriceUpdate` custom data subscriptions (see
+[Binance specific data](#binance-specific-data) below).
 
 The `interval` field on `FundingRateUpdate` is `None` for Binance because the
 Mark Price Stream does not include a funding interval field. Binance exposes
@@ -526,6 +544,9 @@ info (e.g. after delisting or contract expiry), the adapter emits
 | PreDelivering      | PreClose                   |
 | Delivering         | Close                      |
 | Delivered          | Close                      |
+| PreSettle          | PreClose                   |
+| Settling           | Close                      |
+| Close              | Close                      |
 | PreDelisting       | PreClose                   |
 | Delisting          | Suspend                    |
 | Down               | NotAvailableForTrading     |

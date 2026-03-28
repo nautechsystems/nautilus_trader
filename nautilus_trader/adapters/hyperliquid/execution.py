@@ -27,6 +27,7 @@ from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_POST_ONLY
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.transformers import transform_order_to_pyo3
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
@@ -705,7 +706,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
 
         try:
-            await self._client.submit_orders(orders)
+            pyo3_orders = [transform_order_to_pyo3(order) for order in orders]
+            await self._client.submit_orders(pyo3_orders)
         except Exception as e:
             error_str = str(e)
             due_post_only = HYPERLIQUID_POST_ONLY_WOULD_MATCH in error_str
@@ -786,7 +788,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 command.instrument_id.value,
             )
             pyo3_venue_order_id = nautilus_pyo3.VenueOrderId(venue_order_id.value)
-            pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+            pyo3_order_side = order_side_to_pyo3(order.side)
             pyo3_order_type = order_type_to_pyo3(order.order_type)
             pyo3_price = nautilus_pyo3.Price.from_str(str(price))
             pyo3_quantity = nautilus_pyo3.Quantity.from_str(str(quantity))

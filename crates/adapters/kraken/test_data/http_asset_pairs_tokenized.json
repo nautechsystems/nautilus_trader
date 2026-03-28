@@ -1,0 +1,32 @@
+{
+    "error": [],
+    "result": {
+        "AAPLxUSD": {
+            "altname": "AAPLxUSD",
+            "wsname": "AAPLx/USD",
+            "aclass_base": "tokenized_asset",
+            "base": "AAPLx",
+            "aclass_quote": "currency",
+            "quote": "ZUSD",
+            "lot": "unit",
+            "cost_decimals": 5,
+            "pair_decimals": 2,
+            "lot_decimals": 8,
+            "lot_multiplier": 1,
+            "leverage_buy": [2, 3],
+            "leverage_sell": [2, 3],
+            "fees": [[0, 0.1]],
+            "fees_maker": [[0, -0.02]],
+            "fee_volume_currency": "ZUSD",
+            "margin_call": 80,
+            "margin_stop": 40,
+            "ordermin": "0.00000001",
+            "costmin": "0.5",
+            "tick_size": "0.01",
+            "status": "online",
+            "execution_venue": "international",
+            "long_position_limit": 400,
+            "short_position_limit": 400
+        }
+    }
+}

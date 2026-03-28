@@ -418,6 +418,9 @@ pub enum KrakenSystemStatus {
 #[strum(ascii_case_insensitive, serialize_all = "lowercase")]
 pub enum KrakenAssetClass {
     Currency,
+    #[serde(rename = "tokenized_asset")]
+    #[strum(serialize = "tokenized_asset")]
+    TokenizedAsset,
 }
 
 /// Kraken futures order type.

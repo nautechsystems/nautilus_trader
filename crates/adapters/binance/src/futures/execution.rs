@@ -2153,7 +2153,12 @@ fn dispatch_order_update(
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
 
-    if cached_instrument.is_none() && order.execution_type == BinanceExecutionType::Trade {
+    let needs_precision = matches!(
+        order.execution_type,
+        BinanceExecutionType::Trade | BinanceExecutionType::Calculated
+    ) || order.is_exchange_generated();
+
+    if cached_instrument.is_none() && needs_precision {
         log::error!(
             "Instrument not in cache for fill: {}, skipping to avoid precision mismatch",
             order.symbol
@@ -2180,6 +2185,22 @@ fn dispatch_order_update(
         &order.client_order_id,
         BINANCE_NAUTILUS_FUTURES_BROKER_ID,
     ));
+
+    // Exchange-generated orders (liquidation/ADL/settlement) are routed through
+    // reconciliation reports regardless of tracked/untracked state, because
+    // they have no locally submitted identity
+    if order.is_exchange_generated() {
+        dispatch_exchange_generated_fill(
+            msg,
+            emitter,
+            instrument_id,
+            price_precision,
+            size_precision,
+            account_id,
+            ts_init,
+        );
+        return;
+    }
 
     let identity = dispatch_state
         .order_identities
@@ -2323,9 +2344,9 @@ fn dispatch_order_update(
             }
             BinanceExecutionType::Calculated => {
                 log::warn!(
-                    "Calculated execution (liquidation/ADL): symbol={}, client_order_id={}",
+                    "CALCULATED for non-exchange-generated order: symbol={}, client_order_id={}",
                     order.symbol,
-                    order.client_order_id
+                    order.client_order_id,
                 );
             }
         }
@@ -2374,12 +2395,87 @@ fn dispatch_order_update(
             }
             BinanceExecutionType::Calculated => {
                 log::warn!(
-                    "Calculated execution (liquidation/ADL): symbol={}, client_order_id={}",
+                    "CALCULATED for non-exchange-generated order: symbol={}, client_order_id={}",
                     order.symbol,
-                    order.client_order_id
+                    order.client_order_id,
                 );
             }
         }
+    }
+}
+
+/// Dispatches exchange-generated order fills (liquidation, ADL, settlement).
+///
+/// Sends a `FillReport` first, then an `OrderStatusReport`. The fill must
+/// arrive before the status report because a Filled status triggers inferred
+/// fill generation in the reconciliation engine, which would consume the
+/// fill quantity and cause the real fill to be rejected as an overfill.
+///
+/// The execution engine processes these reports only when the order already
+/// exists in cache (e.g. from startup reconciliation). First-seen exchange-
+/// generated orders require engine-level support for creating orders from
+/// runtime status reports, which is not yet implemented.
+///
+/// Skips events with zero fill quantity (pending liquidation notifications).
+fn dispatch_exchange_generated_fill(
+    msg: &super::websocket::streams::messages::BinanceFuturesOrderUpdateMsg,
+    emitter: &ExecutionEventEmitter,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    let order = &msg.order;
+    let last_qty: f64 = order.last_filled_qty.parse().unwrap_or(0.0);
+
+    let order_kind = if order.is_liquidation() {
+        "liquidation"
+    } else if order.is_adl() {
+        "ADL"
+    } else {
+        "settlement"
+    };
+
+    if last_qty == 0.0 {
+        log::warn!(
+            "Exchange-generated {order_kind} pending: symbol={}, client_order_id={}, status={:?}",
+            order.symbol,
+            order.client_order_id,
+            order.order_status,
+        );
+        return;
+    }
+
+    log::warn!(
+        "Exchange-generated {order_kind} fill: symbol={}, client_order_id={}, qty={last_qty}, exec_type={:?}",
+        order.symbol,
+        order.client_order_id,
+        order.execution_type,
+    );
+
+    match parse_futures_order_update_to_fill(
+        msg,
+        instrument_id,
+        price_precision,
+        size_precision,
+        account_id,
+        ts_init,
+    ) {
+        Ok(fill) => emitter.send_fill_report(fill),
+        Err(e) => log::error!("Failed to parse fill report: {e}"),
+    }
+
+    match parse_futures_order_update_to_order_status(
+        msg,
+        instrument_id,
+        price_precision,
+        size_precision,
+        account_id,
+        ts_init,
+    ) {
+        Ok(status) => emitter.send_order_status_report(status),
+        Err(e) => log::error!("Failed to parse order status report: {e}"),
     }
 }
 

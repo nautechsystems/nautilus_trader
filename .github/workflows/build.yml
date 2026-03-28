@@ -729,7 +729,7 @@ jobs:
           scan-args: |
             --config=osv-scanner.toml
             --format json
-            --output=${{ github.workspace }}/osv-results.json
+            --output=/github/workspace/osv-results.json
             --lockfile=Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock

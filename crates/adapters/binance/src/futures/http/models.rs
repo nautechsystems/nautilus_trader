@@ -1012,6 +1012,7 @@ impl BinanceTimeInForce {
             Self::Fok => TimeInForce::Fok,
             Self::Gtx => TimeInForce::Gtc, // GTX is GTC with post-only
             Self::Gtd => TimeInForce::Gtd,
+            Self::Rpi => TimeInForce::Ioc, // RPI behaves as immediate
             Self::Unknown => TimeInForce::Gtc, // default
         }
     }
@@ -1022,9 +1023,9 @@ impl BinanceOrderStatus {
     #[must_use]
     pub fn to_nautilus_order_status(&self) -> OrderStatus {
         match self {
-            Self::New => OrderStatus::Accepted,
+            Self::New | Self::PendingNew => OrderStatus::Accepted,
             Self::PartiallyFilled => OrderStatus::PartiallyFilled,
-            Self::Filled => OrderStatus::Filled,
+            Self::Filled | Self::NewAdl | Self::NewInsurance => OrderStatus::Filled,
             Self::Canceled => OrderStatus::Canceled,
             Self::PendingCancel => OrderStatus::PendingCancel,
             Self::Rejected => OrderStatus::Rejected,

@@ -244,6 +244,8 @@ pub enum BinanceWorkingType {
 pub enum BinanceOrderStatus {
     /// Order accepted and working.
     New,
+    /// Pending new (order list accepted but not yet on book).
+    PendingNew,
     /// Partially filled.
     PartiallyFilled,
     /// Fully filled.
@@ -258,6 +260,10 @@ pub enum BinanceOrderStatus {
     Expired,
     /// Expired in match (IOC/FOK not executed).
     ExpiredInMatch,
+    /// Liquidation with insurance fund.
+    NewInsurance,
+    /// Counterparty liquidation (Auto-Deleveraging).
+    NewAdl,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -362,6 +368,8 @@ pub enum BinanceTimeInForce {
     Gtx,
     /// Good till date.
     Gtd,
+    /// Request-for-quote interactive (USD-M Futures).
+    Rpi,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -395,10 +403,41 @@ pub enum BinanceIncomeType {
     FundingFee,
     /// Trading commission.
     Commission,
+    /// Commission rebate.
+    CommissionRebate,
+    /// API rebate.
+    ApiRebate,
     /// Insurance clear.
     InsuranceClear,
     /// Referral kickback.
     ReferralKickback,
+    /// Contest reward.
+    ContestReward,
+    /// Cross collateral transfer.
+    CrossCollateralTransfer,
+    /// Options premium fee.
+    OptionsPremiumFee,
+    /// Options settle profit.
+    OptionsSettleProfit,
+    /// Internal transfer.
+    InternalTransfer,
+    /// Auto exchange.
+    AutoExchange,
+    /// Delivered settlement.
+    #[serde(rename = "DELIVERED_SETTELMENT")]
+    DeliveredSettlement,
+    /// Coin swap deposit.
+    CoinSwapDeposit,
+    /// Coin swap withdraw.
+    CoinSwapWithdraw,
+    /// Position limit increase fee.
+    PositionLimitIncreaseFee,
+    /// Strategy UM futures transfer.
+    StrategyUmfuturesTransfer,
+    /// Fee return.
+    FeeReturn,
+    /// BFUSD reward.
+    BfusdReward,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -408,7 +447,9 @@ pub enum BinanceIncomeType {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinancePriceMatch {
-    /// Match opposing side (default).
+    /// No price match (default).
+    None,
+    /// Match opposing side.
     Opponent,
     /// Match opposing side with 5 tick offset.
     Opponent5,
@@ -433,12 +474,18 @@ pub enum BinancePriceMatch {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BinanceSelfTradePreventionMode {
+    /// No self-trade prevention.
+    None,
     /// Expire maker orders on self-trade.
     ExpireMaker,
     /// Expire taker orders on self-trade.
     ExpireTaker,
     /// Expire both sides on self-trade.
     ExpireBoth,
+    /// Decrement and cancel (spot).
+    Decrement,
+    /// Transfer to sub-account (spot).
+    Transfer,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -500,6 +547,12 @@ pub enum BinanceContractStatus {
     Delivering,
     /// Delivered.
     Delivered,
+    /// Pre-settle.
+    PreSettle,
+    /// Settling.
+    Settling,
+    /// Closed.
+    Close,
     /// Pre-delist.
     PreDelisting,
     /// Delisting in progress.
@@ -516,10 +569,13 @@ impl From<BinanceContractStatus> for MarketStatusAction {
         match status {
             BinanceContractStatus::Trading => Self::Trading,
             BinanceContractStatus::PendingTrading => Self::PreOpen,
-            BinanceContractStatus::PreDelivering | BinanceContractStatus::PreDelisting => {
-                Self::PreClose
-            }
-            BinanceContractStatus::Delivering | BinanceContractStatus::Delivered => Self::Close,
+            BinanceContractStatus::PreDelivering
+            | BinanceContractStatus::PreDelisting
+            | BinanceContractStatus::PreSettle => Self::PreClose,
+            BinanceContractStatus::Delivering
+            | BinanceContractStatus::Delivered
+            | BinanceContractStatus::Settling
+            | BinanceContractStatus::Close => Self::Close,
             BinanceContractStatus::Delisting => Self::Suspend,
             BinanceContractStatus::Down | BinanceContractStatus::Unknown => {
                 Self::NotAvailableForTrading
@@ -631,6 +687,8 @@ pub enum BinanceFilterType {
     PriceFilter,
     /// Percent price filter.
     PercentPrice,
+    /// Percent price by side filter (spot).
+    PercentPriceBySide,
     /// Lot size filter.
     LotSize,
     /// Market lot size filter.
@@ -639,10 +697,34 @@ pub enum BinanceFilterType {
     Notional,
     /// Min notional filter (futures).
     MinNotional,
+    /// Iceberg parts filter (spot).
+    IcebergParts,
     /// Maximum number of orders filter.
     MaxNumOrders,
     /// Maximum number of algo orders filter.
     MaxNumAlgoOrders,
+    /// Maximum number of iceberg orders filter (spot).
+    MaxNumIcebergOrders,
+    /// Maximum position filter (spot).
+    MaxPosition,
+    /// Trailing delta filter (spot).
+    TrailingDelta,
+    /// Maximum number of order amends filter (spot).
+    MaxNumOrderAmends,
+    /// Maximum number of order lists filter (spot).
+    MaxNumOrderLists,
+    /// Maximum asset filter (spot).
+    MaxAsset,
+    /// Exchange-level maximum number of orders.
+    ExchangeMaxNumOrders,
+    /// Exchange-level maximum number of algo orders.
+    ExchangeMaxNumAlgoOrders,
+    /// Exchange-level maximum number of iceberg orders.
+    ExchangeMaxNumIcebergOrders,
+    /// Exchange-level maximum number of order lists.
+    ExchangeMaxNumOrderLists,
+    /// T+1 sell restriction filter (spot).
+    TPlusSell,
     /// Unknown or undocumented value.
     #[serde(other)]
     Unknown,
@@ -661,8 +743,12 @@ impl Display for BinanceEnvironment {
 /// Rate limit type for API request quotas.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BinanceRateLimitType {
+    /// Weighted request limit.
     RequestWeight,
+    /// Order placement limit.
     Orders,
+    /// Raw request count limit (spot).
+    RawRequests,
 }
 
 /// Rate limit time interval.

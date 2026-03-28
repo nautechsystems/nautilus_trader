@@ -59,6 +59,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionContract
 from nautilus_trader.model.instruments import OptionSpread
 from nautilus_trader.model.instruments import PerpetualContract
+from nautilus_trader.model.instruments import TokenizedAsset
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
@@ -123,6 +124,8 @@ def transform_instrument_to_pyo3(instrument: Instrument):  # noqa: C901
         return nautilus_pyo3.OptionSpread.from_dict(OptionSpread.to_dict(instrument))
     elif isinstance(instrument, PerpetualContract):
         return nautilus_pyo3.PerpetualContract.from_dict(PerpetualContract.to_dict(instrument))
+    elif isinstance(instrument, TokenizedAsset):
+        return nautilus_pyo3.TokenizedAsset.from_dict(TokenizedAsset.to_dict(instrument))
     else:
         raise ValueError(f"Unknown instrument type: {instrument}")
 
@@ -160,6 +163,8 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
         return OptionSpread.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.PerpetualContract):
         return PerpetualContract.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.TokenizedAsset):
+        return TokenizedAsset.from_pyo3(instrument_pyo3)
     else:
         raise ValueError(f"Unknown instrument type: {instrument_pyo3}")
 
@@ -218,6 +223,14 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
         return nautilus_pyo3.StopMarketOrder.create(order_event_pyo3)
     elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
         return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.LIMIT_IF_TOUCHED:
+        return nautilus_pyo3.LimitIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.MARKET_TO_LIMIT:
+        return nautilus_pyo3.MarketToLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_MARKET:
+        return nautilus_pyo3.TrailingStopMarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT:
+        return nautilus_pyo3.TrailingStopLimitOrder.create(order_event_pyo3)
     else:
         raise ValueError(f"Unknown order type: {order_event_pyo3.order_type}")
 

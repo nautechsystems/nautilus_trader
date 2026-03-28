@@ -57,8 +57,8 @@ use crate::{
         enums::{KrakenEnvironment, KrakenOrderSide, KrakenOrderType, KrakenProductType},
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, parse_bar, parse_fill_report,
-            parse_order_status_report, parse_spot_instrument, parse_trade_tick_from_array,
-            truncate_cl_ord_id,
+            parse_order_status_report, parse_spot_instrument, parse_tokenized_instrument,
+            parse_trade_tick_from_array, truncate_cl_ord_id,
         },
         urls::get_kraken_http_base_url,
     },
@@ -472,14 +472,28 @@ impl KrakenSpotRawHttpClient {
     }
 
     /// Requests tradable asset pairs from Kraken.
+    ///
+    /// When `aclass_base` is `None`, the Kraken API defaults to `"currency"` (crypto pairs).
+    /// Pass `"tokenized_asset"` to fetch tokenized equities (xStocks).
     pub async fn get_asset_pairs(
         &self,
         pairs: Option<Vec<String>>,
+        aclass_base: Option<&str>,
     ) -> anyhow::Result<AssetPairsResponse, KrakenHttpError> {
-        let endpoint = if let Some(pairs) = pairs {
-            format!("/0/public/AssetPairs?pair={}", pairs.join(","))
-        } else {
+        let mut params = Vec::new();
+
+        if let Some(pairs) = pairs {
+            params.push(format!("pair={}", pairs.join(",")));
+        }
+
+        if let Some(aclass) = aclass_base {
+            params.push(format!("aclass_base={aclass}"));
+        }
+
+        let endpoint = if params.is_empty() {
             "/0/public/AssetPairs".to_string()
+        } else {
+            format!("/0/public/AssetPairs?{}", params.join("&"))
         };
 
         let response: KrakenResponse<AssetPairsResponse> = self
@@ -1196,14 +1210,17 @@ impl KrakenSpotHttpClient {
     }
 
     /// Requests tradable instruments from Kraken.
+    ///
+    /// When `pairs` is `None` (loading all), also fetches tokenized asset pairs
+    /// (xStocks) and merges them with the default currency pairs.
     pub async fn request_instruments(
         &self,
         pairs: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
-        let asset_pairs = self.inner.get_asset_pairs(pairs).await?;
+        let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
 
-        let instruments: Vec<InstrumentAny> = asset_pairs
+        let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
                 match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
@@ -1215,6 +1232,42 @@ impl KrakenSpotHttpClient {
                 }
             })
             .collect();
+
+        // Also fetch tokenized asset pairs (xStocks). When loading all pairs this
+        // picks up tokenized equities; when loading specific pairs it covers the
+        // case where the requested symbols are tokenized assets.
+        {
+            match self
+                .inner
+                .get_asset_pairs(pairs, Some("tokenized_asset"))
+                .await
+            {
+                Ok(tokenized_pairs) => {
+                    if !tokenized_pairs.is_empty() {
+                        log::info!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
+                    }
+                    let tokenized_instruments: Vec<InstrumentAny> =
+                        tokenized_pairs
+                            .iter()
+                            .filter_map(|(pair_name, definition)| match parse_tokenized_instrument(
+                                pair_name, definition, ts_init, ts_init,
+                            ) {
+                                Ok(instrument) => Some(instrument),
+                                Err(e) => {
+                                    log::warn!(
+                                        "Failed to parse tokenized instrument {pair_name}: {e}"
+                                    );
+                                    None
+                                }
+                            })
+                            .collect();
+                    instruments.extend(tokenized_instruments);
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch tokenized asset pairs: {e}");
+                }
+            }
+        }
 
         Ok(instruments)
     }

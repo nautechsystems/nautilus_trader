@@ -325,9 +325,11 @@ fn parse_side(side: BinanceSide) -> OrderSide {
 
 fn parse_order_status(status: BinanceOrderStatus) -> OrderStatus {
     match status {
-        BinanceOrderStatus::New => OrderStatus::Accepted,
+        BinanceOrderStatus::New | BinanceOrderStatus::PendingNew => OrderStatus::Accepted,
         BinanceOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
-        BinanceOrderStatus::Filled => OrderStatus::Filled,
+        BinanceOrderStatus::Filled
+        | BinanceOrderStatus::NewAdl
+        | BinanceOrderStatus::NewInsurance => OrderStatus::Filled,
         BinanceOrderStatus::Canceled | BinanceOrderStatus::PendingCancel => OrderStatus::Canceled,
         BinanceOrderStatus::Rejected => OrderStatus::Rejected,
         BinanceOrderStatus::Expired | BinanceOrderStatus::ExpiredInMatch => OrderStatus::Expired,
@@ -353,7 +355,7 @@ fn parse_futures_order_type(order_type: BinanceFuturesOrderType) -> OrderType {
 fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
     match tif {
         BinanceTimeInForce::Gtc | BinanceTimeInForce::Gtx => TimeInForce::Gtc,
-        BinanceTimeInForce::Ioc => TimeInForce::Ioc,
+        BinanceTimeInForce::Ioc | BinanceTimeInForce::Rpi => TimeInForce::Ioc,
         BinanceTimeInForce::Fok => TimeInForce::Fok,
         BinanceTimeInForce::Gtd => TimeInForce::Gtd,
         BinanceTimeInForce::Unknown => TimeInForce::Gtc,
@@ -533,5 +535,274 @@ mod tests {
         let decoded = decode_algo_client_id(&msg.algo_order);
 
         assert_eq!(decoded, original);
+    }
+
+    #[rstest]
+    fn test_parse_liquidation_fill() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_calculated.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        assert!(msg.order.is_liquidation());
+        assert!(msg.order.is_exchange_generated());
+
+        let fill = parse_futures_order_update_to_fill(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(fill.account_id, account_id());
+        assert_eq!(fill.instrument_id, instrument_id());
+        assert_eq!(
+            fill.client_order_id,
+            Some(ClientOrderId::new("autoclose-1234567890"))
+        );
+        assert_eq!(fill.venue_order_id, VenueOrderId::new("8886999"));
+        assert_eq!(fill.trade_id, TradeId::new("12345999"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::new(0.014, SIZE_PRECISION));
+        assert_eq!(fill.last_px, Price::new(9910.12, PRICE_PRECISION));
+        assert_eq!(
+            fill.commission,
+            Money::new(0.06937084, Currency::from("USDT"))
+        );
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+    }
+
+    #[rstest]
+    fn test_parse_liquidation_status_report() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_calculated.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let status = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(status.account_id, account_id());
+        assert_eq!(status.instrument_id, instrument_id());
+        assert_eq!(
+            status.client_order_id,
+            Some(ClientOrderId::new("autoclose-1234567890"))
+        );
+        assert_eq!(status.venue_order_id, VenueOrderId::new("8886999"));
+        assert_eq!(status.order_side, OrderSide::Sell);
+        assert_eq!(status.order_status, OrderStatus::Filled);
+        assert_eq!(status.quantity, Quantity::new(0.014, SIZE_PRECISION));
+        assert_eq!(status.filled_qty, Quantity::new(0.014, SIZE_PRECISION));
+    }
+
+    #[rstest]
+    fn test_parse_adl_fill_with_new_adl_status() {
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_adl.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        assert!(msg.order.is_adl());
+        assert!(msg.order.is_exchange_generated());
+        assert!(!msg.order.is_liquidation());
+
+        let fill = parse_futures_order_update_to_fill(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fill.client_order_id,
+            Some(ClientOrderId::new("adl_autoclose_12345"))
+        );
+        assert_eq!(fill.venue_order_id, VenueOrderId::new("8887001"));
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.last_qty, Quantity::new(0.005, SIZE_PRECISION));
+        assert_eq!(fill.last_px, Price::new(42000.00, PRICE_PRECISION));
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+    }
+
+    #[rstest]
+    fn test_parse_adl_status_report_maps_new_adl_to_filled() {
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_adl.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let status = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(status.order_status, OrderStatus::Filled);
+        assert_eq!(status.filled_qty, Quantity::new(0.005, SIZE_PRECISION));
+    }
+
+    #[rstest]
+    fn test_parse_settlement_fill_with_trade_exec_type() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_settlement.json");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        assert!(msg.order.is_settlement());
+        assert!(msg.order.is_exchange_generated());
+        assert!(!msg.order.is_liquidation());
+        assert!(!msg.order.is_adl());
+
+        let fill = parse_futures_order_update_to_fill(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fill.client_order_id,
+            Some(ClientOrderId::new("settlement_autoclose-9999"))
+        );
+        assert_eq!(fill.venue_order_id, VenueOrderId::new("8887002"));
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::new(0.010, SIZE_PRECISION));
+        assert_eq!(fill.last_px, Price::new(50000.00, PRICE_PRECISION));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_new_adl_maps_to_filled() {
+        let result = parse_order_status(BinanceOrderStatus::NewAdl);
+        assert_eq!(result, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    fn test_parse_order_status_new_insurance_maps_to_filled() {
+        let result = parse_order_status(BinanceOrderStatus::NewInsurance);
+        assert_eq!(result, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    fn test_is_exchange_generated_autoclose() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_calculated.json");
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_liquidation());
+    }
+
+    #[rstest]
+    fn test_is_exchange_generated_adl_autoclose() {
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_adl.json");
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_adl());
+    }
+
+    #[rstest]
+    fn test_is_exchange_generated_settlement_autoclose() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_settlement.json");
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_settlement());
+    }
+
+    #[rstest]
+    fn test_normal_order_is_not_exchange_generated() {
+        let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
+        assert!(!msg.order.is_exchange_generated());
+        assert!(!msg.order.is_liquidation());
+        assert!(!msg.order.is_adl());
+        assert!(!msg.order.is_settlement());
+    }
+
+    #[rstest]
+    fn test_parse_insurance_fill_with_new_insurance_status() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_insurance.json");
+
+        assert!(msg.order.is_liquidation());
+        assert!(msg.order.is_exchange_generated());
+        assert_eq!(msg.order.order_status, BinanceOrderStatus::NewInsurance);
+
+        let fill = parse_futures_order_update_to_fill(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fill.client_order_id,
+            Some(ClientOrderId::new("autoclose-insurance-5678"))
+        );
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::new(0.020, SIZE_PRECISION));
+        assert_eq!(fill.last_px, Price::new(45000.00, PRICE_PRECISION));
+    }
+
+    #[rstest]
+    fn test_parse_insurance_status_maps_new_insurance_to_filled() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_insurance.json");
+
+        let status = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(status.order_status, OrderStatus::Filled);
+    }
+
+    #[rstest]
+    fn test_parse_settlement_status_report() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_settlement.json");
+
+        let status = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(status.order_status, OrderStatus::Filled);
+        assert_eq!(status.order_side, OrderSide::Sell);
+        assert_eq!(status.quantity, Quantity::new(0.010, SIZE_PRECISION));
+        assert_eq!(status.filled_qty, Quantity::new(0.010, SIZE_PRECISION));
+    }
+
+    #[rstest]
+    fn test_pending_liquidation_has_zero_fill_qty() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_calculated_pending.json");
+
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_liquidation());
+
+        let last_qty: f64 = msg.order.last_filled_qty.parse().unwrap_or(0.0);
+        assert_eq!(last_qty, 0.0);
     }
 }
