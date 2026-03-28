@@ -84,12 +84,12 @@ use crate::{
         system::ShutdownSystem,
     },
     msgbus::{
-        self, MStr, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
+        self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_option_chain_topic,
+            get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
             get_option_greeks_topic, get_order_cancels_topic, get_order_fills_topic,
             get_quotes_topic, get_trades_topic,
         },
@@ -1068,7 +1068,7 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.actor_id().inner();
-        let topic = get_instruments_topic(venue);
+        let pattern = get_instruments_pattern(venue);
 
         let handler = ShareableMessageHandler::from_typed(move |instrument: &InstrumentAny| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
@@ -1078,7 +1078,7 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_instruments(self, topic, handler, venue, client_id, params);
+        DataActorCore::subscribe_instruments(self, pattern, handler, venue, client_id, params);
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
@@ -2194,7 +2194,7 @@ pub struct DataActorCore {
     clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
     cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
     state: ComponentState,
-    topic_handlers: AHashMap<MStr<Topic>, ShareableMessageHandler>,
+    topic_handlers: AHashMap<MStr<Pattern>, ShareableMessageHandler>,
     deltas_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBookDeltas>>,
     depth10_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBookDepth10>>,
     book_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBook>>,
@@ -2246,7 +2246,8 @@ impl DataActorCore {
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
     ) {
-        if self.topic_handlers.contains_key(&topic) {
+        let pattern: MStr<Pattern> = topic.into();
+        if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate subscription to topic '{topic}'",
                 self.actor_id,
@@ -2254,16 +2255,17 @@ impl DataActorCore {
             return;
         }
 
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_any(topic.into(), handler, None);
+        self.topic_handlers.insert(pattern, handler.clone());
+        msgbus::subscribe_any(pattern, handler, None);
     }
 
     /// Removes a subscription handler for the `topic` if present.
     ///
     /// Logs a warning if the actor is not currently subscribed to the topic.
     pub(crate) fn remove_subscription_any(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), &handler);
+        let pattern: MStr<Pattern> = topic.into();
+        if let Some(handler) = self.topic_handlers.remove(&pattern) {
+            msgbus::unsubscribe_any(pattern, &handler);
         } else {
             log::warn!(
                 "Actor {} attempted to unsubscribe from topic '{topic}' when not subscribed",
@@ -2409,24 +2411,24 @@ impl DataActorCore {
 
     pub(crate) fn add_instrument_subscription(
         &mut self,
-        topic: MStr<Topic>,
+        pattern: MStr<Pattern>,
         handler: ShareableMessageHandler,
     ) {
-        if self.topic_handlers.contains_key(&topic) {
+        if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
-                "Actor {} attempted duplicate instrument subscription to '{topic}'",
+                "Actor {} attempted duplicate instrument subscription to '{pattern}'",
                 self.actor_id
             );
             return;
         }
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_any(topic.into(), handler, None);
+        self.topic_handlers.insert(pattern, handler.clone());
+        msgbus::subscribe_any(pattern, handler, None);
     }
 
     #[allow(dead_code)]
-    pub(crate) fn remove_instrument_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), &handler);
+    pub(crate) fn remove_instrument_subscription(&mut self, pattern: MStr<Pattern>) {
+        if let Some(handler) = self.topic_handlers.remove(&pattern) {
+            msgbus::unsubscribe_any(pattern, &handler);
         }
     }
 
@@ -2435,21 +2437,23 @@ impl DataActorCore {
         topic: MStr<Topic>,
         handler: ShareableMessageHandler,
     ) {
-        if self.topic_handlers.contains_key(&topic) {
+        let pattern: MStr<Pattern> = topic.into();
+        if self.topic_handlers.contains_key(&pattern) {
             log::warn!(
                 "Actor {} attempted duplicate instrument close subscription to '{topic}'",
                 self.actor_id
             );
             return;
         }
-        self.topic_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_any(topic.into(), handler, None);
+        self.topic_handlers.insert(pattern, handler.clone());
+        msgbus::subscribe_any(pattern, handler, None);
     }
 
     #[allow(dead_code)]
     pub(crate) fn remove_instrument_close_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.topic_handlers.remove(&topic) {
-            msgbus::unsubscribe_any(topic.into(), &handler);
+        let pattern: MStr<Pattern> = topic.into();
+        if let Some(handler) = self.topic_handlers.remove(&pattern) {
+            msgbus::unsubscribe_any(pattern, &handler);
         }
     }
 
@@ -3072,7 +3076,7 @@ impl DataActorCore {
     /// Helper method for registering instruments subscriptions from the trait.
     pub fn subscribe_instruments(
         &mut self,
-        topic: MStr<Topic>,
+        pattern: MStr<Pattern>,
         handler: ShareableMessageHandler,
         venue: Venue,
         client_id: Option<ClientId>,
@@ -3080,7 +3084,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(topic, handler);
+        self.add_instrument_subscription(pattern, handler);
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
@@ -3105,7 +3109,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        self.add_instrument_subscription(topic, handler);
+        self.add_instrument_subscription(topic.into(), handler);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
@@ -3480,8 +3484,8 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_instruments_topic(venue);
-        self.remove_instrument_subscription(topic);
+        let pattern = get_instruments_pattern(venue);
+        self.remove_instrument_subscription(pattern);
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
             client_id,
@@ -3505,7 +3509,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
-        self.remove_instrument_subscription(topic);
+        self.remove_instrument_subscription(topic.into());
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
             instrument_id,

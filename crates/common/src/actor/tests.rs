@@ -40,7 +40,7 @@ use nautilus_model::{
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId, Venue},
-    instruments::{CurrencyPair, InstrumentAny, stubs::*},
+    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     stubs::TestDefault,
     types::{Price, Quantity},
@@ -79,8 +79,8 @@ use crate::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_instruments_topic, get_mark_price_topic, get_option_chain_topic,
-            get_option_greeks_topic, get_quotes_topic, get_trades_topic,
+            get_mark_price_topic, get_option_chain_topic, get_option_greeks_topic,
+            get_quotes_topic, get_trades_topic,
         },
     },
     runner::{SyncDataCommandSender, set_data_cmd_sender},
@@ -1073,11 +1073,12 @@ fn test_subscribe_and_receive_instruments(
     let venue = Venue::test_default();
     actor.subscribe_instruments(venue, None, None);
 
-    let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim);
-    msgbus::publish_any(topic, &inst1);
+    let topic1 = get_instrument_topic(inst1.id());
+    msgbus::publish_any(topic1, &inst1);
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim);
-    msgbus::publish_any(topic, &inst2);
+    let topic2 = get_instrument_topic(inst2.id());
+    msgbus::publish_any(topic2, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
     assert_eq!(actor.received_instruments[0], inst1);
@@ -1340,20 +1341,21 @@ fn test_unsubscribe_instruments(
     let venue = Venue::test_default();
     actor.subscribe_instruments(venue, None, None);
 
-    let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish_any(topic, &inst1);
+    let topic1 = get_instrument_topic(inst1.id());
+    msgbus::publish_any(topic1, &inst1);
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish_any(topic, &inst2);
+    let topic2 = get_instrument_topic(inst2.id());
+    msgbus::publish_any(topic2, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
     actor.unsubscribe_instruments(venue, None, None);
 
     let inst3 = InstrumentAny::CurrencyPair(audusd_sim);
-    msgbus::publish_any(topic, &inst3);
+    msgbus::publish_any(topic1, &inst3);
     let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim);
-    msgbus::publish_any(topic, &inst4);
+    msgbus::publish_any(topic2, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
 }

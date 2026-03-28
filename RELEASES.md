@@ -62,6 +62,7 @@ Released on TBD (UTC).
 - Fixed `ExecutionEngine` silently dropping `SubmitOrder` and `SubmitOrderList` commands when no execution client can be resolved; now emits `OrderDenied` (Rust)
 - Fixed `RiskEngine` RefCell re-entrancy panic on order denial (#3680), thanks @husariancom
 - Fixed reconciliation when trigger_price is set for non-conditional orders (#3673), thanks @husariancom
+- Fixed `subscribe_instruments` using exact topic instead of wildcard pattern, causing venue-level subscriptions to miss per-instrument publishes from `DataEngine` (Rust)
 - Fixed spurious "Timer replaced" warnings for expired timers in `LiveClock` and `TestClock` (#3690), thanks @HaakonFlaaronning
 - Fixed time bar historical event deferral (#3698), thanks @faysou
 - Fixed `DataActor` and `Strategy` timer callbacks in live mode silently lost on shared clock

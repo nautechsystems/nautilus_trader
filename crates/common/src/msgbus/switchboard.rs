@@ -21,7 +21,7 @@ use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
 };
 
-use super::mstr::{Endpoint, MStr, Topic};
+use super::mstr::{Endpoint, MStr, Pattern, Topic};
 use crate::msgbus::get_message_bus;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
@@ -56,6 +56,7 @@ macro_rules! define_switchboard {
             $(
                 $field: AHashMap<$key_ty, MStr<Topic>>,
             )*
+            instruments_patterns: AHashMap<Venue, MStr<Pattern>>,
             #[cfg(feature = "defi")]
             pub(crate) defi: crate::defi::switchboard::DefiSwitchboard,
         }
@@ -67,6 +68,7 @@ macro_rules! define_switchboard {
                     $(
                         $field: AHashMap::new(),
                     )*
+                    instruments_patterns: AHashMap::new(),
                     #[cfg(feature = "defi")]
                     defi: crate::defi::switchboard::DefiSwitchboard::default(),
                 }
@@ -168,6 +170,14 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn portfolio_update_account() -> MStr<Endpoint> {
                 *PORTFOLIO_ACCOUNT_ENDPOINT.get_or_init(|| "Portfolio.update_account".into())
+            }
+
+            /// Returns a wildcard pattern for matching all instrument topics for a venue.
+            #[must_use]
+            pub fn instruments_pattern(&mut self, venue: Venue) -> MStr<Pattern> {
+                *self.instruments_patterns
+                    .entry(venue)
+                    .or_insert_with(|| format!("data.instrument.{venue}.*").into())
             }
 
             // Dynamic topics
@@ -319,15 +329,29 @@ define_wrappers! {
     get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic>,
 }
 
+/// Returns a wildcard subscription pattern that matches all instrument topics
+/// for the given `venue`.
+///
+/// For example, venue `BINANCE` produces pattern `data.instrument.BINANCE.*`,
+/// which matches per-instrument topics like `data.instrument.BINANCE.BTCUSDT`.
+#[must_use]
+pub fn get_instruments_pattern(venue: Venue) -> MStr<Pattern> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .instruments_pattern(venue)
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
         data::{BarType, DataType},
-        identifiers::InstrumentId,
+        identifiers::{InstrumentId, Venue},
     };
     use rstest::*;
 
     use super::*;
+    use crate::msgbus::matching::is_matching_backtracking;
 
     #[fixture]
     fn switchboard() -> MessagingSwitchboard {
@@ -434,5 +458,26 @@ mod tests {
                 .order_snapshots_topics
                 .contains_key(&client_order_id)
         );
+    }
+
+    #[rstest]
+    fn test_instruments_pattern_matches_instrument_topic(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+    ) {
+        let venue = instrument_id.venue;
+        let pattern = switchboard.instruments_pattern(venue);
+        let topic = switchboard.get_instrument_topic(instrument_id);
+
+        assert_eq!(pattern.as_ref(), "data.instrument.XCME.*");
+        assert!(is_matching_backtracking(topic, pattern));
+    }
+
+    #[rstest]
+    fn test_instruments_pattern_does_not_match_other_venue(mut switchboard: MessagingSwitchboard) {
+        let pattern = switchboard.instruments_pattern(Venue::from("BINANCE"));
+        let topic = switchboard.get_instrument_topic(InstrumentId::from("ESZ24.XCME"));
+
+        assert!(!is_matching_backtracking(topic, pattern));
     }
 }
