@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
@@ -3664,10 +3665,138 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
             now_ns=20_000,
             ok=False,
             error_summary="publisher_down",
-        )
+    )
         is None
     )
     assert loop_probe.calls == []
+
+
+def test_build_grouped_node_wraps_hyperliquid_data_factory_for_quote_feed_result_ingress(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {
+        "data_factories": [],
+        "strategies": [],
+    }
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+        def configure_quote_feed_runtime(self, *, supervisor, control_emitter) -> None:
+            self.quote_feed_supervisor = supervisor
+            self.quote_feed_control_emitter = control_emitter
+
+        def quote_feed_claim_specs(self) -> tuple[QuoteFeedClaimSpec, ...]:
+            return (
+                QuoteFeedClaimSpec(
+                    feed_identity=QuoteFeedIdentity(
+                        scope="hyperliquid.xyz.main",
+                        instrument_id=self.config.maker_instrument_id,
+                        topic="maker_quote_ticks",
+                    ),
+                    claimant_id=self.config.external_strategy_id,
+                    unusable_after_ms=3_000,
+                    blocker_key="hyperliquid.xyz.main",
+                ),
+            )
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured["strategies"].append(strategy),
+            )
+
+        def add_data_client_factory(self, venue, factory) -> None:
+            captured["data_factories"].append((venue, factory))
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            captured["build_called"] = True
+
+    attached: dict[str, object] = {}
+
+    class _HyperliquidFactory:
+        @staticmethod
+        def create(**_kwargs):
+            class _Client:
+                def set_quote_feed_result_ingress(self, ingress) -> None:
+                    attached["ingress"] = ingress
+
+            return _Client()
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(run_node, "HyperliquidLiveDataClientFactory", _HyperliquidFactory)
+    _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+            data_clients={"HYPERLIQUID": object()},
+            exec_clients={},
+            data_factories={"HYPERLIQUID": _HyperliquidFactory},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_register_cash_borrowing_venues", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_profile_account_projection_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_reference_balance_snapshot_provider", lambda **_kwargs: None)
+
+    run_node.build_grouped_node(
+        (
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_maker",
+                param_set="equities_maker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_taker",
+                param_set="equities_taker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-TAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+        ),
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    assert captured["build_called"] is True
+    assert len(captured["data_factories"]) == 1
+    venue, factory = captured["data_factories"][0]
+    assert venue == "HYPERLIQUID"
+    assert factory is not _HyperliquidFactory
+
+    factory.create(
+        loop=None,
+        name="hyperliquid",
+        config=SimpleNamespace(),
+        msgbus=None,
+        cache=None,
+        clock=None,
+    )
+
+    assert callable(attached["ingress"])
 
 
 def test_attach_quote_feed_runtime_keeps_non_node_scoped_reference_feed_live_on_start_and_stop() -> None:
@@ -3794,6 +3923,275 @@ def test_schedule_quote_feed_result_on_node_loop_ignores_runtime_error() -> None
 
     assert result is None
     assert ingress_calls == []
+
+
+def test_schedule_quote_feed_result_on_node_loop_preserves_extra_result_payload() -> None:
+    ingress_calls: list[dict[str, object]] = []
+
+    class _LoopProbe:
+        def is_closed(self) -> bool:
+            return False
+
+        def call_soon_threadsafe(self, callback) -> None:
+            callback()
+
+    node = SimpleNamespace(get_event_loop=lambda: _LoopProbe())
+
+    result = run_node._schedule_quote_feed_result_on_node_loop(
+        node=node,
+        ingress=lambda **kwargs: ingress_calls.append(kwargs),
+        now_ns=10_000,
+        ok=True,
+        error_summary=None,
+        instrument_id="BTC-USD-PERP.HYPERLIQUID",
+        status="replayed",
+        cache_refreshed=True,
+        result={"status": "replayed"},
+    )
+
+    assert result is None
+    assert ingress_calls == [
+        {
+            "now_ns": 10_000,
+            "ok": True,
+            "error_summary": None,
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "status": "replayed",
+            "cache_refreshed": True,
+            "result": {"status": "replayed"},
+        },
+    ]
+
+
+def test_build_quote_feed_result_ingress_fans_out_to_matching_feed_identities() -> None:
+    instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    first_feed = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=instrument_id,
+        topic="maker_quote_ticks",
+    )
+    second_feed = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.backup",
+        instrument_id=instrument_id,
+        topic="maker_quote_ticks",
+    )
+    ingress_calls: list[tuple[QuoteFeedIdentity, dict[str, object]]] = []
+
+    control_emitter = run_node.QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    control_emitter.register_result_ingress(
+        first_feed,
+        lambda **kwargs: ingress_calls.append((first_feed, kwargs)),
+    )
+    control_emitter.register_result_ingress(
+        second_feed,
+        lambda **kwargs: ingress_calls.append((second_feed, kwargs)),
+    )
+
+    ingress = run_node._build_quote_feed_result_ingress(
+        control_emitter=control_emitter,
+        claimed_feed_identities_by_instrument={
+            instrument_id.value: (first_feed, second_feed),
+        },
+    )
+
+    result = ingress(
+        now_ns=10_000,
+        ok=False,
+        error_summary="transport_unhealthy",
+        instrument_id=instrument_id.value,
+        status="transport_unhealthy",
+        cache_refreshed=False,
+        result={"status": "transport_unhealthy"},
+    )
+
+    assert result is None
+    assert ingress_calls == [
+        (
+            first_feed,
+            {
+                "now_ns": 10_000,
+                "ok": False,
+                "error_summary": "transport_unhealthy",
+                "instrument_id": instrument_id.value,
+                "status": "transport_unhealthy",
+                "cache_refreshed": False,
+                "result": {"status": "transport_unhealthy"},
+            },
+        ),
+        (
+            second_feed,
+            {
+                "now_ns": 10_000,
+                "ok": False,
+                "error_summary": "transport_unhealthy",
+                "instrument_id": instrument_id.value,
+                "status": "transport_unhealthy",
+                "cache_refreshed": False,
+                "result": {"status": "transport_unhealthy"},
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_emit_quote_feed_command_reset_prefers_live_client_recovery_and_preserves_result_payload() -> None:
+    feed_identity = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+        topic="maker_quote_ticks",
+    )
+    recovered: list[InstrumentId] = []
+    ingress_calls: list[dict[str, object]] = []
+
+    async def recover_quote_ticks(instrument_id: InstrumentId) -> dict[str, object]:
+        recovered.append(instrument_id)
+        return {
+            "instrument_id": instrument_id.value,
+            "ok": True,
+            "status": "replayed",
+            "error_summary": None,
+            "cache_refreshed": True,
+        }
+
+    node = SimpleNamespace(
+        get_event_loop=lambda: asyncio.get_running_loop(),
+        kernel=SimpleNamespace(
+            data_engine=SimpleNamespace(
+                execute=lambda command: (_ for _ in ()).throw(
+                    AssertionError(f"unexpected command={command!r}"),
+                ),
+                routing_map={
+                    feed_identity.instrument_id.venue: SimpleNamespace(
+                        recover_quote_ticks=recover_quote_ticks,
+                    ),
+                },
+            ),
+            clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        ),
+    )
+
+    control_emitter: run_node.QuoteFeedControlEmitter | None = None
+
+    def sink(command) -> None:
+        run_node._emit_quote_feed_command(
+            node=node,
+            command=command,
+            control_emitter=control_emitter,
+        )
+
+    control_emitter = run_node.QuoteFeedControlEmitter(
+        node_scoped_id="aapl_tradexyz",
+        sink=sink,
+    )
+    control_emitter.register_result_ingress(
+        feed_identity,
+        lambda **kwargs: ingress_calls.append(kwargs),
+    )
+
+    control_emitter.reset(feed_identity)
+    await asyncio.sleep(0)
+
+    assert recovered == [feed_identity.instrument_id]
+    assert ingress_calls == [
+        {
+            "now_ns": 123_456_789,
+            "ok": True,
+            "error_summary": None,
+            "instrument_id": feed_identity.instrument_id.value,
+            "status": "replayed",
+            "cache_refreshed": True,
+            "result": {
+                "instrument_id": feed_identity.instrument_id.value,
+                "ok": True,
+                "status": "replayed",
+                "error_summary": None,
+                "cache_refreshed": True,
+            },
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_emit_quote_feed_command_reset_does_not_duplicate_result_when_live_client_emits_ingress() -> None:
+    feed_identity = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+        topic="maker_quote_ticks",
+    )
+    ingress_calls: list[dict[str, object]] = []
+    result_payload = {
+        "instrument_id": feed_identity.instrument_id.value,
+        "ok": True,
+        "status": "replayed",
+        "error_summary": None,
+        "cache_refreshed": True,
+    }
+
+    live_client = SimpleNamespace()
+
+    async def recover_quote_ticks(instrument_id: InstrumentId) -> dict[str, object]:
+        live_client._quote_feed_result_ingress(
+            now_ns=123_456_789,
+            ok=True,
+            error_summary=None,
+            instrument_id=instrument_id.value,
+            status="replayed",
+            cache_refreshed=True,
+            result=dict(result_payload),
+        )
+        return dict(result_payload)
+
+    live_client.recover_quote_ticks = recover_quote_ticks
+    live_client.has_quote_feed_result_ingress = lambda: True
+
+    node = SimpleNamespace(
+        get_event_loop=lambda: asyncio.get_running_loop(),
+        kernel=SimpleNamespace(
+            data_engine=SimpleNamespace(
+                execute=lambda command: (_ for _ in ()).throw(
+                    AssertionError(f"unexpected command={command!r}"),
+                ),
+                routing_map={feed_identity.instrument_id.venue: live_client},
+            ),
+            clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        ),
+    )
+
+    control_emitter: run_node.QuoteFeedControlEmitter | None = None
+
+    def sink(command) -> None:
+        run_node._emit_quote_feed_command(
+            node=node,
+            command=command,
+            control_emitter=control_emitter,
+        )
+
+    control_emitter = run_node.QuoteFeedControlEmitter(
+        node_scoped_id="aapl_tradexyz",
+        sink=sink,
+    )
+    control_emitter.register_result_ingress(
+        feed_identity,
+        lambda **kwargs: ingress_calls.append(kwargs),
+    )
+    live_client._quote_feed_result_ingress = (
+        lambda **kwargs: control_emitter.ingest_result(feed_identity, **kwargs)
+    )
+
+    control_emitter.reset(feed_identity)
+    await asyncio.sleep(0)
+
+    assert ingress_calls == [
+        {
+            "now_ns": 123_456_789,
+            "ok": True,
+            "error_summary": None,
+            "instrument_id": feed_identity.instrument_id.value,
+            "status": "replayed",
+            "cache_refreshed": True,
+            "result": dict(result_payload),
+        },
+    ]
 
 
 def test_build_node_shared_recovery_preserves_real_strategy_on_quote_tick_delivery(

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -140,6 +141,83 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
         # Assert
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
         ws_client.subscribe_quotes.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_recover_quote_subscription_refreshes_cache_before_replay(
+    data_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    ws_client.recover_quote_subscription = AsyncMock(
+        side_effect=[
+            ("cache_miss", False, "Instrument not found in cache: BTC-USD-PERP.HYPERLIQUID"),
+            ("replayed", True, None),
+        ],
+    )
+
+    refreshed_instruments = [
+        MagicMock(name="refreshed_instrument_1"),
+        MagicMock(name="refreshed_instrument_2"),
+    ]
+    instrument_provider.instruments_pyo3.return_value = refreshed_instruments
+
+    await client._connect()
+    try:
+        result = await client.recover_quote_subscription(
+            InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        )
+
+        assert result["ok"] is True
+        assert result["status"] == "replayed"
+        assert result["cache_refreshed"] is True
+        instrument_provider.initialize.assert_any_await(reload=True)
+        ws_client.cache_instruments.assert_called_once_with(refreshed_instruments)
+        assert http_client.cache_instrument.call_count >= len(refreshed_instruments)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_recover_quote_subscription_reports_transport_result(
+    data_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    ws_client.recover_quote_subscription = AsyncMock(
+        return_value=("transport_unhealthy", False, "transport inactive"),
+    )
+    result_ingress = MagicMock()
+    client.set_quote_feed_result_ingress(result_ingress)
+
+    await client._connect()
+    try:
+        result = await client.recover_quote_subscription(
+            InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        )
+
+        assert result == {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "ok": False,
+            "status": "transport_unhealthy",
+            "error_summary": "transport inactive",
+            "cache_refreshed": False,
+        }
+        result_ingress.assert_called_once()
+        assert result_ingress.call_args.kwargs["result"] == result
+        assert result_ingress.call_args.kwargs["instrument_id"] == "BTC-USD-PERP.HYPERLIQUID"
+        assert result_ingress.call_args.kwargs["status"] == "transport_unhealthy"
+        assert result_ingress.call_args.kwargs["cache_refreshed"] is False
+        assert result_ingress.call_args.kwargs["ok"] is False
+        assert result_ingress.call_args.kwargs["error_summary"] == "transport inactive"
     finally:
         await client._disconnect()
 

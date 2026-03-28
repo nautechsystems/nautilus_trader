@@ -5,6 +5,7 @@ Run a live Equities trading node using the canonical equities strategy spec.
 
 from __future__ import annotations
 
+import asyncio
 import argparse
 import inspect
 import logging
@@ -56,6 +57,10 @@ from flux.strategies.shared.equities_arb.reference_balances import (
     get_cached_ibkr_reference_balance_provider,
 )
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
+from nautilus_trader.adapters.hyperliquid.factories import (
+    wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress,
+)
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
@@ -325,7 +330,8 @@ def _attach_quote_feed_runtime(
                 now_ns,
                 ok,
                 error_summary=None,
-                feed_identity=claim_spec.feed_identity: supervisor.ingest_recovery_result(
+                feed_identity=claim_spec.feed_identity,
+                **_result: supervisor.ingest_recovery_result(
                     feed_identity,
                     now_ns=now_ns,
                     ok=ok,
@@ -342,6 +348,102 @@ def _attach_quote_feed_runtime(
             unsubscribe=unsubscribe,
             blocker_key=claim_spec.blocker_key,
         )
+
+
+def _quote_feed_result_instrument_key(instrument_id: Any) -> str | None:
+    if instrument_id is None:
+        return None
+    value = getattr(instrument_id, "value", None)
+    if value is not None:
+        text = str(value).strip()
+        return text or None
+    text = str(instrument_id).strip()
+    return text or None
+
+
+def _node_scoped_quote_feed_identities_by_instrument(
+    strategies: Sequence[Any],
+) -> dict[str, tuple[Any, ...]]:
+    claimed_feed_identities: dict[str, list[Any]] = {}
+
+    for strategy in strategies:
+        claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
+        if not callable(claim_specs):
+            continue
+
+        for claim_spec in claim_specs():
+            if not claim_spec.node_scoped_lifecycle:
+                continue
+
+            instrument_key = _quote_feed_result_instrument_key(claim_spec.feed_identity.instrument_id)
+            if instrument_key is None:
+                continue
+
+            feed_identities = claimed_feed_identities.setdefault(instrument_key, [])
+            if claim_spec.feed_identity not in feed_identities:
+                feed_identities.append(claim_spec.feed_identity)
+
+    return {
+        instrument_key: tuple(feed_identities)
+        for instrument_key, feed_identities in claimed_feed_identities.items()
+    }
+
+
+def _build_quote_feed_result_ingress(
+    *,
+    control_emitter: QuoteFeedControlEmitter,
+    claimed_feed_identities_by_instrument: dict[str, tuple[Any, ...]],
+) -> Any:
+    def _ingest_quote_feed_result(
+        *,
+        now_ns: int,
+        ok: bool,
+        error_summary: str | None = None,
+        instrument_id: Any = None,
+        **extra: Any,
+    ) -> Any:
+        instrument_key = _quote_feed_result_instrument_key(instrument_id)
+        if instrument_key is None:
+            return None
+
+        feed_identities = claimed_feed_identities_by_instrument.get(instrument_key)
+        if not feed_identities:
+            return None
+
+        extra_payload = dict(extra)
+        extra_payload["instrument_id"] = instrument_key
+        last_result = None
+        for feed_identity in feed_identities:
+            last_result = control_emitter.ingest_result(
+                feed_identity,
+                now_ns=now_ns,
+                ok=ok,
+                error_summary=error_summary,
+                **extra_payload,
+            )
+        return last_result
+
+    return _ingest_quote_feed_result
+
+
+def _wrap_quote_feed_result_factory(
+    *,
+    factory: type[Any],
+    control_emitter: QuoteFeedControlEmitter,
+    claimed_feed_identities_by_instrument: dict[str, tuple[Any, ...]],
+) -> type[Any]:
+    if factory is not HyperliquidLiveDataClientFactory:
+        return factory
+    if not claimed_feed_identities_by_instrument:
+        return factory
+
+    return wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress(
+        factory_cls=factory,
+        quote_feed_result_ingress=_build_quote_feed_result_ingress(
+            control_emitter=control_emitter,
+            claimed_feed_identities_by_instrument=claimed_feed_identities_by_instrument,
+        ),
+    )
 
 
 def _execute_quote_feed_subscription(
@@ -376,6 +478,7 @@ def _emit_quote_feed_command(
     *,
     node: TradingNode,
     command: Any,
+    control_emitter: QuoteFeedControlEmitter | None = None,
 ) -> None:
     action = str(getattr(command, "action", "")).strip().lower()
     if action == "subscribe":
@@ -393,6 +496,54 @@ def _emit_quote_feed_command(
         )
         return
     if action != "reset":
+        return
+    instrument_id = command.feed_identity.instrument_id
+    data_engine = getattr(node.kernel, "data_engine", None)
+    routing_map = getattr(data_engine, "routing_map", None)
+    live_client = routing_map.get(instrument_id.venue) if hasattr(routing_map, "get") else None
+    recover_quote_ticks = getattr(live_client, "recover_quote_ticks", None)
+    has_quote_feed_result_ingress = getattr(live_client, "has_quote_feed_result_ingress", None)
+    emits_quote_feed_results = (
+        bool(has_quote_feed_result_ingress())
+        if callable(has_quote_feed_result_ingress)
+        else callable(getattr(live_client, "_quote_feed_result_ingress", None))
+    )
+    if callable(recover_quote_ticks) and control_emitter is not None:
+        async def _recover_live_quote_feed() -> None:
+            try:
+                result = await recover_quote_ticks(instrument_id)
+            except Exception as exc:
+                result = {
+                    "instrument_id": instrument_id.value,
+                    "ok": False,
+                    "status": "recover_failed",
+                    "error_summary": f"{type(exc).__name__}: {exc}",
+                }
+            else:
+                if emits_quote_feed_results:
+                    return
+
+            payload = dict(result) if isinstance(result, dict) else {}
+            extra_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"ok", "error_summary"}
+            }
+            extra_payload.setdefault("result", dict(payload))
+            control_emitter.ingest_result(
+                command.feed_identity,
+                now_ns=node.kernel.clock.timestamp_ns(),
+                ok=bool(payload.get("ok", False)),
+                error_summary=payload.get("error_summary"),
+                **extra_payload,
+            )
+
+        loop = node.get_event_loop()
+        create_task = getattr(loop, "create_task", None)
+        if callable(create_task):
+            create_task(_recover_live_quote_feed())
+        else:  # pragma: no cover - defensive fallback
+            asyncio.create_task(_recover_live_quote_feed())
         return
     with suppress(Exception):
         _execute_quote_feed_subscription(
@@ -414,6 +565,7 @@ def _schedule_quote_feed_result_on_node_loop(
     now_ns: int,
     ok: bool,
     error_summary: str | None = None,
+    **extra: Any,
 ) -> Any:
     loop = node.get_event_loop()
     is_closed = getattr(loop, "is_closed", None)
@@ -427,6 +579,7 @@ def _schedule_quote_feed_result_on_node_loop(
         now_ns=now_ns,
         ok=ok,
         error_summary=error_summary,
+        **extra,
     )
     if callable(call_soon_threadsafe):
         try:
@@ -1032,16 +1185,25 @@ def _build_node_for_configs(
     )
 
     node = TradingNode(config=config_node)
+    quote_feed_control_emitter: QuoteFeedControlEmitter | None = None
+
+    def _quote_feed_command_sink(command: Any) -> None:
+        _emit_quote_feed_command(
+            node=node,
+            command=command,
+            control_emitter=quote_feed_control_emitter,
+        )
+
     quote_feed_control_emitter = QuoteFeedControlEmitter(
         node_scoped_id=node_scoped_id,
-        sink=partial(
-            _emit_quote_feed_command,
-            node=node,
-        ),
+        sink=_quote_feed_command_sink,
         result_scheduler=partial(
             _schedule_quote_feed_result_on_node_loop,
             node=node,
         ),
+    )
+    claimed_feed_identities_by_instrument = _node_scoped_quote_feed_identities_by_instrument(
+        attached_strategies,
     )
     for strategy in attached_strategies:
         _attach_quote_feed_runtime(
@@ -1052,7 +1214,14 @@ def _build_node_for_configs(
     for strategy in attached_strategies:
         node.trader.add_strategy(strategy)
     for venue, factory in strategy_venues.data_factories.items():
-        node.add_data_client_factory(venue, factory)
+        node.add_data_client_factory(
+            venue,
+            _wrap_quote_feed_result_factory(
+                factory=factory,
+                control_emitter=quote_feed_control_emitter,
+                claimed_feed_identities_by_instrument=claimed_feed_identities_by_instrument,
+            ),
+        )
     for venue, factory in strategy_venues.exec_factories.items():
         node.add_exec_client_factory(venue, factory)
     node.build()

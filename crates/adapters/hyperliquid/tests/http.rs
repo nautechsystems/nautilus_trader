@@ -22,6 +22,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidInfoRequestType,
     http::{
+        HyperliquidHttpClient,
         models::{
             HyperliquidFills, HyperliquidL2Book, PerpMeta, PerpMetaAndCtxs, SpotMeta,
             SpotMetaAndCtxs,
@@ -29,6 +30,7 @@ use nautilus_hyperliquid::{
         query::{InfoRequest, InfoRequestParams},
     },
 };
+use nautilus_model::instruments::Instrument;
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -455,6 +457,25 @@ async fn test_user_fills_request_includes_user_parameter() {
         "userFills"
     );
     assert_eq!(request_body.get("user").unwrap().as_str().unwrap(), user);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_recovery_request_instruments_supports_cache_rehydrate() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::new(false, None, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+
+    let instruments = client.request_instruments().await.unwrap();
+
+    assert!(
+        instruments
+            .iter()
+            .any(|instrument| instrument.id().to_string() == "BTC-USD-PERP.HYPERLIQUID"),
+        "expected request_instruments() to return a BTC perp for recovery cache refresh",
+    );
 }
 
 fn create_test_client(addr: &SocketAddr) -> TestHttpClient {

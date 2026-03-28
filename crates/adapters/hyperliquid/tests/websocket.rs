@@ -741,6 +741,201 @@ async fn test_subscribe_quotes() {
 
 #[rstest]
 #[tokio::test]
+async fn test_quote_recovery_cache_miss_is_explicit() {
+    let client = connect_client("ws://127.0.0.1:9999/ws", None).await;
+
+    let result = client
+        .recover_quote_subscription(InstrumentId::from("DOGE-USD-PERP.HYPERLIQUID"))
+        .await;
+
+    assert_eq!(result.status, "cache_miss");
+    assert!(!result.ok);
+    assert!(
+        result
+            .error_summary
+            .as_deref()
+            .is_some_and(|summary: &str| summary.contains("Instrument not found")),
+        "expected explicit cache-miss summary, got {result:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_quote_recovery_replays_desired_subscription_on_healthy_transport() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    state.clear_subscription_events().await;
+
+    let result = client.recover_quote_subscription(instrument_id).await;
+
+    assert_eq!(result.status, "replayed");
+    assert!(result.ok, "expected replay-first recovery result, got {result:?}");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(
+        state.total_connection_count.load(Ordering::Relaxed),
+        1,
+        "healthy replay-first recovery should not force a reconnect",
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_quote_recovery_duplicate_resets_are_idempotent() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    state.clear_subscription_events().await;
+    state.drop_next_connection.store(false, Ordering::Relaxed);
+
+    let first = client.recover_quote_subscription(instrument_id).await;
+    let second = client.recover_quote_subscription(instrument_id).await;
+
+    assert_eq!(first.status, "replayed");
+    assert_eq!(second.status, "already_inflight");
+    assert!(second.ok, "duplicate in-flight reset should be idempotent");
+
+    let events = wait_for_subscription_events(&state, Duration::from_secs(2), |events| {
+        events.iter().filter(|(t, ok)| t == "bbo" && *ok).count() >= 1
+    })
+    .await;
+    let replay_count = events.iter().filter(|(t, ok)| t == "bbo" && *ok).count();
+
+    assert_eq!(
+        replay_count, 1,
+        "duplicate recovery attempts should only queue one replay, events={events:?}",
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_quote_recovery_duplicate_resets_stay_blocked_until_quote_resolution() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    state.clear_subscription_events().await;
+
+    let first = client.recover_quote_subscription(instrument_id).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let second = client.recover_quote_subscription(instrument_id).await;
+
+    assert_eq!(first.status, "replayed");
+    assert_eq!(second.status, "already_inflight");
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_user_events() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

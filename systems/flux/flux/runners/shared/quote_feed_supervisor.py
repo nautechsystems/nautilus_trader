@@ -127,6 +127,7 @@ class QuoteFeedControlEmitter:
         now_ns: int,
         ok: bool,
         error_summary: str | None = None,
+        **extra: Any,
     ) -> Any:
         ingress = self._result_ingresses.get(feed_identity)
         if not callable(ingress):
@@ -137,11 +138,13 @@ class QuoteFeedControlEmitter:
                 now_ns=now_ns,
                 ok=ok,
                 error_summary=error_summary,
+                **extra,
             )
         return ingress(
             now_ns=now_ns,
             ok=ok,
             error_summary=error_summary,
+            **extra,
         )
 
 
