@@ -42,6 +42,15 @@ class SnapshotAuthorityState(str, Enum):
     STALE = "stale"
 
 
+class ControllerRunMode(str, Enum):
+    SHADOW = "shadow"
+    ACTIVE = "active"
+
+
+class ControllerIngressPolicy(str, Enum):
+    SINGLE_HOST_CANARY = "single_host_canary"
+
+
 def _coerce_venue_activity_origin(
     value: VenueActivityOrigin | str,
     *,
@@ -232,7 +241,9 @@ class ControllerSnapshotAuthority:
 
 __all__ = (
     "ControllerCrashRecoveryAction",
+    "ControllerIngressPolicy",
     "ControllerOwnershipState",
+    "ControllerRunMode",
     "ControllerSnapshotAuthority",
     "ExecutionLifecycleSemantics",
     "SnapshotAuthorityState",
