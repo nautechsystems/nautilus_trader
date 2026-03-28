@@ -378,13 +378,14 @@ Required environment variables:
 - `RITHMIC_PASSWORD`
 - `RITHMIC_SYSTEM_NAME`
 - `RITHMIC_ACCOUNT_ID` for execution clients
+- `RITHMIC_FCM_ID`
+- `RITHMIC_IB_ID`
 
 Optional environment variables:
 
 - `RITHMIC_PROFILE`
 - `RITHMIC_ENV`
-- `RITHMIC_FCM_ID`
-- `RITHMIC_IB_ID`
+
 - `RITHMIC_ALT_SERVER`
 - `RITHMIC_APP_NAME`
 - `RITHMIC_APP_VERSION`
