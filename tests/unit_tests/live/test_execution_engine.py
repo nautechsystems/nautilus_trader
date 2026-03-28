@@ -11,6 +11,7 @@ import pytest
 
 from flux.events import FluxBusPayload
 from flux.events import TOPIC_EXECUTION_ALERT
+from flux.execution.nautilus_adapter import ControllerManagedExecutionClientAdapter
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
@@ -73,6 +74,11 @@ from nautilus_trader.trading.strategy import Strategy
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+
+
+@pytest.fixture
+def event_loop(session_event_loop):
+    return session_event_loop
 
 
 class TestLiveExecutionEngine:
@@ -1805,6 +1811,40 @@ class TestLiveExecutionEngine:
         )
         assert snapshot.total_cached_order_count == 1
         assert snapshot.open_order_refs == ()
+
+    def test_reconcile_execution_state_uses_open_only_order_history_for_controller_managed_adapter(
+        self,
+    ):
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine.reconciliation_lookback_mins = 60
+
+        raw_client = self.client
+        order_commands = []
+        original_generate_order_status_reports = raw_client.generate_order_status_reports
+
+        async def capture_generate_order_status_reports(command):
+            order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        raw_client.generate_order_status_reports = capture_generate_order_status_reports
+
+        managed_client = ControllerManagedExecutionClientAdapter(
+            client=raw_client,
+            controller_scope_id="ibkr.hedge.main",
+            managed_instrument_ids={AUDUSD_SIM.id},
+            tracked_orders=(),
+        )
+        self.exec_engine.deregister_client(raw_client)
+        self.exec_engine.register_client(managed_client)
+        self.client = managed_client
+        self.exec_engine._startup_reconciliation_event.clear()
+
+        result = self.loop.run_until_complete(self.exec_engine.reconcile_execution_state())
+
+        assert result is True
+        assert managed_client.supports_startup_historical_order_status_reports is False
+        assert [command.instrument_id for command in order_commands] == [AUDUSD_SIM.id]
+        assert [command.open_only for command in order_commands] == [True]
 
     def test_should_cleanup_stale_startup_netting_positions_ignores_orders_proven_missing_at_venue(
         self,
