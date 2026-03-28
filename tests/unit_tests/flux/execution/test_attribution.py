@@ -119,3 +119,25 @@ def test_allocate_shared_netting_fill_rejects_mixed_sign_reservations() -> None:
                 ),
             ),
         )
+
+
+def test_allocate_shared_netting_fill_keeps_negative_reservation_sign_when_fill_qty_is_zero() -> None:
+    attribution = _load_attribution_module()
+
+    result = attribution.allocate_shared_netting_fill(
+        controller_scope_id="ibkr.hedge.main",
+        fill_qty="0",
+        reservations=(
+            attribution.AttributionReservation(
+                strategy_id="strategy-short",
+                reserved_qty="-5",
+                reservation_seq=1,
+            ),
+        ),
+    )
+
+    assert result.fill_qty == Decimal("0")
+    assert result.unattributed_qty == Decimal("0")
+    assert len(result.allocations) == 1
+    assert result.allocations[0].attributed_qty == Decimal("0")
+    assert result.allocations[0].remaining_reservation_qty == Decimal("-5")

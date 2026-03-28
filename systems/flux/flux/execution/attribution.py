@@ -69,17 +69,18 @@ def allocate_shared_netting_fill(
         seen_reservation_seq.add(reservation.reservation_seq)
 
     remaining_fill_abs = abs(normalized_fill_qty)
-    fill_sign = Decimal("1") if normalized_fill_qty >= 0 else Decimal("-1")
+    fill_sign = _decimal_multiplier(normalized_fill_qty)
     allocations: list[AttributedFill] = []
     for reservation in normalized_reservations:
         reserved_abs = abs(reservation.reserved_qty)
         attributed_abs = min(remaining_fill_abs, reserved_abs)
         remaining_fill_abs -= attributed_abs
+        reservation_sign = _decimal_multiplier(reservation.reserved_qty)
         allocations.append(
             AttributedFill(
                 strategy_id=reservation.strategy_id,
                 attributed_qty=attributed_abs * fill_sign,
-                remaining_reservation_qty=(reserved_abs - attributed_abs) * fill_sign,
+                remaining_reservation_qty=(reserved_abs - attributed_abs) * reservation_sign,
                 reservation_seq=reservation.reservation_seq,
             )
         )
@@ -105,6 +106,15 @@ def _decimal_sign(value: Decimal) -> int:
     if value < 0:
         return -1
     return 0
+
+
+def _decimal_multiplier(value: Decimal) -> Decimal:
+    sign = _decimal_sign(value)
+    if sign > 0:
+        return Decimal("1")
+    if sign < 0:
+        return Decimal("-1")
+    return Decimal("0")
 
 
 def _required_text(value: str, field_name: str) -> str:
