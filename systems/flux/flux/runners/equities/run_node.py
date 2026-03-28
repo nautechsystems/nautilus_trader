@@ -361,10 +361,11 @@ def _quote_feed_result_instrument_key(instrument_id: Any) -> str | None:
     return text or None
 
 
-def _node_scoped_quote_feed_identities_by_instrument(
+def _node_scoped_quote_feed_result_routes(
     strategies: Sequence[Any],
-) -> dict[str, tuple[Any, ...]]:
-    claimed_feed_identities: dict[str, list[Any]] = {}
+) -> dict[str, Any]:
+    claimed_feed_identities: dict[str, Any] = {}
+    ambiguous_instrument_keys: set[str] = set()
 
     for strategy in strategies:
         claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
@@ -379,20 +380,25 @@ def _node_scoped_quote_feed_identities_by_instrument(
             if instrument_key is None:
                 continue
 
-            feed_identities = claimed_feed_identities.setdefault(instrument_key, [])
-            if claim_spec.feed_identity not in feed_identities:
-                feed_identities.append(claim_spec.feed_identity)
+            if instrument_key in ambiguous_instrument_keys:
+                continue
 
-    return {
-        instrument_key: tuple(feed_identities)
-        for instrument_key, feed_identities in claimed_feed_identities.items()
-    }
+            existing_feed_identity = claimed_feed_identities.get(instrument_key)
+            if existing_feed_identity is None:
+                claimed_feed_identities[instrument_key] = claim_spec.feed_identity
+                continue
+
+            if existing_feed_identity != claim_spec.feed_identity:
+                claimed_feed_identities.pop(instrument_key, None)
+                ambiguous_instrument_keys.add(instrument_key)
+
+    return claimed_feed_identities
 
 
 def _build_quote_feed_result_ingress(
     *,
     control_emitter: QuoteFeedControlEmitter,
-    claimed_feed_identities_by_instrument: dict[str, tuple[Any, ...]],
+    claimed_feed_identities_by_instrument: dict[str, Any],
 ) -> Any:
     def _ingest_quote_feed_result(
         *,
@@ -406,22 +412,19 @@ def _build_quote_feed_result_ingress(
         if instrument_key is None:
             return None
 
-        feed_identities = claimed_feed_identities_by_instrument.get(instrument_key)
-        if not feed_identities:
+        feed_identity = claimed_feed_identities_by_instrument.get(instrument_key)
+        if feed_identity is None:
             return None
 
         extra_payload = dict(extra)
         extra_payload["instrument_id"] = instrument_key
-        last_result = None
-        for feed_identity in feed_identities:
-            last_result = control_emitter.ingest_result(
-                feed_identity,
-                now_ns=now_ns,
-                ok=ok,
-                error_summary=error_summary,
-                **extra_payload,
-            )
-        return last_result
+        return control_emitter.ingest_result(
+            feed_identity,
+            now_ns=now_ns,
+            ok=ok,
+            error_summary=error_summary,
+            **extra_payload,
+        )
 
     return _ingest_quote_feed_result
 
@@ -430,7 +433,7 @@ def _wrap_quote_feed_result_factory(
     *,
     factory: type[Any],
     control_emitter: QuoteFeedControlEmitter,
-    claimed_feed_identities_by_instrument: dict[str, tuple[Any, ...]],
+    claimed_feed_identities_by_instrument: dict[str, Any],
 ) -> type[Any]:
     if factory is not HyperliquidLiveDataClientFactory:
         return factory
@@ -1202,7 +1205,7 @@ def _build_node_for_configs(
             node=node,
         ),
     )
-    claimed_feed_identities_by_instrument = _node_scoped_quote_feed_identities_by_instrument(
+    claimed_feed_identities_by_instrument = _node_scoped_quote_feed_result_routes(
         attached_strategies,
     )
     for strategy in attached_strategies:

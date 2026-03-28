@@ -3963,7 +3963,7 @@ def test_schedule_quote_feed_result_on_node_loop_preserves_extra_result_payload(
     ]
 
 
-def test_build_quote_feed_result_ingress_fans_out_to_matching_feed_identities() -> None:
+def test_node_scoped_quote_feed_result_routes_drop_ambiguous_same_instrument_feeds() -> None:
     instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
     first_feed = QuoteFeedIdentity(
         scope="hyperliquid.xyz.main",
@@ -3975,22 +3975,46 @@ def test_build_quote_feed_result_ingress_fans_out_to_matching_feed_identities() 
         instrument_id=instrument_id,
         topic="maker_quote_ticks",
     )
-    ingress_calls: list[tuple[QuoteFeedIdentity, dict[str, object]]] = []
+
+    class _Strategy:
+        def quote_feed_claim_specs(self) -> tuple[QuoteFeedClaimSpec, ...]:
+            return (
+                QuoteFeedClaimSpec(
+                    feed_identity=first_feed,
+                    claimant_id="first",
+                    unusable_after_ms=3_000,
+                ),
+                QuoteFeedClaimSpec(
+                    feed_identity=second_feed,
+                    claimant_id="second",
+                    unusable_after_ms=3_000,
+                ),
+            )
+
+    result = run_node._node_scoped_quote_feed_result_routes((_Strategy(),))
+
+    assert result == {}
+
+
+def test_build_quote_feed_result_ingress_routes_unique_feed_identity() -> None:
+    instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    feed_identity = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=instrument_id,
+        topic="maker_quote_ticks",
+    )
+    ingress_calls: list[dict[str, object]] = []
 
     control_emitter = run_node.QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
     control_emitter.register_result_ingress(
-        first_feed,
-        lambda **kwargs: ingress_calls.append((first_feed, kwargs)),
-    )
-    control_emitter.register_result_ingress(
-        second_feed,
-        lambda **kwargs: ingress_calls.append((second_feed, kwargs)),
+        feed_identity,
+        lambda **kwargs: ingress_calls.append(kwargs),
     )
 
     ingress = run_node._build_quote_feed_result_ingress(
         control_emitter=control_emitter,
         claimed_feed_identities_by_instrument={
-            instrument_id.value: (first_feed, second_feed),
+            instrument_id.value: feed_identity,
         },
     )
 
@@ -4006,30 +4030,15 @@ def test_build_quote_feed_result_ingress_fans_out_to_matching_feed_identities() 
 
     assert result is None
     assert ingress_calls == [
-        (
-            first_feed,
-            {
-                "now_ns": 10_000,
-                "ok": False,
-                "error_summary": "transport_unhealthy",
-                "instrument_id": instrument_id.value,
-                "status": "transport_unhealthy",
-                "cache_refreshed": False,
-                "result": {"status": "transport_unhealthy"},
-            },
-        ),
-        (
-            second_feed,
-            {
-                "now_ns": 10_000,
-                "ok": False,
-                "error_summary": "transport_unhealthy",
-                "instrument_id": instrument_id.value,
-                "status": "transport_unhealthy",
-                "cache_refreshed": False,
-                "result": {"status": "transport_unhealthy"},
-            },
-        ),
+        {
+            "now_ns": 10_000,
+            "ok": False,
+            "error_summary": "transport_unhealthy",
+            "instrument_id": instrument_id.value,
+            "status": "transport_unhealthy",
+            "cache_refreshed": False,
+            "result": {"status": "transport_unhealthy"},
+        },
     ]
 
 
