@@ -2,7 +2,10 @@
 
 These notebooks are for local validation of the Rithmic shadow-port branch in a dedicated sandbox clone.
 
-They are not intended to run a production live `TradingNode` inside Jupyter. Use them for short smoke checks and exploratory validation only.
+> [!WARNING]
+>
+> These notebooks are not intended to run a production live `TradingNode` inside Jupyter. Use them for
+> short smoke checks and exploratory validation only.
 
 ## Intended workflow
 
@@ -44,9 +47,11 @@ test environments.
 
 Profile-scoped variables also work through `RITHMIC_PROFILE` plus matching `RITHMIC_{PROFILE}_*` names.
 
-For `RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION`, a temporary working fallback is already available
-if your credentials were not issued with app details. Users do not currently need to complete
-Rithmic conformance themselves unless told otherwise.
+> [!NOTE]
+>
+> For `RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION`, a temporary working fallback is already available
+> if your credentials were not issued with app details. Users do not currently need to complete
+> Rithmic conformance themselves unless told otherwise.
 
 If you need your own issued app credentials later, start here:
 [Rithmic API Request](https://www.rithmic.com/api-request).
@@ -54,11 +59,13 @@ If you need your own issued app credentials later, start here:
 `RITHMIC_PROFILE` is only a local namespace for those environment variables. The actual Rithmic
 connection values are still `SYSTEM_NAME`, `FCM_ID`, and `IB_ID`.
 
-Do not guess those broker-facing values from the firm name alone. Some connections use
-`paper_trading`, Apex uses `Apex`, and other Rithmic brokers can use non-obvious identifiers on
-both prop-firm accounts and standard demo/live accounts. The source of truth is the RTrader Pro
-desktop application under `File > User Profile`, where you should copy `System`, `FCM`, and `IB`
-exactly as shown.
+> [!NOTE]
+>
+> Do not guess those broker-facing values from the firm name alone. Some connections use
+> `paper_trading`, Apex uses `Apex`, and other Rithmic brokers can use non-obvious identifiers on
+> both prop-firm accounts and standard demo/live accounts. The source of truth is the RTrader Pro
+> desktop application under `File > User Profile`, where you should copy `System`, `FCM`, and `IB`
+> exactly as shown.
 
 ## Safety
 
@@ -95,3 +102,11 @@ Additional adapter caveats:
 - historical `TickBar` requests are currently limited to `1-TICK`; the adapter will reject larger historical `TickBar` requests rather than re-aggregate locally
 - native historical `N-TICK` `TickBar` support is expected to land later via upstream `rithmic-rs` support, at which point the adapter should pass it through unchanged
 - history replies can be truncated venue-side; treat each reply as a partial page, verify that the last returned bar actually reaches your requested end time, and if not, continue requesting from the last returned bar onward because the adapter does not auto-resume via `request_key` yet
+
+> [!WARNING]
+>
+> Historical API usage is plan-limited. On basic Rithmic plans, historical downloads are typically
+> capped at `20 GB` per month. Rithmic sends warning emails to the registered account email address
+> when API usage approaches the limit or when their access rules are being breached. Ignoring those
+> warning emails can lead to automatically triggered temporary restrictions, so monitor the
+> registered inbox during large backfills.
