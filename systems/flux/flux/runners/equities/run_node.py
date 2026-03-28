@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -329,6 +330,28 @@ def _attach_quote_feed_runtime(
             ),
             blocker_key=claim_spec.blocker_key,
         )
+
+
+def _schedule_quote_feed_result_on_node_loop(
+    *,
+    node: TradingNode,
+    ingress: Any,
+    now_ns: int,
+    ok: bool,
+    error_summary: str | None = None,
+) -> Any:
+    loop = node.get_event_loop()
+    call_soon_threadsafe = getattr(loop, "call_soon_threadsafe", None)
+    callback = partial(
+        ingress,
+        now_ns=now_ns,
+        ok=ok,
+        error_summary=error_summary,
+    )
+    if callable(call_soon_threadsafe):
+        call_soon_threadsafe(callback)
+        return None
+    return callback()
 
 
 def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
@@ -764,7 +787,6 @@ def _build_node_for_configs(
     attached_strategies: list[Any] = []
     reconciliation_instrument_ids: list[InstrumentId] = []
     quote_feed_supervisor = NodeQuoteFeedSupervisor()
-    quote_feed_control_emitter = QuoteFeedControlEmitter(node_scoped_id=node_scoped_id)
 
     for config in configs:
         strategy_cfg = _table(config, "strategy")
@@ -854,11 +876,6 @@ def _build_node_for_configs(
             config=venue_resolution_config,
             strategy_spec=strategy_spec,
         )
-        _attach_quote_feed_runtime(
-            strategy=strategy,
-            supervisor=quote_feed_supervisor,
-            control_emitter=quote_feed_control_emitter,
-        )
         attached_strategies.append(strategy)
 
     config_node = TradingNodeConfig(
@@ -932,6 +949,19 @@ def _build_node_for_configs(
     )
 
     node = TradingNode(config=config_node)
+    quote_feed_control_emitter = QuoteFeedControlEmitter(
+        node_scoped_id=node_scoped_id,
+        result_scheduler=partial(
+            _schedule_quote_feed_result_on_node_loop,
+            node=node,
+        ),
+    )
+    for strategy in attached_strategies:
+        _attach_quote_feed_runtime(
+            strategy=strategy,
+            supervisor=quote_feed_supervisor,
+            control_emitter=quote_feed_control_emitter,
+        )
     for strategy in attached_strategies:
         node.trader.add_strategy(strategy)
     for venue, factory in strategy_venues.data_factories.items():

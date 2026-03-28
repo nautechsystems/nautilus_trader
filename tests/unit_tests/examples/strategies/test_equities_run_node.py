@@ -3496,6 +3496,14 @@ def test_build_grouped_node_builds_one_shared_node_for_tradexyz_node_group(
 def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_to_siblings(
     monkeypatch,
 ) -> None:
+    class _LoopProbe:
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+
+        def call_soon_threadsafe(self, callback) -> None:
+            self.calls.append(callback)
+
+    loop_probe = _LoopProbe()
     captured: dict[str, object] = {"strategies": []}
     maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
     reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
@@ -3554,6 +3562,9 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
 
         def build(self) -> None:
             captured["build_called"] = True
+
+        def get_event_loop(self):
+            return loop_probe
 
     monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
     _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
@@ -3633,6 +3644,9 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
         ok=False,
         error_summary="transport_failed",
     )
+    assert len(loop_probe.calls) == 1
+    assert supervisor.snapshot(maker_feed).attempt_count == 0
+    loop_probe.calls.pop()()
     assert supervisor.snapshot(maker_feed).attempt_count == 1
     assert supervisor.snapshot(maker_feed).last_error_summary == "transport_failed"
 

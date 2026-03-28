@@ -75,9 +75,16 @@ class _QuoteFeedRecord:
 
 
 class QuoteFeedControlEmitter:
-    def __init__(self, *, node_scoped_id: str, sink: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        node_scoped_id: str,
+        sink: Any | None = None,
+        result_scheduler: Any | None = None,
+    ) -> None:
         self.node_scoped_id = str(node_scoped_id)
         self._sink = sink
+        self._result_scheduler = result_scheduler
         self.commands: list[QuoteFeedCommand] = []
         self._result_ingresses: dict[QuoteFeedIdentity, Any] = {}
 
@@ -120,6 +127,13 @@ class QuoteFeedControlEmitter:
         ingress = self._result_ingresses.get(feed_identity)
         if not callable(ingress):
             return None
+        if callable(self._result_scheduler):
+            return self._result_scheduler(
+                ingress=ingress,
+                now_ns=now_ns,
+                ok=ok,
+                error_summary=error_summary,
+            )
         return ingress(
             now_ns=now_ns,
             ok=ok,
