@@ -98,7 +98,7 @@ flowchart TD
 | `FuturesSpread`      | Deliverable futures spread.                                                      |
 | `CryptoFuture`       | Deliverable futures with crypto assets as underlying and settlement.             |
 | `CryptoPerpetual`    | Crypto perpetual futures (perpetual swap).                                       |
-| `PerpetualContract`  | Asset-class agnostic perpetual swap (any underlying).                            |
+| `PerpetualContract`  | Asset‑class agnostic perpetual swap (any underlying).                            |
 | `OptionContract`     | Generic option contract.                                                         |
 | `OptionSpread`       | Generic option spread.                                                           |
 | `CryptoOption`       | Crypto option contract.                                                          |
@@ -454,7 +454,7 @@ apply to all time-based aggregation (millisecond through year):
 |:------------------------------------|:-------|:--------------|:------------------------------------------------------------------------------------------------------------------------------------------------|
 | `time_bars_interval_type`           | `str`  | `"left-open"` | `"left-open"`: start excluded, end included. `"right-open"`: start included, end excluded.                                                      |
 | `time_bars_timestamp_on_close`      | `bool` | `True`        | When `True`, `ts_event` is the bar close time. When `False`, `ts_event` is the bar open time.                                                   |
-| `time_bars_skip_first_non_full_bar` | `bool` | `False`       | Skip emitting a bar when aggregation starts mid-interval, avoiding partial bars on startup.                                                     |
+| `time_bars_skip_first_non_full_bar` | `bool` | `False`       | Skip emitting a bar when aggregation starts mid‑interval, avoiding partial bars on startup.                                                     |
 | `time_bars_build_with_no_updates`   | `bool` | `True`        | When `True`, bars are emitted even if no market updates arrived during the interval.                                                            |
 | `time_bars_origin_offset`           | `dict` | `None`        | Maps `BarAggregation` types to `pd.Timedelta` offsets for shifting bar alignment (e.g., align to 09:30 market open).                            |
 | `time_bars_build_delay`             | `int`  | `0`           | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires. |

@@ -8199,6 +8199,8 @@ class OKXHttpClient:
         quote_quantity: bool | None = None,
         position_side: PositionSide | None = None,
         attach_algo_ords: list[dict[str, str]] | None = None,
+        px_usd: str | None = None,
+        px_vol: str | None = None,
     ) -> Any: ...
     async def place_algo_order(
         self,
@@ -8355,6 +8357,8 @@ class OKXWebSocketClient:
         quote_quantity: bool | None = None,
         position_side: PositionSide | None = None,
         attach_algo_ords: list[dict[str, str]] | None = None,
+        px_usd: str | None = None,
+        px_vol: str | None = None,
     ) -> None: ...
     async def cancel_order(
         self,
@@ -8373,6 +8377,8 @@ class OKXWebSocketClient:
         venue_order_id: VenueOrderId | None = None,
         price: Price | None = None,
         quantity: Quantity | None = None,
+        new_px_usd: str | None = None,
+        new_px_vol: str | None = None,
     ) -> None: ...
     async def batch_submit_orders(
         self,

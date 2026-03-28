@@ -22,7 +22,7 @@ use nautilus_common::{
 };
 use nautilus_model::{
     data::{greeks::OptionGreekValues, option_chain::OptionGreeks},
-    enums::OrderSide,
+    enums::{OrderSide, TimeInForce},
     identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
 };
 use nautilus_portfolio::portfolio::Portfolio;
@@ -56,6 +56,13 @@ fn create_initialized_strategy() -> DeltaNeutralVol {
     s.put_delta = -0.20;
     s.call_delta_ready = true;
     s.put_delta_ready = true;
+    s
+}
+
+fn create_entry_ready_strategy() -> DeltaNeutralVol {
+    let mut s = create_initialized_strategy();
+    s.call_mark_iv = Some(0.55);
+    s.put_mark_iv = Some(0.50);
     s
 }
 
@@ -523,4 +530,147 @@ fn test_delta_drift_crosses_threshold_boundary() {
 
     assert!((strategy.portfolio_delta() - 1.6).abs() < 1e-10);
     assert!(strategy.should_rehedge());
+}
+
+#[rstest]
+fn test_should_enter_strangle_true_when_ready() {
+    let mut strategy = create_entry_ready_strategy();
+    register_strategy(&mut strategy);
+    assert!(strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_when_config_disabled() {
+    let config = create_config().with_enter_strangle(false);
+    let mut s = DeltaNeutralVol::new(config);
+    s.call_instrument_id = Some(InstrumentId::from("BTC-USD-260327-75000-C.OKX"));
+    s.put_instrument_id = Some(InstrumentId::from("BTC-USD-260327-65000-P.OKX"));
+    s.call_delta = 0.20;
+    s.put_delta = -0.20;
+    s.call_delta_ready = true;
+    s.put_delta_ready = true;
+    s.call_mark_iv = Some(0.55);
+    s.put_mark_iv = Some(0.50);
+    assert!(!s.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_with_existing_call_position() {
+    let mut strategy = create_entry_ready_strategy();
+    strategy.call_position = -5.0;
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_with_existing_put_position() {
+    let mut strategy = create_entry_ready_strategy();
+    strategy.put_position = -5.0;
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_without_call_mark_iv() {
+    let mut strategy = create_initialized_strategy();
+    strategy.put_mark_iv = Some(0.50);
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_without_put_mark_iv() {
+    let mut strategy = create_initialized_strategy();
+    strategy.call_mark_iv = Some(0.55);
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_should_enter_strangle_false_without_greeks_initialized() {
+    let mut strategy = create_selected_strategy();
+    strategy.call_mark_iv = Some(0.55);
+    strategy.put_mark_iv = Some(0.50);
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[rstest]
+fn test_config_enter_strangle_default_true() {
+    let config = create_config();
+    assert!(config.enter_strangle);
+    assert_eq!(config.entry_iv_offset, 0.0);
+}
+
+#[rstest]
+fn test_config_entry_builder_methods() {
+    let config = create_config()
+        .with_enter_strangle(false)
+        .with_entry_iv_offset(0.05)
+        .with_entry_time_in_force(TimeInForce::Ioc);
+
+    assert!(!config.enter_strangle);
+    assert_eq!(config.entry_iv_offset, 0.05);
+    assert_eq!(config.entry_time_in_force, TimeInForce::Ioc);
+}
+
+#[rstest]
+fn test_on_option_greeks_stores_mark_iv() {
+    let mut strategy = create_selected_strategy();
+    let call_id = strategy.call_instrument_id.unwrap();
+
+    let greeks = OptionGreeks {
+        instrument_id: call_id,
+        greeks: OptionGreekValues {
+            delta: 0.25,
+            ..Default::default()
+        },
+        mark_iv: Some(0.55),
+        ..Default::default()
+    };
+
+    strategy.on_option_greeks(&greeks).unwrap();
+    assert_eq!(strategy.call_mark_iv, Some(0.55));
+}
+
+#[rstest]
+fn test_on_option_greeks_stores_put_mark_iv() {
+    let mut strategy = create_selected_strategy();
+    let put_id = strategy.put_instrument_id.unwrap();
+
+    let greeks = OptionGreeks {
+        instrument_id: put_id,
+        greeks: OptionGreekValues {
+            delta: -0.25,
+            ..Default::default()
+        },
+        mark_iv: Some(0.50),
+        ..Default::default()
+    };
+
+    strategy.on_option_greeks(&greeks).unwrap();
+    assert_eq!(strategy.put_mark_iv, Some(0.50));
+}
+
+#[rstest]
+fn test_on_option_greeks_preserves_mark_iv_when_none() {
+    let mut strategy = create_selected_strategy();
+    strategy.call_mark_iv = Some(0.55);
+    let call_id = strategy.call_instrument_id.unwrap();
+
+    let greeks = OptionGreeks {
+        instrument_id: call_id,
+        greeks: OptionGreekValues {
+            delta: 0.30,
+            ..Default::default()
+        },
+        mark_iv: None,
+        ..Default::default()
+    };
+
+    strategy.on_option_greeks(&greeks).unwrap();
+    assert_eq!(strategy.call_mark_iv, Some(0.55));
+    assert!((strategy.call_delta - 0.30).abs() < 1e-10);
+}
+
+#[rstest]
+fn test_mark_iv_default_none() {
+    let strategy = create_strategy();
+    assert!(strategy.call_mark_iv.is_none());
+    assert!(strategy.put_mark_iv.is_none());
 }

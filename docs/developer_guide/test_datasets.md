@@ -55,7 +55,7 @@ User-fetched datasets use the same metadata fields where they apply. They should
 |-----------------------|-----------------------------------------------------------------------|
 | `distribution`        | Must be `"user-fetch"`.                                               |
 | `fetch_method`        | How the user acquires the source data (API, web portal, CLI, etc.).   |
-| `fetch_reference`     | URL or document reference for the user-facing download flow.          |
+| `fetch_reference`     | URL or document reference for the user‑facing download flow.          |
 | `auth`                | Required credentials or entitlements, if any.                         |
 | `transform_version`   | Version of the local transform pipeline that builds the final files.   |
 | `redistribution`      | Short note describing redistribution limits for the dataset.          |

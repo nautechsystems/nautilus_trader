@@ -155,7 +155,7 @@ Betfair's `FILL_OR_KILL`, while `IOC` uses `FILL_OR_KILL` with `min_fill_size=0`
 
 | Feature            | Supported | Notes                                    |
 |--------------------|-----------|------------------------------------------|
-| Order Modification | ✓         | Limited to non-exposure changing fields. |
+| Order Modification | ✓         | Limited to non‑exposure changing fields. |
 | Bracket/OCO Orders | -         | *Not supported*.                         |
 | Iceberg Orders     | -         | *Not supported*.                         |
 
@@ -182,7 +182,7 @@ Betfair's `FILL_OR_KILL`, while `IOC` uses `FILL_OR_KILL` with `min_fill_size=0`
 |----------------------|-----------|----------------------------------------|
 | Query open orders    | ✓         | List all active bets.                  |
 | Query order history  | ✓         | Historical betting data.               |
-| Order status updates | ✓         | Real-time bet state changes.           |
+| Order status updates | ✓         | Real‑time bet state changes.           |
 | Trade history        | ✓         | Bet matching and settlement reports.   |
 
 ### Contingent orders
@@ -258,7 +258,7 @@ When `ignore_external_orders=True`, the client silently skips orders and fills n
 
 | Scenario                       | Description                                         |
 |--------------------------------|-----------------------------------------------------|
-| Unknown order in stream update | No venue-to-client order ID mapping exists.         |
+| Unknown order in stream update | No venue‑to‑client order ID mapping exists.         |
 | Unknown order in full image    | Order not found in cache during image sync.         |
 | Unknown fill in full image     | Fill does not match any known order during sync.    |
 
@@ -291,7 +291,7 @@ reconciliation do not throttle order placement:
 
 | Bucket  | Default | Endpoints                                            | Configurable                     |
 |---------|---------|------------------------------------------------------|----------------------------------|
-| General | 5/s     | Account state, reconciliation, keep-alive.           |                                  |
+| General | 5/s     | Account state, reconciliation, keep‑alive.           |                                  |
 | Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`.      | `order_request_rate_per_second`. |
 
 Order status and fill report queries retry once on `TOO_MANY_REQUESTS` errors
@@ -325,8 +325,8 @@ Real-time ticker data for a betting selection.
 | `instrument_id`       | str     | Nautilus instrument identifier. |
 | `last_traded_price`   | float   | Last matched price (odds).      |
 | `traded_volume`       | float   | Total matched volume.           |
-| `starting_price_near` | float   | Near-side BSP indicator.        |
-| `starting_price_far`  | float   | Far-side BSP indicator.         |
+| `starting_price_near` | float   | Near‑side BSP indicator.        |
+| `starting_price_far`  | float   | Far‑side BSP indicator.         |
 
 ### BetfairStartingPrice
 
@@ -349,7 +349,7 @@ Available for supported UK and Irish races.
 | `selection_id`     | int   | Betfair selection (runner) identifier.  |
 | `latitude`         | float | GPS latitude.                           |
 | `longitude`        | float | GPS longitude.                          |
-| `speed`            | float | Current speed in m/s (Doppler-derived). |
+| `speed`            | float | Current speed in m/s (Doppler‑derived). |
 | `progress`         | float | Distance to finish line in meters.      |
 | `stride_frequency` | float | Stride frequency in Hz.                 |
 
@@ -451,7 +451,7 @@ for data in parse_betfair_rcm_file("path/to/rcm_data.json"):
 | `certs_dir`               | `None`    | Directory containing Betfair SSL certificates for login. |
 | `instrument_config`       | `None`    | Optional `BetfairInstrumentProviderConfig` to scope available markets. |
 | `subscription_delay_secs` | `3`       | Delay (seconds) before initial market subscription request is sent. |
-| `keep_alive_secs`         | `36,000`  | Keep-alive interval (seconds) for the Betfair session. |
+| `keep_alive_secs`         | `36,000`  | Keep‑alive interval (seconds) for the Betfair session. |
 | `subscribe_race_data`     | `False`   | When `True`, subscribe to Race Change Messages (RCM) for live GPS tracking data. |
 | `stream_conflate_ms`      | `None`    | Explicit stream conflation interval in milliseconds (`0` disables conflation). |
 | `stream_heartbeat_ms`     | `5,000`    | Stream heartbeat interval in milliseconds (500-5000). `None` to omit. |

@@ -15,7 +15,10 @@
 
 //! Configuration for the delta-neutral volatility hedger.
 
-use nautilus_model::identifiers::{ClientId, InstrumentId, StrategyId};
+use nautilus_model::{
+    enums::TimeInForce,
+    identifiers::{ClientId, InstrumentId, StrategyId},
+};
 
 use crate::strategy::StrategyConfig;
 
@@ -50,6 +53,14 @@ pub struct DeltaNeutralVolConfig {
     pub rehedge_interval_secs: u64,
     /// Optional expiry date filter (e.g. "260327").
     pub expiry_filter: Option<String>,
+    /// Place strangle entry orders when Greeks are first initialized.
+    /// When false the strategy only hedges externally-entered positions.
+    pub enter_strangle: bool,
+    /// Implied volatility offset subtracted from mark IV for entry limit
+    /// price. A value of 0.02 sells 2 vol points below mark (more aggressive).
+    pub entry_iv_offset: f64,
+    /// Time-in-force for strangle entry orders.
+    pub entry_time_in_force: TimeInForce,
 }
 
 impl DeltaNeutralVolConfig {
@@ -75,6 +86,9 @@ impl DeltaNeutralVolConfig {
             rehedge_delta_threshold: 0.5,
             rehedge_interval_secs: 30,
             expiry_filter: None,
+            enter_strangle: true,
+            entry_iv_offset: 0.0,
+            entry_time_in_force: TimeInForce::Gtc,
         }
     }
 
@@ -115,6 +129,24 @@ impl DeltaNeutralVolConfig {
     }
 
     #[must_use]
+    pub fn with_enter_strangle(mut self, enter: bool) -> Self {
+        self.enter_strangle = enter;
+        self
+    }
+
+    #[must_use]
+    pub fn with_entry_iv_offset(mut self, offset: f64) -> Self {
+        self.entry_iv_offset = offset;
+        self
+    }
+
+    #[must_use]
+    pub fn with_entry_time_in_force(mut self, tif: TimeInForce) -> Self {
+        self.entry_time_in_force = tif;
+        self
+    }
+
+    #[must_use]
     pub fn with_strategy_id(mut self, strategy_id: StrategyId) -> Self {
         self.base.strategy_id = Some(strategy_id);
         self
@@ -143,6 +175,9 @@ impl DeltaNeutralVolConfig {
         rehedge_delta_threshold=0.5,
         rehedge_interval_secs=30,
         expiry_filter=None,
+        enter_strangle=true,
+        entry_iv_offset=0.0,
+        entry_time_in_force=TimeInForce::Gtc,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -157,13 +192,19 @@ impl DeltaNeutralVolConfig {
         rehedge_delta_threshold: f64,
         rehedge_interval_secs: u64,
         expiry_filter: Option<String>,
+        enter_strangle: bool,
+        entry_iv_offset: f64,
+        entry_time_in_force: TimeInForce,
     ) -> Self {
         let mut config = Self::new(option_family, hedge_instrument_id, client_id)
             .with_target_call_delta(target_call_delta)
             .with_target_put_delta(target_put_delta)
             .with_contracts(contracts)
             .with_rehedge_delta_threshold(rehedge_delta_threshold)
-            .with_rehedge_interval_secs(rehedge_interval_secs);
+            .with_rehedge_interval_secs(rehedge_interval_secs)
+            .with_enter_strangle(enter_strangle)
+            .with_entry_iv_offset(entry_iv_offset)
+            .with_entry_time_in_force(entry_time_in_force);
 
         if let Some(id) = strategy_id {
             config.base.strategy_id = Some(id);
@@ -223,5 +264,20 @@ impl DeltaNeutralVolConfig {
     #[getter]
     fn expiry_filter(&self) -> Option<&str> {
         self.expiry_filter.as_deref()
+    }
+
+    #[getter]
+    fn enter_strangle(&self) -> bool {
+        self.enter_strangle
+    }
+
+    #[getter]
+    fn entry_iv_offset(&self) -> f64 {
+        self.entry_iv_offset
+    }
+
+    #[getter]
+    fn entry_time_in_force(&self) -> TimeInForce {
+        self.entry_time_in_force
     }
 }

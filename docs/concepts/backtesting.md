@@ -1141,11 +1141,11 @@ for more sophisticated liquidity modeling.
 | `TwoTierFillModel`           | 10 contracts at best price, remainder one tick worse.   | Basic market depth simulation.               |
 | `ThreeTierFillModel`         | 50/30/20 contracts across three price levels.           | More realistic depth simulation.             |
 | `ProbabilisticFillModel`     | 50% chance best price, 50% chance one tick slippage.    | Randomized execution quality.                |
-| `SizeAwareFillModel`         | Different execution based on order size (≤10 vs >10).   | Size-dependent market impact.                |
+| `SizeAwareFillModel`         | Different execution based on order size (≤10 vs >10).   | Size‑dependent market impact.                |
 | `LimitOrderPartialFillModel` | Max 5 contracts fill per price touch.                   | Queue position via partial fills.            |
-| `MarketHoursFillModel`       | Wider spreads during low liquidity periods.             | Session-aware execution.                     |
-| `VolumeSensitiveFillModel`   | Liquidity based on recent trading volume.               | Volume-adaptive depth.                       |
-| `CompetitionAwareFillModel`  | Only percentage of visible liquidity available.         | Multi-participant competition.               |
+| `MarketHoursFillModel`       | Wider spreads during low liquidity periods.             | Session‑aware execution.                     |
+| `VolumeSensitiveFillModel`   | Liquidity based on recent trading volume.               | Volume‑adaptive depth.                       |
+| `CompetitionAwareFillModel`  | Only percentage of visible liquidity available.         | Multi‑participant competition.               |
 
 #### Configuring fill models
 
@@ -1312,7 +1312,7 @@ Also verify that:
 
 When you attach a venue to the engine, either for live trading or a backtest, you must pick one of three accounting modes by passing the `account_type` parameter:
 
-| Account type | Typical use-case                                 | What the engine locks                                                     |
+| Account type | Typical use‑case                                 | What the engine locks                                                     |
 | ------------ | ------------------------------------------------ | ------------------------------------------------------------------------- |
 | Cash         | Spot trading (e.g., BTC/USDT, stocks).           | Notional value for every position a pending order would open.             |
 | Margin       | Derivatives or any product that allows leverage. | Initial margin for each order plus maintenance margin for open positions. |

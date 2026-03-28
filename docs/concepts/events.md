@@ -75,8 +75,8 @@ All order events share these fields:
 | `trader_id`        | Trader instance identifier.              |
 | `strategy_id`      | Strategy that submitted the order.       |
 | `instrument_id`    | Instrument for the order.                |
-| `client_order_id`  | Client-assigned order identifier.        |
-| `venue_order_id`   | Venue-assigned order identifier.         |
+| `client_order_id`  | Client‑assigned order identifier.        |
+| `venue_order_id`   | Venue‑assigned order identifier.         |
 | `account_id`       | Account the order belongs to.            |
 | `reconciliation`   | Whether generated during reconciliation. |
 | `event_id`         | Unique event identifier.                 |

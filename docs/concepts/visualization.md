@@ -173,7 +173,7 @@ NautilusTrader provides four built-in themes:
 | Theme Name      | Description                                    | Use Case                      |
 |-----------------|------------------------------------------------|-------------------------------|
 | `plotly_white`  | Clean light theme with dark gray headers.      | Default, professional reports.|
-| `plotly_dark`   | Dark background with standard Plotly colors.   | Low-light environments.       |
+| `plotly_dark`   | Dark background with standard Plotly colors.   | Low‑light environments.       |
 | `nautilus`      | Light theme with NautilusTrader brand colors.  | Official light mode.          |
 | `nautilus_dark` | Dark theme with teal/cyan signature colors.    | Official dark mode.           |
 
@@ -255,10 +255,10 @@ config = TearsheetConfig(
 
 | Parameter           | Type                          | Default                           | Description                                   |
 |---------------------|-------------------------------|-----------------------------------|-----------------------------------------------|
-| `charts`            | `list[TearsheetChart]`        | All built-in charts               | List of chart objects to include (in order).  |
+| `charts`            | `list[TearsheetChart]`        | All built‑in charts               | List of chart objects to include (in order).  |
 | `theme`             | `str`                         | `"plotly_white"`                  | Theme name for styling.                       |
-| `layout`            | `GridLayout`                  | `None` (auto-calculated)          | Custom subplot grid layout.                   |
-| `title`             | `str`                         | Auto-generated with strategy/time | Tearsheet title.                              |
+| `layout`            | `GridLayout`                  | `None` (auto‑calculated)          | Custom subplot grid layout.                   |
+| `title`             | `str`                         | Auto‑generated with strategy/time | Tearsheet title.                              |
 | `include_benchmark` | `bool`                        | `True`                            | Show benchmark when provided.                 |
 | `benchmark_name`    | `str`                         | `"Benchmark"`                     | Display name for benchmark.                   |
 | `height`            | `int`                         | `1500`                            | Total height in pixels.                       |

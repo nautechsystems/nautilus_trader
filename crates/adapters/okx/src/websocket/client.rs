@@ -1965,6 +1965,8 @@ impl OKXWebSocketClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> Result<(), OKXWsError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXWsError::ClientError(format!(
@@ -2003,6 +2005,16 @@ impl OKXWebSocketClient {
             okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let quote_currency = instrument.quote_currency();
 
+        // OKX options only support limit-style orders
+        if instrument_type == OKXInstrumentType::Option
+            && matches!(order_type, OrderType::Market | OrderType::MarketToLimit)
+        {
+            return Err(OKXWsError::ClientError(
+                "Market orders are not supported for OKX options, use Limit orders instead"
+                    .to_string(),
+            ));
+        }
+
         match instrument_type {
             OKXInstrumentType::Spot => {
                 // SPOT: ccy parameter is required by OKX for spot trading
@@ -2027,10 +2039,17 @@ impl OKXWebSocketClient {
                     builder.pos_side(OKXPositionSide::Net);
                 }
             }
+            OKXInstrumentType::Option => {
+                builder.ccy(quote_currency.to_string());
+
+                if position_side.is_none() {
+                    builder.pos_side(OKXPositionSide::Net);
+                }
+                // reduceOnly is not applicable to options per OKX docs
+            }
             _ => {
                 builder.ccy(quote_currency.to_string());
 
-                // For derivatives, posSide is required
                 if position_side.is_none() {
                     builder.pos_side(OKXPositionSide::Net);
                 }
@@ -2080,7 +2099,7 @@ impl OKXWebSocketClient {
 
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)
-        // optimal_limit_ioc is only supported for derivatives (SWAP/FUTURES), not SPOT
+        // optimal_limit_ioc is only supported for SWAP/FUTURES, not SPOT or OPTION
         let (okx_ord_type, price) = if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
@@ -2091,14 +2110,24 @@ impl OKXWebSocketClient {
                     ));
                 }
                 (OrderType::Market, TimeInForce::Ioc) => {
-                    // optimal_limit_ioc only works for derivatives, use plain market for SPOT
-                    if instrument_type == OKXInstrumentType::Spot {
+                    // optimal_limit_ioc only works for SWAP/FUTURES
+                    if matches!(
+                        instrument_type,
+                        OKXInstrumentType::Spot | OKXInstrumentType::Option
+                    ) {
                         (OKXOrderType::Market, price)
                     } else {
                         (OKXOrderType::OptimalLimitIoc, price)
                     }
                 }
-                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Fok) => {
+                    // OKX uses op_fok for options FOK orders
+                    if instrument_type == OKXInstrumentType::Option {
+                        (OKXOrderType::OpFok, price)
+                    } else {
+                        (OKXOrderType::Fok, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),
             }
@@ -2113,7 +2142,12 @@ impl OKXWebSocketClient {
         builder.ord_type(okx_ord_type);
         builder.sz(quantity.to_string());
 
-        if let Some(tp) = trigger_price {
+        // For options: pxUsd/pxVol are mutually exclusive with px
+        if let Some(usd) = px_usd {
+            builder.px_usd(usd);
+        } else if let Some(vol) = px_vol {
+            builder.px_vol(vol);
+        } else if let Some(tp) = trigger_price {
             builder.px(tp.to_string());
         } else if let Some(p) = price {
             builder.px(p.to_string());
@@ -2188,6 +2222,8 @@ impl OKXWebSocketClient {
         price: Option<Price>,
         quantity: Option<Quantity>,
         venue_order_id: Option<VenueOrderId>,
+        new_px_usd: Option<String>,
+        new_px_vol: Option<String>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
@@ -2215,7 +2251,12 @@ impl OKXWebSocketClient {
             );
         }
 
-        if let Some(price) = price {
+        // For options: newPxUsd/newPxVol are mutually exclusive with newPx
+        if let Some(usd) = new_px_usd {
+            builder.new_px_usd(usd);
+        } else if let Some(vol) = new_px_vol {
+            builder.new_px_vol(vol);
+        } else if let Some(price) = price {
             builder.new_px(price.to_string());
         }
 
@@ -3120,6 +3161,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             is_tp_limit: None,

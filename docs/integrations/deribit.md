@@ -279,7 +279,7 @@ This provides several advantages:
 
 | Feature           | Supported | Notes                                     |
 |-------------------|-----------|-------------------------------------------|
-| Query positions   | ✓         | Real-time position updates.               |
+| Query positions   | ✓         | Real‑time position updates.               |
 | Position mode     | -         | Deribit uses net position mode only.      |
 | Leverage control  | -         | Leverage set at account level via UI.     |
 | Margin mode       | -         | Portfolio margin via Deribit UI settings. |
@@ -290,7 +290,7 @@ This provides several advantages:
 |----------------------|-----------|------------------------------------|
 | Query open orders    | ✓         | List all active orders.            |
 | Query order history  | ✓         | Historical order data.             |
-| Order status updates | ✓         | Real-time order state changes.     |
+| Order status updates | ✓         | Real‑time order state changes.     |
 | Trade history        | ✓         | Execution and fill reports.        |
 
 ### Contingent orders

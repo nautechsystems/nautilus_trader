@@ -1068,7 +1068,7 @@ production_data_config = InteractiveBrokersDataClientConfig(
 | `connection_timeout`                    | `300`                                           | Seconds to wait for the initial API connection. |
 | `request_timeout_secs`                  | `60`                                            | Seconds to wait for request responses (contract details, etc.). |
 | `fetch_all_open_orders`                 | `False`                                         | When `True`, pulls open orders for every API client ID (not just this session). |
-| `track_option_exercise_from_position_update` | `False`                                    | Subscribe to real-time position updates to detect option exercises when `True`. |
+| `track_option_exercise_from_position_update` | `False`                                    | Subscribe to real‑time position updates to detect option exercises when `True`. |
 
 ### Execution client configuration
 
@@ -1120,9 +1120,9 @@ The adapter supports most Interactive Brokers order types:
 
 | Feature              | Supported | Notes                                        |
 |--------------------|-----------|----------------------------------------------|
-| Query positions     | ✓         | Real-time position updates.                  |
+| Query positions     | ✓         | Real‑time position updates.                  |
 | Position mode       | ✓         | Net vs separate long/short positions.       |
-| Leverage control    | ✓         | Account-level margin requirements.          |
+| Leverage control    | ✓         | Account‑level margin requirements.          |
 | Margin mode         | ✓         | Portfolio vs individual margin.             |
 
 #### Order querying
@@ -1131,16 +1131,16 @@ The adapter supports most Interactive Brokers order types:
 |--------------------|-----------|----------------------------------------------|
 | Query open orders   | ✓         | List all active orders.                      |
 | Query order history | ✓         | Historical order data.                       |
-| Order status updates| ✓         | Real-time order state changes.              |
+| Order status updates| ✓         | Real‑time order state changes.              |
 | Trade history       | ✓         | Execution and fill reports.                 |
 
 #### Contingent orders
 
 | Feature              | Supported | Notes                                        |
 |--------------------|-----------|----------------------------------------------|
-| Order lists         | ✓         | Atomic multi-order submission.               |
-| OCO orders          | ✓         | One-Cancels-Other with customizable OCA types (1, 2, 3). |
-| Bracket orders      | ✓         | Parent-child order relationships. |
+| Order lists         | ✓         | Atomic multi‑order submission.               |
+| OCO orders          | ✓         | One‑Cancels‑Other with customizable OCA types (1, 2, 3). |
+| Bracket orders      | ✓         | Parent‑child order relationships. |
 | Conditional orders  | ✓         | Advanced order conditions and triggers.     |
 
 #### Basic execution client configuration

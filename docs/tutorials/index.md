@@ -38,8 +38,8 @@ New to NautilusTrader? Work through these in sequence:
 | Tutorial                                                                        | Description                                        | Data          |
 |:--------------------------------------------------------------------------------|:---------------------------------------------------|:--------------|
 | [Backtest with FX bar data](backtest_fx_bars)                                   | EMA cross on FX bars with rollover simulation      | Bundled       |
-| [Backtest with order book depth data (Binance)](backtest_orderbook_binance)     | Order book imbalance strategy on depth data        | User-provided |
-| [Backtest with order book depth data (Bybit)](backtest_orderbook_bybit)         | Order book imbalance strategy on depth data        | User-provided |
+| [Backtest with order book depth data (Binance)](backtest_orderbook_binance)     | Order book imbalance strategy on depth data        | User‑provided |
+| [Backtest with order book depth data (Bybit)](backtest_orderbook_bybit)         | Order book imbalance strategy on depth data        | User‑provided |
 
 ## Data workflows
 
@@ -47,7 +47,7 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 
 | Guide                                                                   | Description                                       | Data              |
 |:------------------------------------------------------------------------|:--------------------------------------------------|:------------------|
-| [Loading external data](../how_to/loading_external_data)                | Load external data into the `ParquetDataCatalog`  | User-provided     |
+| [Loading external data](../how_to/loading_external_data)                | Load external data into the `ParquetDataCatalog`  | User‑provided     |
 | [Data catalog with Databento](../how_to/data_catalog_databento)         | Set up a catalog with Databento schemas           | Databento API key |
 
 ## Strategy patterns
@@ -56,11 +56,11 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 |:-------------------------------------------------------------------------------------------|:---------------------------------------------|:------------------|
 | [Mean reversion with proxy FX data (AX Exchange)](fx_mean_reversion_ax)                    | Bollinger Band mean reversion on EURUSD-PERP | TrueFX proxy      |
 | [Gold perpetual book imbalance (AX Exchange)](gold_book_imbalance_ax)                      | Order book imbalance on XAU-PERP             | Databento API key |
-| [Grid market making with a deadman's switch (BitMEX)](grid_market_maker_bitmex)            | Grid MM with server-side safety on XBTUSD    | Tardis.dev        |
-| [On-chain grid market making with short-term orders (dYdX)](grid_market_maker_dydx)        | Grid MM on dYdX v4 perpetuals                | User-provided     |
+| [Grid market making with a deadman's switch (BitMEX)](grid_market_maker_bitmex)            | Grid MM with server‑side safety on XBTUSD    | Tardis.dev        |
+| [On‑chain grid market making with short‑term orders (dYdX)](grid_market_maker_dydx)        | Grid MM on dYdX v4 perpetuals                | User‑provided     |
 
 ## Rust
 
 | Tutorial                                                                                   | Description                                  | Data              |
 |:-------------------------------------------------------------------------------------------|:---------------------------------------------|:------------------|
-| [Book imbalance backtest with Betfair data](backtest_book_imbalance_betfair)               | Book imbalance actor on Betfair L2 data | User-provided     |
+| [Book imbalance backtest with Betfair data](backtest_book_imbalance_betfair)               | Book imbalance actor on Betfair L2 data | User‑provided     |

@@ -642,7 +642,7 @@ flowchart BT
 | Foundation     | `core`, `model`, `common`, `system`, `trading`            | Primitives, domain model, kernel, actor & strategy base. |
 | Engines        | `data`, `execution`, `portfolio`, `risk`                  | Core trading engine components.                          |
 | Infrastructure | `serialization`, `network`, `cryptography`, `persistence` | Encoding, networking, signing, storage.                  |
-| Runtime        | `live`, `backtest`                                        | Environment-specific node implementations.               |
+| Runtime        | `live`, `backtest`                                        | Environment‑specific node implementations.               |
 | External       | `adapters/*`                                              | Venue and data integrations.                             |
 | Bindings       | `pyo3`                                                    | Python bindings.                                         |
 
@@ -652,7 +652,7 @@ flowchart BT
 |-------------|----------------------------|------------------------------------------------------------|
 | `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
 | `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
-| `python`    | most crates                | Enables PyO3 bindings (auto-enables `streaming`, `cloud`). |
+| `python`    | most crates                | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
 | `defi`      | `common`, `model`, `data`  | Enables DeFi/blockchain data types.                        |
 
 :::note

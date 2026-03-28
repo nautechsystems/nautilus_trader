@@ -45,7 +45,7 @@ these lower-level components directly.
 | Spot Markets (incl. Binance US)         | ✓         |                                    |
 | Margin Accounts (Cross & Isolated)      | -         | *Not implemented.* Planned for v2. |
 | USDT-Margined Futures (PERP & Delivery) | ✓         |                                    |
-| Coin-Margined Futures                   | ✓         |                                    |
+| Coin‑Margined Futures                   | ✓         |                                    |
 
 :::note
 Margin account features (borrow, repay, isolated margin management) are not implemented.
@@ -161,8 +161,8 @@ order, it uses the standard cancel endpoint.
 
 | Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |---------------------|------|--------|--------------|--------------|---------------------------------------------|
-| Query positions     | -    | -      | ✓            | ✓            | Real-time position updates.                 |
-| Position mode       | -    | -      | ✓            | ✓            | One-Way vs Hedge mode (position IDs).       |
+| Query positions     | -    | -      | ✓            | ✓            | Real‑time position updates.                 |
+| Position mode       | -    | -      | ✓            | ✓            | One‑Way vs Hedge mode (position IDs).       |
 | Leverage control    | -    | -      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
 | Margin mode         | -    | -      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
 
@@ -170,8 +170,8 @@ order, it uses the standard cancel endpoint.
 
 | Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
 |----------------------|------|--------|--------------|--------------|---------------------------------------------|
-| Liquidation handling | -    | -      | ✓            | ✓            | Exchange-forced position closures.          |
-| ADL handling         | -    | -      | ✓            | ✓            | Auto-Deleveraging events.                   |
+| Liquidation handling | -    | -      | ✓            | ✓            | Exchange‑forced position closures.          |
+| ADL handling         | -    | -      | ✓            | ✓            | Auto‑Deleveraging events.                   |
 
 Binance Futures can trigger exchange-generated orders in response to risk events:
 
@@ -204,7 +204,7 @@ are logged but do not update portfolio state. Orders that are already cached
 |---------------------|------|--------|--------------|--------------|---------------------------------------------|
 | Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
 | Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
-| Order status updates| ✓    | ✓      | ✓            | ✓            | Real-time order state changes.              |
+| Order status updates| ✓    | ✓      | ✓            | ✓            | Real‑time order state changes.              |
 | Trade history       | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.                 |
 
 ### Contingent orders
@@ -214,7 +214,7 @@ are logged but do not update portfolio state. Orders that are already cached
 | Order lists         | -    | -      | -            | -            | *Not supported*.                             |
 | OCO orders          | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
 | Bracket orders      | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
-| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market-if-touched orders.           |
+| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market‑if‑touched orders.           |
 
 ### Order parameters
 
@@ -247,9 +247,9 @@ the current market state and price match mode.
 | `OPPONENT_10` | Join the opposing side price but allow up to a 10-tick offset. |
 | `OPPONENT_20` | Join the opposing side price but allow up to a 20-tick offset. |
 | `QUEUE`       | Join the best price on the same side (stay maker).             |
-| `QUEUE_5`     | Join the same-side queue but offset up to 5 ticks.             |
-| `QUEUE_10`    | Join the same-side queue but offset up to 10 ticks.            |
-| `QUEUE_20`    | Join the same-side queue but offset up to 20 ticks.            |
+| `QUEUE_5`     | Join the same‑side queue but offset up to 5 ticks.             |
+| `QUEUE_10`    | Join the same‑side queue but offset up to 10 ticks.            |
+| `QUEUE_20`    | Join the same‑side queue but offset up to 20 ticks.            |
 
 :::info
 For more details, see the [official documentation](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api).
@@ -632,7 +632,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `venue`                            | `BINANCE` | Venue identifier used when registering the client. |
 | `api_key`                          | `None`    | Binance API key; loaded from environment variables when omitted. |
 | `api_secret`                       | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                         | `HMAC`    | **Deprecated**: key type is now auto-detected from the API secret format. Only needed to force `RSA`. |
+| `key_type`                         | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA`. |
 | `account_type`                     | `SPOT`    | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                    | `None`    | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
@@ -651,7 +651,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `venue`                              | `BINANCE` | Venue identifier used when registering the client. |
 | `api_key`                            | `None`    | Binance API key; loaded from environment variables when omitted. |
 | `api_secret`                         | `None`    | Binance API secret; loaded from environment variables when omitted. |
-| `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto-detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
+| `key_type`                           | `HMAC`    | **Deprecated**: key type is now auto‑detected from the API secret format. Only needed to force `RSA` (data clients only, RSA is not supported for execution). |
 | `account_type`                       | `SPOT`    | Account type for order placement (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                      | `None`    | Override for the HTTP REST base URL. |
 | `base_url_ws`                        | `None`    | Override for the WebSocket API base URL. |
@@ -671,7 +671,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `retry_delay_max_ms`                 | `None`    | Maximum delay (milliseconds) between retry attempts. |
 | `futures_leverages`                  | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
 | `futures_margin_types`               | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
-| `log_rejected_due_post_only_as_warning` | `True` | Log post-only rejections as warnings when `True`; otherwise as errors. |
+| `log_rejected_due_post_only_as_warning` | `True` | Log post‑only rejections as warnings when `True`; otherwise as errors. |
 
 The most common use case is to configure a live `TradingNode` with Binance
 data and execution clients. Add a `BINANCE` section to your client

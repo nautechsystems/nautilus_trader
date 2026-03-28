@@ -11,8 +11,8 @@ NautilusTrader relies on **two complementary benchmarking frameworks**:
 
 | Framework | What is it? | What it measures | When to prefer it |
 |-----------|-------------|------------------|-------------------|
-| [**Criterion**](https://docs.rs/criterion/latest/criterion/) | Statistical benchmark harness that produces detailed HTML reports and performs outlier detection. | Wall-clock run time with confidence intervals. | End-to-end scenarios, anything slower than ≈100 ns, visual comparisons. |
-| [**iai**](https://docs.rs/iai/latest/iai/) | Deterministic micro-benchmark harness that counts retired CPU instructions via hardware counters. | Exact instruction counts (noise-free). | Ultra-fast functions, CI gating via instruction diff. |
+| [**Criterion**](https://docs.rs/criterion/latest/criterion/) | Statistical benchmark harness that produces detailed HTML reports and performs outlier detection. | Wall‑clock run time with confidence intervals. | End‑to‑end scenarios, anything slower than ≈100 ns, visual comparisons. |
+| [**iai**](https://docs.rs/iai/latest/iai/) | Deterministic micro‑benchmark harness that counts retired CPU instructions via hardware counters. | Exact instruction counts (noise‑free). | Ultra‑fast functions, CI gating via instruction diff. |
 
 Most hot code paths benefit from **both** kinds of measurements.
 

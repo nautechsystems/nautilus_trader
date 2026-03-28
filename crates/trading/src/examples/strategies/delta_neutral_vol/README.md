@@ -28,9 +28,14 @@ On startup the strategy:
    hedge instrument.
 6. Waits for Greeks from both option legs before enabling rehedging.
 
-OKX options execution is not enabled here. This example does not place option
-entry or exit orders. It operates as a delta hedger for positions entered
-externally or carried forward from a previous session.
+When `enter_strangle` is `true` (the default) and no option positions exist,
+the strategy places SELL limit orders for both legs once the first Greeks
+updates arrive. Orders are priced in implied volatility (`px_vol`) at the
+mark IV minus `entry_iv_offset`. An offset of 0.0 sells at mark; a positive
+offset (e.g. 0.02) sells 2 vol points below mark for faster fills.
+
+When `enter_strangle` is `false` the strategy operates as a delta hedger
+for positions entered externally or carried forward from a previous session.
 
 ### Rehedging
 
@@ -77,6 +82,9 @@ data feeds. It leaves live positions unchanged.
 | `rehedge_delta_threshold` | `f64`             | `0.5`         | Absolute portfolio delta that triggers a hedge order. Lower values hedge more frequently. |
 | `rehedge_interval_secs`   | `u64`             | `30`          | Periodic rehedge timer interval in seconds.                                               |
 | `expiry_filter`           | `Option<String>`  | `None`        | Restrict to a specific expiry (e.g. `260327`). When `None`, uses the nearest expiry.      |
+| `enter_strangle`          | `bool`            | `true`        | Place strangle entry orders when Greeks arrive. When `false`, only hedges existing positions. |
+| `entry_iv_offset`         | `f64`             | `0.0`         | Vol points subtracted from mark IV for entry limit price. Positive values sell below mark. |
+| `entry_time_in_force`     | `TimeInForce`     | `Gtc`         | Time-in-force for strangle entry orders.                                                  |
 
 ### Inherited from `StrategyConfig`
 
@@ -126,7 +134,8 @@ let config = DeltaNeutralVolConfig::new(
 .with_contracts(5)
 .with_rehedge_delta_threshold(0.3)
 .with_rehedge_interval_secs(15)
-.with_expiry_filter("260627".to_string());
+.with_expiry_filter("260627".to_string())
+.with_entry_iv_offset(0.02);  // Sell 2 vol points below mark
 
 let strategy = DeltaNeutralVol::new(config);
 node.add_strategy(strategy)?;
@@ -147,5 +156,6 @@ config = DeltaNeutralVolConfig(
     rehedge_delta_threshold=0.3,
     rehedge_interval_secs=15,
     expiry_filter="260627",
+    entry_iv_offset=0.02,  # Sell 2 vol points below mark
 )
 ```

@@ -233,7 +233,7 @@ Arrow serialization, cache storage, and catalog persistence.
 | `gamma`             | `float`         | Gamma.                                                 |
 | `vega`              | `float`         | Vega (dV / 1% vol change).                             |
 | `theta`             | `float`         | Theta (daily decay).                                   |
-| `itm_prob`          | `float`         | In-the-money probability.                              |
+| `itm_prob`          | `float`         | In‑the‑money probability.                              |
 
 `GreeksData` scales to portfolio level via its `to_portfolio_greeks()` method, which
 multiplies all values by the contract `multiplier`. The `*` operator applies position
@@ -281,14 +281,14 @@ rate = curve(0.75)  # quadratic interpolation
 
 ## Choosing between the two paths
 
-| Criterion                    | Venue-provided (`OptionGreeks`)        | Local calculator (`GreeksCalculator`)    |
+| Criterion                    | Venue‑provided (`OptionGreeks`)        | Local calculator (`GreeksCalculator`)    |
 |------------------------------|----------------------------------------|------------------------------------------|
-| Computation                  | Done by the venue                      | Local Black-Scholes                      |
+| Computation                  | Done by the venue                      | Local Black‑Scholes                      |
 | Latency                      | Arrives with market data               | Computed on demand                       |
 | Venues                       | Deribit, Bybit, OKX                    | Any venue with option instruments        |
 | Shock scenarios              | Not supported                          | Spot, vol, and time shocks               |
-| Portfolio aggregation        | Manual (iterate `OptionChainSlice`)    | Built-in via `portfolio_greeks()`        |
-| Beta weighting               | Not supported                          | Built-in                                 |
+| Portfolio aggregation        | Manual (iterate `OptionChainSlice`)    | Built‑in via `portfolio_greeks()`        |
+| Beta weighting               | Not supported                          | Built‑in                                 |
 | Backtest support             | Via recorded `OptionGreeks` data       | From cached prices at any point in time  |
 | Greeks available             | delta, gamma, vega, theta, rho, IV, OI | delta, gamma, vega, theta, itm_prob, vol |
 | Data type                    | `OptionGreeks` (Rust/PyO3)             | `GreeksData` (Python `@customdataclass`) |
@@ -303,7 +303,7 @@ For reference, the Greeks that Nautilus computes:
 | Gamma      | `g`    | Second derivative of option price with respect to underlying price (d2V/dS2). |
 | Vega       | `v`    | Sensitivity to a 1 percentage point change in implied volatility (dV/dVol).   |
 | Theta      | `t`    | Daily time decay: change in option price per calendar day (dV/dt / 365.25).   |
-| Rho        | `r`    | Sensitivity to a change in the risk-free interest rate (dV/dr).               |
+| Rho        | `r`    | Sensitivity to a change in the risk‑free interest rate (dV/dr).               |
 | ITM prob   | -      | Probability that the option finishes in the money: P(ϕS_T > ϕK), where ϕ = 1 for calls and ϕ = -1 for puts. |
 
 ## Examples

@@ -147,7 +147,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 | **Duplicate order reports**            | Multiple orders share the same identifier.                                               | Deduplicates with warning logged.                                               |
 | **Position quantity mismatch (long)**  | Internal long position differs from venue (e.g., 100 vs 150).                            | Generates BUY LIMIT with calculated price when `generate_missing_orders=True`.  |
 | **Position quantity mismatch (short)** | Internal short position differs from venue (e.g., -100 vs -150).                         | Generates SELL LIMIT with calculated price when `generate_missing_orders=True`. |
-| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long).          | Generates opposite-side LIMIT order with calculated price.                      |
+| **Position reduction**                 | Venue position smaller than internal (e.g., internal 150 long, venue 100 long).          | Generates opposite‑side LIMIT order with calculated price.                      |
 | **Position side flip**                 | Internal position opposite of venue (e.g., internal 100 long, venue 50 short).           | Generates LIMIT order to close internal and open external position.             |
 | **Internal reconciliation orders**     | Orders with strategy ID `EXTERNAL` and tag `RECONCILIATION`.                             | Never filtered, regardless of `filter_unclaimed_external_orders`.               |
 
@@ -155,7 +155,7 @@ The tables below cover startup reconciliation (mass status) and runtime checks (
 
 | Scenario                          | Description                                             | System behavior                                                        |
 |-----------------------------------|---------------------------------------------------------|------------------------------------------------------------------------|
-| **In-flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                |
+| **In‑flight order timeout**       | Order remains unconfirmed beyond threshold.             | After `inflight_check_retries`, resolves to `REJECTED`.                |
 | **Open orders check discrepancy** | Periodic poll detects a venue state change.             | Confirms status at `open_check_interval_secs` and applies transitions. |
 | **Own books audit mismatch**      | Own order books diverge from venue public books.        | Audits at `own_books_audit_interval_secs`, logs inconsistencies.       |
 
@@ -194,9 +194,9 @@ from fills and adjusts to reconstruct positions accurately.
 | Scenario                                   | Description                                                                  | System behavior                                                             |
 |--------------------------------------------|------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
 | **Complete lifecycle**                     | All fills from opening to current state are captured.                        | No adjustment.                                                              |
-| **Incomplete single lifecycle**            | Window misses opening fills, no zero-crossings.                              | Adds synthetic opening fill with calculated price.                          |
-| **Multiple lifecycles, current matches**   | Zero-crossings detected, current lifecycle matches venue.                    | Filters out old lifecycles, returns current only.                           |
-| **Multiple lifecycles, current mismatch**  | Zero-crossings detected, current lifecycle differs from venue.               | Replaces current lifecycle with a single synthetic fill.                    |
+| **Incomplete single lifecycle**            | Window misses opening fills, no zero‑crossings.                              | Adds synthetic opening fill with calculated price.                          |
+| **Multiple lifecycles, current matches**   | Zero‑crossings detected, current lifecycle matches venue.                    | Filters out old lifecycles, returns current only.                           |
+| **Multiple lifecycles, current mismatch**  | Zero‑crossings detected, current lifecycle differs from venue.               | Replaces current lifecycle with a single synthetic fill.                    |
 | **Flat position**                          | Venue reports FLAT regardless of fill history.                               | No adjustment.                                                              |
 | **No fills**                               | Window contains no fill reports.                                             | No adjustment, empty result.                                                |
 

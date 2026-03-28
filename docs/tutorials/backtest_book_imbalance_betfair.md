@@ -74,11 +74,11 @@ The loader returns a `Vec<BetfairDataItem>` with these variants:
 | `Trade`             | Incremental trade tick from cumulative volumes. | ✓ `Data::Trade`            |
 | `Ticker`            | Last traded price, volume, BSP near/far.        | -                          |
 | `StartingPrice`     | Betfair Starting Price for a runner.            | -                          |
-| `BspBookDelta`      | BSP-specific book delta.                        | -                          |
+| `BspBookDelta`      | BSP‑specific book delta.                        | -                          |
 | `InstrumentClose`   | Settlement event.                               | ✓ `Data::InstrumentClose`  |
 | `SequenceCompleted` | Batch completion marker.                        | -                          |
 | `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                          |
-| `RaceProgress`      | Race-level progress data.                       | -                          |
+| `RaceProgress`      | Race‑level progress data.                       | -                          |
 
 The backtest engine accepts the `Data` enum, so we convert the items we need
 and skip the Betfair-specific types:

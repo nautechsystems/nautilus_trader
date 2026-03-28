@@ -124,7 +124,7 @@ The minimum supported Rust version (MSRV) is **1.94.0**.
 | `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
 | `stubs`          | `nautilus-model`    | Test instrument stubs (`audusd_sim`, etc.).                   |
 | `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
-| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
+| `streaming`      | `nautilus-backtest` | Catalog‑based data streaming via `BacktestNode`.              |
 | `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |
 
 :::tip

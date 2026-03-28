@@ -47,10 +47,10 @@ The following product types are supported on Bybit:
 |-----------------------------|-----------|------------------------------------------|
 | Spot cryptocurrencies       | ✓         | Native spot markets with margin support. |
 | Linear perpetual contracts  | ✓         | USDT/USDC margined perpetual swaps.      |
-| Linear futures contracts    | ✓         | Delivery-settled linear futures.         |
-| Inverse perpetual contracts | ✓         | Coin-margined perpetual swaps.           |
-| Inverse futures contracts   | ✓         | Coin-margined delivery futures.          |
-| Option contracts            | ✓         | USDT-settled European options.           |
+| Linear futures contracts    | ✓         | Delivery‑settled linear futures.         |
+| Inverse perpetual contracts | ✓         | Coin‑margined perpetual swaps.           |
+| Inverse futures contracts   | ✓         | Coin‑margined delivery futures.          |
+| Option contracts            | ✓         | USDT‑settled European options.           |
 
 ## Symbology
 
@@ -191,8 +191,8 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 | Feature             | Spot | Linear | Inverse | Option | Notes                                    |
 |---------------------|------|--------|---------|--------|------------------------------------------|
-| Query positions     | -    | ✓      | ✓       | ✓      | Real-time position updates.              |
-| Position mode       | -    | ✓      | ✓       | -      | One-Way only for Options.                |
+| Query positions     | -    | ✓      | ✓       | ✓      | Real‑time position updates.              |
+| Position mode       | -    | ✓      | ✓       | -      | One‑Way only for Options.                |
 | Leverage control    | -    | ✓      | ✓       | -      | Not applicable for Options.              |
 | Margin mode         | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin.    |
 
@@ -202,7 +202,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 |---------------------|------|--------|---------|--------|-----------------------------------------|
 | Query open orders   | ✓    | ✓      | ✓       | ✓      | List all active orders.                 |
 | Query order history | ✓    | ✓      | ✓       | ✓      | Historical order data.                  |
-| Order status updates| ✓    | ✓      | ✓       | ✓      | Real-time order state changes.          |
+| Order status updates| ✓    | ✓      | ✓       | ✓      | Real‑time order state changes.          |
 | Trade history       | ✓    | ✓      | ✓       | ✓      | Execution and fill reports.             |
 
 ### Contingent orders
@@ -212,7 +212,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Order lists         | -    | -      | -       | -      | *Not supported*.                        |
 | OCO orders          | ✓    | ✓      | ✓       | -      | UI only; API users implement manually.  |
 | Bracket orders      | ✓    | ✓      | ✓       | -      | UI only; API users implement manually.  |
-| Conditional orders  | ✓    | ✓      | ✓       | -      | Stop and limit-if-touched orders.       |
+| Conditional orders  | ✓    | ✓      | ✓       | -      | Stop and limit‑if‑touched orders.       |
 
 ### Order parameters
 
@@ -437,11 +437,11 @@ Every HTTP call consumes the global token bucket as well as any keyed quota(s). 
 
 | Key / Endpoint            | Limit (requests/sec) | Notes                                              |
 |---------------------------|----------------------|----------------------------------------------------|
-| `bybit:global`            | 120                  | Exchange-wide 600 req / 5 s ceiling.               |
+| `bybit:global`            | 120                  | Exchange‑wide 600 req / 5 s ceiling.               |
 | `/v5/market/kline`        | 20                   | Historical sweeps throttled slightly below global. |
 | `/v5/market/trades`       | 24                   | Matches the global quota.                          |
 | `/v5/order/create`        | 10                   | Standard order placement.                          |
-| `/v5/order/cancel`        | 10                   | Single-order cancellation.                         |
+| `/v5/order/cancel`        | 10                   | Single‑order cancellation.                         |
 | `/v5/order/create-batch`  | 5                    | Batch placement endpoints.                         |
 | `/v5/order/cancel-batch`  | 5                    | Batch cancellation endpoints.                      |
 | `/v5/order/cancel-all`    | 2                    | Full book cancel to mirror Bybit guidance.         |
@@ -583,7 +583,7 @@ The product types for each client must be specified in the configurations.
 | `demo`                           | `False` | Connect to the Bybit demo environment when `True`. |
 | `testnet`                        | `False` | Connect to the Bybit testnet when `True`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |
-| `use_ws_execution_fast`          | `False` | Subscribe to the low-latency execution stream. |
+| `use_ws_execution_fast`          | `False` | Subscribe to the low‑latency execution stream. |
 | `use_http_batch_api`             | `False` | Use Bybit's HTTP batch trading API (deprecated). |
 | `use_spot_position_reports`      | `False` | Report Spot wallet balances as positions when `True`. |
 | `auto_repay_spot_borrows`        | `True`  | Automatically repay Spot margin borrows after BUY orders fully fill (Spot only). |
@@ -596,7 +596,7 @@ The product types for each client must be specified in the configurations.
 | `ws_trade_timeout_secs`          | `5.0`   | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
 | `ws_auth_timeout_secs`           | `5.0`   | Timeout (seconds) waiting for auth WebSocket acknowledgements. |
 | `futures_leverages`              | `None`  | Mapping of `BybitSymbol` to leverage settings. |
-| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode (one-way vs hedge). |
+| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode (one‑way vs hedge). |
 | `margin_mode`                    | `None`  | Margin mode setting for the account. |
 
 The most common use case is to configure a live `TradingNode` to include Bybit

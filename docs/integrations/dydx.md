@@ -30,7 +30,7 @@ submission, without requiring external client libraries.
 
 | Product Type      | Data Feed | Trading | Notes                                  |
 |-------------------|-----------|---------|----------------------------------------|
-| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC-settled.       |
+| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC‑settled.       |
 | Spot              | -         | -       | dYdX offers spot on Solana; not supported by this adapter. |
 | Options           | -         | -       | *Not available on dYdX*.               |
 
@@ -68,8 +68,8 @@ The adapter communicates through three independent transport layers:
 
 | Layer     | Target    | Direction  | Purpose                                              |
 |-----------|-----------|------------|------------------------------------------------------|
-| HTTP      | Indexer   | Read-only  | Instrument metadata, historical data, account state. |
-| WebSocket | Indexer   | Read-only  | Real-time market data, order/fill/position updates.  |
+| HTTP      | Indexer   | Read‑only  | Instrument metadata, historical data, account state. |
+| WebSocket | Indexer   | Read‑only  | Real‑time market data, order/fill/position updates.  |
 | gRPC      | Validator | Write      | Order placement, cancellation, and batch operations. |
 
 ### Block-based settlement
@@ -168,10 +168,10 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 |------------------------|------------|----------------------------------------------------|
 | `MARKET`               | ✓          | Immediate execution at best available price.       |
 | `LIMIT`                | ✓          |                                                    |
-| `STOP_MARKET`          | ✓          | Stop-loss conditional order, always long-term.     |
-| `STOP_LIMIT`           | ✓          | Conditional order, always long-term.               |
-| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch. |
-| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.  |
+| `STOP_MARKET`          | ✓          | Stop‑loss conditional order, always long‑term.     |
+| `STOP_LIMIT`           | ✓          | Conditional order, always long‑term.               |
+| `MARKET_IF_TOUCHED`    | ✓          | Take‑profit market order, triggers on price touch. |
+| `LIMIT_IF_TOUCHED`     | ✓          | Take‑profit limit order, triggers on price touch.  |
 | `TRAILING_STOP_MARKET` | -          | *Not supported*.                                   |
 
 ### Execution instructions
@@ -194,7 +194,7 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 
 | Feature            | Perpetuals | Notes            |
 |--------------------|------------|------------------|
-| Order modification | -          | Not supported. dYdX supports short-term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
+| Order modification | -          | Not supported. dYdX supports short‑term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
 | Bracket/OCO orders | -          | *Not supported*. |
 | Iceberg orders     | -          | *Not supported*. |
 
@@ -204,15 +204,15 @@ time-in-force and expiry, so no manual tagging is needed (unlike the legacy Pyth
 |--------------|------------|------------------------------------------------------------------------------------------------------------------------|
 | Batch submit | -          | *Not supported*.                                                                                                       |
 | Batch modify | -          | *Not supported*.                                                                                                       |
-| Batch cancel | ✓          | Partitioned: short-term orders use `MsgBatchCancel` (single gRPC call), long-term orders use batched `MsgCancelOrder`. |
+| Batch cancel | ✓          | Partitioned: short‑term orders use `MsgBatchCancel` (single gRPC call), long‑term orders use batched `MsgCancelOrder`. |
 
 ### Position management
 
 | Feature          | Perpetuals | Notes                         |
 |------------------|------------|-------------------------------|
-| Query positions  | ✓          | Real-time position updates.   |
+| Query positions  | ✓          | Real‑time position updates.   |
 | Position mode    | -          | Netting only (see below).     |
-| Leverage control | ✓          | Per-market leverage settings. |
+| Leverage control | ✓          | Per‑market leverage settings. |
 | Margin mode      | -          | Cross margin only.            |
 
 :::note
@@ -226,7 +226,7 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 |----------------------|------------|--------------------------------|
 | Query open orders    | ✓          | List all active orders.        |
 | Query order history  | ✓          | Historical order data.         |
-| Order status updates | ✓          | Real-time order state changes. |
+| Order status updates | ✓          | Real‑time order state changes. |
 | Trade history        | ✓          | Execution and fill reports.    |
 
 ### Contingent orders
@@ -236,7 +236,7 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 | Order lists        | -          | *Not supported*.                                 |
 | OCO orders         | -          | *Not supported*.                                 |
 | Bracket orders     | -          | *Not supported*.                                 |
-| Conditional orders | ✓          | Stop, take-profit market, and take-profit limit. |
+| Conditional orders | ✓          | Stop, take‑profit market, and take‑profit limit. |
 
 ### Order classification
 
@@ -246,9 +246,9 @@ configuration is required.
 
 | Category        | Placement   | Expiry            | Typical use                                   |
 |-----------------|-------------|-------------------|-----------------------------------------------|
-| Short-term      | In-memory   | Block height      | IOC/FOK, or orders expiring within 40 blocks. |
-| Long-term       | On-chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short-term window (~20s at ~0.5s/block). |
-| Conditional     | On-chain    | Timestamp (UTC)   | Stop-loss and take-profit triggers.           |
+| Short‑term      | In‑memory   | Block height      | IOC/FOK, or orders expiring within 40 blocks. |
+| Long‑term       | On‑chain    | Timestamp (UTC)   | GTC/GTD with expiry beyond the short‑term window (~20s at ~0.5s/block). |
+| Conditional     | On‑chain    | Timestamp (UTC)   | Stop‑loss and take‑profit triggers.           |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
 is a Nautilus convenience that the adapter implements as an aggressive IOC limit order
@@ -384,7 +384,7 @@ Long-term and conditional orders require proper Cosmos SDK sequence management:
 | Error code | Source               | Meaning                                          |
 |------------|----------------------|--------------------------------------------------|
 | `code=32`  | Cosmos SDK           | Account sequence mismatch                        |
-| `code=104` | dYdX authenticator   | Signature verification failed (sequence-related) |
+| `code=104` | dYdX authenticator   | Signature verification failed (sequence‑related) |
 
 Both trigger automatic resync + retry via the `RetryManager`.
 
@@ -456,7 +456,7 @@ automatically via `OrderMessageBuilder`, but understanding the parameters helps 
 
 | Parameter                      | Description                                              |
 |--------------------------------|----------------------------------------------------------|
-| `atomic_resolution`            | Exponent for converting human-readable size to quantums  |
+| `atomic_resolution`            | Exponent for converting human‑readable size to quantums  |
 | `quantum_conversion_exponent`  | Exponent for converting quantums to tokens               |
 | `step_base_quantums`           | Minimum order size step in quantums                      |
 | `subticks_per_tick`            | Price granularity within each tick                       |
@@ -482,7 +482,7 @@ The v4 adapter supports the following data subscriptions:
 | Data type           | Subscription | Historical request | Notes                                     |
 |---------------------|--------------|--------------------|-------------------------------------------|
 | Trade ticks         | ✓            | ✓                  |                                           |
-| Quote ticks         | ✓            | -                  | Synthesized from order book top-of-book.  |
+| Quote ticks         | ✓            | -                  | Synthesized from order book top‑of‑book.  |
 | Order book deltas   | ✓            | ✓                  | L2 depth only. Snapshot via HTTP request. |
 | Bars                | ✓            | ✓                  | See supported resolutions below.          |
 | Mark prices         | ✓            | -                  | Via markets channel.                      |
@@ -646,7 +646,7 @@ clients support environment variable fallbacks for credentials and network-speci
 |---------------------------|---------|------------------------------------------------------------------------------------------|
 | `wallet_address`          | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
 | `is_testnet`              | `False` | Connect to dYdX testnet when `True`.                                                     |
-| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue-native open time. |
+| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue‑native open time. |
 | `base_url_http`           | `None`  | HTTP API endpoint override.                                                              |
 | `base_url_ws`             | `None`  | WebSocket endpoint override.                                                             |
 | `max_retries`             | `3`     | Maximum retry attempts for REST/WebSocket recovery.                                      |
@@ -659,7 +659,7 @@ clients support environment variable fallbacks for credentials and network-speci
 |--------------------------------|---------|----------------------------------------------------------------------------------------------------|
 | `wallet_address`               | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
 | `subaccount`                   | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                                            |
-| `private_key`                  | `None`  | Hex-encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
+| `private_key`                  | `None`  | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
 | `authenticator_ids`            | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).                      |
 | `is_testnet`                   | `False` | Connect to dYdX testnet when `True`.                                                               |
 | `base_url_http`                | `None`  | HTTP client custom endpoint override.                                                              |
@@ -728,7 +728,7 @@ resolved automatically from environment variables based on the `is_testnet` sett
 | Variable                        | Network  | Description                                    |
 |---------------------------------|----------|------------------------------------------------|
 | `DYDX_WALLET_ADDRESS`           | Mainnet  | Bech32-encoded wallet address (`dydx1...`).    |
-| `DYDX_PRIVATE_KEY`              | Mainnet  | Hex-encoded secp256k1 private key for signing. |
+| `DYDX_PRIVATE_KEY`              | Mainnet  | Hex‑encoded secp256k1 private key for signing. |
 | `DYDX_TESTNET_WALLET_ADDRESS`   | Testnet  | Testnet wallet address (`dydx1...`).           |
 | `DYDX_TESTNET_PRIVATE_KEY`      | Testnet  | Testnet private key.                           |
 

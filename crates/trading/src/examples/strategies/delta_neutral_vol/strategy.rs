@@ -24,6 +24,7 @@ use nautilus_common::{
     actor::{DataActor, DataActorCore},
     timer::TimeEvent,
 };
+use nautilus_core::params::Params;
 use nautilus_model::{
     data::{QuoteTick, option_chain::OptionGreeks},
     enums::{OptionKind, OrderSide},
@@ -31,8 +32,9 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::Instrument,
     orders::Order,
-    types::Quantity,
+    types::{Price, Quantity},
 };
+use serde_json::json;
 use ustr::Ustr;
 
 use super::config::DeltaNeutralVolConfig;
@@ -54,6 +56,8 @@ pub struct DeltaNeutralVol {
     pub(super) subscribed_greeks: Vec<InstrumentId>,
     pub(super) call_delta: f64,
     pub(super) put_delta: f64,
+    pub(super) call_mark_iv: Option<f64>,
+    pub(super) put_mark_iv: Option<f64>,
     pub(super) call_delta_ready: bool,
     pub(super) put_delta_ready: bool,
     pub(super) call_position: f64,
@@ -73,6 +77,8 @@ impl DeltaNeutralVol {
             subscribed_greeks: Vec::new(),
             call_delta: 0.0,
             put_delta: 0.0,
+            call_mark_iv: None,
+            put_mark_iv: None,
             call_delta_ready: false,
             put_delta_ready: false,
             call_position: 0.0,
@@ -105,6 +111,113 @@ impl DeltaNeutralVol {
     pub fn should_rehedge(&self) -> bool {
         self.greeks_initialized()
             && self.portfolio_delta().abs() > self.config.rehedge_delta_threshold
+    }
+
+    /// Returns `true` when strangle entry can proceed: both mark IVs
+    /// are available, no positions exist yet, and entry was not already sent.
+    #[must_use]
+    pub fn should_enter_strangle(&self) -> bool {
+        self.config.enter_strangle
+            && self.greeks_initialized()
+            && self.call_mark_iv.is_some()
+            && self.put_mark_iv.is_some()
+            && self.call_position == 0.0
+            && self.put_position == 0.0
+            && !self.has_working_entry_orders()
+    }
+
+    /// Returns `true` when any open or in-flight orders exist on the option legs.
+    #[must_use]
+    pub fn has_working_entry_orders(&self) -> bool {
+        let cache = self.cache();
+        for id in [self.call_instrument_id, self.put_instrument_id]
+            .into_iter()
+            .flatten()
+        {
+            let open = cache.orders_open(None, Some(&id), None, None, None);
+            let inflight = cache.orders_inflight(None, Some(&id), None, None, None);
+
+            if !open.is_empty() || !inflight.is_empty() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn enter_strangle(&mut self) -> anyhow::Result<()> {
+        if !self.should_enter_strangle() {
+            return Ok(());
+        }
+
+        let call_id = self.call_instrument_id.unwrap();
+        let put_id = self.put_instrument_id.unwrap();
+        let call_iv = self.call_mark_iv.unwrap();
+        let put_iv = self.put_mark_iv.unwrap();
+        let offset = self.config.entry_iv_offset;
+
+        let call_entry_iv = call_iv - offset;
+        let put_entry_iv = put_iv - offset;
+
+        log::info!(
+            "Entering strangle: SELL {} x {call_id} @ iv={call_entry_iv:.4} \
+             + SELL {} x {put_id} @ iv={put_entry_iv:.4} (offset={offset})",
+            self.config.contracts,
+            self.config.contracts,
+        );
+
+        let contracts = self.config.contracts;
+        let tif = self.config.entry_time_in_force;
+        let client_id = self.config.client_id;
+
+        let call_order = self.core.order_factory().limit(
+            call_id,
+            OrderSide::Sell,
+            Quantity::new(contracts as f64, 0),
+            Price::new(call_entry_iv, 4),
+            Some(tif),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut call_params = Params::new();
+        call_params.insert("px_vol".to_string(), json!(call_entry_iv.to_string()));
+
+        self.submit_order_with_params(call_order, None, Some(client_id), call_params)?;
+
+        let put_order = self.core.order_factory().limit(
+            put_id,
+            OrderSide::Sell,
+            Quantity::new(contracts as f64, 0),
+            Price::new(put_entry_iv, 4),
+            Some(tif),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut put_params = Params::new();
+        put_params.insert("px_vol".to_string(), json!(put_entry_iv.to_string()));
+
+        self.submit_order_with_params(put_order, None, Some(client_id), put_params)?;
+
+        Ok(())
     }
 
     fn check_rehedge(&mut self) -> anyhow::Result<()> {
@@ -359,12 +472,20 @@ impl DataActor for DeltaNeutralVol {
             self.config.rehedge_delta_threshold,
         );
 
-        // Log intended option trades (execution not yet supported for OKX options)
-        log::info!(
-            "Intended: SELL {} x {call_id} (call) + SELL {} x {put_id} (put)",
-            self.config.contracts,
-            self.config.contracts,
-        );
+        if self.config.enter_strangle {
+            log::info!(
+                "Strangle entry enabled: SELL {} x {call_id} (call) + SELL {} x {put_id} (put) \
+                 once Greeks arrive (iv_offset={})",
+                self.config.contracts,
+                self.config.contracts,
+                self.config.entry_iv_offset,
+            );
+        } else {
+            log::info!(
+                "Strangle entry disabled: hedging externally-held positions only. \
+                 Monitoring {call_id} (call) + {put_id} (put)",
+            );
+        }
 
         Ok(())
     }
@@ -377,6 +498,14 @@ impl DataActor for DeltaNeutralVol {
 
         for instrument_id in ids {
             self.unsubscribe_option_greeks(instrument_id, Some(client_id), None);
+        }
+
+        if let Some(call_id) = self.call_instrument_id {
+            self.cancel_all_orders(call_id, None, None)?;
+        }
+
+        if let Some(put_id) = self.put_instrument_id {
+            self.cancel_all_orders(put_id, None, None)?;
         }
 
         let hedge_id = self.config.hedge_instrument_id;
@@ -393,9 +522,17 @@ impl DataActor for DeltaNeutralVol {
         if Some(greeks.instrument_id) == self.call_instrument_id {
             self.call_delta = greeks.greeks.delta;
             self.call_delta_ready = true;
+
+            if let Some(iv) = greeks.mark_iv {
+                self.call_mark_iv = Some(iv);
+            }
         } else if Some(greeks.instrument_id) == self.put_instrument_id {
             self.put_delta = greeks.greeks.delta;
             self.put_delta_ready = true;
+
+            if let Some(iv) = greeks.mark_iv {
+                self.put_mark_iv = Some(iv);
+            }
         }
 
         let portfolio_delta = self.portfolio_delta();
@@ -412,6 +549,7 @@ impl DataActor for DeltaNeutralVol {
             self.hedge_position,
         );
 
+        self.enter_strangle()?;
         self.check_rehedge()?;
 
         Ok(())
@@ -469,12 +607,12 @@ impl DataActor for DeltaNeutralVol {
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        let is_hedge = self
+        let instrument_id = self
             .cache()
             .order(&event.client_order_id)
-            .is_some_and(|o| o.instrument_id() == self.config.hedge_instrument_id);
+            .map(|o| o.instrument_id());
 
-        if is_hedge {
+        if instrument_id == Some(self.config.hedge_instrument_id) {
             self.hedge_pending = false;
         }
 

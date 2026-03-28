@@ -69,13 +69,13 @@ config = TradingNodeConfig(
 
 | Setting                  | Default      | Description                                 |
 |--------------------------|--------------|---------------------------------------------|
-| `trader_id`              | "TRADER-001" | Unique trader identifier (name-tag format). |
+| `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
 | `timeout_connection`     | 30.0         | Connection timeout in seconds.              |
 | `timeout_reconciliation` | 10.0         | Reconciliation timeout in seconds.          |
 | `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
 | `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |
-| `timeout_post_stop`      | 5.0          | Post-stop cleanup timeout.                  |
+| `timeout_post_stop`      | 5.0          | Post‑stop cleanup timeout.                  |
 
 ### Cache database configuration
 
@@ -165,7 +165,7 @@ Recovers missed order and position events to keep system state consistent with t
 | `reconciliation`                | True    | Activate reconciliation at startup to align internal state with the venue.      |
 | `reconciliation_lookback_mins`  | None    | How far back (minutes) to request past events for reconciling uncached state.   |
 | `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                    |
-| `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue-side duplicates).     |
+| `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue‑side duplicates).     |
 
 See [Execution reconciliation](../concepts/live.md#execution-reconciliation) for details.
 
@@ -217,7 +217,7 @@ When retries are exhausted, the engine resolves the order as follows:
 |--------------------|--------------|-------------|---------------------------------------------------------------------|
 | `SUBMITTED`        | Not found    | `REJECTED`  | Order never confirmed by venue (e.g., lost during network error).   |
 | `ACCEPTED`         | Not found    | `REJECTED`  | Order doesn't exist at venue, likely was never successfully placed. |
-| `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue-initiated).          |
+| `ACCEPTED`         | `CANCELED`   | `CANCELED`  | Venue canceled the order (user action or venue‑initiated).          |
 | `ACCEPTED`         | `EXPIRED`    | `EXPIRED`   | Order reached GTD expiration at venue.                              |
 | `ACCEPTED`         | `REJECTED`   | `REJECTED`  | Venue rejected after initial acceptance (rare but possible).        |
 | `PARTIALLY_FILLED` | `CANCELED`   | `CANCELED`  | Order canceled at venue with fills preserved.                       |
@@ -266,16 +266,16 @@ recently updated orders are not marked missing prematurely.
 
 | Setting                              | Default        | Description                                                                                      |
 |--------------------------------------|----------------|--------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in-flight order status. Set to 0 to disable.                                  |
-| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in-flight order triggers a venue status check. Lower if colocated.                |
-| `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in-flight order with the venue.                                      |
+| `inflight_check_interval_ms`         | 2,000&nbsp;ms  | How often to check in‑flight order status. Set to 0 to disable.                                  |
+| `inflight_check_threshold_ms`        | 5,000&nbsp;ms  | Time before an in‑flight order triggers a venue status check. Lower if colocated.                |
+| `inflight_check_retries`             | 5&nbsp;retries | Retry attempts to verify an in‑flight order with the venue.                                      |
 | `open_check_interval_secs`           | None           | How often (seconds) to check open orders at the venue. None or 0.0 disables. Recommended: 5-10s.|
-| `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource-intensive).          |
+| `open_check_open_only`               | True           | When true, query only open orders; when false, fetch full history (resource‑intensive).          |
 | `open_check_lookback_mins`           | 60&nbsp;min    | Lookback window (minutes) for order status polling. Only orders modified within this window.     |
 | `open_check_threshold_ms`            | 5,000&nbsp;ms  | Minimum time since last cached event before acting on venue discrepancies.                       |
 | `open_check_missing_retries`         | 5&nbsp;retries | Max retries before resolving an order open in cache but not found at venue.                      |
-| `max_single_order_queries_per_cycle` | 10             | Cap on single-order queries per cycle. Prevents rate-limit exhaustion.                           |
-| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single-order queries to avoid rate limits.                                    |
+| `max_single_order_queries_per_cycle` | 10             | Cap on single‑order queries per cycle. Prevents rate‑limit exhaustion.                           |
+| `single_order_query_delay_ms`        | 100&nbsp;ms    | Delay (ms) between single‑order queries to avoid rate limits.                                    |
 | `reconciliation_startup_delay_secs`  | 10.0&nbsp;s    | Delay (seconds) *after* startup reconciliation before continuous checks begin.                   |
 | `own_books_audit_interval_secs`      | None           | Interval (seconds) between auditing own order books against public books.                        |
 | `position_check_interval_secs`       | None           | Interval (seconds) between position consistency checks. On discrepancy, queries for missing fills. None disables. Recommended: 30-60s. |

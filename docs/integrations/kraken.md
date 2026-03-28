@@ -54,7 +54,7 @@ Kraken supports two primary product categories:
 | Product Type             | Supported | Notes                                                     |
 |--------------------------|-----------|-----------------------------------------------------------|
 | Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
+| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD‑margined (`PF_`) perpetual swaps. |
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
@@ -181,9 +181,9 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 |------------------------|------|---------|--------------------------------------------|
 | `MARKET`               | ✓    | ✓       | Immediate execution at market price.       |
 | `LIMIT`                | ✓    | ✓       | Execution at specified price or better.    |
-| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop-loss).      |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take-profit).    |
-| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop-loss-limit). |
+| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).      |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take‑profit).    |
+| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop‑loss‑limit). |
 | `LIMIT_IF_TOUCHED`     | ✓    | ✓       | Maps to `take_profit` with `limit_price`.  |
 
 ### Time in force
@@ -211,9 +211,9 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 | Operation          | Spot | Futures | Notes                                        |
 |--------------------|------|---------|----------------------------------------------|
-| Batch Submit       | -    | ✓       | Futures only, auto-chunks into batches of 10.|
+| Batch Submit       | -    | ✓       | Futures only, auto‑chunks into batches of 10.|
 | Batch Modify       | -    | -       | *Not yet implemented* (Futures only).        |
-| Batch Cancel       | ✓    | ✓       | Auto-chunks into batches of 50.              |
+| Batch Cancel       | ✓    | ✓       | Auto‑chunks into batches of 50.              |
 
 :::note
 **Cancel all orders**:
@@ -228,7 +228,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 
 | Feature           | Spot | Futures | Notes                                                     |
 |-------------------|------|---------|-----------------------------------------------------------|
-| Query positions   | ✓*   | ✓       | *Spot: opt-in via `use_spot_position_reports`. See below. |
+| Query positions   | ✓*   | ✓       | *Spot: opt‑in via `use_spot_position_reports`. See below. |
 | Position mode     | -    | -       | Single position per instrument.                           |
 | Leverage control  | -    | ✓       | Configured per account tier.                              |
 | Margin mode       | -    | ✓       | Cross margin for Futures.                                 |
@@ -239,7 +239,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 |----------------------|------|---------|----------------------------------------------|
 | Query open orders    | ✓    | ✓       | List all active orders.                      |
 | Query order history  | ✓    | ✓       | Historical order data with pagination.       |
-| Order status updates | ✓    | ✓       | Real-time order state changes via WebSocket. |
+| Order status updates | ✓    | ✓       | Real‑time order state changes via WebSocket. |
 | Trade history        | ✓    | ✓       | Execution and fill reports.                  |
 
 ### Contingent orders
@@ -249,7 +249,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | Order lists         | -    | -       | *Not supported*.                         |
 | OCO orders          | -    | -       | *Not supported*.                         |
 | Bracket orders      | -    | -       | *Not supported*.                         |
-| Conditional orders  | ✓    | ✓       | Stop and take-profit orders.             |
+| Conditional orders  | ✓    | ✓       | Stop and take‑profit orders.             |
 
 ## Reconciliation
 

@@ -18,7 +18,7 @@ Mixing types in a single page makes it harder to read and harder to maintain.
 | Type             | Purpose                          | Section          |
 |------------------|----------------------------------|------------------|
 | **Tutorial**     | Teach by walking through a task  | `tutorials/`     |
-| **How-to guide** | Solve a specific problem         | `how_to/`        |
+| **How‑to guide** | Solve a specific problem         | `how_to/`        |
 | **Explanation**  | Clarify design and architecture  | `concepts/`      |
 | **Reference**    | Describe the machinery           | `api_reference/` |
 

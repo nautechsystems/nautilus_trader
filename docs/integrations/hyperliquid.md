@@ -103,7 +103,7 @@ Hyperliquid offers linear perpetual futures and native spot markets.
 
 | Product Type      | Data Feed | Trading | Notes                      |
 |-------------------|-----------|---------|----------------------------|
-| Perpetual Futures | ✓         | ✓       | USDC-settled linear perps. |
+| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps. |
 | Spot              | ✓         | ✓       | Native spot markets.       |
 
 :::note
@@ -287,7 +287,7 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 | Instruction   | Perpetuals | Spot | Notes                            |
 |---------------|------------|------|----------------------------------|
 | `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
-| `reduce_only` | ✓          | ✓    | Close-only orders.               |
+| `reduce_only` | ✓          | ✓    | Close‑only orders.               |
 
 :::info
 Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects

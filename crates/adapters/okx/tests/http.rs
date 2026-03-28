@@ -2213,6 +2213,8 @@ async fn test_http_place_order_with_attached_tp_sl_uses_single_oco_payload() {
                 tp_ord_px: Some("-1".to_string()),
                 tp_trigger_px_type: Some(OKXTriggerType::Last),
             }]),
+            None,
+            None,
         )
         .await
         .unwrap();

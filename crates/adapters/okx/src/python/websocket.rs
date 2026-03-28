@@ -1109,6 +1109,8 @@ impl OKXWebSocketClient {
         quote_quantity=None,
         position_side=None,
         attach_algo_ords=None,
+        px_usd=None,
+        px_vol=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -1130,6 +1132,8 @@ impl OKXWebSocketClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<Py<PyDict>>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
         let client = self.clone();
@@ -1153,6 +1157,8 @@ impl OKXWebSocketClient {
                     quote_quantity,
                     position_side,
                     attach_algo_ords,
+                    px_usd,
+                    px_vol,
                 )
                 .await
                 .map_err(to_pyvalue_err)
@@ -1201,6 +1207,8 @@ impl OKXWebSocketClient {
         venue_order_id=None,
         price=None,
         quantity=None,
+        new_px_usd=None,
+        new_px_vol=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -1213,6 +1221,8 @@ impl OKXWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
+        new_px_usd: Option<String>,
+        new_px_vol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -1226,6 +1236,8 @@ impl OKXWebSocketClient {
                     price,
                     quantity,
                     venue_order_id,
+                    new_px_usd,
+                    new_px_vol,
                 )
                 .await
                 .map_err(to_pyvalue_err)

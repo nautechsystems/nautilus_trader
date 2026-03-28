@@ -38,6 +38,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     MUTEX_POISONED, UnixNanos,
+    params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -72,6 +73,16 @@ use crate::{
         parse::OrderStateSnapshot,
     },
 };
+
+fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
+    params.as_ref().and_then(|p| {
+        p.get(key).and_then(|v| {
+            v.as_str()
+                .map(ToString::to_string)
+                .or_else(|| v.as_f64().map(|n| n.to_string()))
+        })
+    })
+}
 
 #[derive(Debug)]
 pub struct OKXExecutionClient {
@@ -251,6 +262,9 @@ impl OKXExecutionClient {
         let is_reduce_only = order.is_reduce_only();
         let is_quote_quantity = order.is_quote_quantity();
 
+        let px_usd = get_param_as_string(&cmd.params, "px_usd");
+        let px_vol = get_param_as_string(&cmd.params, "px_vol");
+
         self.spawn_task("submit_order", async move {
             let result = ws_private
                 .submit_order(
@@ -270,6 +284,8 @@ impl OKXExecutionClient {
                     Some(is_quote_quantity),
                     None,
                     None,
+                    px_usd,
+                    px_vol,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -1248,10 +1264,24 @@ impl ExecutionClient for OKXExecutionClient {
                 return Ok(());
             }
 
+            let order_type = order.order_type();
+
+            // OKX trigger/algo orders are not supported for options.
+            // Reject before emitting OrderSubmitted to avoid an invalid state transition.
+            if self.is_conditional_order(order_type) {
+                let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
+
+                if inst_type == OKXInstrumentType::Option {
+                    anyhow::bail!(
+                        "Trigger/conditional orders ({order_type:?}) are not supported for OKX options"
+                    );
+                }
+            }
+
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(order);
 
-            order.order_type()
+            order_type
         };
 
         if self.is_conditional_order(order_type) {
@@ -1364,6 +1394,9 @@ impl ExecutionClient for OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
+        let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
+        let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
+
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -1377,6 +1410,8 @@ impl ExecutionClient for OKXExecutionClient {
                     command.price,
                     command.quantity,
                     command.venue_order_id,
+                    new_px_usd,
+                    new_px_vol,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));

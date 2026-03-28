@@ -901,6 +901,15 @@ pub struct OKXOrderMsg {
     /// Mark volatility at fill time (options).
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fill_mark_vol: Option<String>,
+    /// Implied volatility at fill time (options).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub fill_px_vol: Option<String>,
+    /// Fill price in USD (options).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub fill_px_usd: Option<String>,
+    /// Forward price at fill time (options).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub fill_fwd_px: Option<String>,
     /// Fill notional in USD.
     #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
     pub fill_notional_usd: Option<String>,
@@ -1202,6 +1211,15 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub px: Option<String>,
+    /// Price in USD, only applicable to options. Mutually exclusive with `px` and `px_vol`.
+    #[builder(default)]
+    #[serde(rename = "pxUsd", skip_serializing_if = "Option::is_none")]
+    pub px_usd: Option<String>,
+    /// Price in implied volatility (1 = 100%), only applicable to options.
+    /// Mutually exclusive with `px` and `px_usd`.
+    #[builder(default)]
+    #[serde(rename = "pxVol", skip_serializing_if = "Option::is_none")]
+    pub px_vol: Option<String>,
     /// Reduce-only flag.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1278,6 +1296,13 @@ pub struct WsAmendOrderParams {
     /// New order price (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_px: Option<String>,
+    /// New price in USD, only applicable to options. Must match the pricing mode used at placement.
+    #[serde(rename = "newPxUsd", skip_serializing_if = "Option::is_none")]
+    pub new_px_usd: Option<String>,
+    /// New price in implied volatility, only applicable to options.
+    /// Must match the pricing mode used at placement.
+    #[serde(rename = "newPxVol", skip_serializing_if = "Option::is_none")]
+    pub new_px_vol: Option<String>,
     /// New order size (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sz: Option<String>,
@@ -2188,5 +2213,81 @@ mod tests {
         assert!(json.contains("\"instIdCode\":10459"));
         assert!(json.contains("\"instId\":\"BTC-USDT-SWAP\""));
         assert!(json.contains("\"algoId\":\"987654321\""));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_px_usd() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USD-250328-50000-C"))
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("1".to_string())
+            .px_usd("100.5".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"pxUsd\":\"100.5\""));
+        assert!(!json.contains("\"pxVol\""));
+        assert!(!json.contains("\"px\":"));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_px_vol() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USD-250328-50000-C"))
+            .td_mode(OKXTradeMode::Cross)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("1".to_string())
+            .px_vol("0.55".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"pxVol\":\"0.55\""));
+        assert!(!json.contains("\"pxUsd\""));
+        assert!(!json.contains("\"px\":"));
+    }
+
+    #[rstest]
+    fn test_ws_amend_order_params_serializes_new_px_usd() {
+        use super::WsAmendOrderParamsBuilder;
+
+        let params = WsAmendOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USD-250328-50000-C"))
+            .cl_ord_id("client123".to_string())
+            .new_px_usd("105.0".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"newPxUsd\":\"105.0\""));
+        assert!(!json.contains("\"newPx\":"));
+        assert!(!json.contains("\"newPxVol\""));
+    }
+
+    #[rstest]
+    fn test_ws_amend_order_params_serializes_new_px_vol() {
+        use super::WsAmendOrderParamsBuilder;
+
+        let params = WsAmendOrderParamsBuilder::default()
+            .inst_id(Ustr::from("BTC-USD-250328-50000-C"))
+            .cl_ord_id("client123".to_string())
+            .new_px_vol("0.60".to_string())
+            .build()
+            .unwrap();
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"newPxVol\":\"0.60\""));
+        assert!(!json.contains("\"newPx\":"));
+        assert!(!json.contains("\"newPxUsd\""));
     }
 }

@@ -3834,6 +3834,8 @@ impl OKXHttpClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXHttpError::ValidationError(format!(
@@ -3874,6 +3876,16 @@ impl OKXHttpClient {
         let instrument_type = okx_instrument_type(&instrument)
             .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
+        // OKX options only support limit-style orders
+        if instrument_type == OKXInstrumentType::Option
+            && matches!(order_type, OrderType::Market | OrderType::MarketToLimit)
+        {
+            return Err(OKXHttpError::ValidationError(
+                "Market orders are not supported for OKX options, use Limit orders instead"
+                    .to_string(),
+            ));
+        }
+
         let side = OKXSide::from(order_side.as_specified());
         let pos_side = position_side.map(Into::into).or({
             if matches!(
@@ -3909,18 +3921,45 @@ impl OKXHttpClient {
                     ));
                 }
                 (OrderType::Market, TimeInForce::Ioc) => {
-                    if instrument_type == OKXInstrumentType::Spot {
+                    // optimal_limit_ioc only works for SWAP/FUTURES
+                    if matches!(
+                        instrument_type,
+                        OKXInstrumentType::Spot | OKXInstrumentType::Option
+                    ) {
                         (OKXOrderType::Market, price)
                     } else {
                         (OKXOrderType::OptimalLimitIoc, price)
                     }
                 }
-                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Fok) => {
+                    // OKX uses op_fok for options FOK orders
+                    if instrument_type == OKXInstrumentType::Option {
+                        (OKXOrderType::OpFok, price)
+                    } else {
+                        (OKXOrderType::Fok, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),
             }
         } else {
             (OKXOrderType::from(order_type), price)
+        };
+
+        // reduceOnly is not applicable to options per OKX docs
+        let reduce_only = if instrument_type == OKXInstrumentType::Option {
+            None
+        } else {
+            reduce_only
+        };
+
+        // For options: pxUsd/pxVol are mutually exclusive with px
+        let (px, px_usd, px_vol) = if px_usd.is_some() {
+            (None, px_usd, None)
+        } else if px_vol.is_some() {
+            (None, None, px_vol)
+        } else {
+            (px.map(|p| p.to_string()), None, None)
         };
 
         let request = OKXPlaceOrderRequest {
@@ -3933,7 +3972,9 @@ impl OKXHttpClient {
             pos_side,
             ord_type,
             sz: quantity.to_string(),
-            px: px.map(|p| p.to_string()),
+            px,
+            px_usd,
+            px_vol,
             reduce_only,
             tgt_ccy,
             attach_algo_ords,

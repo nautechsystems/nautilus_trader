@@ -11,10 +11,10 @@ The platform defines several option instrument types:
 
 | Instrument       | Description                                                                            |
 |------------------|----------------------------------------------------------------------------------------|
-| `OptionContract` | Exchange-traded option (put or call) on an underlying with strike and expiry.           |
-| `OptionSpread`   | Exchange-defined multi-leg options strategy (vertical, calendar, straddle) as one line. |
+| `OptionContract` | Exchange‑traded option (put or call) on an underlying with strike and expiry.           |
+| `OptionSpread`   | Exchange‑defined multi‑leg options strategy (vertical, calendar, straddle) as one line. |
 | `CryptoOption`   | Option on a crypto underlying with crypto quote/settlement; inverse or quanto styles.   |
-| `BinaryOption`   | Fixed-payout option that settles to 0 or 1 based on a binary outcome.                  |
+| `BinaryOption`   | Fixed‑payout option that settles to 0 or 1 based on a binary outcome.                  |
 
 Greeks-relevant metadata varies by instrument type:
 
@@ -279,7 +279,7 @@ Methods:
 
 The following adapters currently support option Greeks subscriptions:
 
-| Adapter | Per-instrument Greeks | Option chains |
+| Adapter | Per‑instrument Greeks | Option chains |
 |---------|:---------------------:|:-------------:|
 | Deribit | ✓                     | ✓             |
 | Bybit   | ✓                     | ✓             |

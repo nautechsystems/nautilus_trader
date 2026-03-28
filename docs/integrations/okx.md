@@ -21,14 +21,13 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 | Perpetual Swaps   | ✓         | ✓       | Linear and inverse contracts.                    |
 | Futures           | ✓         | ✓       | Specific expiration dates.                       |
 | Margin            | ✓         | ✓       | Spot trading with margin/leverage (spot margin). |
-| Options           | ✓         | -       | Data, greeks; *trading coming soon*.             |
+| Options           | ✓         | ✓       | Limit orders only; no market or conditional.     |
 
 :::note
-**Options support**: You can subscribe to options market data, venue-provided Greeks
-(`subscribe_option_greeks`), and receive real-time delta, gamma, vega, theta, and
-implied volatility updates via the OKX `opt-summary` channel. Order execution for
-options is not yet implemented. See the [Options](../concepts/options.md) guide for
-subscription patterns.
+**Options support**: The adapter supports options market data, venue-provided Greeks
+(`subscribe_option_greeks`), and order execution for options instruments. See the
+[Options trading](#options-trading) section below for details and the
+[Options](../concepts/options.md) guide for subscription patterns.
 :::
 
 :::info
@@ -232,7 +231,7 @@ If you need GTD functionality, you must use Nautilus's strategy-managed GTD feat
 
 | Feature           | Linear Perpetual Swap | Notes                                                |
 |-------------------|-----------------------|------------------------------------------------------|
-| Query positions   | ✓                     | Real-time position updates.                          |
+| Query positions   | ✓                     | Real‑time position updates.                          |
 | Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
 | Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
 | Margin mode       | ✓                     | Supports cash, isolated, and cross modes.            |
@@ -369,7 +368,7 @@ Only use manual override if you have specific requirements that cannot be met th
 |----------------------|-----------------------|-------------------------------------------|
 | Query open orders    | ✓                     | List all active orders.                   |
 | Query order history  | ✓                     | Historical order data.                    |
-| Order status updates | ✓                     | Real-time order state changes.            |
+| Order status updates | ✓                     | Real‑time order state changes.            |
 | Trade history        | ✓                     | Execution and fill reports.               |
 
 ### Contingent orders
@@ -377,9 +376,9 @@ Only use manual override if you have specific requirements that cannot be met th
 | Feature             | Linear Perpetual Swap | Notes                                      |
 |---------------------|-----------------------|--------------------------------------------|
 | Order lists         | ✓                     | Batch via WS; regular orders only.         |
-| OCO orders          | ✓                     | One-Cancels-Other orders.                  |
+| OCO orders          | ✓                     | One‑Cancels‑Other orders.                  |
 | Bracket orders      | ✓                     | Stop loss + take profit combinations.      |
-| Conditional orders  | ✓                     | Stop and limit-if-touched orders.          |
+| Conditional orders  | ✓                     | Stop and limit‑if‑touched orders.          |
 
 #### Conditional order architecture
 
@@ -439,6 +438,96 @@ The OKX adapter automatically detects and handles exchange-initiated risk manage
 
 The adapter handles these exchange-generated orders, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
 :::
+
+## Options trading
+
+The OKX adapter supports trading options (OPTION instrument type) with some differences from
+other derivatives. OKX options are inverse contracts settled in the underlying cryptocurrency.
+For full API details see the
+[OKX Options Trading documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
+### Supported order types
+
+Only limit-style orders are supported. OKX does not allow market orders for options.
+
+| Order Type | Supported | Notes                                             |
+|------------|-----------|---------------------------------------------------|
+| `LIMIT`    | ✓         | Standard limit order.                             |
+| `MARKET`   | -         | Rejected by the adapter before reaching the API.  |
+
+Options support FOK and IOC time-in-force. OKX uses a dedicated `op_fok` order type for
+options FOK orders; the adapter handles this mapping automatically.
+
+Conditional/algo orders (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
+`LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`) are not supported for options and will be denied.
+
+### Pricing modes
+
+Options orders can be priced in three mutually exclusive ways. Pass the pricing mode via
+order `params`:
+
+| Mode  | Parameter | Description                                             |
+|-------|-----------|---------------------------------------------------------|
+| Price | (default) | Standard limit price in the contract's currency.        |
+| USD   | `px_usd`  | Price in USD terms.                                     |
+| IV    | `px_vol`  | Price in implied volatility (1.0 = 100%).               |
+
+```python
+# Price in USD
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTC-USD-250328-50000-C.OKX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("0"),  # Placeholder; px_usd takes precedence
+    params={"px_usd": "100.5"},
+)
+
+# Price in implied volatility
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTC-USD-250328-50000-C.OKX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("0"),  # Placeholder; px_vol takes precedence
+    params={"px_vol": "0.55"},
+)
+```
+
+When modifying an order, the same `px_usd` or `px_vol` params can be passed to the modify
+command to amend the price in the original pricing mode.
+
+### Position Greeks
+
+The adapter exposes position-level Black-Scholes Greeks (`delta_bs`, `gamma_bs`, `theta_bs`,
+`vega_bs`) from OKX position data. These are available through the standard position reporting
+pipeline.
+
+### Restrictions
+
+- `reduce_only` is not applicable to options and is automatically stripped.
+- Position side defaults to `Net`.
+
+### Configuration
+
+Options require the `instrument_families` config parameter to scope which underlyings to load:
+
+```python
+config = TradingNodeConfig(
+    data_clients={
+        OKX: OKXDataClientConfig(
+            instrument_types=(OKXInstrumentType.OPTION,),
+            instrument_families=("BTC-USD", "ETH-USD"),
+            instrument_provider=InstrumentProviderConfig(load_all=True),
+        ),
+    },
+    exec_clients={
+        OKX: OKXExecClientConfig(
+            instrument_types=(OKXInstrumentType.OPTION,),
+            instrument_families=("BTC-USD", "ETH-USD"),
+            margin_mode=OKXMarginMode.CROSS,
+        ),
+    },
+)
+```
 
 ## Authentication
 
@@ -547,7 +636,7 @@ OKX enforces per-endpoint and per-account quotas; exceeding them leads to HTTP 4
 | `/api/v5/market/history-candles` | 20              | Conservative quota for large historical pulls.          |
 | `/api/v5/market/history-trades`  | 30              | Trade history pulls.                                    |
 | `/api/v5/account/balance`        | 5               | OKX guidance: 10 req / 2 s.                             |
-| `/api/v5/trade/order`            | 30              | 60 requests / 2 seconds per-instrument limit.           |
+| `/api/v5/trade/order`            | 30              | 60 requests / 2 seconds per‑instrument limit.           |
 | `/api/v5/trade/orders-pending`   | 20              | Open order fetch.                                       |
 | `/api/v5/trade/orders-history`   | 20              | Historical orders.                                      |
 | `/api/v5/trade/fills`            | 30              | Execution reports.                                      |
@@ -584,7 +673,7 @@ The OKX data client provides the following configuration options:
 | `retry_delay_initial_ms`             | `1,000`                         | Initial delay (milliseconds) before retrying a failed request. |
 | `retry_delay_max_ms`                 | `10,000`                        | Upper bound for exponential backoff delay between retries. |
 | `update_instruments_interval_mins`   | `60`                            | Interval, in minutes, between background instrument refreshes. |
-| `vip_level`                          | `None`                          | Enables higher-depth order book channels when set to the matching OKX VIP tier. |
+| `vip_level`                          | `None`                          | Enables higher‑depth order book channels when set to the matching OKX VIP tier. |
 | `http_proxy_url`                     | `None`                          | Optional HTTP proxy URL. |
 | `ws_proxy_url`                       | `None`                          | Optional WebSocket proxy URL. |
 
@@ -606,8 +695,8 @@ The OKX execution client provides the following configuration options:
 | `use_spot_margin`          | `False`     | Enables margin/leverage for SPOT trading. When `True`, uses `isolated` or `cross` trade mode (determined by `margin_mode`). When `False`, uses `cash` trade mode (no leverage). Only applies to SPOT instruments. |
 | `is_demo`                  | `False`     | Connects to the OKX demo trading environment. |
 | `http_timeout_secs`        | `60`        | Request timeout (seconds) for REST trading calls. |
-| `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower-latency fill reports. |
-| `use_mm_mass_cancel`       | `False`     | Uses the market-maker bulk cancel endpoint when available; otherwise falls back to per-order cancels. |
+| `use_fills_channel`        | `False`     | Subscribes to the dedicated fills channel (VIP5+ required) for lower‑latency fill reports. |
+| `use_mm_mass_cancel`       | `False`     | Uses the market‑maker bulk cancel endpoint when available; otherwise falls back to per‑order cancels. |
 | `max_retries`              | `3`         | Maximum retry attempts for recoverable REST errors. |
 | `retry_delay_initial_ms`   | `1,000`     | Initial delay (milliseconds) applied before retrying a failed request. |
 | `retry_delay_max_ms`       | `10,000`    | Upper bound for the exponential backoff delay between retries. |

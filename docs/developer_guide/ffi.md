@@ -25,7 +25,7 @@ use a helper that does so) to maintain this guarantee.
 |-------|-------------------------------|--------|
 | **1** | Rust                          | Build a `Vec<T>` and convert it with `into()` – this *leaks* the vector and transfers ownership of the raw allocation to foreign code. |
 | **2** | Foreign (Python / Cython / C) | Use the data while the `CVec` value is in scope. **Do not modify the fields `ptr`, `len`, `cap`.** |
-| **3** | Foreign                       | Exactly once, call the *type-specific* drop helper exported by Rust (for example `vec_drop_book_levels`, `vec_drop_book_orders`, `vec_time_event_handlers_drop`). The helper reconstructs the original `Vec<T>` with `Vec::from_raw_parts` and lets it drop, freeing the memory. |
+| **3** | Foreign                       | Exactly once, call the *type‑specific* drop helper exported by Rust (for example `vec_drop_book_levels`, `vec_drop_book_orders`, `vec_time_event_handlers_drop`). The helper reconstructs the original `Vec<T>` with `Vec::from_raw_parts` and lets it drop, freeing the memory. |
 
 :::warning
 If step **3** is forgotten the allocation is leaked for the remainder of the process; if it

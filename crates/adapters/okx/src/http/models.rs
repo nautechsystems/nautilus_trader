@@ -399,6 +399,18 @@ pub struct OKXPosition {
     pub spot_in_use_ccy: String,
     /// USD price.
     pub usd_px: String,
+    /// Black-Scholes delta in dollars, only applicable to OPTION.
+    #[serde(default)]
+    pub delta_bs: String,
+    /// Black-Scholes gamma in dollars, only applicable to OPTION.
+    #[serde(default)]
+    pub gamma_bs: String,
+    /// Black-Scholes theta in dollars, only applicable to OPTION.
+    #[serde(default)]
+    pub theta_bs: String,
+    /// Black-Scholes vega in dollars, only applicable to OPTION.
+    #[serde(default)]
+    pub vega_bs: String,
 }
 
 /// Represents the response from `POST /api/v5/trade/order` (place order).
@@ -538,6 +550,13 @@ pub struct OKXPlaceOrderRequest {
     /// Limit price when required by the order type.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub px: Option<String>,
+    /// Price in USD, only applicable to options. Mutually exclusive with `px` and `px_vol`.
+    #[serde(rename = "pxUsd", skip_serializing_if = "Option::is_none")]
+    pub px_usd: Option<String>,
+    /// Price in implied volatility (1 = 100%), only applicable to options.
+    /// Mutually exclusive with `px` and `px_usd`.
+    #[serde(rename = "pxVol", skip_serializing_if = "Option::is_none")]
+    pub px_vol: Option<String>,
     /// Reduce-only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
@@ -588,6 +607,12 @@ pub struct OKXOrderHistory {
     pub sz: String,
     /// Price (optional).
     pub px: String,
+    /// Price in USD (options only).
+    #[serde(default)]
+    pub px_usd: String,
+    /// Price in implied volatility (options only).
+    #[serde(default)]
+    pub px_vol: String,
     /// Side.
     pub side: OKXSide,
     /// Position side.
@@ -1487,5 +1512,57 @@ mod tests {
         assert!(json.contains("\"newCallbackRatio\":\"0.015\""));
         assert!(json.contains("\"newCallbackSpread\":\"100\""));
         assert!(json.contains("\"newActivePx\":\"62000\""));
+    }
+
+    #[rstest]
+    fn test_place_order_request_serializes_px_usd() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USD-250328-50000-C".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            ccy: None,
+            cl_ord_id: Some("test-opt-1".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: Some(OKXPositionSide::Net),
+            ord_type: OKXOrderType::Limit,
+            sz: "1".to_string(),
+            px: None,
+            px_usd: Some("100.5".to_string()),
+            px_vol: None,
+            reduce_only: None,
+            tgt_ccy: None,
+            attach_algo_ords: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"pxUsd\":\"100.5\""));
+        assert!(!json.contains("\"pxVol\""));
+        assert!(!json.contains("\"px\":"));
+    }
+
+    #[rstest]
+    fn test_place_order_request_serializes_px_vol() {
+        let request = OKXPlaceOrderRequest {
+            inst_id: "BTC-USD-250328-50000-C".to_string(),
+            td_mode: OKXTradeMode::Cross,
+            ccy: None,
+            cl_ord_id: Some("test-opt-2".to_string()),
+            tag: None,
+            side: OKXSide::Buy,
+            pos_side: Some(OKXPositionSide::Net),
+            ord_type: OKXOrderType::Limit,
+            sz: "1".to_string(),
+            px: None,
+            px_usd: None,
+            px_vol: Some("0.55".to_string()),
+            reduce_only: None,
+            tgt_ccy: None,
+            attach_algo_ords: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"pxVol\":\"0.55\""));
+        assert!(!json.contains("\"pxUsd\""));
+        assert!(!json.contains("\"px\":"));
     }
 }

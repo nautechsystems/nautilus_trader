@@ -124,7 +124,7 @@ trade-off:
 | `num_levels`            | `usize`        | `3`        | Number of buy and sell levels.                                           |
 | `grid_step_bps`         | `u32`          | `10`       | Grid spacing in basis points (10 = 0.1%).                                |
 | `skew_factor`           | `f64`          | `0.0`      | How aggressively to shift the grid based on inventory.                   |
-| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid-price move in bps before re-quoting.                         |
+| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid‑price move in bps before re‑quoting.                         |
 | `expire_time_secs`      | `Option<u64>`  | `None`     | Order expiry in seconds. Uses GTD when set, GTC otherwise.               |
 | `on_cancel_resubmit`    | `bool`         | `false`    | Resubmit grid on next quote after an unexpected cancel.                  |
 
@@ -528,11 +528,11 @@ fn grid_orders(
 
 | Log message                                         | Meaning                                            |
 | --------------------------------------------------- | -------------------------------------------------- |
-| `Requoting grid: mid=X, last_mid=Y`                 | Mid-price moved beyond threshold, refreshing grid. |
-| `Submit short-term order N`                         | Order submitted via short-term broadcast path.     |
+| `Requoting grid: mid=X, last_mid=Y`                 | Mid‑price moved beyond threshold, refreshing grid. |
+| `Submit short-term order N`                         | Order submitted via short‑term broadcast path.     |
 | `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.    |
-| `benign cancel error, treating as success`          | Cancel for already-filled/expired order (normal).  |
-| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.        |
+| `benign cancel error, treating as success`          | Cancel for already‑filled/expired order (normal).  |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.        |
 
 ### Expected behavior patterns
 

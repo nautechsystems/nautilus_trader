@@ -143,7 +143,7 @@ Test order book subscription modes and snapshot requests.
 | TC-D10  | Subscribe book deltas          | Stream `OrderBookDeltas` updates.                  | No book support.       |
 | TC-D11  | Subscribe book at interval     | Periodic `OrderBook` snapshots.                    | No book support.       |
 | TC-D12  | Subscribe book depth           | `OrderBookDepth10` snapshots.                      | No book depth.         |
-| TC-D13  | Request book snapshot          | One-time book snapshot request.                    | No book snapshot.      |
+| TC-D13  | Request book snapshot          | One‑time book snapshot request.                    | No book snapshot.      |
 | TC-D14  | Managed book from deltas       | Build local book from delta stream.                | No book support.       |
 | TC-D15  | Request historical book deltas | Historical book deltas request.                    | No historical deltas.  |
 
@@ -235,7 +235,7 @@ DataTesterConfig(
 | Field              | Value                                                                  |
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests a one-time order book snapshot.                    |
+| **Action**         | DataTester requests a one‑time order book snapshot.                    |
 | **Event sequence** | Book snapshot received via historical data callback.                   |
 | **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes.          |
 | **Skip when**      | Adapter does not support book snapshot requests.                       |
@@ -767,8 +767,8 @@ Test actor lifecycle behavior: unsubscribe handling and custom parameters.
 | TC     | Name                    | Description                                        | Skip when            |
 |--------|-------------------------|----------------------------------------------------|----------------------|
 | TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop.         | No unsub support.    |
-| TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.          | N/A.                 |
-| TC-D72 | Custom request params   | Adapter-specific request parameters.               | N/A.                 |
+| TC-D71 | Custom subscribe params | Adapter‑specific subscription parameters.          | N/A.                 |
+| TC-D72 | Custom request params   | Adapter‑specific request parameters.               | N/A.                 |
 
 ### TC-D70: Unsubscribe on stop
 
@@ -805,10 +805,10 @@ DataTesterConfig::new(client_id, vec![instrument_id])
 | Field              | Value                                                                  |
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters. |
-| **Action**         | Subscribe with `subscribe_params` dict containing adapter-specific parameters. |
+| **Action**         | Subscribe with `subscribe_params` dict containing adapter‑specific parameters. |
 | **Event sequence** | Subscription established with custom parameters applied.               |
-| **Pass criteria**  | Data flows with adapter-specific parameters in effect.                 |
-| **Skip when**      | N/A (adapter-specific).                                                |
+| **Pass criteria**  | Data flows with adapter‑specific parameters in effect.                 |
+| **Skip when**      | N/A (adapter‑specific).                                                |
 
 **Considerations:**
 
@@ -820,10 +820,10 @@ DataTesterConfig::new(client_id, vec![instrument_id])
 | Field              | Value                                                                  |
 |--------------------|------------------------------------------------------------------------|
 | **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.      |
-| **Action**         | Request data with `request_params` dict containing adapter-specific parameters. |
+| **Action**         | Request data with `request_params` dict containing adapter‑specific parameters. |
 | **Event sequence** | Request fulfilled with custom parameters applied.                      |
-| **Pass criteria**  | Historical data received with adapter-specific parameters in effect.   |
-| **Skip when**      | N/A (adapter-specific).                                                |
+| **Pass criteria**  | Historical data received with adapter‑specific parameters in effect.   |
+| **Skip when**      | N/A (adapter‑specific).                                                |
 
 **Considerations:**
 

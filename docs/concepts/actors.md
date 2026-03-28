@@ -149,24 +149,24 @@ Different data operations map to these handlers:
 
 | Operation                            | Category   | Handler                  | Purpose                                           |
 |--------------------------------------|------------|--------------------------|---------------------------------------------------|
-| `subscribe_data()`                   | Real-time  | `on_data()`              | Live data updates.                                |
-| `subscribe_instrument()`             | Real-time  | `on_instrument()`        | Live instrument definition updates.               |
-| `subscribe_instruments()`            | Real-time  | `on_instrument()`        | Live instrument definition updates (for venue).   |
-| `subscribe_order_book_deltas()`      | Real-time  | `on_order_book_deltas()` | Live order book deltas.                           |
-| `subscribe_order_book_depth()`       | Real-time  | `on_order_book_depth()`  | Live order book depth snapshots.                  |
-| `subscribe_order_book_at_interval()` | Real-time  | `on_order_book()`        | Live order book snapshots at intervals.           |
-| `subscribe_quote_ticks()`            | Real-time  | `on_quote_tick()`        | Live quote updates.                               |
-| `subscribe_trade_ticks()`            | Real-time  | `on_trade_tick()`        | Live trade updates.                               |
-| `subscribe_mark_prices()`            | Real-time  | `on_mark_price()`        | Live mark price updates.                          |
-| `subscribe_index_prices()`           | Real-time  | `on_index_price()`       | Live index price updates.                         |
-| `subscribe_bars()`                   | Real-time  | `on_bar()`               | Live bar updates.                                 |
-| `subscribe_funding_rates()`          | Real-time  | `on_funding_rate()`      | Live funding rate updates.                        |
-| `subscribe_instrument_status()`      | Real-time  | `on_instrument_status()` | Live instrument status updates.                   |
-| `subscribe_instrument_close()`       | Real-time  | `on_instrument_close()`  | Live instrument close updates.                    |
-| `subscribe_option_greeks()`          | Real-time  | `on_option_greeks()`     | Live option greeks updates.                       |
-| `subscribe_option_chain()`           | Real-time  | `on_option_chain()`      | Live option chain slice snapshots.                |
-| `subscribe_order_fills()`            | Real-time  | `on_order_filled()`      | Live order fill events for an instrument.         |
-| `subscribe_order_cancels()`          | Real-time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
+| `subscribe_data()`                   | Real‑time  | `on_data()`              | Live data updates.                                |
+| `subscribe_instrument()`             | Real‑time  | `on_instrument()`        | Live instrument definition updates.               |
+| `subscribe_instruments()`            | Real‑time  | `on_instrument()`        | Live instrument definition updates (for venue).   |
+| `subscribe_order_book_deltas()`      | Real‑time  | `on_order_book_deltas()` | Live order book deltas.                           |
+| `subscribe_order_book_depth()`       | Real‑time  | `on_order_book_depth()`  | Live order book depth snapshots.                  |
+| `subscribe_order_book_at_interval()` | Real‑time  | `on_order_book()`        | Live order book snapshots at intervals.           |
+| `subscribe_quote_ticks()`            | Real‑time  | `on_quote_tick()`        | Live quote updates.                               |
+| `subscribe_trade_ticks()`            | Real‑time  | `on_trade_tick()`        | Live trade updates.                               |
+| `subscribe_mark_prices()`            | Real‑time  | `on_mark_price()`        | Live mark price updates.                          |
+| `subscribe_index_prices()`           | Real‑time  | `on_index_price()`       | Live index price updates.                         |
+| `subscribe_bars()`                   | Real‑time  | `on_bar()`               | Live bar updates.                                 |
+| `subscribe_funding_rates()`          | Real‑time  | `on_funding_rate()`      | Live funding rate updates.                        |
+| `subscribe_instrument_status()`      | Real‑time  | `on_instrument_status()` | Live instrument status updates.                   |
+| `subscribe_instrument_close()`       | Real‑time  | `on_instrument_close()`  | Live instrument close updates.                    |
+| `subscribe_option_greeks()`          | Real‑time  | `on_option_greeks()`     | Live option greeks updates.                       |
+| `subscribe_option_chain()`           | Real‑time  | `on_option_chain()`      | Live option chain slice snapshots.                |
+| `subscribe_order_fills()`            | Real‑time  | `on_order_filled()`      | Live order fill events for an instrument.         |
+| `subscribe_order_cancels()`          | Real‑time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
 | `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
 | `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                     |
 | `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                      |
@@ -176,7 +176,7 @@ Different data operations map to these handlers:
 | `request_quote_ticks()`              | Historical | `on_historical_data()`   | Historical quotes processing.                     |
 | `request_trade_ticks()`              | Historical | `on_historical_data()`   | Historical trades processing.                     |
 | `request_bars()`                     | Historical | `on_historical_data()`   | Historical bars processing.                       |
-| `request_aggregated_bars()`          | Historical | `on_historical_data()`   | Historical aggregated bars (on-the-fly).          |
+| `request_aggregated_bars()`          | Historical | `on_historical_data()`   | Historical aggregated bars (on‑the‑fly).          |
 | `request_funding_rates()`            | Historical | `on_historical_data()`   | Historical funding rates processing.              |
 
 ### Example
