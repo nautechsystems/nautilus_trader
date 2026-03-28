@@ -305,6 +305,58 @@ def test_terminal_venue_truth_materializes_the_missed_ack_from_venue_truth(
         store.close()
 
 
+def test_terminal_venue_truth_with_final_ack_releases_ownership(
+    tmp_path: Path,
+) -> None:
+    wal = _load_wal_module()
+    ledger = _load_ledger_module()
+    claim = _claim()
+    store = wal.SQLiteOwnershipWal(db_path=tmp_path / "ownership.db")
+    materializer = _RecordingMaterializer()
+    owned_ledger = ledger.ExecutionLedger(wal=store, materializer=materializer)
+
+    try:
+        store.append_claim(
+            claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
+            authority=_authority(),
+            appended_at_ns=111,
+        )
+        store.record_venue_write(
+            claim=claim,
+            authority=_authority(),
+            venue_order_id="venue-9001",
+            written_at_ns=222,
+        )
+
+        plan = asyncio.run(
+            owned_ledger.recover(
+                client_order_id=claim.client_order_id,
+                venue_truth=ledger.VenueTruth(
+                    client_order_id=claim.client_order_id,
+                    venue_order_id="venue-9001",
+                    lifecycle_state=ExecutionLifecycleState.FILLED,
+                    final_ack=True,
+                ),
+                recovered_at_ns=500,
+            )
+        )
+
+        assert plan.classification is ledger.RecoveryClassification.BOUND_TO_VENUE
+        assert plan.crash_recovery_action is ControllerCrashRecoveryAction.RELEASE_CLAIM
+        assert plan.lifecycle_state is ExecutionLifecycleState.FILLED
+        assert plan.should_query_venue is False
+        assert plan.should_send_to_venue is False
+        assert plan.should_materialize is True
+        assert [event.lifecycle_state for event in materializer.events] == [
+            ExecutionLifecycleState.FILLED,
+        ]
+    finally:
+        store.close()
+
+
 def test_venue_truth_without_matching_claim_tuple_is_quarantined_as_an_orphan(
     tmp_path: Path,
 ) -> None:

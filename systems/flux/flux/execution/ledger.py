@@ -272,9 +272,10 @@ class ExecutionLedger:
         classification = RecoveryClassification.BOUND_TO_VENUE
         recovery_action = ControllerCrashRecoveryAction.RECONCILE_BEFORE_RETRY
 
-        if venue_truth.lifecycle_state in TERMINAL_LIFECYCLE_STATES and not venue_truth.final_ack:
-            classification = RecoveryClassification.MATERIALIZED_FROM_VENUE
+        if venue_truth.lifecycle_state in TERMINAL_LIFECYCLE_STATES:
             recovery_action = ControllerCrashRecoveryAction.RELEASE_CLAIM
+            if not venue_truth.final_ack:
+                classification = RecoveryClassification.MATERIALIZED_FROM_VENUE
         elif not venue_truth.final_ack:
             classification = RecoveryClassification.PENDING_RECOVERY
             should_query_venue = True
