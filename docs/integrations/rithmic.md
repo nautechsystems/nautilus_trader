@@ -5,8 +5,8 @@ across supported FCMs and exchanges. This integration supports live market data 
 loading, historical bar requests, and live order execution through NautilusTrader.
 
 :::warning
-**Alpha status.** The current Rithmic adapter is alpha software. It is still under active testing and development
-and should not be used for live trading.
+**Beta status.** The current Rithmic adapter is beta software. It has reached a minimally working state,
+but it remains under active testing and development and should be used cautiously for live trading.
 :::
 
 Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
