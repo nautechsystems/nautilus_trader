@@ -186,7 +186,7 @@ Do not infer this from signal rows alone.
 
 ## 11. Hold A 15-Minute Soak Window
 
-Run repeated readiness JSON and quote-age probes for at least `15` minutes during a live US regular trading session.
+Run repeated readiness JSON and quote-age probes for a `15`-minute soak window during a live US regular trading session.
 
 Do not sign off until:
 
