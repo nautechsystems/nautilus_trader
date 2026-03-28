@@ -1,15 +1,28 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Account state provider for Rithmic.
 //!
 //! The `RithmicAccountProvider` receives account balance updates from the
 //! PnL plant via the `RithmicGateway`. It maintains current account state
 //! and provides event notifications for balance changes.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use dashmap::DashMap;
-use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, warn};
 
 use crate::common::types::{RithmicAccountId, UnixNanos};
 use crate::error::Result;
@@ -58,7 +71,7 @@ pub struct RithmicAccountProvider {
     gateway: Arc<RithmicGateway>,
     account_id: String,
     balances: Arc<DashMap<String, AccountBalance>>,
-    event_tx: Option<mpsc::UnboundedSender<AccountEvent>>,
+    event_tx: Option<tokio::sync::mpsc::UnboundedSender<AccountEvent>>,
     task_handle: Option<JoinHandle<()>>,
 }
 
@@ -94,7 +107,7 @@ impl RithmicAccountProvider {
     /// and updates the local balance state. Call this after the gateway is connected.
     pub async fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
-            warn!("Account provider already started");
+            tracing::warn!("Account provider already started");
             return Ok(());
         }
 
@@ -106,7 +119,7 @@ impl RithmicAccountProvider {
         //
         // For now, the provider acts as a state container that gets updated
         // by the caller who has access to the gateway's PnL events.
-        debug!("Account provider started for account {}", self.account_id);
+        tracing::debug!("Account provider started for account {}", self.account_id);
         Ok(())
     }
 
@@ -115,7 +128,7 @@ impl RithmicAccountProvider {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
         }
-        debug!("Account provider stopped");
+        tracing::debug!("Account provider stopped");
         Ok(())
     }
 
@@ -131,32 +144,32 @@ impl RithmicAccountProvider {
 
     /// Returns available margin.
     pub fn available_margin(&self) -> f64 {
-        self.balance().map(|b| b.available).unwrap_or(0.0)
+        self.balance().map_or(0.0, |b| b.available)
     }
 
     /// Returns unrealized PnL.
     pub fn unrealized_pnl(&self) -> f64 {
-        self.balance().map(|b| b.unrealized_pnl).unwrap_or(0.0)
+        self.balance().map_or(0.0, |b| b.unrealized_pnl)
     }
 
     /// Returns realized PnL.
     pub fn realized_pnl(&self) -> f64 {
-        self.balance().map(|b| b.realized_pnl).unwrap_or(0.0)
+        self.balance().map_or(0.0, |b| b.realized_pnl)
     }
 
     /// Returns total balance.
     pub fn total_balance(&self) -> f64 {
-        self.balance().map(|b| b.total).unwrap_or(0.0)
+        self.balance().map_or(0.0, |b| b.total)
     }
 
     /// Returns locked margin.
     pub fn locked_margin(&self) -> f64 {
-        self.balance().map(|b| b.locked).unwrap_or(0.0)
+        self.balance().map_or(0.0, |b| b.locked)
     }
 
     /// Returns a receiver for account events.
-    pub fn event_receiver(&mut self) -> mpsc::UnboundedReceiver<AccountEvent> {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub fn event_receiver(&mut self) -> tokio::sync::mpsc::UnboundedReceiver<AccountEvent> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.event_tx = Some(tx);
         rx
     }
@@ -184,7 +197,8 @@ impl RithmicAccountProvider {
                     }
                 }
                 AccountEvent::Error(err) => {
-                    error!("Account error: {}", err);
+                    tracing::error!("Account error: {}", err);
+
                     if let Some(tx) = &self.event_tx {
                         let _ = tx.send(AccountEvent::Error(err.clone()));
                     }
@@ -196,6 +210,7 @@ impl RithmicAccountProvider {
     /// Updates account balance (internal use).
     pub(crate) fn update_balance(&self, balance: AccountBalance) {
         let account_id = balance.account_id.clone();
+
         if let Some(tx) = &self.event_tx {
             let _ = tx.send(AccountEvent::BalanceUpdate(balance.clone()));
         }
@@ -209,9 +224,9 @@ impl RithmicAccountProvider {
     }
 }
 
-impl std::fmt::Debug for RithmicAccountProvider {
+impl Debug for RithmicAccountProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicAccountProvider")
+        f.debug_struct(stringify!(RithmicAccountProvider))
             .field("account_id", &self.account_id)
             .field("available_margin", &self.available_margin())
             .field("total_balance", &self.total_balance())
@@ -239,7 +254,7 @@ mod tests {
         Arc::new(RithmicGateway::new(config))
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_account_provider_creation() {
         let gateway = create_test_gateway();
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");
@@ -247,7 +262,7 @@ mod tests {
         assert!(provider.balance().is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_update_balance() {
         let gateway = create_test_gateway();
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");
@@ -271,7 +286,7 @@ mod tests {
         assert_eq!(retrieved.available, 50000.0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_pnl_event() {
         let gateway = create_test_gateway();
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");
@@ -298,7 +313,7 @@ mod tests {
         assert_eq!(provider.unrealized_pnl(), 500.0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_balance_for_different_account() {
         let gateway = create_test_gateway();
         let provider = RithmicAccountProvider::new(gateway, "ACCOUNT123");

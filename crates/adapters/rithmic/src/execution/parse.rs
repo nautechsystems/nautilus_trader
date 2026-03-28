@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Parsing utilities for execution messages.
 
 use rithmic_rs::{OrderSide, OrderStatus, OrderType, TimeInForce};
@@ -58,6 +73,10 @@ pub fn parse_time_in_force(tif_code: i32) -> Result<TimeInForce> {
 }
 
 #[allow(dead_code)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Venue order requests require explicit field mapping at the adapter boundary"
+)]
 pub fn build_order_request(
     client_order_id: &str,
     symbol: &str,
@@ -117,7 +136,7 @@ pub fn build_order_request(
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_build_order_request_market() {
         let request = build_order_request(
             "ORDER123", "ESZ4", "CME", "BUY", "MARKET", "DAY", 5.0, None, None,
@@ -130,7 +149,7 @@ mod tests {
         assert_eq!(request.order_type, OrderType::Market);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_build_order_request_limit() {
         let request = build_order_request(
             "ORDER123",
@@ -150,7 +169,7 @@ mod tests {
         assert_eq!(request.price, Some(4500.00));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_build_order_request_limit_missing_price() {
         let result = build_order_request(
             "ORDER123", "ESZ4", "CME", "BUY", "LIMIT", "DAY", 5.0, None, // Missing price
@@ -160,14 +179,14 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_order_status() {
         assert_eq!(parse_order_status(0).unwrap(), OrderStatus::Pending);
         assert_eq!(parse_order_status(3).unwrap(), OrderStatus::Complete);
         assert!(parse_order_status(99).is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_build_order_request_zero_quantity() {
         let result = build_order_request(
             "ORDER123", "ESZ4", "CME", "BUY", "MARKET", "DAY", 0.0, None, None,
@@ -176,7 +195,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Invalid quantity"));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_build_order_request_negative_quantity() {
         let result = build_order_request(
             "ORDER123", "ESZ4", "CME", "BUY", "MARKET", "DAY", -5.0, None, None,

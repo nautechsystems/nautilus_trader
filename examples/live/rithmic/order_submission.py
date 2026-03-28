@@ -35,7 +35,7 @@ Notes on app credentials:
     conformance themselves unless instructed otherwise.
     For direct API onboarding later: https://www.rithmic.com/api-request
 
-WARNING:
+Warning:
     This sends a real order to the configured account. Use a demo account first.
 """
 
@@ -46,14 +46,14 @@ import math
 import os
 import time
 
-from nautilus_trader.adapters.rithmic import RithmicDataClient, RithmicGateway
-from nautilus_trader.adapters.rithmic.bindings import (
-    OrderSide,
-    OrderType,
-    RithmicExecutionClient,
-    RithmicInstrumentProvider,
-    TimeInForce,
-)
+from nautilus_trader.adapters.rithmic import RithmicDataClient
+from nautilus_trader.adapters.rithmic import RithmicGateway
+from nautilus_trader.adapters.rithmic.bindings import OrderSide
+from nautilus_trader.adapters.rithmic.bindings import OrderType
+from nautilus_trader.adapters.rithmic.bindings import RithmicExecutionClient
+from nautilus_trader.adapters.rithmic.bindings import RithmicInstrumentProvider
+from nautilus_trader.adapters.rithmic.bindings import TimeInForce
+
 
 DEFAULT_PRODUCT = "MNQ"
 DEFAULT_EXCHANGE = "CME"
@@ -112,11 +112,7 @@ def describe_execution_event(event) -> str:
         )
     if event.is_rejected():
         rejected = event.as_rejected()
-        return (
-            "Rejected("
-            f"client_order_id={rejected.client_order_id}, "
-            f"reason={rejected.reason})"
-        )
+        return f"Rejected(client_order_id={rejected.client_order_id}, reason={rejected.reason})"
     if event.is_error():
         return f"Error({event.as_error()})"
     return repr(event)
@@ -129,6 +125,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
             raise RuntimeError(f"Market data error: {event.as_error()}")
         if event.is_quote():
             quote = event.as_quote()
+
             if (
                 quote.symbol == symbol
                 and quote.exchange == exchange
@@ -138,7 +135,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
                 return quote
 
 
-async def wait_for_execution_event(
+async def wait_for_execution_event(  # noqa: C901
     execution_queue: asyncio.Queue,
     client_order_id: str,
     label: str,
@@ -164,9 +161,7 @@ async def wait_for_execution_event(
         if event.is_filled():
             filled = event.as_filled()
             if filled.client_order_id == client_order_id:
-                raise RuntimeError(
-                    "Order filled unexpectedly; the example expects a resting order"
-                )
+                raise RuntimeError("Order filled unexpectedly; the example expects a resting order")
             continue
 
         if allow_submitted and event.is_submitted():
@@ -190,7 +185,7 @@ async def wait_for_execution_event(
                 return event
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: C901
     profile = os.getenv("RITHMIC_PROFILE")
     product = os.getenv("RITHMIC_ORDER_ROOT", DEFAULT_PRODUCT).strip().upper()
     exchange = os.getenv("RITHMIC_ORDER_EXCHANGE", DEFAULT_EXCHANGE).strip().upper()
@@ -229,6 +224,7 @@ async def main() -> None:
     except ValueError as e:
         print(f"Error creating gateway from env: {e}")
         print("Required environment variables:")
+
         if profile:
             print(f"  RITHMIC_{profile.upper()}_USERNAME")
             print(f"  RITHMIC_{profile.upper()}_PASSWORD")
@@ -298,6 +294,7 @@ async def main() -> None:
             quote.bid_price - modified_points_below_bid,
             instrument.tick_size,
         )
+
         if initial_limit_price <= 0.0 or modified_limit_price <= 0.0:
             raise RuntimeError("Calculated limit price was not positive")
 
@@ -324,6 +321,7 @@ async def main() -> None:
             allow_submitted=True,
             allow_accepted=True,
         )
+
         if first_event.is_submitted():
             submitted = first_event.as_submitted()
             venue_order_id = submitted.venue_order_id or venue_order_id

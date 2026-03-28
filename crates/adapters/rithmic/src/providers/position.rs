@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Position state provider for Rithmic.
 //!
 //! The `RithmicPositionProvider` receives position updates from the PnL plant
@@ -5,10 +20,8 @@
 //! quantity, average price, and P&L calculations.
 
 use dashmap::DashMap;
-use std::sync::Arc;
-use tokio::sync::mpsc;
+use std::{fmt::Debug, sync::Arc};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, warn};
 
 use crate::{
     common::types::{ExchangeId, RithmicAccountId, RithmicSymbol, UnixNanos},
@@ -88,7 +101,7 @@ pub struct RithmicPositionProvider {
     gateway: Arc<RithmicGateway>,
     account_id: String,
     positions: Arc<DashMap<String, Position>>,
-    event_tx: Option<mpsc::UnboundedSender<PositionEvent>>,
+    event_tx: Option<tokio::sync::mpsc::UnboundedSender<PositionEvent>>,
     task_handle: Option<JoinHandle<()>>,
 }
 
@@ -124,13 +137,13 @@ impl RithmicPositionProvider {
     /// Call this after the gateway is connected.
     pub async fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
-            warn!("Position provider already started");
+            tracing::warn!("Position provider already started");
             return Ok(());
         }
 
         // Note: The gateway already subscribes to PnL updates during connect().
         // Position updates come from the same PnL subscription as account updates.
-        debug!("Position provider started for account {}", self.account_id);
+        tracing::debug!("Position provider started for account {}", self.account_id);
         Ok(())
     }
 
@@ -139,7 +152,7 @@ impl RithmicPositionProvider {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
         }
-        debug!("Position provider stopped");
+        tracing::debug!("Position provider stopped");
         Ok(())
     }
 
@@ -189,8 +202,8 @@ impl RithmicPositionProvider {
     }
 
     /// Returns a receiver for position events.
-    pub fn event_receiver(&mut self) -> mpsc::UnboundedReceiver<PositionEvent> {
-        let (tx, rx) = mpsc::unbounded_channel();
+    pub fn event_receiver(&mut self) -> tokio::sync::mpsc::UnboundedReceiver<PositionEvent> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.event_tx = Some(tx);
         rx
     }
@@ -239,7 +252,8 @@ impl RithmicPositionProvider {
                     }
                 }
                 PositionEvent::Error(err) => {
-                    error!("Position error: {}", err);
+                    tracing::error!("Position error: {}", err);
+
                     if let Some(tx) = &self.event_tx {
                         let _ = tx.send(PositionEvent::Error(err.clone()));
                     }
@@ -254,11 +268,7 @@ impl RithmicPositionProvider {
     /// based on the previous state and emits the appropriate event.
     pub(crate) fn update_position(&self, position: Position) {
         let key = format!("{}:{}", position.exchange, position.symbol);
-        let was_flat = self
-            .positions
-            .get(&key)
-            .map(|p| p.is_flat())
-            .unwrap_or(true);
+        let was_flat = self.positions.get(&key).is_none_or(|p| p.is_flat());
         let is_flat = position.is_flat();
 
         let event = if was_flat && !is_flat {
@@ -299,9 +309,9 @@ impl RithmicPositionProvider {
     }
 }
 
-impl std::fmt::Debug for RithmicPositionProvider {
+impl Debug for RithmicPositionProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicPositionProvider")
+        f.debug_struct(stringify!(RithmicPositionProvider))
             .field("account_id", &self.account_id)
             .field("open_positions", &self.open_positions_count())
             .field("long_positions", &self.long_positions_count())
@@ -330,7 +340,7 @@ mod tests {
         Arc::new(RithmicGateway::new(config))
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_position_provider_creation() {
         let gateway = create_test_gateway();
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
@@ -338,7 +348,7 @@ mod tests {
         assert_eq!(provider.open_positions_count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_update_position() {
         let gateway = create_test_gateway();
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
@@ -363,7 +373,7 @@ mod tests {
         assert_eq!(provider.open_positions_count(), 1);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_position_states() {
         let mut pos = Position {
             is_snapshot: false,
@@ -392,7 +402,7 @@ mod tests {
         assert!(pos.is_flat());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_pnl_event_updates_position() {
         let gateway = create_test_gateway();
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
@@ -419,7 +429,7 @@ mod tests {
         assert_eq!(provider.total_unrealized_pnl(), -100.0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_position_lifecycle_opened_closed() {
         let gateway = create_test_gateway();
         let mut provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
@@ -466,7 +476,7 @@ mod tests {
         assert!(matches!(event, PositionEvent::Closed { .. }));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_ignores_other_account_positions() {
         let gateway = create_test_gateway();
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");
@@ -490,7 +500,7 @@ mod tests {
         assert_eq!(provider.open_positions_count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_multiple_positions() {
         let gateway = create_test_gateway();
         let provider = RithmicPositionProvider::new(gateway, "ACCOUNT123");

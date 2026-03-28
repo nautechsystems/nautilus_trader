@@ -1,4 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for execution client.
+
+#![allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 execution APIs accept owned Python values at the FFI boundary"
+)]
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -6,9 +26,9 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use nautilus_common::live::get_runtime;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use rithmic_rs::{
@@ -52,7 +72,7 @@ use super::gateway::PyRithmicGateway;
 #[pyclass(name = "RithmicExecutionClient")]
 pub struct PyRithmicExecutionClient {
     /// Reference to the gateway for async operations.
-    gateway: Arc<RwLock<RithmicGateway>>,
+    gateway: Arc<tokio::sync::RwLock<RithmicGateway>>,
     /// Trading account ID.
     account_id: String,
     /// Local order tracking (Arc for sharing with async futures).
@@ -60,7 +80,7 @@ pub struct PyRithmicExecutionClient {
     /// Python callback for execution events.
     execution_callback: Arc<parking_lot::Mutex<Option<Py<PyAny>>>>,
     event_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
-    shutdown_tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
+    shutdown_tx: Arc<parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 /// Local order tracking info.
@@ -165,25 +185,21 @@ impl PyRithmicExecutionClient {
         future_into_py(py, async move {
             // Check if already running
             if event_task.lock().is_some() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Execution event loop already running",
-                ));
+                return Err(to_pyruntime_err("Execution event loop already running"));
             }
 
             // Take the receiver from gateway
             let mut gw = gateway.write().await;
             let rx = gw.take_execution_receiver().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err(
-                    "Execution receiver already taken or not available",
-                )
+                to_pyruntime_err("Execution receiver already taken or not available")
             })?;
 
             // Create shutdown channel
-            let (tx, rx_shutdown) = oneshot::channel();
+            let (tx, rx_shutdown) = tokio::sync::oneshot::channel();
             *shutdown_tx.lock() = Some(tx);
 
             // Spawn event processing task
-            let handle = tokio::spawn(Self::event_loop(rx, rx_shutdown, orders, callback));
+            let handle = get_runtime().spawn(Self::event_loop(rx, rx_shutdown, orders, callback));
 
             // Store task handle
             *event_task.lock() = Some(handle);
@@ -274,37 +290,29 @@ impl PyRithmicExecutionClient {
         Self::validate_symbol_exchange(&symbol, &exchange)?;
 
         if quantity <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Quantity must be positive",
-            ));
+            return Err(to_pyvalue_err("Quantity must be positive"));
         }
 
         if client_order_id.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "client_order_id cannot be empty",
-            ));
+            return Err(to_pyvalue_err("client_order_id cannot be empty"));
         }
 
         let rs_order_type: OrderType = order_type.into();
         let rs_side: OrderSide = side.into();
-        let rs_tif: TimeInForce = time_in_force.map(|t| t.into()).unwrap_or(TimeInForce::Day);
+        let rs_tif: TimeInForce = time_in_force.map_or(TimeInForce::Day, |t| t.into());
 
         // Validate limit orders have price
         if (rs_order_type == OrderType::Limit || rs_order_type == OrderType::StopLimit)
             && price.is_none()
         {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Limit/StopLimit orders require a price",
-            ));
+            return Err(to_pyvalue_err("Limit/StopLimit orders require a price"));
         }
 
         // Validate stop orders have stop price
         if (rs_order_type == OrderType::StopMarket || rs_order_type == OrderType::StopLimit)
             && stop_price.is_none()
         {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Stop orders require a stop_price",
-            ));
+            return Err(to_pyvalue_err("Stop orders require a stop_price"));
         }
 
         let gateway = Arc::clone(&self.gateway);
@@ -327,9 +335,9 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let order = RithmicOrder {
                 symbol,
@@ -344,82 +352,80 @@ impl PyRithmicExecutionClient {
                 trailing_stop,
             };
 
-            let responses = handle.place_order(order).await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Order submission failed: {e}"))
-            })?;
+            let responses = handle
+                .place_order(order)
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Order submission failed: {e}")))?;
 
             let mut venue_order_id: Option<String> = None;
             let mut submitted_event: Option<ExecutionEvent> = None;
 
             for response in &responses {
-                match &response.message {
-                    RithmicMessage::ResponseNewOrder(resp) => {
-                        if let Some(error) = &response.error {
-                            let rejected_event = ExecutionEvent::Rejected(OrderRejected {
-                                client_order_id: tracking_client_order_id.clone(),
-                                reason: error.clone(),
-                                ts_event: rithmic_to_unix_nanos(
-                                    resp.ssboe.unwrap_or(0),
-                                    resp.usecs.unwrap_or(0),
-                                ),
-                                context: crate::execution::OrderContext {
-                                    symbol: Some(tracking_symbol.clone()),
-                                    exchange: Some(tracking_exchange.clone()),
-                                    side: Some(rs_side),
-                                    order_type: Some(rs_order_type),
-                                    time_in_force: Some(rs_tif),
-                                    quantity: Some(quantity as f64),
-                                    filled_qty: Some(0.0),
-                                    leaves_qty: Some(quantity as f64),
-                                    price,
-                                    trigger_price: stop_price,
-                                    avg_price: None,
-                                    ..Default::default()
-                                },
-                            });
-                            Self::dispatch_callback_event(&callback, rejected_event);
-                            return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Order submission failed: {error}"
-                            )));
-                        }
-
-                        let matches_request =
-                            resp.user_tag.as_deref() == Some(tracking_client_order_id.as_str());
-                        let has_venue_identity = resp.basket_id.is_some();
-
-                        if matches_request || has_venue_identity {
-                            venue_order_id = resp.basket_id.clone();
-                            submitted_event = Some(ExecutionEvent::Submitted(OrderSubmitted {
-                                client_order_id: tracking_client_order_id.clone(),
-                                venue_order_id: venue_order_id.clone(),
-                                account_id: gw.config().account_id.clone(),
-                                ts_event: rithmic_to_unix_nanos(
-                                    resp.ssboe.unwrap_or(0),
-                                    resp.usecs.unwrap_or(0),
-                                ),
-                                context: crate::execution::OrderContext {
-                                    symbol: Some(tracking_symbol.clone()),
-                                    exchange: Some(tracking_exchange.clone()),
-                                    side: Some(rs_side),
-                                    order_type: Some(rs_order_type),
-                                    time_in_force: Some(rs_tif),
-                                    quantity: Some(quantity as f64),
-                                    filled_qty: Some(0.0),
-                                    leaves_qty: Some(quantity as f64),
-                                    price,
-                                    trigger_price: stop_price,
-                                    avg_price: None,
-                                    ..Default::default()
-                                },
-                            }));
-                        }
+                if let RithmicMessage::ResponseNewOrder(resp) = &response.message {
+                    if let Some(error) = &response.error {
+                        let rejected_event = ExecutionEvent::Rejected(OrderRejected {
+                            client_order_id: tracking_client_order_id.clone(),
+                            reason: error.clone(),
+                            ts_event: rithmic_to_unix_nanos(
+                                resp.ssboe.unwrap_or(0),
+                                resp.usecs.unwrap_or(0),
+                            ),
+                            context: crate::execution::OrderContext {
+                                symbol: Some(tracking_symbol.clone()),
+                                exchange: Some(tracking_exchange.clone()),
+                                side: Some(rs_side),
+                                order_type: Some(rs_order_type),
+                                time_in_force: Some(rs_tif),
+                                quantity: Some(quantity as f64),
+                                filled_qty: Some(0.0),
+                                leaves_qty: Some(quantity as f64),
+                                price,
+                                trigger_price: stop_price,
+                                avg_price: None,
+                                ..Default::default()
+                            },
+                        });
+                        Self::dispatch_callback_event(&callback, rejected_event);
+                        return Err(to_pyruntime_err(format!(
+                            "Order submission failed: {error}"
+                        )));
                     }
-                    _ => {}
+
+                    let matches_request =
+                        resp.user_tag.as_deref() == Some(tracking_client_order_id.as_str());
+                    let has_venue_identity = resp.basket_id.is_some();
+
+                    if matches_request || has_venue_identity {
+                        venue_order_id = resp.basket_id.clone();
+                        submitted_event = Some(ExecutionEvent::Submitted(OrderSubmitted {
+                            client_order_id: tracking_client_order_id.clone(),
+                            venue_order_id: venue_order_id.clone(),
+                            account_id: gw.config().account_id.clone(),
+                            ts_event: rithmic_to_unix_nanos(
+                                resp.ssboe.unwrap_or(0),
+                                resp.usecs.unwrap_or(0),
+                            ),
+                            context: crate::execution::OrderContext {
+                                symbol: Some(tracking_symbol.clone()),
+                                exchange: Some(tracking_exchange.clone()),
+                                side: Some(rs_side),
+                                order_type: Some(rs_order_type),
+                                time_in_force: Some(rs_tif),
+                                quantity: Some(quantity as f64),
+                                filled_qty: Some(0.0),
+                                leaves_qty: Some(quantity as f64),
+                                price,
+                                trigger_price: stop_price,
+                                avg_price: None,
+                                ..Default::default()
+                            },
+                        }));
+                    }
                 }
             }
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                return Err(to_pyruntime_err(format!(
                     "Order submission failed: {error}"
                 )));
             }
@@ -477,34 +483,31 @@ impl PyRithmicExecutionClient {
         Self::validate_symbol_exchange(&symbol, &exchange)?;
 
         if quantity <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Quantity must be positive",
-            ));
+            return Err(to_pyvalue_err("Quantity must be positive"));
         }
+
         if client_order_id.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "client_order_id cannot be empty",
-            ));
+            return Err(to_pyvalue_err("client_order_id cannot be empty"));
         }
+
         if profit_ticks <= 0 || stop_ticks <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
+            return Err(to_pyvalue_err(
                 "profit_ticks and stop_ticks must be positive",
             ));
         }
 
         let rs_order_type: OrderType = order_type.into();
         let rs_side: OrderSide = side.into();
-        let rs_tif: TimeInForce = time_in_force.map(|t| t.into()).unwrap_or(TimeInForce::Day);
+        let rs_tif: TimeInForce = time_in_force.map_or(TimeInForce::Day, |t| t.into());
 
         if !matches!(rs_order_type, OrderType::Market | OrderType::Limit) {
-            return Err(pyo3::exceptions::PyValueError::new_err(
+            return Err(to_pyvalue_err(
                 "Native bracket orders currently support only MARKET and LIMIT entry types",
             ));
         }
+
         if rs_order_type == OrderType::Limit && price.is_none() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Limit bracket orders require a price",
-            ));
+            return Err(to_pyvalue_err("Limit bracket orders require a price"));
         }
 
         let gateway = Arc::clone(&self.gateway);
@@ -512,9 +515,9 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let bracket_order = RithmicBracketOrder {
                 action: rs_side.into(),
@@ -532,14 +535,10 @@ impl PyRithmicExecutionClient {
             let responses = handle
                 .place_bracket_order(bracket_order)
                 .await
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Bracket submission failed: {e}"
-                    ))
-                })?;
+                .map_err(|e| to_pyruntime_err(format!("Bracket submission failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                return Err(to_pyruntime_err(format!(
                     "Bracket submission failed: {error}"
                 )));
             }
@@ -615,42 +614,32 @@ impl PyRithmicExecutionClient {
         Self::validate_symbol_exchange(&leg2_symbol, &leg2_exchange)?;
 
         if leg1_quantity <= 0 || leg2_quantity <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Quantities must be positive",
-            ));
+            return Err(to_pyvalue_err("Quantities must be positive"));
         }
+
         if leg1_client_order_id.trim().is_empty() || leg2_client_order_id.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "client_order_id cannot be empty",
-            ));
+            return Err(to_pyvalue_err("client_order_id cannot be empty"));
         }
 
         let leg1_order_type_rs: OrderType = leg1_order_type.into();
         let leg2_order_type_rs: OrderType = leg2_order_type.into();
         let leg1_side_rs: OrderSide = leg1_side.into();
         let leg2_side_rs: OrderSide = leg2_side.into();
-        let leg1_tif: TimeInForce = leg1_time_in_force
-            .map(|t| t.into())
-            .unwrap_or(TimeInForce::Day);
-        let leg2_tif: TimeInForce = leg2_time_in_force
-            .map(|t| t.into())
-            .unwrap_or(TimeInForce::Day);
+        let leg1_tif: TimeInForce = leg1_time_in_force.map_or(TimeInForce::Day, |t| t.into());
+        let leg2_tif: TimeInForce = leg2_time_in_force.map_or(TimeInForce::Day, |t| t.into());
 
         for (label, order_type, price, stop_price) in [
             ("leg1", leg1_order_type_rs, leg1_price, leg1_stop_price),
             ("leg2", leg2_order_type_rs, leg2_price, leg2_stop_price),
         ] {
             if matches!(order_type, OrderType::Limit | OrderType::StopLimit) && price.is_none() {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "{label} requires a price",
-                )));
+                return Err(to_pyvalue_err(format!("{label} requires a price",)));
             }
+
             if matches!(order_type, OrderType::StopMarket | OrderType::StopLimit)
                 && stop_price.is_none()
             {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "{label} requires a stop_price",
-                )));
+                return Err(to_pyvalue_err(format!("{label} requires a stop_price",)));
             }
         }
 
@@ -659,9 +648,9 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let leg1 = RithmicOcoOrderLeg {
                 symbol: leg1_symbol.clone(),
@@ -694,14 +683,13 @@ impl PyRithmicExecutionClient {
                 user_tag: leg2_client_order_id.clone(),
             };
 
-            let responses = handle.place_oco_order(leg1, leg2).await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("OCO submission failed: {e}"))
-            })?;
+            let responses = handle
+                .place_oco_order(leg1, leg2)
+                .await
+                .map_err(|e| to_pyruntime_err(format!("OCO submission failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "OCO submission failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("OCO submission failed: {error}")));
             }
 
             let mut venue_ids = std::collections::HashMap::<String, String>::new();
@@ -751,28 +739,25 @@ impl PyRithmicExecutionClient {
         venue_order_id: String,
     ) -> PyResult<Bound<'py, PyAny>> {
         if venue_order_id.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "venue_order_id cannot be empty",
-            ));
+            return Err(to_pyvalue_err("venue_order_id cannot be empty"));
         }
 
         let gateway = Arc::clone(&self.gateway);
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let cancel = RithmicCancelOrder { id: venue_order_id };
-            let responses = handle.cancel_order(cancel).await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel failed: {e}"))
-            })?;
+            let responses = handle
+                .cancel_order(cancel)
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Cancel failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Cancel failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("Cancel failed: {error}")));
             }
 
             Ok(())
@@ -787,18 +772,17 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
-            let response = handle.cancel_all_orders().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel all failed: {e}"))
-            })?;
+            let response = handle
+                .cancel_all_orders()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Cancel all failed: {e}")))?;
 
             if let Some(error) = response.error {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Cancel all failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("Cancel all failed: {error}")));
             }
 
             Ok(())
@@ -832,18 +816,19 @@ impl PyRithmicExecutionClient {
             }
 
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let mut cancelled = 0usize;
             for venue_order_id in venue_order_ids {
                 let cancel = RithmicCancelOrder {
                     id: venue_order_id.clone(),
                 };
-                let responses = handle.cancel_order(cancel).await.map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel failed: {e}"))
-                })?;
+                let responses = handle
+                    .cancel_order(cancel)
+                    .await
+                    .map_err(|e| to_pyruntime_err(format!("Cancel failed: {e}")))?;
 
                 if let Some(error) = first_response_error(&responses) {
                     tracing::warn!(
@@ -870,7 +855,7 @@ impl PyRithmicExecutionClient {
         ids: Vec<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         if ids.iter().any(|id| id.trim().is_empty()) {
-            return Err(pyo3::exceptions::PyValueError::new_err(
+            return Err(to_pyvalue_err(
                 "ids cannot contain empty venue_order_id values",
             ));
         }
@@ -882,18 +867,19 @@ impl PyRithmicExecutionClient {
             }
 
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let mut cancelled = 0usize;
             for venue_order_id in ids {
                 let cancel = RithmicCancelOrder {
                     id: venue_order_id.clone(),
                 };
-                let responses = handle.cancel_order(cancel).await.map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel failed: {e}"))
-                })?;
+                let responses = handle
+                    .cancel_order(cancel)
+                    .await
+                    .map_err(|e| to_pyruntime_err(format!("Cancel failed: {e}")))?;
 
                 if let Some(error) = first_response_error(&responses) {
                     tracing::warn!(
@@ -934,10 +920,7 @@ impl PyRithmicExecutionClient {
             result.insert("symbol".to_string(), Some(info.symbol));
             result.insert("exchange".to_string(), Some(info.exchange));
             result.insert("venue_order_id".to_string(), info.venue_order_id);
-            result.insert(
-                "side".to_string(),
-                info.side.map(|value| value.to_string()),
-            );
+            result.insert("side".to_string(), info.side.map(|value| value.to_string()));
             result
         })
         .collect())
@@ -951,18 +934,17 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
-            let response = handle.show_orders().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Show orders failed: {e}"))
-            })?;
+            let response = handle
+                .show_orders()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Show orders failed: {e}")))?;
 
             if let Some(error) = response.error {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Show orders failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("Show orders failed: {error}")));
             }
 
             Ok(())
@@ -975,18 +957,17 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
-            let responses = handle.show_brackets().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Show brackets failed: {e}"))
-            })?;
+            let responses = handle
+                .show_brackets()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Show brackets failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Show brackets failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("Show brackets failed: {error}")));
             }
 
             let mut result = Vec::<std::collections::HashMap<String, Option<String>>>::new();
@@ -1014,16 +995,17 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
-            let responses = handle.show_bracket_stops().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Show bracket stops failed: {e}"))
-            })?;
+            let responses = handle
+                .show_bracket_stops()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Show bracket stops failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                return Err(to_pyruntime_err(format!(
                     "Show bracket stops failed: {error}"
                 )));
             }
@@ -1068,21 +1050,17 @@ impl PyRithmicExecutionClient {
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let responses = handle
                 .replay_executions(start_index_sec, finish_index_sec)
                 .await
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Replay executions failed: {e}"
-                    ))
-                })?;
+                .map_err(|e| to_pyruntime_err(format!("Replay executions failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                return Err(to_pyruntime_err(format!(
                     "Replay executions failed: {error}"
                 )));
             }
@@ -1141,25 +1119,21 @@ impl PyRithmicExecutionClient {
         Self::validate_symbol_exchange(&symbol, &exchange)?;
 
         if venue_order_id.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "venue_order_id cannot be empty",
-            ));
+            return Err(to_pyvalue_err("venue_order_id cannot be empty"));
         }
 
         if new_qty <= 0 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Quantity must be positive",
-            ));
+            return Err(to_pyvalue_err("Quantity must be positive"));
         }
 
         let gateway = Arc::clone(&self.gateway);
-        let rs_order_type: OrderType = order_type.map(|t| t.into()).unwrap_or(OrderType::Limit);
+        let rs_order_type: OrderType = order_type.map_or(OrderType::Limit, |t| t.into());
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
-            let handle = gw.order_handle().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
-            })?;
+            let handle = gw
+                .order_handle()
+                .ok_or_else(|| to_pyruntime_err("Order plant not connected"))?;
 
             let modify = rithmic_rs::RithmicModifyOrder {
                 id: venue_order_id,
@@ -1170,14 +1144,13 @@ impl PyRithmicExecutionClient {
                 price_type: rs_order_type.into(),
             };
 
-            let responses = handle.modify_order(modify).await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Modify failed: {e}"))
-            })?;
+            let responses = handle
+                .modify_order(modify)
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Modify failed: {e}")))?;
 
             if let Some(error) = first_response_error(&responses) {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Modify failed: {error}"
-                )));
+                return Err(to_pyruntime_err(format!("Modify failed: {error}")));
             }
 
             Ok(())
@@ -1242,14 +1215,11 @@ impl PyRithmicExecutionClient {
     /// Validates symbol and exchange are non-empty.
     fn validate_symbol_exchange(symbol: &str, exchange: &str) -> PyResult<()> {
         if symbol.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "symbol cannot be empty",
-            ));
+            return Err(to_pyvalue_err("symbol cannot be empty"));
         }
+
         if exchange.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "exchange cannot be empty",
-            ));
+            return Err(to_pyvalue_err("exchange cannot be empty"));
         }
         Ok(())
     }
@@ -1261,7 +1231,7 @@ impl PyRithmicExecutionClient {
         match (symbol, exchange) {
             (Some(symbol), Some(exchange)) => Self::validate_symbol_exchange(symbol, exchange),
             (None, None) => Ok(()),
-            _ => Err(pyo3::exceptions::PyValueError::new_err(
+            _ => Err(to_pyvalue_err(
                 "symbol and exchange must either both be provided or both be omitted",
             )),
         }
@@ -1282,11 +1252,13 @@ impl PyRithmicExecutionClient {
                 {
                     return None;
                 }
+
                 if let Some(exchange) = exchange
                     && info.exchange != exchange
                 {
                     return None;
                 }
+
                 if let Some(side) = side
                     && info.side != Some(side)
                 {
@@ -1315,7 +1287,7 @@ impl PyRithmicExecutionClient {
     /// This is separated out to make the async flow clearer and testable.
     async fn event_loop(
         mut rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-        mut rx_shutdown: oneshot::Receiver<()>,
+        mut rx_shutdown: tokio::sync::oneshot::Receiver<()>,
         orders: Arc<parking_lot::Mutex<std::collections::HashMap<String, OrderInfo>>>,
         callback: Arc<parking_lot::Mutex<Option<Py<PyAny>>>>,
     ) {
@@ -1364,6 +1336,7 @@ impl PyRithmicExecutionClient {
             if let Some(venue_order_id) = venue_order_id {
                 info.venue_order_id = Some(venue_order_id.to_string());
             }
+
             if side.is_some() {
                 info.side = side;
             }

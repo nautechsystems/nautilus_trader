@@ -356,6 +356,7 @@ def main() -> None:
     print(f"Bar type: {bar_type}")
     print(f"Trade size: {trade_size}")
     print(f"Fast/slow EMA periods: {fast_period}/{slow_period}")
+
     if request_bars:
         print(f"Historical warmup: {warmup_minutes} minutes")
     else:
@@ -367,6 +368,7 @@ def main() -> None:
     print()
     print("WARNING: this example can submit live orders to the configured account.")
     print("Use a demo account first.")
+
     if request_bars:
         print("EMAs warm up from native Rithmic historical bars before live execution begins.")
     elif use_history:

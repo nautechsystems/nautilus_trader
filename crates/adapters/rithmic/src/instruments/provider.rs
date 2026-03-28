@@ -1,13 +1,26 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Rithmic instrument provider implementation.
 
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use dashmap::DashMap;
 use rithmic_rs::rti::ResponseFrontMonthContract;
 use rithmic_rs::rti::messages::RithmicMessage;
 use rithmic_rs::rti::request_search_symbols::{InstrumentType, Pattern};
-use tokio::sync::RwLock;
-use tracing::{debug, warn};
 
 use crate::common::consts::exchanges::KNOWN_EXCHANGES;
 use crate::error::{Result, RithmicError};
@@ -55,16 +68,16 @@ pub struct RithmicInstrument {
 /// use nautilus_rithmic::{RithmicGateway, RithmicInstrumentProvider, GatewayConfig};
 ///
 /// let config = GatewayConfig::from_env()?;
-/// let gateway = Arc::new(RwLock::new(RithmicGateway::new(config)));
+/// let gateway = Arc::new(tokio::sync::RwLock::new(RithmicGateway::new(config)));
 /// gateway.write().await.connect().await?;
 /// let provider = RithmicInstrumentProvider::new(Arc::clone(&gateway));
 /// let instrument = provider.load_instrument_async("ESH5", "CME").await?;
 /// println!("Tick size: {}", instrument.tick_size);
 /// ```
 pub struct RithmicInstrumentProvider {
-    gateway: Arc<RwLock<RithmicGateway>>,
+    gateway: Arc<tokio::sync::RwLock<RithmicGateway>>,
     instruments: DashMap<String, RithmicInstrument>,
-    loaded_exchanges: RwLock<Vec<String>>,
+    loaded_exchanges: tokio::sync::RwLock<Vec<String>>,
 }
 
 impl RithmicInstrumentProvider {
@@ -91,22 +104,20 @@ impl RithmicInstrumentProvider {
     /// Creates a new instrument provider with the given gateway.
     ///
     /// The gateway should be connected before calling the async loading methods.
-    pub fn new(gateway: Arc<RwLock<RithmicGateway>>) -> Self {
+    pub fn new(gateway: Arc<tokio::sync::RwLock<RithmicGateway>>) -> Self {
         Self {
             gateway,
             instruments: DashMap::new(),
-            loaded_exchanges: RwLock::new(Vec::new()),
+            loaded_exchanges: tokio::sync::RwLock::new(Vec::new()),
         }
     }
 
     /// Returns a reference to the gateway.
-    pub fn gateway(&self) -> &Arc<RwLock<RithmicGateway>> {
+    pub fn gateway(&self) -> &Arc<tokio::sync::RwLock<RithmicGateway>> {
         &self.gateway
     }
 
-    // ========================================================================
-    // Async Loading Methods
-    // ========================================================================
+    // Async loading methods.
 
     /// Loads all available instruments from all known exchanges.
     ///
@@ -122,11 +133,11 @@ impl RithmicInstrumentProvider {
         for exchange in KNOWN_EXCHANGES {
             match self.load_exchange_async(exchange).await {
                 Ok(instruments) => {
-                    debug!("Loaded {} instruments from {}", instruments.len(), exchange);
+                    tracing::debug!("Loaded {} instruments from {}", instruments.len(), exchange);
                     total_loaded += instruments.len();
                 }
                 Err(e) => {
-                    warn!("Failed to load instruments from {}: {}", exchange, e);
+                    tracing::warn!("Failed to load instruments from {}: {}", exchange, e);
                     // Continue with other exchanges
                 }
             }
@@ -170,18 +181,18 @@ impl RithmicInstrumentProvider {
         // Collect symbols from search results
         for response in &responses {
             if let Some(error) = &response.error {
-                warn!("Search response error: {}", error);
+                tracing::warn!("Search response error: {}", error);
                 continue;
             }
 
-            if let RithmicMessage::ResponseSearchSymbols(search_result) = &response.message {
-                if let Some(symbol) = &search_result.symbol {
-                    symbols_to_load.push(symbol.clone());
-                }
+            if let RithmicMessage::ResponseSearchSymbols(search_result) = &response.message
+                && let Some(symbol) = &search_result.symbol
+            {
+                symbols_to_load.push(symbol.clone());
             }
         }
 
-        debug!(
+        tracing::debug!(
             "Found {} symbols on {}, loading reference data...",
             symbols_to_load.len(),
             exchange
@@ -194,7 +205,7 @@ impl RithmicInstrumentProvider {
                     instruments.push(instrument);
                 }
                 Err(e) => {
-                    debug!("Failed to load reference data for {}: {}", symbol, e);
+                    tracing::debug!("Failed to load reference data for {}: {}", symbol, e);
                     // Continue with other symbols
                 }
             }
@@ -230,7 +241,7 @@ impl RithmicInstrumentProvider {
         exchange: &str,
     ) -> Result<RithmicInstrument> {
         // Check cache first
-        let cache_key = format!("{}:{}", exchange, symbol);
+        let cache_key = format!("{exchange}:{symbol}");
         if let Some(instrument) = self.instruments.get(&cache_key) {
             return Ok(instrument.clone());
         }
@@ -249,8 +260,7 @@ impl RithmicInstrumentProvider {
         // Check for errors in response
         if let Some(error) = &response.error {
             return Err(RithmicError::Instrument(format!(
-                "Reference data error for {}: {}",
-                symbol, error
+                "Reference data error for {symbol}: {error}"
             )));
         }
 
@@ -308,8 +318,7 @@ impl RithmicInstrumentProvider {
         // Check for errors
         if let Some(error) = &response.error {
             return Err(RithmicError::Instrument(format!(
-                "Front month error for {}: {}",
-                product, error
+                "Front month error for {product}: {error}"
             )));
         }
 
@@ -328,9 +337,7 @@ impl RithmicInstrumentProvider {
         }
     }
 
-    // ========================================================================
-    // Instrument Cache Methods (NautilusTrader standard interface)
-    // ========================================================================
+    // Instrument cache methods (NautilusTrader standard interface).
 
     /// Caches multiple instruments.
     ///
@@ -359,9 +366,7 @@ impl RithmicInstrumentProvider {
         self.instruments.get(symbol).map(|r| r.clone())
     }
 
-    // ========================================================================
-    // Additional convenience methods
-    // ========================================================================
+    // Additional convenience methods.
 
     /// Returns a loaded instrument by symbol (alias for `get_instrument`).
     pub fn get(&self, symbol: &str) -> Option<RithmicInstrument> {
@@ -392,7 +397,7 @@ impl RithmicInstrumentProvider {
 
     /// Returns all instruments for a specific exchange.
     pub fn instruments_for_exchange(&self, exchange: &str) -> Vec<RithmicInstrument> {
-        let prefix = format!("{}:", exchange);
+        let prefix = format!("{exchange}:");
         self.instruments
             .iter()
             .filter(|r| r.key().starts_with(&prefix))
@@ -429,9 +434,9 @@ impl RithmicInstrumentProvider {
     }
 }
 
-impl std::fmt::Debug for RithmicInstrumentProvider {
+impl Debug for RithmicInstrumentProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicInstrumentProvider")
+        f.debug_struct(stringify!(RithmicInstrumentProvider))
             .field("instrument_count", &self.instruments.len())
             .finish()
     }
@@ -443,7 +448,7 @@ mod tests {
     use crate::config::RithmicEnv;
     use crate::gateway::GatewayConfig;
 
-    fn test_gateway() -> Arc<RwLock<RithmicGateway>> {
+    fn test_gateway() -> Arc<tokio::sync::RwLock<RithmicGateway>> {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
             "user",
@@ -453,7 +458,7 @@ mod tests {
             "ib",
             "account",
         );
-        Arc::new(RwLock::new(RithmicGateway::new(config)))
+        Arc::new(tokio::sync::RwLock::new(RithmicGateway::new(config)))
     }
 
     fn test_instrument() -> RithmicInstrument {
@@ -473,14 +478,14 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_instrument_provider_creation() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(gateway);
         assert_eq!(provider.count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_cache_instrument() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(gateway);
@@ -494,7 +499,7 @@ mod tests {
         assert_eq!(retrieved.tick_size, 0.25);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_cache_instruments_batch() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(gateway);
@@ -537,7 +542,7 @@ mod tests {
         assert!(provider.get_instrument("NQZ4").is_some());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_get_by_exchange() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(gateway);
@@ -547,7 +552,7 @@ mod tests {
         assert_eq!(retrieved.exchange, "CME");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_instruments_for_exchange() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(gateway);
@@ -560,7 +565,7 @@ mod tests {
         assert!(nymex_instruments.is_empty());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_reference() {
         let gateway = test_gateway();
         let provider = RithmicInstrumentProvider::new(Arc::clone(&gateway));
@@ -569,7 +574,7 @@ mod tests {
         assert!(!provider.gateway().blocking_read().is_connected());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_front_month_contract_prefers_trading_symbol_and_exchange() {
         let response = ResponseFrontMonthContract {
             template_id: 0,

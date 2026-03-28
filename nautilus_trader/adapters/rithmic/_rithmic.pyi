@@ -1,11 +1,10 @@
 from collections.abc import Callable
-from typing import Any, ClassVar
-
+from typing import Any
+from typing import ClassVar
 
 class OrderSide:
     BUY: ClassVar[OrderSide]
     SELL: ClassVar[OrderSide]
-
 
 class OrderType:
     MARKET: ClassVar[OrderType]
@@ -13,13 +12,11 @@ class OrderType:
     STOP_MARKET: ClassVar[OrderType]
     STOP_LIMIT: ClassVar[OrderType]
 
-
 class TimeInForce:
     DAY: ClassVar[TimeInForce]
     GTC: ClassVar[TimeInForce]
     IOC: ClassVar[TimeInForce]
     FOK: ClassVar[TimeInForce]
-
 
 class OrderStatus:
     PENDING: ClassVar[OrderStatus]
@@ -30,14 +27,12 @@ class OrderStatus:
     REJECTED: ClassVar[OrderStatus]
     EXPIRED: ClassVar[OrderStatus]
 
-
 class ConnectionState:
     DISCONNECTED: ClassVar[ConnectionState]
     CONNECTING: ClassVar[ConnectionState]
     CONNECTED: ClassVar[ConnectionState]
     RECONNECTING: ClassVar[ConnectionState]
     ERROR: ClassVar[ConnectionState]
-
 
 class QuoteTick:
     symbol: str
@@ -49,7 +44,6 @@ class QuoteTick:
     ts_event: int
     ts_init: int
 
-
 class TradeTick:
     symbol: str
     exchange: str
@@ -59,7 +53,6 @@ class TradeTick:
     trade_id: str
     ts_event: int
     ts_init: int
-
 
 class TimeBar:
     symbol: str
@@ -76,7 +69,6 @@ class TimeBar:
     ts_event: int
     ts_init: int
 
-
 class MarketDataEvent:
     def is_quote(self) -> bool: ...
     def is_trade(self) -> bool: ...
@@ -86,7 +78,6 @@ class MarketDataEvent:
     def as_trade(self) -> TradeTick: ...
     def as_bar(self) -> TimeBar: ...
     def as_error(self) -> str: ...
-
 
 class OrderSubmitted:
     is_snapshot: bool
@@ -109,7 +100,6 @@ class OrderSubmitted:
     bracket_type: str | None
     ts_event: int
 
-
 class OrderAccepted:
     is_snapshot: bool
     client_order_id: str
@@ -131,7 +121,6 @@ class OrderAccepted:
     bracket_type: str | None
     ts_event: int
 
-
 class OrderRejected:
     is_snapshot: bool
     client_order_id: str
@@ -142,7 +131,6 @@ class OrderRejected:
     linked_basket_ids: list[str]
     bracket_type: str | None
     ts_event: int
-
 
 class OrderFilled:
     is_snapshot: bool
@@ -162,7 +150,6 @@ class OrderFilled:
     bracket_type: str | None
     ts_event: int
 
-
 class OrderCancelled:
     is_snapshot: bool
     client_order_id: str
@@ -173,7 +160,6 @@ class OrderCancelled:
     linked_basket_ids: list[str]
     bracket_type: str | None
     ts_event: int
-
 
 class OrderModified:
     is_snapshot: bool
@@ -187,7 +173,6 @@ class OrderModified:
     linked_basket_ids: list[str]
     bracket_type: str | None
     ts_event: int
-
 
 class ExecutionEvent:
     def is_error(self) -> bool: ...
@@ -205,7 +190,6 @@ class ExecutionEvent:
     def as_cancelled(self) -> OrderCancelled: ...
     def as_modified(self) -> OrderModified: ...
 
-
 class AccountEvent:
     is_snapshot: bool
     account_id: str
@@ -215,7 +199,6 @@ class AccountEvent:
     locked: float
     unrealized_pnl: float
     realized_pnl: float
-
 
 class PositionEvent:
     is_snapshot: bool
@@ -227,7 +210,6 @@ class PositionEvent:
     unrealized_pnl: float
     realized_pnl: float
     ts_event: int
-
 
 class RithmicGateway:
     @staticmethod
@@ -262,7 +244,6 @@ class RithmicGateway:
     def connection_state(self) -> str: ...
     def account_id(self) -> str | None: ...
 
-
 class RithmicInstrument:
     symbol: str
     exchange: str
@@ -277,7 +258,6 @@ class RithmicInstrument:
     expiration_ts: int | None
     is_tradeable: bool
 
-
 class RithmicInstrumentProvider:
     def __init__(self, gateway: RithmicGateway) -> None: ...
     async def load_all_async(self) -> None: ...
@@ -285,7 +265,6 @@ class RithmicInstrumentProvider:
     async def load_instrument_async(self, symbol: str, exchange: str) -> RithmicInstrument: ...
     async def load_front_month_async(self, product: str, exchange: str) -> RithmicInstrument: ...
     def instruments(self) -> list[RithmicInstrument]: ...
-
 
 class RithmicDataClient:
     def __init__(self, gateway: RithmicGateway) -> None: ...
@@ -298,7 +277,6 @@ class RithmicDataClient:
     async def subscribe_trades(self, symbol: str, exchange: str) -> None: ...
     async def unsubscribe(self, symbol: str, exchange: str) -> None: ...
     async def request_bars(self, *args: Any, **kwargs: Any) -> list[Any]: ...
-
 
 class RithmicExecutionClient:
     def __init__(self, gateway: RithmicGateway, account_id: str) -> None: ...

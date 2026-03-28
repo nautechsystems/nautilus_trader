@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Message handler for Rithmic execution events.
 
 use rithmic_rs::{
@@ -12,7 +27,6 @@ use rithmic_rs::{
         rithmic_order_notification::NotifyType as RithmicNotifyType,
     },
 };
-use tracing::{debug, warn};
 
 use super::client::{
     ExecutionEvent, OrderAccepted, OrderCancelled, OrderContext, OrderFilled, OrderModified,
@@ -117,7 +131,7 @@ impl ExecutionHandler {
     fn handle_message(&self, message: &RithmicMessage) -> Option<ExecutionEvent> {
         match message {
             RithmicMessage::RithmicOrderNotification(notif) => {
-                debug!(
+                tracing::debug!(
                     user_tag = ?notif.user_tag,
                     basket_id = ?notif.basket_id,
                     notify_type = ?notif.notify_type,
@@ -129,7 +143,7 @@ impl ExecutionHandler {
                 self.handle_rithmic_order_notification(notif)
             }
             RithmicMessage::ExchangeOrderNotification(notif) => {
-                debug!(
+                tracing::debug!(
                     user_tag = ?notif.user_tag,
                     basket_id = ?notif.basket_id,
                     notify_type = ?notif.notify_type,
@@ -143,11 +157,11 @@ impl ExecutionHandler {
                 self.handle_exchange_order_notification(notif)
             }
             RithmicMessage::ForcedLogout(_) => {
-                warn!("Forced logout received from order plant");
+                tracing::warn!("Forced logout received from order plant");
                 Some(ExecutionEvent::Error("Forced logout".to_string()))
             }
             other => {
-                debug!(
+                tracing::debug!(
                     kind = ?std::mem::discriminant(other),
                     "ignoring non-execution order plant response"
                 );
@@ -169,7 +183,9 @@ impl ExecutionHandler {
         {
             Some(tag) => tag,
             None => {
-                debug!("RithmicOrderNotification missing user_tag/original_basket_id/basket_id");
+                tracing::debug!(
+                    "RithmicOrderNotification missing user_tag/original_basket_id/basket_id"
+                );
                 return None;
             }
         };
@@ -178,7 +194,7 @@ impl ExecutionHandler {
         let ts_event = rithmic_to_unix_nanos(notif.ssboe.unwrap_or(0), notif.usecs.unwrap_or(0));
         let account_id = notif.account_id.clone().unwrap_or_default();
 
-        debug!(
+        tracing::debug!(
             client_order_id = %client_order_id,
             ?notify_type,
             basket_id = ?notif.basket_id,
@@ -195,7 +211,7 @@ impl ExecutionHandler {
                     venue_order_id: notif.basket_id.clone(),
                     account_id,
                     ts_event,
-                    context: context.clone(),
+                    context,
                 }))
             }
             RithmicNotifyType::Open => Some(ExecutionEvent::Accepted(OrderAccepted {
@@ -203,7 +219,7 @@ impl ExecutionHandler {
                 venue_order_id: notif.basket_id.clone().unwrap_or_default(),
                 account_id,
                 ts_event,
-                context: context.clone(),
+                context,
             })),
             RithmicNotifyType::Modified => Some(ExecutionEvent::Modified(OrderModified {
                 client_order_id,
@@ -211,7 +227,7 @@ impl ExecutionHandler {
                 new_price: notif.price,
                 new_qty: notif.quantity.map(|q| q as f64),
                 ts_event,
-                context: context.clone(),
+                context,
             })),
             RithmicNotifyType::Complete => {
                 let status: OrderStatus = notif
@@ -227,12 +243,12 @@ impl ExecutionHandler {
                         client_order_id,
                         venue_order_id,
                         ts_event,
-                        context: context.clone(),
+                        context,
                     }))
                 } else {
                     // Completion without a clear cancellation is typically followed by an
                     // ExchangeOrderNotification::Fill. Avoid emitting a duplicate event here.
-                    debug!(
+                    tracing::debug!(
                         ?status,
                         "order complete without cancellation – waiting for fill detail"
                     );
@@ -265,7 +281,7 @@ impl ExecutionHandler {
             | RithmicNotifyType::ModifySentToExch
             | RithmicNotifyType::CancelSentToExch
             | RithmicNotifyType::Generic => {
-                debug!("Ignoring pending/generic order notification");
+                tracing::debug!("Ignoring pending/generic order notification");
                 None
             }
         }
@@ -284,7 +300,9 @@ impl ExecutionHandler {
         {
             Some(tag) => tag,
             None => {
-                debug!("ExchangeOrderNotification missing user_tag/original_basket_id/basket_id");
+                tracing::debug!(
+                    "ExchangeOrderNotification missing user_tag/original_basket_id/basket_id"
+                );
                 return None;
             }
         };
@@ -292,7 +310,7 @@ impl ExecutionHandler {
         let ts_event = rithmic_to_unix_nanos(notif.ssboe.unwrap_or(0), notif.usecs.unwrap_or(0));
         let venue_order_id = notif.basket_id.clone().unwrap_or_default();
 
-        debug!(
+        tracing::debug!(
             client_order_id = %client_order_id,
             ?notify_type,
             basket_id = ?notif.basket_id,
@@ -305,14 +323,14 @@ impl ExecutionHandler {
                 let fill_price = match notif.fill_price {
                     Some(p) => p,
                     None => {
-                        debug!("Fill notification missing price");
+                        tracing::debug!("Fill notification missing price");
                         return None;
                     }
                 };
                 let fill_qty = match notif.fill_size {
                     Some(q) => q as f64,
                     None => {
-                        debug!("Fill notification missing size");
+                        tracing::debug!("Fill notification missing size");
                         return None;
                     }
                 };
@@ -328,14 +346,14 @@ impl ExecutionHandler {
                     ts_event,
                     trade_id: notif.fill_id.clone(),
                     currency: notif.currency.clone(),
-                    context: context.clone(),
+                    context,
                 }))
             }
             ExchangeNotifyType::Cancel => Some(ExecutionEvent::Cancelled(OrderCancelled {
                 client_order_id,
                 venue_order_id,
                 ts_event,
-                context: context.clone(),
+                context,
             })),
             ExchangeNotifyType::Reject
             | ExchangeNotifyType::NotCancelled
@@ -349,7 +367,7 @@ impl ExecutionHandler {
                     client_order_id,
                     reason,
                     ts_event,
-                    context: context.clone(),
+                    context,
                 }))
             }
             ExchangeNotifyType::Modify => Some(ExecutionEvent::Modified(OrderModified {
@@ -363,7 +381,7 @@ impl ExecutionHandler {
             ExchangeNotifyType::Status
             | ExchangeNotifyType::Trigger
             | ExchangeNotifyType::Generic => {
-                debug!("Ignoring status/trigger/generic exchange notification");
+                tracing::debug!("Ignoring status/trigger/generic exchange notification");
                 None
             }
         }
@@ -374,24 +392,26 @@ impl ExecutionHandler {
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn submitted_from_rithmic_notification() {
-        let mut notif = RithmicOrderNotification::default();
-        notif.notify_type = Some(RithmicNotifyType::OrderRcvdFromClnt as i32);
-        notif.user_tag = Some("C1".to_string());
-        notif.basket_id = Some("B1".to_string());
-        notif.account_id = Some("ACCT".to_string());
-        notif.is_snapshot = Some(true);
-        notif.symbol = Some("ESZ4".to_string());
-        notif.exchange = Some("CME".to_string());
-        notif.transaction_type = Some(1);
-        notif.price_type = Some(2);
-        notif.duration = Some(2);
-        notif.quantity = Some(3);
-        notif.price = Some(5025.25);
-        notif.total_unfilled_size = Some(3);
-        notif.ssboe = Some(1);
-        notif.usecs = Some(2);
+        let notif = RithmicOrderNotification {
+            notify_type: Some(RithmicNotifyType::OrderRcvdFromClnt as i32),
+            user_tag: Some("C1".to_string()),
+            basket_id: Some("B1".to_string()),
+            account_id: Some("ACCT".to_string()),
+            is_snapshot: Some(true),
+            symbol: Some("ESZ4".to_string()),
+            exchange: Some("CME".to_string()),
+            transaction_type: Some(1),
+            price_type: Some(2),
+            duration: Some(2),
+            quantity: Some(3),
+            price: Some(5025.25),
+            total_unfilled_size: Some(3),
+            ssboe: Some(1),
+            usecs: Some(2),
+            ..Default::default()
+        };
 
         let handler = ExecutionHandler::new();
         let event = handler
@@ -415,26 +435,28 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn fill_from_exchange_notification() {
-        let mut notif = ExchangeOrderNotification::default();
-        notif.notify_type = Some(ExchangeNotifyType::Fill as i32);
-        notif.user_tag = Some("C2".to_string());
-        notif.basket_id = Some("B2".to_string());
-        notif.is_snapshot = Some(true);
-        notif.symbol = Some("ESZ4".to_string());
-        notif.exchange = Some("CME".to_string());
-        notif.transaction_type = Some(1);
-        notif.price_type = Some(2);
-        notif.duration = Some(1);
-        notif.quantity = Some(5);
-        notif.fill_price = Some(4500.25);
-        notif.fill_size = Some(2);
-        notif.fill_id = Some("FILL1".to_string());
-        notif.currency = Some("USD".to_string());
-        notif.total_unfilled_size = Some(3);
-        notif.ssboe = Some(10);
-        notif.usecs = Some(20);
+        let notif = ExchangeOrderNotification {
+            notify_type: Some(ExchangeNotifyType::Fill as i32),
+            user_tag: Some("C2".to_string()),
+            basket_id: Some("B2".to_string()),
+            is_snapshot: Some(true),
+            symbol: Some("ESZ4".to_string()),
+            exchange: Some("CME".to_string()),
+            transaction_type: Some(1),
+            price_type: Some(2),
+            duration: Some(1),
+            quantity: Some(5),
+            fill_price: Some(4500.25),
+            fill_size: Some(2),
+            fill_id: Some("FILL1".to_string()),
+            currency: Some("USD".to_string()),
+            total_unfilled_size: Some(3),
+            ssboe: Some(10),
+            usecs: Some(20),
+            ..Default::default()
+        };
 
         let handler = ExecutionHandler::new();
         let event = handler
@@ -460,15 +482,17 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn reject_from_exchange_notification() {
-        let mut notif = ExchangeOrderNotification::default();
-        notif.notify_type = Some(ExchangeNotifyType::Reject as i32);
-        notif.user_tag = Some("C3".to_string());
-        notif.basket_id = Some("B3".to_string());
-        notif.text = Some("Reason".to_string());
-        notif.ssboe = Some(5);
-        notif.usecs = Some(6);
+        let notif = ExchangeOrderNotification {
+            notify_type: Some(ExchangeNotifyType::Reject as i32),
+            user_tag: Some("C3".to_string()),
+            basket_id: Some("B3".to_string()),
+            text: Some("Reason".to_string()),
+            ssboe: Some(5),
+            usecs: Some(6),
+            ..Default::default()
+        };
 
         let handler = ExecutionHandler::new();
         let event = handler
@@ -485,22 +509,24 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn bracket_child_notification_uses_original_basket_id_when_user_tag_missing() {
-        let mut notif = ExchangeOrderNotification::default();
-        notif.notify_type = Some(ExchangeNotifyType::Fill as i32);
-        notif.user_tag = None;
-        notif.original_basket_id = Some("PB1".to_string());
-        notif.linked_basket_ids = Some("TB1".to_string());
-        notif.bracket_type = Some(ExchangeBracketType::StopOnlyStatic as i32);
-        notif.basket_id = Some("SB1".to_string());
-        notif.symbol = Some("ESZ4".to_string());
-        notif.exchange = Some("CME".to_string());
-        notif.fill_price = Some(4500.25);
-        notif.fill_size = Some(1);
-        notif.total_unfilled_size = Some(0);
-        notif.ssboe = Some(10);
-        notif.usecs = Some(20);
+        let notif = ExchangeOrderNotification {
+            notify_type: Some(ExchangeNotifyType::Fill as i32),
+            user_tag: None,
+            original_basket_id: Some("PB1".to_string()),
+            linked_basket_ids: Some("TB1".to_string()),
+            bracket_type: Some(ExchangeBracketType::StopOnlyStatic as i32),
+            basket_id: Some("SB1".to_string()),
+            symbol: Some("ESZ4".to_string()),
+            exchange: Some("CME".to_string()),
+            fill_price: Some(4500.25),
+            fill_size: Some(1),
+            total_unfilled_size: Some(0),
+            ssboe: Some(10),
+            usecs: Some(20),
+            ..Default::default()
+        };
 
         let handler = ExecutionHandler::new();
         let event = handler

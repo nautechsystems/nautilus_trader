@@ -1,4 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for data client.
+
+#![allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 data-client APIs accept owned Python values at the FFI boundary"
+)]
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -6,9 +26,9 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use nautilus_common::live::get_runtime;
+use nautilus_core::python::{to_pynotimplemented_err, to_pyruntime_err, to_pyvalue_err};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::TimeBarType;
@@ -38,7 +58,7 @@ use super::gateway::PyRithmicGateway;
 #[pyclass(name = "RithmicDataClient")]
 pub struct PyRithmicDataClient {
     /// Reference to the gateway for async operations.
-    gateway: Arc<RwLock<RithmicGateway>>,
+    gateway: Arc<tokio::sync::RwLock<RithmicGateway>>,
     /// Local subscription tracking (mirrors the Rust client).
     /// Uses Arc so it can be shared with async futures.
     subscriptions: Arc<parking_lot::Mutex<std::collections::HashSet<String>>>,
@@ -47,7 +67,7 @@ pub struct PyRithmicDataClient {
     /// Python callback for market data events.
     data_callback: Arc<parking_lot::Mutex<Option<Py<PyAny>>>>,
     event_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
-    shutdown_tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
+    shutdown_tx: Arc<parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -138,7 +158,7 @@ impl PyRithmicDataClient {
         bar_type: String,
         bar_period: i32,
     ) -> bool {
-        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type, bar_period);
+        let key = Self::bar_subscription_key(symbol, exchange, &bar_type, bar_period);
         self.bar_subscriptions.lock().contains(&key)
     }
 
@@ -187,25 +207,21 @@ impl PyRithmicDataClient {
         future_into_py(py, async move {
             // Check if already running
             if event_task.lock().is_some() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Market data event loop already running",
-                ));
+                return Err(to_pyruntime_err("Market data event loop already running"));
             }
 
             // Take the receiver from gateway
             let mut gw = gateway.write().await;
             let rx = gw.take_market_data_receiver().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err(
-                    "Market data receiver already taken or not available",
-                )
+                to_pyruntime_err("Market data receiver already taken or not available")
             })?;
 
             // Create shutdown channel
-            let (tx, rx_shutdown) = oneshot::channel();
+            let (tx, rx_shutdown) = tokio::sync::oneshot::channel();
             *shutdown_tx.lock() = Some(tx);
 
             // Spawn event processing task
-            let handle = tokio::spawn(Self::event_loop(rx, rx_shutdown, callback));
+            let handle = get_runtime().spawn(Self::event_loop(rx, rx_shutdown, callback));
 
             // Store task handle
             *event_task.lock() = Some(handle);
@@ -266,13 +282,11 @@ impl PyRithmicDataClient {
             let gw = gateway.read().await;
             gw.subscribe_market_data(&symbol, &exchange)
                 .await
-                .map(|_| {
+                .map(|()| {
                     // Only add to tracking on success
                     subscriptions.lock().insert(key);
                 })
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Subscription failed: {e}"))
-                })
+                .map_err(|e| to_pyruntime_err(format!("Subscription failed: {e}")))
         })
     }
 
@@ -320,7 +334,7 @@ impl PyRithmicDataClient {
 
         let gateway = Arc::clone(&self.gateway);
         let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
-        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type.as_str(), bar_period);
+        let key = Self::bar_subscription_key(&symbol, &exchange, bar_type.as_str(), bar_period);
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
@@ -328,16 +342,10 @@ impl PyRithmicDataClient {
                 ParsedBarType::Time(bar_type) => gw
                     .subscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
                     .await
-                    .map_err(|e| {
-                        pyo3::exceptions::PyRuntimeError::new_err(format!(
-                            "Live bar subscription failed: {e}"
-                        ))
-                    })?,
+                    .map_err(|e| to_pyruntime_err(format!("Live bar subscription failed: {e}")))?,
                 ParsedBarType::Tick => {
                     let handle = gw.history_handle().ok_or_else(|| {
-                        pyo3::exceptions::PyRuntimeError::new_err(
-                            "History plant not connected".to_string(),
-                        )
+                        to_pyruntime_err("History plant not connected".to_string())
                     })?;
 
                     let response = handle
@@ -351,13 +359,11 @@ impl PyRithmicDataClient {
                         )
                         .await
                         .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Live bar subscription failed: {e}"
-                            ))
+                            to_pyruntime_err(format!("Live bar subscription failed: {e}"))
                         })?;
 
                     if let Some(error) = response.error {
-                        return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        return Err(to_pyruntime_err(format!(
                             "Live bar subscription failed: {error}"
                         )));
                     }
@@ -389,13 +395,11 @@ impl PyRithmicDataClient {
             let gw = gateway.read().await;
             gw.unsubscribe_market_data(&symbol, &exchange)
                 .await
-                .map(|_| {
+                .map(|()| {
                     // Only remove from tracking on success
                     subscriptions.lock().remove(&key);
                 })
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Unsubscribe failed: {e}"))
-                })
+                .map_err(|e| to_pyruntime_err(format!("Unsubscribe failed: {e}")))
         })
     }
 
@@ -413,7 +417,7 @@ impl PyRithmicDataClient {
 
         let gateway = Arc::clone(&self.gateway);
         let bar_subscriptions = Arc::clone(&self.bar_subscriptions);
-        let key = Self::bar_subscription_key(&symbol, &exchange, &bar_type.as_str(), bar_period);
+        let key = Self::bar_subscription_key(&symbol, &exchange, bar_type.as_str(), bar_period);
 
         future_into_py(py, async move {
             let gw = gateway.read().await;
@@ -421,16 +425,10 @@ impl PyRithmicDataClient {
                 ParsedBarType::Time(bar_type) => gw
                     .unsubscribe_time_bars(&symbol, &exchange, bar_type, bar_period)
                     .await
-                    .map_err(|e| {
-                        pyo3::exceptions::PyRuntimeError::new_err(format!(
-                            "Live bar unsubscribe failed: {e}"
-                        ))
-                    })?,
+                    .map_err(|e| to_pyruntime_err(format!("Live bar unsubscribe failed: {e}")))?,
                 ParsedBarType::Tick => {
                     let handle = gw.history_handle().ok_or_else(|| {
-                        pyo3::exceptions::PyRuntimeError::new_err(
-                            "History plant not connected".to_string(),
-                        )
+                        to_pyruntime_err("History plant not connected".to_string())
                     })?;
 
                     let response = handle
@@ -444,13 +442,11 @@ impl PyRithmicDataClient {
                         )
                         .await
                         .map_err(|e| {
-                            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                                "Live bar unsubscribe failed: {e}"
-                            ))
+                            to_pyruntime_err(format!("Live bar unsubscribe failed: {e}"))
                         })?;
 
                     if let Some(error) = response.error {
-                        return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        return Err(to_pyruntime_err(format!(
                             "Live bar unsubscribe failed: {error}"
                         )));
                     }
@@ -502,18 +498,14 @@ impl PyRithmicDataClient {
                         end_time_sec,
                     )
                     .await
-                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?,
+                    .map_err(|e| to_pyruntime_err(e.to_string()))?,
                 ParsedBarType::Tick => {
                     if bar_period != 1 {
-                        return Err(pyo3::exceptions::PyNotImplementedError::new_err(
-                            TICK_BAR_HISTORY_NOT_EXPOSED,
-                        ));
+                        return Err(to_pynotimplemented_err(TICK_BAR_HISTORY_NOT_EXPOSED));
                     }
 
                     let handle = gw.history_handle().ok_or_else(|| {
-                        pyo3::exceptions::PyRuntimeError::new_err(
-                            "History plant not connected".to_string(),
-                        )
+                        to_pyruntime_err("History plant not connected".to_string())
                     })?;
 
                     handle
@@ -524,14 +516,14 @@ impl PyRithmicDataClient {
                             end_time_sec,
                         )
                         .await
-                        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?
+                        .map_err(|e| to_pyruntime_err(e.to_string()))?
                 }
             };
 
             let mut bars = Vec::new();
             for response in responses {
                 if let Some(error) = &response.error {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(error.clone()));
+                    return Err(to_pyruntime_err(error.clone()));
                 }
 
                 match response.message {
@@ -563,14 +555,11 @@ impl PyRithmicDataClient {
     /// Validates symbol and exchange are non-empty.
     fn validate_symbol_exchange(symbol: &str, exchange: &str) -> PyResult<()> {
         if symbol.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "symbol cannot be empty",
-            ));
+            return Err(to_pyvalue_err("symbol cannot be empty"));
         }
+
         if exchange.trim().is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "exchange cannot be empty",
-            ));
+            return Err(to_pyvalue_err("exchange cannot be empty"));
         }
         Ok(())
     }
@@ -582,7 +571,7 @@ impl PyRithmicDataClient {
             "DailyBar" => Ok(ParsedBarType::Time(TimeBarType::DailyBar)),
             "WeeklyBar" => Ok(ParsedBarType::Time(TimeBarType::WeeklyBar)),
             "TickBar" => Ok(ParsedBarType::Tick),
-            _ => Err(pyo3::exceptions::PyValueError::new_err(
+            _ => Err(to_pyvalue_err(
                 "Unsupported bar type. Valid values: SecondBar, MinuteBar, DailyBar, WeeklyBar, TickBar",
             )),
         }
@@ -602,7 +591,7 @@ impl PyRithmicDataClient {
     /// This is separated out to make the async flow clearer and testable.
     async fn event_loop(
         mut rx: tokio::sync::mpsc::UnboundedReceiver<MarketDataEvent>,
-        mut rx_shutdown: oneshot::Receiver<()>,
+        mut rx_shutdown: tokio::sync::oneshot::Receiver<()>,
         callback: Arc<parking_lot::Mutex<Option<Py<PyAny>>>>,
     ) {
         loop {

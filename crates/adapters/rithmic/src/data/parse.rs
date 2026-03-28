@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Parsing utilities for Rithmic market data messages.
 
 use crate::common::parse::parse_timestamp_nanos;
@@ -54,6 +69,7 @@ pub fn parse_trade_tick(
     if price <= 0.0 {
         return Err(RithmicError::Parse(format!("Invalid trade price: {price}")));
     }
+
     if size <= 0.0 {
         return Err(RithmicError::Parse(format!("Invalid trade size: {size}")));
     }
@@ -92,7 +108,7 @@ pub fn determine_aggressor_side(
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_quote_tick() {
         let quote = parse_quote_tick(
             "ESZ4",
@@ -110,7 +126,7 @@ mod tests {
         assert_eq!(quote.ask_price, 4500.50);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_trade_tick() {
         let trade = parse_trade_tick(
             "ESZ4",
@@ -127,7 +143,7 @@ mod tests {
         assert_eq!(trade.price, 4500.25);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_determine_aggressor_side() {
         assert_eq!(
             determine_aggressor_side(100.0, Some(100.0), Some(101.0)),

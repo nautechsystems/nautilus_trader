@@ -1,18 +1,37 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Instrument provider for Rithmic."""
 
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Optional
-
-from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId, Symbol, Venue
-from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.objects import Currency, Price, Quantity
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
 from nautilus_trader.adapters.rithmic.config import to_binding_environment
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+
 
 if TYPE_CHECKING:
     from nautilus_trader.model.instruments import Instrument
@@ -60,7 +79,7 @@ def normalize_rithmic_symbol(symbol: str) -> str:
     return base
 
 
-def resolve_exchange_hint(symbol: str, filters: Optional[dict] = None) -> Optional[str]:
+def resolve_exchange_hint(symbol: str, filters: dict | None = None) -> str | None:
     """Resolve an exchange from request filters first, then from a symbol suffix."""
     if filters:
         exchange = filters.get("exchange")
@@ -97,7 +116,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
         """Return the venue."""
         return RITHMIC_VENUE
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         """
         Load all instruments from Rithmic.
 
@@ -118,7 +137,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
         Load specific instruments by ID.
@@ -148,7 +167,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
         Load a specific instrument.
@@ -173,7 +192,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
             return
         self._cache_instrument(self._convert_instrument(loaded))
 
-    def find(self, instrument_id: InstrumentId) -> Optional["Instrument"]:
+    def find(self, instrument_id: InstrumentId) -> Instrument | None:
         """
         Find an instrument by ID.
 
@@ -197,7 +216,7 @@ class RithmicInstrumentProvider(InstrumentProvider):
         normalized_id = InstrumentId.from_str(f"{symbol}.{RITHMIC_VENUE.value}")
         return self._instruments.get(normalized_id)
 
-    def get_all(self) -> dict[InstrumentId, "Instrument"]:
+    def get_all(self) -> dict[InstrumentId, Instrument]:
         """
         Return all loaded instruments.
 
@@ -266,19 +285,19 @@ class RithmicInstrumentProvider(InstrumentProvider):
                 raise RuntimeError("Bound Rithmic gateway is not connected")
             await self._gateway.connect()
 
-    def _cache_instrument(self, instrument: "Instrument") -> None:
+    def _cache_instrument(self, instrument: Instrument) -> None:
         self.add(instrument)
 
         currency = getattr(instrument, "currency", None)
         if currency is not None:
             self.add_currency(currency)
 
-    def _tradeable_only(self, filters: Optional[dict]) -> bool:
+    def _tradeable_only(self, filters: dict | None) -> bool:
         if filters is None:
             return False
         return bool(filters.get("tradeable_only"))
 
-    def _resolve_exchange(self, symbol: str, filters: Optional[dict]) -> Optional[str]:
+    def _resolve_exchange(self, symbol: str, filters: dict | None) -> str | None:
         return resolve_exchange_hint(symbol, filters)
 
     def _convert_instrument(self, instrument) -> FuturesContract:

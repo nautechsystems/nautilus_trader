@@ -1,7 +1,22 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Rithmic data client implementation.
 
 use dashmap::DashMap;
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use rithmic_rs::rti::request_time_bar_replay::BarType as TimeBarType;
 
@@ -476,19 +491,13 @@ impl RithmicDataClient {
     /// Returns true if subscribed to quotes for the given instrument.
     pub fn is_subscribed_quotes(&self, symbol: &str, exchange: &str) -> bool {
         let key = format!("{exchange}:{symbol}");
-        self.subscriptions
-            .get(&key)
-            .map(|s| s.quotes)
-            .unwrap_or(false)
+        self.subscriptions.get(&key).is_some_and(|s| s.quotes)
     }
 
     /// Returns true if subscribed to trades for the given instrument.
     pub fn is_subscribed_trades(&self, symbol: &str, exchange: &str) -> bool {
         let key = format!("{exchange}:{symbol}");
-        self.subscriptions
-            .get(&key)
-            .map(|s| s.trades)
-            .unwrap_or(false)
+        self.subscriptions.get(&key).is_some_and(|s| s.trades)
     }
 
     /// Returns true if subscribed to live bars for the given symbol/bar shape.
@@ -504,9 +513,9 @@ impl RithmicDataClient {
     }
 }
 
-impl std::fmt::Debug for RithmicDataClient {
+impl Debug for RithmicDataClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicDataClient")
+        f.debug_struct(stringify!(RithmicDataClient))
             .field("connection_state", &self.connection_state())
             .field("subscriptions", &self.subscription_count())
             .field("bar_subscriptions", &self.bar_subscription_count())
@@ -549,7 +558,7 @@ mod tests {
         Arc::new(RithmicGateway::new(config))
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_data_client_creation() {
         let gateway = create_test_gateway();
         let client = RithmicDataClient::new(gateway);
@@ -558,7 +567,7 @@ mod tests {
         assert_eq!(client.bar_subscription_count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_subscription_tracking() {
         let gateway = create_test_gateway();
         let client = RithmicDataClient::new(gateway);
@@ -593,7 +602,7 @@ mod tests {
         assert_eq!(client.subscription_count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_unsubscribe_all() {
         let gateway = create_test_gateway();
         let client = RithmicDataClient::new(gateway);
@@ -625,7 +634,7 @@ mod tests {
         assert_eq!(client.bar_subscription_count(), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_subscriptions_list() {
         let gateway = create_test_gateway();
         let client = RithmicDataClient::new(gateway);
@@ -651,7 +660,7 @@ mod tests {
         assert!(subs.contains(&"NYMEX:CLZ4".to_string()));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_bar_subscriptions_list() {
         let gateway = create_test_gateway();
         let client = RithmicDataClient::new(gateway);

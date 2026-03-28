@@ -1,4 +1,30 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for configuration types.
+
+#![allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 configuration APIs accept owned Python values at the FFI boundary"
+)]
+#![allow(
+    clippy::too_many_arguments,
+    reason = "PyO3 constructors mirror the Python-visible configuration signatures"
+)]
+
+use nautilus_core::python::to_pyvalue_err;
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -133,7 +159,7 @@ impl PyRithmicDataClientConfig {
     #[pyo3(signature = (profile=None))]
     fn from_env(profile: Option<String>) -> PyResult<Self> {
         let config = RithmicDataClientConfig::from_env_with_profile(profile.as_deref())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| to_pyvalue_err(e.to_string()))?;
         Ok(Self { inner: config })
     }
 
@@ -209,7 +235,7 @@ impl PyRithmicExecClientConfig {
     #[pyo3(signature = (profile=None))]
     fn from_env(profile: Option<String>) -> PyResult<Self> {
         let config = RithmicExecClientConfig::from_env_with_profile(profile.as_deref())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| to_pyvalue_err(e.to_string()))?;
         Ok(Self { inner: config })
     }
 

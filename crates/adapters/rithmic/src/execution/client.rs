@@ -1,9 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Rithmic execution client implementation.
 
 use dashmap::DashMap;
-use std::sync::Arc;
+use nautilus_common::live::get_runtime;
+use std::{fmt::Debug, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, warn};
 
 use rithmic_rs::{
     OrderSide, OrderStatus, OrderType, RithmicCancelOrder, RithmicModifyOrder, RithmicOrder,
@@ -304,16 +319,18 @@ impl RithmicExecutionClient {
         // Validate quantity is a positive whole number (Rithmic uses i32 for contracts)
         if request.quantity <= 0.0 {
             return Err(RithmicError::Order(format!(
-                "Quantity must be positive, got: {}",
+                "Quantity must be positive, received: {}",
                 request.quantity
             )));
         }
+
         if request.quantity.fract() != 0.0 {
             return Err(RithmicError::Order(format!(
-                "Quantity must be a whole number (contracts), got: {}",
+                "Quantity must be a whole number (contracts), received: {}",
                 request.quantity
             )));
         }
+
         if request.quantity > i32::MAX as f64 {
             return Err(RithmicError::Order(format!(
                 "Quantity exceeds maximum: {}",
@@ -376,7 +393,7 @@ impl RithmicExecutionClient {
             trail_by_ticks: ts.trail_by_ticks,
         });
 
-        debug!(
+        tracing::debug!(
             "Submitting order: client_id={}, symbol={}, exchange={}, qty={}, price={}, trigger={:?}, side={:?}, type={:?}, trailing={:?}",
             request.client_order_id,
             request.symbol,
@@ -418,7 +435,7 @@ impl RithmicExecutionClient {
         for response in &responses {
             match &response.message {
                 RithmicMessage::ResponseNewOrder(resp) => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -486,14 +503,14 @@ impl RithmicExecutionClient {
                             },
                         }));
                     } else {
-                        debug!(
+                        tracing::debug!(
                             request_id = %response.request_id,
                             "ignoring response_new_order without matching user_tag or basket_id"
                         );
                     }
                 }
                 other => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -508,7 +525,7 @@ impl RithmicExecutionClient {
             self.apply_event(&event);
         }
 
-        debug!("Order submitted: {}", request.client_order_id);
+        tracing::debug!("Order submitted: {}", request.client_order_id);
         Ok(())
     }
 
@@ -530,12 +547,13 @@ impl RithmicExecutionClient {
         if let Some(qty) = new_qty {
             if qty <= 0.0 {
                 return Err(RithmicError::Order(format!(
-                    "Quantity must be positive, got: {qty}"
+                    "Quantity must be positive, received: {qty}"
                 )));
             }
+
             if qty.fract() != 0.0 {
                 return Err(RithmicError::Order(format!(
-                    "Quantity must be a whole number (contracts), got: {qty}"
+                    "Quantity must be a whole number (contracts), received: {qty}"
                 )));
             }
         }
@@ -554,14 +572,17 @@ impl RithmicExecutionClient {
             id: venue_order_id.clone(),
             exchange: order.exchange.clone(),
             symbol: order.symbol.clone(),
-            qty: new_qty.map(|q| q as i32).unwrap_or(order.leaves_qty as i32),
+            qty: new_qty.map_or(order.leaves_qty as i32, |q| q as i32),
             price: new_price.unwrap_or(0.0),
             price_type: order.order_type.into(),
         };
 
-        debug!(
+        tracing::debug!(
             "Modifying order: client_id={}, venue_id={}, new_qty={:?}, new_price={:?}",
-            client_order_id, venue_order_id, new_qty, new_price
+            client_order_id,
+            venue_order_id,
+            new_qty,
+            new_price
         );
 
         let responses = self
@@ -573,7 +594,7 @@ impl RithmicExecutionClient {
         for response in &responses {
             match &response.message {
                 RithmicMessage::ResponseModifyOrder(resp) => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -585,7 +606,7 @@ impl RithmicExecutionClient {
                     );
                 }
                 other => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -617,9 +638,10 @@ impl RithmicExecutionClient {
             .clone()
             .ok_or_else(|| RithmicError::Order("Order not yet accepted by venue".to_string()))?;
 
-        debug!(
+        tracing::debug!(
             "Cancelling order: client_id={}, venue_id={}",
-            client_order_id, venue_order_id
+            client_order_id,
+            venue_order_id
         );
 
         let cancel_request = RithmicCancelOrder { id: venue_order_id };
@@ -633,7 +655,7 @@ impl RithmicExecutionClient {
         for response in &responses {
             match &response.message {
                 RithmicMessage::ResponseCancelOrder(resp) => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -645,7 +667,7 @@ impl RithmicExecutionClient {
                     );
                 }
                 other => {
-                    debug!(
+                    tracing::debug!(
                         request_id = %response.request_id,
                         source = %response.source,
                         error = ?response.error,
@@ -665,7 +687,7 @@ impl RithmicExecutionClient {
 
     /// Cancels all open orders.
     pub async fn cancel_all_orders(&self) -> Result<()> {
-        debug!("Cancelling all orders");
+        tracing::debug!("Cancelling all orders");
 
         let response = self
             .handle
@@ -690,22 +712,23 @@ impl RithmicExecutionClient {
     /// Returns the number of orders successfully submitted for cancellation.
     /// Note: This doesn't guarantee the cancels were accepted by the venue.
     pub async fn batch_cancel_orders(&self, client_order_ids: &[&str]) -> Result<usize> {
-        debug!("Batch cancelling {} orders", client_order_ids.len());
+        tracing::debug!("Batch cancelling {} orders", client_order_ids.len());
 
         let mut cancelled = 0;
         for client_order_id in client_order_ids {
             match self.cancel_order(client_order_id).await {
                 Ok(()) => cancelled += 1,
                 Err(e) => {
-                    warn!(
+                    tracing::warn!(
                         "Failed to cancel order {}: {} (continuing with batch)",
-                        client_order_id, e
+                        client_order_id,
+                        e
                     );
                 }
             }
         }
 
-        debug!(
+        tracing::debug!(
             "Batch cancel submitted {} of {} orders",
             cancelled,
             client_order_ids.len()
@@ -718,7 +741,7 @@ impl RithmicExecutionClient {
     /// This triggers an order reconciliation - the response will come
     /// through the gateway's execution event channel.
     pub async fn query_orders(&self) -> Result<()> {
-        debug!("Querying open orders");
+        tracing::debug!("Querying open orders");
 
         let response = self
             .handle
@@ -742,9 +765,10 @@ impl RithmicExecutionClient {
         start_index_sec: i32,
         finish_index_sec: i32,
     ) -> Result<()> {
-        debug!(
+        tracing::debug!(
             start_index_sec,
-            finish_index_sec, "Replaying execution history"
+            finish_index_sec,
+            "Replaying execution history"
         );
 
         let responses = self
@@ -818,17 +842,20 @@ impl RithmicExecutionClient {
                     .insert(vid.to_string(), client_order_id.to_string());
             }
             order.status = status;
+
             if let Some(fq) = filled_qty {
                 order.filled_qty = fq;
             }
+
             if let Some(lq) = leaves_qty {
                 order.leaves_qty = lq;
             }
+
             if let Some(ap) = avg_price {
                 order.avg_price = ap;
             }
         } else {
-            warn!(
+            tracing::warn!(
                 "Received update for unknown order: client_id={}",
                 client_order_id
             );
@@ -910,9 +937,10 @@ impl RithmicExecutionClient {
                             .insert(e.venue_order_id.clone(), e.client_order_id.clone());
                     }
                 } else {
-                    warn!(
+                    tracing::warn!(
                         "Filled event for unknown order: client_id={} venue_id={}",
-                        e.client_order_id, e.venue_order_id
+                        e.client_order_id,
+                        e.venue_order_id
                     );
                 }
             }
@@ -933,6 +961,7 @@ impl RithmicExecutionClient {
                         // Keep filled_qty unchanged; recompute leaves based on new quantity
                         order.leaves_qty = (order.quantity - order.filled_qty).max(0.0);
                     }
+
                     if let Some(price) = e.new_price {
                         // Track latest working price in avg_price field if no separate field exists
                         order.avg_price = if order.filled_qty == 0.0 {
@@ -948,9 +977,10 @@ impl RithmicExecutionClient {
                             .insert(e.venue_order_id.clone(), e.client_order_id.clone());
                     }
                 } else {
-                    warn!(
+                    tracing::warn!(
                         "Modify event for unknown order: client_id={} venue_id={}",
-                        e.client_order_id, e.venue_order_id
+                        e.client_order_id,
+                        e.venue_order_id
                     );
                 }
             }
@@ -985,13 +1015,13 @@ impl RithmicExecutionClient {
         self: Arc<Self>,
         rx: mpsc::UnboundedReceiver<ExecutionEvent>,
     ) -> JoinHandle<()> {
-        tokio::spawn(self.pump_events(rx))
+        get_runtime().spawn(self.pump_events(rx))
     }
 }
 
-impl std::fmt::Debug for RithmicExecutionClient {
+impl Debug for RithmicExecutionClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicExecutionClient")
+        f.debug_struct(stringify!(RithmicExecutionClient))
             .field("account_id", &self.account_id)
             .field("open_orders", &self.open_orders_count())
             .finish()

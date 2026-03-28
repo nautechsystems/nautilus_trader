@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Tests for the Rithmic execution client."""
 
 import asyncio
@@ -5,42 +20,39 @@ from decimal import Decimal
 
 import pytest
 
+
 pytest.importorskip("nautilus_trader")
 
-from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.adapters.rithmic.config import RithmicEnvironment
+from nautilus_trader.adapters.rithmic.config import RithmicExecClientConfig
+from nautilus_trader.adapters.rithmic.execution import RITHMIC_VENUE
+from nautilus_trader.adapters.rithmic.execution import RithmicLiveExecutionClient
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import (
-    BatchCancelOrders,
-    CancelAllOrders,
-    GenerateFillReports,
-    GenerateOrderStatusReports,
-    GeneratePositionStatusReports,
-)
-from nautilus_trader.model.enums import (
-    ContingencyType,
-    OrderSide,
-    OrderStatus,
-    OrderType,
-    PositionSide,
-    TimeInForce,
-)
-from nautilus_trader.model.identifiers import (
-    AccountId,
-    ClientId,
-    ClientOrderId,
-    InstrumentId,
-    VenueOrderId,
-)
-from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.execution.messages import BatchCancelOrders
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-
-from nautilus_trader.adapters.rithmic.config import RithmicEnvironment, RithmicExecClientConfig
-from nautilus_trader.adapters.rithmic.execution import RITHMIC_VENUE, RithmicLiveExecutionClient
 
 
 def _make_client(
@@ -68,6 +80,15 @@ def _make_client(
             account_id="A1",
             native_bracket_state_path=native_bracket_state_path,
         ),
+    )
+
+
+def _rithmic_future(symbol: str, underlying: str) -> object:
+    return TestInstrumentProvider.future(
+        symbol=symbol,
+        underlying=underlying,
+        venue="RITHMIC",
+        exchange="CME",
     )
 
 
@@ -148,8 +169,11 @@ class TestRithmicLiveExecutionClient:
         try:
             client = _make_client(loop)
             client._client = DummyRust()
+            instrument = _rithmic_future("MNQH6", "MNQ")
+            client._cache.add_instrument(instrument)
 
             order = TestExecStubs.limit_order(
+                instrument=instrument,
                 client_order_id=ClientOrderId("C1"),
             )
             submit = TestCommandStubs.submit_order_command(order)
@@ -220,7 +244,7 @@ class TestRithmicLiveExecutionClient:
             client = _make_client(loop)
             client._client = DummyRust()
 
-            target_instrument_id = InstrumentId.from_str("MNQH6.RITHMIC")
+            target_instrument_id = InstrumentId.from_str("MNQH6.CME.RITHMIC")
 
             loop.run_until_complete(
                 client._cancel_all_orders(
@@ -258,7 +282,7 @@ class TestRithmicLiveExecutionClient:
 
         class DummyOrder:
             account_id = AccountId("RITHMIC-A1")
-            instrument_id = InstrumentId.from_str("MNQM6.RITHMIC")
+            instrument_id = InstrumentId.from_str("MNQM6.CME.RITHMIC")
             client_order_id = ClientOrderId(f"{exit_path.upper()}-1")
             side = OrderSide.SELL
             order_type = OrderType.MARKET
@@ -302,11 +326,13 @@ class TestRithmicLiveExecutionClient:
     def test_submit_order_rejects_mismatched_rithmic_account_id(self):
         class DummyRust:
             async def submit_order(self, **kwargs):
-                raise AssertionError("submit_order should not be called for mismatched account routing")
+                raise AssertionError(
+                    "submit_order should not be called for mismatched account routing"
+                )
 
         class DummyOrder:
             account_id = AccountId("RITHMIC-A2")
-            instrument_id = InstrumentId.from_str("MNQH6.RITHMIC")
+            instrument_id = InstrumentId.from_str("MNQH6.CME.RITHMIC")
             client_order_id = ClientOrderId("C1")
             side = OrderSide.BUY
             order_type = OrderType.LIMIT
@@ -356,7 +382,7 @@ class TestRithmicLiveExecutionClient:
             client = _make_client(loop)
             client._client = DummyRust()
 
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -369,12 +395,14 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.LIMIT,
-                entry_price=Price.from_str("1.00000"),
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                entry_price=Price.from_str("21000.00"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
 
-            loop.run_until_complete(client._submit_order_list(_ExecutionPayload(order_list=order_list)))
+            loop.run_until_complete(
+                client._submit_order_list(_ExecutionPayload(order_list=order_list))
+            )
         finally:
             loop.close()
 
@@ -382,9 +410,13 @@ class TestRithmicLiveExecutionClient:
         assert calls["bracket"]["client_order_id"] == parent_order.client_order_id.value
         assert calls["bracket"]["profit_ticks"] == 1000
         assert calls["bracket"]["stop_ticks"] == 1000
-        assert client._orders[parent_order.client_order_id.value]["venue_order_id"] == VenueOrderId("PB1")
+        assert client._orders[parent_order.client_order_id.value]["venue_order_id"] == VenueOrderId(
+            "PB1"
+        )
         assert client._orders[stop_order.client_order_id.value]["status"] == OrderStatus.INITIALIZED
-        assert client._orders[target_order.client_order_id.value]["status"] == OrderStatus.INITIALIZED
+        assert (
+            client._orders[target_order.client_order_id.value]["status"] == OrderStatus.INITIALIZED
+        )
 
     def test_submit_order_list_uses_native_oco_semantics(self):
         calls = {}
@@ -415,7 +447,7 @@ class TestRithmicLiveExecutionClient:
         try:
             client = _make_client(loop)
             client._client = DummyRust()
-            instrument_id = InstrumentId.from_str("MNQZ4.RITHMIC")
+            instrument_id = InstrumentId.from_str("MNQZ4.CME.RITHMIC")
             first_id = ClientOrderId("C1")
             second_id = ClientOrderId("C2")
             first_order = DummyOrder(
@@ -451,7 +483,9 @@ class TestRithmicLiveExecutionClient:
 
             loop.run_until_complete(
                 client._submit_order_list(
-                    _ExecutionPayload(order_list=_ExecutionPayload(orders=[first_order, second_order]))
+                    _ExecutionPayload(
+                        order_list=_ExecutionPayload(orders=[first_order, second_order])
+                    )
                 )
             )
         finally:
@@ -471,7 +505,7 @@ class TestRithmicLiveExecutionClient:
             client = _make_client(loop)
             client._client = DummyRust()
 
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -484,8 +518,8 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.MARKET,
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
 
             with pytest.raises(ValueError, match="LIMIT entry orders"):
@@ -532,20 +566,23 @@ class TestRithmicLiveExecutionClient:
         )
 
         assert client._balances["A1"]["currency"] == "USD"
-        assert reports and len(reports) == 1
+        assert reports
+        assert len(reports) == 1
 
         report = reports[0]
         assert report.account_id.value == "RITHMIC-A1"
-        assert report.instrument_id == InstrumentId.from_str("ESZ4.RITHMIC")
+        assert report.instrument_id == InstrumentId.from_str("ESZ4.CME.RITHMIC")
         assert report.position_side == PositionSide.LONG
         assert float(report.quantity) == 2.0
         assert report.avg_px_open == Decimal("5000.0")
 
     @pytest.mark.asyncio
-    async def test_flatten_account_async_cancels_scoped_orders_and_flattens_positions(self):
+    async def test_flatten_account_async_cancels_scoped_orders_and_flattens_positions(  # noqa: C901
+        self,
+    ):
         client = _make_client(asyncio.get_running_loop())
 
-        target_instrument_id = InstrumentId.from_str("ESZ4.RITHMIC")
+        target_instrument_id = InstrumentId.from_str("ESZ4.CME.RITHMIC")
         cancelled: list[dict] = []
         submitted: list[dict] = []
 
@@ -664,7 +701,9 @@ class TestRithmicLiveExecutionClient:
         assert submitted[0]["side"] == client._to_rithmic_side(OrderSide.SELL)
         assert submitted[0]["order_type"] == client._to_rithmic_order_type(OrderType.MARKET)
         assert submitted[0]["time_in_force"] == client._to_rithmic_tif(TimeInForce.IOC)
-        remaining_positions = {position.symbol: position.quantity for position in dummy_gateway.positions("A1")}
+        remaining_positions = {
+            position.symbol: position.quantity for position in dummy_gateway.positions("A1")
+        }
         assert "ESZ4" not in remaining_positions
         assert remaining_positions == {"NQZ4": 2.0}
 
@@ -672,14 +711,14 @@ class TestRithmicLiveExecutionClient:
     async def test_fill_reports_preserve_event_order(self):
         client = _make_client(asyncio.get_running_loop())
 
-        instrument_id = InstrumentId.from_str("ESZ4.RITHMIC")
+        instrument_id = InstrumentId.from_str("ESZ4.CME.RITHMIC")
         client._fills = [
             {
                 "client_order_id": "C1",
                 "venue_order_id": "V1",
                 "price": Decimal("101.0"),
                 "qty": Decimal("1.0"),
-                "commission": Decimal("0"),
+                "commission": Decimal(0),
                 "ts_event": 2,
                 "ts_init": 2,
                 "instrument_id": instrument_id,
@@ -691,7 +730,7 @@ class TestRithmicLiveExecutionClient:
                 "venue_order_id": "V1",
                 "price": Decimal("100.0"),
                 "qty": Decimal("1.0"),
-                "commission": Decimal("0"),
+                "commission": Decimal(0),
                 "ts_event": 1,
                 "ts_init": 1,
                 "instrument_id": instrument_id,
@@ -740,12 +779,12 @@ class TestRithmicLiveExecutionClient:
         client._on_execution_event(event)
 
         assert len(client._fills) == 1
-        assert client._orders["C9"]["instrument_id"] == InstrumentId.from_str("ESZ4.RITHMIC")
+        assert client._orders["C9"]["instrument_id"] == InstrumentId.from_str("ESZ4.CME.RITHMIC")
         assert client._orders["C9"]["order_side"] == OrderSide.BUY
 
         reports = await client.generate_fill_reports(
             GenerateFillReports(
-                instrument_id=InstrumentId.from_str("ESZ4.RITHMIC"),
+                instrument_id=InstrumentId.from_str("ESZ4.CME.RITHMIC"),
                 venue_order_id=None,
                 start=None,
                 end=None,
@@ -756,7 +795,7 @@ class TestRithmicLiveExecutionClient:
 
         assert len(reports) == 1
         report = reports[0]
-        assert report.instrument_id == InstrumentId.from_str("ESZ4.RITHMIC")
+        assert report.instrument_id == InstrumentId.from_str("ESZ4.CME.RITHMIC")
         assert report.trade_id.value == "FILL-1"
         assert report.order_side == OrderSide.BUY
         assert float(report.last_px) == 5010.25
@@ -799,7 +838,7 @@ class TestRithmicLiveExecutionClient:
 
         assert len(reports) == 1
         report = reports[0]
-        assert report.instrument_id == InstrumentId.from_str("NQH5.RITHMIC")
+        assert report.instrument_id == InstrumentId.from_str("NQH5.CME.RITHMIC")
         assert report.order_side == OrderSide.SELL
         assert report.order_type == OrderType.LIMIT
         assert report.time_in_force == TimeInForce.GTC
@@ -821,12 +860,16 @@ class TestRithmicLiveExecutionClient:
         try:
             client = _make_client(loop)
             client._client = DummyRust()
-            unresolved = loop.run_until_complete(client._unrecoverable_native_bracket_parent_venue_ids())
+            unresolved = loop.run_until_complete(
+                client._unrecoverable_native_bracket_parent_venue_ids()
+            )
             assert unresolved == ["PBX", "PBY"]
         finally:
             loop.close()
 
-    def test_unrecoverable_native_bracket_parent_venue_ids_ignore_locally_persisted_parent_basket_ids(self, tmp_path):
+    def test_unrecoverable_native_bracket_parent_venue_ids_ignore_locally_persisted_parent_basket_ids(
+        self, tmp_path
+    ):
         state_path = tmp_path / "native-brackets.json"
 
         class DummyRust:
@@ -839,7 +882,7 @@ class TestRithmicLiveExecutionClient:
         loop = asyncio.new_event_loop()
         try:
             client = _make_client(loop, str(state_path))
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -852,14 +895,16 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.LIMIT,
-                entry_price=Price.from_str("1.00000"),
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                entry_price=Price.from_str("21000.00"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
             parent_order, stop_order, target_order = order_list.orders
             client._register_native_bracket(parent_order, stop_order, target_order, "PB1")
             client._client = DummyRust()
-            unresolved = loop.run_until_complete(client._unrecoverable_native_bracket_parent_venue_ids())
+            unresolved = loop.run_until_complete(
+                client._unrecoverable_native_bracket_parent_venue_ids()
+            )
             assert unresolved == []
         finally:
             loop.close()
@@ -868,7 +913,7 @@ class TestRithmicLiveExecutionClient:
         loop = asyncio.new_event_loop()
         try:
             client = _make_client(loop)
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -881,9 +926,9 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.LIMIT,
-                entry_price=Price.from_str("1.00000"),
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                entry_price=Price.from_str("21000.00"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
             parent_order, stop_order, target_order = order_list.orders
             client._seed_order_state(
@@ -901,14 +946,14 @@ class TestRithmicLiveExecutionClient:
                     _ExecutionPayload(
                         client_order_id=parent_order.client_order_id.value,
                         venue_order_id="SB1",
-                        symbol="AUD/USD",
-                        exchange="SIM",
+                        symbol="MNQM6",
+                        exchange="CME",
                         side="SELL",
                         order_type="STOP_MARKET",
                         time_in_force="GTC",
                         quantity=1.0,
                         leaves_qty=1.0,
-                        trigger_price=0.9900,
+                        trigger_price=20990.0,
                         bracket_type="STOP_ONLY_STATIC",
                         original_basket_id="PB1",
                         linked_basket_ids=["TB1"],
@@ -922,12 +967,12 @@ class TestRithmicLiveExecutionClient:
                     _ExecutionPayload(
                         client_order_id=parent_order.client_order_id.value,
                         venue_order_id="TB1",
-                        symbol="AUD/USD",
-                        exchange="SIM",
+                        symbol="MNQM6",
+                        exchange="CME",
                         side="SELL",
                         order_type="LIMIT",
                         quantity=1.0,
-                        fill_price=1.0100,
+                        fill_price=21010.0,
                         fill_qty=1.0,
                         leaves_qty=0.0,
                         commission=0.0,
@@ -955,7 +1000,7 @@ class TestRithmicLiveExecutionClient:
         loop = asyncio.new_event_loop()
         try:
             first_client = _make_client(loop, str(state_path))
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             first_client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -968,9 +1013,9 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.LIMIT,
-                entry_price=Price.from_str("1.00000"),
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                entry_price=Price.from_str("21000.00"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
             parent_order, stop_order, target_order = order_list.orders
             first_client._register_native_bracket(parent_order, stop_order, target_order, "PB1")
@@ -984,14 +1029,14 @@ class TestRithmicLiveExecutionClient:
                     _ExecutionPayload(
                         client_order_id=parent_order.client_order_id.value,
                         venue_order_id="SB1",
-                        symbol="AUD/USD",
-                        exchange="SIM",
+                        symbol="MNQM6",
+                        exchange="CME",
                         side="SELL",
                         order_type="STOP_MARKET",
                         time_in_force="GTC",
                         quantity=1.0,
                         leaves_qty=1.0,
-                        trigger_price=0.9900,
+                        trigger_price=20990.0,
                         bracket_type="STOP_ONLY_STATIC",
                         original_basket_id="PB1",
                         linked_basket_ids=["TB1"],
@@ -1004,7 +1049,10 @@ class TestRithmicLiveExecutionClient:
             assert stop_state["venue_order_id"] == VenueOrderId("SB1")
             assert stop_state["parent_order_id"] == parent_order.client_order_id
             assert stop_state["linked_order_ids"] == [target_order.client_order_id]
-            assert second_client._native_brackets_by_parent_venue_id["PB1"] == parent_order.client_order_id.value
+            assert (
+                second_client._native_brackets_by_parent_venue_id["PB1"]
+                == parent_order.client_order_id.value
+            )
         finally:
             loop.close()
 
@@ -1013,7 +1061,7 @@ class TestRithmicLiveExecutionClient:
         loop = asyncio.new_event_loop()
         try:
             client = _make_client(loop, str(state_path))
-            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            instrument = _rithmic_future("MNQM6", "MNQ")
             client._cache.add_instrument(instrument)
             factory = OrderFactory(
                 TestIdStubs.trader_id(),
@@ -1026,9 +1074,9 @@ class TestRithmicLiveExecutionClient:
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(1),
                 entry_order_type=OrderType.LIMIT,
-                entry_price=Price.from_str("1.00000"),
-                tp_price=Price.from_str("1.01000"),
-                sl_trigger_price=Price.from_str("0.99000"),
+                entry_price=Price.from_str("21000.00"),
+                tp_price=Price.from_str("21010.00"),
+                sl_trigger_price=Price.from_str("20990.00"),
             )
             parent_order, stop_order, target_order = order_list.orders
             client._seed_order_state(
@@ -1065,13 +1113,13 @@ class TestRithmicLiveExecutionClient:
             client = _make_client(loop)
             client._orders["C11"] = {
                 "client_order_id": ClientOrderId("C11"),
-                "instrument_id": InstrumentId.from_str("MNQM5.RITHMIC"),
+                "instrument_id": InstrumentId.from_str("MNQM5.CME.RITHMIC"),
                 "order_side": OrderSide.BUY,
                 "order_type": OrderType.LIMIT,
                 "time_in_force": TimeInForce.DAY,
-                "quantity": Decimal("1"),
-                "filled_qty": Decimal("1"),
-                "leaves_qty": Decimal("0"),
+                "quantity": Decimal(1),
+                "filled_qty": Decimal(1),
+                "leaves_qty": Decimal(0),
                 "status": OrderStatus.FILLED,
                 "ts_last": 200,
                 "ts_init": 50,

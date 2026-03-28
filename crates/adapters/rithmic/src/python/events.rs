@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for event types.
 //!
 //! This module exposes market data and execution events to Python,
@@ -13,9 +28,7 @@ use crate::execution::{
 };
 use crate::providers::{AccountEvent, PositionEvent};
 
-// ============================================================================
-// Market Data Events
-// ============================================================================
+// Market data events.
 
 /// Python wrapper for QuoteTick (best bid/offer update).
 #[cfg(feature = "python")]
@@ -172,9 +185,7 @@ impl From<TradeTick> for PyTradeTick {
     }
 }
 
-// ============================================================================
-// Execution Events
-// ============================================================================
+// Execution events.
 
 /// Python wrapper for OrderSubmitted event.
 #[cfg(feature = "python")]
@@ -842,9 +853,7 @@ impl From<OrderModified> for PyOrderModified {
     }
 }
 
-// ============================================================================
-// Unified Event Wrapper
-// ============================================================================
+// Unified event wrapper.
 
 /// Python wrapper for MarketDataEvent (union type).
 #[cfg(feature = "python")]
@@ -909,7 +918,7 @@ impl PyMarketDataEvent {
     /// Get the connection state as a string if this is a connection state event.
     fn as_connection_state(&self) -> Option<String> {
         match &self.inner {
-            MarketDataEvent::ConnectionState(s) => Some(format!("{:?}", s)),
+            MarketDataEvent::ConnectionState(s) => Some(format!("{s:?}")),
             _ => None,
         }
     }
@@ -935,11 +944,11 @@ impl PyMarketDataEvent {
                 bar.symbol, bar.exchange, bar.bar_type, bar.bar_period
             ),
             MarketDataEvent::ConnectionState(s) => {
-                format!("MarketDataEvent::ConnectionState({:?})", s)
+                format!("MarketDataEvent::ConnectionState({s:?})")
             }
             MarketDataEvent::Reconnected => "MarketDataEvent::Reconnected".to_string(),
             MarketDataEvent::Authenticated => "MarketDataEvent::Authenticated".to_string(),
-            MarketDataEvent::Error(e) => format!("MarketDataEvent::Error({})", e),
+            MarketDataEvent::Error(e) => format!("MarketDataEvent::Error({e})"),
         }
     }
 }
@@ -1052,7 +1061,7 @@ impl PyExecutionEvent {
     /// Get the connection state as a string if this is a connection state event.
     fn as_connection_state(&self) -> Option<String> {
         match &self.inner {
-            ExecutionEvent::ConnectionState(s) => Some(format!("{:?}", s)),
+            ExecutionEvent::ConnectionState(s) => Some(format!("{s:?}")),
             _ => None,
         }
     }
@@ -1084,11 +1093,11 @@ impl PyExecutionEvent {
                 format!("ExecutionEvent::Modified({})", e.client_order_id)
             }
             ExecutionEvent::ConnectionState(s) => {
-                format!("ExecutionEvent::ConnectionState({:?})", s)
+                format!("ExecutionEvent::ConnectionState({s:?})")
             }
             ExecutionEvent::Reconnected => "ExecutionEvent::Reconnected".to_string(),
             ExecutionEvent::Authenticated => "ExecutionEvent::Authenticated".to_string(),
-            ExecutionEvent::Error(e) => format!("ExecutionEvent::Error({})", e),
+            ExecutionEvent::Error(e) => format!("ExecutionEvent::Error({e})"),
         }
     }
 }
@@ -1099,9 +1108,7 @@ impl From<ExecutionEvent> for PyExecutionEvent {
     }
 }
 
-// ============================================================================
-// PnL / Position Events
-// ============================================================================
+// PnL / position events.
 
 /// Python wrapper for AccountEvent.
 #[cfg(feature = "python")]
@@ -1314,10 +1321,7 @@ impl PyPositionEvent {
                 symbol,
                 exchange,
                 ..
-            } => format!(
-                "PositionEvent::Closed(account={}, symbol={}.{})",
-                account_id, symbol, exchange
-            ),
+            } => format!("PositionEvent::Closed(account={account_id}, symbol={symbol}.{exchange})"),
             PositionEvent::Error(err) => format!("PositionEvent::Error({err})"),
         }
     }
@@ -1329,9 +1333,7 @@ impl From<PositionEvent> for PyPositionEvent {
     }
 }
 
-// ============================================================================
-// Time Bar Data
-// ============================================================================
+// Time bar data.
 
 /// Python wrapper for Rithmic time bar data from history requests and live updates.
 #[cfg(feature = "python")]

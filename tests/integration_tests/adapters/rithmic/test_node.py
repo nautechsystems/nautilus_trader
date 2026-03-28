@@ -17,8 +17,8 @@ import msgspec
 
 from nautilus_trader.adapters.rithmic import RITHMIC
 from nautilus_trader.adapters.rithmic import RithmicDataClientConfig
-from nautilus_trader.adapters.rithmic import RithmicExecClientConfig
 from nautilus_trader.adapters.rithmic import RithmicEnvironment
+from nautilus_trader.adapters.rithmic import RithmicExecClientConfig
 from nautilus_trader.adapters.rithmic import RithmicLiveDataClientFactory
 from nautilus_trader.adapters.rithmic import RithmicLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig

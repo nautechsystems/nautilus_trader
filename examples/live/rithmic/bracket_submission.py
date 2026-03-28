@@ -38,7 +38,7 @@ Notes on app credentials:
     conformance themselves unless instructed otherwise.
     For direct API onboarding later: https://www.rithmic.com/api-request
 
-WARNING:
+Warning:
     This sends a real native bracket request to the configured account.
     Use a demo account first.
 """
@@ -50,14 +50,14 @@ import math
 import os
 import time
 
-from nautilus_trader.adapters.rithmic import RithmicDataClient, RithmicGateway
-from nautilus_trader.adapters.rithmic.bindings import (
-    OrderSide,
-    OrderType,
-    RithmicExecutionClient,
-    RithmicInstrumentProvider,
-    TimeInForce,
-)
+from nautilus_trader.adapters.rithmic import RithmicDataClient
+from nautilus_trader.adapters.rithmic import RithmicGateway
+from nautilus_trader.adapters.rithmic.bindings import OrderSide
+from nautilus_trader.adapters.rithmic.bindings import OrderType
+from nautilus_trader.adapters.rithmic.bindings import RithmicExecutionClient
+from nautilus_trader.adapters.rithmic.bindings import RithmicInstrumentProvider
+from nautilus_trader.adapters.rithmic.bindings import TimeInForce
+
 
 DEFAULT_PRODUCT = "MNQ"
 DEFAULT_EXCHANGE = "CME"
@@ -93,12 +93,13 @@ def parse_side(value: str) -> OrderSide:
     raise ValueError("RITHMIC_BRACKET_ENTRY_SIDE must be BUY or SELL")
 
 
-def describe_execution_event(event) -> str:
+def describe_execution_event(event) -> str:  # noqa: C901
     def suffix(payload) -> str:
         bracket_type = getattr(payload, "bracket_type", None)
         original_basket_id = getattr(payload, "original_basket_id", None)
         linked_basket_ids = getattr(payload, "linked_basket_ids", None)
         parts = []
+
         if bracket_type:
             parts.append(f"bracket_type={bracket_type}")
         if original_basket_id:
@@ -169,6 +170,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
             raise RuntimeError(f"Market data error: {event.as_error()}")
         if event.is_quote():
             quote = event.as_quote()
+
             if (
                 quote.symbol == symbol
                 and quote.exchange == exchange
@@ -178,7 +180,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
                 return quote
 
 
-async def wait_for_execution_event(
+async def wait_for_execution_event(  # noqa: C901
     execution_queue: asyncio.Queue,
     client_order_id: str,
     label: str,
@@ -224,7 +226,7 @@ async def wait_for_execution_event(
                 return event
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: C901
     profile = os.getenv("RITHMIC_PROFILE")
     product = os.getenv("RITHMIC_BRACKET_ROOT", DEFAULT_PRODUCT).strip().upper()
     exchange = os.getenv("RITHMIC_BRACKET_EXCHANGE", DEFAULT_EXCHANGE).strip().upper()
@@ -245,7 +247,9 @@ async def main() -> None:
     if entry_points_from_market <= 0:
         raise ValueError("RITHMIC_BRACKET_ENTRY_POINTS_FROM_MARKET must be positive")
     if profit_ticks <= 0 or stop_ticks <= 0:
-        raise ValueError("RITHMIC_BRACKET_PROFIT_TICKS and RITHMIC_BRACKET_STOP_TICKS must be positive")
+        raise ValueError(
+            "RITHMIC_BRACKET_PROFIT_TICKS and RITHMIC_BRACKET_STOP_TICKS must be positive"
+        )
     if hold_seconds < 0:
         raise ValueError("RITHMIC_BRACKET_HOLD_SECONDS cannot be negative")
 
@@ -267,6 +271,7 @@ async def main() -> None:
     except ValueError as e:
         print(f"Error creating gateway from env: {e}")
         print("Required environment variables:")
+
         if profile:
             print(f"  RITHMIC_{profile.upper()}_USERNAME")
             print(f"  RITHMIC_{profile.upper()}_PASSWORD")
@@ -368,6 +373,7 @@ async def main() -> None:
             allow_submitted=True,
             allow_accepted=True,
         )
+
         if first_event.is_submitted():
             submitted = first_event.as_submitted()
             venue_order_id = submitted.venue_order_id or venue_order_id
@@ -402,7 +408,9 @@ async def main() -> None:
 
         print()
         print("Bracket example completed successfully.")
-        print("The native bracket request was accepted and the parent order was cancelled before fill.")
+        print(
+            "The native bracket request was accepted and the parent order was cancelled before fill."
+        )
     finally:
         print("\nCleaning up...")
 

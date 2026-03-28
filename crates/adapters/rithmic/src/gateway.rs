@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Central gateway for managing Rithmic plant connections.
 //!
 //! The `RithmicGateway` provides a single point of connection management for all
@@ -20,9 +35,9 @@
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use std::{env, sync::Arc, time::Duration};
+use nautilus_common::live::get_runtime;
+use std::{env, fmt::Debug, sync::Arc, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tracing::{debug, error, info, warn};
 
 use crate::{
     common::enums::ConnectionState,
@@ -101,6 +116,7 @@ fn default_server_name(env: RithmicEnv) -> &'static str {
 ///
 /// This unified configuration contains all credentials needed to connect
 /// to any Rithmic plant. Use `from_env()` to load from environment variables.
+#[must_use]
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
     /// Rithmic environment (Demo, Live, Test).
@@ -192,8 +208,7 @@ impl GatewayConfig {
     /// Creates configuration from environment variables, optionally scoped by profile.
     pub fn from_env_with_profile(profile: Option<&str>) -> Result<Self> {
         let environment = optional_env_var("ENV", profile)?
-            .map(|s| parse_rithmic_env(&s))
-            .unwrap_or(Ok(RithmicEnv::Demo))?;
+            .map_or(Ok(RithmicEnv::Demo), |s| parse_rithmic_env(&s))?;
 
         Ok(Self {
             environment,
@@ -301,10 +316,10 @@ impl GatewayConfig {
             ),
         };
 
-        let named_url = Some(resolve_server_endpoint(
-            self.server.as_deref().unwrap_or(default_server_name(env)),
-        )?
-        .to_string());
+        let named_url = Some(
+            resolve_server_endpoint(self.server.as_deref().unwrap_or(default_server_name(env)))?
+                .to_string(),
+        );
         let url = self
             .url_override
             .clone()
@@ -623,7 +638,7 @@ impl RithmicGateway {
             )));
         }
 
-        debug!("Subscribed to market data for {symbol} on {exchange}");
+        tracing::debug!("Subscribed to market data for {symbol} on {exchange}");
         Ok(())
     }
 
@@ -645,7 +660,7 @@ impl RithmicGateway {
                 RithmicError::Connection(format!("Order book subscription failed: {e}"))
             })?;
 
-        debug!("Subscribed to order book for {symbol} on {exchange}");
+        tracing::debug!("Subscribed to order book for {symbol} on {exchange}");
         Ok(())
     }
 
@@ -665,7 +680,7 @@ impl RithmicGateway {
             .await
             .map_err(|e| RithmicError::Connection(format!("Unsubscribe failed: {e}")))?;
 
-        debug!("Unsubscribed from market data for {symbol} on {exchange}");
+        tracing::debug!("Unsubscribed from market data for {symbol} on {exchange}");
         Ok(())
     }
 
@@ -685,13 +700,11 @@ impl RithmicGateway {
             .await
             .map_err(|e| RithmicError::Connection(format!("Order book unsubscribe failed: {e}")))?;
 
-        debug!("Unsubscribed from order book for {symbol} on {exchange}");
+        tracing::debug!("Unsubscribed from order book for {symbol} on {exchange}");
         Ok(())
     }
 
-    // ========================================================================
-    // Historical Data Methods
-    // ========================================================================
+    // Historical data methods.
 
     /// Requests historical time bars from the history plant.
     ///
@@ -736,7 +749,7 @@ impl RithmicGateway {
             .await
             .map_err(|e| RithmicError::Api(format!("Bar request failed: {e}")))?;
 
-        debug!(
+        tracing::debug!(
             "Received {} bar responses for {} on {}",
             responses.len(),
             symbol,
@@ -775,9 +788,12 @@ impl RithmicGateway {
             )));
         }
 
-        debug!(
+        tracing::debug!(
             "Subscribed to live {:?} bars(period={}) for {} on {}",
-            bar_type, bar_period, symbol, exchange
+            bar_type,
+            bar_period,
+            symbol,
+            exchange
         );
         Ok(())
     }
@@ -812,9 +828,12 @@ impl RithmicGateway {
             )));
         }
 
-        debug!(
+        tracing::debug!(
             "Unsubscribed from live {:?} bars(period={}) for {} on {}",
-            bar_type, bar_period, symbol, exchange
+            bar_type,
+            bar_period,
+            symbol,
+            exchange
         );
         Ok(())
     }
@@ -839,7 +858,7 @@ impl RithmicGateway {
         }
 
         self.set_connection_state(ConnectionState::Connecting);
-        info!("Connecting to Rithmic gateway...");
+        tracing::info!("Connecting to Rithmic gateway...");
 
         let rithmic_config = self.config.to_rithmic_config()?;
         println!(
@@ -890,7 +909,7 @@ impl RithmicGateway {
         let _ = self.market_data_tx.send(MarketDataEvent::Authenticated);
         let _ = self.execution_tx.send(ExecutionEvent::Authenticated);
 
-        info!("Rithmic gateway connected successfully");
+        tracing::info!("Rithmic gateway connected successfully");
 
         Ok(())
     }
@@ -902,7 +921,7 @@ impl RithmicGateway {
         &mut self,
         config: &RithmicConfig,
     ) -> Result<RithmicTickerPlantHandle> {
-        info!("Connecting to ticker plant...");
+        tracing::info!("Connecting to ticker plant...");
 
         let plant = RithmicTickerPlant::connect(config, ConnectStrategy::Simple)
             .await
@@ -927,7 +946,7 @@ impl RithmicGateway {
             )));
         }
 
-        debug!("Ticker plant connected and authenticated");
+        tracing::debug!("Ticker plant connected and authenticated");
 
         self.ticker_plant = Some(plant);
         self.ticker_query_handle = Some(query_handle);
@@ -939,8 +958,8 @@ impl RithmicGateway {
         &mut self,
         config: &RithmicConfig,
     ) -> Result<RithmicOrderPlantHandle> {
-        info!("Connecting to order plant...");
-        debug!(
+        tracing::info!("Connecting to order plant...");
+        tracing::debug!(
             system_name = %config.system_name,
             user = %config.user,
             account_id = %config.account_id,
@@ -969,7 +988,7 @@ impl RithmicGateway {
         }
 
         // Subscribe to order updates
-        debug!(
+        tracing::debug!(
             template_id = 308,
             account_id = %config.account_id,
             fcm_id = %config.fcm_id,
@@ -985,17 +1004,17 @@ impl RithmicGateway {
 
         if let Some(error) = &subscribe_response.error {
             self.order_updates_available = false;
-            warn!(
+            tracing::warn!(
                 source = %subscribe_response.source,
                 error = %error,
                 "order updates subscription unavailable; continuing with direct command responses only"
             );
         } else {
             self.order_updates_available = true;
-            debug!(?subscribe_response, "subscribed to order updates");
+            tracing::debug!(?subscribe_response, "subscribed to order updates");
         }
 
-        debug!("Order plant connected and authenticated");
+        tracing::debug!("Order plant connected and authenticated");
 
         // Store plant so we can create handles via order_handle()
         self.order_plant = Some(plant);
@@ -1004,7 +1023,7 @@ impl RithmicGateway {
 
     /// Connects to the PnL plant and returns a handle for the processor.
     async fn connect_pnl_plant(&mut self, config: &RithmicConfig) -> Result<RithmicPnlPlantHandle> {
-        info!("Connecting to PnL plant...");
+        tracing::info!("Connecting to PnL plant...");
 
         let plant = RithmicPnlPlant::connect(config, ConnectStrategy::Simple)
             .await
@@ -1029,7 +1048,7 @@ impl RithmicGateway {
             RithmicError::Connection(format!("PnL updates subscription failed: {e}"))
         })?;
 
-        debug!("PnL plant connected and authenticated");
+        tracing::debug!("PnL plant connected and authenticated");
 
         self.pnl_plant = Some(plant);
         Ok(handle)
@@ -1037,7 +1056,7 @@ impl RithmicGateway {
 
     /// Connects to the history plant.
     async fn connect_history_plant(&mut self, config: &RithmicConfig) -> Result<()> {
-        info!("Connecting to history plant...");
+        tracing::info!("Connecting to history plant...");
 
         let plant = RithmicHistoryPlant::connect(config, ConnectStrategy::Simple)
             .await
@@ -1058,7 +1077,7 @@ impl RithmicGateway {
             )));
         }
 
-        debug!("History plant connected and authenticated");
+        tracing::debug!("History plant connected and authenticated");
 
         self.history_plant = Some(plant);
         self.history_handle = Some(handle);
@@ -1079,7 +1098,7 @@ impl RithmicGateway {
             let event_tx = self.market_data_tx.clone();
             let connection_state = Arc::clone(&self.connection_state);
 
-            let task = tokio::spawn(async move {
+            let task = get_runtime().spawn(async move {
                 ticker_processor(handle, instruments, event_tx, connection_state).await;
             });
             self.task_handles.push(task);
@@ -1090,7 +1109,7 @@ impl RithmicGateway {
             let event_tx = self.execution_tx.clone();
             let connection_state = Arc::clone(&self.connection_state);
 
-            let task = tokio::spawn(async move {
+            let task = get_runtime().spawn(async move {
                 order_processor(handle, event_tx, connection_state).await;
             });
             self.task_handles.push(task);
@@ -1101,7 +1120,7 @@ impl RithmicGateway {
             let event_tx = self.pnl_tx.clone();
             let connection_state = Arc::clone(&self.connection_state);
 
-            let task = tokio::spawn(async move {
+            let task = get_runtime().spawn(async move {
                 pnl_processor(handle, event_tx, connection_state).await;
             });
             self.task_handles.push(task);
@@ -1111,7 +1130,7 @@ impl RithmicGateway {
             let event_tx = self.market_data_tx.clone();
             let connection_state = Arc::clone(&self.connection_state);
 
-            let task = tokio::spawn(async move {
+            let task = get_runtime().spawn(async move {
                 history_processor(handle, event_tx, connection_state).await;
             });
             self.task_handles.push(task);
@@ -1129,7 +1148,7 @@ impl RithmicGateway {
             return Ok(());
         }
 
-        info!("Disconnecting from Rithmic gateway...");
+        tracing::info!("Disconnecting from Rithmic gateway...");
 
         // Signal shutdown
         if let Some(tx) = self.shutdown_tx.take() {
@@ -1154,11 +1173,11 @@ impl RithmicGateway {
             {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    warn!("Error disconnecting ticker plant: {e}; aborting plant");
+                    tracing::warn!("Error disconnecting ticker plant: {e}; aborting plant");
                     handle.abort();
                 }
                 Err(_) => {
-                    warn!("Timed out disconnecting ticker plant; aborting plant");
+                    tracing::warn!("Timed out disconnecting ticker plant; aborting plant");
                     handle.abort();
                 }
             }
@@ -1174,11 +1193,11 @@ impl RithmicGateway {
             {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    warn!("Error disconnecting order plant: {e}; aborting plant");
+                    tracing::warn!("Error disconnecting order plant: {e}; aborting plant");
                     handle.abort();
                 }
                 Err(_) => {
-                    warn!("Timed out disconnecting order plant; aborting plant");
+                    tracing::warn!("Timed out disconnecting order plant; aborting plant");
                     handle.abort();
                 }
             }
@@ -1194,11 +1213,11 @@ impl RithmicGateway {
             {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    warn!("Error disconnecting PnL plant: {e}; aborting plant");
+                    tracing::warn!("Error disconnecting PnL plant: {e}; aborting plant");
                     handle.abort();
                 }
                 Err(_) => {
-                    warn!("Timed out disconnecting PnL plant; aborting plant");
+                    tracing::warn!("Timed out disconnecting PnL plant; aborting plant");
                     handle.abort();
                 }
             }
@@ -1214,11 +1233,11 @@ impl RithmicGateway {
             {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
-                    warn!("Error disconnecting history plant: {e}; aborting plant");
+                    tracing::warn!("Error disconnecting history plant: {e}; aborting plant");
                     handle.abort();
                 }
                 Err(_) => {
-                    warn!("Timed out disconnecting history plant; aborting plant");
+                    tracing::warn!("Timed out disconnecting history plant; aborting plant");
                     handle.abort();
                 }
             }
@@ -1229,7 +1248,7 @@ impl RithmicGateway {
         self.history_handle = None;
 
         self.set_connection_state(ConnectionState::Disconnected);
-        info!("Rithmic gateway disconnected");
+        tracing::info!("Rithmic gateway disconnected");
 
         Ok(())
     }
@@ -1237,7 +1256,7 @@ impl RithmicGateway {
     /// Attempts to reconnect to Rithmic with exponential backoff.
     pub async fn reconnect(&mut self) -> Result<()> {
         self.set_connection_state(ConnectionState::Reconnecting);
-        info!("Attempting to reconnect to Rithmic...");
+        tracing::info!("Attempting to reconnect to Rithmic...");
 
         let mut attempts = 0;
         let mut backoff_ms = INITIAL_BACKOFF_MS;
@@ -1247,7 +1266,7 @@ impl RithmicGateway {
 
             // Clean up existing connections
             if let Err(e) = self.disconnect().await {
-                warn!("Error during disconnect for reconnect: {e}");
+                tracing::warn!("Error during disconnect for reconnect: {e}");
             }
 
             // Wait before retry
@@ -1260,11 +1279,11 @@ impl RithmicGateway {
                     let _ = self.market_data_tx.send(MarketDataEvent::Reconnected);
                     let _ = self.execution_tx.send(ExecutionEvent::Reconnected);
 
-                    info!("Reconnection successful after {attempts} attempts");
+                    tracing::info!("Reconnection successful after {attempts} attempts");
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("Reconnection attempt {attempts} failed: {e}");
+                    tracing::warn!("Reconnection attempt {attempts} failed: {e}");
                     backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
                 }
             }
@@ -1290,9 +1309,9 @@ impl RithmicGateway {
     }
 }
 
-impl std::fmt::Debug for RithmicGateway {
+impl Debug for RithmicGateway {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RithmicGateway")
+        f.debug_struct(stringify!(RithmicGateway))
             .field("environment", &self.config.environment)
             .field("connection_state", &self.connection_state())
             .field("ticker_enabled", &self.config.enable_ticker)
@@ -1313,9 +1332,7 @@ impl Drop for RithmicGateway {
     }
 }
 
-// =============================================================================
-// Processor Tasks
-// =============================================================================
+// Processor tasks.
 
 /// Background task that processes ticker plant messages.
 ///
@@ -1327,7 +1344,7 @@ async fn ticker_processor(
     event_tx: mpsc::UnboundedSender<MarketDataEvent>,
     connection_state: Arc<ArcSwap<ConnectionState>>,
 ) {
-    debug!("Ticker processor started");
+    tracing::debug!("Ticker processor started");
     // Cache only lives for the lifetime of the active ticker task, so it is
     // dropped on disconnect/reconnect and cannot leak stale quotes across sessions.
     let mut quote_state: AHashMap<String, crate::data::QuoteTick> = AHashMap::new();
@@ -1337,7 +1354,7 @@ async fn ticker_processor(
             Ok(response) => {
                 // Check for connection issues
                 if is_connection_issue(&response) {
-                    warn!("Ticker plant connection issue detected");
+                    tracing::warn!("Ticker plant connection issue detected");
                     quote_state.clear();
                     connection_state.store(Arc::new(ConnectionState::Reconnecting));
                     let _ = event_tx.send(MarketDataEvent::ConnectionState(
@@ -1348,7 +1365,7 @@ async fn ticker_processor(
 
                 // Check for errors
                 if let Some(error) = &response.error {
-                    warn!("Ticker plant error: {error}");
+                    tracing::warn!("Ticker plant error: {error}");
                     let _ = event_tx.send(MarketDataEvent::Error(error.clone()));
                     continue;
                 }
@@ -1363,14 +1380,14 @@ async fn ticker_processor(
             }
             Err(e) => {
                 // Channel closed or lagged
-                error!("Ticker processor receive error: {e}");
+                tracing::error!("Ticker processor receive error: {e}");
                 quote_state.clear();
                 break;
             }
         }
     }
 
-    debug!("Ticker processor stopped");
+    tracing::debug!("Ticker processor stopped");
 }
 
 /// Background task that processes history-plant subscription updates.
@@ -1379,13 +1396,13 @@ async fn history_processor(
     event_tx: mpsc::UnboundedSender<MarketDataEvent>,
     connection_state: Arc<ArcSwap<ConnectionState>>,
 ) {
-    debug!("History processor started");
+    tracing::debug!("History processor started");
 
     loop {
         match handle.subscription_receiver.recv().await {
             Ok(response) => {
                 if is_connection_issue(&response) {
-                    warn!("History plant connection issue detected");
+                    tracing::warn!("History plant connection issue detected");
                     connection_state.store(Arc::new(ConnectionState::Reconnecting));
                     let _ = event_tx.send(MarketDataEvent::ConnectionState(
                         ConnectionState::Reconnecting,
@@ -1394,7 +1411,7 @@ async fn history_processor(
                 }
 
                 if let Some(error) = &response.error {
-                    warn!("History plant error: {error}");
+                    tracing::warn!("History plant error: {error}");
                     let _ = event_tx.send(MarketDataEvent::Error(error.clone()));
                     continue;
                 }
@@ -1404,13 +1421,13 @@ async fn history_processor(
                 }
             }
             Err(e) => {
-                error!("History processor receive error: {e}");
+                tracing::error!("History processor receive error: {e}");
                 break;
             }
         }
     }
 
-    debug!("History processor stopped");
+    tracing::debug!("History processor stopped");
 }
 
 /// Background task that processes order plant messages.
@@ -1419,14 +1436,14 @@ async fn order_processor(
     event_tx: mpsc::UnboundedSender<ExecutionEvent>,
     connection_state: Arc<ArcSwap<ConnectionState>>,
 ) {
-    debug!("Order processor started");
+    tracing::debug!("Order processor started");
 
     let handler = ExecutionHandler::new();
 
     loop {
         match handle.subscription_receiver.recv().await {
             Ok(response) => {
-                debug!(
+                tracing::debug!(
                     request_id = %response.request_id,
                     source = %response.source,
                     is_update = response.is_update,
@@ -1438,7 +1455,7 @@ async fn order_processor(
 
                 // Check for connection issues
                 if is_connection_issue(&response) {
-                    warn!("Order plant connection issue detected");
+                    tracing::warn!("Order plant connection issue detected");
                     connection_state.store(Arc::new(ConnectionState::Reconnecting));
                     let _ = event_tx.send(ExecutionEvent::ConnectionState(
                         ConnectionState::Reconnecting,
@@ -1448,27 +1465,27 @@ async fn order_processor(
 
                 // Check for errors
                 if let Some(error) = &response.error {
-                    warn!("Order plant error: {error}");
+                    tracing::warn!("Order plant error: {error}");
                     let _ = event_tx.send(ExecutionEvent::Error(error.clone()));
                     continue;
                 }
 
                 // Transform execution messages
                 if let Some(event) = handler.handle_response(&response) {
-                    debug!(?event, "order processor emitting mapped execution event");
+                    tracing::debug!(?event, "order processor emitting mapped execution event");
                     let _ = event_tx.send(event);
                 } else {
-                    debug!("order processor ignored response after execution mapping");
+                    tracing::debug!("order processor ignored response after execution mapping");
                 }
             }
             Err(e) => {
-                error!("Order processor receive error: {e}");
+                tracing::error!("Order processor receive error: {e}");
                 break;
             }
         }
     }
 
-    debug!("Order processor stopped");
+    tracing::debug!("Order processor stopped");
 }
 
 /// Background task that processes PnL plant messages.
@@ -1477,21 +1494,21 @@ async fn pnl_processor(
     event_tx: mpsc::UnboundedSender<PnlEvent>,
     connection_state: Arc<ArcSwap<ConnectionState>>,
 ) {
-    debug!("PnL processor started");
+    tracing::debug!("PnL processor started");
 
     loop {
         match handle.subscription_receiver.recv().await {
             Ok(response) => {
                 // Check for connection issues
                 if is_connection_issue(&response) {
-                    warn!("PnL plant connection issue detected");
+                    tracing::warn!("PnL plant connection issue detected");
                     connection_state.store(Arc::new(ConnectionState::Reconnecting));
                     break;
                 }
 
                 // Check for errors
                 if let Some(error) = &response.error {
-                    warn!("PnL plant error: {error}");
+                    tracing::warn!("PnL plant error: {error}");
                     continue;
                 }
 
@@ -1502,18 +1519,16 @@ async fn pnl_processor(
                 }
             }
             Err(e) => {
-                error!("PnL processor receive error: {e}");
+                tracing::error!("PnL processor receive error: {e}");
                 break;
             }
         }
     }
 
-    debug!("PnL processor stopped");
+    tracing::debug!("PnL processor stopped");
 }
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
+// Helper functions.
 
 /// Checks if a response indicates a connection issue.
 fn is_connection_issue(response: &RithmicResponse) -> bool {
@@ -1668,7 +1683,7 @@ fn transform_history_market_data(response: &RithmicResponse) -> Option<MarketDat
             }))
         }
         RithmicMessage::ForcedLogout(_) => {
-            warn!("Forced logout from history plant");
+            tracing::warn!("Forced logout from history plant");
             Some(MarketDataEvent::Error("Forced logout".to_string()))
         }
         _ => None,
@@ -1719,14 +1734,14 @@ fn transform_market_data_message(
                         .or_else(|| prior.as_ref().map(|quote| quote.bid_price))
                         .unwrap_or(0.0)
                 } else {
-                    prior.as_ref().map(|quote| quote.bid_price).unwrap_or(0.0)
+                    prior.as_ref().map_or(0.0, |quote| quote.bid_price)
                 },
                 ask_price: if ask_updated {
                     bbo.ask_price
                         .or_else(|| prior.as_ref().map(|quote| quote.ask_price))
                         .unwrap_or(0.0)
                 } else {
-                    prior.as_ref().map(|quote| quote.ask_price).unwrap_or(0.0)
+                    prior.as_ref().map_or(0.0, |quote| quote.ask_price)
                 },
                 bid_size: if bid_updated {
                     bbo.bid_size
@@ -1734,7 +1749,7 @@ fn transform_market_data_message(
                         .or_else(|| prior.as_ref().map(|quote| quote.bid_size))
                         .unwrap_or(0.0)
                 } else {
-                    prior.as_ref().map(|quote| quote.bid_size).unwrap_or(0.0)
+                    prior.as_ref().map_or(0.0, |quote| quote.bid_size)
                 },
                 ask_size: if ask_updated {
                     bbo.ask_size
@@ -1742,7 +1757,7 @@ fn transform_market_data_message(
                         .or_else(|| prior.as_ref().map(|quote| quote.ask_size))
                         .unwrap_or(0.0)
                 } else {
-                    prior.as_ref().map(|quote| quote.ask_size).unwrap_or(0.0)
+                    prior.as_ref().map_or(0.0, |quote| quote.ask_size)
                 },
                 ts_event,
                 ts_init,
@@ -1791,11 +1806,11 @@ fn transform_market_data_message(
         }
         RithmicMessage::DepthByOrder(_) => {
             // Order book depth - future enhancement
-            debug!("Received DepthByOrder message (not yet implemented)");
+            tracing::debug!("Received DepthByOrder message (not yet implemented)");
             None
         }
         RithmicMessage::ForcedLogout(_) => {
-            warn!("Forced logout from ticker plant");
+            tracing::warn!("Forced logout from ticker plant");
             Some(MarketDataEvent::Error("Forced logout".to_string()))
         }
         _ => None,
@@ -1825,9 +1840,12 @@ fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
             let realized_pnl = parse_optional_f64(&update.closed_position_pnl).unwrap_or(0.0);
             let ts_event = rithmic_timestamp_to_nanos(update.ssboe, update.usecs);
 
-            debug!(
+            tracing::debug!(
                 "AccountPnLPositionUpdate: account={}, balance={}, available={}, margin={}",
-                account_id, total, available, locked
+                account_id,
+                total,
+                available,
+                locked
             );
 
             Some(PnlEvent::Account(AccountEvent::BalanceUpdate(
@@ -1866,9 +1884,13 @@ fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
 
             let ts_event = rithmic_timestamp_to_nanos(update.ssboe, update.usecs);
 
-            debug!(
+            tracing::debug!(
                 "InstrumentPnLPositionUpdate: {}:{} qty={}, avg_price={}, pnl={}",
-                exchange, symbol, quantity, avg_price, unrealized_pnl
+                exchange,
+                symbol,
+                quantity,
+                avg_price,
+                unrealized_pnl
             );
 
             Some(PnlEvent::Position(PositionEvent::Updated(Position {
@@ -1884,7 +1906,7 @@ fn transform_pnl_message(message: &RithmicMessage) -> Option<PnlEvent> {
             })))
         }
         RithmicMessage::ForcedLogout(_) => {
-            warn!("Forced logout from PnL plant");
+            tracing::warn!("Forced logout from PnL plant");
             Some(PnlEvent::Account(AccountEvent::Error(
                 "Forced logout".to_string(),
             )))
@@ -1925,6 +1947,10 @@ mod tests {
         }
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Test helpers are called with inline message fixtures for readability"
+    )]
     fn transform_market_data_for_test(
         message: RithmicMessage,
         instruments: &DashMap<String, InstrumentInfo>,
@@ -1933,11 +1959,15 @@ mod tests {
         transform_market_data_message(&message, instruments, quote_state)
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Test helpers are called with inline message fixtures for readability"
+    )]
     fn transform_pnl_for_test(message: RithmicMessage) -> Option<PnlEvent> {
         transform_pnl_message(&message)
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_creation() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -1956,7 +1986,7 @@ mod tests {
         assert!(gateway.history_handle().is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_builder() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -1980,7 +2010,7 @@ mod tests {
         assert_eq!(config.app_version, DEFAULT_APP_VERSION);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_to_rithmic_config_uses_url_overrides() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -2001,7 +2031,7 @@ mod tests {
         assert_eq!(rithmic.system_name, "system");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_to_rithmic_config_defaults_primary_server() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -2030,7 +2060,7 @@ mod tests {
         restore_env(&previous);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_to_rithmic_config_resolves_named_servers() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -2050,7 +2080,7 @@ mod tests {
         assert_eq!(rithmic.beta_url, "wss://rprotocol-au.rithmic.com:443");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_from_env_uses_canonical_vars() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -2105,7 +2135,7 @@ mod tests {
         restore_env(&previous);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_from_env_requires_canonical_username() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -2141,7 +2171,7 @@ mod tests {
         restore_env(&previous);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_gateway_config_from_profile_env() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -2188,7 +2218,7 @@ mod tests {
         restore_env(&previous);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_connection_state_default() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -2204,7 +2234,7 @@ mod tests {
         assert_eq!(gateway.connection_state(), ConnectionState::Disconnected);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_instruments_initially_empty() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -2220,7 +2250,7 @@ mod tests {
         assert!(gateway.instruments().is_empty());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_event_receivers_can_be_taken() {
         let config = GatewayConfig::new(
             RithmicEnv::Demo,
@@ -2244,7 +2274,7 @@ mod tests {
         assert!(gateway.take_pnl_receiver().is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_rithmic_timestamp_to_nanos() {
         // Test with both ssboe and usecs
         let nanos = rithmic_timestamp_to_nanos(Some(1704067200), Some(123456));
@@ -2260,7 +2290,7 @@ mod tests {
         assert_eq!(nanos, 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_to_quote() {
         use rithmic_rs::rti::BestBidOffer;
 
@@ -2308,7 +2338,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_preserves_last_seen_opposite_side() {
         use rithmic_rs::rti::BestBidOffer;
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
@@ -2370,11 +2400,11 @@ mod tests {
                 assert_eq!(quote.ask_price, 6619.50);
                 assert_eq!(quote.ask_size, 5.0);
             }
-            other => panic!("Expected Quote event, got {other:?}"),
+            other => panic!("Expected Quote event, was {other:?}"),
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_preserves_last_seen_ask_when_bid_only_update_zeroes_ask_fields() {
         use rithmic_rs::rti::BestBidOffer;
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
@@ -2436,11 +2466,11 @@ mod tests {
                 assert_eq!(quote.ask_price, 6617.25);
                 assert_eq!(quote.ask_size, 1.0);
             }
-            other => panic!("Expected Quote event, got {other:?}"),
+            other => panic!("Expected Quote event, was {other:?}"),
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_waits_until_both_sides_seen_before_emitting_quote() {
         use rithmic_rs::rti::BestBidOffer;
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
@@ -2503,11 +2533,11 @@ mod tests {
                 assert_eq!(quote.ask_price, 6617.25);
                 assert_eq!(quote.ask_size, 1.0);
             }
-            other => panic!("Expected Quote event, got {other:?}"),
+            other => panic!("Expected Quote event, was {other:?}"),
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_last_trade_to_trade() {
         use rithmic_rs::rti::LastTrade;
 
@@ -2559,7 +2589,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_missing_symbol_returns_none() {
         use rithmic_rs::rti::BestBidOffer;
 
@@ -2595,7 +2625,7 @@ mod tests {
         assert!(event.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_bbo_no_prices_returns_none() {
         use rithmic_rs::rti::BestBidOffer;
 
@@ -2631,7 +2661,7 @@ mod tests {
         assert!(event.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_trade_zero_size_returns_none() {
         use rithmic_rs::rti::LastTrade;
 
@@ -2671,7 +2701,7 @@ mod tests {
         assert!(event.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_trade_sell_aggressor() {
         use rithmic_rs::rti::LastTrade;
 
@@ -2717,7 +2747,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_account_pnl_update() {
         use rithmic_rs::rti::AccountPnLPositionUpdate;
 
@@ -2782,7 +2812,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_instrument_pnl_update() {
         use rithmic_rs::rti::InstrumentPnLPositionUpdate;
 
@@ -2839,7 +2869,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_transform_pnl_missing_account_id() {
         use rithmic_rs::rti::AccountPnLPositionUpdate;
 
@@ -2892,7 +2922,7 @@ mod tests {
         assert!(event.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_optional_f64() {
         // Valid number
         assert_eq!(
@@ -2916,6 +2946,6 @@ mod tests {
         assert_eq!(parse_optional_f64(&Some("invalid".to_string())), None);
 
         // Empty string
-        assert_eq!(parse_optional_f64(&Some("".to_string())), None);
+        assert_eq!(parse_optional_f64(&Some(String::new())), None);
     }
 }

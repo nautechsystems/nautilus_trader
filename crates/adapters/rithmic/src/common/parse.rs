@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Parsing helpers for Rithmic messages.
 //!
 //! This module provides utilities for parsing Rithmic protocol buffer
@@ -83,24 +98,24 @@ pub fn extract_exchange(symbol: &str) -> Option<&str> {
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_price() {
         assert_eq!(parse_price("1234.50").unwrap(), 1234.50);
         assert!(parse_price("invalid").is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_timestamp() {
-        let nanos = parse_timestamp_nanos(1234567890.123456789);
+        let nanos = parse_timestamp_nanos(1_234_567_890.123_456_7);
         // f64 has ~15-16 significant digits, so we check approximate equality
         // The exact value 1234567890123456789 can't be represented precisely in f64
         let expected = 1234567890123456789_u64;
         let diff = (nanos as i64 - expected as i64).unsigned_abs();
 
-        assert!(diff < 100, "Timestamp diff too large: {}", diff);
+        assert!(diff < 100, "Timestamp diff too large: {diff}");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_tick_size_to_precision() {
         assert_eq!(tick_size_to_precision(0.25), 2);
         assert_eq!(tick_size_to_precision(0.01), 2);
@@ -108,13 +123,13 @@ mod tests {
         assert_eq!(tick_size_to_precision(1.0), 0);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_normalize_symbol() {
         assert_eq!(normalize_symbol("CME:ES"), "ES");
         assert_eq!(normalize_symbol("ES"), "ES");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_extract_exchange() {
         assert_eq!(extract_exchange("CME:ES"), Some("CME"));
         assert_eq!(extract_exchange("ES"), None);
