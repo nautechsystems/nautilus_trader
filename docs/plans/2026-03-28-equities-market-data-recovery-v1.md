@@ -5,7 +5,7 @@
 
 **Goal:** Restore honest real-time equities signal flow and full market-data recovery on grouped nodes by moving quote-reset ownership from individual strategies to a shared node-scoped recovery layer.
 
-**Architecture:** Keep the March 27 grouped-node topology and all external `equities` contracts. Add one shared quote-feed supervisor per node, rewire `MakerV4Strategy` to report staleness instead of directly resetting feeds, harden Hyperliquid and Binance adapters for idempotent recovery, and make `recovering/down` first-class fail-closed states in readiness and signal payloads.
+**Architecture:** Keep the March 27 grouped-node topology and all external `equities` contracts. Add one shared quote-feed supervisor per node keyed by feed identity, rewire `MakerV4Strategy` to report staleness instead of directly resetting feeds, harden Hyperliquid and Binance adapters for idempotent replay-first recovery, and make `recovering/down` first-class fail-closed states in readiness and signal payloads with cancel-only safety when required feeds are non-tradeable.
 
 **Tech Stack:** Python, Nautilus live runners, Flux equities strategies, venue adapters for Hyperliquid/Binance/IBKR, pytest, immutable release-root deploys, systemd/Pulse.
 
@@ -28,6 +28,10 @@ What is already considered decided for this review:
 - do not treat the earlier dual-IBKR-gateway cleanup as the architectural answer to the remaining problem
 - do not rely on more strategy-local resubscribe patches as the long-term recovery model
 
+Review provenance note:
+
+- one external review referenced the upstream public NautilusTrader project; this plan only adopts points that were verified against this fork, such as existing `ComponentState.degrade()` / `fault()` support and adapter reconnect-replay behavior
+
 What an external reviewer should challenge:
 
 - ownership boundaries between strategies, runner, supervisor, and venue adapters
@@ -44,8 +48,12 @@ What an external reviewer should challenge:
 - Do not continue with strategy-owned resubscribe patches as the primary recovery model.
 - Do not build a standalone venue daemon for V1.
 - Add an explicit runner-to-strategy attachment seam for node-scoped quote recovery objects before wiring supervisor behavior.
-- Add a shared node-scoped quote-feed supervisor and make strategies observer-only for recovery.
+- Add a shared node-scoped quote-feed supervisor keyed by feed identity and make strategies observer-only for recovery.
 - Centralize subscribe, reset, and final unsubscribe side effects at the shared supervisor layer for V1.
+- Keep IBKR at the shared publisher/session boundary in V1; per-node recovery hardening targets Hyperliquid and Binance maker feeds.
+- Require pair-level tradeability gating plus cancel-only quote pull when required feeds are non-tradeable.
+- Require adapter outcomes to re-enter the runner/kernel thread before mutating supervisor state.
+- Reuse existing component degrade/fault lifecycle rails instead of inventing a new operator lifecycle model.
 - Hyperliquid cache rehydrate and idempotent reset semantics are mandatory V1 scope at the actual client layer.
 - Binance idempotent reset semantics are mandatory V1 scope.
 - `recovering` must be added without regressing the existing fail-closed `down` contract.
@@ -80,12 +88,14 @@ What an external reviewer should challenge:
 
 Add focused tests for a new node-scoped recovery object that prove:
 
-- two grouped siblings requesting recovery for the same instrument produce one reset action
+- two grouped siblings requesting recovery for the same feed identity produce one reset action
+- same-instrument feeds with different feed identities do not alias into one supervisor record
 - the supervisor is the sole owner of lifecycle state (`desired`, `state`, `attempt_count`, `backoff_until`, `last_error_summary`)
 - the strictest active freshness budget drives local unusable state, but node-level reset admission stays feed-scoped
 - a fresh quote transitions `bootstrapping/recovering` back to `healthy`
 - repeated failed recovery attempts transition the feed to `down`
 - missing startup/session preconditions transition the feed to `blocked` without reset storms
+- a node-local venue/session blocker suppresses per-feed reset storms when a shared venue precondition is unhealthy
 - unregistering a strategy claimant removes its influence on budget and ownership
 - loss of one sibling strategy does not prevent the shared feed from continuing to advance health state
 
@@ -104,13 +114,15 @@ Expected: FAIL because there is no supervisor module, no explicit strategy attac
 
 Create `quote_feed_supervisor.py` with:
 
-- one feed-state record per instrument
+- one feed-state record per feed identity
 - claimant registration and deregistration
 - last quote timestamp tracking
 - `bootstrapping/healthy/stale/blocked/recovering/down` state transitions
 - bounded recovery backoff and attempt counting
-- one injected reset callable per instrument
+- one injected reset callable per feed identity
 - feed-scoped reset admission policy kept separate from claimant-local unusable thresholds
+- node-local venue/session blocker support
+- a runner-owned ingress path for adapter/reset outcomes so supervisor state stays on the node/kernel thread
 
 Add explicit strategy attachment methods in `MakerV4Strategy` so the runner can wire the shared supervisor and control emitter without reaching into internals.
 
@@ -122,9 +134,10 @@ Update `run_node.py` so:
 
 - one supervisor is created per built node
 - each attached strategy receives the shared supervisor during construction/attachment
-- grouped siblings register the same maker and reference instruments with the supervisor
+- grouped siblings register the same maker and reference feed identities with the supervisor
 - reset ownership is canonical and node-scoped
 - the injected reset callable is runner-owned rather than borrowed from an arbitrary sibling strategy object
+- adapter/reset outcomes re-enter supervisor state through the runner-owned ingress path rather than mutating it directly from background tasks
 
 **Step 5: Re-run the tests**
 
@@ -165,7 +178,9 @@ Add tests that prove:
 - `on_quote_tick` records fresh timestamps with the supervisor
 - strategies still receive quote ticks after the refactor and transition out of `bootstrapping/recovering` when fresh data arrives
 - strategy snapshots continue to reflect honest quote state during `bootstrapping/blocked/recovering/down`
-- quote placement and hedge placement are blocked while required feeds are non-tradeable
+- required legs are only tradeable as a pair when feed state, session compatibility, and max leg-age skew all pass
+- quote placement, quote amendment, and hedge placement are blocked while required feeds are non-tradeable
+- non-tradeable required feeds force cancel-only behavior, pull working maker quotes, and still allow cancel/reduce-only or emergency-exit paths
 
 **Step 2: Run the tests to confirm they fail**
 
@@ -183,7 +198,9 @@ Update `strategy.py` so:
 - the liveness timer becomes observer-only
 - quote ticks report fresh timestamps into the supervisor
 - direct external subscribe/unsubscribe/reset side effects are removed from strategy-owned logic
-- quote-dependent execution paths gate on the shared supervisor tradeability state, not just stale display state
+- quote-dependent execution paths gate on shared pair-level tradeability, not just stale display state
+- on non-tradeable required-feed transitions, the strategy enters cancel-only mode, pulls working maker quotes, suppresses new quote/amend/hedge actions, and keeps cancel/reduce-only or emergency-exit paths enabled
+- prolonged blocked/recovering states degrade through the existing component lifecycle rail and unrecoverable down/fatal conditions fault/escalate through the same rail
 
 Do not remove the existing honest snapshot publication behavior.
 
@@ -226,10 +243,11 @@ git commit -m "refactor: move makerv4 quote recovery to shared supervisor"
 
 Add tests that prove:
 
-- duplicate reset attempts for the same instrument are idempotent
+- duplicate reset attempts for the same feed identity are idempotent
 - cache-miss recovery is explicit and testable
 - a reset path refreshes or validates instrument cache before quote subscribe
 - a successful reset preserves desired quote-subscription state
+- recovery tries desired-subscription replay on a healthy transport before escalating to reconnect/reset
 - transport-local reset outcomes can be reported back to the shared supervisor without duplicating policy ownership
 
 At least one Rust-layer test should model the `Instrument not found in cache` path that is currently appearing in live journals, because the warning is emitted below the thin Python adapter.
@@ -251,8 +269,10 @@ Update the Hyperliquid client/adapter path so:
 - quote-reset behavior is idempotent
 - cache preconditions are checked before re-subscribe
 - cache-miss recovery becomes an explicit error or repair path, not warning-only churn
+- desired-subscription replay on a healthy transport is attempted before reconnect/reset escalation
 - reset state can be observed by the shared supervisor
 - the adapter reports transport facts and explicit reset outcomes, but not lifecycle policy state
+- transport outcomes re-enter the shared supervisor through the runner-owned ingress path rather than mutating Python supervisor state directly from async tasks
 
 Do not introduce a new network daemon or change the external trading contract here.
 
@@ -295,6 +315,7 @@ Add tests that prove:
 - desired subscription state remains explicit during reset windows
 - a failed reset produces an explicit recovery failure instead of silent optimism
 - websocket subscription state remains coherent across repeated reset requests
+- recovery attempts desired-subscription replay on a healthy transport before escalating to reconnect/reset
 - transport-local reset outcomes can be reported back to the shared supervisor without duplicating policy ownership
 
 **Step 2: Run the tests to confirm they fail**
@@ -309,11 +330,12 @@ Update `data.py` so:
 
 - quote-reset behavior is idempotent
 - duplicate sibling resets are collapsed safely
+- desired-subscription replay is attempted before reconnect/reset escalation
 - reset state can be surfaced to the shared supervisor
 
 Update `websocket/client.py` as needed so the underlying subscription state remains coherent across repeated grouped-node resets.
 
-Keep the change bounded to quote-feed recovery. Do not refactor unrelated Binance paths, and do not move lifecycle policy ownership out of the shared supervisor.
+Keep the change bounded to quote-feed recovery. Do not refactor unrelated Binance paths, do not move lifecycle policy ownership out of the shared supervisor, and do not mutate supervisor state directly from background websocket tasks.
 
 **Step 4: Re-run the tests**
 
@@ -348,6 +370,7 @@ Add tests that prove:
 - public-facing payload fields keep the existing fail-closed contract rather than introducing new top-level enums
 - readiness counts non-tradeable recovery/precondition states as unhealthy
 - existing `down` semantics stay fail-closed and unchanged
+- pair-level non-tradeable reasons remain explicit without leaking supervisor internals
 - grouped-node or supervisor internals do not leak into external strategy ids
 
 **Step 2: Run the tests to confirm they fail**
@@ -363,6 +386,7 @@ Update the payload and readiness builders so:
 - `bootstrapping`, `blocked`, and `recovering` are added as internal fail-closed states
 - existing `down` behavior remains intact
 - stale/recovery reasons stay explicit
+- pair-level disabled reasons remain explicit using the existing external contract vocabulary
 - existing external payload contracts remain intact
 
 **Step 4: Re-run the tests**
@@ -397,6 +421,7 @@ Before changing prod, capture:
 - currently deployed equities release id / release root
 - current `/etc/flux/equities*.env` targets and any systemd unit env-file pointers that must be restorable
 - current readiness JSON
+- current active market/session window for the targeted equities basket
 - current quote-age probes for the known incident rows:
   - `aapl_tradexyz`
   - `amd_tradexyz`
@@ -412,6 +437,7 @@ Then extend readiness output if needed so rollout verification can prove:
 - all `38` strategies are healthy
 - no maker feed is stuck in `recovering/down`
 - targeted historically stale symbols now advance quote timestamps
+- strategies with non-tradeable required feeds hold zero working maker quotes
 - the post-rollout result is strictly better than the captured pre-rollout baseline
 - rollout failure can be diagnosed from structured recovery-state output
 
@@ -438,6 +464,7 @@ Confirm before release cut:
 - `chainsaw@md-ibkr-publisher.service` is healthy
 - the current failure snapshot is recorded for comparison
 - the currently deployed release id and `/etc/flux/equities*.env` targets are recorded in the rollout log so rollback can be executed without rediscovery
+- if IBKR gateway or publisher health is bad, stop here and treat that as a shared-reference precondition failure rather than a maker-feed recovery result
 
 Expected: PASS
 
@@ -455,7 +482,8 @@ Validate:
 - previously stale rows (`aapl_tradexyz`, `amd_tradexyz`, `meta_tradexyz`, `msft_tradexyz`, `orcl_tradexyz`, `tsla_tradexyz`, `ewy_binance_perp`) advance in repeated probes over a 10-15 minute soak
 - rows do not claim `good` or `fresh` unless the quote timestamps are genuinely fresh
 - supervisor state-transition logs show bounded recovery attempts instead of silent infinite loops
-- during the restart/recovery window, any strategy whose required feeds are `bootstrapping`, `blocked`, `recovering`, or `down` emits no quote-placement or hedge-placement side effects; prove this from structured strategy/order logs or counters before declaring the rollout safe
+- during the restart/recovery window, any strategy whose required feeds are `bootstrapping`, `blocked`, `recovering`, or `down` emits no quote-placement, quote-amendment, or hedge-placement side effects and retains zero working maker quotes; prove this from structured strategy/order logs, counters, or venue state before declaring the rollout safe
+- if a venue/session blocker trips, it is explicit in the logs and suppresses per-feed reset churn instead of leaving the node in silent retry storms
 - final signoff sample is taken during a live US regular trading session, not only overnight
 - rollback immediately if health regresses below baseline or the historically bad rows remain frozen after the soak window
 
@@ -465,13 +493,14 @@ Run repeated readiness and quote-age probes for a bounded soak window and confir
 
 - the known bad rows stay live
 - recovery logs show bounded attempts rather than churn
+- strategies do not leak back into live maker quotes while required feeds remain non-tradeable
 - no new grouped-node regression appears
 
 **Step 7: Update the rollout tracker**
 
 Record the exact release id, validation timestamps, remaining risks, and any rollback notes in `2026-03-27-equities-shared-symbol-node.md`.
 Record the superseded release id and restorable `/etc/flux/equities*.env` targets alongside the new release id.
-Update `docs/runbooks/equities-shared-node-cutover.md` so the operator procedure reflects the new supervisor-owned recovery model, the soak-window requirement, the fail-closed execution check during non-tradeable feed states, and the rollback threshold against the pre-restart baseline.
+Update `docs/runbooks/equities-shared-node-cutover.md` so the operator procedure reflects the new supervisor-owned recovery model, the soak-window requirement, the fail-closed cancel-only / zero-working-quotes check during non-tradeable feed states, the explicit IBKR/publisher precondition boundary, and the rollback threshold against the pre-restart baseline.
 
 **Step 8: Commit**
 
