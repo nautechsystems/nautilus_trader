@@ -13,6 +13,7 @@ on:
   push:
     branches:
       - test-ci
+      - test-ci-v2
       - develop
       - nightly
 
@@ -246,13 +247,15 @@ jobs:
           pip install --upgrade maturin
           maturin build --release --out ../dist
 
-      # TODO: fix v2 Python test collection (exit code 4 since added)
-      # - name: Run v2 Python tests
-      #   working-directory: ${{ env.PACKAGE_DIR }}
-      #   run: |
-      #     pip install ../dist/*.whl
-      #     uv pip install --system --group test
-      #     pytest tests/ -v
+      - name: Run v2 Python tests
+        working-directory: ${{ env.PACKAGE_DIR }}
+        run: |
+          uv sync --group test --no-install-package nautilus-trader
+          uv pip install "../dist/"*.whl
+          cd /tmp && uv run --project "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" --no-sync pytest \
+            --import-mode=importlib \
+            --rootdir="$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" \
+            "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}/tests/" -v
 
       # Temporary: show whether v2 stub or docstring generation dirtied tracked files while we isolate CI drift
       - name: Report generated v2 file drift
