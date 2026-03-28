@@ -4,13 +4,15 @@
 across supported FCMs and exchanges. This integration supports live market data ingest, instrument
 loading, historical bar requests, and live order execution through NautilusTrader.
 
-:::warning
-**Alpha status.** The current Rithmic adapter is alpha software. It is still under active testing and development
-and should not be used for live trading.
-:::
+> [!WARNING]
+>
+> **Beta status.** The current Rithmic adapter is beta software. It has reached a minimally working state,
+> but it remains under active testing and development and should be used cautiously for live trading.
 
-Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
-During these periods connections might be terminated and it might not be possible to test or deploy live connections.
+> [!NOTE]
+>
+> Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods.
+> During these periods connections might be terminated and it might not be possible to test or deploy live connections.
 
 ## Overview
 
@@ -27,10 +29,10 @@ depending on the use case.
 - `RithmicLiveDataClientFactory`: Factory for Rithmic data clients.
 - `RithmicLiveExecClientFactory`: Factory for Rithmic execution clients.
 
-:::note
-Most users will define a live trading node configuration and will not need to work with
-the lower-level components directly.
-:::
+> [!NOTE]
+>
+> Most users will define a live trading node configuration and will not need to work with
+> the lower-level components directly.
 
 ## Examples
 
@@ -223,16 +225,17 @@ live-only nodes that do not need the history plant.
 
 Custom second-bar resolutions such as `15-SECOND-LAST-EXTERNAL` are supported through this path.
 
-:::warning
-Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are
-typically capped at **20 GB per month**. Rithmic sends warning emails to the account's registered
-email address when API usage approaches that limit or when their access rules are being breached.
-Do not ignore those emails. Temporary restrictions can be applied automatically if usage continues
-after warnings are sent.
+> [!WARNING]
+>
+> Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are
+> typically capped at **20 GB per month**. Rithmic sends warning emails to the account's registered
+> email address when API usage approaches that limit or when their access rules are being breached.
+> Do not ignore those emails. Temporary restrictions can be applied automatically if usage continues
+> after warnings are sent.
+>
+> If you are downloading large windows, prefer smaller batched requests and monitor the registered
+> email inbox for notices from Rithmic.
 
-If you are downloading large windows, prefer smaller batched requests and monitor the registered
-email inbox for notices from Rithmic.
-:::
 
 Current historical external bar limits:
 
@@ -378,31 +381,31 @@ Required environment variables:
 - `RITHMIC_PASSWORD`
 - `RITHMIC_SYSTEM_NAME`
 - `RITHMIC_ACCOUNT_ID` for execution clients
+- `RITHMIC_FCM_ID`
+- `RITHMIC_IB_ID`
 
 Optional environment variables:
 
 - `RITHMIC_PROFILE`
 - `RITHMIC_ENV`
-- `RITHMIC_FCM_ID`
-- `RITHMIC_IB_ID`
 - `RITHMIC_ALT_SERVER`
 - `RITHMIC_APP_NAME`
 - `RITHMIC_APP_VERSION`
 - `RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS`
 - `RITHMIC_NATIVE_BRACKET_STATE_PATH`
 
-:::note
-`RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION` are not arbitrary local labels. To obtain valid values,
-you generally need to contact Rithmic, request API access, and complete their conformance process.
-At present, that conformance step is typically just connecting to the test API endpoint as directed
-by Rithmic support. The required details are provided by Rithmic during the API onboarding flow.
-
-Start here: [Rithmic API Request](https://www.rithmic.com/api-request).
-
-As a temporary fallback, NautilusTrader currently provides a working built-in app credential path.
-That means users do not currently need to complete Rithmic conformance themselves unless instructed
-otherwise.
-:::
+> [!NOTE]
+>
+> `RITHMIC_APP_NAME` and `RITHMIC_APP_VERSION` are not arbitrary local labels. To obtain valid values,
+> you generally need to contact Rithmic, request API access, and complete their conformance process.
+> At present, that conformance step is typically just connecting to the test API endpoint as directed
+> by Rithmic support. The required details are provided by Rithmic during the API onboarding flow.
+>
+> Start here: [Rithmic API Request](https://www.rithmic.com/api-request).
+>
+> As a temporary fallback, NautilusTrader currently provides a working built-in app credential path.
+> That means users do not currently need to complete Rithmic conformance themselves unless instructed
+> otherwise.
 
 Example shell setup:
 
@@ -421,15 +424,15 @@ export RITHMIC_ALT_SERVER="Sydney"             # Secondary route if you want one
 `RITHMIC_PROFILE` is only a local environment-variable namespace. The actual broker-facing values
 are `RITHMIC_*_SYSTEM_NAME`, `RITHMIC_*_FCM_ID`, and `RITHMIC_*_IB_ID`.
 
-:::note
-Do not guess the Rithmic `System`, `FCM`, or `IB` values from the broker or prop-firm brand
-name alone. Some connections use `paper_trading`, Apex uses `Apex`, and other Rithmic brokers may
-use non-obvious identifiers even on standard demo or live accounts.
-
-To find the correct values, sign in to the RTrader Pro desktop application and open
-`File > User Profile`, then copy `System`, `FCM`, and `IB` exactly as shown. Treat them as
-case-sensitive.
-:::
+> [!NOTE]
+>
+> Do not guess the Rithmic `System`, `FCM`, or `IB` values from the broker or prop-firm brand
+> name alone. Some connections use `paper_trading`, Apex uses `Apex`, and other Rithmic brokers may
+> use non-obvious identifiers even on standard demo or live accounts.
+>
+> To find the correct values, sign in to the RTrader Pro desktop application and open
+> `File > User Profile`, then copy `System`, `FCM`, and `IB` exactly as shown. Treat them as
+> case-sensitive.
 
 ### Server endpoint selection
 

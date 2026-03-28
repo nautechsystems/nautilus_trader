@@ -103,6 +103,11 @@ def in_ipython() -> bool:
 SCRIPT_MODE = not in_ipython()
 
 
+def log_step(message: str) -> None:
+    if SCRIPT_MODE:
+        print(f"[rithmic-backtest] {message}", flush=True)
+
+
 # %% [markdown]
 # ## Parameters
 
@@ -110,7 +115,7 @@ SCRIPT_MODE = not in_ipython()
 PROFILE = os.environ.get("RITHMIC_PROFILE", "Apex")
 PRODUCT = os.environ.get("RITHMIC_NOTEBOOK_ROOT", "MNQ")
 EXCHANGE = os.environ.get("RITHMIC_NOTEBOOK_EXCHANGE", "CME")
-LOOKBACK_MINUTES = int(os.environ.get("RITHMIC_NOTEBOOK_LOOKBACK_MINUTES", "120"))
+LOOKBACK_MINUTES = int(os.environ.get("RITHMIC_NOTEBOOK_LOOKBACK_MINUTES", str(60 * 24 * 5)))
 BAR_SPEC = "1-MINUTE-LAST"
 CATALOG_PATH = Path(
     os.environ.get("RITHMIC_NOTEBOOK_CATALOG_PATH", "tmp/rithmic_notebook_catalog"),
@@ -224,9 +229,16 @@ def resolve_nautilus_instrument(
     product: str,
     exchange: str,
 ):
+    log_step(f"Resolving front month for product={product} exchange={exchange}")
     front_month = run_async(resolve_front_month_contract(config, product, exchange))
+    log_step(
+        "Resolved front month "
+        f"symbol={front_month.symbol} exchange={front_month.exchange}",
+    )
     instrument_id = InstrumentId.from_str(f"{front_month.symbol}.{exchange}.{RITHMIC}")
+    log_step(f"Loading Nautilus instrument {instrument_id}")
     instrument = run_async(load_nautilus_instrument(config, instrument_id, exchange))
+    log_step(f"Loaded Nautilus instrument {instrument.id}")
 
     return front_month, instrument
 
@@ -240,12 +252,19 @@ def download_bars_to_catalog(
     end = pd.Timestamp.utcnow().floor("min")
     start = end - pd.Timedelta(minutes=lookback_minutes)
     bar_type = BarType.from_str(f"{instrument.id}-{BAR_SPEC}-EXTERNAL")
+    log_step(
+        "Starting historical download "
+        f"instrument={instrument.id} bar_type={bar_type} "
+        f"start={start.isoformat()} end={end.isoformat()} "
+        f"catalog_path={catalog_path}",
+    )
     script = textwrap.dedent(
         f"""
         from __future__ import annotations
 
         import asyncio
         from pathlib import Path
+        import sys
 
         import pandas as pd
 
@@ -282,10 +301,18 @@ def download_bars_to_catalog(
         )
         provider = PythonInstrumentProvider(config)
         instrument_id = InstrumentId.from_str({str(instrument.id)!r})
+        print(
+            f"[rithmic-backtest] Download subprocess loading instrument {{instrument_id}}",
+            flush=True,
+        )
         asyncio.run(provider.load_async(instrument_id, filters={{"exchange": {exchange!r}}}))
         instrument = provider.find(instrument_id)
         if instrument is None:
             raise RuntimeError(f"Failed to load {{instrument_id}}")
+        print(
+            f"[rithmic-backtest] Download subprocess loaded instrument {{instrument.id}}",
+            flush=True,
+        )
         gateway = getattr(provider, "_gateway", None)
         if gateway is not None and gateway.is_connected():
             async def disconnect_gateway():
@@ -302,6 +329,11 @@ def download_bars_to_catalog(
 
         node = BacktestNode([])
         node.add_data_client_factory(RITHMIC, RithmicLiveDataClientFactory)
+        print(
+            f"[rithmic-backtest] Download subprocess starting request_bars "
+            f"bar_type={{bar_type}} start={{start.isoformat()}} end={{end.isoformat()}}",
+            flush=True,
+        )
         node.setup_download_engine(
             catalog_config=DataCatalogConfig(path=str(catalog_path)),
             data_clients={{RITHMIC: config}},
@@ -313,6 +345,7 @@ def download_bars_to_catalog(
             end=end.to_pydatetime(),
             params={{"exchange": {exchange!r}}},
         )
+        print("[rithmic-backtest] Download subprocess finished request_bars", flush=True)
         node.dispose()
         """
     )
@@ -322,8 +355,20 @@ def download_bars_to_catalog(
         cwd=Path.cwd(),
         env=os.environ.copy(),
     )
+    log_step(
+        "Completed historical download "
+        f"instrument={instrument.id} bar_type={bar_type} "
+        f"window_minutes={lookback_minutes}",
+    )
 
     return start, end, bar_type
+
+
+def load_cached_catalog_data(catalog_path: Path, instrument_id: str, bar_type: str):
+    catalog = ParquetDataCatalog(str(catalog_path))
+    instruments = catalog.instruments(instrument_ids=[instrument_id])
+    bars = catalog.bars(bar_types=[bar_type])
+    return catalog, instruments, bars
 
 
 def bars_to_frame(bars) -> pd.DataFrame:
@@ -345,6 +390,7 @@ def run_ema_backtest(instrument, bars):
     if not bars:
         raise RuntimeError("No bars found in catalog for backtest")
 
+    log_step(f"Running EMA backtest with {len(bars)} bars for {instrument.id}")
     engine = BacktestEngine(
         config=BacktestEngineConfig(
             trader_id=TraderId("BACKTESTER-001"),
@@ -377,6 +423,7 @@ def run_ema_backtest(instrument, bars):
         ),
     )
     engine.run()
+    log_step("Backtest engine run completed")
 
     results = {
         "fills": engine.trader.generate_order_fills_report(),
@@ -392,6 +439,10 @@ def run_ema_backtest(instrument, bars):
 
 # %%
 data_client_config = build_data_client_config(PROFILE, EXCHANGE)
+log_step(
+    f"Using profile={PROFILE} product={PRODUCT} exchange={EXCHANGE} "
+    f"lookback_minutes={LOOKBACK_MINUTES} catalog_path={CATALOG_PATH}",
+)
 front_month_contract, instrument = resolve_nautilus_instrument(
     data_client_config,
     PRODUCT,
@@ -422,18 +473,46 @@ if SCRIPT_MODE:
 # result in automatically triggered temporary restrictions.
 
 # %%
-window_start, window_end, bar_type = download_bars_to_catalog(
+bar_type = BarType.from_str(f"{instrument.id}-{BAR_SPEC}-EXTERNAL")
+catalog, cached_instruments, cached_bars = load_cached_catalog_data(
     CATALOG_PATH,
-    instrument,
-    EXCHANGE,
-    LOOKBACK_MINUTES,
+    str(instrument.id),
+    str(bar_type),
 )
+
+if cached_instruments and cached_bars:
+    log_step(
+        f"Using cached catalog data for instrument={instrument.id} "
+        f"bar_type={bar_type} catalog_path={CATALOG_PATH}",
+    )
+    window_start = (
+        catalog.query_first_timestamp(type(cached_bars[0]), str(bar_type)) if cached_bars else None
+    )
+    window_end = (
+        catalog.query_last_timestamp(type(cached_bars[0]), str(bar_type)) if cached_bars else None
+    )
+else:
+    missing_parts = []
+    if not cached_instruments:
+        missing_parts.append("instrument")
+    if not cached_bars:
+        missing_parts.append("bars")
+    log_step(
+        f"Catalog cache miss for {', '.join(missing_parts)}; "
+        f"downloading instrument spec and historical bars into {CATALOG_PATH}",
+    )
+    window_start, window_end, bar_type = download_bars_to_catalog(
+        CATALOG_PATH,
+        instrument,
+        EXCHANGE,
+        LOOKBACK_MINUTES,
+    )
 
 download_summary = {
     "catalog_path": str(CATALOG_PATH),
     "bar_type": str(bar_type),
-    "window_start": window_start.isoformat(),
-    "window_end": window_end.isoformat(),
+    "window_start": window_start.isoformat() if window_start is not None else None,
+    "window_end": window_end.isoformat() if window_end is not None else None,
 }
 download_summary
 
@@ -446,6 +525,7 @@ if SCRIPT_MODE:
 
 # %%
 catalog = ParquetDataCatalog(str(CATALOG_PATH))
+log_step(f"Inspecting catalog contents at {CATALOG_PATH}")
 catalog_instrument = catalog.instruments(instrument_ids=[str(instrument.id)])[-1]
 catalog_bars = catalog.bars(bar_types=[str(bar_type)])
 bars_df = bars_to_frame(catalog_bars)
