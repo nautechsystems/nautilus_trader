@@ -685,6 +685,22 @@ def _apply_quote_health_to_v4_leg(
     max_quote_age_ms: int,
 ) -> dict[str, Any]:
     normalized = dict(payload) if isinstance(payload, Mapping) else {}
+    recovery_state = decode_text(normalized.pop("recovery_state", None)).strip().lower()
+    if recovery_state == "bootstrapping":
+        normalized["feed_state"] = "unknown"
+        normalized["quote_state"] = "missing"
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_unknown"
+        return normalized
+    if recovery_state in {"blocked", "recovering", "down"}:
+        normalized["feed_state"] = "down"
+        normalized["quote_state"] = "missing"
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_down"
+        return normalized
+
     transport_connected = (
         True
         if normalized.get("ts_ms") is not None

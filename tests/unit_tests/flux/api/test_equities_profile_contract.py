@@ -1152,6 +1152,152 @@ def test_signals_profile_equities_makerv4_tradeable_respects_leg_quote_health(
     assert row["maker_v4"]["quote_snapshot"]["maker_leg"]["quote_state"] == "old"
 
 
+def test_signals_profile_equities_fail_closes_recovering_quote_health_without_leaking_supervisor_fields(
+    redis_client,
+    params_schema,
+    params_defaults,
+) -> None:
+    strategy_id = "aapl_tradexyz_maker"
+    now_ms = int(time.time() * 1000)
+    flux_config = FluxConfig(
+        mode="paper",
+        confirm_live=False,
+        identity=FluxIdentityConfig(
+            namespace="flux",
+            schema_version="v1",
+            strategy_id=strategy_id,
+            strategy_instance_id=strategy_id,
+            trader_id="trader_01",
+            external_strategy_id=strategy_id,
+        ),
+        redis=FluxRedisConfig(host="127.0.0.1", port=6380, db=0),
+        venues=FluxVenuesConfig(
+            execution_venue="hyperliquid",
+            reference_venue="ibkr",
+            execution_symbol="AAPL/USD",
+            reference_symbol="AAPL/USD",
+        ),
+    )
+    _seed_required_schema_keys_for_strategy(redis_client, flux_config, strategy_id)
+    keys = FluxRedisKeys(
+        strategy_id=strategy_id,
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.set_json(
+        keys.state(),
+        {
+            "strategy_id": strategy_id,
+            "state": "running",
+            "bot_on": True,
+            "ts_ms": now_ms,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "ibkr:AAPL.NASDAQ",
+                "hedge_leg": "ibkr:AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": now_ms,
+                    "maker_leg": {
+                        "venue": "HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 190.10,
+                        "ask": 190.20,
+                        "age_ms": 50,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "SMART",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "age_ms": 25,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": "recovering",
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "age_ms": 25,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": "recovering",
+                    },
+                },
+            },
+        },
+    )
+    redis_client.set_hash_json(
+        keys.params_hash_key(),
+        {"qty": "1.0", "bot_on": "1", "max_age_ms": "10000"},
+    )
+    redis_client.set_json(keys.balances_snapshot(), [])
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=(
+            app_module.ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            app_module.ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        strategy_metadata=_split_equities_metadata_for_strategy(strategy_id),
+        strategy_metadata_resolver=_split_equities_metadata_for_strategy,
+        profile_strategy_map={"equities": [strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/signals", query_string={"profile": "equities"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    row = body["data"]["strategies"][0]
+    ref_leg = row["equities_arb"]["quote_snapshot"]["ref_leg"]
+    hedge_leg = row["equities_arb"]["quote_snapshot"]["hedge_leg"]
+
+    assert row["id"] == strategy_id
+    assert row["meta"]["strategy_id"] == strategy_id
+    assert "node_group_id" not in row
+    assert "job_id" not in row
+    assert row["tradeable"] is False
+    assert row["blocked"] is True
+
+    assert ref_leg["feed_state"] == "down"
+    assert ref_leg["quote_state"] != "fresh"
+    assert ref_leg["pricing_usable"] is False
+    assert ref_leg["hedge_usable"] is False
+    assert "recovery_state" not in ref_leg
+    assert "recovering" not in str(ref_leg.get("reason_code", ""))
+
+    assert hedge_leg["feed_state"] == "down"
+    assert hedge_leg["quote_state"] != "fresh"
+    assert hedge_leg["pricing_usable"] is False
+    assert hedge_leg["hedge_usable"] is False
+    assert "recovery_state" not in hedge_leg
+    assert "recovering" not in str(hedge_leg.get("reason_code", ""))
+
+
 def test_signals_profile_equities_makerv4_uses_published_ibkr_quote_age_budget(
     redis_client,
     params_schema,

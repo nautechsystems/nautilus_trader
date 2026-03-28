@@ -3703,6 +3703,155 @@ def test_build_signals_payload_preserves_partial_explicit_ibkr_feed_state() -> N
     assert ref_leg["pricing_usable"] is False
 
 
+@pytest.mark.parametrize(
+    ("recovery_state", "expected_feed_state"),
+    [
+        ("bootstrapping", "unknown"),
+        ("blocked", "down"),
+        ("recovering", "down"),
+        ("down", "down"),
+    ],
+)
+def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states(
+    recovery_state: str,
+    expected_feed_state: str,
+) -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="AAPL",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="hyperliquid",
+                symbol="AAPL/USD",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="AAPL/USD",
+                instrument_id="AAPL.NASDAQ",
+            ),
+        ),
+        market_rows={
+            "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                "exchange": "hyperliquid",
+                "symbol": "AAPL/USD",
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "bid": 190.10,
+                "ask": 190.20,
+                "ts_ms": 1700000099900,
+            },
+            "ibkr:AAPL.NASDAQ": {
+                "exchange": "ibkr",
+                "symbol": "AAPL/USD",
+                "instrument_id": "AAPL.NASDAQ",
+                "bid": 189.90,
+                "ask": 190.00,
+                "ts_ms": 1700000099950,
+            },
+        },
+        now_ms_value=1700000100000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="aapl_tradexyz_maker",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1700000099000,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "ibkr:AAPL.NASDAQ",
+                "hedge_leg": "ibkr:AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1700000099950,
+                    "maker_leg": {
+                        "venue": "HYPERLIQUID",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 190.10,
+                        "ask": 190.20,
+                        "ts_ms": 1700000099900,
+                        "age_ms": 100,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "ts_ms": 1700000099950,
+                        "age_ms": 50,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": recovery_state,
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "SMART",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "ts_ms": 1700000099950,
+                        "age_ms": 50,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": recovery_state,
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 190.0},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=legs,
+    )
+
+    ref_leg = payload["equities_arb"]["quote_snapshot"]["ref_leg"]
+    hedge_leg = payload["equities_arb"]["quote_snapshot"]["hedge_leg"]
+
+    assert ref_leg["feed_state"] == expected_feed_state
+    assert ref_leg["feed_state"] in {"ok", "degraded", "down", "unknown"}
+    assert ref_leg["quote_state"] in {"fresh", "old", "missing"}
+    assert ref_leg["quote_state"] != "fresh"
+    assert ref_leg["pricing_usable"] is False
+    assert ref_leg["hedge_usable"] is False
+    assert "recovery_state" not in ref_leg
+    if recovery_state == "down":
+        assert ref_leg["reason_code"] == "reference_feed_down"
+    else:
+        assert recovery_state not in str(ref_leg.get("reason_code", ""))
+
+    assert hedge_leg["feed_state"] == expected_feed_state
+    assert hedge_leg["quote_state"] != "fresh"
+    assert hedge_leg["pricing_usable"] is False
+    assert hedge_leg["hedge_usable"] is False
+    assert "recovery_state" not in hedge_leg
+    if recovery_state == "down":
+        assert hedge_leg["reason_code"] == "hedge_feed_down"
+    else:
+        assert recovery_state not in str(hedge_leg.get("reason_code", ""))
+
+    assert payload["tradeable"] is False
+    assert payload["blocked"] is True
+
+
 def test_build_signals_payload_emits_shared_equities_arb_contract_for_equities_taker() -> None:
     metadata = StrategyMetadata(
         strategy_class="equities_taker",
