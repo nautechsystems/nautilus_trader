@@ -45,9 +45,13 @@ The current Rithmic example set includes:
 - `rithmic_ema_cross.py` for a full live `TradingNode` EMA-cross strategy on resolved front-month futures with native 15-second external bars and bounded historical warmup by default. The example uses environment variables only for Rithmic credentials and profile selection; strategy settings are configured in the file.
 - `notebooks/rithmic_live_strategy_sandbox.py` for a live `TradingNode` quote/trade/internal-bar sandbox.
 - `notebooks/rithmic_backtest_strategy_sandbox.py` for historical 1-minute bar download plus a local EMA backtest.
+- [`notebooks/rithmic_contracts_fetch_to_parquet.ipynb`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/rithmic/notebooks/rithmic_contracts_fetch_to_parquet.ipynb) for contract discovery, specific-contract parquet export, synthetic-root continuous-history export, and a simple continuous-data EMA backtest. This is the most important historical-data example because it demonstrates the practical Rithmic API limitations for older specific-contract history and the continuous-root workaround used for backtesting.
 - `order_submission.py` for a low-level safe working-order submit/modify/cancel flow.
 - `bracket_submission.py` for a low-level native bracket smoke run.
 - `oco_submission.py` for a low-level native OCO smoke run.
+
+If you want to run the notebook outside this repository, copy it into a workspace where
+NautilusTrader is already installed, using a build/version that includes the Rithmic adapter.
 
 ## Products
 
@@ -270,6 +274,48 @@ window.
 
 Rithmic exposes a `request_key`/resume flow for truncated replies, but the current adapter does not
 yet drive that path automatically, so callers must currently page large backfills themselves.
+
+### Synthetic continuous-root workflow for backtests
+
+The Rithmic historical API has an important practical limitation for futures backtesting:
+
+- individual contract history is often shallower than the corresponding root-symbol history
+- older contract definitions may not always be available through normal instrument-info lookups
+
+This matters because a specific contract such as `MNQM6` can be valid for live trading and bounded
+recent history, while the root symbol `MNQ` can still return a materially larger continuous history
+window. In the current notebook workflow, that continuous root series is expected to extend back to
+**June 2019**, which is deeper than many individual contract responses.
+
+The recommended example for this workflow is
+[`examples/live/rithmic/notebooks/rithmic_contracts_fetch_to_parquet.ipynb`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/rithmic/notebooks/rithmic_contracts_fetch_to_parquet.ipynb).
+
+That notebook demonstrates the following pattern:
+
+1. Discover real futures contracts for a root such as `MNQ`.
+2. Persist the real Nautilus `FuturesContract` objects for specific-contract backtests.
+3. Derive one synthetic root instrument definition from a discovered real contract definition.
+4. Rename that copied instrument to the root symbol and use it only as a backtest placeholder.
+5. Request historical bars with the root symbol itself, such as `MNQ`, to capture the larger
+   continuous history that Rithmic exposes for the root.
+6. Save those bars against the synthetic root instrument ID so a backtest can treat the result as
+   a continuous contract series.
+
+This synthetic root flow is intentionally a **backtest-only** workflow. It is not a live-trading
+symbology shortcut and should not be confused with the live front-month resolution workflow
+described earlier in this guide.
+
+The notebook also shows why the synthetic root is needed:
+
+- it derives usable instrument metadata from a real contract because older contracts may not have
+  retrievable symbol info
+- it stores real contract data and synthetic continuous-root data separately so users can backtest
+  either workflow
+- it pages historical requests because Rithmic can truncate large history responses
+
+To use that notebook, copy it into a workspace where NautilusTrader is installed and importable,
+using a version/build that already contains the Rithmic adapter. The notebook is not intended to be
+a standalone artifact without a Nautilus installation.
 
 ### Live external bars
 
