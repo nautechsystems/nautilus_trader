@@ -9,6 +9,8 @@ from contextlib import suppress
 from dataclasses import asdict
 from dataclasses import dataclass
 from decimal import Decimal
+import json
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -113,6 +115,158 @@ class ControllerIntentCommand:
     cancel_after_ms: int | None = None
 
 
+class ControllerStateFeedBridge:
+    POLL_INTERVAL_SECS = 0.1
+
+    def __init__(
+        self,
+        *,
+        redis_client: Any,
+        controller_scope_id: str,
+        strategy_id: str,
+        namespace: str,
+        schema_version: str,
+    ) -> None:
+        self.redis_client = redis_client
+        self.controller_scope_id = str(controller_scope_id)
+        self.strategy_id = str(strategy_id)
+        self.namespace = str(namespace)
+        self.schema_version = str(schema_version)
+        self._lifecycle_callback = None
+        self._canonical_state_callback = None
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_lifecycle_payload: bytes | None = None
+        self._last_canonical_state_payload: bytes | None = None
+
+    def bind(
+        self,
+        *,
+        lifecycle_callback: Any,
+        canonical_state_callback: Any,
+    ) -> None:
+        self._lifecycle_callback = lifecycle_callback
+        self._canonical_state_callback = canonical_state_callback
+
+    def lifecycle_event_key(self) -> str:
+        keys = FluxRedisKeys(
+            strategy_id=self.strategy_id,
+            namespace=self.namespace,
+            schema_version=self.schema_version,
+        )
+        return (
+            f"{keys.prefix}:controller:lifecycle:"
+            f"{self.controller_scope_id}:{self.strategy_id}"
+        )
+
+    def canonical_state_key(self) -> str:
+        keys = FluxRedisKeys(
+            strategy_id=self.strategy_id,
+            namespace=self.namespace,
+            schema_version=self.schema_version,
+        )
+        return (
+            f"{keys.prefix}:controller:canonical_state:"
+            f"{self.controller_scope_id}:{self.strategy_id}"
+        )
+
+    @staticmethod
+    def _payload_fingerprint(payload: Any) -> bytes | None:
+        if payload is None:
+            return None
+        if isinstance(payload, bytes):
+            return payload
+        if isinstance(payload, bytearray):
+            return bytes(payload)
+        if isinstance(payload, str):
+            return payload.encode("utf-8")
+        try:
+            return json.dumps(payload, sort_keys=True).encode("utf-8")
+        except Exception:
+            return repr(payload).encode("utf-8")
+
+    @staticmethod
+    def _load_mapping(payload: Any) -> Mapping[str, Any] | None:
+        if payload is None:
+            return None
+        if isinstance(payload, Mapping):
+            return payload
+        if isinstance(payload, (bytes, bytearray)):
+            payload = payload.decode("utf-8")
+        if not isinstance(payload, str):
+            return None
+        text = payload.strip()
+        if not text:
+            return None
+        decoded = json.loads(text)
+        if not isinstance(decoded, Mapping):
+            return None
+        return decoded
+
+    def _read_mapping(self, key: str) -> tuple[bytes | None, Mapping[str, Any] | None]:
+        get = getattr(self.redis_client, "get", None)
+        if not callable(get):
+            return None, None
+        raw_payload = get(key)
+        return self._payload_fingerprint(raw_payload), self._load_mapping(raw_payload)
+
+    def sync_once(self) -> None:
+        lifecycle_fingerprint, lifecycle_payload = self._read_mapping(self.lifecycle_event_key())
+        if (
+            lifecycle_fingerprint is not None
+            and lifecycle_payload is not None
+            and lifecycle_fingerprint != self._last_lifecycle_payload
+        ):
+            if callable(self._lifecycle_callback):
+                self._lifecycle_callback(ExecutionLifecycleEvent(**dict(lifecycle_payload)))
+            self._last_lifecycle_payload = lifecycle_fingerprint
+
+        canonical_fingerprint, canonical_payload = self._read_mapping(self.canonical_state_key())
+        if (
+            canonical_fingerprint is not None
+            and canonical_payload is not None
+            and canonical_fingerprint != self._last_canonical_state_payload
+        ):
+            if callable(self._canonical_state_callback):
+                self._canonical_state_callback(dict(canonical_payload))
+            self._last_canonical_state_payload = canonical_fingerprint
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"controller-state-feed:{self.controller_scope_id}:{self.strategy_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        thread = self._thread
+        if thread is None:
+            return
+        self._stop_event.set()
+        if thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=max(self.POLL_INTERVAL_SECS * 2, 1.0))
+        if not thread.is_alive():
+            self._thread = None
+
+    def _run(self) -> None:
+        while not self._stop_event.is_set():
+            with suppress(Exception):
+                self.sync_once()
+            self._stop_event.wait(self.POLL_INTERVAL_SECS)
+
+    def publish_lifecycle_event(self, event: ExecutionLifecycleEvent) -> None:
+        if callable(self._lifecycle_callback):
+            self._lifecycle_callback(event)
+
+    def publish_canonical_state(self, payload: Mapping[str, Any]) -> None:
+        if callable(self._canonical_state_callback):
+            self._canonical_state_callback(payload)
+
+
 class MakerV4StrategyConfig(MakerV3StrategyConfig):
     """
     MakerV4 config surface for the immediate-hedge core.
@@ -168,7 +322,7 @@ class MakerV4Strategy(Strategy):
         ).strip()
         self._controller_scope_id = configured_controller_scope_id or None
         self._controller_intent_publisher = None
-        self._controller_canonical_state_feed: dict[str, Any] | None = None
+        self._controller_canonical_state_feed: ControllerStateFeedBridge | None = None
         self._controller_canonical_state: dict[str, Any] | None = None
         self._controller_intent_seq = 0
         self._controller_pending_place_intents: dict[str, dict[str, Any]] = {}
@@ -274,15 +428,69 @@ class MakerV4Strategy(Strategy):
         if self._controller_scope_id is not None and self._controller_scope_id != scope_id:
             raise ValueError("controller scope mismatch for canonical state feed")
         self._controller_scope_id = scope_id
-        self._controller_canonical_state_feed = {
-            "redis_client": redis_client,
-            "controller_scope_id": scope_id,
-            "namespace": str(namespace),
-            "schema_version": str(schema_version),
-        }
+        feed = ControllerStateFeedBridge(
+            redis_client=redis_client,
+            controller_scope_id=scope_id,
+            strategy_id=self.runtime_strategy_id,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        feed.bind(
+            lifecycle_callback=self.apply_controller_lifecycle_event,
+            canonical_state_callback=self.apply_controller_canonical_state,
+        )
+        self._controller_canonical_state_feed = feed
 
     def apply_controller_canonical_state(self, payload: Mapping[str, Any]) -> None:
-        self._controller_canonical_state = dict(payload)
+        state = dict(payload)
+        self._controller_canonical_state = state
+
+        managed_orders = state.get("managed_maker_orders")
+        if isinstance(managed_orders, list):
+            canonical_orders: dict[str, ManagedMakerOrderState] = {}
+            for row in managed_orders:
+                if not isinstance(row, Mapping):
+                    continue
+                side = str(row.get("side", "")).strip().upper()
+                if side not in {"BUY", "SELL"}:
+                    continue
+                canonical_orders[side] = ManagedMakerOrderState(
+                    client_order_id=str(row.get("client_order_id", "")).strip(),
+                    instrument_id=str(row.get("instrument_id", "")).strip(),
+                    side=side,
+                    quantity=Decimal(str(row.get("quantity", "0"))),
+                    price=Decimal(str(row.get("price", "0"))),
+                    post_only=bool(row.get("post_only", True)),
+                    pending_cancel=bool(row.get("pending_cancel", False)),
+                )
+            self._managed_maker_orders = canonical_orders
+
+        if "pending_hedge" in state:
+            pending = state.get("pending_hedge")
+            if isinstance(pending, Mapping):
+                self._pending_hedge = PendingHedgeState(
+                    fill_id=str(pending.get("fill_id", "")).strip(),
+                    side=str(pending.get("side", "")).strip().upper(),
+                    requested_qty=Decimal(str(pending.get("requested_qty", "0"))),
+                    remaining_qty=Decimal(str(pending.get("remaining_qty", "0"))),
+                    limit_price=Decimal(str(pending.get("limit_price", "0"))),
+                    route=str(pending.get("route", "SMART")).strip(),
+                    time_in_force=str(pending.get("time_in_force", "IOC")).strip(),
+                    outside_rth=bool(pending.get("outside_rth", False)),
+                    include_overnight=bool(pending.get("include_overnight", False)),
+                    cancel_after_ms=(
+                        None
+                        if pending.get("cancel_after_ms") in (None, "")
+                        else int(pending.get("cancel_after_ms"))
+                    ),
+                    order_id=(
+                        None
+                        if pending.get("order_id") in (None, "")
+                        else str(pending.get("order_id")).strip() or None
+                    ),
+                )
+            else:
+                self._pending_hedge = None
 
     @property
     def hedge_request_count(self) -> int:
@@ -385,6 +593,7 @@ class MakerV4Strategy(Strategy):
                 ExecutionLifecycleState.REJECTED,
                 ExecutionLifecycleState.CANCELED,
                 ExecutionLifecycleState.FILLED,
+                ExecutionLifecycleState.QUARANTINED,
             }:
                 self._controller_pending_place_intents.pop(event.intent_id, None)
             return
@@ -415,6 +624,7 @@ class MakerV4Strategy(Strategy):
                 ExecutionLifecycleState.REJECTED,
                 ExecutionLifecycleState.CANCELED,
                 ExecutionLifecycleState.FILLED,
+                ExecutionLifecycleState.QUARANTINED,
             }:
                 if event.lifecycle_state in {
                     ExecutionLifecycleState.CANCELED,
@@ -452,6 +662,7 @@ class MakerV4Strategy(Strategy):
             ExecutionLifecycleState.REJECTED,
             ExecutionLifecycleState.CANCELED,
             ExecutionLifecycleState.FILLED,
+            ExecutionLifecycleState.QUARANTINED,
         }:
             if self._pending_hedge is not None and self._pending_hedge.order_id == event.client_order_id:
                 self._pending_hedge = None
@@ -1985,8 +2196,8 @@ class MakerV4Strategy(Strategy):
             self._controller_pending_place_intents[command.intent.intent_id] = {
                 "side": side,
                 "instrument_id": str(self.config.maker_instrument_id),
-                "quantity": str(base_qty),
-                "price": str(target_price),
+                "quantity": _decimal_text(base_qty),
+                "price": _decimal_text(target_price),
                 "post_only": True,
             }
             return
@@ -2029,8 +2240,8 @@ class MakerV4Strategy(Strategy):
             self._controller_pending_place_intents[command.intent.intent_id] = {
                 "side": side,
                 "instrument_id": str(self.config.maker_instrument_id),
-                "quantity": str(base_qty),
-                "price": str(target_price),
+                "quantity": _decimal_text(base_qty),
+                "price": _decimal_text(target_price),
                 "post_only": False,
             }
             self._last_take_submission_ns = max(0, int(now_ns))
@@ -2507,7 +2718,11 @@ class MakerV4Strategy(Strategy):
         return True
 
     def _retry_hedge_backlog(self, *, now_ns: int) -> None:
-        if self._hedge_backlog is None or self._pending_hedge is not None:
+        if (
+            self._hedge_backlog is None
+            or self._pending_hedge is not None
+            or self._controller_pending_hedge_intents
+        ):
             return
         quote = self._reference_quote_snapshot(now_ns=now_ns)
         if quote is None:
@@ -2537,6 +2752,11 @@ class MakerV4Strategy(Strategy):
         order, pending_state = pending
         order_id = self._submit_hedge_intent(order)
         if order_id is None:
+            if self._controller_managed_mode() and self._controller_pending_hedge_intents:
+                self._hedge_requests.append(order)
+                self._hedge_backlog = None
+                self.tradeable = True
+                self.hedge_disabled_reason = None
             return
         self._hedge_requests.append(order)
         self._pending_hedge = PendingHedgeState(
@@ -2963,12 +3183,18 @@ class MakerV4Strategy(Strategy):
                 with suppress(Exception):
                     provider_start()
 
-        self._reclaim_managed_maker_orders_from_cache()
+        if self._controller_canonical_state_feed is not None:
+            self._controller_canonical_state_feed.sync_once()
+            self._controller_canonical_state_feed.start()
+        if not self._controller_managed_mode():
+            self._reclaim_managed_maker_orders_from_cache()
         self._publish_balances()
         self._publish_state_snapshot()
 
     def on_stop(self) -> None:
         self._cancel_managed_maker_orders()
+        if self._controller_canonical_state_feed is not None:
+            self._controller_canonical_state_feed.stop()
         unsubscribed_instrument_ids: list[Any] = []
         for instrument_id in (
             self.config.maker_instrument_id,
