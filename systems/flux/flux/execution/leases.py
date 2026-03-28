@@ -68,15 +68,11 @@ class LocalControllerLeaseStore:
         ttl_ms = max(1, int(lease_ttl_ms))
         with self._locked_scope(scope) as (handle, current):
             if current is not None and not current.is_stale(now_ms=timestamp_ms):
-                if current.owner_id != owner:
-                    raise ControllerLeaseRejectedError(
-                        f"controller scope `{scope}` is already owned by `{current.owner_id}`",
-                    )
-                lease_token = current.lease_token
-                acquired_at_ms = current.acquired_at_ms
-            else:
-                lease_token = uuid.uuid4().hex
-                acquired_at_ms = timestamp_ms
+                raise ControllerLeaseRejectedError(
+                    f"controller scope `{scope}` is already owned by `{current.owner_id}`",
+                )
+            lease_token = uuid.uuid4().hex
+            acquired_at_ms = timestamp_ms
             lease = ControllerLease(
                 controller_scope_id=scope,
                 owner_id=owner,

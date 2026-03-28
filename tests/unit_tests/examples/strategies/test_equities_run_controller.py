@@ -67,3 +67,33 @@ def test_build_runner_defaults_shadow_mode_and_lease_root(tmp_path: Path) -> Non
 
     assert service.started == 1
     assert service.stopped == 1
+
+
+def test_build_runner_rejects_duplicate_default_startup_for_same_scope(tmp_path: Path) -> None:
+    run_controller = _load_run_controller_module()
+    leases = importlib.import_module("flux.execution.leases")
+    first = run_controller.build_runner(
+        {
+            "controller": {
+                "controller_scope_id": "acct.execution.main",
+                "allow_single_host_canary": True,
+            },
+        },
+        repo_root=tmp_path,
+    )
+    second = run_controller.build_runner(
+        {
+            "controller": {
+                "controller_scope_id": "acct.execution.main",
+                "allow_single_host_canary": True,
+            },
+        },
+        repo_root=tmp_path,
+    )
+
+    first.start(now_ms=1_000)
+
+    with pytest.raises(leases.ControllerLeaseRejectedError, match="already owned"):
+        second.start(now_ms=1_000)
+
+    first.stop()
