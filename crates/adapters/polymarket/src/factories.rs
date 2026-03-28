@@ -83,14 +83,14 @@ impl DataClientFactory for PolymarketDataClientFactory {
             Some(polymarket_config.gamma_url()),
             polymarket_config.http_timeout_secs,
             RetryConfig {
-                max_retries: 5,
-                initial_delay_ms: 3_000,
+                max_retries: 10,
+                initial_delay_ms: 5_000,
                 max_delay_ms: 30_000,
-                backoff_factor: 2.0,
-                jitter_ms: 1_000,
+                backoff_factor: 1.5,
+                jitter_ms: 2_000,
                 operation_timeout_ms: Some(30_000),
                 immediate_first: true,
-                max_elapsed_ms: Some(120_000),
+                max_elapsed_ms: Some(300_000),
             },
         )?;
 
