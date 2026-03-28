@@ -388,7 +388,6 @@ Optional environment variables:
 
 - `RITHMIC_PROFILE`
 - `RITHMIC_ENV`
-
 - `RITHMIC_ALT_SERVER`
 - `RITHMIC_APP_NAME`
 - `RITHMIC_APP_VERSION`
