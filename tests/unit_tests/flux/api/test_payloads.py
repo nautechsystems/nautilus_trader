@@ -3704,17 +3704,18 @@ def test_build_signals_payload_preserves_partial_explicit_ibkr_feed_state() -> N
 
 
 @pytest.mark.parametrize(
-    ("recovery_state", "expected_feed_state"),
+    ("recovery_state", "expected_feed_state", "expected_quote_state"),
     [
-        ("bootstrapping", "unknown"),
-        ("blocked", "down"),
-        ("recovering", "down"),
-        ("down", "down"),
+        ("bootstrapping", "unknown", "missing"),
+        ("blocked", "down", "missing"),
+        ("recovering", "down", "missing"),
+        ("down", "down", None),
     ],
 )
 def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states(
     recovery_state: str,
     expected_feed_state: str,
+    expected_quote_state: str | None,
 ) -> None:
     metadata = StrategyMetadata(
         strategy_class="equities_maker",
@@ -3835,8 +3836,7 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
     raw_state_hedge_leg = payload["state"]["maker_v4"]["quote_snapshot"]["hedge_leg"]
 
     assert maker_leg["feed_state"] == expected_feed_state
-    assert maker_leg["quote_state"] in {"fresh", "old", "missing"}
-    assert maker_leg["quote_state"] != "fresh"
+    assert maker_leg.get("quote_state") == expected_quote_state
     assert maker_leg["pricing_usable"] is False
     assert maker_leg["hedge_usable"] is False
     assert "recovery_state" not in maker_leg
@@ -3847,8 +3847,7 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
 
     assert ref_leg["feed_state"] == expected_feed_state
     assert ref_leg["feed_state"] in {"ok", "degraded", "down", "unknown"}
-    assert ref_leg["quote_state"] in {"fresh", "old", "missing"}
-    assert ref_leg["quote_state"] != "fresh"
+    assert ref_leg.get("quote_state") == expected_quote_state
     assert ref_leg["pricing_usable"] is False
     assert ref_leg["hedge_usable"] is False
     assert "recovery_state" not in ref_leg
@@ -3858,7 +3857,7 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
         assert recovery_state not in str(ref_leg.get("reason_code", ""))
 
     assert hedge_leg["feed_state"] == expected_feed_state
-    assert hedge_leg["quote_state"] != "fresh"
+    assert hedge_leg.get("quote_state") == expected_quote_state
     assert hedge_leg["pricing_usable"] is False
     assert hedge_leg["hedge_usable"] is False
     assert "recovery_state" not in hedge_leg

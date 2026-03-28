@@ -693,9 +693,16 @@ def _apply_quote_health_to_v4_leg(
         normalized["hedge_usable"] = False
         normalized["reason_code"] = f"{leg_role}_feed_unknown"
         return normalized
-    if recovery_state in {"blocked", "recovering", "down"}:
+    if recovery_state in {"blocked", "recovering"}:
         normalized["feed_state"] = "down"
         normalized["quote_state"] = "missing"
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_down"
+        return normalized
+    if recovery_state == "down":
+        normalized["feed_state"] = "down"
+        normalized.pop("quote_state", None)
         normalized["pricing_usable"] = False
         normalized["hedge_usable"] = False
         normalized["reason_code"] = f"{leg_role}_feed_down"
