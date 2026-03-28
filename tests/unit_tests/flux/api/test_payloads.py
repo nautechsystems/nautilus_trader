@@ -3191,7 +3191,7 @@ def test_build_signals_payload_prefers_live_equities_arb_leg_quotes_over_stale_s
     assert payload["ts_ms"] == 1700000099950
 
 
-def test_build_signals_payload_preserves_explicit_ibkr_quote_health_without_runtime_budget() -> None:
+def test_build_signals_payload_preserves_explicit_ibkr_quote_health_within_runtime_budget() -> None:
     metadata = StrategyMetadata(
         strategy_class="equities_maker",
         strategy_groups="equities",
@@ -3292,7 +3292,7 @@ def test_build_signals_payload_preserves_explicit_ibkr_quote_health_without_runt
             },
         },
         fv_row={"fv": 92.55},
-        params={"qty": 1.0, "max_age_ms": 10_000},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 3_000},
         balances=[],
         legs=legs,
     )
@@ -3301,6 +3301,126 @@ def test_build_signals_payload_preserves_explicit_ibkr_quote_health_without_runt
     assert ref_leg["age_ms"] == 1500
     assert ref_leg["quote_state"] == "fresh"
     assert ref_leg["pricing_usable"] is True
+
+
+def test_build_signals_payload_recomputes_explicit_ibkr_quote_health_when_live_age_exceeds_runtime_budget() -> None:
+    metadata = StrategyMetadata(
+        strategy_class="equities_maker",
+        strategy_groups="equities",
+        base_asset="CRCL",
+        quote_asset="USD",
+        param_set="equities_maker",
+        strategy_family="equities_maker",
+        strategy_version="v1",
+    )
+    legs = build_legs_payload(
+        contracts=(
+            ContractCatalogEntry(
+                exchange="binance_perp",
+                symbol="CRCLUSDT",
+                instrument_id="CRCLUSDT-PERP.BINANCE_PERP",
+            ),
+            ContractCatalogEntry(
+                exchange="ibkr",
+                symbol="CRCL/USD",
+                instrument_id="CRCL.NYSE",
+            ),
+        ),
+        market_rows={
+            "binance_perp:CRCLUSDT-PERP.BINANCE_PERP": {
+                "exchange": "binance_perp",
+                "symbol": "CRCLUSDT",
+                "instrument_id": "CRCLUSDT-PERP.BINANCE_PERP",
+                "bid": 92.61,
+                "ask": 92.62,
+                "ts_ms": 1700000000000,
+            },
+            "ibkr:CRCL.NYSE": {
+                "exchange": "ibkr",
+                "symbol": "CRCL/USD",
+                "instrument_id": "CRCL.NYSE",
+                "bid": 92.51,
+                "ask": 92.59,
+                "ts_ms": 1700000001500,
+            },
+        },
+        now_ms_value=1700000100000,
+    )
+
+    payload = build_signals_payload(
+        strategy_id="crcl_binance_perp_maker",
+        metadata=metadata,
+        state={
+            "bot_on": False,
+            "managed_orders": 0,
+            "state": "running",
+            "ts_ms": 1700000099000,
+            "maker_role_map": {
+                "maker_leg": "binance_perp:CRCLUSDT-PERP.BINANCE_PERP",
+                "ref_leg": "ibkr:CRCL.NYSE",
+                "hedge_leg": "ibkr:CRCL.NYSE",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1700000099000,
+                    "maker_leg": {
+                        "venue": "BINANCE_PERP",
+                        "instrument_id": "CRCLUSDT-PERP.BINANCE_PERP",
+                        "bid": 92.61,
+                        "ask": 92.62,
+                        "ts_ms": 1700000099000,
+                        "age_ms": 0,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "ref_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "CRCL.NYSE",
+                        "bid": 92.51,
+                        "ask": 92.59,
+                        "ts_ms": 1700000097500,
+                        "age_ms": 1500,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "hedge_leg": {
+                        "venue": "IBKR",
+                        "instrument_id": "CRCL.NYSE",
+                        "route": "SMART",
+                        "bid": 92.51,
+                        "ask": 92.59,
+                        "ts_ms": 1700000097500,
+                        "age_ms": 1500,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 92.55},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=legs,
+    )
+
+    ref_leg = payload["equities_arb"]["quote_snapshot"]["ref_leg"]
+    hedge_leg = payload["equities_arb"]["quote_snapshot"]["hedge_leg"]
+
+    assert ref_leg["age_ms"] == 1500
+    assert ref_leg["quote_state"] == "old"
+    assert ref_leg["pricing_usable"] is False
+    assert ref_leg["hedge_usable"] is False
+    assert ref_leg["reason_code"] == "reference_quote_old"
+    assert hedge_leg["quote_state"] == "old"
+    assert hedge_leg["pricing_usable"] is False
+    assert hedge_leg["hedge_usable"] is False
+    assert hedge_leg["reason_code"] == "hedge_quote_old"
 
 
 def test_build_signals_payload_overrides_explicit_fresh_ibkr_health_when_live_age_is_grossly_stale() -> None:

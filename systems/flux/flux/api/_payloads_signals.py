@@ -713,9 +713,8 @@ def _apply_quote_health_to_v4_leg(
             explicit_feed_state in {"degraded", "down", "unknown"}
             or explicit_quote_state in {"old", "missing"}
         )
-        explicit_hard_cap_ms = max(max_quote_age_ms, 30_000)
         live_age_ms = safe_int(normalized.get("age_ms"))
-        explicit_stale_override = live_age_ms is not None and live_age_ms > explicit_hard_cap_ms
+        explicit_stale_override = live_age_ms is not None and live_age_ms > max_quote_age_ms
         if not conservative_explicit and (not optimistic_explicit or explicit_stale_override):
             normalized["feed_state"] = quote_health.feed_state
             normalized["quote_state"] = quote_health.quote_state

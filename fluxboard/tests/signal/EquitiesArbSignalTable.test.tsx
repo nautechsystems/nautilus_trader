@@ -88,6 +88,8 @@ function buildEquitiesStrategy(
           instrument_id: 'xyz:AAPL-USD-PERP.HYPERLIQUID',
           feed_state: 'ok',
           quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
         },
         hedge_leg: {
           venue: 'IBKR',
@@ -95,12 +97,16 @@ function buildEquitiesStrategy(
           route: 'BLUEOCEAN',
           feed_state: 'ok',
           quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
         },
         ref_leg: {
           venue: 'IBKR',
           instrument_id: 'AAPL.NASDAQ',
           feed_state: 'ok',
           quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
         },
       },
     },
@@ -246,6 +252,59 @@ describe('EquitiesArbSignalTable', () => {
       'aapl_aaa_taker',
     ]);
     expect(screen.getByText('Taker')).toBeInTheDocument();
+  });
+
+  it('uses worst-leg freshness and hides actionable hedge/spread states when quote health is stale', () => {
+    const strategy = buildEquitiesStrategy('aapl_tradexyz_maker', 'equities_maker', 'Maker');
+    strategy.equities_arb = {
+      ...strategy.equities_arb,
+      quote_snapshot: {
+        ...strategy.equities_arb?.quote_snapshot,
+        hedge_ready: true,
+        hedge_disabled_reason: null,
+        maker_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.maker_leg,
+          age_ms: 1_000,
+          ts_ms: 1_700_000_009_000,
+          quote_state: 'fresh',
+          pricing_usable: true,
+          hedge_usable: true,
+        },
+        hedge_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.hedge_leg,
+          age_ms: 9_000,
+          ts_ms: 1_700_000_001_000,
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'hedge_quote_old',
+        },
+        ref_leg: {
+          ...strategy.equities_arb?.quote_snapshot?.ref_leg,
+          age_ms: 9_000,
+          ts_ms: 1_700_000_001_000,
+          quote_state: 'old',
+          pricing_usable: false,
+          hedge_usable: false,
+          reason_code: 'reference_quote_old',
+        },
+      },
+    };
+
+    render(
+      <EquitiesArbSignalTable
+        rows={[strategy]}
+        nowProvider={() => 1_700_000_010_000}
+      />,
+    );
+
+    expect(screen.getByText(/\(9s ago\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Blocked/i)).toBeInTheDocument();
+    expect(screen.getByText(/Quote health/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^stale$/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('2.0 bps')).not.toBeInTheDocument();
+    expect(screen.queryByText('B 14.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('A -11.0')).not.toBeInTheDocument();
   });
 
   it('ticks the last-updated age label on the shared equities surface', () => {
