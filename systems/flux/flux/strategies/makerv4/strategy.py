@@ -7,12 +7,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict
+from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
 from flux.common.quantity_units import exposure_from_venue_qty
 from flux.common.keys import FluxRedisKeys
+from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import ExecutionIntent
+from flux.execution.intents import ExecutionLifecycleState
 from flux.common.quantity_units import normalize_order_qty_unit
 from flux.common.portfolio_inventory import DEFAULT_PORTFOLIO_INVENTORY_STALE_AFTER_MS
 from flux.common.portfolio_inventory import StrategyInventoryComponent
@@ -84,6 +88,31 @@ def _normalized_timestamp_ms(value: Any) -> int:
     return max(0, ts_value)
 
 
+def _decimal_text(value: Decimal | str | int | float) -> str:
+    text = format(Decimal(str(value)), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerIntentCommand:
+    intent: ExecutionIntent
+    command_type: str
+    order_role: str
+    instrument_id: str
+    side: str | None = None
+    quantity: str | None = None
+    limit_price: str | None = None
+    post_only: bool | None = None
+    time_in_force: str | None = None
+    target_client_order_id: str | None = None
+    route: str | None = None
+    outside_rth: bool | None = None
+    include_overnight: bool | None = None
+    cancel_after_ms: int | None = None
+
+
 class MakerV4StrategyConfig(MakerV3StrategyConfig):
     """
     MakerV4 config surface for the immediate-hedge core.
@@ -97,6 +126,7 @@ class MakerV4StrategyConfig(MakerV3StrategyConfig):
     outside_rth_hedge_enabled: bool = False
     ibkr_hedge_route: str = ""
     hedge_fee_plan: str = "ibkr_pro_tiered"
+    controller_scope_id: str | None = None
 
 
 class MakerV4Strategy(Strategy):
@@ -133,6 +163,19 @@ class MakerV4Strategy(Strategy):
         )
         self._profile_account_projection_namespace = "flux"
         self._profile_account_projection_schema_version = "v1"
+        configured_controller_scope_id = str(
+            getattr(config, "controller_scope_id", "") or "",
+        ).strip()
+        self._controller_scope_id = configured_controller_scope_id or None
+        self._controller_intent_publisher = None
+        self._controller_canonical_state_feed: dict[str, Any] | None = None
+        self._controller_canonical_state: dict[str, Any] | None = None
+        self._controller_intent_seq = 0
+        self._controller_pending_place_intents: dict[str, dict[str, Any]] = {}
+        self._controller_pending_cancel_intents: dict[str, str] = {}
+        self._controller_pending_cancel_sides: set[str] = set()
+        self._controller_pending_hedge_intents: dict[str, PendingHedgeState] = {}
+        self._controller_staged_pending_hedge: PendingHedgeState | None = None
         self._runtime_params = dict(runtime_params_mod.MAKERV4_RUNTIME_PARAM_DEFAULTS)
         self._maker_instrument = None
         self._instruments: dict[Any, Any] = {}
@@ -201,6 +244,46 @@ class MakerV4Strategy(Strategy):
         self._profile_account_projection_namespace = namespace
         self._profile_account_projection_schema_version = schema_version
 
+    def configure_controller_intent_publisher(
+        self,
+        *,
+        controller_scope_id: str,
+        publish_intent: Any,
+    ) -> None:
+        scope_id = str(controller_scope_id).strip()
+        if not scope_id:
+            raise ValueError("`controller_scope_id` must be a non-empty string")
+        if self._controller_scope_id is not None and self._controller_scope_id != scope_id:
+            raise ValueError("controller scope mismatch for managed intent publisher")
+        if not callable(publish_intent):
+            raise TypeError("`publish_intent` must be callable")
+        self._controller_scope_id = scope_id
+        self._controller_intent_publisher = publish_intent
+
+    def configure_controller_canonical_state_feed(
+        self,
+        *,
+        redis_client: Any,
+        controller_scope_id: str,
+        namespace: str,
+        schema_version: str,
+    ) -> None:
+        scope_id = str(controller_scope_id).strip()
+        if not scope_id:
+            raise ValueError("`controller_scope_id` must be a non-empty string")
+        if self._controller_scope_id is not None and self._controller_scope_id != scope_id:
+            raise ValueError("controller scope mismatch for canonical state feed")
+        self._controller_scope_id = scope_id
+        self._controller_canonical_state_feed = {
+            "redis_client": redis_client,
+            "controller_scope_id": scope_id,
+            "namespace": str(namespace),
+            "schema_version": str(schema_version),
+        }
+
+    def apply_controller_canonical_state(self, payload: Mapping[str, Any]) -> None:
+        self._controller_canonical_state = dict(payload)
+
     @property
     def hedge_request_count(self) -> int:
         return len(self._hedge_requests)
@@ -210,6 +293,169 @@ class MakerV4Strategy(Strategy):
         if self._pending_hedge is None:
             return Decimal("0")
         return self._pending_hedge.remaining_qty
+
+    def _controller_managed_mode(self) -> bool:
+        return self._controller_scope_id is not None and callable(self._controller_intent_publisher)
+
+    def _next_controller_intent_id(self, *, order_role: str, command_type: str) -> str:
+        self._controller_intent_seq += 1
+        return (
+            f"{self.runtime_strategy_id}:{order_role}:{command_type}:{self._controller_intent_seq}"
+        )
+
+    def _publish_controller_command(
+        self,
+        *,
+        command_type: str,
+        order_role: str,
+        instrument_id: Any,
+        side: str | None = None,
+        quantity: Decimal | None = None,
+        limit_price: Decimal | None = None,
+        post_only: bool | None = None,
+        time_in_force: str | None = None,
+        target_client_order_id: str | None = None,
+        route: str | None = None,
+        outside_rth: bool | None = None,
+        include_overnight: bool | None = None,
+        cancel_after_ms: int | None = None,
+    ) -> ControllerIntentCommand:
+        if not self._controller_managed_mode():
+            raise RuntimeError("controller-managed intent publishing is not configured")
+        assert self._controller_scope_id is not None  # narrow for type-checkers
+        command = ControllerIntentCommand(
+            intent=ExecutionIntent(
+                intent_id=self._next_controller_intent_id(
+                    order_role=order_role,
+                    command_type=command_type,
+                ),
+                controller_scope_id=self._controller_scope_id,
+                strategy_id=self.runtime_strategy_id,
+            ),
+            command_type=command_type,
+            order_role=order_role,
+            instrument_id=str(instrument_id),
+            side=None if side is None else str(side).strip().upper(),
+            quantity=None if quantity is None else _decimal_text(quantity),
+            limit_price=None if limit_price is None else _decimal_text(limit_price),
+            post_only=post_only,
+            time_in_force=None if time_in_force is None else str(time_in_force).strip().upper(),
+            target_client_order_id=(
+                None
+                if target_client_order_id is None
+                else str(target_client_order_id).strip() or None
+            ),
+            route=None if route is None else str(route).strip().upper() or None,
+            outside_rth=outside_rth,
+            include_overnight=include_overnight,
+            cancel_after_ms=None if cancel_after_ms is None else int(cancel_after_ms),
+        )
+        self._controller_intent_publisher(command)
+        return command
+
+    def apply_controller_lifecycle_event(self, event: ExecutionLifecycleEvent) -> None:
+        if self._controller_scope_id is None:
+            return
+        if event.controller_scope_id != self._controller_scope_id:
+            return
+        if event.strategy_id != self.runtime_strategy_id:
+            return
+
+        place_spec = self._controller_pending_place_intents.get(event.intent_id)
+        if place_spec is not None:
+            side = str(place_spec["side"])
+            if event.lifecycle_state in {
+                ExecutionLifecycleState.ACCEPTED,
+                ExecutionLifecycleState.OWNED_PRE_WRITE,
+                ExecutionLifecycleState.SENT_TO_VENUE,
+                ExecutionLifecycleState.WORKING,
+                ExecutionLifecycleState.PARTIALLY_FILLED,
+            }:
+                self._managed_maker_orders[side] = ManagedMakerOrderState(
+                    client_order_id=event.client_order_id,
+                    instrument_id=str(place_spec["instrument_id"]),
+                    side=side,
+                    quantity=Decimal(str(place_spec["quantity"])),
+                    price=Decimal(str(place_spec["price"])),
+                    post_only=bool(place_spec["post_only"]),
+                    pending_cancel=False,
+                )
+                self._controller_pending_place_intents.pop(event.intent_id, None)
+            if event.lifecycle_state in {
+                ExecutionLifecycleState.REJECTED,
+                ExecutionLifecycleState.CANCELED,
+                ExecutionLifecycleState.FILLED,
+            }:
+                self._controller_pending_place_intents.pop(event.intent_id, None)
+            return
+
+        cancel_side = self._controller_pending_cancel_intents.get(event.intent_id)
+        if cancel_side is not None:
+            state = self._managed_maker_orders.get(cancel_side)
+            if (
+                state is not None
+                and event.lifecycle_state
+                in {
+                    ExecutionLifecycleState.ACCEPTED,
+                    ExecutionLifecycleState.OWNED_PRE_WRITE,
+                    ExecutionLifecycleState.SENT_TO_VENUE,
+                    ExecutionLifecycleState.WORKING,
+                }
+            ):
+                self._managed_maker_orders[cancel_side] = ManagedMakerOrderState(
+                    client_order_id=state.client_order_id,
+                    instrument_id=state.instrument_id,
+                    side=state.side,
+                    quantity=state.quantity,
+                    price=state.price,
+                    post_only=state.post_only,
+                    pending_cancel=True,
+                )
+            if event.lifecycle_state in {
+                ExecutionLifecycleState.REJECTED,
+                ExecutionLifecycleState.CANCELED,
+                ExecutionLifecycleState.FILLED,
+            }:
+                if event.lifecycle_state in {
+                    ExecutionLifecycleState.CANCELED,
+                    ExecutionLifecycleState.FILLED,
+                }:
+                    self._managed_maker_orders.pop(cancel_side, None)
+                self._controller_pending_cancel_intents.pop(event.intent_id, None)
+                self._controller_pending_cancel_sides.discard(cancel_side)
+            return
+
+        pending_hedge = self._controller_pending_hedge_intents.get(event.intent_id)
+        if pending_hedge is None:
+            return
+        if event.lifecycle_state in {
+            ExecutionLifecycleState.ACCEPTED,
+            ExecutionLifecycleState.OWNED_PRE_WRITE,
+            ExecutionLifecycleState.SENT_TO_VENUE,
+            ExecutionLifecycleState.WORKING,
+            ExecutionLifecycleState.PARTIALLY_FILLED,
+        }:
+            self._pending_hedge = PendingHedgeState(
+                fill_id=pending_hedge.fill_id,
+                side=pending_hedge.side,
+                requested_qty=pending_hedge.requested_qty,
+                remaining_qty=pending_hedge.remaining_qty,
+                limit_price=pending_hedge.limit_price,
+                route=pending_hedge.route,
+                time_in_force=pending_hedge.time_in_force,
+                outside_rth=pending_hedge.outside_rth,
+                include_overnight=pending_hedge.include_overnight,
+                cancel_after_ms=pending_hedge.cancel_after_ms,
+                order_id=event.client_order_id,
+            )
+        if event.lifecycle_state in {
+            ExecutionLifecycleState.REJECTED,
+            ExecutionLifecycleState.CANCELED,
+            ExecutionLifecycleState.FILLED,
+        }:
+            if self._pending_hedge is not None and self._pending_hedge.order_id == event.client_order_id:
+                self._pending_hedge = None
+            self._controller_pending_hedge_intents.pop(event.intent_id, None)
 
     def _strategy_cache(self) -> Any | None:
         cache = getattr(self, "_cache", None)
@@ -1514,6 +1760,19 @@ class MakerV4Strategy(Strategy):
             return
         if all(state.pending_cancel for state in self._managed_maker_orders.values()):
             return
+        if self._controller_managed_mode():
+            for side, state in self._managed_maker_orders.items():
+                if state.pending_cancel or side in self._controller_pending_cancel_sides:
+                    continue
+                command = self._publish_controller_command(
+                    command_type="cancel",
+                    order_role="maker",
+                    instrument_id=state.instrument_id,
+                    target_client_order_id=state.client_order_id,
+                )
+                self._controller_pending_cancel_intents[command.intent.intent_id] = side
+                self._controller_pending_cancel_sides.add(side)
+            return
         cancel_all_orders = getattr(self, "cancel_all_orders", None)
         if not callable(cancel_all_orders):
             return
@@ -1712,6 +1971,25 @@ class MakerV4Strategy(Strategy):
         if venue_qty <= 0 or base_qty <= 0:
             self._disable_hedging("maker_qty_conversion_failed")
             return
+        if self._controller_managed_mode():
+            command = self._publish_controller_command(
+                command_type="place",
+                order_role="maker",
+                instrument_id=self.config.maker_instrument_id,
+                side=side,
+                quantity=venue_qty,
+                limit_price=target_price,
+                post_only=True,
+                time_in_force="GTC",
+            )
+            self._controller_pending_place_intents[command.intent.intent_id] = {
+                "side": side,
+                "instrument_id": str(self.config.maker_instrument_id),
+                "quantity": str(base_qty),
+                "price": str(target_price),
+                "post_only": True,
+            }
+            return
         order = self.order_factory.limit(
             instrument_id=self.config.maker_instrument_id,
             order_side=self._order_side_enum(side),
@@ -1736,6 +2014,26 @@ class MakerV4Strategy(Strategy):
         venue_qty, base_qty = self._maker_order_quantities()
         if venue_qty <= 0 or base_qty <= 0:
             self._disable_hedging("maker_qty_conversion_failed")
+            return
+        if self._controller_managed_mode():
+            command = self._publish_controller_command(
+                command_type="place",
+                order_role="maker",
+                instrument_id=self.config.maker_instrument_id,
+                side=side,
+                quantity=venue_qty,
+                limit_price=target_price,
+                post_only=False,
+                time_in_force="IOC",
+            )
+            self._controller_pending_place_intents[command.intent.intent_id] = {
+                "side": side,
+                "instrument_id": str(self.config.maker_instrument_id),
+                "quantity": str(base_qty),
+                "price": str(target_price),
+                "post_only": False,
+            }
+            self._last_take_submission_ns = max(0, int(now_ns))
             return
         order = self.order_factory.limit(
             instrument_id=self.config.maker_instrument_id,
@@ -1828,6 +2126,8 @@ class MakerV4Strategy(Strategy):
             if any(state.post_only for state in self._managed_maker_orders.values()):
                 self._cancel_managed_maker_orders()
             return
+        if self._controller_pending_place_intents or self._controller_pending_cancel_intents:
+            return
         signal = self._take_take_signal(now_ns=now_ns)
         if signal is None:
             return
@@ -1840,6 +2140,8 @@ class MakerV4Strategy(Strategy):
     def _refresh_maker_quotes(self, *, now_ns: int) -> None:
         if self._execution_mode() == "take_take":
             self._refresh_take_take_orders(now_ns=now_ns)
+            return
+        if self._controller_pending_place_intents or self._controller_pending_cancel_intents:
             return
         targets = self._maker_quote_targets(now_ns=now_ns)
         if targets is None:
@@ -1908,6 +2210,8 @@ class MakerV4Strategy(Strategy):
         hedge_backlog_payload = self._hedge_backlog_payload()
         if hedge_backlog_payload is not None:
             payload["maker_v4"]["hedge_backlog"] = hedge_backlog_payload
+        if self._controller_canonical_state is not None:
+            payload["maker_v4"]["controller_canonical_state"] = dict(self._controller_canonical_state)
         payload.update(inventory_fields)
         pricing_debug: dict[str, Any] = {}
         if isinstance(self._last_pricing_debug, dict) and self._last_pricing_debug:
@@ -1989,6 +2293,42 @@ class MakerV4Strategy(Strategy):
         )
 
     def _submit_hedge_intent(self, intent: HedgeOrderIntent) -> str | None:
+        if self._controller_managed_mode():
+            pending_state = self._controller_staged_pending_hedge
+            if pending_state is None:
+                pending_state = PendingHedgeState(
+                    fill_id=self._next_controller_intent_id(order_role="hedge", command_type="shadow"),
+                    side=str(intent.side).strip().upper(),
+                    requested_qty=abs(Decimal(str(intent.qty))),
+                    remaining_qty=abs(Decimal(str(intent.qty))),
+                    limit_price=Decimal(str(intent.limit_price)),
+                    route=str(intent.route),
+                    time_in_force=str(intent.time_in_force),
+                    outside_rth=bool(intent.outside_rth),
+                    include_overnight=bool(intent.include_overnight),
+                    cancel_after_ms=(
+                        None if intent.cancel_after_ms is None else int(intent.cancel_after_ms)
+                    ),
+                    order_id=None,
+                )
+            command = self._publish_controller_command(
+                command_type="place",
+                order_role="hedge",
+                instrument_id=intent.instrument_id,
+                side=intent.side,
+                quantity=intent.qty,
+                limit_price=intent.limit_price,
+                time_in_force=intent.time_in_force,
+                route=intent.route,
+                outside_rth=bool(intent.outside_rth),
+                include_overnight=bool(intent.include_overnight),
+                cancel_after_ms=(
+                    None if intent.cancel_after_ms is None else int(intent.cancel_after_ms)
+                ),
+            )
+            self._controller_pending_hedge_intents[command.intent.intent_id] = pending_state
+            self._controller_staged_pending_hedge = None
+            return None
         hedge_instrument_id = self._coerce_instrument_id(
             self.config.reference_instrument_id,
             intent.instrument_id,
@@ -2877,6 +3217,12 @@ class MakerV4Strategy(Strategy):
             return None
         order, pending_state = pending
         self._hedge_requests.append(order)
+        if self._controller_managed_mode():
+            self._controller_staged_pending_hedge = pending_state
+            self._hedge_backlog = None
+            self.tradeable = True
+            self.hedge_disabled_reason = None
+            return order
         self._pending_hedge = pending_state
         self._hedge_backlog = None
         self.tradeable = True
@@ -2923,6 +3269,8 @@ class MakerV4Strategy(Strategy):
             snapshot["hedge_backlog"] = asdict(self._hedge_backlog)
         if isinstance(self._take_take_residual_base_fill, dict):
             snapshot["take_take_residual_base_fill"] = dict(self._take_take_residual_base_fill)
+        if self._controller_canonical_state is not None:
+            snapshot["controller_canonical_state"] = dict(self._controller_canonical_state)
         return snapshot
 
     def restore_state(self, snapshot: dict[str, object]) -> None:
@@ -2982,6 +3330,11 @@ class MakerV4Strategy(Strategy):
             )
         else:
             self._take_take_residual_base_fill = None
+        canonical_state = snapshot.get("controller_canonical_state")
+        if isinstance(canonical_state, Mapping):
+            self._controller_canonical_state = dict(canonical_state)
+        else:
+            self._controller_canonical_state = None
 
     def _publish_market_bbo(
         self,
@@ -3069,6 +3422,7 @@ class MakerV4Strategy(Strategy):
 
 
 __all__ = [
+    "ControllerIntentCommand",
     "MakerV4Strategy",
     "MakerV4StrategyConfig",
 ]

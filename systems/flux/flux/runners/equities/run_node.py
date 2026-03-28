@@ -144,7 +144,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes"),
+        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes", "controller"),
     )
 
 
@@ -227,6 +227,58 @@ def _attach_profile_account_projection_feed(
         redis_client=redis_client,
         profile_id=EQUITIES_DESCRIPTOR.profile,
         account_scope_id=account_scope_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+
+
+def _build_controller_intent_publisher(*, strategy: Any, controller_scope_id: str):
+    endpoint = f"FluxExecutionController.request.{controller_scope_id}"
+
+    def _publish_intent(command: Any) -> None:
+        msgbus = getattr(strategy, "_msgbus", None)
+        if msgbus is None:
+            with suppress(Exception):
+                msgbus = strategy.msgbus
+        request = getattr(msgbus, "request", None)
+        if callable(request):
+            request(endpoint=endpoint, request=command)
+
+    return _publish_intent
+
+
+def _attach_controller_endpoint_and_canonical_state_feed(
+    *,
+    strategy: Any,
+    config: dict[str, Any],
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    controller_cfg = config.get("controller")
+    if not isinstance(controller_cfg, dict) or not controller_cfg:
+        return
+    controller_scope_id = _optional_text(getattr(strategy.config, "controller_scope_id", None))
+    if controller_scope_id is None:
+        return
+
+    configure_intent_publisher = getattr(strategy, "configure_controller_intent_publisher", None)
+    if callable(configure_intent_publisher):
+        configure_intent_publisher(
+            controller_scope_id=controller_scope_id,
+            publish_intent=_build_controller_intent_publisher(
+                strategy=strategy,
+                controller_scope_id=controller_scope_id,
+            ),
+        )
+
+    configure_canonical_feed = getattr(strategy, "configure_controller_canonical_state_feed", None)
+    if not callable(configure_canonical_feed):
+        return
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    configure_canonical_feed(
+        redis_client=redis_client,
+        controller_scope_id=controller_scope_id,
         namespace=namespace,
         schema_version=schema_version,
     )
@@ -449,6 +501,7 @@ def _optional_strategy_config_kwargs(
             continue
         candidates["portfolio_asset_id"] = contract.portfolio_asset_id
         candidates["execution_account_scope_id"] = contract.execution_account_scope_id
+        candidates["controller_scope_id"] = contract.controller_scope_id
         break
     return {
         field_name: value
@@ -732,6 +785,13 @@ def build_node(
     )
     _attach_profile_account_projection_feed(
         strategy=strategy,
+        redis_cfg=redis_cfg,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    _attach_controller_endpoint_and_canonical_state_feed(
+        strategy=strategy,
+        config=config,
         redis_cfg=redis_cfg,
         namespace=namespace,
         schema_version=schema_version,
