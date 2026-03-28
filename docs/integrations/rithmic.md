@@ -4,13 +4,17 @@
 across supported FCMs and exchanges. This integration supports live market data ingest, instrument
 loading, historical bar requests, and live order execution through NautilusTrader.
 
-:::warning
-**Beta status.** The current Rithmic adapter is beta software. It has reached a minimally working state,
-but it remains under active testing and development and should be used cautiously for live trading.
-:::
+> [!WARNING]
+> 
+> **Beta status.** The current Rithmic adapter is beta software. It has reached a minimally working state,
+> but it remains under active testing and development and should be used cautiously for live trading.
+>
 
-Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
-During these periods connections might be terminated and it might not be possible to test or deploy live connections.
+> [!NOTE]
+> 
+> Rithmic servers undergo scheduled maintenance on weekends and during exchange maintenance periods. 
+> During these periods connections might be terminated and it might not be possible to test or deploy live connections.
+>
 
 ## Overview
 
@@ -223,16 +227,17 @@ live-only nodes that do not need the history plant.
 
 Custom second-bar resolutions such as `15-SECOND-LAST-EXTERNAL` are supported through this path.
 
-:::warning
-Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are
-typically capped at **20 GB per month**. Rithmic sends warning emails to the account's registered
-email address when API usage approaches that limit or when their access rules are being breached.
-Do not ignore those emails. Temporary restrictions can be applied automatically if usage continues
-after warnings are sent.
+> [!WARNING]
+> 
+> Rithmic historical API usage is plan-limited. On basic Rithmic plans, historical downloads are
+> typically capped at **20 GB per month**. Rithmic sends warning emails to the account's registered
+> email address when API usage approaches that limit or when their access rules are being breached.
+> Do not ignore those emails. Temporary restrictions can be applied automatically if usage continues
+> after warnings are sent.
+> 
+> If you are downloading large windows, prefer smaller batched requests and monitor the registered
+> email inbox for notices from Rithmic.
 
-If you are downloading large windows, prefer smaller batched requests and monitor the registered
-email inbox for notices from Rithmic.
-:::
 
 Current historical external bar limits:
 
@@ -422,15 +427,16 @@ export RITHMIC_ALT_SERVER="Sydney"             # Secondary route if you want one
 `RITHMIC_PROFILE` is only a local environment-variable namespace. The actual broker-facing values
 are `RITHMIC_*_SYSTEM_NAME`, `RITHMIC_*_FCM_ID`, and `RITHMIC_*_IB_ID`.
 
-:::note
-Do not guess the Rithmic `System`, `FCM`, or `IB` values from the broker or prop-firm brand
-name alone. Some connections use `paper_trading`, Apex uses `Apex`, and other Rithmic brokers may
-use non-obvious identifiers even on standard demo or live accounts.
-
-To find the correct values, sign in to the RTrader Pro desktop application and open
-`File > User Profile`, then copy `System`, `FCM`, and `IB` exactly as shown. Treat them as
-case-sensitive.
-:::
+> [!NOTE]
+>
+> Do not guess the Rithmic `System`, `FCM`, or `IB` values from the broker or prop-firm brand
+> name alone. Some connections use `paper_trading`, Apex uses `Apex`, and other Rithmic brokers may
+> use non-obvious identifiers even on standard demo or live accounts.
+> 
+> To find the correct values, sign in to the RTrader Pro desktop application and open
+> `File > User Profile`, then copy `System`, `FCM`, and `IB` exactly as shown. Treat them as
+> case-sensitive.
+>
 
 ### Server endpoint selection
 
