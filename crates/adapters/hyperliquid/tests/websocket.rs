@@ -828,6 +828,43 @@ async fn test_quote_recovery_replays_desired_subscription_on_healthy_transport()
 
 #[rstest]
 #[tokio::test]
+async fn test_quote_recovery_startup_not_desired_is_retryable() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let result = client.recover_quote_subscription(instrument_id).await;
+
+    assert_eq!(result.status, "not_desired");
+    assert!(
+        !result.ok,
+        "startup not_desired recovery must fail closed so the supervisor can retry",
+    );
+    assert!(
+        result
+            .error_summary
+            .as_deref()
+            .is_some_and(|summary| summary.contains("no longer desired")),
+        "expected explicit not_desired summary, got {result:?}",
+    );
+    assert_eq!(
+        state.subscription_events().await,
+        Vec::<(String, bool)>::new(),
+        "startup not_desired recovery should not queue a replay before the desired subscribe exists",
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_quote_recovery_duplicate_resets_are_idempotent() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

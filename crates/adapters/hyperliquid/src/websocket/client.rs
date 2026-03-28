@@ -72,7 +72,7 @@ impl QuoteSubscriptionRecoveryResult {
     fn not_desired(instrument_id: &InstrumentId) -> Self {
         Self {
             status: "not_desired",
-            ok: true,
+            ok: false,
             error_summary: Some(format!(
                 "Quote recovery ignored because the subscription is no longer desired: {instrument_id}"
             )),

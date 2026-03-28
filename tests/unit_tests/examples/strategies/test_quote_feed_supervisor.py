@@ -241,6 +241,41 @@ def test_quote_feed_supervisor_retries_bootstrap_feed_when_first_quote_never_arr
     assert supervisor.snapshot(feed).state == "recovering"
 
 
+def test_quote_feed_supervisor_failed_startup_recovery_returns_to_retryable_state() -> None:
+    commands: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor(recovery_backoff_ns=100)
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: commands.append("reset"),
+        subscribe=lambda: commands.append("subscribe"),
+    )
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+
+    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+
+    snapshot = supervisor.ingest_recovery_result(
+        feed,
+        now_ns=1_100,
+        ok=False,
+        error_summary="not_desired",
+    )
+
+    assert commands == ["subscribe", "reset"]
+    assert snapshot.state == "stale"
+    assert snapshot.attempt_count == 1
+    assert snapshot.last_error_summary == "not_desired"
+    assert supervisor.should_attempt_recovery(feed, now_ns=1_201)
+    assert not supervisor.request_recovery(feed, now_ns=1_199, requested_by="maker")
+    assert supervisor.request_recovery(feed, now_ns=1_201, requested_by="maker")
+    assert commands == ["subscribe", "reset", "reset"]
+
+
 def test_quote_feed_supervisor_node_local_blocker_suppresses_per_feed_reset_storms() -> None:
     resets: list[str] = []
     supervisor = NodeQuoteFeedSupervisor()

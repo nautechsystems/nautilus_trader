@@ -363,6 +363,8 @@ class NodeQuoteFeedSupervisor:
         record.attempt_count += 1
         record.last_error_summary = error_summary
         record.backoff_until = max(0, int(now_ns)) + self._recovery_backoff_ns
+        if record.last_quote_ns is None and callable(record.reset):
+            record.startup_retry_pending = True
         record.state = "down" if record.attempt_count >= self._max_attempts else "stale"
         return self.snapshot(feed_identity)
 
