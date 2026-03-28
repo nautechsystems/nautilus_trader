@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ REQUEST_REPLY_SUFFIX = ".intent-rpc.sock"
 EVENT_STREAM_SUFFIX = ".lifecycle-events.sock"
 REPLY_STATUS_ACCEPTED = "accepted"
 REPLY_STATUS_REJECTED = "rejected"
+AF_UNIX_MAX_PATH_BYTES = 107
 
 
 def _required_text(value: str, field_name: str) -> str:
@@ -39,6 +41,14 @@ def _scope_socket_name(controller_scope_id: str, suffix: str) -> str:
     if "/" in scope or "\x00" in scope:
         raise ValueError("`controller_scope_id` must be a valid socket path component")
     return f"{scope}{suffix}"
+
+
+def _assert_af_unix_path_length(path: Path) -> None:
+    path_bytes = os.fsencode(str(path))
+    if len(path_bytes) > AF_UNIX_MAX_PATH_BYTES:
+        raise ValueError(
+            f"AF_UNIX pathname exceeds {AF_UNIX_MAX_PATH_BYTES} bytes: {path} ({len(path_bytes)} bytes)",
+        )
 
 
 def _intent_to_dict(intent: ExecutionIntent) -> dict[str, str]:
@@ -78,11 +88,15 @@ class UdsTransportPaths:
         scope = _required_text(controller_scope_id, "controller_scope_id")
         root = Path(root_dir)
         base_dir = root / SOCKET_NAMESPACE
+        request_reply_path = base_dir / _scope_socket_name(scope, REQUEST_REPLY_SUFFIX)
+        event_stream_path = base_dir / _scope_socket_name(scope, EVENT_STREAM_SUFFIX)
+        _assert_af_unix_path_length(request_reply_path)
+        _assert_af_unix_path_length(event_stream_path)
         return cls(
             controller_scope_id=scope,
             root_dir=root,
-            request_reply_path=base_dir / _scope_socket_name(scope, REQUEST_REPLY_SUFFIX),
-            event_stream_path=base_dir / _scope_socket_name(scope, EVENT_STREAM_SUFFIX),
+            request_reply_path=request_reply_path,
+            event_stream_path=event_stream_path,
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -155,6 +169,12 @@ class ControllerIntentReply:
                 raise ValueError("accepted replies require `claim`")
             if self.reason is not None:
                 raise ValueError("accepted replies cannot carry `reason`")
+            if (
+                self.intent_id != self.claim.intent_id
+                or self.controller_scope_id != self.claim.controller_scope_id
+                or self.strategy_id != self.claim.strategy_id
+            ):
+                raise ValueError("accepted replies must preserve claim identity")
         elif self.status == REPLY_STATUS_REJECTED:
             if self.claim is not None:
                 raise ValueError("rejected replies cannot carry `claim`")

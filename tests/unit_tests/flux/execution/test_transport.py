@@ -40,6 +40,16 @@ def test_v1_uds_paths_are_scope_specific_and_versioned() -> None:
     }
 
 
+def test_v1_uds_paths_reject_linux_af_unix_pathnames_longer_than_limit() -> None:
+    transport = _load_transport_module()
+
+    with pytest.raises(ValueError, match="AF_UNIX"):
+        transport.UdsTransportPaths.for_controller_scope(
+            controller_scope_id="a" * 90,
+            root_dir=Path("/run/flux"),
+        )
+
+
 def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
     transport = _load_transport_module()
     intent = ExecutionIntent(
@@ -107,6 +117,35 @@ def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
         "reason": "intent rejected by controller guardrail",
     }
     assert transport.ControllerIntentReply.from_dict(rejected.to_dict()) == rejected
+
+
+def test_v1_accepted_reply_rejects_top_level_identity_mismatch_with_claim() -> None:
+    transport = _load_transport_module()
+
+    with pytest.raises(ValueError, match="claim identity"):
+        transport.ControllerIntentReply.from_dict(
+            {
+                "schema_version": "v1",
+                "transport": "uds",
+                "channel": "request_reply",
+                "status": "accepted",
+                "replied_at_ns": 123_999,
+                "intent_id": "intent-a",
+                "controller_scope_id": "acct.execution.main",
+                "strategy_id": "strategy-01",
+                "claim": {
+                    "intent_id": "intent-b",
+                    "controller_scope_id": "acct.execution.main",
+                    "strategy_id": "strategy-01",
+                    "controller_epoch": 7,
+                    "controller_seq": 42,
+                    "client_order_id": "acct.execution.main:7:42:intent-b",
+                    "venue_order_id": None,
+                    "lifecycle_state": "accepted",
+                },
+                "reason": None,
+            }
+        )
 
 
 def test_v1_uds_event_stream_contract_round_trips_lifecycle_events() -> None:
