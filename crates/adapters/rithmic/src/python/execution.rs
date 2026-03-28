@@ -69,6 +69,7 @@ struct OrderInfo {
     symbol: String,
     exchange: String,
     venue_order_id: Option<String>,
+    side: Option<OrderSide>,
 }
 
 fn first_response_error(responses: &[RithmicResponse]) -> Option<String> {
@@ -429,6 +430,7 @@ impl PyRithmicExecutionClient {
                     symbol: tracking_symbol,
                     exchange: tracking_exchange,
                     venue_order_id,
+                    side: Some(rs_side),
                 },
             );
 
@@ -556,6 +558,7 @@ impl PyRithmicExecutionClient {
                     symbol,
                     exchange,
                     venue_order_id,
+                    side: Some(rs_side),
                 },
             );
 
@@ -717,6 +720,7 @@ impl PyRithmicExecutionClient {
                     symbol: leg1_symbol,
                     exchange: leg1_exchange,
                     venue_order_id: venue_ids.get(&leg1_client_order_id).cloned(),
+                    side: Some(leg1_side_rs),
                 },
             );
             guard.insert(
@@ -725,6 +729,7 @@ impl PyRithmicExecutionClient {
                     symbol: leg2_symbol,
                     exchange: leg2_exchange,
                     venue_order_id: venue_ids.get(&leg2_client_order_id).cloned(),
+                    side: Some(leg2_side_rs),
                 },
             );
 
@@ -798,6 +803,144 @@ impl PyRithmicExecutionClient {
 
             Ok(())
         })
+    }
+
+    /// Cancels tracked open orders matching optional symbol/exchange and side filters.
+    ///
+    /// Returns the number of cancel requests successfully submitted.
+    #[pyo3(signature = (*, symbol=None, exchange=None, side=None))]
+    fn cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        symbol: Option<String>,
+        exchange: Option<String>,
+        side: Option<PyOrderSide>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        Self::validate_symbol_exchange_filter(symbol.as_deref(), exchange.as_deref())?;
+
+        let gateway = Arc::clone(&self.gateway);
+        let venue_order_ids = Self::matching_venue_order_ids(
+            &self.orders,
+            symbol.as_deref(),
+            exchange.as_deref(),
+            side.map(Into::into),
+        );
+
+        future_into_py(py, async move {
+            if venue_order_ids.is_empty() {
+                return Ok(0usize);
+            }
+
+            let gw = gateway.read().await;
+            let handle = gw.order_handle().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
+            })?;
+
+            let mut cancelled = 0usize;
+            for venue_order_id in venue_order_ids {
+                let cancel = RithmicCancelOrder {
+                    id: venue_order_id.clone(),
+                };
+                let responses = handle.cancel_order(cancel).await.map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel failed: {e}"))
+                })?;
+
+                if let Some(error) = first_response_error(&responses) {
+                    tracing::warn!(
+                        venue_order_id = %venue_order_id,
+                        error = %error,
+                        "scoped cancel failed for tracked Rithmic order",
+                    );
+                    continue;
+                }
+
+                cancelled += 1;
+            }
+
+            Ok(cancelled)
+        })
+    }
+
+    /// Cancels a batch of venue order IDs.
+    ///
+    /// Returns the number of cancel requests successfully submitted.
+    fn batch_cancel_orders<'py>(
+        &self,
+        py: Python<'py>,
+        ids: Vec<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        if ids.iter().any(|id| id.trim().is_empty()) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "ids cannot contain empty venue_order_id values",
+            ));
+        }
+
+        let gateway = Arc::clone(&self.gateway);
+        future_into_py(py, async move {
+            if ids.is_empty() {
+                return Ok(0usize);
+            }
+
+            let gw = gateway.read().await;
+            let handle = gw.order_handle().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Order plant not connected")
+            })?;
+
+            let mut cancelled = 0usize;
+            for venue_order_id in ids {
+                let cancel = RithmicCancelOrder {
+                    id: venue_order_id.clone(),
+                };
+                let responses = handle.cancel_order(cancel).await.map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Cancel failed: {e}"))
+                })?;
+
+                if let Some(error) = first_response_error(&responses) {
+                    tracing::warn!(
+                        venue_order_id = %venue_order_id,
+                        error = %error,
+                        "batch cancel failed for tracked Rithmic order",
+                    );
+                    continue;
+                }
+
+                cancelled += 1;
+            }
+
+            Ok(cancelled)
+        })
+    }
+
+    /// Returns tracked open orders matching optional symbol/exchange and side filters.
+    #[pyo3(signature = (*, symbol=None, exchange=None, side=None))]
+    fn open_orders(
+        &self,
+        symbol: Option<String>,
+        exchange: Option<String>,
+        side: Option<PyOrderSide>,
+    ) -> PyResult<Vec<std::collections::HashMap<String, Option<String>>>> {
+        Self::validate_symbol_exchange_filter(symbol.as_deref(), exchange.as_deref())?;
+
+        Ok(Self::matching_orders(
+            &self.orders,
+            symbol.as_deref(),
+            exchange.as_deref(),
+            side.map(Into::into),
+        )
+        .into_iter()
+        .map(|(client_order_id, info)| {
+            let mut result = std::collections::HashMap::new();
+            result.insert("client_order_id".to_string(), Some(client_order_id));
+            result.insert("symbol".to_string(), Some(info.symbol));
+            result.insert("exchange".to_string(), Some(info.exchange));
+            result.insert("venue_order_id".to_string(), info.venue_order_id);
+            result.insert(
+                "side".to_string(),
+                info.side.map(|value| value.to_string()),
+            );
+            result
+        })
+        .collect())
     }
 
     /// Requests an open-order snapshot from Rithmic.
@@ -1062,6 +1205,10 @@ impl PyRithmicExecutionClient {
             result.insert("symbol".to_string(), Some(info.symbol.clone()));
             result.insert("exchange".to_string(), Some(info.exchange.clone()));
             result.insert("venue_order_id".to_string(), info.venue_order_id.clone());
+            result.insert(
+                "side".to_string(),
+                info.side.as_ref().map(std::string::ToString::to_string),
+            );
             result
         })
     }
@@ -1105,6 +1252,62 @@ impl PyRithmicExecutionClient {
             ));
         }
         Ok(())
+    }
+
+    fn validate_symbol_exchange_filter(
+        symbol: Option<&str>,
+        exchange: Option<&str>,
+    ) -> PyResult<()> {
+        match (symbol, exchange) {
+            (Some(symbol), Some(exchange)) => Self::validate_symbol_exchange(symbol, exchange),
+            (None, None) => Ok(()),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(
+                "symbol and exchange must either both be provided or both be omitted",
+            )),
+        }
+    }
+
+    fn matching_orders(
+        orders: &Arc<parking_lot::Mutex<std::collections::HashMap<String, OrderInfo>>>,
+        symbol: Option<&str>,
+        exchange: Option<&str>,
+        side: Option<OrderSide>,
+    ) -> Vec<(String, OrderInfo)> {
+        orders
+            .lock()
+            .iter()
+            .filter_map(|(client_order_id, info)| {
+                if let Some(symbol) = symbol
+                    && info.symbol != symbol
+                {
+                    return None;
+                }
+                if let Some(exchange) = exchange
+                    && info.exchange != exchange
+                {
+                    return None;
+                }
+                if let Some(side) = side
+                    && info.side != Some(side)
+                {
+                    return None;
+                }
+
+                Some((client_order_id.clone(), info.clone()))
+            })
+            .collect()
+    }
+
+    fn matching_venue_order_ids(
+        orders: &Arc<parking_lot::Mutex<std::collections::HashMap<String, OrderInfo>>>,
+        symbol: Option<&str>,
+        exchange: Option<&str>,
+        side: Option<OrderSide>,
+    ) -> Vec<String> {
+        Self::matching_orders(orders, symbol, exchange, side)
+            .into_iter()
+            .filter_map(|(_, info)| info.venue_order_id)
+            .collect()
     }
 
     /// Event processing loop that runs in a spawned task.
@@ -1154,11 +1357,15 @@ impl PyRithmicExecutionClient {
         venue_order_id: Option<&str>,
         symbol: Option<&str>,
         exchange: Option<&str>,
+        side: Option<OrderSide>,
     ) {
         let mut guard = orders.lock();
         if let Some(info) = guard.get_mut(client_order_id) {
             if let Some(venue_order_id) = venue_order_id {
                 info.venue_order_id = Some(venue_order_id.to_string());
+            }
+            if side.is_some() {
+                info.side = side;
             }
             return;
         }
@@ -1173,6 +1380,7 @@ impl PyRithmicExecutionClient {
                 symbol: symbol.to_string(),
                 exchange: exchange.to_string(),
                 venue_order_id: venue_order_id.map(str::to_string),
+                side,
             },
         );
     }
@@ -1189,6 +1397,7 @@ impl PyRithmicExecutionClient {
                     e.venue_order_id.as_deref(),
                     e.context.symbol.as_deref(),
                     e.context.exchange.as_deref(),
+                    e.context.side,
                 );
             }
             ExecutionEvent::Accepted(e) => {
@@ -1198,6 +1407,7 @@ impl PyRithmicExecutionClient {
                     Some(&e.venue_order_id),
                     e.context.symbol.as_deref(),
                     e.context.exchange.as_deref(),
+                    e.context.side,
                 );
             }
             ExecutionEvent::Cancelled(e) => {
@@ -1214,6 +1424,7 @@ impl PyRithmicExecutionClient {
                         Some(&e.venue_order_id),
                         e.context.symbol.as_deref(),
                         e.context.exchange.as_deref(),
+                        e.context.side,
                     );
                 } else {
                     orders.lock().remove(&e.client_order_id);

@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use nautilus_common::live::get_runtime;
@@ -13,6 +14,10 @@ use tokio::sync::{RwLock, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::gateway::{GatewayConfig, PnlEvent, RithmicGateway};
+use crate::providers::{
+    AccountBalance, AccountEvent as ProviderAccountEvent, Position,
+    PositionEvent as ProviderPositionEvent,
+};
 use crate::python::events::{PyAccountEvent, PyPositionEvent};
 
 use super::config::PyRithmicEnv;
@@ -29,6 +34,8 @@ pub struct PyRithmicGateway {
     pub(crate) inner: Arc<RwLock<RithmicGateway>>,
     pnl_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
     pnl_shutdown: Arc<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
+    balances: Arc<parking_lot::Mutex<HashMap<String, AccountBalance>>>,
+    positions: Arc<parking_lot::Mutex<HashMap<String, Position>>>,
 }
 
 #[cfg(feature = "python")]
@@ -99,6 +106,8 @@ impl PyRithmicGateway {
             inner: Arc::new(RwLock::new(RithmicGateway::new(config))),
             pnl_task: Arc::new(parking_lot::Mutex::new(None)),
             pnl_shutdown: Arc::new(parking_lot::Mutex::new(None)),
+            balances: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            positions: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         }
     }
 
@@ -112,6 +121,8 @@ impl PyRithmicGateway {
             inner: Arc::new(RwLock::new(RithmicGateway::new(config))),
             pnl_task: Arc::new(parking_lot::Mutex::new(None)),
             pnl_shutdown: Arc::new(parking_lot::Mutex::new(None)),
+            balances: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            positions: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         })
     }
 
@@ -166,6 +177,24 @@ impl PyRithmicGateway {
                 ))
             })
         })
+    }
+
+    /// Returns the current live position snapshots tracked by the gateway PnL loop.
+    #[pyo3(signature = (account_id=None))]
+    fn positions(&self, account_id: Option<String>) -> Vec<PyPositionEvent> {
+        self.positions
+            .lock()
+            .values()
+            .filter(|position| {
+                account_id
+                    .as_ref()
+                    .map(|expected| &position.account_id == expected)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .map(ProviderPositionEvent::Updated)
+            .map(PyPositionEvent::from)
+            .collect()
     }
 
     fn __repr__(&self) -> String {
@@ -236,6 +265,8 @@ impl PyRithmicGateway {
         let callback = callback;
         let shutdown = Arc::clone(&self.pnl_shutdown);
         let task_slot = Arc::clone(&self.pnl_task);
+        let balances = Arc::clone(&self.balances);
+        let positions = Arc::clone(&self.positions);
 
         // Spawn async task
         let handle = get_runtime().spawn(async move {
@@ -256,6 +287,7 @@ impl PyRithmicGateway {
                     }
                     maybe_event = rx.recv() => {
                         if let Some(event) = maybe_event {
+                            Self::sync_pnl_state(&balances, &positions, &event);
                             Python::attach(|py| {
                                 match event {
                                     PnlEvent::Account(ae) => {
@@ -351,6 +383,46 @@ impl PyRithmicGateway {
                     pyo3::exceptions::PyRuntimeError::new_err(format!("Unsubscribe failed: {e}"))
                 })
         })
+    }
+}
+
+#[cfg(feature = "python")]
+impl PyRithmicGateway {
+    fn sync_pnl_state(
+        balances: &Arc<parking_lot::Mutex<HashMap<String, AccountBalance>>>,
+        positions: &Arc<parking_lot::Mutex<HashMap<String, Position>>>,
+        event: &PnlEvent,
+    ) {
+        match event {
+            PnlEvent::Account(ProviderAccountEvent::BalanceUpdate(balance)) => {
+                balances
+                    .lock()
+                    .insert(balance.account_id.clone(), balance.clone());
+            }
+            PnlEvent::Account(_) => {}
+            PnlEvent::Position(ProviderPositionEvent::Opened(position))
+            | PnlEvent::Position(ProviderPositionEvent::Updated(position)) => {
+                let key = format!(
+                    "{}:{}:{}",
+                    position.account_id, position.exchange, position.symbol
+                );
+                if position.quantity == 0.0 {
+                    positions.lock().remove(&key);
+                } else {
+                    positions.lock().insert(key, position.clone());
+                }
+            }
+            PnlEvent::Position(ProviderPositionEvent::Closed {
+                account_id,
+                symbol,
+                exchange,
+                ..
+            }) => {
+                let key = format!("{account_id}:{exchange}:{symbol}");
+                positions.lock().remove(&key);
+            }
+            PnlEvent::Position(ProviderPositionEvent::Error(_)) => {}
+        }
     }
 }
 

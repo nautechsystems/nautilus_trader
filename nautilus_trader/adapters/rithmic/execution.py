@@ -6,6 +6,7 @@ import asyncio
 import json
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from typing import Optional
 
@@ -466,6 +467,318 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
                 return True
 
         return False
+
+    def _live_open_orders(
+        self,
+        instrument_ids: set[InstrumentId] | None = None,
+        order_side: OrderSide = OrderSide.NO_ORDER_SIDE,
+    ) -> list[dict]:
+        if self._client and hasattr(self._client, "open_orders"):
+            if instrument_ids is None:
+                rows = self._client.open_orders(
+                    side=(
+                        self._to_rithmic_side(order_side)
+                        if order_side != OrderSide.NO_ORDER_SIDE
+                        else None
+                    ),
+                )
+            else:
+                rows = []
+                for instrument_id in sorted(instrument_ids, key=lambda item: item.to_str()):
+                    rows.extend(
+                        self._client.open_orders(
+                            symbol=self._resolve_rithmic_symbol(instrument_id),
+                            exchange=self._resolve_rithmic_exchange(instrument_id),
+                            side=(
+                                self._to_rithmic_side(order_side)
+                                if order_side != OrderSide.NO_ORDER_SIDE
+                                else None
+                            ),
+                        ),
+                    )
+
+            matches: list[dict] = []
+            for row in rows:
+                symbol = row.get("symbol")
+                exchange = row.get("exchange")
+                if not symbol or not exchange:
+                    continue
+                instrument_id = self._event_instrument_id(symbol, exchange)
+                if instrument_id is None:
+                    continue
+                matches.append(
+                    {
+                        "client_order_id": row.get("client_order_id"),
+                        "venue_order_id": row.get("venue_order_id"),
+                        "instrument_id": instrument_id,
+                        "exchange": exchange,
+                    },
+                )
+            return matches
+
+        matches: list[dict] = []
+        for state in self._orders.values():
+            state_instrument_id = state.get("instrument_id")
+            if instrument_ids is not None and state_instrument_id not in instrument_ids:
+                continue
+
+            state_side = state.get("order_side", OrderSide.NO_ORDER_SIDE)
+            if order_side != OrderSide.NO_ORDER_SIDE and state_side != order_side:
+                continue
+
+            if self._is_open_order_status(self._order_status(state.get("status"))):
+                matches.append(state)
+
+        return matches
+
+    async def _cancel_matching_open_orders(
+        self,
+        instrument_id: InstrumentId | None = None,
+        order_side: OrderSide = OrderSide.NO_ORDER_SIDE,
+    ) -> list[str]:
+        if not self._client:
+            raise RuntimeError("Execution client not connected")
+
+        matches = self._live_open_orders(
+            instrument_ids={instrument_id} if instrument_id is not None else None,
+            order_side=order_side,
+        )
+        venue_order_ids = [
+            venue_order_id
+            for state in matches
+            if (venue_order_id := state.get("venue_order_id"))
+        ]
+        if not venue_order_ids:
+            return []
+
+        if hasattr(self._client, "cancel_orders"):
+            await self._client.cancel_orders(
+                symbol=self._resolve_rithmic_symbol(instrument_id) if instrument_id else None,
+                exchange=self._resolve_rithmic_exchange(instrument_id) if instrument_id else None,
+                side=(
+                    self._to_rithmic_side(order_side)
+                    if order_side != OrderSide.NO_ORDER_SIDE
+                    else None
+                ),
+            )
+        elif len(venue_order_ids) == 1:
+            await self._client.cancel_order(venue_order_ids[0])
+        else:
+            await self._client.batch_cancel_orders(venue_order_ids)
+
+        return venue_order_ids
+
+    def _matching_open_positions(
+        self,
+        instrument_ids: set[InstrumentId] | None = None,
+    ) -> list[dict]:
+        if self._gateway and hasattr(self._gateway, "positions"):
+            matches: list[dict] = []
+            for event in self._gateway.positions(self._config.account_id):
+                instrument_id = self._event_instrument_id(event.symbol, event.exchange)
+                if instrument_id is None:
+                    continue
+                if instrument_ids is not None and instrument_id not in instrument_ids:
+                    continue
+
+                quantity = self._to_decimal(event.quantity) or Decimal("0")
+                if quantity == 0:
+                    continue
+
+                matches.append(
+                    {
+                        "account_id": self._require_account_id().value,
+                        "instrument_id": instrument_id,
+                        "exchange": event.exchange,
+                        "quantity": quantity,
+                        "avg_price": self._to_decimal(event.avg_price) or Decimal("0"),
+                        "unrealized_pnl": self._to_decimal(event.unrealized_pnl)
+                        or Decimal("0"),
+                        "realized_pnl": self._to_decimal(event.realized_pnl) or Decimal("0"),
+                        "currency": self._balances.get(self._config.account_id, {}).get(
+                            "currency",
+                            "USD",
+                        ),
+                        "ts_event": event.ts_event,
+                    },
+                )
+            return matches
+
+        matches: list[dict] = []
+
+        for pos in self._positions.values():
+            instrument_id = pos.get("instrument_id")
+            if instrument_id is None:
+                continue
+            if instrument_ids is not None and instrument_id not in instrument_ids:
+                continue
+
+            quantity = self._to_decimal(pos.get("quantity", 0)) or Decimal("0")
+            if quantity == 0:
+                continue
+
+            matches.append(pos)
+
+        return matches
+
+    async def _submit_flatten_order(
+        self,
+        position: dict,
+        *,
+        time_in_force: TimeInForce,
+    ) -> ClientOrderId:
+        if not self._client:
+            raise RuntimeError("Execution client not connected")
+
+        instrument_id = position.get("instrument_id")
+        if instrument_id is None:
+            raise ValueError("Position missing instrument_id")
+
+        quantity = self._to_decimal(position.get("quantity", 0)) or Decimal("0")
+        if quantity == 0:
+            raise ValueError(f"Cannot flatten flat position for {instrument_id}")
+
+        side = OrderSide.SELL if quantity > 0 else OrderSide.BUY
+        qty_abs = abs(quantity)
+        qty_int = int(qty_abs)
+        if qty_int <= 0:
+            raise ValueError(f"Cannot flatten invalid quantity {qty_abs} for {instrument_id}")
+
+        symbol = self._resolve_rithmic_symbol(instrument_id)
+        exchange = self._resolve_rithmic_exchange(instrument_id, position)
+        client_order_id = ClientOrderId(f"FLATTEN-{UUID4()}")
+
+        await self._client.submit_order(
+            symbol=symbol,
+            exchange=exchange,
+            side=self._to_rithmic_side(side),
+            order_type=RithmicOrderType.MARKET,
+            quantity=qty_int,
+            client_order_id=client_order_id.value,
+            price=None,
+            stop_price=None,
+            time_in_force=self._to_rithmic_tif(time_in_force),
+            trailing_stop_ticks=None,
+        )
+
+        state = self._seed_order_state(
+            SimpleNamespace(
+                client_order_id=client_order_id,
+                instrument_id=instrument_id,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=Quantity.from_int(qty_int),
+                time_in_force=time_in_force,
+                trigger_price=None,
+                order_list_id=None,
+                linked_order_ids=None,
+                parent_order_id=None,
+                contingency_type=ContingencyType.NO_CONTINGENCY,
+                expire_time=None,
+                display_qty=None,
+                post_only=False,
+                reduce_only=True,
+                ts_init=self._clock.timestamp_ns(),
+                venue_order_id=None,
+            ),
+            status=OrderStatus.SUBMITTED,
+            venue_order_id=self._tracked_venue_order_id(client_order_id.value),
+        )
+        state["exchange"] = exchange
+        return client_order_id
+
+    async def flatten_account_async(
+        self,
+        *,
+        instrument_ids: list[InstrumentId] | None = None,
+        time_in_force: TimeInForce = TimeInForce.IOC,
+        timeout_secs: float = 10.0,
+        poll_interval_secs: float = 0.1,
+        cancel_open_orders: bool = True,
+    ) -> None:
+        """
+        Flatten open positions for the configured Rithmic account.
+
+        This is an adapter-specific live helper. It first cancels scoped open orders,
+        then submits opposite-side market orders and waits until the targeted positions
+        are flat.
+        """
+        if not self._client:
+            raise RuntimeError("Execution client not connected")
+
+        instruments_filter = set(instrument_ids) if instrument_ids is not None else None
+
+        if cancel_open_orders:
+            if instruments_filter is None:
+                await self._cancel_matching_open_orders()
+            else:
+                for instrument_id in sorted(
+                    instruments_filter,
+                    key=lambda item: item.to_str(),
+                ):
+                    await self._cancel_matching_open_orders(instrument_id=instrument_id)
+
+        deadline = self._loop.time() + timeout_secs
+
+        while True:
+            open_orders = self._live_open_orders(instrument_ids=instruments_filter)
+            open_positions = self._matching_open_positions(instrument_ids=instruments_filter)
+
+            if not open_orders and not open_positions:
+                return
+
+            if self._loop.time() >= deadline:
+                residual_positions = [
+                    f"{pos['instrument_id']}={self._decimal_str(pos.get('quantity', 0))}"
+                    for pos in open_positions
+                ]
+                residual_orders = [
+                    state.get("client_order_id").value
+                    if isinstance(state.get("client_order_id"), ClientOrderId)
+                    else str(state.get("client_order_id"))
+                    for state in open_orders
+                ]
+                raise TimeoutError(
+                    "Timed out waiting for Rithmic account flatten. "
+                    f"Open orders={residual_orders}, open positions={residual_positions}"
+                )
+
+            if not open_orders and open_positions:
+                for position in open_positions:
+                    await self._submit_flatten_order(
+                        position,
+                        time_in_force=time_in_force,
+                    )
+
+            await asyncio.sleep(poll_interval_secs)
+
+    def flatten_account(
+        self,
+        *,
+        instrument_ids: list[InstrumentId] | None = None,
+        time_in_force: TimeInForce = TimeInForce.IOC,
+        timeout_secs: float = 10.0,
+        poll_interval_secs: float = 0.1,
+        cancel_open_orders: bool = True,
+    ) -> Task:
+        """
+        Schedule a Rithmic-specific live account flatten task.
+        """
+        scope = "entire account" if not instrument_ids else ",".join(
+            instrument_id.to_str() for instrument_id in instrument_ids
+        )
+        self._log.warning(f"Flattening Rithmic account scope={scope}...")
+        return self.create_task(
+            self.flatten_account_async(
+                instrument_ids=instrument_ids,
+                time_in_force=time_in_force,
+                timeout_secs=timeout_secs,
+                poll_interval_secs=poll_interval_secs,
+                cancel_open_orders=cancel_open_orders,
+            ),
+            log_msg=f"flatten_account: {scope}",
+            success_msg=f"Flattened Rithmic account scope={scope}",
+        )
 
     def _tracked_venue_order_id(self, client_order_id: str) -> VenueOrderId | None:
         if not self._client or not hasattr(self._client, "get_order"):
@@ -1938,7 +2251,15 @@ class RithmicLiveExecutionClient(LiveExecutionClient):
         if not self._client:
             raise RuntimeError("Execution client not connected")
 
-        await self._client.cancel_all_orders()
+        cancelled_ids = await self._cancel_matching_open_orders(
+            instrument_id=command.instrument_id,
+            order_side=command.order_side,
+        )
+        if not cancelled_ids:
+            self._log.info(
+                f"No tracked Rithmic open orders matched scoped cancel request "
+                f"{command.instrument_id} side={command.order_side.name}",
+            )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         """

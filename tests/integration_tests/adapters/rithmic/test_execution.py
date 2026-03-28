@@ -141,9 +141,6 @@ class TestRithmicLiveExecutionClient:
             async def cancel_order(self, venue_order_id):
                 calls["cancel"] = venue_order_id
 
-            async def cancel_all_orders(self):
-                calls["cancel_all"] = True
-
             async def batch_cancel_orders(self, ids):
                 calls["batch"] = ids
 
@@ -172,16 +169,6 @@ class TestRithmicLiveExecutionClient:
             cancel = TestCommandStubs.cancel_order_command(order=accepted)
             loop.run_until_complete(client._cancel_order(cancel))
 
-            cancel_all = CancelAllOrders(
-                trader_id=TestIdStubs.trader_id(),
-                strategy_id=TestIdStubs.strategy_id(),
-                instrument_id=accepted.instrument_id,
-                order_side=OrderSide.NO_ORDER_SIDE,
-                command_id=TestIdStubs.uuid(),
-                ts_init=0,
-            )
-            loop.run_until_complete(client._cancel_all_orders(cancel_all))
-
             batch_cancel = BatchCancelOrders(
                 trader_id=TestIdStubs.trader_id(),
                 strategy_id=TestIdStubs.strategy_id(),
@@ -199,8 +186,118 @@ class TestRithmicLiveExecutionClient:
         assert calls["modify"]["new_qty"] == 2
         assert calls["modify"]["new_price"] == 54.0
         assert calls["cancel"] == "V1"
-        assert calls["cancel_all"] is True
         assert calls["batch"] == ["V1"]
+
+    def test_cancel_all_orders_filters_by_instrument_and_side(self):
+        calls = {}
+
+        class DummyRust:
+            def open_orders(self, **kwargs):
+                calls["open_orders"] = kwargs
+                return [
+                    {
+                        "client_order_id": "C1",
+                        "symbol": "MNQH6",
+                        "exchange": "CME",
+                        "venue_order_id": "V1",
+                        "side": "BUY",
+                    },
+                    {
+                        "client_order_id": "C2",
+                        "symbol": "MNQH6",
+                        "exchange": "CME",
+                        "venue_order_id": "V2",
+                        "side": "BUY",
+                    },
+                ]
+
+            async def cancel_orders(self, **kwargs):
+                calls["cancel_orders"] = kwargs
+                return 2
+
+        loop = asyncio.new_event_loop()
+        try:
+            client = _make_client(loop)
+            client._client = DummyRust()
+
+            target_instrument_id = InstrumentId.from_str("MNQH6.RITHMIC")
+
+            loop.run_until_complete(
+                client._cancel_all_orders(
+                    CancelAllOrders(
+                        trader_id=TestIdStubs.trader_id(),
+                        strategy_id=TestIdStubs.strategy_id(),
+                        instrument_id=target_instrument_id,
+                        order_side=OrderSide.BUY,
+                        command_id=TestIdStubs.uuid(),
+                        ts_init=0,
+                    ),
+                ),
+            )
+        finally:
+            loop.close()
+
+        assert calls["open_orders"] == {
+            "symbol": "MNQH6",
+            "exchange": "CME",
+            "side": client._to_rithmic_side(OrderSide.BUY),
+        }
+        assert calls["cancel_orders"] == {
+            "symbol": "MNQH6",
+            "exchange": "CME",
+            "side": client._to_rithmic_side(OrderSide.BUY),
+        }
+
+    @pytest.mark.parametrize("exit_path", ["close_position", "market_exit", "manage_stop"])
+    def test_submit_order_supports_standard_strategy_exit_market_orders(self, exit_path):
+        calls = {}
+
+        class DummyRust:
+            async def submit_order(self, **kwargs):
+                calls["submit"] = kwargs
+
+        class DummyOrder:
+            account_id = AccountId("RITHMIC-A1")
+            instrument_id = InstrumentId.from_str("MNQM6.RITHMIC")
+            client_order_id = ClientOrderId(f"{exit_path.upper()}-1")
+            side = OrderSide.SELL
+            order_type = OrderType.MARKET
+            quantity = Quantity.from_int(1)
+            price = None
+            trigger_price = None
+            trailing_offset = None
+            time_in_force = TimeInForce.GTC
+            order_list_id = None
+            linked_order_ids = None
+            parent_order_id = None
+            contingency_type = ContingencyType.NO_CONTINGENCY
+            expire_time = None
+            display_qty = None
+            post_only = False
+            reduce_only = True
+            ts_init = 0
+            venue_order_id = None
+
+        loop = asyncio.new_event_loop()
+        try:
+            client = _make_client(loop)
+            client._client = DummyRust()
+
+            loop.run_until_complete(client._submit_order(_ExecutionPayload(order=DummyOrder())))
+        finally:
+            loop.close()
+
+        submit = calls["submit"]
+        state = client._orders[DummyOrder.client_order_id.value]
+        assert submit["symbol"] == "MNQM6"
+        assert submit["exchange"] == "CME"
+        assert submit["side"] == client._to_rithmic_side(OrderSide.SELL)
+        assert submit["order_type"] == client._to_rithmic_order_type(OrderType.MARKET)
+        assert submit["time_in_force"] == client._to_rithmic_tif(TimeInForce.GTC)
+        assert submit["quantity"] == 1
+        assert state["order_type"] == OrderType.MARKET
+        assert state["time_in_force"] == TimeInForce.GTC
+        assert state["reduce_only"] is True
 
     def test_submit_order_rejects_mismatched_rithmic_account_id(self):
         class DummyRust:
@@ -443,6 +540,133 @@ class TestRithmicLiveExecutionClient:
         assert report.position_side == PositionSide.LONG
         assert float(report.quantity) == 2.0
         assert report.avg_px_open == Decimal("5000.0")
+
+    @pytest.mark.asyncio
+    async def test_flatten_account_async_cancels_scoped_orders_and_flattens_positions(self):
+        client = _make_client(asyncio.get_running_loop())
+
+        target_instrument_id = InstrumentId.from_str("ESZ4.RITHMIC")
+        cancelled: list[dict] = []
+        submitted: list[dict] = []
+
+        class DummyGateway:
+            def __init__(self):
+                self._positions = {
+                    "ESZ4": _ExecutionPayload(
+                        account_id="A1",
+                        symbol="ESZ4",
+                        exchange="CME",
+                        quantity=1.0,
+                        avg_price=5000.0,
+                        unrealized_pnl=0.0,
+                        realized_pnl=0.0,
+                        ts_event=1,
+                    ),
+                    "NQZ4": _ExecutionPayload(
+                        account_id="A1",
+                        symbol="NQZ4",
+                        exchange="CME",
+                        quantity=2.0,
+                        avg_price=21000.0,
+                        unrealized_pnl=0.0,
+                        realized_pnl=0.0,
+                        ts_event=1,
+                    ),
+                }
+
+            def positions(self, account_id=None):
+                assert account_id == "A1"
+                return list(self._positions.values())
+
+        class DummyRust:
+            def __init__(self):
+                self._target_order_open = True
+
+            def open_orders(self, **kwargs):
+                symbol = kwargs.get("symbol")
+                if symbol == "ESZ4" and self._target_order_open:
+                    return [
+                        {
+                            "client_order_id": "OPEN-TARGET",
+                            "symbol": "ESZ4",
+                            "exchange": "CME",
+                            "venue_order_id": "OV1",
+                            "side": "BUY",
+                        },
+                    ]
+                if symbol == "NQZ4":
+                    return [
+                        {
+                            "client_order_id": "OPEN-OTHER",
+                            "symbol": "NQZ4",
+                            "exchange": "CME",
+                            "venue_order_id": "OV2",
+                            "side": "BUY",
+                        },
+                    ]
+                return []
+
+            async def cancel_orders(self, **kwargs):
+                cancelled.append(kwargs)
+                if kwargs.get("symbol") == "ESZ4":
+                    self._target_order_open = False
+                return 1
+
+            async def submit_order(self, **kwargs):
+                submitted.append(kwargs)
+                asyncio.get_running_loop().call_soon(
+                    self._fill_target_position,
+                    kwargs["client_order_id"],
+                    kwargs["symbol"],
+                    kwargs["exchange"],
+                    kwargs["quantity"],
+                )
+
+            def _fill_target_position(self, client_order_id, symbol, exchange, quantity):
+                dummy_gateway._positions.pop(symbol, None)
+                client._on_execution_event(
+                    _ExecutionEvent(
+                        "filled",
+                        _ExecutionPayload(
+                            client_order_id=client_order_id,
+                            venue_order_id=f"FLAT-{client_order_id}",
+                            symbol=symbol,
+                            exchange=exchange,
+                            side="SELL",
+                            order_type="MARKET",
+                            time_in_force="IOC",
+                            fill_price=5000.0,
+                            fill_qty=float(quantity),
+                            leaves_qty=0.0,
+                            commission=0.0,
+                            trade_id=f"TRD-{client_order_id}",
+                            currency="USD",
+                            ts_event=10,
+                        ),
+                    ),
+                )
+
+        dummy_gateway = DummyGateway()
+        client._gateway = dummy_gateway
+        client._client = DummyRust()
+
+        await client.flatten_account_async(
+            instrument_ids=[target_instrument_id],
+            time_in_force=TimeInForce.IOC,
+            timeout_secs=2.0,
+            poll_interval_secs=0.01,
+        )
+
+        assert cancelled == [{"symbol": "ESZ4", "exchange": "CME", "side": None}]
+        assert len(submitted) == 1
+        assert submitted[0]["symbol"] == "ESZ4"
+        assert submitted[0]["exchange"] == "CME"
+        assert submitted[0]["side"] == client._to_rithmic_side(OrderSide.SELL)
+        assert submitted[0]["order_type"] == client._to_rithmic_order_type(OrderType.MARKET)
+        assert submitted[0]["time_in_force"] == client._to_rithmic_tif(TimeInForce.IOC)
+        remaining_positions = {position.symbol: position.quantity for position in dummy_gateway.positions("A1")}
+        assert "ESZ4" not in remaining_positions
+        assert remaining_positions == {"NQZ4": 2.0}
 
     @pytest.mark.asyncio
     async def test_fill_reports_preserve_event_order(self):
