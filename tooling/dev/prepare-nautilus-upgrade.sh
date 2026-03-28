@@ -45,7 +45,7 @@ if [[ -z "$target_tag" ]]; then
   exit 1
 fi
 
-if ! git ls-remote --tags --refs "$UPSTREAM_REMOTE" "refs/tags/$target_tag" | grep -q .; then
+if ! git ls-remote --exit-code "$UPSTREAM_REMOTE" "refs/tags/$target_tag" >/dev/null 2>&1; then
   echo "error: tag $target_tag not found on $UPSTREAM_REMOTE" >&2
   exit 1
 fi
@@ -79,7 +79,19 @@ else
 fi
 
 if [[ -n "${CHERRY_PICK_COMMITS:-}" ]]; then
-  for commit in $CHERRY_PICK_COMMITS; do
+  read -r -a commits <<< "$CHERRY_PICK_COMMITS"
+  for commit in "${commits[@]}"; do
+    if [[ ! "$commit" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+      echo "error: invalid cherry-pick commit '$commit'" >&2
+      exit 1
+    fi
+    if ! git rev-parse --verify --quiet "${commit}^{commit}" >/dev/null; then
+      echo "error: cherry-pick commit '$commit' was not found locally" >&2
+      exit 1
+    fi
+  done
+
+  for commit in "${commits[@]}"; do
     git cherry-pick "$commit"
   done
 fi

@@ -56,3 +56,29 @@ if REPO_ROOT_OVERRIDE="$dirty_repo" UPSTREAM_URL="$upstream_bare" UPGRADE_DATE="
   echo "expected dirty worktree run to fail" >&2
   exit 1
 fi
+
+invalid_cherry_pick_repo="$tmpdir/invalid-cherry-pick"
+git clone "$upstream_bare" "$invalid_cherry_pick_repo" >/dev/null 2>&1
+git -C "$invalid_cherry_pick_repo" config user.name "Test User"
+git -C "$invalid_cherry_pick_repo" config user.email "test@example.com"
+if REPO_ROOT_OVERRIDE="$invalid_cherry_pick_repo" \
+  UPSTREAM_URL="$upstream_bare" \
+  UPGRADE_DATE="20260320" \
+  CHERRY_PICK_COMMITS="README.md" \
+  "$SCRIPT_PATH"; then
+  echo "expected invalid cherry-pick identifiers to fail" >&2
+  exit 1
+fi
+
+missing_cherry_pick_repo="$tmpdir/missing-cherry-pick"
+git clone "$upstream_bare" "$missing_cherry_pick_repo" >/dev/null 2>&1
+git -C "$missing_cherry_pick_repo" config user.name "Test User"
+git -C "$missing_cherry_pick_repo" config user.email "test@example.com"
+if REPO_ROOT_OVERRIDE="$missing_cherry_pick_repo" \
+  UPSTREAM_URL="$upstream_bare" \
+  UPGRADE_DATE="20260321" \
+  CHERRY_PICK_COMMITS="0000000000000000000000000000000000000000" \
+  "$SCRIPT_PATH"; then
+  echo "expected missing cherry-pick commits to fail" >&2
+  exit 1
+fi
