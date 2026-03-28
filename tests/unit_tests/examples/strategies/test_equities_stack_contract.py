@@ -667,15 +667,16 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert binance["recv_window_ms"] == 5000
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
-    assert scopes["ibkr.reference.main"]["ibg_port"] == 4002
+    assert scopes["ibkr.reference.main"]["ibg_port"] == 4001
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
     assert scopes["ibkr.reference.main"]["account_id"] == "U10015777"
+    assert "ibg_fallback_ports" not in scopes["ibkr.reference.main"]
     assert reference_gateway["manage_container"] is False
     assert reference_gateway["relogin_after_twofa_timeout"] is False
     assert reference_gateway["twofa_timeout_action"] == "exit"
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
     assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
-    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4002
+    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4001
     assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 908
     assert scopes["ibkr.hedge.main"]["account_id"] == "U10015777"
     assert hedge_gateway["manage_container"] is False
@@ -924,8 +925,8 @@ def test_equities_live_ibkr_scopes_route_reference_and_hedge_via_active_gateway_
         if row.get("provider") == "ibkr"
     }
 
-    assert scopes["ibkr.reference.main"]["ibg_port"] == 4002
-    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4002
+    assert scopes["ibkr.reference.main"]["ibg_port"] == 4001
+    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4001
 
 
 def test_equities_binance_split_strategies_use_primary_gateway_port() -> None:

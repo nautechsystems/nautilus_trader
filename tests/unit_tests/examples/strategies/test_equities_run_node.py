@@ -2246,7 +2246,7 @@ def test_build_node_uses_explicit_contract_reference_for_binance_perp_route(monk
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 107,
                     "account_id": "U10015777",
                 },
@@ -2255,7 +2255,7 @@ def test_build_node_uses_explicit_contract_reference_for_binance_perp_route(monk
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 108,
                     "account_id": "U10015777",
                 },
@@ -2393,7 +2393,7 @@ def test_build_node_promotes_contract_maker_venue_over_stale_top_level_execution
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 107,
                     "account_id": "U10015777",
                 },
@@ -2402,7 +2402,7 @@ def test_build_node_promotes_contract_maker_venue_over_stale_top_level_execution
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 108,
                     "account_id": "U10015777",
                 },
@@ -2537,7 +2537,7 @@ def test_build_node_clears_stale_execution_flags_when_contract_promotes_new_make
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 107,
                     "account_id": "U10015777",
                 },
@@ -2707,7 +2707,7 @@ def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for
                 "provider": "ibkr",
                 "venue": "IBKR",
                 "ibg_host": "127.0.0.1",
-                "ibg_port": 4002,
+                "ibg_port": 4001,
                 "ibg_client_id": 107,
                 "account_id": "U10015777",
                 "dockerized_gateway": {
@@ -2720,7 +2720,7 @@ def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for
                 "provider": "ibkr",
                 "venue": "IBKR",
                 "ibg_host": "127.0.0.1",
-                "ibg_port": 4002,
+                "ibg_port": 4001,
                 "ibg_client_id": 108,
                 "account_id": "U10015777",
                 "dockerized_gateway": {
@@ -2758,7 +2758,7 @@ def test_effective_venue_resolution_config_preserves_strategy_ibkr_client_id_for
         "trading_mode": "live",
         "manage_container": False,
     }
-    assert ibkr_cfg["ibg_port"] == 4002
+    assert ibkr_cfg["ibg_port"] == 4001
 
 
 def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_when_external_id_missing() -> None:
@@ -2793,7 +2793,7 @@ def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_wh
                 "provider": "ibkr",
                 "venue": "IBKR",
                 "ibg_host": "127.0.0.1",
-                "ibg_port": 4002,
+                "ibg_port": 4001,
                 "ibg_client_id": 108,
                 "account_id": "U10015777",
                 "dockerized_gateway": {
@@ -2823,7 +2823,7 @@ def test_effective_venue_resolution_config_falls_back_to_identity_strategy_id_wh
     ibkr_cfg = effective["node"]["venues"]["IBKR"]
     assert ibkr_cfg["execution"] is True
     assert ibkr_cfg["ibg_host"] == "127.0.0.1"
-    assert ibkr_cfg["ibg_port"] == 4002
+    assert ibkr_cfg["ibg_port"] == 4001
     assert ibkr_cfg["ibg_client_id"] == 108
     assert ibkr_cfg["account_id"] == "U10015777"
     assert ibkr_cfg["dockerized_gateway"] == {
@@ -2955,7 +2955,7 @@ def test_attach_reference_balance_snapshot_provider_preserves_explicit_port_with
                     "IBKR": {
                         "adapter": "interactive_brokers",
                         "ibg_host": "127.0.0.1",
-                        "ibg_port": 4002,
+                        "ibg_port": 4001,
                         "ibg_client_id": 7,
                         "dockerized_gateway": {
                             "trading_mode": "live",
@@ -2972,7 +2972,7 @@ def test_attach_reference_balance_snapshot_provider_preserves_explicit_port_with
 
     provider_config = captured["provider_config"]
     assert provider_config.dockerized_gateway is not None
-    assert provider_config.ibg_port == 4002
+    assert provider_config.ibg_port == 4001
     assert provider_config.ibg_client_id == 7
     assert captured["provider"] is not None
 
@@ -3685,7 +3685,7 @@ def test_build_grouped_node_rejects_divergent_node_scoped_config_for_node_group(
     }
     taker_config["node"] = {
         "enable_execution": True,
-        "venues": {"IBKR": {"ibg_client_id": 7, "ibg_port": 4002}},
+        "venues": {"IBKR": {"ibg_client_id": 7, "ibg_port": 4001}},
     }
 
     _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)

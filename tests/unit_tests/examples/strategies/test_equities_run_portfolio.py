@@ -173,7 +173,6 @@ def _account_scopes() -> list[dict[str, object]]:
             "venue": "IBKR",
             "ibg_host": "127.0.0.1",
             "ibg_port": 4001,
-            "ibg_fallback_ports": [4002],
             "ibg_client_id": 7,
             "ibg_connection_timeout_secs": 5,
             "ibg_request_timeout_secs": 10,
@@ -187,7 +186,7 @@ def _account_scopes() -> list[dict[str, object]]:
             "provider": "ibkr",
             "venue": "IBKR",
             "ibg_host": "127.0.0.1",
-            "ibg_port": 4002,
+            "ibg_port": 4001,
             "ibg_client_id": 8,
             "ibg_connection_timeout_secs": 5,
             "ibg_request_timeout_secs": 10,
@@ -431,12 +430,12 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert len(captured_provider_configs) == 2
     assert captured_provider_configs[0].dockerized_gateway is not None
     assert captured_provider_configs[0].ibg_port == 4001
-    assert captured_provider_configs[0].ibg_fallback_ports == (4002,)
+    assert captured_provider_configs[0].ibg_fallback_ports == ()
     assert captured_provider_configs[0].ibg_client_id == 7
     assert captured_provider_configs[0].connection_timeout == 5
     assert captured_provider_configs[0].request_timeout_secs == 10
     assert captured_provider_configs[1].dockerized_gateway is not None
-    assert captured_provider_configs[1].ibg_port == 4002
+    assert captured_provider_configs[1].ibg_port == 4001
     assert captured_provider_configs[1].ibg_fallback_ports == ()
     assert captured_provider_configs[1].ibg_client_id == 8
     assert captured_provider_configs[1].connection_timeout == 5
@@ -485,7 +484,7 @@ def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 7,
                 },
                 {
@@ -493,7 +492,7 @@ def test_build_profile_account_provider_bindings_supports_binance_futures_scope(
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 8,
                 },
             ],
@@ -671,7 +670,7 @@ def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_cl
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 0,
                 },
                 {
@@ -679,7 +678,7 @@ def test_build_profile_account_provider_bindings_preserves_explicit_zero_ibkr_cl
                     "provider": "ibkr",
                     "venue": "IBKR",
                     "ibg_host": "127.0.0.1",
-                    "ibg_port": 4002,
+                    "ibg_port": 4001,
                     "ibg_client_id": 8,
                 },
             ],

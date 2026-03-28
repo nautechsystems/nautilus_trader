@@ -195,6 +195,7 @@ install_units() {
 append_deploy_root_env_overrides() {
   local env_path="$1"
 
+  printf 'PYTHONDONTWRITEBYTECODE=1\n' >> "${env_path}"
   printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}" >> "${env_path}"
   if [[ -n "${EQUITIES_REDIS_DB}" ]]; then
     printf 'EQUITIES_REDIS_DB=%s\n' "${EQUITIES_REDIS_DB}" >> "${env_path}"
