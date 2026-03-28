@@ -1,19 +1,31 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Configuration classes for the Rithmic adapter."""
 
 from __future__ import annotations
 
 import os
 from enum import Enum
-from typing import Optional
 
-from nautilus_trader.config import LiveDataClientConfig, LiveExecClientConfig
+from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.config import LiveExecClientConfig
 
 
 def _normalize_profile_token(profile: str) -> str:
-    normalized = "".join(
-        char.upper() if char.isalnum() else "_"
-        for char in profile.strip()
-    )
+    normalized = "".join(char.upper() if char.isalnum() else "_" for char in profile.strip())
     normalized = "_".join(part for part in normalized.split("_") if part)
     if not normalized:
         raise ValueError("Rithmic env profile cannot be empty")
@@ -25,6 +37,7 @@ def _candidate_env_keys(
     profile: str | None = None,
 ) -> list[str]:
     candidates: list[str] = []
+
     if profile:
         candidates.append(f"RITHMIC_{_normalize_profile_token(profile)}_{key}")
     candidates.append(f"RITHMIC_{key}")
@@ -34,7 +47,7 @@ def _candidate_env_keys(
 def _optional_env(
     key: str,
     profile: str | None = None,
-) -> Optional[str]:
+) -> str | None:
     for candidate in _candidate_env_keys(key, profile):
         value = os.environ.get(candidate)
         if value:
@@ -56,7 +69,7 @@ def _required_env(
 def _optional_int_env(
     key: str,
     profile: str | None = None,
-) -> Optional[int]:
+) -> int | None:
     value = _optional_env(key, profile)
     if value is None:
         return None
@@ -71,7 +84,7 @@ class RithmicEnvironment(Enum):
     TEST = "test"
 
     @classmethod
-    def from_str(cls, value: str) -> "RithmicEnvironment":
+    def from_str(cls, value: str) -> RithmicEnvironment:
         """Parse environment from string."""
         value_lower = value.lower()
         if value_lower in ("demo", "paper"):
@@ -140,14 +153,14 @@ class RithmicDataClientConfig(LiveDataClientConfig, frozen=True):
     system_name: str = ""
     app_name: str = "fufo:fund-forge"
     app_version: str = "1.0"
-    fcm_id: Optional[str] = None
-    ib_id: Optional[str] = None
-    server: Optional[str] = None
-    alt_server: Optional[str] = None
+    fcm_id: str | None = None
+    ib_id: str | None = None
+    server: str | None = None
+    alt_server: str | None = None
     enable_history: bool = True
 
     @classmethod
-    def from_env(cls, profile: str | None = None) -> "RithmicDataClientConfig":
+    def from_env(cls, profile: str | None = None) -> RithmicDataClientConfig:
         """
         Create configuration from environment variables.
 
@@ -240,15 +253,15 @@ class RithmicExecClientConfig(LiveExecClientConfig, frozen=True):
     account_id: str = ""
     app_name: str = "fufo:fund-forge"
     app_version: str = "1.0"
-    fcm_id: Optional[str] = None
-    ib_id: Optional[str] = None
-    server: Optional[str] = None
-    alt_server: Optional[str] = None
+    fcm_id: str | None = None
+    ib_id: str | None = None
+    server: str | None = None
+    alt_server: str | None = None
     execution_replay_lookback_secs: int = 86_400
-    native_bracket_state_path: Optional[str] = None
+    native_bracket_state_path: str | None = None
 
     @classmethod
-    def from_env(cls, profile: str | None = None) -> "RithmicExecClientConfig":
+    def from_env(cls, profile: str | None = None) -> RithmicExecClientConfig:
         """
         Create configuration from environment variables.
 

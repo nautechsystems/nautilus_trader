@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Rithmic venue constants.
 
 /// The Rithmic venue identifier string.
@@ -174,7 +189,7 @@ pub mod plants {
 mod tests {
     use super::products;
 
-    #[test]
+    #[rstest::rstest]
     fn requested_cme_equity_roots_are_represented() {
         assert_eq!(products::ES, "ES");
         assert_eq!(products::NKD, "NKD");
@@ -190,7 +205,7 @@ mod tests {
         assert_eq!(products::MET, "MET");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn requested_cme_fx_roots_are_represented() {
         assert_eq!(products::FX_6A, "6A");
         assert_eq!(products::FX_6B, "6B");
@@ -207,7 +222,7 @@ mod tests {
         assert_eq!(products::FX_M6B, "M6B");
     }
 
-    #[test]
+    #[rstest::rstest]
     fn requested_energy_ag_and_metals_roots_are_represented() {
         assert_eq!(products::HE, "HE");
         assert_eq!(products::LE, "LE");

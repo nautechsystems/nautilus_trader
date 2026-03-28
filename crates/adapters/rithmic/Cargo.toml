@@ -17,35 +17,37 @@ workspace = true
 
 [lib]
 name = "nautilus_rithmic"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-python = ["pyo3", "pyo3-async-runtimes"]
-extension-module = ["python", "pyo3/extension-module"]
+python = ["nautilus-core/python", "pyo3", "pyo3-async-runtimes"]
+extension-module = ["python", "nautilus-core/extension-module", "pyo3/extension-module"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true, features = ["live"] }
 ahash = { workspace = true }
-rithmic-rs = { git = "https://github.com/pbeets/rithmic-rs", features = ["serde"] }
-tokio = { workspace = true, features = ["full"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-tracing = "0.1"
-dashmap = { workspace = true }
 arc-swap = { workspace = true }
+dashmap = { workspace = true }
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
 parking_lot = "0.12"
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+rithmic-rs = { git = "https://github.com/pbeets/rithmic-rs", features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = "0.1"
 
 [dev-dependencies]
 futures-util = { workspace = true }
 prost = { version = "0.14.3", default-features = false, features = ["std"] }
-tokio-tungstenite = { workspace = true }
+rstest = { workspace = true }
 tokio-test = "0.4"
+tokio-tungstenite = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

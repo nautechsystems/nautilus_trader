@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Symbol parsing utilities.
 
 use crate::error::{Result, RithmicError};
@@ -35,7 +50,7 @@ pub fn month_code_to_number(code: char) -> Result<u32> {
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_symbol() {
         let (product, expiry) = parse_symbol("ESZ4").unwrap();
         assert_eq!(product, "ES");
@@ -48,7 +63,7 @@ mod tests {
         assert!(parse_symbol("ES").is_err()); // too short
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_month_code_to_number() {
         assert_eq!(month_code_to_number('F').unwrap(), 1);
         assert_eq!(month_code_to_number('Z').unwrap(), 12);

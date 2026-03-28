@@ -37,7 +37,7 @@ Notes on app credentials:
     conformance themselves unless instructed otherwise.
     For direct API onboarding later: https://www.rithmic.com/api-request
 
-WARNING:
+Warning:
     This sends a real native OCO request to the configured account.
     Use a demo account first.
 """
@@ -49,14 +49,14 @@ import math
 import os
 import time
 
-from nautilus_trader.adapters.rithmic import RithmicDataClient, RithmicGateway
-from nautilus_trader.adapters.rithmic.bindings import (
-    OrderSide,
-    OrderType,
-    RithmicExecutionClient,
-    RithmicInstrumentProvider,
-    TimeInForce,
-)
+from nautilus_trader.adapters.rithmic import RithmicDataClient
+from nautilus_trader.adapters.rithmic import RithmicGateway
+from nautilus_trader.adapters.rithmic.bindings import OrderSide
+from nautilus_trader.adapters.rithmic.bindings import OrderType
+from nautilus_trader.adapters.rithmic.bindings import RithmicExecutionClient
+from nautilus_trader.adapters.rithmic.bindings import RithmicInstrumentProvider
+from nautilus_trader.adapters.rithmic.bindings import TimeInForce
+
 
 DEFAULT_PRODUCT = "MNQ"
 DEFAULT_EXCHANGE = "CME"
@@ -95,6 +95,7 @@ def describe_execution_event(event) -> str:
     def suffix(payload) -> str:
         linked_basket_ids = getattr(payload, "linked_basket_ids", None)
         parts = []
+
         if linked_basket_ids:
             parts.append(f"linked_basket_ids={linked_basket_ids}")
         return f", {'; '.join(parts)}" if parts else ""
@@ -152,6 +153,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
             raise RuntimeError(f"Market data error: {event.as_error()}")
         if event.is_quote():
             quote = event.as_quote()
+
             if (
                 quote.symbol == symbol
                 and quote.exchange == exchange
@@ -161,7 +163,7 @@ async def wait_for_quote(data_queue: asyncio.Queue, symbol: str, exchange: str):
                 return quote
 
 
-def _buffered_matching_event(
+def _buffered_matching_event(  # noqa: C901
     pending_events: list[object],
     client_order_id: str,
     *,
@@ -205,7 +207,7 @@ def _buffered_matching_event(
     return None
 
 
-async def wait_for_execution_event(
+async def wait_for_execution_event(  # noqa: C901
     execution_queue: asyncio.Queue,
     pending_events: list[object],
     client_order_id: str,
@@ -223,6 +225,7 @@ async def wait_for_execution_event(
         allow_accepted=allow_accepted,
         allow_cancelled=allow_cancelled,
     )
+
     if buffered is not None:
         print(f"{label}: {describe_execution_event(buffered)}")
         return buffered
@@ -268,7 +271,7 @@ async def wait_for_execution_event(
         pending_events.append(event)
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: C901
     profile = os.getenv("RITHMIC_PROFILE")
     product = os.getenv("RITHMIC_OCO_ROOT", DEFAULT_PRODUCT).strip().upper()
     exchange = os.getenv("RITHMIC_OCO_EXCHANGE", DEFAULT_EXCHANGE).strip().upper()
@@ -312,6 +315,7 @@ async def main() -> None:
     except ValueError as e:
         print(f"Error creating gateway from env: {e}")
         print("Required environment variables:")
+
         if profile:
             print(f"  RITHMIC_{profile.upper()}_USERNAME")
             print(f"  RITHMIC_{profile.upper()}_PASSWORD")
@@ -434,8 +438,10 @@ async def main() -> None:
                 allow_submitted=True,
                 allow_accepted=True,
             )
+
             if first_event.is_submitted():
                 submitted = first_event.as_submitted()
+
                 if client_order_id == limit_client_order_id:
                     limit_venue_order_id = submitted.venue_order_id or limit_venue_order_id
                 try:
@@ -448,6 +454,7 @@ async def main() -> None:
                         allow_accepted=True,
                     )
                     accepted = accepted_event.as_accepted()
+
                     if client_order_id == limit_client_order_id:
                         limit_venue_order_id = accepted.venue_order_id
                 except TimeoutError:
@@ -460,10 +467,12 @@ async def main() -> None:
                         f"{label}-accept: no distinct Accepted event observed; "
                         f"continuing with tracked venue_order_id={tracked['venue_order_id']}"
                     )
+
                     if client_order_id == limit_client_order_id:
                         limit_venue_order_id = tracked["venue_order_id"]
             else:
                 accepted = first_event.as_accepted()
+
                 if client_order_id == limit_client_order_id:
                     limit_venue_order_id = accepted.venue_order_id
 

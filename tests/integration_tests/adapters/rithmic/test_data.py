@@ -1,13 +1,32 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Tests for Rithmic data client."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
 
-from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig, RithmicEnvironment
-from nautilus_trader.adapters.rithmic.data import RithmicLiveDataClient, RITHMIC_VENUE
-from nautilus_trader.model.data import BarAggregation, BarSpecification, BarType
+from nautilus_trader.adapters.rithmic.data import RITHMIC_VENUE
+from nautilus_trader.adapters.rithmic.data import RithmicLiveDataClient
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -56,13 +75,14 @@ class _DummyDataClient:
     _lookup_instrument = RithmicLiveDataClient._lookup_instrument
     _resolve_exchange = RithmicLiveDataClient._resolve_exchange
     _publish_instrument_to_data_engine = RithmicLiveDataClient._publish_instrument_to_data_engine
-    _send_all_instruments_to_data_engine = RithmicLiveDataClient._send_all_instruments_to_data_engine
+    _send_all_instruments_to_data_engine = (
+        RithmicLiveDataClient._send_all_instruments_to_data_engine
+    )
     _ensure_instrument_loaded = RithmicLiveDataClient._ensure_instrument_loaded
     _warn_unsupported = RithmicLiveDataClient._warn_unsupported
     _bar_subscription_key = RithmicLiveDataClient._bar_subscription_key
     _subscribe_bars = RithmicLiveDataClient._subscribe_bars
     _unsubscribe_bars = RithmicLiveDataClient._unsubscribe_bars
-    _request_quote_ticks = RithmicLiveDataClient._request_quote_ticks
     _resolve_bar_type_name = RithmicLiveDataClient._resolve_bar_type_name
     _convert_time_bars = RithmicLiveDataClient._convert_time_bars
     _bar_timestamp_from_response = RithmicLiveDataClient._bar_timestamp_from_response
@@ -120,6 +140,7 @@ def _make_bar_type(aggregation: BarAggregation = BarAggregation.MINUTE, step: in
 
 # Note: These tests require mocking the NautilusTrader infrastructure
 # Full integration tests would require a running NautilusTrader instance
+
 
 class TestRithmicLiveDataClient:
     """Tests for RithmicLiveDataClient."""
@@ -273,14 +294,6 @@ class TestRithmicLiveDataClient:
 
         assert client._rust_client.calls[-1] == ("unsubscribe", "ESZ4", "CME", "TickBar", 233)
         assert client._bar_subscriptions == {}
-
-    @pytest.mark.asyncio
-    async def test_request_quote_ticks_warns_when_unsupported(self):
-        client = _DummyDataClient()
-
-        await client._request_quote_ticks(object())
-
-        assert client._log.warnings == ["Historical quote tick requests not implemented for Rithmic"]
 
     @pytest.mark.parametrize(
         ("aggregation", "expected"),
@@ -461,8 +474,8 @@ class TestRithmicLiveDataClient:
         bar_type = _make_bar_type()
         request = SimpleNamespace(
             bar_type=bar_type,
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC),
             params={"exchange": "CME"},
             id="req-1",
         )
@@ -475,8 +488,8 @@ class TestRithmicLiveDataClient:
         client = _DummyDataClient(config=SimpleNamespace(enable_history=False))
         request = SimpleNamespace(
             bar_type=_make_bar_type(),
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=1),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=1),
             params={"exchange": "CME"},
             id="req-history-disabled",
         )
@@ -498,7 +511,9 @@ class TestRithmicLiveDataClient:
                 self._responses = responses
                 self.calls = []
 
-            async def request_bars(self, symbol, exchange, bar_type_name, bar_period, start_sec, end_sec):
+            async def request_bars(
+                self, symbol, exchange, bar_type_name, bar_period, start_sec, end_sec
+            ):
                 self.calls.append((symbol, exchange, bar_type_name, bar_period, start_sec, end_sec))
                 return self._responses
 
@@ -519,8 +534,8 @@ class TestRithmicLiveDataClient:
         bar_type = _make_bar_type(BarAggregation.MINUTE, step=1)
         request = SimpleNamespace(
             bar_type=bar_type,
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=5),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=5),
             params={"exchange": "CME"},
             id="req-2",
             start_time=None,
@@ -553,13 +568,15 @@ class TestRithmicLiveDataClient:
         client._rust_client = object()
         request = SimpleNamespace(
             bar_type=BarType.from_str("ESZ4.RITHMIC-5-TICK-LAST-EXTERNAL"),
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=1),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=1),
             params={"exchange": "CME"},
             id="req-tick-unsupported",
         )
 
-        with pytest.raises(NotImplementedError, match="Historical TickBar requests with period > 1"):
+        with pytest.raises(
+            NotImplementedError, match="Historical TickBar requests with period > 1"
+        ):
             await client._request_bars(request)
 
     @pytest.mark.asyncio
@@ -576,7 +593,9 @@ class TestRithmicLiveDataClient:
                 self._responses = responses
                 self.calls = []
 
-            async def request_bars(self, symbol, exchange, bar_type_name, bar_period, start_sec, end_sec):
+            async def request_bars(
+                self, symbol, exchange, bar_type_name, bar_period, start_sec, end_sec
+            ):
                 self.calls.append((symbol, exchange, bar_type_name, bar_period, start_sec, end_sec))
                 return self._responses
 
@@ -597,8 +616,8 @@ class TestRithmicLiveDataClient:
 
         request = SimpleNamespace(
             bar_type=BarType.from_str("ESZ4.RITHMIC-1-TICK-LAST-EXTERNAL"),
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=30),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(seconds=30),
             params={"exchange": "CME"},
             id="req-tick-1",
             start_time=None,
@@ -640,8 +659,8 @@ class TestRithmicLiveDataClient:
 
         request = SimpleNamespace(
             bar_type=_make_bar_type(BarAggregation.MINUTE, step=1),
-            start=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            end=datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=30),
+            start=datetime(2024, 1, 1, tzinfo=UTC),
+            end=datetime(2024, 1, 1, tzinfo=UTC) + timedelta(minutes=30),
             params={"exchange": "CME"},
             id="req-truncated-warning",
             start_time=None,

@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Live data client for Rithmic."""
 
 from __future__ import annotations
@@ -5,17 +20,24 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
+from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
+from nautilus_trader.adapters.rithmic.config import to_binding_environment
+from nautilus_trader.adapters.rithmic.providers import normalize_rithmic_symbol
+from nautilus_trader.adapters.rithmic.providers import resolve_exchange_hint
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import Bar, BarAggregation, BarType
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick as NautilusQuoteTick
 from nautilus_trader.model.data import TradeTick as NautilusTradeTick
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import ClientId, InstrumentId, TradeId, Venue
-from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
-from nautilus_trader.adapters.rithmic.config import to_binding_environment
-from nautilus_trader.adapters.rithmic.providers import normalize_rithmic_symbol, resolve_exchange_hint
 
 if TYPE_CHECKING:
     from nautilus_trader.cache import Cache
@@ -50,8 +72,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         self,
         loop,
         client_id,
-        msgbus: "MessageBus",
-        cache: "Cache",
+        msgbus: MessageBus,
+        cache: Cache,
         clock,
         config: RithmicDataClientConfig,
     ) -> None:
@@ -165,7 +187,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             self._gateway = None
             try:
                 await asyncio.wait_for(gateway.disconnect(), timeout=3.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._log.warning(
                     "Timed out waiting for Rithmic gateway disconnect; continuing local shutdown",
                 )
@@ -560,6 +582,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             return
 
         bar_type = command.bar_type
+
         if (
             bar_type.spec.aggregation != BarAggregation.TICK
             and not bar_type.spec.is_time_aggregated()
@@ -653,20 +676,13 @@ class RithmicLiveDataClient(LiveMarketDataClient):
             request.params,
         )
 
-    async def _request_quote_ticks(self, request) -> None:
-        """Request historical quote ticks."""
-        self._warn_unsupported("Historical quote tick requests")
-
-    async def _request_trade_ticks(self, request) -> None:
-        """Request historical trade ticks."""
-        self._warn_unsupported("Historical trade tick requests")
-
-    async def _request_bars(self, request) -> None:
+    async def _request_bars(self, request) -> None:  # noqa: C901
         """Request historical bars."""
         if not self._config.enable_history:
             raise RuntimeError("Historical bars requested, but Rithmic history is disabled")
 
         temporary_connection = False
+
         if not self._rust_client:
             await self._connect()
             temporary_connection = True
@@ -799,7 +815,9 @@ class RithmicLiveDataClient(LiveMarketDataClient):
     def _resolve_rithmic_symbol(self, instrument_id: InstrumentId) -> str:
         return normalize_rithmic_symbol(instrument_id.symbol.value)
 
-    def _resolve_exchange(self, instrument_id: InstrumentId, params: dict | None = None) -> str | None:
+    def _resolve_exchange(
+        self, instrument_id: InstrumentId, params: dict | None = None
+    ) -> str | None:
         instrument = self._lookup_instrument(instrument_id)
         if instrument is not None:
             exchange = getattr(instrument, "exchange", None)
@@ -855,6 +873,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
 
             # Validate and correct OHLC relationships if needed
             ohlc_corrected = False
+
             if high_price < low_price:
                 high_price, low_price = low_price, high_price
                 ohlc_corrected = True
@@ -872,9 +891,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 ohlc_corrected = True
 
             if ohlc_corrected:
-                self._log.warning(
-                    f"Corrected invalid OHLC data for {instrument_id} at {ts_event}"
-                )
+                self._log.warning(f"Corrected invalid OHLC data for {instrument_id} at {ts_event}")
 
             bars.append(
                 Bar(
@@ -892,7 +909,8 @@ class RithmicLiveDataClient(LiveMarketDataClient):
         return bars
 
     def _bar_timestamp_from_response(self, response, bar_type: BarType) -> int:
-        """Extract bar timestamp from Rithmic response.
+        """
+        Extract bar timestamp from Rithmic response.
 
         Prefer the Rithmic `marker` field when present, which is the bar's
         epoch-based marker in seconds. Fall back to parsing `period` only when
@@ -917,9 +935,7 @@ class RithmicLiveDataClient(LiveMarketDataClient):
                 seconds = int(response.period)
                 return seconds * 1_000_000_000
             except ValueError:
-                self._log.warning(
-                    f"Could not parse bar period '{response.period}' as timestamp"
-                )
+                self._log.warning(f"Could not parse bar period '{response.period}' as timestamp")
 
         return self._fallback_bar_timestamp(bar_type)
 

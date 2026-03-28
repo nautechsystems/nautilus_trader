@@ -1,4 +1,24 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for the Rithmic gateway.
+
+#![allow(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 gateway APIs accept owned Python values at the FFI boundary"
+)]
 
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -6,13 +26,18 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use nautilus_common::live::get_runtime;
-use tokio::sync::{RwLock, oneshot};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use tokio::task::JoinHandle;
 
 use crate::gateway::{GatewayConfig, PnlEvent, RithmicGateway};
+use crate::providers::{
+    AccountBalance, AccountEvent as ProviderAccountEvent, Position,
+    PositionEvent as ProviderPositionEvent,
+};
 use crate::python::events::{PyAccountEvent, PyPositionEvent};
 
 use super::config::PyRithmicEnv;
@@ -24,11 +49,13 @@ use super::config::PyRithmicEnv;
 #[cfg(feature = "python")]
 #[pyclass(name = "RithmicGateway")]
 pub struct PyRithmicGateway {
-    /// The inner gateway wrapped in RwLock for safe async access.
-    /// We use RwLock because connect/disconnect need &mut self.
-    pub(crate) inner: Arc<RwLock<RithmicGateway>>,
+    /// The inner gateway wrapped in tokio::sync::RwLock for safe async access.
+    /// We use tokio::sync::RwLock because connect/disconnect need &mut self.
+    pub(crate) inner: Arc<tokio::sync::RwLock<RithmicGateway>>,
     pnl_task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
-    pnl_shutdown: Arc<parking_lot::Mutex<Option<oneshot::Sender<()>>>>,
+    pnl_shutdown: Arc<parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+    balances: Arc<parking_lot::Mutex<HashMap<String, AccountBalance>>>,
+    positions: Arc<parking_lot::Mutex<HashMap<String, Position>>>,
 }
 
 #[cfg(feature = "python")]
@@ -96,9 +123,11 @@ impl PyRithmicGateway {
         }
 
         Self {
-            inner: Arc::new(RwLock::new(RithmicGateway::new(config))),
+            inner: Arc::new(tokio::sync::RwLock::new(RithmicGateway::new(config))),
             pnl_task: Arc::new(parking_lot::Mutex::new(None)),
             pnl_shutdown: Arc::new(parking_lot::Mutex::new(None)),
+            balances: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            positions: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         }
     }
 
@@ -107,11 +136,13 @@ impl PyRithmicGateway {
     #[pyo3(signature = (profile=None))]
     fn from_env(profile: Option<String>) -> PyResult<Self> {
         let config = GatewayConfig::from_env_with_profile(profile.as_deref())
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+            .map_err(|e| to_pyvalue_err(e.to_string()))?;
         Ok(Self {
-            inner: Arc::new(RwLock::new(RithmicGateway::new(config))),
+            inner: Arc::new(tokio::sync::RwLock::new(RithmicGateway::new(config))),
             pnl_task: Arc::new(parking_lot::Mutex::new(None)),
             pnl_shutdown: Arc::new(parking_lot::Mutex::new(None)),
+            balances: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            positions: Arc::new(parking_lot::Mutex::new(HashMap::new())),
         })
     }
 
@@ -126,10 +157,10 @@ impl PyRithmicGateway {
 
     /// Returns the current connection state as a string.
     fn connection_state(&self) -> String {
-        self.inner
-            .try_read()
-            .map(|g| format!("{:?}", g.connection_state()))
-            .unwrap_or_else(|_| "Unknown".to_string())
+        self.inner.try_read().map_or_else(
+            |_| "Unknown".to_string(),
+            |g| format!("{:?}", g.connection_state()),
+        )
     }
 
     /// Returns the account ID from the configuration.
@@ -145,11 +176,10 @@ impl PyRithmicGateway {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
             let gateway = inner.read().await;
-            gateway.list_accounts().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Account list request failed: {e}"
-                ))
-            })
+            gateway
+                .list_accounts()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Account list request failed: {e}")))
         })
     }
 
@@ -160,12 +190,28 @@ impl PyRithmicGateway {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
             let gateway = inner.read().await;
-            gateway.request_pnl_snapshot().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "PnL snapshot request failed: {e}"
-                ))
-            })
+            gateway
+                .request_pnl_snapshot()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("PnL snapshot request failed: {e}")))
         })
+    }
+
+    /// Returns the current live position snapshots tracked by the gateway PnL loop.
+    #[pyo3(signature = (account_id=None))]
+    fn positions(&self, account_id: Option<String>) -> Vec<PyPositionEvent> {
+        self.positions
+            .lock()
+            .values()
+            .filter(|position| {
+                account_id
+                    .as_ref()
+                    .is_none_or(|expected| &position.account_id == expected)
+            })
+            .cloned()
+            .map(ProviderPositionEvent::Updated)
+            .map(PyPositionEvent::from)
+            .collect()
     }
 
     fn __repr__(&self) -> String {
@@ -191,9 +237,10 @@ impl PyRithmicGateway {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
             let mut gateway = inner.write().await;
-            gateway.connect().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Connection failed: {e}"))
-            })
+            gateway
+                .connect()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Connection failed: {e}")))
         })
     }
 
@@ -214,9 +261,10 @@ impl PyRithmicGateway {
         let inner = Arc::clone(&self.inner);
         future_into_py(py, async move {
             let mut gateway = inner.write().await;
-            gateway.disconnect().await.map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Disconnection failed: {e}"))
-            })
+            gateway
+                .disconnect()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("Disconnection failed: {e}")))
         })
     }
 
@@ -227,15 +275,15 @@ impl PyRithmicGateway {
     fn start_pnl_loop(&self, _py: Python<'_>, callback: Py<PyAny>) -> PyResult<()> {
         // Prevent double-start
         if self.pnl_task.lock().is_some() {
-            return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                "PnL loop already running",
-            ));
+            return Err(to_pyruntime_err("PnL loop already running"));
         }
 
         let inner = Arc::clone(&self.inner);
         let callback = callback;
         let shutdown = Arc::clone(&self.pnl_shutdown);
         let task_slot = Arc::clone(&self.pnl_task);
+        let balances = Arc::clone(&self.balances);
+        let positions = Arc::clone(&self.positions);
 
         // Spawn async task
         let handle = get_runtime().spawn(async move {
@@ -246,7 +294,7 @@ impl PyRithmicGateway {
             };
             drop(gw);
 
-            let (tx, mut rx_shutdown) = oneshot::channel();
+            let (tx, mut rx_shutdown) = tokio::sync::oneshot::channel();
             *shutdown.lock() = Some(tx);
 
             loop {
@@ -256,6 +304,7 @@ impl PyRithmicGateway {
                     }
                     maybe_event = rx.recv() => {
                         if let Some(event) = maybe_event {
+                            Self::sync_pnl_state(&balances, &positions, &event);
                             Python::attach(|py| {
                                 match event {
                                     PnlEvent::Account(ae) => {
@@ -287,6 +336,7 @@ impl PyRithmicGateway {
         if let Some(tx) = self.pnl_shutdown.lock().take() {
             let _ = tx.send(());
         }
+
         if let Some(handle) = self.pnl_task.lock().take() {
             handle.abort();
         }
@@ -319,9 +369,7 @@ impl PyRithmicGateway {
             gateway
                 .subscribe_market_data(&symbol, &exchange)
                 .await
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Subscription failed: {e}"))
-                })
+                .map_err(|e| to_pyruntime_err(format!("Subscription failed: {e}")))
         })
     }
 
@@ -347,10 +395,50 @@ impl PyRithmicGateway {
             gateway
                 .unsubscribe_market_data(&symbol, &exchange)
                 .await
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Unsubscribe failed: {e}"))
-                })
+                .map_err(|e| to_pyruntime_err(format!("Unsubscribe failed: {e}")))
         })
+    }
+}
+
+#[cfg(feature = "python")]
+impl PyRithmicGateway {
+    fn sync_pnl_state(
+        balances: &Arc<parking_lot::Mutex<HashMap<String, AccountBalance>>>,
+        positions: &Arc<parking_lot::Mutex<HashMap<String, Position>>>,
+        event: &PnlEvent,
+    ) {
+        match event {
+            PnlEvent::Account(ProviderAccountEvent::BalanceUpdate(balance)) => {
+                balances
+                    .lock()
+                    .insert(balance.account_id.clone(), balance.clone());
+            }
+            PnlEvent::Account(_) => {}
+            PnlEvent::Position(
+                ProviderPositionEvent::Opened(position) | ProviderPositionEvent::Updated(position),
+            ) => {
+                let key = format!(
+                    "{}:{}:{}",
+                    position.account_id, position.exchange, position.symbol
+                );
+
+                if position.quantity == 0.0 {
+                    positions.lock().remove(&key);
+                } else {
+                    positions.lock().insert(key, position.clone());
+                }
+            }
+            PnlEvent::Position(ProviderPositionEvent::Closed {
+                account_id,
+                symbol,
+                exchange,
+                ..
+            }) => {
+                let key = format!("{account_id}:{exchange}:{symbol}");
+                positions.lock().remove(&key);
+            }
+            PnlEvent::Position(ProviderPositionEvent::Error(_)) => {}
+        }
     }
 }
 

@@ -1,8 +1,22 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Message handler for Rithmic market data.
 
 use ahash::AHashMap;
 use rithmic_rs::rti::messages::RithmicMessage;
-use tracing::debug;
 
 use crate::error::Result;
 
@@ -29,6 +43,14 @@ impl MarketDataHandler {
     }
 
     /// Handles a best bid/offer update message.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Wire updates carry fixed venue fields"
+    )]
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Handler API aligns with fallible message parsing"
+    )]
     pub fn handle_bbo_update(
         &self,
         symbol: &str,
@@ -68,6 +90,14 @@ impl MarketDataHandler {
     }
 
     /// Handles a last trade update message.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Wire updates carry fixed venue fields"
+    )]
+    #[allow(
+        clippy::unnecessary_wraps,
+        reason = "Handler API aligns with fallible message parsing"
+    )]
     pub fn handle_trade_update(
         &self,
         symbol: &str,
@@ -198,7 +228,7 @@ impl MarketDataHandler {
                 Ok(Some(MarketDataEvent::Trade(tick)))
             }
             _ => {
-                debug!("Unhandled market data message type");
+                tracing::debug!("Unhandled market data message type");
                 Ok(None)
             }
         }
@@ -239,6 +269,10 @@ mod tests {
     use super::*;
     use rithmic_rs::rti::{BestBidOffer, LastTrade};
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Test helper builds venue payloads"
+    )]
     fn make_bbo(
         symbol: Option<&str>,
         exchange: Option<&str>,
@@ -272,6 +306,10 @@ mod tests {
         })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Test helper builds venue payloads"
+    )]
     fn make_last_trade(
         symbol: Option<&str>,
         exchange: Option<&str>,
@@ -309,7 +347,7 @@ mod tests {
         })
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_message() {
         let handler = MarketDataHandler::new();
         let msg = make_bbo(
@@ -340,7 +378,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_last_trade_message() {
         let handler = MarketDataHandler::new();
         let msg = make_last_trade(
@@ -371,7 +409,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_missing_symbol() {
         let handler = MarketDataHandler::new();
         let msg = make_bbo(
@@ -389,7 +427,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_no_prices() {
         let handler = MarketDataHandler::new();
         let msg = make_bbo(
@@ -407,7 +445,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_trade_missing_price() {
         let handler = MarketDataHandler::new();
         let msg = make_last_trade(
@@ -425,7 +463,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_trade_zero_size() {
         let handler = MarketDataHandler::new();
         let msg = make_last_trade(
@@ -443,7 +481,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_partial_prices() {
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
 
@@ -494,7 +532,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_clears_cached_quote_on_connection_issue() {
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
 
@@ -571,7 +609,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_preserves_last_seen_ask_when_bid_only_update_zeroes_ask_fields() {
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
 
@@ -626,7 +664,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_process_bbo_waits_until_both_sides_seen_before_emitting_quote() {
         use rithmic_rs::rti::best_bid_offer::PresenceBits;
 

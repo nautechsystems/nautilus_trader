@@ -116,7 +116,7 @@ pub fn test_history_only_gateway_config(url: &str) -> GatewayConfig {
 pub fn assert_connection_error(err: RithmicError, expected: &str) {
     match err {
         RithmicError::Connection(message) => assert_eq!(message, expected),
-        other => panic!("expected connection error {expected:?}, got {other:?}"),
+        other => panic!("expected connection error {expected:?}, was {other:?}"),
     }
 }
 
@@ -168,7 +168,7 @@ impl MockTickerPlant {
                                 subscribe_requests_task.fetch_add(1, Ordering::SeqCst);
 
                                 ws.send(Message::Binary(
-                                    encode_message(ResponseMarketDataUpdate {
+                                    encode_message(&ResponseMarketDataUpdate {
                                         template_id: 101,
                                         user_msg: vec![request_id],
                                         rp_code: vec![],
@@ -179,7 +179,7 @@ impl MockTickerPlant {
                                 .unwrap();
 
                                 ws.send(Message::Binary(
-                                    encode_message(BestBidOffer {
+                                    encode_message(&BestBidOffer {
                                         template_id: 151,
                                         symbol: Some(symbol.clone()),
                                         exchange: Some(exchange.clone()),
@@ -208,7 +208,7 @@ impl MockTickerPlant {
                                 .unwrap();
 
                                 ws.send(Message::Binary(
-                                    encode_message(LastTrade {
+                                    encode_message(&LastTrade {
                                         template_id: 150,
                                         symbol: Some(symbol),
                                         exchange: Some(exchange),
@@ -828,12 +828,12 @@ async fn send_protobuf(
     ws: &mut WebSocketStream<tokio::net::TcpStream>,
     message: impl ProstMessage,
 ) {
-    ws.send(Message::Binary(encode_message(message).into()))
+    ws.send(Message::Binary(encode_message(&message).into()))
         .await
         .unwrap();
 }
 
-fn encode_message(message: impl ProstMessage) -> Vec<u8> {
+fn encode_message(message: &impl ProstMessage) -> Vec<u8> {
     let mut bytes = Vec::new();
     let len = message.encoded_len() as u32;
     bytes.extend_from_slice(&len.to_be_bytes());

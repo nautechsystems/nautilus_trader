@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for instrument provider.
 
 #[cfg(feature = "python")]
@@ -6,8 +21,8 @@ use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3_async_runtimes::tokio::future_into_py;
 
+use nautilus_core::python::to_pyruntime_err;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use crate::gateway::RithmicGateway;
 use crate::instruments::{RithmicInstrument, RithmicInstrumentProvider};
@@ -16,7 +31,7 @@ use super::gateway::PyRithmicGateway;
 
 /// Python wrapper for RithmicInstrument.
 #[cfg(feature = "python")]
-#[pyclass(name = "RithmicInstrument")]
+#[pyclass(name = "RithmicInstrument", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRithmicInstrument {
     inner: RithmicInstrument,
@@ -103,7 +118,7 @@ impl From<RithmicInstrument> for PyRithmicInstrument {
 #[cfg(feature = "python")]
 #[pyclass(name = "RithmicInstrumentProvider")]
 pub struct PyRithmicInstrumentProvider {
-    gateway: Arc<RwLock<RithmicGateway>>,
+    gateway: Arc<tokio::sync::RwLock<RithmicGateway>>,
     provider: Arc<RithmicInstrumentProvider>,
 }
 
@@ -126,14 +141,12 @@ impl PyRithmicInstrumentProvider {
         let gateway = Arc::clone(&self.gateway);
         future_into_py(py, async move {
             if !gateway.read().await.is_connected() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Gateway is not connected",
-                ));
+                return Err(to_pyruntime_err("Gateway is not connected"));
             }
             provider
                 .load_all_async()
                 .await
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+                .map_err(|e| to_pyruntime_err(e.to_string()))
         })
     }
 
@@ -147,9 +160,7 @@ impl PyRithmicInstrumentProvider {
         let gateway = Arc::clone(&self.gateway);
         future_into_py(py, async move {
             if !gateway.read().await.is_connected() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Gateway is not connected",
-                ));
+                return Err(to_pyruntime_err("Gateway is not connected"));
             }
             provider
                 .load_exchange_async(&exchange)
@@ -159,7 +170,7 @@ impl PyRithmicInstrumentProvider {
                         .map(PyRithmicInstrument::from)
                         .collect::<Vec<_>>()
                 })
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+                .map_err(|e| to_pyruntime_err(e.to_string()))
         })
     }
 
@@ -174,15 +185,13 @@ impl PyRithmicInstrumentProvider {
         let gateway = Arc::clone(&self.gateway);
         future_into_py(py, async move {
             if !gateway.read().await.is_connected() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Gateway is not connected",
-                ));
+                return Err(to_pyruntime_err("Gateway is not connected"));
             }
             provider
                 .load_instrument_async(&symbol, &exchange)
                 .await
                 .map(PyRithmicInstrument::from)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+                .map_err(|e| to_pyruntime_err(e.to_string()))
         })
     }
 
@@ -197,15 +206,13 @@ impl PyRithmicInstrumentProvider {
         let gateway = Arc::clone(&self.gateway);
         future_into_py(py, async move {
             if !gateway.read().await.is_connected() {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(
-                    "Gateway is not connected",
-                ));
+                return Err(to_pyruntime_err("Gateway is not connected"));
             }
             provider
                 .load_front_month(&product, &exchange)
                 .await
                 .map(PyRithmicInstrument::from)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+                .map_err(|e| to_pyruntime_err(e.to_string()))
         })
     }
 

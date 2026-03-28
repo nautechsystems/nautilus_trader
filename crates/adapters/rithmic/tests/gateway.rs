@@ -20,6 +20,8 @@
 
 mod common;
 
+use std::time::Duration;
+
 use nautilus_rithmic::{
     PnlEvent, TimeBarType,
     common::enums::ConnectionState,
@@ -27,7 +29,6 @@ use nautilus_rithmic::{
     providers::{AccountEvent, PositionEvent},
 };
 use rithmic_rs::rti::messages::RithmicMessage;
-use tokio::time::{Duration, timeout};
 
 use crate::common::{
     MockHistoryPlant, MockOrderPlant, MockPnlPlant, assert_connection_error, test_gateway,
@@ -234,7 +235,7 @@ async fn request_bars_connected_path_collects_multi_response_history_replay() {
 async fn next_execution_event(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) -> ExecutionEvent {
-    timeout(Duration::from_secs(2), rx.recv())
+    tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("timed out waiting for execution event")
         .expect("execution channel closed unexpectedly")
@@ -246,9 +247,10 @@ async fn expect_execution_authenticated(
     for _ in 0..4 {
         match next_execution_event(rx).await {
             ExecutionEvent::Authenticated => return,
-            ExecutionEvent::ConnectionState(ConnectionState::Connecting)
-            | ExecutionEvent::ConnectionState(ConnectionState::Connected) => {}
-            other => panic!("expected authenticated execution event, got {other:?}"),
+            ExecutionEvent::ConnectionState(
+                ConnectionState::Connecting | ConnectionState::Connected,
+            ) => {}
+            other => panic!("expected authenticated execution event, was {other:?}"),
         }
     }
 
@@ -256,7 +258,7 @@ async fn expect_execution_authenticated(
 }
 
 async fn next_pnl_event(rx: &mut tokio::sync::mpsc::UnboundedReceiver<PnlEvent>) -> PnlEvent {
-    timeout(Duration::from_secs(2), rx.recv())
+    tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("timed out waiting for pnl event")
         .expect("pnl channel closed unexpectedly")

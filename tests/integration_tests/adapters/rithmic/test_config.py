@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 """Tests for Rithmic configuration."""
 
 import os
@@ -5,11 +20,9 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.rithmic.config import (
-    RithmicDataClientConfig,
-    RithmicEnvironment,
-    RithmicExecClientConfig,
-)
+from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
+from nautilus_trader.adapters.rithmic.config import RithmicEnvironment
+from nautilus_trader.adapters.rithmic.config import RithmicExecClientConfig
 
 
 class TestRithmicEnvironment:
@@ -121,9 +134,14 @@ class TestRithmicDataClientConfig:
             "RITHMIC_PASSWORD": "pass",
             "RITHMIC_SYSTEM_NAME": "system",
         }
-        with patch.dict(os.environ, env_vars, clear=True):
-            with pytest.raises(ValueError, match="RITHMIC_USERNAME"):
-                RithmicDataClientConfig.from_env()
+        with (
+            patch.dict(os.environ, env_vars, clear=True),
+            pytest.raises(
+                ValueError,
+                match="RITHMIC_USERNAME",
+            ),
+        ):
+            RithmicDataClientConfig.from_env()
 
 
 class TestRithmicExecClientConfig:
@@ -144,7 +162,8 @@ class TestRithmicExecClientConfig:
         assert config.execution_replay_lookback_secs == 86_400
         assert config.native_bracket_state_path is None
 
-    def test_from_env(self):
+    def test_from_env(self, tmp_path):
+        state_path = tmp_path / "rithmic-native-brackets.json"
         env_vars = {
             "RITHMIC_ENV": "demo",
             "RITHMIC_USERNAME": "env_user",
@@ -154,7 +173,7 @@ class TestRithmicExecClientConfig:
             "RITHMIC_SERVER": "Chicago",
             "RITHMIC_ALT_SERVER": "Sydney",
             "RITHMIC_EXECUTION_REPLAY_LOOKBACK_SECS": "7200",
-            "RITHMIC_NATIVE_BRACKET_STATE_PATH": "/tmp/rithmic-native-brackets.json",
+            "RITHMIC_NATIVE_BRACKET_STATE_PATH": str(state_path),
         }
         with patch.dict(os.environ, env_vars, clear=False):
             config = RithmicExecClientConfig.from_env()
@@ -162,7 +181,7 @@ class TestRithmicExecClientConfig:
             assert config.server == "Chicago"
             assert config.alt_server == "Sydney"
             assert config.execution_replay_lookback_secs == 7200
-            assert config.native_bracket_state_path == "/tmp/rithmic-native-brackets.json"
+            assert config.native_bracket_state_path == str(state_path)
 
     def test_from_env_profile(self):
         env_vars = {
@@ -184,6 +203,11 @@ class TestRithmicExecClientConfig:
             "RITHMIC_PASSWORD": "pass",
             "RITHMIC_SYSTEM_NAME": "system",
         }
-        with patch.dict(os.environ, env_vars, clear=True):
-            with pytest.raises(ValueError, match="RITHMIC_ACCOUNT_ID"):
-                RithmicExecClientConfig.from_env()
+        with (
+            patch.dict(os.environ, env_vars, clear=True),
+            pytest.raises(
+                ValueError,
+                match="RITHMIC_ACCOUNT_ID",
+            ),
+        ):
+            RithmicExecClientConfig.from_env()

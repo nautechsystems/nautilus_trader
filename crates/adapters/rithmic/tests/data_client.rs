@@ -22,11 +22,11 @@
 mod common;
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use nautilus_rithmic::TimeBarType;
 use nautilus_rithmic::common::enums::ConnectionState;
 use nautilus_rithmic::data::MarketDataEvent;
-use tokio::time::{Duration, timeout};
+use nautilus_rithmic::{RithmicBarType, TimeBarType};
 
 use crate::common::{
     MockTickerPlant, assert_connection_error, test_data_client, test_ticker_only_gateway_config,
@@ -201,7 +201,7 @@ async fn subscribe_bars_connected_path_emits_live_bar_updates() {
         MarketDataEvent::Bar(bar) => {
             assert_eq!(bar.symbol, "ESM6");
             assert_eq!(bar.exchange, "CME");
-            assert_eq!(bar.bar_type, TimeBarType::MinuteBar);
+            assert_eq!(bar.bar_type, RithmicBarType::MinuteBar);
             assert_eq!(bar.bar_period, 1);
             assert_eq!(bar.open_price, 4500.75);
             assert_eq!(bar.close_price, 4501.25);
@@ -227,7 +227,7 @@ async fn subscribe_bars_connected_path_emits_live_bar_updates() {
 async fn next_market_data_event(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<MarketDataEvent>,
 ) -> MarketDataEvent {
-    timeout(Duration::from_secs(2), rx.recv())
+    tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("timed out waiting for market data event")
         .expect("market data channel closed unexpectedly")
@@ -237,9 +237,10 @@ async fn expect_authenticated(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Mark
     for _ in 0..4 {
         match next_market_data_event(rx).await {
             MarketDataEvent::Authenticated => return,
-            MarketDataEvent::ConnectionState(ConnectionState::Connecting)
-            | MarketDataEvent::ConnectionState(ConnectionState::Connected) => {}
-            other => panic!("expected authenticated event, got {other:?}"),
+            MarketDataEvent::ConnectionState(
+                ConnectionState::Connecting | ConnectionState::Connected,
+            ) => {}
+            other => panic!("expected authenticated event, was {other:?}"),
         }
     }
 

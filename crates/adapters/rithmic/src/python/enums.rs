@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for enums.
 
 #[cfg(feature = "python")]
@@ -7,7 +22,7 @@ use crate::common::enums::ConnectionState;
 use rithmic_rs::{OrderSide, OrderStatus, OrderType, TimeInForce};
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderSide")]
+#[pyclass(name = "OrderSide", from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderSide {
     inner: OrderSide,
@@ -38,7 +53,7 @@ impl From<PyOrderSide> for OrderSide {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderType")]
+#[pyclass(name = "OrderType", from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderType {
     inner: OrderType,
@@ -79,7 +94,7 @@ impl From<PyOrderType> for OrderType {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "TimeInForce")]
+#[pyclass(name = "TimeInForce", from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeInForce {
     inner: TimeInForce,
@@ -120,7 +135,7 @@ impl From<PyTimeInForce> for TimeInForce {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderStatus")]
+#[pyclass(name = "OrderStatus", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderStatus {
     inner: OrderStatus,
@@ -170,7 +185,7 @@ impl PyOrderStatus {
 }
 
 #[cfg(feature = "python")]
-#[pyclass(name = "ConnectionState")]
+#[pyclass(name = "ConnectionState", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyConnectionState {
     inner: ConnectionState,

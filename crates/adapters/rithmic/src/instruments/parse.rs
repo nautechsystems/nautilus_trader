@@ -1,7 +1,21 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Parsing utilities for Rithmic instrument data.
 
 use rithmic_rs::rti::ResponseReferenceData;
-use tracing::warn;
 
 use crate::{
     common::parse::tick_size_to_precision,
@@ -27,9 +41,11 @@ pub fn parse_instrument(
     if symbol.is_empty() {
         return Err(RithmicError::Parse("Symbol cannot be empty".to_string()));
     }
+
     if exchange.is_empty() {
         return Err(RithmicError::Parse("Exchange cannot be empty".to_string()));
     }
+
     if tick_size <= 0.0 {
         return Err(RithmicError::Parse(format!(
             "Invalid tick size: {tick_size}"
@@ -123,7 +139,7 @@ pub fn response_to_instrument(ref_data: &ResponseReferenceData) -> Result<Rithmi
 
     // min_qprice_change is the tick size (minimum price change in quote units)
     let tick_size = ref_data.min_qprice_change.unwrap_or_else(|| {
-        warn!(
+        tracing::warn!(
             "No tick size in reference data for {}, using default 0.01",
             symbol
         );
@@ -132,7 +148,7 @@ pub fn response_to_instrument(ref_data: &ResponseReferenceData) -> Result<Rithmi
 
     // single_point_value is the dollar value per point
     let point_value = ref_data.single_point_value.unwrap_or_else(|| {
-        warn!(
+        tracing::warn!(
             "No point value in reference data for {}, using default 1.0",
             symbol
         );
@@ -156,8 +172,7 @@ pub fn response_to_instrument(ref_data: &ResponseReferenceData) -> Result<Rithmi
     let is_tradeable = ref_data
         .is_tradable
         .as_ref()
-        .map(|s| s.eq_ignore_ascii_case("true") || s == "1")
-        .unwrap_or(true);
+        .is_none_or(|s| s.eq_ignore_ascii_case("true") || s == "1");
 
     Ok(RithmicInstrument {
         symbol,
@@ -233,7 +248,7 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i32 {
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_instrument() {
         let instrument =
             parse_instrument("ESZ4", "CME", "ES", "E-mini S&P 500", 0.25, 50.0, "USD").unwrap();
@@ -244,7 +259,7 @@ mod tests {
         assert_eq!(instrument.price_precision, 2);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_contract_expiry() {
         let (month, year) = parse_contract_expiry("ESZ4").unwrap();
         assert_eq!(month, 12); // December
@@ -255,7 +270,7 @@ mod tests {
         assert_eq!(year, 2025);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_response_to_instrument() {
         let ref_data = ResponseReferenceData {
             template_id: 15,
@@ -301,7 +316,7 @@ mod tests {
         assert!(instrument.expiration_ts.is_some());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_response_to_instrument_missing_symbol() {
         let ref_data = ResponseReferenceData {
             template_id: 15,
@@ -337,7 +352,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_response_to_instrument_defaults() {
         // Test with minimal data to verify defaults are applied
         let ref_data = ResponseReferenceData {
@@ -382,7 +397,7 @@ mod tests {
         assert!(instrument.expiration_ts.is_none());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_expiration_date() {
         // March 15, 2024
         let ts = parse_expiration_date("20240315").unwrap();
@@ -395,7 +410,7 @@ mod tests {
         assert!(ts2 > ts); // Later date should have higher timestamp
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_expiration_date_invalid() {
         // Too short
         assert!(parse_expiration_date("2024").is_err());
@@ -404,7 +419,7 @@ mod tests {
         assert!(parse_expiration_date("2024XX15").is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_days_from_civil() {
         // Unix epoch is 1970-01-01
         assert_eq!(days_from_civil(1970, 1, 1), 0);

@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Configuration types for the Rithmic adapter.
 //!
 //! Configuration can be loaded from environment variables or constructed programmatically.
@@ -80,6 +95,7 @@ fn normalize_env_profile(profile: &str) -> Result<String> {
 
 fn env_candidates(key: &str, profile: Option<&str>) -> Result<Vec<String>> {
     let mut candidates = Vec::new();
+
     if let Some(profile) = profile {
         candidates.push(format!(
             "RITHMIC_{}_{}",
@@ -116,6 +132,7 @@ pub(crate) fn required_env_var(key: &str, profile: Option<&str>) -> Result<Strin
 }
 
 /// Configuration for the Rithmic data client.
+#[must_use]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RithmicDataClientConfig {
     /// Rithmic environment (Demo, Live, Test).
@@ -170,8 +187,7 @@ impl RithmicDataClientConfig {
     /// Creates configuration from environment variables, optionally scoped by profile.
     pub fn from_env_with_profile(profile: Option<&str>) -> Result<Self> {
         let environment = optional_env_var("ENV", profile)?
-            .map(|s| parse_rithmic_env(&s))
-            .unwrap_or(Ok(RithmicEnv::Demo))?;
+            .map_or(Ok(RithmicEnv::Demo), |s| parse_rithmic_env(&s))?;
 
         Ok(Self {
             environment,
@@ -215,6 +231,7 @@ impl RithmicDataClientConfig {
 }
 
 /// Configuration for the Rithmic execution client.
+#[must_use]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RithmicExecClientConfig {
     /// Rithmic environment (Demo, Live, Test).
@@ -273,8 +290,7 @@ impl RithmicExecClientConfig {
     /// Creates configuration from environment variables, optionally scoped by profile.
     pub fn from_env_with_profile(profile: Option<&str>) -> Result<Self> {
         let environment = optional_env_var("ENV", profile)?
-            .map(|s| parse_rithmic_env(&s))
-            .unwrap_or(Ok(RithmicEnv::Demo))?;
+            .map_or(Ok(RithmicEnv::Demo), |s| parse_rithmic_env(&s))?;
 
         Ok(Self {
             environment,
@@ -344,7 +360,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_parse_rithmic_env() {
         assert_eq!(parse_rithmic_env("demo").unwrap(), RithmicEnv::Demo);
         assert_eq!(parse_rithmic_env("live").unwrap(), RithmicEnv::Live);
@@ -352,7 +368,7 @@ mod tests {
         assert!(parse_rithmic_env("invalid").is_err());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_data_client_config_builder() {
         let config = RithmicDataClientConfig::new(RithmicEnv::Demo, "user", "pass", "system")
             .with_app_name("TestApp")
@@ -362,7 +378,7 @@ mod tests {
         assert_eq!(config.fcm_id, Some("FCM001".to_string()));
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_data_client_config_from_profile_env() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [
@@ -408,7 +424,7 @@ mod tests {
         restore_env(&previous);
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_exec_client_config_profile_falls_back_to_canonical_env() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous = [

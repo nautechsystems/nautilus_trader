@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Python bindings for event types.
 //!
 //! This module exposes market data and execution events to Python,
@@ -13,13 +28,11 @@ use crate::execution::{
 };
 use crate::providers::{AccountEvent, PositionEvent};
 
-// ============================================================================
-// Market Data Events
-// ============================================================================
+// Market data events.
 
 /// Python wrapper for QuoteTick (best bid/offer update).
 #[cfg(feature = "python")]
-#[pyclass(name = "QuoteTick")]
+#[pyclass(name = "QuoteTick", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyQuoteTick {
     inner: QuoteTick,
@@ -97,7 +110,7 @@ impl From<QuoteTick> for PyQuoteTick {
 
 /// Python wrapper for TradeTick (last trade).
 #[cfg(feature = "python")]
-#[pyclass(name = "TradeTick")]
+#[pyclass(name = "TradeTick", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTradeTick {
     inner: TradeTick,
@@ -172,13 +185,11 @@ impl From<TradeTick> for PyTradeTick {
     }
 }
 
-// ============================================================================
-// Execution Events
-// ============================================================================
+// Execution events.
 
 /// Python wrapper for OrderSubmitted event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderSubmitted")]
+#[pyclass(name = "OrderSubmitted", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderSubmitted {
     inner: OrderSubmitted,
@@ -332,7 +343,7 @@ impl From<OrderSubmitted> for PyOrderSubmitted {
 
 /// Python wrapper for OrderAccepted event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderAccepted")]
+#[pyclass(name = "OrderAccepted", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderAccepted {
     inner: OrderAccepted,
@@ -471,7 +482,7 @@ impl From<OrderAccepted> for PyOrderAccepted {
 
 /// Python wrapper for OrderRejected event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderRejected")]
+#[pyclass(name = "OrderRejected", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderRejected {
     inner: OrderRejected,
@@ -550,7 +561,7 @@ impl From<OrderRejected> for PyOrderRejected {
 
 /// Python wrapper for OrderFilled event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderFilled")]
+#[pyclass(name = "OrderFilled", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderFilled {
     inner: OrderFilled,
@@ -674,7 +685,7 @@ impl From<OrderFilled> for PyOrderFilled {
 
 /// Python wrapper for OrderCancelled event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderCancelled")]
+#[pyclass(name = "OrderCancelled", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderCancelled {
     inner: OrderCancelled,
@@ -753,7 +764,7 @@ impl From<OrderCancelled> for PyOrderCancelled {
 
 /// Python wrapper for OrderModified event.
 #[cfg(feature = "python")]
-#[pyclass(name = "OrderModified")]
+#[pyclass(name = "OrderModified", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyOrderModified {
     inner: OrderModified,
@@ -842,13 +853,11 @@ impl From<OrderModified> for PyOrderModified {
     }
 }
 
-// ============================================================================
-// Unified Event Wrapper
-// ============================================================================
+// Unified event wrapper.
 
 /// Python wrapper for MarketDataEvent (union type).
 #[cfg(feature = "python")]
-#[pyclass(name = "MarketDataEvent")]
+#[pyclass(name = "MarketDataEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyMarketDataEvent {
     inner: MarketDataEvent,
@@ -909,7 +918,7 @@ impl PyMarketDataEvent {
     /// Get the connection state as a string if this is a connection state event.
     fn as_connection_state(&self) -> Option<String> {
         match &self.inner {
-            MarketDataEvent::ConnectionState(s) => Some(format!("{:?}", s)),
+            MarketDataEvent::ConnectionState(s) => Some(format!("{s:?}")),
             _ => None,
         }
     }
@@ -935,11 +944,11 @@ impl PyMarketDataEvent {
                 bar.symbol, bar.exchange, bar.bar_type, bar.bar_period
             ),
             MarketDataEvent::ConnectionState(s) => {
-                format!("MarketDataEvent::ConnectionState({:?})", s)
+                format!("MarketDataEvent::ConnectionState({s:?})")
             }
             MarketDataEvent::Reconnected => "MarketDataEvent::Reconnected".to_string(),
             MarketDataEvent::Authenticated => "MarketDataEvent::Authenticated".to_string(),
-            MarketDataEvent::Error(e) => format!("MarketDataEvent::Error({})", e),
+            MarketDataEvent::Error(e) => format!("MarketDataEvent::Error({e})"),
         }
     }
 }
@@ -952,7 +961,7 @@ impl From<MarketDataEvent> for PyMarketDataEvent {
 
 /// Python wrapper for ExecutionEvent (union type).
 #[cfg(feature = "python")]
-#[pyclass(name = "ExecutionEvent")]
+#[pyclass(name = "ExecutionEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyExecutionEvent {
     inner: ExecutionEvent,
@@ -1052,7 +1061,7 @@ impl PyExecutionEvent {
     /// Get the connection state as a string if this is a connection state event.
     fn as_connection_state(&self) -> Option<String> {
         match &self.inner {
-            ExecutionEvent::ConnectionState(s) => Some(format!("{:?}", s)),
+            ExecutionEvent::ConnectionState(s) => Some(format!("{s:?}")),
             _ => None,
         }
     }
@@ -1084,11 +1093,11 @@ impl PyExecutionEvent {
                 format!("ExecutionEvent::Modified({})", e.client_order_id)
             }
             ExecutionEvent::ConnectionState(s) => {
-                format!("ExecutionEvent::ConnectionState({:?})", s)
+                format!("ExecutionEvent::ConnectionState({s:?})")
             }
             ExecutionEvent::Reconnected => "ExecutionEvent::Reconnected".to_string(),
             ExecutionEvent::Authenticated => "ExecutionEvent::Authenticated".to_string(),
-            ExecutionEvent::Error(e) => format!("ExecutionEvent::Error({})", e),
+            ExecutionEvent::Error(e) => format!("ExecutionEvent::Error({e})"),
         }
     }
 }
@@ -1099,13 +1108,11 @@ impl From<ExecutionEvent> for PyExecutionEvent {
     }
 }
 
-// ============================================================================
-// PnL / Position Events
-// ============================================================================
+// PnL / position events.
 
 /// Python wrapper for AccountEvent.
 #[cfg(feature = "python")]
-#[pyclass(name = "AccountEvent")]
+#[pyclass(name = "AccountEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyAccountEvent {
     inner: AccountEvent,
@@ -1211,7 +1218,7 @@ impl From<AccountEvent> for PyAccountEvent {
 
 /// Python wrapper for PositionEvent.
 #[cfg(feature = "python")]
-#[pyclass(name = "PositionEvent")]
+#[pyclass(name = "PositionEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyPositionEvent {
     inner: PositionEvent,
@@ -1314,10 +1321,7 @@ impl PyPositionEvent {
                 symbol,
                 exchange,
                 ..
-            } => format!(
-                "PositionEvent::Closed(account={}, symbol={}.{})",
-                account_id, symbol, exchange
-            ),
+            } => format!("PositionEvent::Closed(account={account_id}, symbol={symbol}.{exchange})"),
             PositionEvent::Error(err) => format!("PositionEvent::Error({err})"),
         }
     }
@@ -1329,13 +1333,11 @@ impl From<PositionEvent> for PyPositionEvent {
     }
 }
 
-// ============================================================================
-// Time Bar Data
-// ============================================================================
+// Time bar data.
 
 /// Python wrapper for Rithmic time bar data from history requests and live updates.
 #[cfg(feature = "python")]
-#[pyclass(name = "TimeBar")]
+#[pyclass(name = "TimeBar", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTimeBar {
     /// Instrument symbol.

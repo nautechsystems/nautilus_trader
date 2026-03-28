@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 //! Error types for the Rithmic adapter.
 //!
 //! This module defines error types following NautilusTrader patterns:
@@ -146,21 +161,21 @@ impl RithmicError {
 mod tests {
     use super::*;
 
-    #[test]
+    #[rstest::rstest]
     fn test_ws_error_retriable() {
         assert!(RithmicWsError::ConnectionFailed("test".to_string()).is_retriable());
         assert!(RithmicWsError::HeartbeatTimeout.is_retriable());
         assert!(!RithmicWsError::AuthenticationFailed("test".to_string()).is_retriable());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_error_from_ws_error() {
         let ws_err = RithmicWsError::ConnectionFailed("test".to_string());
         let err: RithmicError = ws_err.into();
         assert!(err.is_retriable());
     }
 
-    #[test]
+    #[rstest::rstest]
     fn test_auth_error_detection() {
         let err = RithmicError::Authentication("invalid credentials".to_string());
         assert!(err.is_auth_error());

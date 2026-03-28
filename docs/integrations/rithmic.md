@@ -53,7 +53,7 @@ The current adapter is futures-focused.
 
 | Product Type | Supported | Notes |
 |--------------|-----------|-------|
-| Futures market data | ✓ | Quote ticks, trade ticks, instrument definitions, and historical bars. |
+| Futures market data | ✓ | Live quote ticks, live trade ticks, instrument definitions, and historical bars. |
 | Futures execution | ✓ | Live order submission, reconciliation, native venue brackets, and OCO. |
 | Spot / cash products | - | Not exposed through the current adapter surface. |
 | Options workflows | Limited | The adapter does not currently provide a complete options-specific operator guide or examples. |
@@ -197,6 +197,8 @@ The provider recognizes exchange hints in either filters or symbology suffixes. 
 | Instrument definition loading | ✓ | Via `RithmicInstrumentProvider` and the live data client provider path. |
 | Live quote ticks | ✓ | Subscribes to the Rithmic ticker plant. |
 | Live trade ticks | ✓ | Subscribes to the Rithmic ticker plant. |
+| Historical quote ticks | - | Not supported by the Rithmic API exposed through this adapter. |
+| Historical trade ticks | - | Not supported by the Rithmic API exposed through this adapter. |
 | Historical bars | ✓ | TimeBar and TickBar requests via the history plant. Historical TickBar requests are currently limited to `1-TICK`; native `N-TICK` support is not yet exposed by the current `rithmic-rs` request helper used here. |
 | Live external bar subscriptions | ✓ | Time bars and tick bars via the history plant when `enable_history=True`. |
 | Internal bars | ✓ | Still the simplest live strategy pattern: subscribe to ticks and consolidate inside Nautilus. |
