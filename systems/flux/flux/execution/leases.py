@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import fcntl
 import json
 import sys
@@ -45,6 +46,23 @@ class ControllerLease:
         return int(now_ms) > self.expires_at_ms
 
 
+@dataclass(slots=True)
+class ControllerIngressClaim:
+    controller_scope_id: str
+    owner_id: str
+    _handle: object
+
+    def release(self) -> None:
+        handle = self._handle
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+            self._handle = None
+
+
 class LocalControllerLeaseStore:
     def __init__(self, *, root_dir: str | Path) -> None:
         self._root_dir = Path(root_dir)
@@ -83,6 +101,32 @@ class LocalControllerLeaseStore:
             )
             _write_lease(handle, lease)
             return lease
+
+    def claim_ingress(
+        self,
+        *,
+        controller_scope_id: str,
+        owner_id: str,
+    ) -> ControllerIngressClaim:
+        scope = _required_text(controller_scope_id, "controller_scope_id")
+        owner = _required_text(owner_id, "owner_id")
+        path = self._scope_lock_path(scope)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            handle.close()
+            if exc.errno in (errno.EACCES, errno.EAGAIN):
+                raise ControllerLeaseRejectedError(
+                    f"controller scope `{scope}` already running on this host",
+                ) from exc
+            raise
+        return ControllerIngressClaim(
+            controller_scope_id=scope,
+            owner_id=owner,
+            _handle=handle,
+        )
 
     def refresh(
         self,
@@ -164,6 +208,11 @@ class LocalControllerLeaseStore:
             raise ValueError("`controller_scope_id` must be a valid lease path component")
         return self._root_dir / f"{controller_scope_id}.json"
 
+    def _scope_lock_path(self, controller_scope_id: str) -> Path:
+        if "/" in controller_scope_id or "\x00" in controller_scope_id:
+            raise ValueError("`controller_scope_id` must be a valid lease path component")
+        return self._root_dir / f"{controller_scope_id}.lock"
+
     @staticmethod
     def _require_current(
         *,
@@ -215,6 +264,7 @@ def _required_text(value: str, field_name: str) -> str:
 
 
 __all__ = (
+    "ControllerIngressClaim",
     "ControllerLease",
     "ControllerLeaseError",
     "ControllerLeaseRejectedError",

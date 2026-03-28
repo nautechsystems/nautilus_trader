@@ -108,3 +108,29 @@ def test_local_controller_leases_reject_stale_writer_after_expiry(tmp_path: Path
 
     assert replacement.owner_id == "controller-b"
     assert replacement.lease_token != first.lease_token
+
+
+def test_local_controller_ingress_claim_remains_active_until_released(tmp_path: Path) -> None:
+    leases = _load_leases_module()
+    store = leases.LocalControllerLeaseStore(root_dir=tmp_path / "leases")
+
+    claim = store.claim_ingress(
+        controller_scope_id="acct.execution.main",
+        owner_id="controller-a",
+    )
+
+    with pytest.raises(leases.ControllerLeaseRejectedError, match="already running"):
+        store.claim_ingress(
+            controller_scope_id="acct.execution.main",
+            owner_id="controller-b",
+        )
+
+    claim.release()
+
+    replacement = store.claim_ingress(
+        controller_scope_id="acct.execution.main",
+        owner_id="controller-b",
+    )
+
+    assert replacement.owner_id == "controller-b"
+    replacement.release()

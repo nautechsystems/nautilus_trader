@@ -88,3 +88,42 @@ def test_shadow_controller_runner_rejects_a_stale_local_writer(tmp_path: Path) -
     with pytest.raises(leases.StaleControllerWriterError):
         runner.assert_can_write(now_ms=1_251)
 
+
+def test_shadow_controller_runner_blocks_duplicate_start_after_ttl_while_running(tmp_path: Path) -> None:
+    leases = _load_leases_module()
+    runner_module = _load_runner_module()
+    first_service = _RecordingControllerService()
+    second_service = _RecordingControllerService()
+    lease_store = leases.LocalControllerLeaseStore(root_dir=tmp_path / "leases")
+    first = runner_module.ShadowControllerRunner(
+        config=runner_module.ControllerRunnerConfig(
+            controller_scope_id="acct.execution.main",
+            owner_id="controller-a",
+            allow_single_host_canary=True,
+            lease_ttl_ms=250,
+        ),
+        lease_store=lease_store,
+        controller_service=first_service,
+    )
+    second = runner_module.ShadowControllerRunner(
+        config=runner_module.ControllerRunnerConfig(
+            controller_scope_id="acct.execution.main",
+            owner_id="controller-b",
+            allow_single_host_canary=True,
+            lease_ttl_ms=250,
+        ),
+        lease_store=lease_store,
+        controller_service=second_service,
+    )
+
+    first.start(now_ms=1_000)
+
+    with pytest.raises(leases.ControllerLeaseRejectedError, match="already running"):
+        second.start(now_ms=1_251)
+
+    assert first.running is True
+    assert second.running is False
+    assert first_service.started == 1
+    assert second_service.started == 0
+
+    first.stop()

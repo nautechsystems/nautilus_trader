@@ -93,7 +93,40 @@ def test_build_runner_rejects_duplicate_default_startup_for_same_scope(tmp_path:
 
     first.start(now_ms=1_000)
 
-    with pytest.raises(leases.ControllerLeaseRejectedError, match="already owned"):
+    with pytest.raises(leases.ControllerLeaseRejectedError, match="already (owned|running)"):
         second.start(now_ms=1_000)
+
+    first.stop()
+
+
+def test_build_runner_rejects_duplicate_default_startup_after_ttl_while_running(tmp_path: Path) -> None:
+    run_controller = _load_run_controller_module()
+    leases = importlib.import_module("flux.execution.leases")
+    first = run_controller.build_runner(
+        {
+            "controller": {
+                "controller_scope_id": "acct.execution.main",
+                "allow_single_host_canary": True,
+            },
+        },
+        repo_root=tmp_path,
+    )
+    second = run_controller.build_runner(
+        {
+            "controller": {
+                "controller_scope_id": "acct.execution.main",
+                "allow_single_host_canary": True,
+            },
+        },
+        repo_root=tmp_path,
+    )
+
+    first.start(now_ms=1_000)
+
+    with pytest.raises(leases.ControllerLeaseRejectedError, match="already running"):
+        second.start(now_ms=1_251)
+
+    assert first.running is True
+    assert second.running is False
 
     first.stop()

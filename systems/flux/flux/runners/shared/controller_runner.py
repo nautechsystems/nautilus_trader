@@ -7,6 +7,7 @@ from typing import Protocol
 
 from flux.execution.controller import ControllerIngressPolicy
 from flux.execution.controller import ControllerRunMode
+from flux.execution.leases import ControllerIngressClaim
 from flux.execution.leases import ControllerLease
 from flux.execution.leases import LocalControllerLeaseStore
 
@@ -57,6 +58,7 @@ class ShadowControllerRunner:
         self.config = config
         self.lease_store = lease_store
         self._controller_service = controller_service
+        self._ingress_claim: ControllerIngressClaim | None = None
         self._lease: ControllerLease | None = None
         self._running = False
 
@@ -68,25 +70,33 @@ class ShadowControllerRunner:
         if self._running and self._lease is not None:
             return self._lease
         _validate_single_host_canary_gate(self.config)
-        lease = self.lease_store.acquire(
+        claim = self.lease_store.claim_ingress(
             controller_scope_id=self.config.controller_scope_id,
             owner_id=self.config.owner_id,
-            now_ms=_now_ms(now_ms),
-            lease_ttl_ms=self.config.lease_ttl_ms,
-        )
-        self.lease_store.assert_can_write(
-            controller_scope_id=self.config.controller_scope_id,
-            lease_token=lease.lease_token,
-            now_ms=_now_ms(now_ms),
         )
         try:
-            self._controller_service.start()
-        except Exception:
-            self.lease_store.release(
+            timestamp_ms = _now_ms(now_ms)
+            lease = self.lease_store.acquire(
+                controller_scope_id=self.config.controller_scope_id,
+                owner_id=self.config.owner_id,
+                now_ms=timestamp_ms,
+                lease_ttl_ms=self.config.lease_ttl_ms,
+            )
+            self.lease_store.assert_can_write(
                 controller_scope_id=self.config.controller_scope_id,
                 lease_token=lease.lease_token,
+                now_ms=timestamp_ms,
             )
+            self._controller_service.start()
+        except Exception:
+            if "lease" in locals():
+                self.lease_store.release(
+                    controller_scope_id=self.config.controller_scope_id,
+                    lease_token=lease.lease_token,
+                )
+            claim.release()
             raise
+        self._ingress_claim = claim
         self._lease = lease
         self._running = True
         return lease
@@ -102,6 +112,9 @@ class ShadowControllerRunner:
                     controller_scope_id=self.config.controller_scope_id,
                     lease_token=self._lease.lease_token,
                 )
+            if self._ingress_claim is not None:
+                self._ingress_claim.release()
+                self._ingress_claim = None
             self._lease = None
             self._running = False
 
