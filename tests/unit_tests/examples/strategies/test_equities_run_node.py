@@ -3651,6 +3651,54 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
     assert supervisor.snapshot(maker_feed).last_error_summary == "transport_failed"
 
 
+def test_schedule_quote_feed_result_on_node_loop_skips_closed_loop() -> None:
+    ingress_calls: list[dict[str, object]] = []
+
+    class _ClosedLoop:
+        def is_closed(self) -> bool:
+            return True
+
+        def call_soon_threadsafe(self, callback) -> None:
+            raise AssertionError(f"should not schedule callback={callback!r}")
+
+    node = SimpleNamespace(get_event_loop=lambda: _ClosedLoop())
+
+    result = run_node._schedule_quote_feed_result_on_node_loop(
+        node=node,
+        ingress=lambda **kwargs: ingress_calls.append(kwargs),
+        now_ns=10_000,
+        ok=False,
+        error_summary="loop_closed",
+    )
+
+    assert result is None
+    assert ingress_calls == []
+
+
+def test_schedule_quote_feed_result_on_node_loop_ignores_runtime_error() -> None:
+    ingress_calls: list[dict[str, object]] = []
+
+    class _RaisingLoop:
+        def is_closed(self) -> bool:
+            return False
+
+        def call_soon_threadsafe(self, callback) -> None:
+            raise RuntimeError(f"loop is closing callback={callback!r}")
+
+    node = SimpleNamespace(get_event_loop=lambda: _RaisingLoop())
+
+    result = run_node._schedule_quote_feed_result_on_node_loop(
+        node=node,
+        ingress=lambda **kwargs: ingress_calls.append(kwargs),
+        now_ns=10_000,
+        ok=False,
+        error_summary="runtime_error",
+    )
+
+    assert result is None
+    assert ingress_calls == []
+
+
 def test_build_node_shared_recovery_preserves_real_strategy_on_quote_tick_delivery(
     monkeypatch,
 ) -> None:

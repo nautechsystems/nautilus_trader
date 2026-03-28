@@ -341,6 +341,11 @@ def _schedule_quote_feed_result_on_node_loop(
     error_summary: str | None = None,
 ) -> Any:
     loop = node.get_event_loop()
+    is_closed = getattr(loop, "is_closed", None)
+    if callable(is_closed):
+        with suppress(Exception):
+            if is_closed():
+                return None
     call_soon_threadsafe = getattr(loop, "call_soon_threadsafe", None)
     callback = partial(
         ingress,
@@ -349,7 +354,10 @@ def _schedule_quote_feed_result_on_node_loop(
         error_summary=error_summary,
     )
     if callable(call_soon_threadsafe):
-        call_soon_threadsafe(callback)
+        try:
+            call_soon_threadsafe(callback)
+        except RuntimeError:
+            return None
         return None
     return callback()
 
