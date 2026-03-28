@@ -855,6 +855,7 @@ def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible(
     assert "deploy/tokenmm/systemd/prometheus.yml" in install_script
     assert "install_monitoring_binaries()" in install_script
     assert "curl -fsSL" in install_script
+    assert "trap 'rm -rf -- \"${tmpdir}\"' EXIT" in install_script
     assert "dl.grafana.com/oss/release/grafana-" in install_script
     assert "github.com/prometheus/prometheus/releases/download/v" in install_script
 

@@ -282,14 +282,16 @@ download_and_extract_monitoring_tarball() {
   local destination="$2"
   local tmpdir=""
 
-  tmpdir="$(mktemp -d)"
-  install -d "$(dirname "${destination}")"
-  rm -rf "${destination}"
-  install -d "${destination}"
-  curl -fsSL "${url}" -o "${tmpdir}/bundle.tar.gz"
-  tar -xzf "${tmpdir}/bundle.tar.gz" -C "${destination}" --strip-components=1
-  chown -R root:root "${destination}"
-  rm -rf "${tmpdir}"
+  (
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf -- "${tmpdir}"' EXIT
+    install -d "$(dirname "${destination}")"
+    rm -rf "${destination}"
+    install -d "${destination}"
+    curl -fsSL "${url}" -o "${tmpdir}/bundle.tar.gz"
+    tar -xzf "${tmpdir}/bundle.tar.gz" -C "${destination}" --strip-components=1
+    chown -R root:root "${destination}"
+  )
 }
 
 install_monitoring_binaries() {
