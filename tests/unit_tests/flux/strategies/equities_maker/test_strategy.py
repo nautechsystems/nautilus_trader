@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
 from nautilus_trader.flux.strategies import EquitiesMakerStrategy as EquitiesMakerStrategyFromRoot
 from nautilus_trader.flux.strategies import (
     EquitiesMakerStrategyConfig as EquitiesMakerStrategyConfigFromRoot,
@@ -226,5 +228,55 @@ def test_equities_maker_timer_resubscribes_stalled_quotes(
 
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
 
+    assert unsubscribed == [maker_id, ref_id]
+    assert subscribed == [maker_id, ref_id]
+
+
+def test_equities_maker_shared_recovery_attachment_preserves_timer_resubscribe_behavior(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quotes(strategy)
+
+    class _FakeClock:
+        def __init__(self) -> None:
+            self.now = 10_000_000_000
+
+        def timestamp_ns(self) -> int:
+            return self.now
+
+    fake_clock = _FakeClock()
+    subscribed: list[InstrumentId] = []
+    unsubscribed: list[InstrumentId] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    monkeypatch.setattr(
+        strategy,
+        "subscribe_quote_ticks",
+        lambda *, instrument_id, client_id=None: subscribed.append(instrument_id),
+    )
+    monkeypatch.setattr(
+        strategy,
+        "unsubscribe_quote_ticks",
+        lambda *, instrument_id, client_id=None: unsubscribed.append(instrument_id),
+    )
+    strategy._publish_balances_if_due = lambda: None
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 3_000
+    strategy._runtime_params["quote_liveness_recover_after_ms"] = 900
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("190.00"), "ask": Decimal("190.02"), "ts_ns": 1_000_000_000},
+        ref_id: {"bid": Decimal("189.90"), "ask": Decimal("189.92"), "ts_ns": 1_000_000_000},
+    }
+
+    strategy.configure_quote_feed_runtime(
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+
+    assert strategy._quote_feed_supervisor is supervisor
+    assert strategy._quote_feed_control_emitter is control_emitter
     assert unsubscribed == [maker_id, ref_id]
     assert subscribed == [maker_id, ref_id]

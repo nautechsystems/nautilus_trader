@@ -34,6 +34,8 @@ from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.logging import build_node_logging_config
+from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
 from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
@@ -285,6 +287,35 @@ def _attach_reference_balance_snapshot_provider(
         ),
     )
     configure_provider(provider)
+
+
+def _attach_quote_feed_runtime(
+    *,
+    strategy: Any,
+    supervisor: NodeQuoteFeedSupervisor,
+    control_emitter: QuoteFeedControlEmitter,
+) -> None:
+    configure_runtime = getattr(strategy, "configure_quote_feed_runtime", None)
+    if callable(configure_runtime):
+        configure_runtime(
+            supervisor=supervisor,
+            control_emitter=control_emitter,
+        )
+
+    claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
+    if not callable(claim_specs):
+        return
+
+    for claim_spec in claim_specs():
+        supervisor.register_claimant(
+            claim_spec.feed_identity,
+            claimant_id=claim_spec.claimant_id,
+            unusable_after_ms=claim_spec.unusable_after_ms,
+            reset=lambda feed_identity=claim_spec.feed_identity: control_emitter.reset(
+                feed_identity,
+            ),
+            blocker_key=claim_spec.blocker_key,
+        )
 
 
 def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
@@ -719,6 +750,8 @@ def _build_node_for_configs(
     reference_instrument_id = None
     attached_strategies: list[Any] = []
     reconciliation_instrument_ids: list[InstrumentId] = []
+    quote_feed_supervisor = NodeQuoteFeedSupervisor()
+    quote_feed_control_emitter = QuoteFeedControlEmitter(node_scoped_id=node_scoped_id)
 
     for config in configs:
         strategy_cfg = _table(config, "strategy")
@@ -807,6 +840,11 @@ def _build_node_for_configs(
             strategy=strategy,
             config=venue_resolution_config,
             strategy_spec=strategy_spec,
+        )
+        _attach_quote_feed_runtime(
+            strategy=strategy,
+            supervisor=quote_feed_supervisor,
+            control_emitter=quote_feed_control_emitter,
         )
         attached_strategies.append(strategy)
 

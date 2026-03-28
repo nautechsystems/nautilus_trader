@@ -62,6 +62,10 @@ from flux.strategies.shared.ibkr_tags import build_ibkr_order_tags
 from flux.strategies.shared.publisher_common import build_role_map_payload
 from flux.strategies.shared.quote_health import evaluate_quote_health
 from flux.strategies.shared.trades import publish_trade as publish_shared_trade
+from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedClaimSpec
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedIdentity
 from flux.strategies.shared.venue_protection import extract_hyperliquid_request_quota
 from flux.strategies.shared.venue_protection import is_venue_protection_reason
 from flux.strategies.shared.venue_protection import normalize_reason_text
@@ -164,6 +168,8 @@ class MakerV4Strategy(Strategy):
         self._last_quote_liveness_resubscribe_ns = 0
         self._last_actionable_alert_ns: dict[str, int] = {}
         self._last_actionable_alert_transition: dict[str, str] = {}
+        self._quote_feed_supervisor: NodeQuoteFeedSupervisor | None = None
+        self._quote_feed_control_emitter: QuoteFeedControlEmitter | None = None
 
     def set_params_manager_factory(self, factory) -> None:
         self._params_manager_factory = factory
@@ -204,6 +210,61 @@ class MakerV4Strategy(Strategy):
         self._profile_account_projection_account_scope_id = account_scope_id.strip() or None
         self._profile_account_projection_namespace = namespace
         self._profile_account_projection_schema_version = schema_version
+
+    def configure_quote_feed_runtime(
+        self,
+        *,
+        supervisor: NodeQuoteFeedSupervisor,
+        control_emitter: QuoteFeedControlEmitter,
+    ) -> None:
+        self._quote_feed_supervisor = supervisor
+        self._quote_feed_control_emitter = control_emitter
+
+    def quote_feed_claim_specs(self) -> tuple[QuoteFeedClaimSpec, ...]:
+        maker_scope = str(
+            getattr(self.config, "execution_account_scope_id", "") or "",
+        ).strip() or str(getattr(self.config.maker_instrument_id, "venue", "")).strip().lower()
+        reference_scope = str(getattr(self.config.reference_instrument_id, "venue", "")).strip()
+        if reference_scope.upper() == "IBKR":
+            reference_scope = "ibkr.shared_publisher"
+        else:
+            reference_scope = reference_scope.lower() or "reference"
+
+        maker_budget_ms = max(
+            1,
+            int(
+                self._runtime_params.get(
+                    "quote_liveness_stall_after_ms",
+                    self._runtime_params.get("max_age_ms", 10_000),
+                )
+                or self._runtime_params.get("max_age_ms", 10_000)
+                or 10_000
+            ),
+        )
+        reference_budget_ms = max(1, int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)))
+
+        return (
+            QuoteFeedClaimSpec(
+                feed_identity=QuoteFeedIdentity(
+                    scope=maker_scope,
+                    instrument_id=self.config.maker_instrument_id,
+                    topic="maker_quote_ticks",
+                ),
+                claimant_id=self._external_strategy_id,
+                unusable_after_ms=maker_budget_ms,
+                blocker_key=maker_scope,
+            ),
+            QuoteFeedClaimSpec(
+                feed_identity=QuoteFeedIdentity(
+                    scope=reference_scope,
+                    instrument_id=self.config.reference_instrument_id,
+                    topic="reference_quote_ticks",
+                ),
+                claimant_id=self._external_strategy_id,
+                unusable_after_ms=reference_budget_ms,
+                blocker_key=reference_scope,
+            ),
+        )
 
     @property
     def hedge_request_count(self) -> int:

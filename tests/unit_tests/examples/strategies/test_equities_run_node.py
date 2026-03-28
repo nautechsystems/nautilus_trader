@@ -9,6 +9,8 @@ import pytest
 
 from flux.runners.equities import run_node
 from flux.runners.shared.bootstrap import strategy_startup_lock
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedClaimSpec
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedIdentity
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies.equities_maker import EquitiesMakerStrategyConfig
 from flux.strategies.equities_taker import EquitiesTakerStrategyConfig
@@ -3489,6 +3491,238 @@ def test_build_grouped_node_builds_one_shared_node_for_tradexyz_node_group(
     assert attach_calls["inventory"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
     assert attach_calls["projection"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
     assert attach_calls["reference"] == ["aapl_tradexyz_maker", "aapl_tradexyz_taker"]
+
+
+def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_to_siblings(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {"strategies": []}
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+            self.quote_feed_supervisor = None
+            self.quote_feed_control_emitter = None
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+        def configure_quote_feed_runtime(self, *, supervisor, control_emitter) -> None:
+            self.quote_feed_supervisor = supervisor
+            self.quote_feed_control_emitter = control_emitter
+
+        def quote_feed_claim_specs(self) -> tuple[QuoteFeedClaimSpec, ...]:
+            return (
+                QuoteFeedClaimSpec(
+                    feed_identity=QuoteFeedIdentity(
+                        scope="hyperliquid.xyz.main",
+                        instrument_id=self.config.maker_instrument_id,
+                        topic="maker_quote_ticks",
+                    ),
+                    claimant_id=self.config.external_strategy_id,
+                    unusable_after_ms=3_000,
+                    blocker_key="hyperliquid.xyz.main",
+                ),
+                QuoteFeedClaimSpec(
+                    feed_identity=QuoteFeedIdentity(
+                        scope="ibkr.shared_publisher",
+                        instrument_id=self.config.reference_instrument_id,
+                        topic="reference_quote_ticks",
+                    ),
+                    claimant_id=self.config.external_strategy_id,
+                    unusable_after_ms=1_000,
+                    blocker_key="ibkr.shared_publisher",
+                ),
+            )
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured["strategies"].append(strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            captured["build_called"] = True
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_grouped_strategy_specs(monkeypatch, _CapturedStrategy)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_register_cash_borrowing_venues", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_profile_account_projection_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_reference_balance_snapshot_provider", lambda **_kwargs: None)
+
+    run_node.build_grouped_node(
+        (
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_maker",
+                param_set="equities_maker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+            _split_equities_config(
+                strategy_id="aapl_tradexyz_taker",
+                param_set="equities_taker",
+                trader_id="EQUITIES-LIVE-AAPL-TRADEXYZ-TAKER",
+                portfolio_asset_id="AAPL",
+                maker_instrument_id=str(maker_instrument_id),
+                reference_instrument_id=str(reference_instrument_id),
+                execution_account_scope_id="hyperliquid.xyz.main",
+            ),
+        ),
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    strategies = captured["strategies"]
+    assert captured["build_called"] is True
+    assert len(strategies) == 2
+    assert strategies[0].quote_feed_supervisor is strategies[1].quote_feed_supervisor
+    assert strategies[0].quote_feed_control_emitter is strategies[1].quote_feed_control_emitter
+
+    supervisor = strategies[0].quote_feed_supervisor
+    maker_snapshot = supervisor.snapshot(
+        QuoteFeedIdentity(
+            scope="hyperliquid.xyz.main",
+            instrument_id=maker_instrument_id,
+            topic="maker_quote_ticks",
+        )
+    )
+    reference_snapshot = supervisor.snapshot(
+        QuoteFeedIdentity(
+            scope="ibkr.shared_publisher",
+            instrument_id=reference_instrument_id,
+            topic="reference_quote_ticks",
+        )
+    )
+
+    assert set(maker_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+    assert set(reference_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+
+
+def test_build_node_shared_recovery_preserves_real_strategy_on_quote_tick_delivery(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    maker_instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_profile_account_projection_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_reference_balance_snapshot_provider", lambda **_kwargs: None)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_maker",
+                "external_strategy_id": "aapl_tradexyz_maker",
+                "trader_id": "EQUITIES-LIVE-AAPL-TRADEXYZ-MAKER",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_maker",
+                "param_set": "equities_maker",
+                "order_qty": "1",
+                "qty": "1",
+            },
+            "strategy_contracts": [
+                {
+                    "strategy_id": "aapl_tradexyz_maker",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_instrument_id": str(maker_instrument_id),
+                    "reference_instrument_id": str(reference_instrument_id),
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                },
+            ],
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    strategy._refresh_runtime_params_if_due = lambda **_kwargs: None
+    strategy._retry_hedge_backlog = lambda **_kwargs: None
+    strategy._refresh_maker_quotes = lambda **_kwargs: None
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+
+    strategy.on_quote_tick(
+        SimpleNamespace(
+            instrument_id=maker_instrument_id,
+            bid_price=Decimal("190.00"),
+            ask_price=Decimal("190.04"),
+            ts_event=2_000_000_000,
+        )
+    )
+
+    assert strategy._quote_feed_supervisor is not None
+    assert strategy._quote_feed_control_emitter is not None
+    assert strategy._latest_quotes[maker_instrument_id] == {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.04"),
+        "ts_ns": 2_000_000_000,
+    }
 
 
 def test_build_grouped_node_keeps_binance_perp_hooks_strategy_scoped(
