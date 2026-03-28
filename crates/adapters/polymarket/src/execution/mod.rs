@@ -1051,21 +1051,17 @@ impl ExecutionClient for PolymarketExecutionClient {
     ) {
     }
 
-    fn instrument_update_callback(&self) -> Option<Arc<dyn Fn(InstrumentAny) + Send + Sync>> {
-        let token_instruments = self.shared_token_instruments.clone();
-        let neg_risk_index = self.neg_risk_index.clone();
-        Some(Arc::new(move |instrument: InstrumentAny| {
-            let token_id = Ustr::from(instrument.raw_symbol().as_str());
-            if let InstrumentAny::BinaryOption(bo) = &instrument {
-                let neg_risk = bo
-                    .info
-                    .as_ref()
-                    .and_then(|i| i.get_bool("neg_risk"))
-                    .unwrap_or(false);
-                neg_risk_index.insert(bo.id, neg_risk);
-            }
-            token_instruments.insert(token_id, instrument);
-        }))
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+        if let InstrumentAny::BinaryOption(bo) = &instrument {
+            let neg_risk = bo
+                .info
+                .as_ref()
+                .and_then(|i| i.get_bool("neg_risk"))
+                .unwrap_or(false);
+            self.neg_risk_index.insert(bo.id, neg_risk);
+        }
+        self.shared_token_instruments.insert(token_id, instrument);
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {

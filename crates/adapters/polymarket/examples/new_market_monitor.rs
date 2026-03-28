@@ -43,12 +43,14 @@ use nautilus_common::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{AccountId, ClientId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_polymarket::{
-    common::models::PolymarketLabel, config::PolymarketDataClientConfig,
-    factories::PolymarketDataClientFactory, filters::SearchFilter,
+    common::{enums::SignatureType, models::PolymarketLabel},
+    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    filters::SearchFilter,
 };
 
 #[derive(Debug, Clone)]
@@ -139,14 +141,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("POLYMARKET-001");
     let client_id = ClientId::new("POLYMARKET");
 
     // SearchFilter pre-populates BTC markets as the initial instrument set
     let search_filter = SearchFilter::from_query("BTC");
 
-    let polymarket_config = PolymarketDataClientConfig {
+    let data_config = PolymarketDataClientConfig {
         subscribe_new_markets: true,
         filters: vec![Arc::new(search_filter)],
+        ..Default::default()
+    };
+
+    let exec_config = PolymarketExecClientConfig {
+        trader_id,
+        account_id,
+        signature_type: SignatureType::PolyGnosisSafe,
         ..Default::default()
     };
 
@@ -155,13 +165,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let client_factory = PolymarketDataClientFactory;
-
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name("POLYMARKET-NEW-MARKET-MONITOR-001".to_string())
         .with_logging(log_config)
+        .with_reconciliation(true)
+        .with_reconciliation_lookback_mins(120)
+        .with_timeout_reconciliation(60)
         .with_delay_post_stop_secs(2)
-        .add_data_client(None, Box::new(client_factory), Box::new(polymarket_config))?
+        .add_data_client(
+            None,
+            Box::new(PolymarketDataClientFactory),
+            Box::new(data_config),
+        )?
+        .add_exec_client(
+            None,
+            Box::new(PolymarketExecutionClientFactory),
+            Box::new(exec_config),
+        )?
         .build()?;
 
     let actor_config = NewMarketMonitorConfig {

@@ -48,7 +48,7 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessagingSwitchboard, TypedIntoHandler, get_message_bus,
+        self, MessagingSwitchboard, ShareableMessageHandler, TypedIntoHandler, get_message_bus,
         switchboard::{self},
     },
     runner::try_get_trading_cmd_sender,
@@ -189,6 +189,31 @@ impl ExecutionEngine {
                 }
             }),
         );
+    }
+
+    /// Subscribes to instrument updates for a venue via the message bus.
+    ///
+    /// When instruments are published by the `DataEngine`, the handler routes
+    /// them to the execution client registered for that venue.
+    pub fn subscribe_venue_instruments(engine: &Rc<RefCell<Self>>, venue: Venue) {
+        let weak = WeakCell::from(Rc::downgrade(engine));
+        let pattern = switchboard::get_instruments_pattern(venue);
+
+        let handler = ShareableMessageHandler::from_typed(move |instrument: &InstrumentAny| {
+            if let Some(rc) = weak.upgrade() {
+                let venue = instrument.id().venue;
+                let client_id = rc.borrow().routing_map.get(&venue).copied();
+                if let Some(client_id) = client_id {
+                    let mut engine = rc.borrow_mut();
+                    if let Some(adapter) = engine.get_client_adapter_mut(&client_id) {
+                        adapter.on_instrument(instrument.clone());
+                    }
+                }
+            }
+        });
+
+        msgbus::subscribe_any(pattern, handler, None);
+        log::info!("Subscribed to instrument updates for venue {venue}");
     }
 
     #[must_use]
