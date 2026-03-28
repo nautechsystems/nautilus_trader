@@ -8,8 +8,24 @@ COMMON_ENV_PATH="${ENV_DIR}/common.env"
 TARGET_PATH="${SYSTEMD_DIR}/flux-tokenmm.target"
 DEPLOY_ROOT_OVERRIDE="${TOKENMM_DEPLOY_ROOT:-}"
 TOKENMM_API_HOST="${TOKENMM_API_HOST:-}"
+TOKENMM_GRAFANA_ADMIN_PASSWORD="${TOKENMM_GRAFANA_ADMIN_PASSWORD:-}"
 TELEMETRY_HEALTH_SERVICE_PATH="${SYSTEMD_DIR}/flux-tokenmm-telemetry-health.service"
 TELEMETRY_HEALTH_TIMER_PATH="${SYSTEMD_DIR}/flux-tokenmm-telemetry-health.timer"
+MONITORING_ROOT="/etc/tokenmm-monitoring"
+MONITORING_RUNTIME_ROOT="/opt/tokenmm-monitoring"
+MONITORING_EXPORTER_DIR="${MONITORING_ROOT}/exporter"
+MONITORING_GRAFANA_DASHBOARDS_DIR="${MONITORING_ROOT}/grafana/dashboards"
+MONITORING_GRAFANA_PROVISIONING_DASHBOARDS_DIR="${MONITORING_ROOT}/grafana/provisioning/dashboards"
+MONITORING_GRAFANA_PROVISIONING_DATASOURCES_DIR="${MONITORING_ROOT}/grafana/provisioning/datasources"
+MONITORING_PROMETHEUS_DIR="${MONITORING_ROOT}/prometheus"
+MONITORING_GRAFANA_RUNTIME_ROOT="${MONITORING_RUNTIME_ROOT}/grafana"
+MONITORING_PROMETHEUS_RUNTIME_ROOT="${MONITORING_RUNTIME_ROOT}/prometheus"
+MONITORING_GRAFANA_DATA_DIR="/var/lib/tokenmm-monitoring/grafana"
+MONITORING_PROMETHEUS_DATA_DIR="/var/lib/tokenmm-monitoring/prometheus"
+GRAFANA_WRAPPER_PATH="/usr/local/bin/tokenmm-grafana-run.sh"
+PROMETHEUS_WRAPPER_PATH="/usr/local/bin/tokenmm-prometheus-run.sh"
+GRAFANA_VERSION="10.2.3"
+PROMETHEUS_VERSION="2.48.0"
 
 read_env_value() {
   local env_path="$1"
@@ -86,6 +102,13 @@ read_existing_api_host() {
   fi
 }
 
+read_existing_grafana_admin_password() {
+  local env_path="${ENV_DIR}/tokenmm-grafana.env"
+
+  [[ -f "${env_path}" ]] || return 0
+  read_env_value "${env_path}" "GRAFANA_ADMIN_PASSWORD" || true
+}
+
 DEPLOY_ROOT="$(resolve_deploy_root)"
 if [[ ! -d "${DEPLOY_ROOT}" ]]; then
   echo "[tokenmm-systemd] deploy root missing or not a directory: ${DEPLOY_ROOT}" >&2
@@ -136,6 +159,27 @@ discover_node_strategies() {
   fi
 }
 
+resolve_grafana_admin_password() {
+  local password="${TOKENMM_GRAFANA_ADMIN_PASSWORD}"
+
+  if [[ -z "${password}" ]]; then
+    password="$(read_existing_grafana_admin_password)"
+  fi
+
+  if [[ -z "${password}" ]]; then
+    password="$("${TOKENMM_PYTHON_BIN}" - <<'PY'
+import secrets
+import string
+
+alphabet = string.ascii_letters + string.digits
+print("".join(secrets.choice(alphabet) for _ in range(24)))
+PY
+)"
+  fi
+
+  printf '%s\n' "${password}"
+}
+
 build_service_ids() {
   # shellcheck disable=SC2178
   local -n out_service_ids="$1"
@@ -145,6 +189,10 @@ build_service_ids() {
     "tokenmm-portfolio"
     "tokenmm-bridge"
     "tokenmm-telemetry-shipper"
+    "tokenmm-prometheus"
+    "tokenmm-grafana"
+    "tokenmm-liquidity-exporter"
+    "tokenmm-markouts-exporter"
   )
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
@@ -171,10 +219,103 @@ install_units() {
     "${ENV_DIR}/tokenmm-telemetry-rds.env.example"
 }
 
+install_monitoring_assets() {
+  install -d \
+    "${MONITORING_GRAFANA_RUNTIME_ROOT}" \
+    "${MONITORING_PROMETHEUS_RUNTIME_ROOT}" \
+    "${MONITORING_EXPORTER_DIR}" \
+    "${MONITORING_GRAFANA_DASHBOARDS_DIR}" \
+    "${MONITORING_GRAFANA_PROVISIONING_DASHBOARDS_DIR}" \
+    "${MONITORING_GRAFANA_PROVISIONING_DATASOURCES_DIR}" \
+    "${MONITORING_PROMETHEUS_DIR}"
+  install -d -o ubuntu -g ubuntu \
+    "${MONITORING_GRAFANA_DATA_DIR}" \
+    "${MONITORING_PROMETHEUS_DATA_DIR}"
+
+  install -m 0755 "${DEPLOY_ROOT}/deploy/tokenmm/systemd/tokenmm-grafana-run.sh" "${GRAFANA_WRAPPER_PATH}"
+  install -m 0755 "${DEPLOY_ROOT}/deploy/tokenmm/systemd/tokenmm-prometheus-run.sh" "${PROMETHEUS_WRAPPER_PATH}"
+  install -m 0644 "${DEPLOY_ROOT}/deploy/tokenmm/systemd/prometheus.yml" "${MONITORING_PROMETHEUS_DIR}/prometheus.yml"
+  install -m 0644 \
+    "${DEPLOY_ROOT}/monitoring/grafana/provisioning/dashboards/dashboards.yml" \
+    "${MONITORING_GRAFANA_PROVISIONING_DASHBOARDS_DIR}/dashboards.yml"
+  install -m 0644 \
+    "${DEPLOY_ROOT}/monitoring/grafana/provisioning/datasources/datasources.yml" \
+    "${MONITORING_GRAFANA_PROVISIONING_DATASOURCES_DIR}/datasources.yml"
+
+  local dashboard_path=""
+  for dashboard_path in "${DEPLOY_ROOT}"/monitoring/grafana/dashboards/*.json; do
+    install -m 0644 "${dashboard_path}" "${MONITORING_GRAFANA_DASHBOARDS_DIR}/$(basename "${dashboard_path}")"
+  done
+}
+
 append_deploy_root_env_overrides() {
   local env_path="$1"
 
   printf 'WORKDIR=%s\nPYTHONPATH=%s\n' "${DEPLOY_ROOT}" "${DEPLOY_ROOT}" >> "${env_path}"
+}
+
+append_env_var() {
+  local env_path="$1"
+  local key="$2"
+  local value="$3"
+
+  printf '%s=%s\n' "${key}" "${value}" >> "${env_path}"
+}
+
+resolve_monitoring_archive_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64)
+      printf 'amd64\n'
+      ;;
+    aarch64 | arm64)
+      printf 'arm64\n'
+      ;;
+    *)
+      echo "[tokenmm-systemd] unsupported monitoring archive architecture: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+download_and_extract_monitoring_tarball() {
+  local url="$1"
+  local destination="$2"
+  local tmpdir=""
+
+  (
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf -- "${tmpdir}"' EXIT
+    install -d "$(dirname "${destination}")"
+    rm -rf "${destination}"
+    install -d "${destination}"
+    curl -fsSL "${url}" -o "${tmpdir}/bundle.tar.gz"
+    tar -xzf "${tmpdir}/bundle.tar.gz" -C "${destination}" --strip-components=1
+    chown -R root:root "${destination}"
+  )
+}
+
+install_monitoring_binaries() {
+  local archive_arch=""
+  local grafana_version_dir=""
+  local prometheus_version_dir=""
+
+  archive_arch="$(resolve_monitoring_archive_arch)"
+  grafana_version_dir="${MONITORING_GRAFANA_RUNTIME_ROOT}/grafana-v${GRAFANA_VERSION}"
+  prometheus_version_dir="${MONITORING_PROMETHEUS_RUNTIME_ROOT}/prometheus-${PROMETHEUS_VERSION}.linux-${archive_arch}"
+
+  if [[ ! -x "${grafana_version_dir}/bin/grafana-server" ]]; then
+    download_and_extract_monitoring_tarball \
+      "https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}.linux-${archive_arch}.tar.gz" \
+      "${grafana_version_dir}"
+  fi
+  if [[ ! -x "${prometheus_version_dir}/prometheus" ]]; then
+    download_and_extract_monitoring_tarball \
+      "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-${archive_arch}.tar.gz" \
+      "${prometheus_version_dir}"
+  fi
+
+  ln -sfn "${grafana_version_dir}" "${MONITORING_GRAFANA_RUNTIME_ROOT}/current"
+  ln -sfn "${prometheus_version_dir}" "${MONITORING_PROMETHEUS_RUNTIME_ROOT}/current"
 }
 
 render_api_env() {
@@ -238,6 +379,62 @@ render_telemetry_shipper_env() {
   append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-telemetry-shipper.env"
 }
 
+render_prometheus_env() {
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-prometheus.env" \
+    "TokenMM Prometheus" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${PROMETHEUS_WRAPPER_PATH}" \
+    "9090" \
+    "tokenmm-prometheus"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-prometheus.env"
+}
+
+render_grafana_env() {
+  local grafana_admin_password=""
+  grafana_admin_password="$(resolve_grafana_admin_password)"
+
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-grafana.env" \
+    "TokenMM Grafana" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${GRAFANA_WRAPPER_PATH}" \
+    "3000" \
+    "tokenmm-grafana"
+  append_env_var "${ENV_DIR}/tokenmm-grafana.env" "GRAFANA_ADMIN_PASSWORD" "${grafana_admin_password}"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-grafana.env"
+}
+
+render_liquidity_exporter_env() {
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-liquidity-exporter.env" \
+    "TokenMM liquidity metrics exporter" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} ${DEPLOY_ROOT}/ops/scripts/exporters/tokenmm_metrics_exporter.py --env prod --port 9108 --poll-interval-s 5 --strategy-group tokenmm" \
+    "9108" \
+    "tokenmm-liquidity-exporter"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-liquidity-exporter.env"
+}
+
+render_markouts_exporter_env() {
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-markouts-exporter.env" \
+    "TokenMM markouts metrics exporter" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} ${DEPLOY_ROOT}/ops/scripts/exporters/tokenmm_markouts_exporter.py --env prod --profile tokenmm --fills-db /var/lib/nautilus/telemetry/tokenmm/fills.sqlite --markouts-db /var/lib/nautilus/telemetry/tokenmm/markouts.sqlite --benchmark-name fv_market_mid,local_mkt_mid --window-hours 168 --port 9109 --poll-interval-s 15" \
+    "9109" \
+    "tokenmm-markouts-exporter"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-markouts-exporter.env"
+}
+
 render_node_envs() {
   local strategy_id
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
@@ -277,11 +474,17 @@ main() {
   run_rollout_preflight
   discover_node_strategies
   install_units
+  install_monitoring_binaries
+  install_monitoring_assets
   render_target
   render_api_env
   render_portfolio_env
   render_bridge_env
   render_telemetry_shipper_env
+  render_prometheus_env
+  render_grafana_env
+  render_liquidity_exporter_env
+  render_markouts_exporter_env
   render_node_envs
   rebuild_pulse_sudoers
   render_jupyter_env
