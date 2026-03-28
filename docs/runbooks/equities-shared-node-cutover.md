@@ -169,7 +169,7 @@ Do not call the cutover healthy until both checks pass.
 The readiness gate and the human rollout log should prove all of the following:
 
 - `healthy_strategy_count = 38`
-- no maker leg remains in a persistent non-tradeable recovery state: public `feed_state` is never `down` or `unknown`, public `quote_state` is not `missing`, and structured recovery logs do not show repeated `bootstrapping`, `blocked`, or `recovering` loops after restart
+- no maker leg remains in a persistent non-tradeable recovery state: public `feed_state` is never `degraded`, `down`, or `unknown`, public `quote_state` is never `old` or `missing`, and structured recovery logs do not show repeated `bootstrapping`, `blocked`, or `recovering` loops after restart
 - the shared IBKR gateway and `chainsaw@md-ibkr-publisher.service` are healthy and were treated as preconditions, not local maker-feed results
 - historically stale rows now advance quote timestamps after restart
 - balances / projections are no worse than the captured baseline
@@ -178,7 +178,7 @@ The readiness gate and the human rollout log should prove all of the following:
 
 Before declaring the restart safe, inspect structured logs, counters, or venue/order state and prove:
 
-- when required feeds are non-tradeable, including internal `bootstrapping`, `blocked`, or `recovering` supervisor states and public `feed_state in {down, unknown}` / `quote_state = missing`, strategies emit no quote-placement, quote-amendment, or hedge-placement side effects
+- when required feeds are non-tradeable, including internal `bootstrapping`, `blocked`, or `recovering` supervisor states and public `feed_state in {degraded, down, unknown}` / `quote_state in {old, missing}`, strategies emit no quote-placement, quote-amendment, or hedge-placement side effects
 - those same strategies retain zero working maker quotes while the required feeds remain non-tradeable
 - any venue/session blocker is explicit in logs and suppresses per-feed reset churn
 
@@ -192,7 +192,7 @@ Do not sign off until:
 
 - the historically stale rows continue to advance over repeated samples
 - readiness stays at or above the captured pre-restart baseline
-- no new maker feed falls back into a persistent non-tradeable loop on operator surfaces (`feed_state in {down, unknown}` or `quote_state = missing`) or repeated internal recovery-loop logging
+- no new maker feed falls back into a persistent non-tradeable loop on operator surfaces (`feed_state in {degraded, down, unknown}` or `quote_state in {old, missing}`) or repeated internal recovery-loop logging
 - no strategy leaks back into working maker quotes while required feeds remain non-tradeable
 
 Rollback immediately if health regresses below baseline or the historically bad rows remain frozen after the soak window.
