@@ -9,5 +9,5 @@ providers:
     updateIntervalSeconds: 10
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      path: /etc/tokenmm-monitoring/grafana/dashboards
       foldersFromFilesStructure: true

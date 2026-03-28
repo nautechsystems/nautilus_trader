@@ -107,7 +107,7 @@ Recommended minimal sidecar invocation:
 python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
   --env prod \
   --profile tokenmm \
-  --port 9094 \
+  --port 9109 \
   --benchmark-name fv_market_mid,local_mkt_mid \
   --poll-interval-s 30 \
   --window-hours 168

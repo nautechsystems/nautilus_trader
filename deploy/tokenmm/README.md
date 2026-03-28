@@ -225,12 +225,16 @@ Runtime registration is explicit:
   already points at a stable checkout, and the installer refuses worktree roots for fresh bootstrap/cutover.
 - Repointing `/etc/flux/tokenmm*.env` to a new immutable release root does not restart the live services by itself;
   restart the TokenMM units only during an explicit cutover window.
+- `install_tokenmm_systemd.sh` also installs the dashboard monitoring assets under `/etc/tokenmm-monitoring`
+  stages pinned native Grafana and Prometheus tarballs under `/opt/tokenmm-monitoring`, and refreshes the
+  launcher scripts at `/usr/local/bin/tokenmm-grafana-run.sh` and `/usr/local/bin/tokenmm-prometheus-run.sh`.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 allowlisted
-  node services.
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`,
+  `tokenmm-telemetry-shipper`, `tokenmm-prometheus`, `tokenmm-grafana`,
+  `tokenmm-liquidity-exporter`, `tokenmm-markouts-exporter`, and the 7 allowlisted node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.
 
@@ -244,6 +248,8 @@ Primary operator surfaces:
 
 - `http://<host>:5022/tokenmm`
 - `http://<host>:5022/pulse`
+- `http://<host>:3000/login`
+- `http://<host>:9090`
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/tokenmm/restart`
 - Risk validation and rollout gates live in `docs/runbooks/tokenmm-risk-validation.md`.
