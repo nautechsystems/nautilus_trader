@@ -45,6 +45,20 @@ def _required_text(value: str, field_name: str) -> str:
     return text
 
 
+def _coerce_lifecycle_state(
+    value: ExecutionLifecycleState | str,
+    *,
+    field_name: str,
+) -> ExecutionLifecycleState:
+    if isinstance(value, ExecutionLifecycleState):
+        return value
+    text = _required_text(value, field_name)
+    try:
+        return ExecutionLifecycleState(text)
+    except ValueError as exc:
+        raise ValueError(f"`{field_name}` must be one of {EXECUTION_LIFECYCLE_STATES}") from exc
+
+
 def build_client_order_id(
     *,
     controller_scope_id: str,
@@ -77,6 +91,11 @@ class ExecutionIntent:
             _required_text(self.controller_scope_id, "controller_scope_id"),
         )
         object.__setattr__(self, "strategy_id", _required_text(self.strategy_id, "strategy_id"))
+        object.__setattr__(
+            self,
+            "lifecycle_state",
+            _coerce_lifecycle_state(self.lifecycle_state, field_name="lifecycle_state"),
+        )
 
     def claim(self, *, controller_epoch: int, controller_seq: int) -> ExecutionClaim:
         return ExecutionClaim(
@@ -117,15 +136,27 @@ class ExecutionClaim:
         object.__setattr__(self, "strategy_id", _required_text(self.strategy_id, "strategy_id"))
         object.__setattr__(self, "controller_epoch", int(self.controller_epoch))
         object.__setattr__(self, "controller_seq", int(self.controller_seq))
-        object.__setattr__(
-            self,
-            "client_order_id",
-            _required_text(self.client_order_id, "client_order_id"),
-        )
+        client_order_id = _required_text(self.client_order_id, "client_order_id")
+        object.__setattr__(self, "client_order_id", client_order_id)
         venue_order_id = self.venue_order_id
         if venue_order_id is not None:
             venue_order_id = _required_text(venue_order_id, "venue_order_id")
         object.__setattr__(self, "venue_order_id", venue_order_id)
+        object.__setattr__(
+            self,
+            "lifecycle_state",
+            _coerce_lifecycle_state(self.lifecycle_state, field_name="lifecycle_state"),
+        )
+        expected_client_order_id = build_client_order_id(
+            controller_scope_id=self.controller_scope_id,
+            controller_epoch=self.controller_epoch,
+            controller_seq=self.controller_seq,
+            intent_id=self.intent_id,
+        )
+        if client_order_id != expected_client_order_id:
+            raise ValueError(
+                "`client_order_id` must match the deterministic controller ownership chain",
+            )
 
     def to_dict(self) -> dict[str, str | int | None]:
         return {

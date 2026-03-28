@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from nautilus_trader.flux.execution.controller import VenueActivityOrigin
 from nautilus_trader.flux.execution.events import ExecutionLifecycleEvent
 from nautilus_trader.flux.execution.intents import EXECUTION_LIFECYCLE_STATES
+from nautilus_trader.flux.execution.intents import ExecutionClaim
 from nautilus_trader.flux.execution.intents import ExecutionIntent
 from nautilus_trader.flux.execution.intents import ExecutionLifecycleState
 
@@ -66,3 +68,68 @@ def test_intent_claim_and_event_schema_preserve_deterministic_id_chain() -> None
         "venue_activity_origin": "controller",
         "reason": None,
     }
+
+
+def test_public_execution_schemas_normalize_and_validate_enum_backed_fields() -> None:
+    intent = ExecutionIntent(
+        intent_id="intent-001",
+        controller_scope_id="acct.execution.main",
+        strategy_id="strategy-01",
+        lifecycle_state="published",
+    )
+    claim = ExecutionClaim(
+        intent_id="intent-001",
+        controller_scope_id="acct.execution.main",
+        strategy_id="strategy-01",
+        controller_epoch=7,
+        controller_seq=42,
+        client_order_id="acct.execution.main:7:42:intent-001",
+        venue_order_id=None,
+        lifecycle_state="accepted",
+    )
+    event = ExecutionLifecycleEvent.from_claim(
+        claim=claim,
+        lifecycle_state="sent_to_venue",
+        venue_activity_origin="controller",
+        venue_order_id="venue-9001",
+    )
+
+    assert intent.lifecycle_state is ExecutionLifecycleState.PUBLISHED
+    assert claim.lifecycle_state is ExecutionLifecycleState.ACCEPTED
+    assert event.lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
+    assert event.venue_activity_origin is VenueActivityOrigin.CONTROLLER
+    assert event.to_dict()["venue_activity_origin"] == "controller"
+
+    with pytest.raises(ValueError, match="lifecycle_state"):
+        ExecutionClaim(
+            intent_id="intent-001",
+            controller_scope_id="acct.execution.main",
+            strategy_id="strategy-01",
+            controller_epoch=7,
+            controller_seq=42,
+            client_order_id="acct.execution.main:7:42:intent-001",
+            venue_order_id=None,
+            lifecycle_state="not-a-real-state",
+        )
+
+    with pytest.raises(ValueError, match="venue_activity_origin"):
+        ExecutionLifecycleEvent.from_claim(
+            claim=claim,
+            lifecycle_state=ExecutionLifecycleState.SENT_TO_VENUE,
+            venue_activity_origin="desk-ghost",
+            venue_order_id="venue-9001",
+        )
+
+
+def test_execution_claim_rejects_client_order_ids_that_break_deterministic_chain() -> None:
+    with pytest.raises(ValueError, match="client_order_id"):
+        ExecutionClaim(
+            intent_id="intent-001",
+            controller_scope_id="acct.execution.main",
+            strategy_id="strategy-01",
+            controller_epoch=7,
+            controller_seq=42,
+            client_order_id="acct.execution.main:7:43:intent-001",
+            venue_order_id=None,
+            lifecycle_state=ExecutionLifecycleState.ACCEPTED,
+        )

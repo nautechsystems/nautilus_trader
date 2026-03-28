@@ -83,3 +83,27 @@ def test_snapshot_authority_requires_monotonic_epoch_then_sequence_progression()
 
     with pytest.raises(ValueError, match="controller_scope_id"):
         wrong_scope.assert_can_follow(baseline)
+
+
+def test_snapshot_authority_normalizes_and_validates_authority_state() -> None:
+    authority = ControllerSnapshotAuthority(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        snapshot_ts_ms=1_000,
+        stale_after_ms=250,
+        authority_state="authoritative",
+    )
+
+    assert authority.authority_state is SnapshotAuthorityState.AUTHORITATIVE
+    assert authority.to_snapshot_fields(now_ms=1_000)["authority_state"] == "authoritative"
+
+    with pytest.raises(ValueError, match="authority_state"):
+        ControllerSnapshotAuthority(
+            controller_scope_id="acct.execution.main",
+            controller_epoch=7,
+            controller_seq=42,
+            snapshot_ts_ms=1_000,
+            stale_after_ms=250,
+            authority_state="wrong",
+        )

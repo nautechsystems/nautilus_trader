@@ -3,8 +3,11 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
+from .controller import VenueActivityOrigin
+from .controller import _coerce_venue_activity_origin
 from .intents import ExecutionClaim
 from .intents import ExecutionLifecycleState
+from .intents import _coerce_lifecycle_state
 
 
 if __name__ == "flux.execution.events":
@@ -23,16 +26,31 @@ class ExecutionLifecycleEvent:
     client_order_id: str
     venue_order_id: str | None
     lifecycle_state: ExecutionLifecycleState
-    venue_activity_origin: str
+    venue_activity_origin: VenueActivityOrigin
     reason: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "lifecycle_state",
+            _coerce_lifecycle_state(self.lifecycle_state, field_name="lifecycle_state"),
+        )
+        object.__setattr__(
+            self,
+            "venue_activity_origin",
+            _coerce_venue_activity_origin(
+                self.venue_activity_origin,
+                field_name="venue_activity_origin",
+            ),
+        )
 
     @classmethod
     def from_claim(
         cls,
         *,
         claim: ExecutionClaim,
-        lifecycle_state: ExecutionLifecycleState,
-        venue_activity_origin: str,
+        lifecycle_state: ExecutionLifecycleState | str,
+        venue_activity_origin: VenueActivityOrigin | str,
         venue_order_id: str | None = None,
         reason: str | None = None,
     ) -> ExecutionLifecycleEvent:
@@ -59,7 +77,7 @@ class ExecutionLifecycleEvent:
         return cls.from_claim(
             claim=claim,
             lifecycle_state=ExecutionLifecycleState.SENT_TO_VENUE,
-            venue_activity_origin="controller",
+            venue_activity_origin=VenueActivityOrigin.CONTROLLER,
             venue_order_id=venue_order_id,
             reason=None,
         )
@@ -74,7 +92,7 @@ class ExecutionLifecycleEvent:
             "client_order_id": self.client_order_id,
             "venue_order_id": self.venue_order_id,
             "lifecycle_state": self.lifecycle_state.value,
-            "venue_activity_origin": self.venue_activity_origin,
+            "venue_activity_origin": self.venue_activity_origin.value,
             "reason": self.reason,
         }
 

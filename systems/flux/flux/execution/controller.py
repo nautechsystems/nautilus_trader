@@ -42,6 +42,42 @@ class SnapshotAuthorityState(str, Enum):
     STALE = "stale"
 
 
+def _coerce_venue_activity_origin(
+    value: VenueActivityOrigin | str,
+    *,
+    field_name: str,
+) -> VenueActivityOrigin:
+    if isinstance(value, VenueActivityOrigin):
+        return value
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"`{field_name}` must be a non-empty string")
+    try:
+        return VenueActivityOrigin(text)
+    except ValueError as exc:
+        raise ValueError(
+            f"`{field_name}` must be one of {tuple(origin.value for origin in VenueActivityOrigin)}",
+        ) from exc
+
+
+def _coerce_authority_state(
+    value: SnapshotAuthorityState | str,
+    *,
+    field_name: str,
+) -> SnapshotAuthorityState:
+    if isinstance(value, SnapshotAuthorityState):
+        return value
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"`{field_name}` must be a non-empty string")
+    try:
+        return SnapshotAuthorityState(text)
+    except ValueError as exc:
+        raise ValueError(
+            f"`{field_name}` must be one of {tuple(state.value for state in SnapshotAuthorityState)}",
+        ) from exc
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionLifecycleSemantics:
     lifecycle_state: ExecutionLifecycleState
@@ -134,8 +170,12 @@ def ownership_state_for_lifecycle(lifecycle_state: ExecutionLifecycleState) -> C
 
 
 def default_lifecycle_state_for_venue_activity(
-    venue_activity_origin: VenueActivityOrigin,
+    venue_activity_origin: VenueActivityOrigin | str,
 ) -> ExecutionLifecycleState:
+    venue_activity_origin = _coerce_venue_activity_origin(
+        venue_activity_origin,
+        field_name="venue_activity_origin",
+    )
     if venue_activity_origin is VenueActivityOrigin.CONTROLLER:
         return ExecutionLifecycleState.WORKING
     return ExecutionLifecycleState.QUARANTINED
@@ -158,6 +198,11 @@ class ControllerSnapshotAuthority:
         object.__setattr__(self, "stale_after_ms", max(0, int(self.stale_after_ms)))
         if not self.controller_scope_id:
             raise ValueError("`controller_scope_id` must be a non-empty string")
+        object.__setattr__(
+            self,
+            "authority_state",
+            _coerce_authority_state(self.authority_state, field_name="authority_state"),
+        )
 
     def is_stale(self, *, now_ms: int) -> bool:
         return int(now_ms) > self.snapshot_ts_ms + self.stale_after_ms
