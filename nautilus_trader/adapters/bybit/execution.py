@@ -79,71 +79,58 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
-# ---------------------------------------------------------------------------
-# Bybit TP/SL parameter helpers
-# ---------------------------------------------------------------------------
-
 # Bybit V5 API uses PascalCase strings for these enum fields.
 _BYBIT_VALID_TRIGGER_TYPES: frozenset[str] = frozenset({"LastPrice", "IndexPrice", "MarkPrice"})
 _BYBIT_VALID_ORDER_TYPES: frozenset[str] = frozenset({"Market", "Limit"})
 
 
+def _validate_price_string(key: str, val: str) -> str:
+    s = str(val)
+    try:
+        p = nautilus_pyo3.Price.from_str(s)
+    except ValueError:
+        raise ValueError(
+            f"Invalid Bybit price for '{key}': '{s}'",
+        ) from None
+    if p.as_double() < 0:
+        raise ValueError(
+            f"Invalid Bybit price for '{key}': '{s}', expected a non-negative value",
+        )
+    return s
+
+
+def _validate_tp_sl_cross_fields(result: dict) -> None:
+    has_tp = "take_profit" in result
+    has_sl = "stop_loss" in result
+    tp_fields = ("tp_trigger_by", "tp_order_type", "tp_limit_price", "tp_trigger_price")
+    sl_fields = ("sl_trigger_by", "sl_order_type", "sl_limit_price", "sl_trigger_price")
+
+    if not has_tp and any(k in result for k in tp_fields):
+        raise ValueError("TP override fields require 'take_profit' to be set")
+
+    if not has_sl and any(k in result for k in sl_fields):
+        raise ValueError("SL override fields require 'stop_loss' to be set")
+
+    if result.get("tp_order_type") == "Limit" and "tp_limit_price" not in result:
+        raise ValueError("'tp_order_type' is 'Limit' but 'tp_limit_price' was not provided")
+    if result.get("sl_order_type") == "Limit" and "sl_limit_price" not in result:
+        raise ValueError("'sl_order_type' is 'Limit' but 'sl_limit_price' was not provided")
+    if "tp_limit_price" in result and result.get("tp_order_type") != "Limit":
+        raise ValueError("'tp_limit_price' requires 'tp_order_type' to be 'Limit'")
+    if "sl_limit_price" in result and result.get("sl_order_type") != "Limit":
+        raise ValueError("'sl_limit_price' requires 'sl_order_type' to be 'Limit'")
+
+
 def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
     """
-    Parse and validate Bybit-specific TP/SL execution parameters.
+    Parse and validate Bybit TP/SL params from ``SubmitOrder.params``.
 
-    Call this *before* emitting ``generate_order_submitted`` so that invalid
-    values can be surfaced as ``generate_order_denied`` instead of a runtime
-    error after the order is already considered accepted.
-
-    Expected param keys and valid values
-    -------------------------------------
-    take_profit : str
-        Take-profit activation price (e.g. ``"55000.00"``).
-    stop_loss : str
-        Stop-loss activation price (e.g. ``"47000.00"``).
-    tp_trigger_by : str
-        Price type used to trigger take-profit. One of ``"LastPrice"``,
-        ``"MarkPrice"``, ``"IndexPrice"``. Defaults to ``"LastPrice"``
-        when *take_profit* is set and this key is omitted.
-    sl_trigger_by : str
-        Price type used to trigger stop-loss (same valid values as above).
-    tp_order_type : str
-        Order type for the take-profit leg: ``"Market"`` (default) or
-        ``"Limit"``. Use ``"Limit"`` together with *tp_limit_price*.
-    sl_order_type : str
-        Order type for the stop-loss leg: ``"Market"`` (default) or
-        ``"Limit"``.
-    tp_trigger_price : str
-        Trigger price for the TP leg when *tp_order_type* is ``"Limit"``.
-    sl_trigger_price : str
-        Trigger price for the SL leg when *sl_order_type* is ``"Limit"``.
-    tp_limit_price : str
-        Limit execution price for the TP leg (only valid when
-        *tp_order_type* is ``"Limit"``).
-    sl_limit_price : str
-        Limit execution price for the SL leg.
-    close_on_trigger : bool
-        If ``True``, the position is fully closed when the TP/SL triggers.
-    is_leverage : bool
-        Mark the order as a leveraged order.
-
-    Returns
-    -------
-    dict
-        Validated, normalised parameter dict ready for use.
-
-    Raises
-    ------
-    ValueError
-        If *tp_trigger_by*, *sl_trigger_by*, *tp_order_type*, or
-        *sl_order_type* contains a value not accepted by the Bybit V5 API.
+    Raises ``ValueError`` for invalid prices, enum values, or field combinations.
 
     """
     p = params or {}
     result: dict = {"is_leverage": bool(p.get("is_leverage", False))}
 
-    # Price fields — passed through as strings so Bybit receives them verbatim.
     for key in (
         "take_profit",
         "stop_loss",
@@ -154,9 +141,8 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
     ):
         val = p.get(key)
         if val is not None:
-            result[key] = str(val)
+            result[key] = _validate_price_string(key, val)
 
-    # Trigger-type enum fields (Bybit V5 PascalCase: "LastPrice", "MarkPrice", "IndexPrice").
     for key in ("tp_trigger_by", "sl_trigger_by"):
         val = p.get(key)
         if val is not None:
@@ -167,7 +153,6 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
                 )
             result[key] = val
 
-    # Order-type enum fields (Bybit V5: "Market" or "Limit").
     for key in ("tp_order_type", "sl_order_type"):
         val = p.get(key)
         if val is not None:
@@ -178,7 +163,8 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
                 )
             result[key] = val
 
-    # Bool field.
+    _validate_tp_sl_cross_fields(result)
+
     val = p.get("close_on_trigger")
     if val is not None:
         result["close_on_trigger"] = bool(val)
@@ -188,18 +174,7 @@ def _parse_bybit_tp_sl_params(params: dict | None) -> dict:
 
 def _apply_tp_sl_fields(order_params: object, tp_sl: dict) -> None:
     """
-    Write extra TP/SL fields onto a ``BybitWsPlaceOrderParams`` object.
-
-    ``take_profit`` and ``stop_loss`` are passed directly to
-    ``build_place_order_params`` as ``Price`` objects so that the Rust layer
-    can set ``tpsl_mode`` and the default trigger types automatically.  This
-    helper applies only the remaining override fields that are not accepted by
-    ``build_place_order_params``.
-
-    All relevant fields on ``BybitWsPlaceOrderParams`` are exposed with
-    ``#[pyo3(get, set)]`` and can therefore be set directly from Python
-    after the object is constructed by ``build_place_order_params``.
-
+    Apply TP/SL override fields onto a ``BybitWsPlaceOrderParams`` object.
     """
     for attr in (
         "tp_trigger_by",
@@ -1035,6 +1010,16 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
+        if self._is_demo and (tp_sl.get("take_profit") or tp_sl.get("stop_loss")):
+            self.generate_order_denied(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason="Native TP/SL params are not supported in demo mode",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         # Generate OrderSubmitted event
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
@@ -1170,6 +1155,17 @@ class BybitExecutionClient(LiveExecutionClient):
             return
 
         if self._is_demo:
+            if tp_sl.get("take_profit") or tp_sl.get("stop_loss"):
+                now_ns = self._clock.timestamp_ns()
+                for order in command.order_list.orders:
+                    self.generate_order_denied(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        reason="Native TP/SL params are not supported in demo mode",
+                        ts_event=now_ns,
+                    )
+                return
             await self._submit_order_list_http(command, tp_sl["is_leverage"])
             return
 
