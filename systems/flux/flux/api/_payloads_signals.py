@@ -790,7 +790,11 @@ def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None
     return None
 
 
-def _sanitize_external_signal_state(state: Mapping[str, Any]) -> dict[str, Any]:
+def _sanitize_external_signal_state(
+    state: Mapping[str, Any],
+    *,
+    quote_snapshot: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     public_state = dict(state)
     state_maker_v4 = state.get("maker_v4")
     if not isinstance(state_maker_v4, Mapping):
@@ -804,6 +808,10 @@ def _sanitize_external_signal_state(state: Mapping[str, Any]) -> dict[str, Any]:
 
     public_quote_snapshot = dict(raw_quote_snapshot)
     for leg_key in ("maker_leg", "ref_leg", "hedge_leg"):
+        normalized_leg = quote_snapshot.get(leg_key) if isinstance(quote_snapshot, Mapping) else None
+        if isinstance(normalized_leg, Mapping):
+            public_quote_snapshot[leg_key] = dict(normalized_leg)
+            continue
         raw_leg = raw_quote_snapshot.get(leg_key)
         if not isinstance(raw_leg, Mapping):
             continue
@@ -1680,7 +1688,7 @@ def build_signals_payload_impl(
         if uses_equities_arb_contract
         else None
     )
-    public_state = _sanitize_external_signal_state(state)
+    public_state = _sanitize_external_signal_state(state, quote_snapshot=quote_snapshot)
 
     return {
         "id": strategy_id,
