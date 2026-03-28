@@ -40,6 +40,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -156,7 +157,18 @@ class HyperliquidDataClient(LiveMarketDataClient):
     def has_quote_feed_result_ingress(self) -> bool:
         return callable(self._quote_feed_result_ingress)
 
-    async def recover_quote_subscription(self, instrument_id: InstrumentId) -> dict[str, Any]:
+    def supports_quote_feed_identity_recovery(self) -> bool:
+        return True
+
+    def _normalize_quote_recovery_target(self, target: Any) -> tuple[InstrumentId, Any | None]:
+        instrument_id = getattr(target, "instrument_id", target)
+        if not isinstance(instrument_id, InstrumentId):
+            raise TypeError(f"Unsupported quote recovery target {target!r}")
+        feed_identity = target if instrument_id is not target else None
+        return instrument_id, feed_identity
+
+    async def recover_quote_subscription(self, target: Any) -> dict[str, Any]:
+        instrument_id, feed_identity = self._normalize_quote_recovery_target(target)
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
         cache_refreshed = False
 
@@ -189,11 +201,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
             "error_summary": error_summary,
             "cache_refreshed": cache_refreshed,
         }
+        if feed_identity is not None:
+            result["feed_identity"] = feed_identity
         self._emit_quote_feed_result(result)
         return result
 
-    async def recover_quote_ticks(self, instrument_id: InstrumentId) -> dict[str, Any]:
-        return await self.recover_quote_subscription(instrument_id)
+    async def recover_quote_ticks(self, target: Any) -> dict[str, Any]:
+        return await self.recover_quote_subscription(target)
 
     def _emit_quote_feed_result(self, result: dict[str, Any]) -> None:
         ingress = self._quote_feed_result_ingress
@@ -206,6 +220,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
                 now_ns=now_ns,
                 ok=bool(result["ok"]),
                 error_summary=result.get("error_summary"),
+                feed_identity=result.get("feed_identity"),
                 instrument_id=result.get("instrument_id"),
                 status=result.get("status"),
                 cache_refreshed=bool(result.get("cache_refreshed", False)),

@@ -350,22 +350,10 @@ def _attach_quote_feed_runtime(
         )
 
 
-def _quote_feed_result_instrument_key(instrument_id: Any) -> str | None:
-    if instrument_id is None:
-        return None
-    value = getattr(instrument_id, "value", None)
-    if value is not None:
-        text = str(value).strip()
-        return text or None
-    text = str(instrument_id).strip()
-    return text or None
-
-
 def _node_scoped_quote_feed_result_routes(
     strategies: Sequence[Any],
-) -> dict[str, Any]:
-    claimed_feed_identities: dict[str, Any] = {}
-    ambiguous_instrument_keys: set[str] = set()
+) -> dict[Any, Any]:
+    claimed_feed_identities: dict[Any, Any] = {}
 
     for strategy in strategies:
         claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
@@ -375,22 +363,7 @@ def _node_scoped_quote_feed_result_routes(
         for claim_spec in claim_specs():
             if not claim_spec.node_scoped_lifecycle:
                 continue
-
-            instrument_key = _quote_feed_result_instrument_key(claim_spec.feed_identity.instrument_id)
-            if instrument_key is None:
-                continue
-
-            if instrument_key in ambiguous_instrument_keys:
-                continue
-
-            existing_feed_identity = claimed_feed_identities.get(instrument_key)
-            if existing_feed_identity is None:
-                claimed_feed_identities[instrument_key] = claim_spec.feed_identity
-                continue
-
-            if existing_feed_identity != claim_spec.feed_identity:
-                claimed_feed_identities.pop(instrument_key, None)
-                ambiguous_instrument_keys.add(instrument_key)
+            claimed_feed_identities[claim_spec.feed_identity] = claim_spec.feed_identity
 
     return claimed_feed_identities
 
@@ -398,28 +371,24 @@ def _node_scoped_quote_feed_result_routes(
 def _build_quote_feed_result_ingress(
     *,
     control_emitter: QuoteFeedControlEmitter,
-    claimed_feed_identities_by_instrument: dict[str, Any],
+    claimed_feed_identities: dict[Any, Any],
 ) -> Any:
     def _ingest_quote_feed_result(
         *,
         now_ns: int,
         ok: bool,
         error_summary: str | None = None,
-        instrument_id: Any = None,
+        feed_identity: Any = None,
         **extra: Any,
     ) -> Any:
-        instrument_key = _quote_feed_result_instrument_key(instrument_id)
-        if instrument_key is None:
-            return None
-
-        feed_identity = claimed_feed_identities_by_instrument.get(instrument_key)
-        if feed_identity is None:
+        routed_feed_identity = claimed_feed_identities.get(feed_identity)
+        if routed_feed_identity is None:
             return None
 
         extra_payload = dict(extra)
-        extra_payload["instrument_id"] = instrument_key
+        extra_payload.pop("feed_identity", None)
         return control_emitter.ingest_result(
-            feed_identity,
+            routed_feed_identity,
             now_ns=now_ns,
             ok=ok,
             error_summary=error_summary,
@@ -433,18 +402,18 @@ def _wrap_quote_feed_result_factory(
     *,
     factory: type[Any],
     control_emitter: QuoteFeedControlEmitter,
-    claimed_feed_identities_by_instrument: dict[str, Any],
+    claimed_feed_identities: dict[Any, Any],
 ) -> type[Any]:
     if factory is not HyperliquidLiveDataClientFactory:
         return factory
-    if not claimed_feed_identities_by_instrument:
+    if not claimed_feed_identities:
         return factory
 
     return wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress(
         factory_cls=factory,
         quote_feed_result_ingress=_build_quote_feed_result_ingress(
             control_emitter=control_emitter,
-            claimed_feed_identities_by_instrument=claimed_feed_identities_by_instrument,
+            claimed_feed_identities=claimed_feed_identities,
         ),
     )
 
@@ -505,6 +474,16 @@ def _emit_quote_feed_command(
     routing_map = getattr(data_engine, "routing_map", None)
     live_client = routing_map.get(instrument_id.venue) if hasattr(routing_map, "get") else None
     recover_quote_ticks = getattr(live_client, "recover_quote_ticks", None)
+    supports_quote_feed_identity_recovery = getattr(
+        live_client,
+        "supports_quote_feed_identity_recovery",
+        None,
+    )
+    recovers_by_feed_identity = (
+        bool(supports_quote_feed_identity_recovery())
+        if callable(supports_quote_feed_identity_recovery)
+        else bool(supports_quote_feed_identity_recovery)
+    )
     has_quote_feed_result_ingress = getattr(live_client, "has_quote_feed_result_ingress", None)
     emits_quote_feed_results = (
         bool(has_quote_feed_result_ingress())
@@ -514,7 +493,9 @@ def _emit_quote_feed_command(
     if callable(recover_quote_ticks) and control_emitter is not None:
         async def _recover_live_quote_feed() -> None:
             try:
-                result = await recover_quote_ticks(instrument_id)
+                result = await recover_quote_ticks(
+                    command.feed_identity if recovers_by_feed_identity else instrument_id,
+                )
             except Exception as exc:
                 result = {
                     "instrument_id": instrument_id.value,
@@ -530,7 +511,7 @@ def _emit_quote_feed_command(
             extra_payload = {
                 key: value
                 for key, value in payload.items()
-                if key not in {"ok", "error_summary"}
+                if key not in {"ok", "error_summary", "feed_identity"}
             }
             extra_payload.setdefault("result", dict(payload))
             control_emitter.ingest_result(
@@ -1205,7 +1186,7 @@ def _build_node_for_configs(
             node=node,
         ),
     )
-    claimed_feed_identities_by_instrument = _node_scoped_quote_feed_result_routes(
+    claimed_feed_identities = _node_scoped_quote_feed_result_routes(
         attached_strategies,
     )
     for strategy in attached_strategies:
@@ -1222,7 +1203,7 @@ def _build_node_for_configs(
             _wrap_quote_feed_result_factory(
                 factory=factory,
                 control_emitter=quote_feed_control_emitter,
-                claimed_feed_identities_by_instrument=claimed_feed_identities_by_instrument,
+                claimed_feed_identities=claimed_feed_identities,
             ),
         )
     for venue, factory in strategy_venues.exec_factories.items():

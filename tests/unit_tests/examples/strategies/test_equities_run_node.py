@@ -3963,7 +3963,7 @@ def test_schedule_quote_feed_result_on_node_loop_preserves_extra_result_payload(
     ]
 
 
-def test_node_scoped_quote_feed_result_routes_drop_ambiguous_same_instrument_feeds() -> None:
+def test_node_scoped_quote_feed_result_routes_keep_exact_feed_identities() -> None:
     instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
     first_feed = QuoteFeedIdentity(
         scope="hyperliquid.xyz.main",
@@ -3993,28 +3993,40 @@ def test_node_scoped_quote_feed_result_routes_drop_ambiguous_same_instrument_fee
 
     result = run_node._node_scoped_quote_feed_result_routes((_Strategy(),))
 
-    assert result == {}
+    assert result == {
+        first_feed: first_feed,
+        second_feed: second_feed,
+    }
 
 
-def test_build_quote_feed_result_ingress_routes_unique_feed_identity() -> None:
+def test_build_quote_feed_result_ingress_routes_explicit_feed_identity() -> None:
     instrument_id = InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID")
-    feed_identity = QuoteFeedIdentity(
+    first_feed = QuoteFeedIdentity(
         scope="hyperliquid.xyz.main",
         instrument_id=instrument_id,
         topic="maker_quote_ticks",
     )
-    ingress_calls: list[dict[str, object]] = []
-
+    second_feed = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.backup",
+        instrument_id=instrument_id,
+        topic="maker_quote_ticks",
+    )
+    ingress_calls: list[tuple[QuoteFeedIdentity, dict[str, object]]] = []
     control_emitter = run_node.QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
     control_emitter.register_result_ingress(
-        feed_identity,
-        lambda **kwargs: ingress_calls.append(kwargs),
+        first_feed,
+        lambda **kwargs: ingress_calls.append((first_feed, kwargs)),
+    )
+    control_emitter.register_result_ingress(
+        second_feed,
+        lambda **kwargs: ingress_calls.append((second_feed, kwargs)),
     )
 
     ingress = run_node._build_quote_feed_result_ingress(
         control_emitter=control_emitter,
-        claimed_feed_identities_by_instrument={
-            instrument_id.value: feed_identity,
+        claimed_feed_identities={
+            first_feed: first_feed,
+            second_feed: second_feed,
         },
     )
 
@@ -4022,6 +4034,7 @@ def test_build_quote_feed_result_ingress_routes_unique_feed_identity() -> None:
         now_ns=10_000,
         ok=False,
         error_summary="transport_unhealthy",
+        feed_identity=second_feed,
         instrument_id=instrument_id.value,
         status="transport_unhealthy",
         cache_refreshed=False,
@@ -4030,32 +4043,36 @@ def test_build_quote_feed_result_ingress_routes_unique_feed_identity() -> None:
 
     assert result is None
     assert ingress_calls == [
-        {
-            "now_ns": 10_000,
-            "ok": False,
-            "error_summary": "transport_unhealthy",
-            "instrument_id": instrument_id.value,
-            "status": "transport_unhealthy",
-            "cache_refreshed": False,
-            "result": {"status": "transport_unhealthy"},
-        },
+        (
+            second_feed,
+            {
+                "now_ns": 10_000,
+                "ok": False,
+                "error_summary": "transport_unhealthy",
+                "instrument_id": instrument_id.value,
+                "status": "transport_unhealthy",
+                "cache_refreshed": False,
+                "result": {"status": "transport_unhealthy"},
+            },
+        ),
     ]
 
 
 @pytest.mark.asyncio
-async def test_emit_quote_feed_command_reset_prefers_live_client_recovery_and_preserves_result_payload() -> None:
+async def test_emit_quote_feed_command_reset_prefers_live_client_feed_identity_recovery_and_preserves_result_payload() -> None:
     feed_identity = QuoteFeedIdentity(
         scope="hyperliquid.xyz.main",
         instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
         topic="maker_quote_ticks",
     )
-    recovered: list[InstrumentId] = []
+    recovered: list[QuoteFeedIdentity] = []
     ingress_calls: list[dict[str, object]] = []
 
-    async def recover_quote_ticks(instrument_id: InstrumentId) -> dict[str, object]:
-        recovered.append(instrument_id)
+    async def recover_quote_ticks(recovery_feed_identity: QuoteFeedIdentity) -> dict[str, object]:
+        recovered.append(recovery_feed_identity)
         return {
-            "instrument_id": instrument_id.value,
+            "feed_identity": recovery_feed_identity,
+            "instrument_id": recovery_feed_identity.instrument_id.value,
             "ok": True,
             "status": "replayed",
             "error_summary": None,
@@ -4072,6 +4089,7 @@ async def test_emit_quote_feed_command_reset_prefers_live_client_recovery_and_pr
                 routing_map={
                     feed_identity.instrument_id.venue: SimpleNamespace(
                         recover_quote_ticks=recover_quote_ticks,
+                        supports_quote_feed_identity_recovery=lambda: True,
                     ),
                 },
             ),
@@ -4100,7 +4118,7 @@ async def test_emit_quote_feed_command_reset_prefers_live_client_recovery_and_pr
     control_emitter.reset(feed_identity)
     await asyncio.sleep(0)
 
-    assert recovered == [feed_identity.instrument_id]
+    assert recovered == [feed_identity]
     assert ingress_calls == [
         {
             "now_ns": 123_456_789,
@@ -4110,6 +4128,7 @@ async def test_emit_quote_feed_command_reset_prefers_live_client_recovery_and_pr
             "status": "replayed",
             "cache_refreshed": True,
             "result": {
+                "feed_identity": feed_identity,
                 "instrument_id": feed_identity.instrument_id.value,
                 "ok": True,
                 "status": "replayed",
@@ -4129,6 +4148,7 @@ async def test_emit_quote_feed_command_reset_does_not_duplicate_result_when_live
     )
     ingress_calls: list[dict[str, object]] = []
     result_payload = {
+        "feed_identity": feed_identity,
         "instrument_id": feed_identity.instrument_id.value,
         "ok": True,
         "status": "replayed",
@@ -4138,12 +4158,13 @@ async def test_emit_quote_feed_command_reset_does_not_duplicate_result_when_live
 
     live_client = SimpleNamespace()
 
-    async def recover_quote_ticks(instrument_id: InstrumentId) -> dict[str, object]:
+    async def recover_quote_ticks(recovery_feed_identity: QuoteFeedIdentity) -> dict[str, object]:
         live_client._quote_feed_result_ingress(
             now_ns=123_456_789,
             ok=True,
             error_summary=None,
-            instrument_id=instrument_id.value,
+            feed_identity=recovery_feed_identity,
+            instrument_id=recovery_feed_identity.instrument_id.value,
             status="replayed",
             cache_refreshed=True,
             result=dict(result_payload),
@@ -4152,6 +4173,7 @@ async def test_emit_quote_feed_command_reset_does_not_duplicate_result_when_live
 
     live_client.recover_quote_ticks = recover_quote_ticks
     live_client.has_quote_feed_result_ingress = lambda: True
+    live_client.supports_quote_feed_identity_recovery = lambda: True
 
     node = SimpleNamespace(
         get_event_loop=lambda: asyncio.get_running_loop(),
@@ -4183,8 +4205,9 @@ async def test_emit_quote_feed_command_reset_does_not_duplicate_result_when_live
         feed_identity,
         lambda **kwargs: ingress_calls.append(kwargs),
     )
-    live_client._quote_feed_result_ingress = (
-        lambda **kwargs: control_emitter.ingest_result(feed_identity, **kwargs)
+    live_client._quote_feed_result_ingress = run_node._build_quote_feed_result_ingress(
+        control_emitter=control_emitter,
+        claimed_feed_identities={feed_identity: feed_identity},
     )
 
     control_emitter.reset(feed_identity)

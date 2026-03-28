@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedIdentity
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
@@ -218,6 +219,37 @@ async def test_recover_quote_subscription_reports_transport_result(
         assert result_ingress.call_args.kwargs["cache_refreshed"] is False
         assert result_ingress.call_args.kwargs["ok"] is False
         assert result_ingress.call_args.kwargs["error_summary"] == "transport inactive"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_recover_quote_ticks_reports_explicit_feed_identity(
+    data_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    ws_client.recover_quote_subscription = AsyncMock(
+        return_value=("transport_unhealthy", False, "transport inactive"),
+    )
+    result_ingress = MagicMock()
+    client.set_quote_feed_result_ingress(result_ingress)
+    feed_identity = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        topic="maker_quote_ticks",
+    )
+
+    await client._connect()
+    try:
+        result = await client.recover_quote_ticks(feed_identity)
+
+        assert result["feed_identity"] == feed_identity
+        assert result_ingress.call_args.kwargs["feed_identity"] == feed_identity
+        assert result_ingress.call_args.kwargs["instrument_id"] == "BTC-USD-PERP.HYPERLIQUID"
     finally:
         await client._disconnect()
 
