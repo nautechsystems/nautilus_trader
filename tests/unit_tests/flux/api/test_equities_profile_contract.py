@@ -1209,6 +1209,8 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
                         "quote_state": "fresh",
                         "pricing_usable": True,
                         "hedge_usable": True,
+                        "reason_code": "maker_quote_recovering",
+                        "recovery_state": "recovering",
                     },
                     "hedge_leg": {
                         "venue": "IBKR",
@@ -1275,8 +1277,10 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
 
     assert response.status_code == 200
     row = body["data"]["strategies"][0]
+    maker_leg = row["equities_arb"]["quote_snapshot"]["maker_leg"]
     ref_leg = row["equities_arb"]["quote_snapshot"]["ref_leg"]
     hedge_leg = row["equities_arb"]["quote_snapshot"]["hedge_leg"]
+    raw_state_maker_leg = row["state"]["maker_v4"]["quote_snapshot"]["maker_leg"]
     raw_state_ref_leg = row["state"]["maker_v4"]["quote_snapshot"]["ref_leg"]
     raw_state_hedge_leg = row["state"]["maker_v4"]["quote_snapshot"]["hedge_leg"]
 
@@ -1286,6 +1290,13 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
     assert "job_id" not in row
     assert row["tradeable"] is False
     assert row["blocked"] is True
+
+    assert maker_leg["feed_state"] == "down"
+    assert maker_leg["quote_state"] != "fresh"
+    assert maker_leg["pricing_usable"] is False
+    assert maker_leg["hedge_usable"] is False
+    assert "recovery_state" not in maker_leg
+    assert "recovering" not in str(maker_leg.get("reason_code", ""))
 
     assert ref_leg["feed_state"] == "down"
     assert ref_leg["quote_state"] != "fresh"
@@ -1307,6 +1318,13 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
     assert raw_state_ref_leg["pricing_usable"] is True
     assert raw_state_ref_leg["hedge_usable"] is True
     assert "reason_code" not in raw_state_ref_leg
+
+    assert "recovery_state" not in raw_state_maker_leg
+    assert raw_state_maker_leg["feed_state"] == "ok"
+    assert raw_state_maker_leg["quote_state"] == "fresh"
+    assert raw_state_maker_leg["pricing_usable"] is True
+    assert raw_state_maker_leg["hedge_usable"] is True
+    assert "reason_code" not in raw_state_maker_leg
 
     assert "recovery_state" not in raw_state_hedge_leg
     assert raw_state_hedge_leg["feed_state"] == "ok"

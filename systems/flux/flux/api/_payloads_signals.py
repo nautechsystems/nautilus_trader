@@ -796,13 +796,17 @@ def _sanitize_external_signal_state(state: Mapping[str, Any]) -> dict[str, Any]:
         return public_state
 
     public_quote_snapshot = dict(raw_quote_snapshot)
-    for leg_key in ("ref_leg", "hedge_leg"):
+    for leg_key in ("maker_leg", "ref_leg", "hedge_leg"):
         raw_leg = raw_quote_snapshot.get(leg_key)
         if not isinstance(raw_leg, Mapping):
             continue
         public_leg = dict(raw_leg)
         public_leg.pop("recovery_state", None)
-        leg_role = {"ref_leg": "reference", "hedge_leg": "hedge"}.get(leg_key, "")
+        leg_role = {
+            "maker_leg": "maker",
+            "ref_leg": "reference",
+            "hedge_leg": "hedge",
+        }.get(leg_key, "")
         reason_code = decode_text(public_leg.get("reason_code")).strip().lower()
         if leg_role and reason_code in {
             f"{leg_role}_quote_bootstrapping",
