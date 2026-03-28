@@ -395,6 +395,154 @@ def test_active_canary_hedge_place_routes_through_wal_backed_writer_path(tmp_pat
     assert records[-1].venue_order_id == "ibkr-venue-9001"
 
 
+def test_active_canary_hedge_cancel_routes_through_wal_bound_venue_id(tmp_path: Path) -> None:
+    run_controller = _load_run_controller_module()
+    transport = importlib.import_module("flux.execution.transport")
+    wal = importlib.import_module("flux.execution.wal")
+    gateway = _RecordingActiveWriterGateway()
+    service = run_controller._ResidentRequestReplyControllerService(
+        controller_scope_id="equities.ibkr.hedge.main",
+        transport_root_dir=tmp_path / ".run",
+        repo_root=tmp_path,
+        config={
+            "controller": {
+                "controller_scope_id": "equities.ibkr.hedge.main",
+                "allow_single_host_canary": True,
+                "mode": "active",
+                "write_ownership_enabled": True,
+            },
+            "account_scopes": [
+                {
+                    "scope_id": "ibkr.hedge.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 208,
+                    "account_id": "U10015777",
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                },
+            ],
+            "controller_scopes": [
+                {
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                    "profile_id": "equities",
+                    "writer_account_scope_id": "ibkr.hedge.main",
+                    "account_scope_ids": ["ibkr.hedge.main"],
+                    "canary": True,
+                },
+            ],
+        },
+        active_writer_factory=lambda **_kwargs: gateway,
+    )
+    runner = run_controller.build_runner(
+        {
+            "controller": {
+                "controller_scope_id": "equities.ibkr.hedge.main",
+                "allow_single_host_canary": True,
+                "mode": "active",
+                "write_ownership_enabled": True,
+            },
+            "account_scopes": [
+                {
+                    "scope_id": "ibkr.hedge.main",
+                    "provider": "ibkr",
+                    "venue": "IBKR",
+                    "ibg_host": "127.0.0.1",
+                    "ibg_port": 4002,
+                    "ibg_client_id": 208,
+                    "account_id": "U10015777",
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                },
+            ],
+            "controller_scopes": [
+                {
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                    "profile_id": "equities",
+                    "writer_account_scope_id": "ibkr.hedge.main",
+                    "account_scope_ids": ["ibkr.hedge.main"],
+                    "canary": True,
+                },
+            ],
+        },
+        owner_id="controller-a",
+        repo_root=tmp_path,
+        controller_service_factory=lambda _config: service,
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="equities.ibkr.hedge.main",
+        root_dir=tmp_path / ".run",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    place_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-hedge-place-001",
+                controller_scope_id="equities.ibkr.hedge.main",
+                strategy_id="strategy-01",
+            ),
+            requested_at_ns=123_456,
+            command=transport.ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="hedge",
+                instrument_id="AAPL.NASDAQ",
+                side="BUY",
+                quantity="10",
+                limit_price="190.01",
+                time_in_force="IOC",
+                route="SMART",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    assert place_reply.claim is not None
+
+    cancel_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-hedge-cancel-001",
+                controller_scope_id="equities.ibkr.hedge.main",
+                strategy_id="strategy-01",
+            ),
+            requested_at_ns=123_789,
+            command=transport.ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="hedge",
+                instrument_id="AAPL.NASDAQ",
+                target_client_order_id=place_reply.claim.client_order_id,
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    store = wal.SQLiteOwnershipWal(db_path=service._wal_path)
+    try:
+        records = store.list_records()
+    finally:
+        store.close()
+
+    cancel_records = [
+        record
+        for record in records
+        if record.claim.intent_id == "intent-hedge-cancel-001"
+    ]
+
+    assert cancel_reply.status == "accepted"
+    assert cancel_reply.claim is not None
+    assert len(gateway.place_calls) == 1
+    assert gateway.cancel_calls == ["ibkr-venue-9001"]
+    assert [record.lifecycle_state.value for record in cancel_records] == [
+        "owned_pre_write",
+        "sent_to_venue",
+    ]
+    assert cancel_records[-1].venue_order_id == "ibkr-venue-9001"
+
+
 def test_active_canary_writer_failures_leave_distinct_owned_pre_write_record(tmp_path: Path) -> None:
     run_controller = _load_run_controller_module()
     transport = importlib.import_module("flux.execution.transport")
