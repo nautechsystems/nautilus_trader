@@ -79,6 +79,9 @@ def test_write_owned_order_appends_durably_before_the_owned_venue_send(tmp_path:
         record = asyncio.run(
             owned_ledger.write_owned_order(
                 claim=claim,
+                account_scope_id="ibkr.hedge.main",
+                operation_type="submit",
+                claim_key="submit:intent-001",
                 append_authority=_authority(),
                 write_authority=_authority(),
                 venue_writer=_VenueWriter(),
@@ -89,6 +92,13 @@ def test_write_owned_order_appends_durably_before_the_owned_venue_send(tmp_path:
         assert seen_lifecycle_states == ["owned_pre_write"]
         assert record.lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
         assert record.venue_order_id == "venue-9001"
+        assert record.account_scope_id == "ibkr.hedge.main"
+        assert record.operation_type == "submit"
+        assert record.claim_key == "submit:intent-001"
+        history = store.list_records()
+        assert len(history) == 2
+        assert history[0].lifecycle_state is ExecutionLifecycleState.OWNED_PRE_WRITE
+        assert history[1].previous_wal_seq == history[0].wal_seq
         assert materializer.events == []
     finally:
         store.close()
@@ -115,6 +125,9 @@ def test_write_owned_order_revalidates_the_controller_epoch_before_the_send(
             asyncio.run(
                 owned_ledger.write_owned_order(
                     claim=claim,
+                    account_scope_id="ibkr.hedge.main",
+                    operation_type="submit",
+                    claim_key="submit:intent-001",
                     append_authority=_authority(),
                     write_authority=_authority(controller_epoch=8, controller_seq=42),
                     venue_writer=_ShouldNotSendWriter(),
@@ -143,6 +156,9 @@ def test_materialization_is_async_and_replay_safe_for_duplicate_state_replays(
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -175,6 +191,9 @@ def test_materialization_is_async_and_replay_safe_for_duplicate_state_replays(
         assert [event.lifecycle_state for event in materializer.events] == [
             ExecutionLifecycleState.SENT_TO_VENUE,
         ]
+        history = store.list_records()
+        assert len(history) == 3
+        assert history[-1].materialized_lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
         assert store.fetch_by_intent_id(claim.intent_id).materialized_lifecycle_state is (
             ExecutionLifecycleState.SENT_TO_VENUE
         )

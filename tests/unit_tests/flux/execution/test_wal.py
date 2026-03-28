@@ -55,13 +55,20 @@ def test_sqlite_ownership_wal_uses_full_sync_and_persists_owned_pre_write_claim(
     try:
         record = store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
 
         assert record.claim == claim
+        assert record.account_scope_id == "ibkr.hedge.main"
+        assert record.operation_type == "submit"
+        assert record.claim_key == "submit:intent-001"
         assert record.lifecycle_state is ExecutionLifecycleState.OWNED_PRE_WRITE
         assert record.materialized_lifecycle_state is None
+        assert len(store.list_records()) == 1
         assert store.fetch_by_intent_id(claim.intent_id) == record
         assert store.connection.execute("PRAGMA journal_mode;").fetchone()[0].lower() == "wal"
         assert store.connection.execute("PRAGMA synchronous;").fetchone()[0] == 2
@@ -77,6 +84,9 @@ def test_append_claim_rejects_controller_epoch_fence_regression(tmp_path: Path) 
         with pytest.raises(wal.FenceRejectedError, match="before append"):
             store.append_claim(
                 claim=_claim(),
+                account_scope_id="ibkr.hedge.main",
+                operation_type="submit",
+                claim_key="submit:intent-001",
                 authority=_authority(controller_epoch=8, controller_seq=42),
                 appended_at_ns=111,
             )
@@ -92,8 +102,11 @@ def test_record_venue_write_rechecks_the_fence_and_advances_to_sent_to_venue(
     store = wal.SQLiteOwnershipWal(db_path=tmp_path / "ownership.db")
 
     try:
-        store.append_claim(
+        first = store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -112,9 +125,18 @@ def test_record_venue_write_rechecks_the_fence_and_advances_to_sent_to_venue(
             venue_order_id="venue-9001",
             written_at_ns=222,
         )
+        history = store.list_records()
 
         assert record.lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
         assert record.venue_order_id == "venue-9001"
+        assert record.account_scope_id == "ibkr.hedge.main"
+        assert record.operation_type == "submit"
+        assert record.claim_key == "submit:intent-001"
+        assert len(history) == 2
+        assert history[0].wal_seq == first.wal_seq
+        assert history[0].lifecycle_state is ExecutionLifecycleState.OWNED_PRE_WRITE
+        assert history[1].previous_wal_seq == history[0].wal_seq
+        assert history[1].lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
         assert store.fetch_by_client_order_id(claim.client_order_id) == record
     finally:
         store.close()

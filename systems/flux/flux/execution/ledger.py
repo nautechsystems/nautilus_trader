@@ -119,6 +119,9 @@ class ExecutionLedger:
         self,
         *,
         claim: ExecutionClaim,
+        account_scope_id: str,
+        operation_type: str,
+        claim_key: str,
         append_authority: ControllerSnapshotAuthority,
         write_authority: ControllerSnapshotAuthority,
         venue_writer: ExecutionVenueWriter,
@@ -126,6 +129,9 @@ class ExecutionLedger:
     ):
         self._wal.append_claim(
             claim=claim,
+            account_scope_id=account_scope_id,
+            operation_type=operation_type,
+            claim_key=claim_key,
             authority=append_authority,
             appended_at_ns=written_at_ns,
         )

@@ -75,6 +75,9 @@ def test_owned_pre_write_replay_without_venue_evidence_stays_in_pre_write_recove
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -111,6 +114,9 @@ def test_sent_to_venue_replay_without_venue_evidence_stays_pending_recovery(
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -152,6 +158,9 @@ def test_matching_venue_truth_binds_and_materializes_without_reissuing_ownership
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -182,10 +191,11 @@ def test_matching_venue_truth_binds_and_materializes_without_reissuing_ownership
         assert [event.lifecycle_state for event in materializer.events] == [
             ExecutionLifecycleState.WORKING,
         ]
-        persisted = store.fetch_by_intent_id(claim.intent_id)
-        assert persisted.lifecycle_state is ExecutionLifecycleState.WORKING
-        assert persisted.materialized_lifecycle_state is ExecutionLifecycleState.WORKING
-        assert persisted.venue_order_id == "venue-9001"
+        history = store.list_records()
+        assert len(history) == 4
+        assert history[-1].lifecycle_state is ExecutionLifecycleState.WORKING
+        assert history[-1].materialized_lifecycle_state is ExecutionLifecycleState.WORKING
+        assert history[-1].venue_order_id == "venue-9001"
     finally:
         store.close()
 
@@ -203,6 +213,9 @@ def test_partial_venue_truth_without_final_ack_stays_pending_recovery_but_materi
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -234,6 +247,7 @@ def test_partial_venue_truth_without_final_ack_stays_pending_recovery_but_materi
         assert [event.lifecycle_state for event in materializer.events] == [
             ExecutionLifecycleState.PARTIALLY_FILLED,
         ]
+        assert len(store.list_records()) == 4
     finally:
         store.close()
 
@@ -251,6 +265,9 @@ def test_terminal_venue_truth_materializes_the_missed_ack_from_venue_truth(
     try:
         store.append_claim(
             claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
             authority=_authority(),
             appended_at_ns=111,
         )
@@ -281,9 +298,9 @@ def test_terminal_venue_truth_materializes_the_missed_ack_from_venue_truth(
         assert [event.lifecycle_state for event in materializer.events] == [
             ExecutionLifecycleState.FILLED,
         ]
-        assert store.fetch_by_intent_id(claim.intent_id).materialized_lifecycle_state is (
-            ExecutionLifecycleState.FILLED
-        )
+        history = store.list_records()
+        assert len(history) == 4
+        assert history[-1].materialized_lifecycle_state is ExecutionLifecycleState.FILLED
     finally:
         store.close()
 
