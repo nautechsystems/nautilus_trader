@@ -55,7 +55,6 @@ from nautilus_trader.adapters.rithmic.bindings import (
 )
 from nautilus_trader.adapters.rithmic.config import RithmicDataClientConfig
 from nautilus_trader.adapters.rithmic.config import to_binding_environment
-from nautilus_trader.adapters.rithmic.factories import RithmicLiveDataClientFactory
 from nautilus_trader.adapters.rithmic.providers import (
     RithmicInstrumentProvider as PythonInstrumentProvider,
 )
@@ -73,7 +72,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.config import DataCatalogConfig
+
 
 try:
     asyncio.get_running_loop()
@@ -129,6 +128,7 @@ CATALOG_PATH = Path(
 
 # %% [markdown]
 # ## Helpers
+
 
 # %%
 def build_data_client_config(profile: str, exchange: str) -> RithmicDataClientConfig:
@@ -316,7 +316,7 @@ def download_bars_to_catalog(
         node.dispose()
         """
     )
-    subprocess.run(
+    subprocess.run(  # noqa: S603
         [sys.executable, "-c", script],
         check=True,
         cwd=Path.cwd(),
@@ -367,7 +367,7 @@ def run_ema_backtest(instrument, bars):
             config=EMACrossConfig(
                 instrument_id=instrument.id,
                 bar_type=bars[0].bar_type,
-                trade_size=Decimal("1"),
+                trade_size=Decimal(1),
                 fast_ema_period=10,
                 slow_ema_period=20,
                 subscribe_trade_ticks=False,
@@ -449,8 +449,12 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 catalog_instrument = catalog.instruments(instrument_ids=[str(instrument.id)])[-1]
 catalog_bars = catalog.bars(bar_types=[str(bar_type)])
 bars_df = bars_to_frame(catalog_bars)
-first_ts = catalog.query_first_timestamp(type(catalog_bars[0]), str(bar_type)) if catalog_bars else None
-last_ts = catalog.query_last_timestamp(type(catalog_bars[0]), str(bar_type)) if catalog_bars else None
+first_ts = (
+    catalog.query_first_timestamp(type(catalog_bars[0]), str(bar_type)) if catalog_bars else None
+)
+last_ts = (
+    catalog.query_last_timestamp(type(catalog_bars[0]), str(bar_type)) if catalog_bars else None
+)
 
 summary = {
     "instrument_id": str(catalog_instrument.id),

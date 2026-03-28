@@ -63,6 +63,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading.strategy import Strategy
 
+
 try:
     asyncio.get_running_loop()
 except RuntimeError:
@@ -119,6 +120,7 @@ VERBOSE_TICK_LOGS = os.environ.get("RITHMIC_NOTEBOOK_VERBOSE_TICKS", "0") == "1"
 
 # %% [markdown]
 # ## Helpers
+
 
 # %%
 def build_data_client_config(
@@ -302,7 +304,10 @@ class RithmicLiveProbe(Strategy):
             "ask_size": float(tick.ask_size),
         }
 
-        if self.config.verbose_tick_logs or self.quote_count % max(self.config.log_every_n_ticks, 1) == 0:
+        if (
+            self.config.verbose_tick_logs
+            or self.quote_count % max(self.config.log_every_n_ticks, 1) == 0
+        ):
             self.log.info(
                 f"Quote[{self.quote_count}] bid={tick.bid_price} ask={tick.ask_price}",
                 LogColor.CYAN,
@@ -317,7 +322,10 @@ class RithmicLiveProbe(Strategy):
             "aggressor_side": tick.aggressor_side.name,
         }
 
-        if self.config.verbose_tick_logs or self.trade_count % max(self.config.log_every_n_ticks, 1) == 0:
+        if (
+            self.config.verbose_tick_logs
+            or self.trade_count % max(self.config.log_every_n_ticks, 1) == 0
+        ):
             self.log.info(
                 f"Trade[{self.trade_count}] price={tick.price} size={tick.size}",
                 LogColor.MAGENTA,
