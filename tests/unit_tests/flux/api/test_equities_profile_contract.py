@@ -1221,6 +1221,7 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
                         "quote_state": "fresh",
                         "pricing_usable": True,
                         "hedge_usable": True,
+                        "reason_code": "hedge_quote_recovering",
                         "recovery_state": "recovering",
                     },
                     "ref_leg": {
@@ -1233,6 +1234,7 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
                         "quote_state": "fresh",
                         "pricing_usable": True,
                         "hedge_usable": True,
+                        "reason_code": "reference_quote_recovering",
                         "recovery_state": "recovering",
                     },
                 },
@@ -1304,12 +1306,14 @@ def test_signals_profile_equities_fail_closes_recovering_quote_health_without_le
     assert raw_state_ref_leg["quote_state"] == "fresh"
     assert raw_state_ref_leg["pricing_usable"] is True
     assert raw_state_ref_leg["hedge_usable"] is True
+    assert "reason_code" not in raw_state_ref_leg
 
     assert "recovery_state" not in raw_state_hedge_leg
     assert raw_state_hedge_leg["feed_state"] == "ok"
     assert raw_state_hedge_leg["quote_state"] == "fresh"
     assert raw_state_hedge_leg["pricing_usable"] is True
     assert raw_state_hedge_leg["hedge_usable"] is True
+    assert "reason_code" not in raw_state_hedge_leg
 
 
 def test_signals_profile_equities_makerv4_uses_published_ibkr_quote_age_budget(

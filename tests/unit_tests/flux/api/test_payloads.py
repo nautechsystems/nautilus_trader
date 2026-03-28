@@ -3798,6 +3798,7 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
                         "quote_state": "fresh",
                         "pricing_usable": True,
                         "hedge_usable": True,
+                        "reason_code": f"reference_quote_{recovery_state}",
                         "recovery_state": recovery_state,
                     },
                     "hedge_leg": {
@@ -3812,6 +3813,7 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
                         "quote_state": "fresh",
                         "pricing_usable": True,
                         "hedge_usable": True,
+                        "reason_code": f"hedge_quote_{recovery_state}",
                         "recovery_state": recovery_state,
                     },
                 },
@@ -3855,12 +3857,14 @@ def test_build_signals_payload_fail_closes_internal_recovery_quote_health_states
     assert raw_state_ref_leg["quote_state"] == "fresh"
     assert raw_state_ref_leg["pricing_usable"] is True
     assert raw_state_ref_leg["hedge_usable"] is True
+    assert "reason_code" not in raw_state_ref_leg
 
     assert "recovery_state" not in raw_state_hedge_leg
     assert raw_state_hedge_leg["feed_state"] == "ok"
     assert raw_state_hedge_leg["quote_state"] == "fresh"
     assert raw_state_hedge_leg["pricing_usable"] is True
     assert raw_state_hedge_leg["hedge_usable"] is True
+    assert "reason_code" not in raw_state_hedge_leg
 
     assert payload["tradeable"] is False
     assert payload["blocked"] is True

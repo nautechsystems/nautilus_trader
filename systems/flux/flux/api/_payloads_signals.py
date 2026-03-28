@@ -802,6 +802,15 @@ def _sanitize_external_signal_state(state: Mapping[str, Any]) -> dict[str, Any]:
             continue
         public_leg = dict(raw_leg)
         public_leg.pop("recovery_state", None)
+        leg_role = {"ref_leg": "reference", "hedge_leg": "hedge"}.get(leg_key, "")
+        reason_code = decode_text(public_leg.get("reason_code")).strip().lower()
+        if leg_role and reason_code in {
+            f"{leg_role}_quote_bootstrapping",
+            f"{leg_role}_quote_blocked",
+            f"{leg_role}_quote_recovering",
+            f"{leg_role}_quote_down",
+        }:
+            public_leg.pop("reason_code", None)
         public_quote_snapshot[leg_key] = public_leg
 
     public_maker_v4["quote_snapshot"] = public_quote_snapshot
