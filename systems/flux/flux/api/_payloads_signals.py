@@ -783,6 +783,32 @@ def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None
     return None
 
 
+def _sanitize_external_signal_state(state: Mapping[str, Any]) -> dict[str, Any]:
+    public_state = dict(state)
+    state_maker_v4 = state.get("maker_v4")
+    if not isinstance(state_maker_v4, Mapping):
+        return public_state
+
+    public_maker_v4 = dict(state_maker_v4)
+    raw_quote_snapshot = state_maker_v4.get("quote_snapshot")
+    if not isinstance(raw_quote_snapshot, Mapping):
+        public_state["maker_v4"] = public_maker_v4
+        return public_state
+
+    public_quote_snapshot = dict(raw_quote_snapshot)
+    for leg_key in ("ref_leg", "hedge_leg"):
+        raw_leg = raw_quote_snapshot.get(leg_key)
+        if not isinstance(raw_leg, Mapping):
+            continue
+        public_leg = dict(raw_leg)
+        public_leg.pop("recovery_state", None)
+        public_quote_snapshot[leg_key] = public_leg
+
+    public_maker_v4["quote_snapshot"] = public_quote_snapshot
+    public_state["maker_v4"] = public_maker_v4
+    return public_state
+
+
 def _derive_quote_snapshot_v4(
     *,
     state: Mapping[str, Any],
@@ -1634,6 +1660,7 @@ def build_signals_payload_impl(
         if uses_equities_arb_contract
         else None
     )
+    public_state = _sanitize_external_signal_state(state)
 
     return {
         "id": strategy_id,
@@ -1668,7 +1695,7 @@ def build_signals_payload_impl(
         **({"equities_arb": equities_arb_payload} if uses_equities_arb_contract else {}),
         **({"maker_v4": equities_arb_payload} if strategy_family == "maker_v4" else {}),
         **({"maker_v3": {"quote_snapshot": quote_snapshot}} if not uses_equities_arb_contract else {}),
-        "state": state,
+        "state": public_state,
         "legs": legs,
         "legs_order": legs_order,
         "fv_row": fv_row,
