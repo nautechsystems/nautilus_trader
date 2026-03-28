@@ -3607,12 +3607,14 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
     assert strategies[0].quote_feed_control_emitter is strategies[1].quote_feed_control_emitter
 
     supervisor = strategies[0].quote_feed_supervisor
+    control_emitter = strategies[0].quote_feed_control_emitter
+    maker_feed = QuoteFeedIdentity(
+        scope="hyperliquid.xyz.main",
+        instrument_id=maker_instrument_id,
+        topic="maker_quote_ticks",
+    )
     maker_snapshot = supervisor.snapshot(
-        QuoteFeedIdentity(
-            scope="hyperliquid.xyz.main",
-            instrument_id=maker_instrument_id,
-            topic="maker_quote_ticks",
-        )
+        maker_feed
     )
     reference_snapshot = supervisor.snapshot(
         QuoteFeedIdentity(
@@ -3624,6 +3626,15 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
 
     assert set(maker_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
     assert set(reference_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+
+    control_emitter.ingest_result(
+        maker_feed,
+        now_ns=10_000,
+        ok=False,
+        error_summary="transport_failed",
+    )
+    assert supervisor.snapshot(maker_feed).attempt_count == 1
+    assert supervisor.snapshot(maker_feed).last_error_summary == "transport_failed"
 
 
 def test_build_node_shared_recovery_preserves_real_strategy_on_quote_tick_delivery(

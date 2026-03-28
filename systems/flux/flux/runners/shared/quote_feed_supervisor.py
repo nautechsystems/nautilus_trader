@@ -79,6 +79,7 @@ class QuoteFeedControlEmitter:
         self.node_scoped_id = str(node_scoped_id)
         self._sink = sink
         self.commands: list[QuoteFeedCommand] = []
+        self._result_ingresses: dict[QuoteFeedIdentity, Any] = {}
 
     def _emit(
         self,
@@ -104,6 +105,26 @@ class QuoteFeedControlEmitter:
 
     def unsubscribe(self, feed_identity: QuoteFeedIdentity, *, reason: str | None = None) -> None:
         self._emit(action="unsubscribe", feed_identity=feed_identity, reason=reason)
+
+    def register_result_ingress(self, feed_identity: QuoteFeedIdentity, ingress: Any) -> None:
+        self._result_ingresses[feed_identity] = ingress
+
+    def ingest_result(
+        self,
+        feed_identity: QuoteFeedIdentity,
+        *,
+        now_ns: int,
+        ok: bool,
+        error_summary: str | None = None,
+    ) -> Any:
+        ingress = self._result_ingresses.get(feed_identity)
+        if not callable(ingress):
+            return None
+        return ingress(
+            now_ns=now_ns,
+            ok=ok,
+            error_summary=error_summary,
+        )
 
 
 class NodeQuoteFeedSupervisor:

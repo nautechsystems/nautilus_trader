@@ -307,6 +307,19 @@ def _attach_quote_feed_runtime(
         return
 
     for claim_spec in claim_specs():
+        control_emitter.register_result_ingress(
+            claim_spec.feed_identity,
+            lambda *,
+            now_ns,
+            ok,
+            error_summary=None,
+            feed_identity=claim_spec.feed_identity: supervisor.ingest_recovery_result(
+                feed_identity,
+                now_ns=now_ns,
+                ok=ok,
+                error_summary=error_summary,
+            ),
+        )
         supervisor.register_claimant(
             claim_spec.feed_identity,
             claimant_id=claim_spec.claimant_id,
