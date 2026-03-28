@@ -169,6 +169,27 @@ def load_canary_session_artifact(path: Path) -> dict[str, object]:
     )
 
 
+def assert_canary_session_target(
+    report: Mapping[str, object],
+    *,
+    profile: str,
+    scope: str,
+    single_host: bool,
+) -> None:
+    if str(report["profile"]) != _required_text(profile, "profile"):
+        raise ValueError(
+            f"canary-session artifact profile `{report['profile']}` did not match requested profile `{profile}`",
+        )
+    if str(report["scope"]) != _required_text(scope, "scope"):
+        raise ValueError(
+            f"canary-session artifact scope `{report['scope']}` did not match requested scope `{scope}`",
+        )
+    if bool(report["single_host"]) is not bool(single_host):
+        raise ValueError(
+            "canary-session artifact single_host flag did not match requested target",
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if args.check_thresholds:
@@ -190,11 +211,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     report = load_canary_session_artifact(args.session_artifact)
-    print(json.dumps(report, indent=2, sort_keys=True))
     try:
+        assert_canary_session_target(
+            report,
+            profile=args.profile,
+            scope=args.scope,
+            single_host=args.single_host,
+        )
         assert_canary_session(report)
     except ValueError:
+        print(json.dumps(report, indent=2, sort_keys=True))
         return 1
+    print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
 

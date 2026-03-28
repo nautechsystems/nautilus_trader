@@ -118,3 +118,74 @@ def test_canary_session_artifact_rejects_unexplained_ownership_diffs_and_balance
         match="shadow_fill_diffs|unexplained_ownership_diffs|balance_divergence|rollback_bounces",
     ):
         module.assert_canary_session(module.load_canary_session_artifact(session_path))
+
+
+def test_canary_session_artifact_rejects_requested_target_mismatch(tmp_path: Path) -> None:
+    module = _load_failover_module()
+    session_path = tmp_path / "wrong-scope-session.json"
+    session_path.write_text(
+        json.dumps(
+            {
+                "profile": "equities",
+                "scope": "ibkr.hedge.alt",
+                "single_host": True,
+                "latency_budget_passed": True,
+                "shadow_order_diffs": 0,
+                "shadow_fill_diffs": 0,
+                "shadow_position_diffs": 0,
+                "unexplained_ownership_diffs": 0,
+                "balance_divergence": False,
+                "rollback_bounces": 1,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    report = module.load_canary_session_artifact(session_path)
+
+    with pytest.raises(ValueError, match="requested scope"):
+        module.assert_canary_session_target(
+            report,
+            profile="equities",
+            scope="ibkr.hedge.main",
+            single_host=True,
+        )
+
+
+def test_canary_session_cli_rejects_artifact_context_mismatch(tmp_path: Path) -> None:
+    module = _load_failover_module()
+    session_path = tmp_path / "wrong-scope-session.json"
+    session_path.write_text(
+        json.dumps(
+            {
+                "profile": "equities",
+                "scope": "ibkr.hedge.secondary",
+                "single_host": True,
+                "latency_budget_passed": True,
+                "shadow_order_diffs": 0,
+                "shadow_fill_diffs": 0,
+                "shadow_position_diffs": 0,
+                "unexplained_ownership_diffs": 0,
+                "balance_divergence": False,
+                "rollback_bounces": 1,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = module.main(
+        [
+            "--profile",
+            "equities",
+            "--scope",
+            "ibkr.hedge.main",
+            "--single-host",
+            "--check-canary-session",
+            "--session-artifact",
+            str(session_path),
+        ]
+    )
+
+    assert exit_code == 1
