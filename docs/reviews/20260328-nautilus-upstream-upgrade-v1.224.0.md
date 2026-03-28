@@ -18,8 +18,11 @@ Run metadata:
 - upstream release date: `2026-03-03T07:48:59Z`
 - base branch: `origin/main`
 - base branch head before sync: `5e413a4af56e3d6a7910f36e83375e60b66973fb`
+- base branch head before final merge: `4995b215b2573bb98610e05d28e9e6a22254ba7d`
 - upgrade branch: `upgrade/nautilus-20260328-v1.224.0`
 - upgrade branch head after sync: `aff0d04921c930e9bac9671a4f14536cd5a87469`
+- upgrade branch head after rebasing onto `origin/main`:
+  `03a8ddcfca77b54bebb329e46a676a397b639307`
 - upstream sync branch: `upstream-sync/v1.224.0`
 
 ## Verified upstream baseline
@@ -82,6 +85,10 @@ Script output summary:
 - cherry-picked nine upstream merge commits onto the upgrade branch
 - stopped for conflicts in the IB-related follow-up commits, which were resolved
   manually and continued with `git cherry-pick --continue`
+- while this note was being finalized, `origin/main` advanced to
+  `4995b215b2573bb98610e05d28e9e6a22254ba7d` via PR `#89`; the prepared
+  upgrade branch was then rebased onto that newer `origin/main` cleanly, with
+  no additional conflicts
 
 ## Cherry-picks
 
