@@ -184,9 +184,9 @@ Before declaring the restart safe, inspect structured logs, counters, or venue/o
 
 Do not infer this from signal rows alone.
 
-## 11. Hold A Soak Window
+## 11. Hold A 15-Minute Soak Window
 
-Run repeated readiness JSON and quote-age probes for at least `10-15` minutes during a live US regular trading session.
+Run repeated readiness JSON and quote-age probes for at least `15` minutes during a live US regular trading session.
 
 Do not sign off until:
 
