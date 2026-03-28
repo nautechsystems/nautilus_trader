@@ -66,10 +66,30 @@ BASELINE_OPERATION_SAMPLES = {
     ),
 }
 
+CANARY_OPERATION_SAMPLES = {
+    "submit": OperationLatencySamples(
+        direct_path_us=(150, 160, 170, 180, 195),
+        controller_path_us=(225, 235, 250, 285, 320),
+    ),
+    "cancel": OperationLatencySamples(
+        direct_path_us=(90, 100, 110, 120, 135),
+        controller_path_us=(155, 165, 180, 210, 230),
+    ),
+    "replace": OperationLatencySamples(
+        direct_path_us=(185, 195, 205, 215, 225),
+        controller_path_us=(275, 295, 305, 330, 380),
+    ),
+}
+
 SCENARIOS = {
     "baseline": {
         "operation_samples": BASELINE_OPERATION_SAMPLES,
         "queue_backlog_age_us": (200, 350, 500, 900, 1_500),
+        "dropped_intents": 0,
+    },
+    "canary": {
+        "operation_samples": CANARY_OPERATION_SAMPLES,
+        "queue_backlog_age_us": (450, 700, 850, 1_250, 1_900),
         "dropped_intents": 0,
     },
 }

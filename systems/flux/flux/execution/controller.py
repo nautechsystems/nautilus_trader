@@ -3,14 +3,26 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from .intents import ExecutionLifecycleState
+
+if TYPE_CHECKING:
+    from .intents import ExecutionClaim
+    from .leases import ControllerLease
 
 
 if __name__ == "flux.execution.controller":
     sys.modules.setdefault("nautilus_trader.flux.execution.controller", sys.modules[__name__])
 elif __name__ == "nautilus_trader.flux.execution.controller":
     sys.modules.setdefault("flux.execution.controller", sys.modules[__name__])
+
+
+STALE_WRITER_STOP_BUDGET_MS = 250
+
+
+class ControllerFenceViolation(RuntimeError):
+    pass
 
 
 class ControllerOwnershipState(str, Enum):
@@ -190,6 +202,57 @@ def default_lifecycle_state_for_venue_activity(
     return ExecutionLifecycleState.QUARANTINED
 
 
+def assert_controller_write_fence(
+    *,
+    claim: ExecutionClaim,
+    authority: ControllerSnapshotAuthority,
+    lease: ControllerLease,
+    now_ms: int,
+) -> None:
+    if authority.controller_scope_id != claim.controller_scope_id:
+        raise ControllerFenceViolation("controller scope mismatch")
+    if lease.controller_scope_id != claim.controller_scope_id:
+        raise ControllerFenceViolation("controller scope mismatch")
+    if authority.controller_epoch != claim.controller_epoch:
+        raise ControllerFenceViolation("controller epoch mismatch")
+    if authority.controller_seq < claim.controller_seq:
+        raise ControllerFenceViolation("controller sequence regressed")
+    if authority.authority_state is not SnapshotAuthorityState.AUTHORITATIVE:
+        raise ControllerFenceViolation(
+            f"authority is {authority.authority_state.value}",
+        )
+    if lease.is_stale(now_ms=int(now_ms)):
+        raise ControllerFenceViolation("lease is stale")
+
+
+def assert_single_writer(
+    *,
+    controller_scope_id: str,
+    leases: tuple[ControllerLease, ...],
+    now_ms: int,
+) -> None:
+    scope_id = str(controller_scope_id).strip()
+    active_tokens = {
+        lease.lease_token
+        for lease in leases
+        if lease.controller_scope_id == scope_id and not lease.is_stale(now_ms=int(now_ms))
+    }
+    if len(active_tokens) > 1:
+        raise ControllerFenceViolation(f"split-brain detected for controller scope `{scope_id}`")
+
+
+def assert_stale_writer_stop_budget(
+    *,
+    lease_lost_at_ms: int,
+    stopped_at_ms: int,
+) -> None:
+    stop_latency_ms = int(stopped_at_ms) - int(lease_lost_at_ms)
+    if stop_latency_ms > STALE_WRITER_STOP_BUDGET_MS:
+        raise ControllerFenceViolation(
+            f"stale writer stop latency {stop_latency_ms}ms exceeded budget {STALE_WRITER_STOP_BUDGET_MS}ms",
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ControllerSnapshotAuthority:
     controller_scope_id: str
@@ -240,14 +303,19 @@ class ControllerSnapshotAuthority:
 
 
 __all__ = (
+    "ControllerFenceViolation",
     "ControllerCrashRecoveryAction",
     "ControllerIngressPolicy",
     "ControllerOwnershipState",
     "ControllerRunMode",
     "ControllerSnapshotAuthority",
+    "STALE_WRITER_STOP_BUDGET_MS",
     "ExecutionLifecycleSemantics",
     "SnapshotAuthorityState",
     "VenueActivityOrigin",
+    "assert_controller_write_fence",
+    "assert_single_writer",
+    "assert_stale_writer_stop_budget",
     "default_lifecycle_state_for_venue_activity",
     "lifecycle_semantics",
     "ownership_state_for_lifecycle",

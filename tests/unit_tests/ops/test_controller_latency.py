@@ -121,3 +121,64 @@ def test_assert_latency_budgets_rejects_threshold_regressions() -> None:
         match="submit added_overhead_us p50|submit added_overhead_us p99|queue_backlog_age_us p99|dropped_intents",
     ):
         module.assert_latency_budgets(report)
+
+
+def test_canary_benchmark_output_shape_and_thresholds_are_locked(capsys) -> None:
+    module = _load_bench_module()
+
+    exit_code = module.main(["--scenario", "canary", "--check-budgets"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "scenario": "canary",
+        "transport": {
+            "kind": "uds",
+            "schema_version": "v1",
+        },
+        "operations": {
+            "submit": {
+                "direct_path_us": {"count": 5, "p50": 170.0, "p99": 195.0},
+                "controller_path_us": {"count": 5, "p50": 250.0, "p99": 320.0},
+                "added_overhead_us": {
+                    "count": 5,
+                    "p50": 80.0,
+                    "p99": 125.0,
+                    "budget": {"p50": 100.0, "p99": 750.0},
+                },
+            },
+            "cancel": {
+                "direct_path_us": {"count": 5, "p50": 110.0, "p99": 135.0},
+                "controller_path_us": {"count": 5, "p50": 180.0, "p99": 230.0},
+                "added_overhead_us": {
+                    "count": 5,
+                    "p50": 70.0,
+                    "p99": 95.0,
+                    "budget": {"p50": 100.0, "p99": 750.0},
+                },
+            },
+            "replace": {
+                "direct_path_us": {"count": 5, "p50": 205.0, "p99": 225.0},
+                "controller_path_us": {"count": 5, "p50": 305.0, "p99": 380.0},
+                "added_overhead_us": {
+                    "count": 5,
+                    "p50": 100.0,
+                    "p99": 155.0,
+                    "budget": {"p50": 100.0, "p99": 750.0},
+                },
+            },
+        },
+        "queue_backlog_age_us": {
+            "count": 5,
+            "p50": 850.0,
+            "p99": 1900.0,
+            "budget": {"p99": 2000.0},
+        },
+        "dropped_intents": {
+            "count": 0,
+            "budget": {"count": 0},
+        },
+        "budget_check": {
+            "passed": True,
+            "violations": [],
+        },
+    }
