@@ -7,6 +7,12 @@ Use this runbook to cut prod equities from one node per strategy to one node per
 - Source release commit includes grouped-node runtime, API, and installer support.
 - The source release has a clean `uv sync --all-groups --all-extras --frozen`.
 - Do not start until you have a writable baseline snapshot path under `~/archive`.
+- Treat this market-data recovery V1 as an intra-node hardening wave on top of the grouped-node rollout, not as a fleet-wide market-data redesign.
+- Confirm the shared IBKR reference boundary is healthy before evaluating maker-feed recovery:
+  - the live IBKR gateway is authenticated
+  - `chainsaw@md-ibkr-publisher.service` is healthy
+  - current `/api/v1/readiness?profile=equities` can be captured for comparison
+- Do not restart `chainsaw@md-ibkr-publisher.service` as part of this cutover unless the release explicitly changed publisher config.
 
 ## 1. Capture The Live Baseline
 
@@ -33,11 +39,30 @@ BASELINE="$HOME/archive/equities-shared-node-cutover-${STAMP}.txt"
   echo
   echo "# pulse jobs"
   curl -fsS 'http://127.0.0.1:5024/api/pulse/jobs'
+  echo
+  echo "# readiness json"
+  bash "$HOME/releases/prod/equities/current/ops/scripts/deploy/check_equities_live_readiness.sh" --json
+  echo
+  echo "# ibkr / publisher"
+  systemctl is-active chainsaw@md-ibkr-publisher.service || true
+  systemctl is-active nautilus-ib-gateway-live.service || true
 } >"$BASELINE"
 echo "$BASELINE"
 ```
 
 Rollback must use this snapshot, not memory.
+
+Also capture repeated quote-age probes for the historically bad rows before any restart:
+
+- `aapl_tradexyz`
+- `amd_tradexyz`
+- `meta_tradexyz`
+- `msft_tradexyz`
+- `orcl_tradexyz`
+- `tsla_tradexyz`
+- `ewy_binance_perp`
+
+Store at least two spaced samples so the post-restart result can be compared against a real baseline rather than a single timestamp.
 
 ## 2. Create A Fresh Immutable Release Root
 
@@ -102,8 +127,6 @@ sudo systemctl start flux-equities.target
 sudo systemctl restart flux@equities-api.service
 ```
 
-Do not restart `chainsaw@md-ibkr-publisher.service` as part of this cutover unless the release explicitly changed publisher config.
-
 ## 7. Verify Pulse And Live API State
 
 ```bash
@@ -137,11 +160,42 @@ Then verify a fresh page load still uses the existing realtime contract and does
 
 ```bash
 cd "$HOME/releases/prod/equities/releases/$RELEASE_ID"
-bash ops/scripts/deploy/check_equities_live_readiness.sh
+bash ops/scripts/deploy/check_equities_live_readiness.sh --json
 curl -fsS 'http://127.0.0.1:5024/api/v1/readiness?profile=equities'
 ```
 
 Do not call the cutover healthy until both checks pass.
+
+The readiness gate and the human rollout log should prove all of the following:
+
+- `healthy_strategy_count = 38`
+- no maker feed remains stuck in `recovering` or `down`
+- the shared IBKR gateway and `chainsaw@md-ibkr-publisher.service` are healthy and were treated as preconditions, not local maker-feed results
+- historically stale rows now advance quote timestamps after restart
+- balances / projections are no worse than the captured baseline
+
+## 10. Verify Fail-Closed Trading Behavior During Recovery
+
+Before declaring the restart safe, inspect structured logs, counters, or venue/order state and prove:
+
+- strategies whose required feeds are `bootstrapping`, `blocked`, `recovering`, or `down` emit no quote-placement, quote-amendment, or hedge-placement side effects
+- those same strategies retain zero working maker quotes while the required feeds remain non-tradeable
+- any venue/session blocker is explicit in logs and suppresses per-feed reset churn
+
+Do not infer this from signal rows alone.
+
+## 11. Hold A Soak Window
+
+Run repeated readiness JSON and quote-age probes for at least `10-15` minutes during a live US regular trading session.
+
+Do not sign off until:
+
+- the historically stale rows continue to advance over repeated samples
+- readiness stays at or above the captured pre-restart baseline
+- no new maker feed falls back into a persistent `recovering` / `down` loop
+- no strategy leaks back into working maker quotes while required feeds remain non-tradeable
+
+Rollback immediately if health regresses below baseline or the historically bad rows remain frozen after the soak window.
 
 ## Rollback
 
@@ -166,3 +220,4 @@ sudo systemctl restart flux@equities-api.service
 ```
 
 5. Re-run the verification steps above and confirm no grouped node service remains active or restartable.
+6. Use the pre-restart baseline snapshot and quote-age probes as the rollback acceptance threshold. The rollback is not complete until readiness and historically bad rows are back to the recorded baseline or better.
