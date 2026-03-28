@@ -17,6 +17,7 @@
 
 use std::{
     future::Future,
+    str::FromStr,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -37,7 +38,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    MUTEX_POISONED, Params, UnixNanos,
     env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -49,7 +50,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Price},
 };
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -60,9 +61,9 @@ use crate::{
         credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
-            BybitTimeInForce,
+            BybitTimeInForce, BybitTriggerType,
         },
-        parse::{extract_raw_symbol, nanos_to_millis},
+        parse::{extract_raw_symbol, nanos_to_millis, spot_leverage},
     },
     config::BybitExecClientConfig,
     http::client::BybitHttpClient,
@@ -72,6 +73,170 @@ use crate::{
         messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     },
 };
+
+/// Parsed and validated Bybit TP/SL parameters from a `SubmitOrder.params` map.
+#[derive(Debug, Default)]
+struct BybitTpSlParams {
+    take_profit: Option<Price>,
+    stop_loss: Option<Price>,
+    tp_trigger_by: Option<BybitTriggerType>,
+    sl_trigger_by: Option<BybitTriggerType>,
+    tp_order_type: Option<BybitOrderType>,
+    sl_order_type: Option<BybitOrderType>,
+    tp_limit_price: Option<String>,
+    sl_limit_price: Option<String>,
+    tp_trigger_price: Option<String>,
+    sl_trigger_price: Option<String>,
+    close_on_trigger: Option<bool>,
+    is_leverage: bool,
+}
+
+impl BybitTpSlParams {
+    fn has_tp_sl(&self) -> bool {
+        self.take_profit.is_some() || self.stop_loss.is_some()
+    }
+}
+
+/// Extracts a string value from params, accepting both string and numeric JSON values.
+fn get_price_str(params: &Params, key: &str) -> Option<String> {
+    let value = params.get(key)?;
+    if let Some(s) = value.as_str() {
+        Some(s.to_string())
+    } else if let Some(n) = value.as_f64() {
+        Some(n.to_string())
+    } else if let Some(n) = value.as_i64() {
+        Some(n.to_string())
+    } else {
+        value.as_u64().map(|n| n.to_string())
+    }
+}
+
+fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<BybitTpSlParams> {
+    let Some(params) = params else {
+        return Ok(BybitTpSlParams::default());
+    };
+
+    let mut result = BybitTpSlParams {
+        is_leverage: params.get_bool("is_leverage").unwrap_or(false),
+        ..Default::default()
+    };
+
+    if let Some(s) = get_price_str(params, "take_profit") {
+        let p =
+            Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'take_profit' price: {e}"))?;
+
+        if p.as_f64() < 0.0 {
+            anyhow::bail!("invalid 'take_profit' price: '{s}', expected a non-negative value");
+        }
+        result.take_profit = Some(p);
+    }
+
+    if let Some(s) = get_price_str(params, "stop_loss") {
+        let p =
+            Price::from_str(&s).map_err(|e| anyhow::anyhow!("invalid 'stop_loss' price: {e}"))?;
+
+        if p.as_f64() < 0.0 {
+            anyhow::bail!("invalid 'stop_loss' price: '{s}', expected a non-negative value");
+        }
+        result.stop_loss = Some(p);
+    }
+
+    for (key, setter) in [
+        (
+            "tp_limit_price",
+            &mut result.tp_limit_price as &mut Option<String>,
+        ),
+        ("sl_limit_price", &mut result.sl_limit_price),
+        ("tp_trigger_price", &mut result.tp_trigger_price),
+        ("sl_trigger_price", &mut result.sl_trigger_price),
+    ] {
+        if let Some(s) = get_price_str(params, key) {
+            let v: f64 = s
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid price for '{key}': '{s}'"))?;
+
+            if !v.is_finite() || v < 0.0 {
+                anyhow::bail!(
+                    "invalid price for '{key}': '{s}', expected a finite non-negative number"
+                );
+            }
+            *setter = Some(s);
+        }
+    }
+
+    if let Some(s) = params.get_str("tp_trigger_by") {
+        result.tp_trigger_by = Some(parse_trigger_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("sl_trigger_by") {
+        result.sl_trigger_by = Some(parse_trigger_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("tp_order_type") {
+        result.tp_order_type = Some(parse_tp_sl_order_type(s)?);
+    }
+
+    if let Some(s) = params.get_str("sl_order_type") {
+        result.sl_order_type = Some(parse_tp_sl_order_type(s)?);
+    }
+
+    let has_tp_fields = result.tp_trigger_by.is_some()
+        || result.tp_order_type.is_some()
+        || result.tp_limit_price.is_some()
+        || result.tp_trigger_price.is_some();
+
+    let has_sl_fields = result.sl_trigger_by.is_some()
+        || result.sl_order_type.is_some()
+        || result.sl_limit_price.is_some()
+        || result.sl_trigger_price.is_some();
+
+    if result.take_profit.is_none() && has_tp_fields {
+        anyhow::bail!("TP override fields require 'take_profit' to be set");
+    }
+
+    if result.stop_loss.is_none() && has_sl_fields {
+        anyhow::bail!("SL override fields require 'stop_loss' to be set");
+    }
+
+    if result.tp_order_type == Some(BybitOrderType::Limit) && result.tp_limit_price.is_none() {
+        anyhow::bail!("'tp_order_type' is 'Limit' but 'tp_limit_price' was not provided");
+    }
+
+    if result.sl_order_type == Some(BybitOrderType::Limit) && result.sl_limit_price.is_none() {
+        anyhow::bail!("'sl_order_type' is 'Limit' but 'sl_limit_price' was not provided");
+    }
+
+    if result.tp_limit_price.is_some() && result.tp_order_type != Some(BybitOrderType::Limit) {
+        anyhow::bail!("'tp_limit_price' requires 'tp_order_type' to be 'Limit'");
+    }
+
+    if result.sl_limit_price.is_some() && result.sl_order_type != Some(BybitOrderType::Limit) {
+        anyhow::bail!("'sl_limit_price' requires 'sl_order_type' to be 'Limit'");
+    }
+
+    result.close_on_trigger = params.get_bool("close_on_trigger");
+
+    Ok(result)
+}
+
+fn parse_trigger_type(s: &str) -> anyhow::Result<BybitTriggerType> {
+    match s {
+        "LastPrice" => Ok(BybitTriggerType::LastPrice),
+        "MarkPrice" => Ok(BybitTriggerType::MarkPrice),
+        "IndexPrice" => Ok(BybitTriggerType::IndexPrice),
+        _ => anyhow::bail!(
+            "invalid Bybit trigger type: '{s}', expected LastPrice, MarkPrice, or IndexPrice"
+        ),
+    }
+}
+
+fn parse_tp_sl_order_type(s: &str) -> anyhow::Result<BybitOrderType> {
+    match s {
+        "Market" => Ok(BybitOrderType::Market),
+        "Limit" => Ok(BybitOrderType::Limit),
+        _ => anyhow::bail!("invalid Bybit TP/SL order type: '{s}', expected Market or Limit"),
+    }
+}
 
 /// Live execution client for Bybit.
 #[derive(Debug)]
@@ -791,6 +956,20 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
+        let tp_sl = match parse_bybit_tp_sl_params(cmd.params.as_ref()) {
+            Ok(p) => p,
+            Err(e) => {
+                self.emitter.emit_order_denied(&order, &e.to_string());
+                return Ok(());
+            }
+        };
+
+        if self.config.environment == BybitEnvironment::Demo && tp_sl.has_tp_sl() {
+            self.emitter
+                .emit_order_denied(&order, "Native TP/SL params are not supported in demo mode");
+            return Ok(());
+        }
+
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
@@ -867,13 +1046,14 @@ impl ExecutionClient for BybitExecutionClient {
         let bybit_side = BybitOrderSide::try_from(order.order_side())?;
         let bybit_order_type = Self::map_order_type(order.order_type())?;
 
+        let has_tp_sl = tp_sl.has_tp_sl();
         let params = BybitWsPlaceOrderParams {
             category: product_type,
             symbol: Ustr::from(raw_symbol),
             side: bybit_side,
             order_type: bybit_order_type,
             qty: order.quantity().to_string(),
-            is_leverage: None,
+            is_leverage: spot_leverage(product_type, tp_sl.is_leverage),
             market_unit: None,
             price: order.price().map(|p| p.to_string()),
             time_in_force: Some(Self::map_time_in_force(
@@ -886,21 +1066,33 @@ impl ExecutionClient for BybitExecutionClient {
             } else {
                 None
             },
-            close_on_trigger: None,
+            close_on_trigger: tp_sl.close_on_trigger,
             trigger_price: order.trigger_price().map(|p| p.to_string()),
             trigger_by: None,
             trigger_direction: None,
-            tpsl_mode: None,
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            sl_trigger_price: None,
-            tp_trigger_price: None,
-            sl_order_type: None,
-            tp_order_type: None,
-            sl_limit_price: None,
-            tp_limit_price: None,
+            tpsl_mode: if has_tp_sl {
+                Some("Full".to_string())
+            } else {
+                None
+            },
+            take_profit: tp_sl.take_profit.map(|p| p.to_string()),
+            stop_loss: tp_sl.stop_loss.map(|p| p.to_string()),
+            tp_trigger_by: tp_sl.tp_trigger_by.or(if tp_sl.take_profit.is_some() {
+                Some(BybitTriggerType::LastPrice)
+            } else {
+                None
+            }),
+            sl_trigger_by: tp_sl.sl_trigger_by.or(if tp_sl.stop_loss.is_some() {
+                Some(BybitTriggerType::LastPrice)
+            } else {
+                None
+            }),
+            sl_trigger_price: tp_sl.sl_trigger_price,
+            tp_trigger_price: tp_sl.tp_trigger_price,
+            sl_order_type: tp_sl.sl_order_type,
+            tp_order_type: tp_sl.tp_order_type,
+            sl_limit_price: tp_sl.sl_limit_price,
+            tp_limit_price: tp_sl.tp_limit_price,
         };
 
         let ws_trade = self.ws_trade.clone();
@@ -1251,5 +1443,157 @@ impl ExecutionClient for BybitExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::Params;
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    fn params_from(pairs: &[(&str, serde_json::Value)]) -> Params {
+        let mut p = Params::new();
+        for (k, v) in pairs {
+            p.insert(k.to_string(), v.clone());
+        }
+        p
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_none_returns_defaults() {
+        let result = parse_bybit_tp_sl_params(None).unwrap();
+        assert!(!result.is_leverage);
+        assert!(!result.has_tp_sl());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_empty_returns_defaults() {
+        let p = Params::new();
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert!(!result.is_leverage);
+        assert!(!result.has_tp_sl());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_valid_full() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("stop_loss", json!("47000.00")),
+            ("tp_trigger_by", json!("MarkPrice")),
+            ("sl_trigger_by", json!("IndexPrice")),
+            ("tp_order_type", json!("Limit")),
+            ("tp_limit_price", json!("54990.00")),
+            ("sl_order_type", json!("Market")),
+            ("close_on_trigger", json!(true)),
+            ("is_leverage", json!(true)),
+        ]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert!(result.has_tp_sl());
+        assert!(result.take_profit.is_some());
+        assert!(result.stop_loss.is_some());
+        assert_eq!(result.tp_trigger_by, Some(BybitTriggerType::MarkPrice));
+        assert_eq!(result.sl_trigger_by, Some(BybitTriggerType::IndexPrice));
+        assert_eq!(result.tp_order_type, Some(BybitOrderType::Limit));
+        assert_eq!(result.sl_order_type, Some(BybitOrderType::Market));
+        assert_eq!(result.tp_limit_price.as_deref(), Some("54990.00"));
+        assert_eq!(result.close_on_trigger, Some(true));
+        assert!(result.is_leverage);
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("nan")]
+    #[case("inf")]
+    #[case("-1.0")]
+    fn test_parse_tp_sl_params_rejects_invalid_take_profit(#[case] price: &str) {
+        let p = params_from(&[("take_profit", json!(price))]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    #[case("abc")]
+    #[case("nan")]
+    #[case("inf")]
+    fn test_parse_tp_sl_params_rejects_invalid_stop_loss(#[case] price: &str) {
+        let p = params_from(&[("stop_loss", json!(price))]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    #[case("nan")]
+    #[case("inf")]
+    #[case("-5.0")]
+    #[case("not_a_number")]
+    fn test_parse_tp_sl_params_rejects_invalid_limit_price(#[case] price: &str) {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_order_type", json!("Limit")),
+            ("tp_limit_price", json!(price)),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_invalid_trigger_type() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_trigger_by", json!("InvalidType")),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_invalid_order_type() {
+        let p = params_from(&[
+            ("stop_loss", json!("47000.00")),
+            ("sl_order_type", json!("Stop")),
+        ]);
+        assert!(parse_bybit_tp_sl_params(Some(&p)).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_limit_without_limit_price() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_order_type", json!("Limit")),
+        ]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("tp_limit_price"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_limit_price_without_limit_type() {
+        let p = params_from(&[
+            ("take_profit", json!("55000.00")),
+            ("tp_limit_price", json!("54990.00")),
+        ]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("tp_order_type"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_orphaned_tp_fields() {
+        let p = params_from(&[("tp_trigger_by", json!("MarkPrice"))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("TP override fields require"));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_accepts_numeric_prices() {
+        let p = params_from(&[("take_profit", json!(55000.0)), ("stop_loss", json!(47000))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert!(result.take_profit.is_some());
+        assert!(result.stop_loss.is_some());
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_rejects_orphaned_sl_fields() {
+        let p = params_from(&[("sl_trigger_by", json!("IndexPrice"))]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("SL override fields require"));
     }
 }

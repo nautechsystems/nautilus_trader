@@ -23,6 +23,7 @@ import pytest
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
+from nautilus_trader.adapters.bybit.execution import _parse_bybit_tp_sl_params
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -721,6 +722,242 @@ async def test_submit_order_with_invalid_sl_order_type_emits_order_denied(
         await client._submit_order(command)
 
         ws_trade_client.submit_order.assert_not_awaited()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"take_profit": "nan"},
+        {"stop_loss": "inf"},
+        {"take_profit": "1e309"},
+        {"take_profit": "-1.0"},
+        {"take_profit": "abc"},
+        {"stop_loss": "not_a_price", "take_profit": "55000.00"},
+    ],
+)
+def test_parse_tp_sl_rejects_invalid_prices(params):
+    with pytest.raises(ValueError, match="Invalid Bybit price"):
+        _parse_bybit_tp_sl_params(params)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"take_profit": "55000.00", "tp_order_type": "Limit"},
+        {"stop_loss": "47000.00", "sl_order_type": "Limit"},
+    ],
+)
+def test_parse_tp_sl_rejects_limit_without_limit_price(params):
+    with pytest.raises(
+        ValueError,
+        match=r"'tp_limit_price' was not provided|'sl_limit_price' was not provided",
+    ):
+        _parse_bybit_tp_sl_params(params)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"take_profit": "55000.00", "tp_limit_price": "54990.00"},
+        {"stop_loss": "47000.00", "sl_limit_price": "46990.00"},
+    ],
+)
+def test_parse_tp_sl_rejects_limit_price_without_limit_type(params):
+    with pytest.raises(
+        ValueError,
+        match=r"requires 'tp_order_type' to be 'Limit'|requires 'sl_order_type' to be 'Limit'",
+    ):
+        _parse_bybit_tp_sl_params(params)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"tp_trigger_by": "MarkPrice"},
+        {"tp_order_type": "Market"},
+        {"tp_limit_price": "54990.00", "tp_order_type": "Limit"},
+        {"sl_trigger_by": "IndexPrice"},
+    ],
+)
+def test_parse_tp_sl_rejects_orphaned_override_fields(params):
+    with pytest.raises(ValueError, match="override fields require"):
+        _parse_bybit_tp_sl_params(params)
+
+
+def test_parse_tp_sl_valid_full_params():
+    result = _parse_bybit_tp_sl_params(
+        {
+            "take_profit": "55000.00",
+            "stop_loss": "47000.00",
+            "tp_trigger_by": "MarkPrice",
+            "sl_trigger_by": "IndexPrice",
+            "tp_order_type": "Limit",
+            "tp_limit_price": "54990.00",
+            "sl_order_type": "Market",
+            "close_on_trigger": True,
+            "is_leverage": True,
+        },
+    )
+    assert result["take_profit"] == "55000.00"
+    assert result["stop_loss"] == "47000.00"
+    assert result["tp_trigger_by"] == "MarkPrice"
+    assert result["sl_trigger_by"] == "IndexPrice"
+    assert result["tp_order_type"] == "Limit"
+    assert result["tp_limit_price"] == "54990.00"
+    assert result["sl_order_type"] == "Market"
+    assert result["close_on_trigger"] is True
+    assert result["is_leverage"] is True
+
+
+def test_parse_tp_sl_none_params_returns_defaults():
+    result = _parse_bybit_tp_sl_params(None)
+    assert result == {"is_leverage": False}
+
+
+def test_parse_tp_sl_empty_params_returns_defaults():
+    result = _parse_bybit_tp_sl_params({})
+    assert result == {"is_leverage": False}
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_tp_sl_in_demo_mode_emits_order_denied(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(
+        monkeypatch,
+        config_kwargs={"demo": True},
+    )
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "55000.00", "stop_loss": "47000.00"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_not_awaited()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+        http_client.submit_order.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_with_nan_price_emits_order_denied(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+        params={"take_profit": "nan"},
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_not_awaited()
+        ws_trade_client.batch_place_orders.assert_not_awaited()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_without_tp_sl_uses_regular_path(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    Order without TP/SL params routes through the regular submit_order path, not batch.
+    """
+    client, ws_client, http_client, instrument_provider = exec_client_builder(monkeypatch)
+
+    ws_trade_client = client._ws_trade_client
+    ws_trade_client.submit_order = AsyncMock()
+    ws_trade_client.batch_place_orders = AsyncMock()
+
+    await client._connect()
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-123456"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.100"),
+        price=Price.from_str("50000.00"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    command = SubmitOrder(
+        trader_id=order.trader_id,
+        strategy_id=order.strategy_id,
+        order=order,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        await client._submit_order(command)
+
+        ws_trade_client.submit_order.assert_awaited_once()
         ws_trade_client.batch_place_orders.assert_not_awaited()
     finally:
         await client._disconnect()

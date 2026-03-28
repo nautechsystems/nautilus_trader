@@ -10,10 +10,12 @@ Released on TBD (UTC).
 - Added `interval` field to `FundingRateUpdate` (#3694), thanks @dxwil
 - Added `BookImbalanceActor` example actor for order book quoted volume imbalance in Rust
 - Added `ExecTesterConfig.test_reject_post_only` implicitly setting `post_only` on orders without requiring `use_post_only` (Python and Rust)
-- Added Betfair backtest example streaming raw `.gz` data through `BacktestEngine` in Rust
+- Added `TieredTickScheme` and `TickScheme::Tiered` for price-dependent tick sizes (Rust)
+- Added Betfair backtest example streaming raw `.gz` data through `BacktestEngine` (Rust)
 - Added Binance `decode_binance_spot_client_order_id` and `decode_binance_futures_client_order_id` utility functions for decoding Link & Trade encoded `clientOrderId` values from raw Binance API responses
 - Added Binance instrument status polling in Rust
 - Added Binance Futures `close_position` parameter for algo stop orders to close an entire position at trigger price (Python and Rust) (#3751), thanks for reporting @dodge-basic
+- Added Bybit native TP/SL params for order placement (#3754), thanks @jindrichsirucek
 - Added Bybit instrument status polling and subscription (#3738), thanks @filipmacek
 - Added Bybit options trade subscriptions using `baseCoin` topic with per-instrument filtering
 - Added Bybit option instrument fee rate population from `/v5/account/fee-rate`
@@ -34,7 +36,6 @@ Released on TBD (UTC).
 - Added Tardis `TardisDataType` enum for normalized Tardis Machine data type identifiers
 - Added Tardis live streaming support via `stream_options` config with automatic reconnection and exponential backoff
 - Added Tardis raw provider metadata to `Instrument.info` (#3730), thanks for reporting @volemont
-- Added `TieredTickScheme` and `TickScheme::Tiered` in Rust for price-dependent tick sizes
 
 ### Breaking Changes
 - Removed deprecated `convert_quote_qty_to_base` from `ExecEngineConfig` and `LiveExecEngineConfig`; adapters now handle quote-to-base conversion directly
@@ -82,6 +83,19 @@ Released on TBD (UTC).
 - Fixed Binance Spot SBE schema version mismatch after Binance upgraded to schema 3:3 (released 2026-03-25)
 - Fixed Binance algo order update (#3665), thanks @qu1zzyboy
 - Fixed Binance SBE price/quantity precision derivation (#3670), thanks @husariancom
+- Fixed Binance Futures `set_futures_hedge_mode` sending GET instead of POST to `positionSide/dual` endpoint (#3745), thanks for reporting @dodge-basic
+- Fixed Binance Spot post-only (`LIMIT_MAKER`) rejection not setting `due_post_only` on `OrderRejected` events (Python and Rust)
+- Fixed Binance Rust WS trading API not decoding SBE error responses, losing error codes on rejection
+- Fixed Binance Rust WS trading request-response race condition where fast rejections arrived before pending request registration
+- Fixed Binance Rust WS trading `OrderRejected` DashMap deadlock when `cleanup_terminal` ran while holding a read guard
+- Fixed Binance Spot Rust `connect()` not waiting for WS session authentication before signaling connected
+- Fixed Bybit demo exec client failing with error 10001 when `/v5/account/fee-rate` is unavailable (#3742), thanks for reporting @jindrichsirucek
+- Fixed Bybit HTTP client not retrying on 429 rate limit responses
+- Fixed Bybit HTTP cancellation token not resettable after `disconnect()`, causing REST calls to short-circuit on reconnect
+- Fixed Bybit WebSocket subscription ACKs confirming all pending topics instead of the acknowledged topic (via `req_id` correlation)
+- Fixed Bybit WebSocket failed subscription ACKs (success=false) not triggering `mark_failure` recovery path
+- Fixed Bybit bulk order status reports silently missing conditional (stop/MIT) orders
+- Fixed Bybit account state free balance underflowing when locked margin exceeds wallet total during liquidation
 - Fixed Databento price precision truncation for fractional tick sizes (#3696), thanks @pandashark
 - Fixed Deribit cancel event lost during WebSocket reconnection gap when `user.orders` subscription update never arrives
 - Fixed Deribit duplicate `OrderCanceled` events when cancel RPC response and `user.orders` subscription both emit
@@ -98,25 +112,13 @@ Released on TBD (UTC).
 - Fixed Deribit `VenueOrderId` comparison via unnecessary string conversion in fill report filtering
 - Fixed Deribit WebSocket `connect()` not clearing subscription state for manual disconnect/reconnect cycles
 - Fixed dYdX WebSocket handler repeatedly emitting `NewInstrumentDiscovered` for uncached instruments on every `v4_markets` update
+- Fixed Hyperliquid vault orders rejected with "Builder fee has not been approved" when `vault_address` is configured (#3762), thanks for reporting @chester0
 - Fixed Interactive Brokers docs `request_ticks` API and add contract example (#3699), thanks @faysou
 - Fixed Interactive Brokers live-session synchronization and reconciliation (#3715), thanks @faysou
 - Fixed Interactive Brokers shared historical request dedup for concurrent warmup (#3719), thanks @Johnkhk
 - Fixed Interactive Brokers historical bar subscriptions not restored after daily gateway restart (#3733), thanks for reporting @bomber555
 - Fixed Interactive Brokers inactive order status handling to prevent silent dropping (#3723), thanks @pandashark
 - Fixed Interactive Brokers spread instrument not found on restart reconciliation (#3753), thanks @davidsblom
-- Fixed Binance Futures `set_futures_hedge_mode` sending GET instead of POST to `positionSide/dual` endpoint (#3745), thanks for reporting @dodge-basic
-- Fixed Binance Spot post-only (`LIMIT_MAKER`) rejection not setting `due_post_only` on `OrderRejected` events (Python and Rust)
-- Fixed Binance Rust WS trading API not decoding SBE error responses, losing error codes on rejection
-- Fixed Binance Rust WS trading request-response race condition where fast rejections arrived before pending request registration
-- Fixed Binance Rust WS trading `OrderRejected` DashMap deadlock when `cleanup_terminal` ran while holding a read guard
-- Fixed Binance Spot Rust `connect()` not waiting for WS session authentication before signaling connected
-- Fixed Bybit demo exec client failing with error 10001 when `/v5/account/fee-rate` is unavailable (#3742), thanks for reporting @jindrichsirucek
-- Fixed Bybit HTTP client not retrying on 429 rate limit responses
-- Fixed Bybit HTTP cancellation token not resettable after `disconnect()`, causing REST calls to short-circuit on reconnect
-- Fixed Bybit WebSocket subscription ACKs confirming all pending topics instead of the acknowledged topic (via `req_id` correlation)
-- Fixed Bybit WebSocket failed subscription ACKs (success=false) not triggering `mark_failure` recovery path
-- Fixed Bybit bulk order status reports silently missing conditional (stop/MIT) orders
-- Fixed Bybit account state free balance underflowing when locked margin exceeds wallet total during liquidation
 - Fixed Kraken post-only order rejection not setting `due_post_only` on `OrderRejected` events (Spot and Futures)
 - Fixed OKX BboTbt quote parsing spamming errors on empty bid/ask arrays for illiquid options by adding `QuoteCache` for partial quote merging
 - Fixed OKX `_subscribe_instrument_status` raising `NotImplementedError` instead of being a no-op (status detected via polling)
@@ -138,7 +140,6 @@ Released on TBD (UTC).
 - Fixed OKX `connect()` not passing `instrument_families` for OPTION instrument requests (HTTP 400 from OKX API)
 - Fixed OKX `base_url_ws` ignored for private and business WebSocket channels (#3727), thanks for reporting @Stamppot82
 - Fixed Polymarket WebSocket initial vs incremental subscribe (#3717), thanks @Javdu10
-- Fixed Hyperliquid vault orders rejected with "Builder fee has not been approved" when `vault_address` is configured (#3762), thanks for reporting @chester0
 - Fixed Polymarket cancel request silently dropped when `venue_order_id` not yet available, causing order to remain open until next reconciliation (Python and Rust)
 - Fixed Polymarket market BUY quote-to-base quantity calculation using worst crossing price instead of per-level accumulation (#3747), thanks @filipmacek
 - Fixed Polymarket FOK orders stuck in accepted state when WS terminal status update is missed; deferred REST status check resolves after 5s
@@ -150,9 +151,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added `SpreadQuoteAggregator` (#3698), thanks @faysou
-- Regenerated Binance Spot SBE codecs from schema 3:3 XML using Real Logic SBE tool v1.37.1
-- Improved Binance Spot SBE HTTP parsers to use `block_length` from the message header for end-of-block skip, making decoders forward-compatible with future schema additions
-- Replaced Binance `WsDispatchState` `DashSet` dedup with `FifoCache` from `nautilus_common` for bounded FIFO eviction with proper `remove()` cleanup
+- Added `Params` and `dict` field support for `#[custom_data]` and `@customdataclass` persistence (#3765), thanks @faysou
 - Added `BINANCE_GTX_ORDER_REJECT_CODE` and `BINANCE_SPOT_POST_ONLY_REJECT_MSG` constants for reliable post-only rejection detection in Rust
 - Added `batch_submit_limit_pair` to `ExecTesterConfig` for order list testing
 - Added Python strategy support to v2 `LiveNode` with `add_strategy_from_config`
@@ -173,9 +172,12 @@ Released on TBD (UTC).
 - Added OKX execution client integration tests for trade dedup, algo cancel rejections, batch cancel failures, and concurrent dedup
 - Added OKX HTTP mock test for `place_algo_order` `sCode` rejection path
 - Added OKX `OKXPriceType`, `OKXSettlementState`, `OKXQuickMarginType` enums for type-safe field deserialization
-- Added Tardis HTTP and WebSocket mock server integration tests
 - Added Bybit `BybitWsFrame` enum separating wire-level deserialization from public `BybitWsMessage` API per adapter spec pattern
 - Added Bybit frame classification and subscription correlation test coverage (25 handler tests)
+- Added Databento feed handler integration tests with mock LSG server
+- Added Databento MBO buffering unit tests and proptests
+- Added Tardis HTTP and WebSocket mock server integration tests
+- Replaced Binance `WsDispatchState` `DashSet` dedup with `FifoCache` from `nautilus_common` for bounded FIFO eviction with proper `remove()` cleanup
 - Replaced Bybit topic string constants with `BybitWsPublicChannel` and `BybitWsPrivateChannel` enum references
 - Replaced `AtomicMap` and `AtomicSet` type aliases with newtypes wrapping `ArcSwap` for ergonomic read-heavy concurrent collections
 - Replaced `DashMap`/`DashSet` with `AtomicMap`/`AtomicSet` for subscription tracking sets, instrument caches, and bar type caches across all adapters
@@ -184,15 +186,16 @@ Released on TBD (UTC).
 - Refactored Polymarket HTTP client and improved outcome enum (#3702), thanks @filipmacek
 - Refactored Tardis adapter module organization to align with adapter spec (`common/`, `machine/cache.rs`)
 - Refactored Tardis `TardisDataClient` with `Credential::resolve()`, centralized URL resolution, and `AHashMap`
+- Regenerated Binance Spot SBE codecs from schema 3:3 XML using Real Logic SBE tool v1.37.1
 - Moved cache purge timers to base `ExecutionEngine` in Python
 - Improved socket clients reconnect and shutdown reliability
 - Improved `LiveNode` event loop to use biased `select!` with pinned `ctrl_c` for reliable signal handling
-- Added Databento feed handler integration tests with mock LSG server
-- Added Databento MBO buffering unit tests and proptests
+- Improved Binance Spot SBE HTTP parsers to use `block_length` from the message header for end-of-block skip, making decoders forward-compatible with future schema additions
 - Improved Databento live price precision handling with maps populated from instrument definitions
 - Improved Polymarket Rust adapter (#3726), thanks @filipmacek
 - Improved Polymarket execution client (#3734), thanks @filipmacek
 - Improved Polymarket adapter in Rust (#3760), thanks @filipmacek
+- Refined `TimeEventHandler` ordering and fixed spread quote timestamps (#3764), thanks @faysou
 - Refined `SpreadQuoteAggregator` transition from historical to live mode (#3759), thanks @faysou
 - Refined handling of instruments in catalog (#3761), thanks @faysou
 - Refined `AtomicTime` mode switching and datetime panics
