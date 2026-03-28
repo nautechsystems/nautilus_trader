@@ -431,6 +431,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         await self._ws_client.subscribe_book_ticker(command.instrument_id.symbol.value)
 
+    async def recover_quote_ticks(self, instrument_id: InstrumentId) -> dict[str, object]:
+        return await self._ws_client.recover_book_ticker(instrument_id.symbol.value)
+
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         if self._use_agg_trade_ticks:
             await self._ws_client.subscribe_agg_trades(command.instrument_id.symbol.value)

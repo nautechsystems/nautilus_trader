@@ -63,6 +63,7 @@ class BinanceWebSocketClient:
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._streams: list[str] = []
+        self._desired_streams: set[str] = set()
         self._clients: dict[int, WebSocketClient | None] = {}  # Client ID -> WebSocket client
         self._client_streams: dict[int, list[str]] = {}  # Client ID -> streams
         self._is_connecting: dict[int, bool] = {}  # Client ID -> is_connecting flag
@@ -206,6 +207,8 @@ class BinanceWebSocketClient:
 
         # Update client streams tracking
         self._client_streams[client_id] = streams.copy()
+        for stream in streams:
+            self._bump_stream_version(stream)
 
         # Binance expects at least one stream for the initial connection
         initial_stream = streams[0]
@@ -263,14 +266,15 @@ class BinanceWebSocketClient:
         """
         Handle reconnection for a specific client.
         """
-        if client_id not in self._client_streams or not self._client_streams[client_id]:
+        streams = self._desired_streams_for_client(client_id)
+        if not streams:
             self._log.error(f"ws-client {client_id}: Cannot reconnect: no streams for this client")
             return
 
         self._log.warning(f"ws-client {client_id}: Reconnected to {self._base_url}")
 
-        # Re-subscribe to all streams for this client
-        streams = self._client_streams[client_id]
+        # Re-subscribe to the desired streams for this client.
+        self._client_streams[client_id] = streams.copy()
         task = self._loop.create_task(self._resubscribe_client(client_id, streams))
         self._tasks.add(task)
 
@@ -324,6 +328,8 @@ class BinanceWebSocketClient:
 
         self._clients[client_id] = None  # Dispose (will go out of scope)
         self._log.debug(f"ws-client {client_id}: Disconnected from {self._base_url}")
+        for stream in self._client_streams.get(client_id, []):
+            self._bump_stream_version(stream)
 
     async def subscribe_agg_trades(self, symbol: str) -> None:
         """
@@ -505,6 +511,10 @@ class BinanceWebSocketClient:
             stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
         await self._unsubscribe(stream)
 
+    async def recover_book_ticker(self, symbol: str) -> dict[str, Any]:
+        stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
+        return await self._recover_stream(stream)
+
     async def subscribe_partial_book_depth(
         self,
         symbol: str,
@@ -599,6 +609,9 @@ class BinanceWebSocketClient:
         await self._unsubscribe(stream)
 
     async def _subscribe(self, stream: str) -> None:
+        if stream not in self._desired_streams:
+            self._desired_streams.add(stream)
+            self._bump_stream_version(stream)
         if stream in self._streams:
             self._log.warning(f"Cannot subscribe to {stream}: already subscribed")
             return  # Already subscribed
@@ -628,6 +641,9 @@ class BinanceWebSocketClient:
         self._log.debug(f"ws-client {client_id}: Subscribed to {stream}")
 
     async def _unsubscribe(self, stream: str) -> None:
+        if stream in self._desired_streams:
+            self._desired_streams.discard(stream)
+            self._bump_stream_version(stream)
         if stream not in self._streams:
             self._log.warning(f"Cannot unsubscribe from {stream}: not subscribed")
             return  # Not subscribed
@@ -927,11 +943,11 @@ class BinanceWebSocketClient:
         self._msg_id += 1
         return message
 
-    async def _send(self, client_id: int, msg: dict[str, Any]) -> None:
+    async def _send(self, client_id: int, msg: dict[str, Any]) -> bool:
         client = self._clients.get(client_id)
         if client is None:
             self._log.error(f"ws-client {client_id}: Cannot send message {msg}: not connected")
-            return
+            return False
 
         self._log.debug(f"ws-client {client_id}: SENDING: {msg}")
 
@@ -939,3 +955,5 @@ class BinanceWebSocketClient:
             await client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
             self._log.error(f"ws-client {client_id}: {e!s}")
+            return False
+        return True
