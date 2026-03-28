@@ -61,6 +61,9 @@ from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
@@ -308,28 +311,100 @@ def _attach_quote_feed_runtime(
         return
 
     for claim_spec in claim_specs():
-        control_emitter.register_result_ingress(
-            claim_spec.feed_identity,
-            lambda *,
-            now_ns,
-            ok,
-            error_summary=None,
-            feed_identity=claim_spec.feed_identity: supervisor.ingest_recovery_result(
-                feed_identity,
-                now_ns=now_ns,
-                ok=ok,
-                error_summary=error_summary,
-            ),
+        subscribe = lambda feed_identity=claim_spec.feed_identity: control_emitter.subscribe(
+            feed_identity,
         )
-        supervisor.register_claimant(
-            claim_spec.feed_identity,
-            claimant_id=claim_spec.claimant_id,
-            unusable_after_ms=claim_spec.unusable_after_ms,
-            reset=lambda feed_identity=claim_spec.feed_identity: control_emitter.reset(
+        reset = None
+        unsubscribe = lambda feed_identity=claim_spec.feed_identity: control_emitter.unsubscribe(
+            feed_identity,
+        )
+        if claim_spec.node_scoped_lifecycle:
+            control_emitter.register_result_ingress(
+                claim_spec.feed_identity,
+                lambda *,
+                now_ns,
+                ok,
+                error_summary=None,
+                feed_identity=claim_spec.feed_identity: supervisor.ingest_recovery_result(
+                    feed_identity,
+                    now_ns=now_ns,
+                    ok=ok,
+                    error_summary=error_summary,
+                ),
+            )
+            reset = lambda feed_identity=claim_spec.feed_identity: control_emitter.reset(
                 feed_identity,
-            ),
+            )
+        supervisor.ensure_feed(
+            claim_spec.feed_identity,
+            reset=reset,
+            subscribe=subscribe,
+            unsubscribe=unsubscribe,
             blocker_key=claim_spec.blocker_key,
         )
+
+
+def _execute_quote_feed_subscription(
+    *,
+    node: TradingNode,
+    feed_identity: Any,
+    subscribe: bool,
+) -> None:
+    instrument_id = feed_identity.instrument_id
+    node.kernel.data_engine.execute(
+        SubscribeQuoteTicks(
+            instrument_id=instrument_id,
+            client_id=None,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=node.kernel.clock.timestamp_ns(),
+            params={},
+        )
+        if subscribe
+        else UnsubscribeQuoteTicks(
+            instrument_id=instrument_id,
+            client_id=None,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=node.kernel.clock.timestamp_ns(),
+            params={},
+        ),
+    )
+
+
+def _emit_quote_feed_command(
+    *,
+    node: TradingNode,
+    command: Any,
+) -> None:
+    action = str(getattr(command, "action", "")).strip().lower()
+    if action == "subscribe":
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=True,
+        )
+        return
+    if action == "unsubscribe":
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=False,
+        )
+        return
+    if action != "reset":
+        return
+    with suppress(Exception):
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=False,
+        )
+    _execute_quote_feed_subscription(
+        node=node,
+        feed_identity=command.feed_identity,
+        subscribe=True,
+    )
 
 
 def _schedule_quote_feed_result_on_node_loop(
@@ -959,6 +1034,10 @@ def _build_node_for_configs(
     node = TradingNode(config=config_node)
     quote_feed_control_emitter = QuoteFeedControlEmitter(
         node_scoped_id=node_scoped_id,
+        sink=partial(
+            _emit_quote_feed_command,
+            node=node,
+        ),
         result_scheduler=partial(
             _schedule_quote_feed_result_on_node_loop,
             node=node,

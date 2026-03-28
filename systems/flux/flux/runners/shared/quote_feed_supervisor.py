@@ -29,6 +29,7 @@ class QuoteFeedClaimSpec:
     claimant_id: str
     unusable_after_ms: int
     blocker_key: str | None = None
+    node_scoped_lifecycle: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +51,16 @@ class QuoteFeedSnapshot:
 
 @dataclass(slots=True)
 class _QuoteFeedRecord:
-    reset: Any
+    reset: Any | None
+    subscribe: Any | None = None
+    unsubscribe: Any | None = None
     blocker_key: str | None = None
     state: QuoteFeedState = "bootstrapping"
     attempt_count: int = 0
     backoff_until: int | None = None
     last_error_summary: str | None = None
     last_quote_ns: int | None = None
+    startup_retry_pending: bool = False
     claimants: dict[str, int] | None = None
 
     def __post_init__(self) -> None:
@@ -153,32 +157,80 @@ class NodeQuoteFeedSupervisor:
         self._feeds: dict[QuoteFeedIdentity, _QuoteFeedRecord] = {}
         self._blockers: dict[str, tuple[bool, str | None]] = {}
 
-    def register_claimant(
+    def ensure_feed(
         self,
         feed_identity: QuoteFeedIdentity,
         *,
-        claimant_id: str,
-        unusable_after_ms: int,
-        reset: Any,
+        reset: Any | None,
+        subscribe: Any | None = None,
+        unsubscribe: Any | None = None,
         blocker_key: str | None = None,
     ) -> QuoteFeedSnapshot:
         record = self._feeds.get(feed_identity)
         if record is None:
             record = _QuoteFeedRecord(
                 reset=reset,
+                subscribe=subscribe,
+                unsubscribe=unsubscribe,
                 blocker_key=blocker_key,
             )
             self._feeds[feed_identity] = record
-        if record.reset is None:
+        elif reset is not None:
             record.reset = reset
+        if record.subscribe is None and subscribe is not None:
+            record.subscribe = subscribe
+        if record.unsubscribe is None and unsubscribe is not None:
+            record.unsubscribe = unsubscribe
+        if record.blocker_key is None and blocker_key is not None:
+            record.blocker_key = blocker_key
+        return self.snapshot(feed_identity)
+
+    def peek(self, feed_identity: QuoteFeedIdentity) -> QuoteFeedSnapshot | None:
+        if feed_identity not in self._feeds:
+            return None
+        return self.snapshot(feed_identity)
+
+    def register_claimant(
+        self,
+        feed_identity: QuoteFeedIdentity,
+        *,
+        claimant_id: str,
+        unusable_after_ms: int,
+        reset: Any | None = None,
+        subscribe: Any | None = None,
+        unsubscribe: Any | None = None,
+        blocker_key: str | None = None,
+    ) -> QuoteFeedSnapshot:
+        was_desired = bool(self._feeds.get(feed_identity).desired) if feed_identity in self._feeds else False
+        record = self._feeds.get(feed_identity)
+        if record is None:
+            self.ensure_feed(
+                feed_identity,
+                reset=reset,
+                subscribe=subscribe,
+                unsubscribe=unsubscribe,
+                blocker_key=blocker_key,
+            )
+            record = self._feeds[feed_identity]
+        elif record.reset is None and reset is not None:
+            record.reset = reset
+        if record.subscribe is None and subscribe is not None:
+            record.subscribe = subscribe
+        if record.unsubscribe is None and unsubscribe is not None:
+            record.unsubscribe = unsubscribe
         if record.blocker_key is None and blocker_key is not None:
             record.blocker_key = blocker_key
         record.claimants[str(claimant_id)] = max(1, int(unusable_after_ms))
         if self._is_blocked(record):
             record.state = "blocked"
             record.last_error_summary = self._blocker_reason(record)
-        elif record.last_quote_ns is not None:
+            if record.last_quote_ns is None and callable(record.reset):
+                record.startup_retry_pending = True
+        elif record.last_quote_ns is not None and record.state == "bootstrapping":
             record.state = "healthy"
+        elif not was_desired and callable(record.subscribe):
+            record.subscribe()
+            record.startup_retry_pending = callable(record.reset)
         return self.snapshot(feed_identity)
 
     def unregister_claimant(
@@ -188,9 +240,17 @@ class NodeQuoteFeedSupervisor:
         claimant_id: str,
     ) -> QuoteFeedSnapshot:
         record = self._feeds[feed_identity]
+        was_desired = record.desired
         record.claimants.pop(str(claimant_id), None)
         if not record.desired:
             record.state = "bootstrapping"
+            record.attempt_count = 0
+            record.backoff_until = None
+            record.last_error_summary = None
+            record.last_quote_ns = None
+            record.startup_retry_pending = False
+            if was_desired and callable(record.unsubscribe):
+                record.unsubscribe()
         return self.snapshot(feed_identity)
 
     def set_blocker(self, blocker_key: str, *, blocked: bool, reason: str | None = None) -> None:
@@ -201,10 +261,13 @@ class NodeQuoteFeedSupervisor:
 
     def record_quote(self, feed_identity: QuoteFeedIdentity, *, ts_ns: int) -> QuoteFeedSnapshot:
         record = self._feeds[feed_identity]
+        if not record.desired:
+            return self.snapshot(feed_identity)
         record.last_quote_ns = max(0, int(ts_ns))
         record.backoff_until = None
         record.last_error_summary = None
         record.state = "healthy"
+        record.startup_retry_pending = False
         return self.snapshot(feed_identity)
 
     def refresh(self, feed_identity: QuoteFeedIdentity, *, now_ns: int) -> QuoteFeedSnapshot:
@@ -230,6 +293,19 @@ class NodeQuoteFeedSupervisor:
     def is_locally_usable(self, feed_identity: QuoteFeedIdentity, *, now_ns: int) -> bool:
         return self.refresh(feed_identity, now_ns=now_ns).state == "healthy"
 
+    def should_attempt_recovery(self, feed_identity: QuoteFeedIdentity, *, now_ns: int) -> bool:
+        record = self._feeds[feed_identity]
+        snapshot = self.refresh(feed_identity, now_ns=now_ns)
+        if snapshot.state == "stale":
+            return True
+        return (
+            snapshot.state == "bootstrapping"
+            and record.startup_retry_pending
+            and record.desired
+            and callable(record.reset)
+            and not self._is_blocked(record)
+        )
+
     def request_recovery(
         self,
         feed_identity: QuoteFeedIdentity,
@@ -243,6 +319,8 @@ class NodeQuoteFeedSupervisor:
         if self._is_blocked(record):
             record.state = "blocked"
             return False
+        if not callable(record.reset):
+            return False
         if record.backoff_until is not None and max(0, int(now_ns)) < record.backoff_until:
             return False
         if record.state == "recovering":
@@ -251,6 +329,7 @@ class NodeQuoteFeedSupervisor:
             return False
         record.state = "recovering"
         record.backoff_until = None
+        record.startup_retry_pending = False
         try:
             if callable(record.reset):
                 record.reset()
@@ -273,6 +352,8 @@ class NodeQuoteFeedSupervisor:
         error_summary: str | None = None,
     ) -> QuoteFeedSnapshot:
         record = self._feeds[feed_identity]
+        if not record.desired:
+            return self.snapshot(feed_identity)
         if ok:
             record.state = "recovering"
             return self.snapshot(feed_identity)

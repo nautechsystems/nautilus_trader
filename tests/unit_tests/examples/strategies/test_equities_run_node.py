@@ -15,6 +15,8 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies.equities_maker import EquitiesMakerStrategyConfig
 from flux.strategies.equities_taker import EquitiesTakerStrategyConfig
 from flux.runners.tokenmm.run_node import _strategy_startup_lock as _tokenmm_strategy_startup_lock
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -3545,6 +3547,7 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
                     claimant_id=self.config.external_strategy_id,
                     unusable_after_ms=1_000,
                     blocker_key="ibkr.shared_publisher",
+                    node_scoped_lifecycle=False,
                 ),
             )
 
@@ -3635,8 +3638,10 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
         )
     )
 
-    assert set(maker_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
-    assert set(reference_snapshot.claimant_ids) == {"aapl_tradexyz_maker", "aapl_tradexyz_taker"}
+    assert maker_snapshot.desired is False
+    assert reference_snapshot.desired is False
+    assert maker_snapshot.claimant_ids == ()
+    assert reference_snapshot.claimant_ids == ()
 
     control_emitter.ingest_result(
         maker_feed,
@@ -3647,8 +3652,100 @@ def test_build_grouped_node_shared_recovery_attaches_one_quote_feed_supervisor_t
     assert len(loop_probe.calls) == 1
     assert supervisor.snapshot(maker_feed).attempt_count == 0
     loop_probe.calls.pop()()
-    assert supervisor.snapshot(maker_feed).attempt_count == 1
-    assert supervisor.snapshot(maker_feed).last_error_summary == "transport_failed"
+    assert supervisor.snapshot(maker_feed).attempt_count == 0
+    assert supervisor.snapshot(maker_feed).last_error_summary is None
+    assert (
+        control_emitter.ingest_result(
+            QuoteFeedIdentity(
+                scope="ibkr.shared_publisher",
+                instrument_id=reference_instrument_id,
+                topic="reference_quote_ticks",
+            ),
+            now_ns=20_000,
+            ok=False,
+            error_summary="publisher_down",
+        )
+        is None
+    )
+    assert loop_probe.calls == []
+
+
+def test_attach_quote_feed_runtime_keeps_non_node_scoped_reference_feed_live_on_start_and_stop() -> None:
+    executed_commands: list[object] = []
+    attached_topics: list[InstrumentId] = []
+    detached_topics: list[InstrumentId] = []
+    reference_instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    reference_feed = QuoteFeedIdentity(
+        scope="ibkr.shared_publisher",
+        instrument_id=reference_instrument_id,
+        topic="reference_quote_ticks",
+    )
+
+    class _CapturedStrategy:
+        def __init__(self) -> None:
+            self.quote_feed_supervisor = None
+            self.quote_feed_control_emitter = None
+
+        def configure_quote_feed_runtime(self, *, supervisor, control_emitter) -> None:
+            self.quote_feed_supervisor = supervisor
+            self.quote_feed_control_emitter = control_emitter
+
+        def quote_feed_claim_specs(self) -> tuple[QuoteFeedClaimSpec, ...]:
+            return (
+                QuoteFeedClaimSpec(
+                    feed_identity=reference_feed,
+                    claimant_id="aapl_tradexyz_maker",
+                    unusable_after_ms=1_000,
+                    blocker_key="ibkr.shared_publisher",
+                    node_scoped_lifecycle=False,
+                ),
+            )
+
+        def on_start(self) -> None:
+            attached_topics.append(reference_instrument_id)
+            self.quote_feed_supervisor.register_claimant(
+                reference_feed,
+                claimant_id="aapl_tradexyz_maker",
+                unusable_after_ms=1_000,
+                blocker_key="ibkr.shared_publisher",
+            )
+
+        def on_stop(self) -> None:
+            detached_topics.append(reference_instrument_id)
+            self.quote_feed_supervisor.unregister_claimant(
+                reference_feed,
+                claimant_id="aapl_tradexyz_maker",
+            )
+
+    node = SimpleNamespace(
+        kernel=SimpleNamespace(
+            data_engine=SimpleNamespace(execute=lambda command: executed_commands.append(command)),
+            clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        ),
+    )
+    supervisor = run_node.NodeQuoteFeedSupervisor()
+    control_emitter = run_node.QuoteFeedControlEmitter(
+        node_scoped_id="aapl_tradexyz",
+        sink=lambda command: run_node._emit_quote_feed_command(node=node, command=command),
+    )
+    strategy = _CapturedStrategy()
+
+    run_node._attach_quote_feed_runtime(
+        strategy=strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+
+    strategy.on_start()
+    strategy.on_stop()
+
+    assert attached_topics == [reference_instrument_id]
+    assert detached_topics == [reference_instrument_id]
+    assert [type(command) for command in executed_commands] == [
+        SubscribeQuoteTicks,
+        UnsubscribeQuoteTicks,
+    ]
+    assert supervisor.snapshot(reference_feed).desired is False
 
 
 def test_schedule_quote_feed_result_on_node_loop_skips_closed_loop() -> None:

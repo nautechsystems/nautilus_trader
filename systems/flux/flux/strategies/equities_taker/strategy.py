@@ -341,6 +341,11 @@ class EquitiesTakerStrategy(MakerV4Strategy):
             ask=ask,
             ts_ns=ts_ns,
         )
+        self._record_supervisor_quote_observation(
+            instrument_id=instrument_id,
+            ts_ns=ts_ns,
+        )
+        self._refresh_quote_tradeability(now_ns=ts_ns)
         self._reconcile_closed_taker_orders_from_cache(now_ns=ts_ns)
         self._retry_hedge_backlog(now_ns=ts_ns)
         self._refresh_taker_orders(now_ns=ts_ns)

@@ -191,6 +191,56 @@ def test_quote_feed_supervisor_missing_preconditions_transition_to_blocked_witho
     assert snapshot.last_error_summary == "session_down"
 
 
+def test_quote_feed_supervisor_retries_startup_blocked_feed_after_blocker_clears() -> None:
+    resets: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: resets.append("reset"),
+        blocker_key="hyperliquid.xyz.main",
+    )
+    supervisor.set_blocker("hyperliquid.xyz.main", blocked=True, reason="session_down")
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+        blocker_key="hyperliquid.xyz.main",
+    )
+
+    assert supervisor.snapshot(feed).state == "blocked"
+    supervisor.set_blocker("hyperliquid.xyz.main", blocked=False, reason=None)
+    assert supervisor.should_attempt_recovery(feed, now_ns=1_000)
+    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert resets == ["reset"]
+    assert supervisor.snapshot(feed).state == "recovering"
+
+
+def test_quote_feed_supervisor_retries_bootstrap_feed_when_first_quote_never_arrives() -> None:
+    commands: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: commands.append("reset"),
+        subscribe=lambda: commands.append("subscribe"),
+    )
+    snapshot = supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+
+    assert commands == ["subscribe"]
+    assert snapshot.state == "bootstrapping"
+    assert supervisor.should_attempt_recovery(feed, now_ns=1_000)
+    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert commands == ["subscribe", "reset"]
+    assert supervisor.snapshot(feed).state == "recovering"
+
+
 def test_quote_feed_supervisor_node_local_blocker_suppresses_per_feed_reset_storms() -> None:
     resets: list[str] = []
     supervisor = NodeQuoteFeedSupervisor()
@@ -265,3 +315,132 @@ def test_quote_feed_supervisor_remaining_sibling_can_advance_shared_feed_health(
     snapshot = supervisor.snapshot(feed)
     assert snapshot.state == "healthy"
     assert snapshot.claimant_ids == ("taker",)
+
+
+def test_quote_feed_supervisor_owns_first_subscribe_and_last_unsubscribe() -> None:
+    commands: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: commands.append("reset"),
+        subscribe=lambda: commands.append("subscribe"),
+        unsubscribe=lambda: commands.append("unsubscribe"),
+    )
+
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+    supervisor.register_claimant(
+        feed,
+        claimant_id="taker",
+        unusable_after_ms=3_000,
+    )
+    supervisor.unregister_claimant(feed, claimant_id="maker")
+    supervisor.unregister_claimant(feed, claimant_id="taker")
+
+    assert commands == ["subscribe", "unsubscribe"]
+
+
+def test_quote_feed_supervisor_resubscribes_after_final_unsubscribe_cycle() -> None:
+    commands: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: commands.append("reset"),
+        subscribe=lambda: commands.append("subscribe"),
+        unsubscribe=lambda: commands.append("unsubscribe"),
+    )
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+    supervisor.record_quote(feed, ts_ns=1_000)
+    supervisor.unregister_claimant(feed, claimant_id="maker")
+    supervisor.record_quote(feed, ts_ns=2_000)
+
+    snapshot = supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+
+    assert commands == ["subscribe", "unsubscribe", "subscribe"]
+    assert snapshot.state == "bootstrapping"
+
+
+def test_quote_feed_supervisor_ignores_late_recovery_result_after_final_unsubscribe() -> None:
+    commands: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.ensure_feed(
+        feed,
+        reset=lambda: commands.append("reset"),
+        subscribe=lambda: commands.append("subscribe"),
+        unsubscribe=lambda: commands.append("unsubscribe"),
+    )
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+
+    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    supervisor.unregister_claimant(feed, claimant_id="maker")
+
+    late_snapshot = supervisor.ingest_recovery_result(
+        feed,
+        now_ns=1_100,
+        ok=False,
+        error_summary="late-boom",
+    )
+
+    snapshot = supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+    )
+
+    assert commands == ["subscribe", "reset", "unsubscribe", "subscribe"]
+    assert late_snapshot.desired is False
+    assert late_snapshot.state == "bootstrapping"
+    assert late_snapshot.attempt_count == 0
+    assert late_snapshot.backoff_until is None
+    assert late_snapshot.last_error_summary is None
+    assert snapshot.state == "bootstrapping"
+    assert snapshot.attempt_count == 0
+    assert snapshot.backoff_until is None
+    assert snapshot.last_error_summary is None
+
+
+def test_quote_feed_supervisor_does_not_admit_recovery_without_node_owned_reset() -> None:
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed(
+        scope="ibkr.shared_publisher",
+        instrument_id="AAPL.NASDAQ",
+        topic="reference_quote_ticks",
+    )
+
+    supervisor.ensure_feed(
+        feed,
+        reset=None,
+        blocker_key="ibkr.shared_publisher",
+    )
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=1_000,
+        blocker_key="ibkr.shared_publisher",
+    )
+    supervisor.record_quote(feed, ts_ns=0)
+
+    assert supervisor.refresh(feed, now_ns=2_000_000_000).state == "stale"
+    assert not supervisor.request_recovery(feed, now_ns=2_000_000_000, requested_by="maker")
+    assert supervisor.snapshot(feed).state == "stale"

@@ -66,6 +66,7 @@ from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
 from flux.runners.shared.quote_feed_supervisor import QuoteFeedClaimSpec
 from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
 from flux.runners.shared.quote_feed_supervisor import QuoteFeedIdentity
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedSnapshot
 from flux.strategies.shared.venue_protection import extract_hyperliquid_request_quota
 from flux.strategies.shared.venue_protection import is_venue_protection_reason
 from flux.strategies.shared.venue_protection import normalize_reason_text
@@ -170,6 +171,10 @@ class MakerV4Strategy(Strategy):
         self._last_actionable_alert_transition: dict[str, str] = {}
         self._quote_feed_supervisor: NodeQuoteFeedSupervisor | None = None
         self._quote_feed_control_emitter: QuoteFeedControlEmitter | None = None
+        self._quote_feed_interest_registered = False
+        self._local_quote_topics_attached: set[Any] = set()
+        self._quote_feed_lifecycle_state: str | None = None
+        self._quote_feed_lifecycle_pending_since_ns: int | None = None
 
     def set_params_manager_factory(self, factory) -> None:
         self._params_manager_factory = factory
@@ -224,11 +229,7 @@ class MakerV4Strategy(Strategy):
         maker_scope = str(
             getattr(self.config, "execution_account_scope_id", "") or "",
         ).strip() or str(getattr(self.config.maker_instrument_id, "venue", "")).strip().lower()
-        reference_scope = str(getattr(self.config.reference_instrument_id, "venue", "")).strip()
-        if reference_scope.upper() == "IBKR":
-            reference_scope = "ibkr.shared_publisher"
-        else:
-            reference_scope = reference_scope.lower() or "reference"
+        reference_scope = "ibkr.shared_publisher"
 
         maker_budget_ms = max(
             1,
@@ -263,7 +264,100 @@ class MakerV4Strategy(Strategy):
                 claimant_id=self._external_strategy_id,
                 unusable_after_ms=reference_budget_ms,
                 blocker_key=reference_scope,
+                node_scoped_lifecycle=False,
             ),
+        )
+
+    def _quote_feed_identity_for_instrument(self, instrument_id: Any) -> QuoteFeedIdentity | None:
+        for claim_spec in self.quote_feed_claim_specs():
+            if self._instrument_id_matches(claim_spec.feed_identity.instrument_id, instrument_id):
+                return claim_spec.feed_identity
+        return None
+
+    def _quote_feed_claim_spec_for_instrument(
+        self,
+        instrument_id: Any,
+    ) -> QuoteFeedClaimSpec | None:
+        for claim_spec in self.quote_feed_claim_specs():
+            if self._instrument_id_matches(claim_spec.feed_identity.instrument_id, instrument_id):
+                return claim_spec
+        return None
+
+    def _attach_local_quote_topic(self, instrument_id: Any) -> None:
+        if instrument_id in self._local_quote_topics_attached:
+            return
+        msgbus = getattr(self, "_msgbus", None)
+        topic_cache = getattr(self, "_topic_cache", None)
+        handler = getattr(self, "handle_quote_tick", None)
+        if msgbus is None or topic_cache is None or not callable(handler):
+            return
+        subscribe = getattr(msgbus, "subscribe", None)
+        get_quotes_topic = getattr(topic_cache, "get_quotes_topic", None)
+        if not callable(subscribe) or not callable(get_quotes_topic):
+            return
+        subscribe(
+            topic=get_quotes_topic(instrument_id),
+            handler=handler,
+        )
+        self._local_quote_topics_attached.add(instrument_id)
+
+    def _detach_local_quote_topic(self, instrument_id: Any) -> None:
+        if instrument_id not in self._local_quote_topics_attached:
+            return
+        msgbus = getattr(self, "_msgbus", None)
+        topic_cache = getattr(self, "_topic_cache", None)
+        handler = getattr(self, "handle_quote_tick", None)
+        if msgbus is None or topic_cache is None or not callable(handler):
+            self._local_quote_topics_attached.discard(instrument_id)
+            return
+        unsubscribe = getattr(msgbus, "unsubscribe", None)
+        get_quotes_topic = getattr(topic_cache, "get_quotes_topic", None)
+        if not callable(unsubscribe) or not callable(get_quotes_topic):
+            self._local_quote_topics_attached.discard(instrument_id)
+            return
+        unsubscribe(
+            topic=get_quotes_topic(instrument_id),
+            handler=handler,
+        )
+        self._local_quote_topics_attached.discard(instrument_id)
+
+    def _register_quote_feed_interest(self) -> None:
+        if self._quote_feed_interest_registered or self._quote_feed_supervisor is None:
+            return
+        self._sync_quote_feed_interest()
+        self._quote_feed_interest_registered = True
+
+    def _sync_quote_feed_interest(self) -> None:
+        if self._quote_feed_supervisor is None:
+            return
+        for claim_spec in self.quote_feed_claim_specs():
+            self._quote_feed_supervisor.register_claimant(
+                claim_spec.feed_identity,
+                claimant_id=claim_spec.claimant_id,
+                unusable_after_ms=claim_spec.unusable_after_ms,
+                blocker_key=claim_spec.blocker_key,
+            )
+
+    def _deregister_quote_feed_interest(self) -> None:
+        if not self._quote_feed_interest_registered or self._quote_feed_supervisor is None:
+            return
+        for claim_spec in self.quote_feed_claim_specs():
+            with suppress(KeyError):
+                self._quote_feed_supervisor.unregister_claimant(
+                    claim_spec.feed_identity,
+                    claimant_id=claim_spec.claimant_id,
+                )
+        self._quote_feed_interest_registered = False
+
+    def _record_supervisor_quote_observation(self, *, instrument_id: Any, ts_ns: int) -> None:
+        if self._quote_feed_supervisor is None:
+            return
+        claim_spec = self._quote_feed_claim_spec_for_instrument(instrument_id)
+        if claim_spec is None:
+            return
+        self._quote_feed_supervisor.record_quote(
+            claim_spec.feed_identity,
+            ts_ns=ts_ns,
         )
 
     @property
@@ -431,6 +525,8 @@ class MakerV4Strategy(Strategy):
             self._last_runtime_params_refresh_ns = normalized_now_ns
             return
         self._last_runtime_params_refresh_ns = normalized_now_ns
+        if self._quote_feed_interest_registered:
+            self._sync_quote_feed_interest()
 
         if bot_on_before and not self._effective_bot_on():
             self._cancel_managed_maker_orders()
@@ -456,6 +552,12 @@ class MakerV4Strategy(Strategy):
             int(self._runtime_params.get("quote_liveness_recover_after_ms", 0) or 0),
         )
         return max(stall_after_ms, recover_after_ms) * 1_000_000
+
+    def _quote_feed_lifecycle_degrade_after_ns(self) -> int:
+        retry_interval_ns = self._quote_liveness_retry_interval_ns()
+        if retry_interval_ns > 0:
+            return retry_interval_ns
+        return max(1, int(self.QUOTE_LIVENESS_TIMER_INTERVAL_MS)) * 1_000_000
 
     def _stalled_quote_instrument_ids(self, *, now_ns: int) -> list[Any]:
         stall_after_ms = max(
@@ -501,6 +603,162 @@ class MakerV4Strategy(Strategy):
                 self.subscribe_quote_ticks(instrument_id=instrument_id)
         self._last_quote_liveness_resubscribe_ns = now_ns
 
+    def _quote_feed_snapshot(
+        self,
+        feed_identity: QuoteFeedIdentity,
+        *,
+        now_ns: int,
+    ) -> QuoteFeedSnapshot | None:
+        if self._quote_feed_supervisor is None:
+            return None
+        if self._quote_feed_supervisor.peek(feed_identity) is None:
+            return None
+        return self._quote_feed_supervisor.refresh(
+            feed_identity,
+            now_ns=now_ns,
+        )
+
+    def _quote_feed_component_lifecycle_target(self, *, now_ns: int) -> str | None:
+        if self._quote_feed_supervisor is None:
+            return None
+        target: str | None = None
+        for claim_spec in self.quote_feed_claim_specs():
+            snapshot = self._quote_feed_snapshot(
+                claim_spec.feed_identity,
+                now_ns=now_ns,
+            )
+            if snapshot is None:
+                continue
+            if snapshot.state == "down":
+                return "faulted"
+            if snapshot.state in {"blocked", "recovering"}:
+                target = "degraded"
+        return target
+
+    def _sync_quote_feed_component_lifecycle(self, *, now_ns: int) -> None:
+        target = self._quote_feed_component_lifecycle_target(now_ns=now_ns)
+        if target == "faulted":
+            self._quote_feed_lifecycle_pending_since_ns = None
+            if self._quote_feed_lifecycle_state != "faulted":
+                with suppress(Exception):
+                    self.fault()
+                self._quote_feed_lifecycle_state = "faulted"
+            return
+        if target == "degraded":
+            if self._quote_feed_lifecycle_pending_since_ns is None:
+                self._quote_feed_lifecycle_pending_since_ns = max(0, int(now_ns))
+                return
+            if (
+                max(0, int(now_ns)) - self._quote_feed_lifecycle_pending_since_ns
+                < self._quote_feed_lifecycle_degrade_after_ns()
+            ):
+                return
+            if self._quote_feed_lifecycle_state is None:
+                with suppress(Exception):
+                    self.degrade()
+                self._quote_feed_lifecycle_state = "degraded"
+            return
+        self._quote_feed_lifecycle_pending_since_ns = None
+        if self._quote_feed_lifecycle_state == "degraded":
+            with suppress(Exception):
+                self.resume()
+            self._quote_feed_lifecycle_state = None
+
+    def _required_quote_pair_tradeability(self, *, now_ns: int) -> tuple[bool, str | None]:
+        if self._quote_feed_supervisor is None or self._quote_feed_control_emitter is None:
+            return True, None
+
+        for claim_spec in self.quote_feed_claim_specs():
+            snapshot = self._quote_feed_snapshot(
+                claim_spec.feed_identity,
+                now_ns=now_ns,
+            )
+            if snapshot is not None and snapshot.state != "healthy":
+                return False, "stale_quote"
+
+        maker_snapshot = self._latest_quotes.get(self.config.maker_instrument_id)
+        maker_health = self._maker_quote_health(now_ns=now_ns)
+        if not maker_health.usable_for_pricing:
+            return False, "stale_quote"
+
+        reference_quote = self._reference_quote_snapshot(now_ns=now_ns)
+        if reference_quote is None:
+            return False, "stale_quote"
+        if validate_ibkr_quote(
+            bid=reference_quote.bid,
+            ask=reference_quote.ask,
+            quote_age_ms=reference_quote.age_ms,
+            max_quote_age_ms=int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
+            max_spread_bps=Decimal(str(getattr(self.config, "max_ibkr_spread_bps", "25"))),
+        ) is not None:
+            return False, "stale_quote"
+
+        if not isinstance(maker_snapshot, Mapping):
+            return False, "stale_quote"
+        maker_ts_ns = self._quote_ts_ns(maker_snapshot.get("ts_ns"))
+        reference_ts_ns = max(0, int(reference_quote.ts_ms)) * 1_000_000
+        if maker_ts_ns <= 0 or reference_ts_ns <= 0:
+            return False, "stale_quote"
+        max_skew_ms = max(
+            1,
+            min(
+                int(self._runtime_params.get("max_age_ms", 10_000) or 10_000),
+                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
+            ),
+        )
+        if abs(maker_ts_ns - reference_ts_ns) // 1_000_000 > max_skew_ms:
+            return False, "stale_quote"
+        if (
+            not bool(getattr(self.config, "outside_rth_hedge_enabled", False))
+            and not self._is_regular_hedge_session(ts_ms=max(now_ns, reference_ts_ns) // 1_000_000)
+        ):
+            return False, "stale_quote"
+        return True, None
+
+    def _required_quote_pair_tradeable(self, *, now_ns: int) -> tuple[bool, str | None]:
+        return self._required_quote_pair_tradeability(now_ns=now_ns)
+
+    def _refresh_quote_tradeability(self, *, now_ns: int) -> bool:
+        tradeable, blocked_reason = self._required_quote_pair_tradeability(now_ns=now_ns)
+        self._sync_quote_feed_component_lifecycle(now_ns=now_ns)
+        if tradeable:
+            if (
+                self.tradeable is False
+                and self.hedge_disabled_reason == "stale_quote"
+                and self._pending_hedge is None
+                and self._hedge_backlog is None
+            ):
+                self.tradeable = True
+                self.hedge_disabled_reason = None
+            return True
+        if blocked_reason and (self.tradeable or self.hedge_disabled_reason != blocked_reason):
+            self._disable_hedging(blocked_reason)
+        return False
+
+    def _observe_quote_liveness(self, *, now_ns: int) -> None:
+        if self._quote_feed_supervisor is None:
+            self._resubscribe_stalled_quote_ticks(now_ns=now_ns)
+            return
+
+        self._register_quote_feed_interest()
+        for claim_spec in self.quote_feed_claim_specs():
+            snapshot = self._quote_feed_snapshot(
+                claim_spec.feed_identity,
+                now_ns=now_ns,
+            )
+            if snapshot is None or not claim_spec.node_scoped_lifecycle:
+                continue
+            if not self._quote_feed_supervisor.should_attempt_recovery(
+                claim_spec.feed_identity,
+                now_ns=now_ns,
+            ):
+                continue
+            self._quote_feed_supervisor.request_recovery(
+                claim_spec.feed_identity,
+                now_ns=now_ns,
+                requested_by=claim_spec.claimant_id,
+            )
+
     def _effective_bot_on(self) -> bool:
         bot_on = self._runtime_params.get("bot_on", getattr(self.config, "bot_on", False))
         return bool(bot_on)
@@ -509,9 +767,15 @@ class MakerV4Strategy(Strategy):
         mode = str(self._runtime_params.get("execution_mode", "maker_hedge")).strip().lower()
         return mode if mode in {"maker_hedge", "take_take"} else "maker_hedge"
 
-    def _can_quote(self) -> bool:
+    def _can_quote(self, *, now_ns: int | None = None) -> bool:
+        if now_ns is None:
+            now_ns = int(self.clock.timestamp_ns())
+        pair_tradeable, _blocked_reason = self._required_quote_pair_tradeability(
+            now_ns=max(0, int(now_ns)),
+        )
         return (
             self.tradeable
+            and pair_tradeable
             and self._effective_bot_on()
             and self._pending_hedge is None
             and self._hedge_backlog is None
@@ -1326,6 +1590,15 @@ class MakerV4Strategy(Strategy):
             "symbol": symbol,
             "instrument_id": str(instrument_id),
         }
+        supervisor_snapshot = None
+        if self._quote_feed_supervisor is not None:
+            feed_identity = self._quote_feed_identity_for_instrument(instrument_id)
+            if feed_identity is not None:
+                with suppress(KeyError):
+                    supervisor_snapshot = self._quote_feed_supervisor.refresh(
+                        feed_identity,
+                        now_ns=now_ns,
+                    )
         snapshot = self._latest_quotes.get(instrument_id)
         if snapshot is None:
             quote_health = evaluate_quote_health(
@@ -1347,6 +1620,15 @@ class MakerV4Strategy(Strategy):
             payload["hedge_usable"] = quote_health.usable_for_hedging
             if quote_health.reason_code is not None:
                 payload["reason_code"] = quote_health.reason_code
+            if supervisor_snapshot is not None:
+                payload["recovery_state"] = supervisor_snapshot.state
+                if supervisor_snapshot.state != "healthy":
+                    payload["feed_state"] = (
+                        "unknown" if supervisor_snapshot.state == "bootstrapping" else "down"
+                    )
+                    payload["pricing_usable"] = False
+                    payload["hedge_usable"] = False
+                    payload["reason_code"] = f"{leg_role}_quote_{supervisor_snapshot.state}"
             return payload
 
         bid = self._decimal_or_none(snapshot.get("bid"))
@@ -1382,6 +1664,13 @@ class MakerV4Strategy(Strategy):
         payload["hedge_usable"] = quote_health.usable_for_hedging
         if quote_health.reason_code is not None:
             payload["reason_code"] = quote_health.reason_code
+        if supervisor_snapshot is not None:
+            payload["recovery_state"] = supervisor_snapshot.state
+            if supervisor_snapshot.state != "healthy":
+                payload["feed_state"] = "degraded" if supervisor_snapshot.state == "stale" else "down"
+                payload["pricing_usable"] = False
+                payload["hedge_usable"] = False
+                payload["reason_code"] = f"{leg_role}_quote_{supervisor_snapshot.state}"
         return payload
 
     def _quote_snapshot_payload(self, *, now_ns: int) -> dict[str, Any]:
@@ -1537,7 +1826,7 @@ class MakerV4Strategy(Strategy):
         )
 
     def _maker_quote_targets(self, *, now_ns: int) -> dict[str, Decimal] | None:
-        if not self._can_quote():
+        if not self._can_quote(now_ns=now_ns):
             return None
         if int(self._runtime_params.get("n_orders1", 0)) <= 0:
             return None
@@ -1888,7 +2177,7 @@ class MakerV4Strategy(Strategy):
         self._last_take_submission_ns = max(0, int(now_ns))
 
     def _take_take_signal(self, *, now_ns: int) -> tuple[str, Decimal] | None:
-        if not self._can_quote():
+        if not self._can_quote(now_ns=now_ns):
             return None
         cooldown_ns = max(0, int(self._runtime_params.get("take_cooldown_ms", 0))) * 1_000_000
         if (
@@ -2299,6 +2588,11 @@ class MakerV4Strategy(Strategy):
 
     def _retry_hedge_backlog(self, *, now_ns: int) -> None:
         if self._hedge_backlog is None or self._pending_hedge is not None:
+            return
+        pair_tradeable, blocked_reason = self._required_quote_pair_tradeable(now_ns=now_ns)
+        if not pair_tradeable:
+            if blocked_reason:
+                self._disable_hedging(blocked_reason)
             return
         quote = self._reference_quote_snapshot(now_ns=now_ns)
         if quote is None:
@@ -2749,7 +3043,25 @@ class MakerV4Strategy(Strategy):
             subscribed_instrument_ids.append(instrument_id)
             self._last_market_bbo_publish_ns[instrument_id] = 0
             self._prime_cached_quote(instrument_id)
-            self.subscribe_quote_ticks(instrument_id=instrument_id)
+            if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
+                self._attach_local_quote_topic(instrument_id)
+            else:
+                self.subscribe_quote_ticks(instrument_id=instrument_id)
+
+        self._register_quote_feed_interest()
+        for instrument_id in subscribed_instrument_ids:
+            snapshot = self._latest_quotes.get(instrument_id)
+            if not isinstance(snapshot, Mapping):
+                continue
+            ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
+            if ts_ns <= 0:
+                continue
+            self._record_supervisor_quote_observation(
+                instrument_id=instrument_id,
+                ts_ns=ts_ns,
+            )
+        self._reclaim_managed_maker_orders_from_cache()
+        self._refresh_quote_tradeability(now_ns=int(self.clock.timestamp_ns()))
 
         provider_start = getattr(self._reference_balance_snapshot_provider, "start", None)
         if callable(provider_start):
@@ -2758,8 +3070,6 @@ class MakerV4Strategy(Strategy):
             except TypeError:
                 with suppress(Exception):
                     provider_start()
-
-        self._reclaim_managed_maker_orders_from_cache()
         self._publish_balances()
         self._publish_state_snapshot()
 
@@ -2782,7 +3092,11 @@ class MakerV4Strategy(Strategy):
                 continue
             unsubscribed_instrument_ids.append(instrument_id)
             with suppress(Exception):
-                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+                if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
+                    self._detach_local_quote_topic(instrument_id)
+                else:
+                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+        self._deregister_quote_feed_interest()
         provider_stop = getattr(self._reference_balance_snapshot_provider, "stop", None)
         if callable(provider_stop):
             with suppress(Exception):
@@ -2795,7 +3109,11 @@ class MakerV4Strategy(Strategy):
 
         now_ns = int(self.clock.timestamp_ns())
         self._refresh_runtime_params_if_due(now_ns=now_ns)
-        self._resubscribe_stalled_quote_ticks(now_ns=now_ns)
+        if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
+            self._observe_quote_liveness(now_ns=now_ns)
+            self._refresh_quote_tradeability(now_ns=now_ns)
+        else:
+            self._resubscribe_stalled_quote_ticks(now_ns=now_ns)
         self._publish_balances_if_due()
 
     def on_market_exit(self) -> None:
@@ -2839,6 +3157,11 @@ class MakerV4Strategy(Strategy):
             ask=ask,
             ts_ns=ts_ns,
         )
+        self._record_supervisor_quote_observation(
+            instrument_id=instrument_id,
+            ts_ns=ts_ns,
+        )
+        self._refresh_quote_tradeability(now_ns=ts_ns)
         if self._execution_mode() == "take_take":
             self._reconcile_closed_take_take_orders_from_cache(now_ns=ts_ns)
         self._retry_hedge_backlog(now_ns=ts_ns)
@@ -2974,6 +3297,17 @@ class MakerV4Strategy(Strategy):
                 blocked_reason=self._hedge_backlog.blocked_reason,
             )
             self._retry_hedge_backlog(now_ns=max(0, int(fill.ts_ms)) * 1_000_000)
+            return None
+
+        pair_tradeable, blocked_reason = self._required_quote_pair_tradeable(
+            now_ns=max(0, int(fill.ts_ms)) * 1_000_000,
+        )
+        if not pair_tradeable:
+            self._queue_hedge_backlog_for_fill(
+                fill=fill,
+                maker_fee_bps=maker_fee_bps,
+                blocked_reason=blocked_reason or "stale_quote",
+            )
             return None
 
         quote_error = validate_ibkr_quote(
