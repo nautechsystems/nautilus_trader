@@ -18,6 +18,13 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.execution.controller import VenueActivityOrigin
+from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentRequest
+from flux.execution.transport import UdsTransportPaths
+from flux.execution.transport import REPLY_STATUS_REJECTED
+from flux.execution.transport import send_request as send_transport_request
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
@@ -232,17 +239,42 @@ def _attach_profile_account_projection_feed(
     )
 
 
-def _build_controller_intent_publisher(*, strategy: Any, controller_scope_id: str):
-    endpoint = f"FluxExecutionController.request.{controller_scope_id}"
+def _build_controller_intent_publisher(
+    *,
+    strategy: Any,
+    controller_scope_id: str,
+    transport_root_dir: Path,
+    send_request_fn=send_transport_request,
+):
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id=controller_scope_id,
+        root_dir=transport_root_dir,
+    )
 
     def _publish_intent(command: Any) -> None:
-        msgbus = getattr(strategy, "_msgbus", None)
-        if msgbus is None:
-            with suppress(Exception):
-                msgbus = strategy.msgbus
-        request = getattr(msgbus, "request", None)
-        if callable(request):
-            request(endpoint=endpoint, request=command)
+        request = ControllerIntentRequest.from_command(
+            command=command,
+            requested_at_ns=_strategy_timestamp_ns(strategy),
+        )
+        reply = send_request_fn(
+            paths=paths,
+            request=request,
+            timeout_s=1.0,
+        )
+        if reply.status == REPLY_STATUS_REJECTED:
+            raise RuntimeError(reply.reason or "controller rejected canary request")
+        if reply.claim is None:
+            raise RuntimeError("controller accepted the request without returning a claim")
+
+        apply_lifecycle = getattr(strategy, "apply_controller_lifecycle_event", None)
+        if callable(apply_lifecycle):
+            apply_lifecycle(
+                ExecutionLifecycleEvent.from_claim(
+                    claim=reply.claim,
+                    lifecycle_state=ExecutionLifecycleState.ACCEPTED,
+                    venue_activity_origin=VenueActivityOrigin.CONTROLLER,
+                ),
+            )
 
     return _publish_intent
 
@@ -269,6 +301,7 @@ def _attach_controller_endpoint_and_canonical_state_feed(
             publish_intent=_build_controller_intent_publisher(
                 strategy=strategy,
                 controller_scope_id=controller_scope_id,
+                transport_root_dir=_repo_root() / ".run",
             ),
         )
 
@@ -282,6 +315,17 @@ def _attach_controller_endpoint_and_canonical_state_feed(
         namespace=namespace,
         schema_version=schema_version,
     )
+
+
+def _strategy_timestamp_ns(strategy: Any) -> int:
+    clock = getattr(strategy, "clock", None)
+    if clock is None:
+        clock = getattr(strategy, "_clock", None)
+    timestamp_ns = getattr(clock, "timestamp_ns", None)
+    if callable(timestamp_ns):
+        with suppress(Exception):
+            return int(timestamp_ns())
+    return 0
 
 
 def _attach_reference_balance_snapshot_provider(

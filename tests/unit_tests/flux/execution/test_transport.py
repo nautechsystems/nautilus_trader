@@ -59,7 +59,23 @@ def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
     )
     claim = intent.claim(controller_epoch=7, controller_seq=42)
 
-    request = transport.ControllerIntentRequest(intent=intent, requested_at_ns=123_456)
+    request = transport.ControllerIntentRequest(
+        intent=intent,
+        requested_at_ns=123_456,
+        command=transport.ControllerIntentCommandPayload(
+            command_type="place",
+            order_role="hedge",
+            instrument_id="AAPL.NASDAQ",
+            side="BUY",
+            quantity="2",
+            limit_price="190.04",
+            post_only=False,
+            time_in_force="IOC",
+            route="SMART",
+            outside_rth=True,
+            include_overnight=False,
+        ),
+    )
     accepted = transport.ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
     rejected = transport.ControllerIntentReply.rejected(
         intent=intent,
@@ -77,6 +93,21 @@ def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
             "controller_scope_id": "acct.execution.main",
             "strategy_id": "strategy-01",
             "lifecycle_state": "published",
+        },
+        "command": {
+            "command_type": "place",
+            "order_role": "hedge",
+            "instrument_id": "AAPL.NASDAQ",
+            "side": "BUY",
+            "quantity": "2",
+            "limit_price": "190.04",
+            "post_only": False,
+            "time_in_force": "IOC",
+            "target_client_order_id": None,
+            "route": "SMART",
+            "outside_rth": True,
+            "include_overnight": False,
+            "cancel_after_ms": None,
         },
     }
     assert transport.ControllerIntentRequest.from_dict(request.to_dict()) == request
@@ -146,6 +177,21 @@ def test_v1_accepted_reply_rejects_top_level_identity_mismatch_with_claim() -> N
                 "reason": None,
             }
         )
+
+
+def test_v1_uds_runtime_frames_round_trip_requests_and_replies() -> None:
+    transport = _load_transport_module()
+    intent = ExecutionIntent(
+        intent_id="intent-001",
+        controller_scope_id="acct.execution.main",
+        strategy_id="strategy-01",
+    )
+    claim = intent.claim(controller_epoch=7, controller_seq=42)
+    request = transport.ControllerIntentRequest(intent=intent, requested_at_ns=123_456)
+    reply = transport.ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    assert transport.decode_request_frame(transport.encode_request_frame(request)) == request
+    assert transport.decode_reply_frame(transport.encode_reply_frame(reply)) == reply
 
 
 def test_v1_uds_event_stream_contract_round_trips_lifecycle_events() -> None:

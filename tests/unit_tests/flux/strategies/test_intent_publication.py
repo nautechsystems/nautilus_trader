@@ -55,6 +55,9 @@ class _FakeRedis:
     def get(self, key: str):
         return self.payloads.get(key)
 
+    def set(self, key: str, value: bytes) -> None:
+        self.payloads[key] = value
+
 
 def _lifecycle_event(
     command: ControllerIntentCommand,
@@ -429,3 +432,47 @@ def test_makerv4_on_start_hydrates_controller_state_without_background_feed_star
     strategy.on_start()
 
     assert strategy._managed_maker_orders["BUY"].quantity == Decimal("5")
+
+
+def test_makerv4_on_quote_tick_refreshes_controller_state_when_due() -> None:
+    strategy = MakerV4Strategy(config=_config())
+    redis_client = _FakeRedis()
+    strategy.configure_controller_intent_publisher(
+        controller_scope_id="equities.ibkr.hedge.main",
+        publish_intent=lambda _command: None,
+    )
+    strategy.configure_controller_canonical_state_feed(
+        redis_client=redis_client,
+        controller_scope_id="equities.ibkr.hedge.main",
+        namespace="flux",
+        schema_version="v1",
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: _instrument(raw_symbol="AAPL/USD"),
+        strategy.config.reference_instrument_id: _instrument(raw_symbol="AAPL"),
+    }
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+    )
+    strategy._refresh_runtime_params_if_due = lambda **_kwargs: None
+    strategy._retry_hedge_backlog = lambda **_kwargs: None
+    strategy._refresh_maker_quotes = lambda **_kwargs: None
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+
+    feed = strategy._controller_canonical_state_feed
+    redis_client.payloads[feed.canonical_state_key()] = json.dumps(
+        _canonical_state_payload(client_order_id="managed-buy-tick", quantity="7"),
+    ).encode("utf-8")
+
+    strategy.on_quote_tick(
+        SimpleNamespace(
+            instrument_id=strategy.config.maker_instrument_id,
+            bid_price=Decimal("190.00"),
+            ask_price=Decimal("190.04"),
+            ts_event=1_000_000_000,
+        ),
+    )
+
+    assert strategy._managed_maker_orders["BUY"].quantity == Decimal("7")

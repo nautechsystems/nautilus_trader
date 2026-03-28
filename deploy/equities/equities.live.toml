@@ -150,6 +150,15 @@ writer_account_scope_id = "ibkr.hedge.main"
 account_scope_ids = ["ibkr.hedge.main"]
 canary = true
 
+[controller]
+controller_scope_id = "equities.ibkr.hedge.main"
+owner_id = "equities-controller:equities.ibkr.hedge.main"
+mode = "active"
+allow_single_host_canary = true
+# Set false to roll the canary back to shadow ownership without removing the service.
+write_ownership_enabled = true
+preserve_compatibility_outputs = true
+
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_maker"
 portfolio_asset_id = "AAPL"

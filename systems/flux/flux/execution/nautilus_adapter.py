@@ -78,9 +78,11 @@ class ControllerManagedExecutionClientAdapter(LiveExecutionClient):
         controller_scope_id: str,
         managed_instrument_ids: set[InstrumentId] | frozenset[InstrumentId],
         tracked_orders: tuple[ManagedOrderBinding, ...] | list[ManagedOrderBinding],
+        preserve_compatibility_outputs: bool = False,
     ) -> None:
         self._client = client
         self.controller_scope_id = _required_text(controller_scope_id, "controller_scope_id")
+        self.preserve_compatibility_outputs = bool(preserve_compatibility_outputs)
         tracked = tuple(tracked_orders)
         managed = set(managed_instrument_ids)
         managed.update(binding.instrument_id for binding in tracked)
@@ -103,7 +105,7 @@ class ControllerManagedExecutionClientAdapter(LiveExecutionClient):
         if client.account_id is not None:
             self._set_account_id(client.account_id)
 
-        if self._managed_instrument_ids:
+        if self._managed_instrument_ids and not self.preserve_compatibility_outputs:
             self.supports_startup_historical_order_status_reports = False
         else:
             self.supports_startup_historical_order_status_reports = getattr(
@@ -213,15 +215,9 @@ class ControllerManagedExecutionClientAdapter(LiveExecutionClient):
 
         try:
             for instrument_id in sorted(self._managed_instrument_ids, key=str):
-                order_reports = await self._client.generate_order_status_reports(
-                    GenerateOrderStatusReports(
-                        instrument_id=instrument_id,
-                        start=since,
-                        end=None,
-                        open_only=True,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    ),
+                order_reports = await self._generate_mass_status_order_reports(
+                    instrument_id=instrument_id,
+                    since=since,
                 )
                 fill_reports = await self._client.generate_fill_reports(
                     GenerateFillReports(
@@ -262,6 +258,60 @@ class ControllerManagedExecutionClientAdapter(LiveExecutionClient):
 
         return mass_status
 
+    async def _generate_mass_status_order_reports(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        since,
+    ) -> list[OrderStatusReport]:
+        bulk_order_reports = await self._client.generate_order_status_reports(
+            GenerateOrderStatusReports(
+                instrument_id=instrument_id,
+                start=since,
+                end=None,
+                open_only=not self.preserve_compatibility_outputs,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            ),
+        )
+        if not self.preserve_compatibility_outputs:
+            return list(bulk_order_reports)
+
+        targeted_reports = await self._generate_targeted_order_reports(
+            instrument_id=instrument_id,
+        )
+        return _merge_order_reports(
+            targeted_reports=targeted_reports,
+            bulk_reports=list(bulk_order_reports),
+        )
+
+    async def _generate_targeted_order_reports(
+        self,
+        *,
+        instrument_id: InstrumentId,
+    ) -> list[OrderStatusReport]:
+        reports: list[OrderStatusReport] = []
+        seen_bindings: set[tuple[ClientOrderId | None, VenueOrderId | None]] = set()
+        for binding in self._tracked_orders:
+            if binding.instrument_id != instrument_id:
+                continue
+            binding_key = (binding.client_order_id, binding.venue_order_id)
+            if binding_key in seen_bindings:
+                continue
+            seen_bindings.add(binding_key)
+            report = await self._client.generate_order_status_report(
+                GenerateOrderStatusReport(
+                    instrument_id=instrument_id,
+                    client_order_id=binding.client_order_id,
+                    venue_order_id=binding.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                ),
+            )
+            if report is not None:
+                reports.append(report)
+        return reports
+
     def _is_visible_order_report(self, report: OrderStatusReport) -> bool:
         return self._is_visible_order_lineage(
             instrument_id=report.instrument_id,
@@ -293,6 +343,23 @@ class ControllerManagedExecutionClientAdapter(LiveExecutionClient):
             )
             for binding in self._tracked_orders
         )
+
+
+def _merge_order_reports(
+    *,
+    targeted_reports: list[OrderStatusReport],
+    bulk_reports: list[OrderStatusReport],
+) -> list[OrderStatusReport]:
+    merged: list[OrderStatusReport] = []
+    seen_keys: set[VenueOrderId | ClientOrderId] = set()
+    for report in [*targeted_reports, *bulk_reports]:
+        dedupe_key = report.venue_order_id or report.client_order_id
+        if dedupe_key is not None and dedupe_key in seen_keys:
+            continue
+        if dedupe_key is not None:
+            seen_keys.add(dedupe_key)
+        merged.append(report)
+    return merged
 
 
 __all__ = [

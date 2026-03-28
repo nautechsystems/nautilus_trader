@@ -6,6 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from flux.execution.controller import VenueActivityOrigin
+from flux.execution.intents import ExecutionIntent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentReply
 from flux.runners.equities import run_node
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -597,6 +601,113 @@ def test_build_node_attaches_controller_endpoint_and_canonical_state_feed(monkey
         "namespace": "flux",
         "schema_version": "v1",
     }
+
+
+def test_controller_intent_publisher_routes_via_uds_and_applies_accepted_lifecycle_event(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    lifecycle_events = []
+
+    strategy = SimpleNamespace(
+        _msgbus=SimpleNamespace(
+            request=lambda **_kwargs: pytest.fail("publisher should not use the process-local msgbus"),
+        ),
+        apply_controller_lifecycle_event=lifecycle_events.append,
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        captured["paths"] = paths
+        captured["request"] = request
+        captured["timeout_s"] = timeout_s
+        claim = request.intent.claim(controller_epoch=3, controller_seq=11)
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="equities.ibkr.hedge.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+    command = SimpleNamespace(
+        intent=ExecutionIntent(
+            intent_id="intent-001",
+            controller_scope_id="equities.ibkr.hedge.main",
+            strategy_id="aapl_tradexyz_makerv4",
+        ),
+        command_type="place",
+        order_role="hedge",
+        instrument_id="AAPL.NASDAQ",
+        side="BUY",
+        quantity="2",
+        limit_price="190.04",
+        post_only=False,
+        time_in_force="IOC",
+        target_client_order_id=None,
+        route="SMART",
+        outside_rth=True,
+        include_overnight=False,
+        cancel_after_ms=None,
+    )
+
+    publisher(command)
+
+    paths = captured["paths"]
+    request = captured["request"]
+    assert paths.controller_scope_id == "equities.ibkr.hedge.main"
+    assert paths.request_reply_path.name == "equities.ibkr.hedge.main.intent-rpc.sock"
+    assert request.intent == command.intent
+    assert request.command is not None
+    assert request.command.command_type == "place"
+    assert request.command.instrument_id == "AAPL.NASDAQ"
+    assert lifecycle_events and lifecycle_events[0].lifecycle_state is ExecutionLifecycleState.ACCEPTED
+    assert lifecycle_events[0].venue_activity_origin is VenueActivityOrigin.CONTROLLER
+
+
+def test_controller_intent_publisher_raises_on_rejected_reply(tmp_path: Path) -> None:
+    strategy = SimpleNamespace(
+        _msgbus=SimpleNamespace(
+            request=lambda **_kwargs: pytest.fail("publisher should not use the process-local msgbus"),
+        ),
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        return ControllerIntentReply.rejected(
+            intent=request.intent,
+            reason="controller rejected canary request",
+            replied_at_ns=123_999,
+        )
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="equities.ibkr.hedge.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+
+    with pytest.raises(RuntimeError, match="controller rejected canary request"):
+        publisher(
+            SimpleNamespace(
+                intent=ExecutionIntent(
+                    intent_id="intent-002",
+                    controller_scope_id="equities.ibkr.hedge.main",
+                    strategy_id="aapl_tradexyz_makerv4",
+                ),
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                side=None,
+                quantity=None,
+                limit_price=None,
+                post_only=None,
+                time_in_force=None,
+                target_client_order_id="managed-buy-1",
+                route=None,
+                outside_rth=None,
+                include_overnight=None,
+                cancel_after_ms=None,
+            )
+        )
 
 
 def test_build_node_omits_local_inventory_fields_for_equities_maker(monkeypatch) -> None:

@@ -233,10 +233,16 @@ class ControllerStateFeedBridge:
         return None
 
     def publish_lifecycle_event(self, event: ExecutionLifecycleEvent) -> None:
+        set_value = getattr(self.redis_client, "set", None)
+        if callable(set_value):
+            set_value(self.lifecycle_event_key(), json.dumps(event.to_dict(), sort_keys=True).encode("utf-8"))
         if callable(self._lifecycle_callback):
             self._lifecycle_callback(event)
 
     def publish_canonical_state(self, payload: Mapping[str, Any]) -> None:
+        set_value = getattr(self.redis_client, "set", None)
+        if callable(set_value):
+            set_value(self.canonical_state_key(), json.dumps(dict(payload), sort_keys=True).encode("utf-8"))
         if callable(self._canonical_state_callback):
             self._canonical_state_callback(payload)
 
@@ -264,6 +270,7 @@ class MakerV4Strategy(Strategy):
 
     BALANCES_PUBLISH_INTERVAL_MS = 10_000
     PARAMS_REFRESH_INTERVAL_MS = 500
+    CONTROLLER_SYNC_INTERVAL_MS = 250
 
     def __init__(self, config: MakerV4StrategyConfig) -> None:
         super().__init__(config)
@@ -329,6 +336,7 @@ class MakerV4Strategy(Strategy):
         self._take_take_fill_accumulators: dict[str, dict[str, Any]] = {}
         self._take_take_residual_base_fill: dict[str, Any] | None = None
         self._last_runtime_params_refresh_ns = 0
+        self._last_controller_state_sync_ns = 0
         self._last_actionable_alert_ns: dict[str, int] = {}
         self._last_actionable_alert_transition: dict[str, str] = {}
 
@@ -478,6 +486,20 @@ class MakerV4Strategy(Strategy):
 
     def _controller_managed_mode(self) -> bool:
         return self._controller_scope_id is not None and callable(self._controller_intent_publisher)
+
+    def _sync_controller_state_if_due(self, *, now_ns: int) -> None:
+        feed = self._controller_canonical_state_feed
+        if feed is None:
+            return
+        timestamp_ns = max(0, int(now_ns))
+        interval_ns = self.CONTROLLER_SYNC_INTERVAL_MS * 1_000_000
+        if (
+            self._last_controller_state_sync_ns > 0
+            and timestamp_ns - self._last_controller_state_sync_ns < interval_ns
+        ):
+            return
+        feed.sync_once()
+        self._last_controller_state_sync_ns = timestamp_ns
 
     def _next_controller_intent_id(self, *, order_role: str, command_type: str) -> str:
         self._controller_intent_seq += 1
@@ -3217,6 +3239,7 @@ class MakerV4Strategy(Strategy):
         ask = self._decimal_or_none(getattr(tick, "ask_price", None))
         ts_ns = self._quote_ts_ns(getattr(tick, "ts_event", 0))
         self._refresh_runtime_params_if_due(now_ns=ts_ns)
+        self._sync_controller_state_if_due(now_ns=ts_ns)
         self._update_quote_snapshot(
             instrument_id=instrument_id,
             bid=bid,
