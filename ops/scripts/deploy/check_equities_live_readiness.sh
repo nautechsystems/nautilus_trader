@@ -35,6 +35,7 @@ load_common_env() {
       -e '/^EQUITIES_REDIS_PASSWORD=/p' \
       -e '/^EQUITIES_REDIS_SSL=/p' \
       -e '/^EQUITIES_API_BACKEND_URL=/p' \
+      -e '/^EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS=/p' \
       "${env_path}"
   )
 }
