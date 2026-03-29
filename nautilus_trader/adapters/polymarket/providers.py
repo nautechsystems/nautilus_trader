@@ -164,26 +164,42 @@ class PolymarketInstrumentProvider(InstrumentProvider):
 
         filter_is_active = filters.get("is_active", False)
 
+        # Keys consumed by the provider itself — not forwarded to market-level filtering.
+        _PROVIDER_FILTER_KEYS = {"next_cursor", "next_cursor_list", "pages_per_cursor", "n_expected_markets", "is_active"}
+
         markets_visited = 0
+        n_expected = filters.get("n_expected_markets", 100)
 
-        next_cursor = filters.get("next_cursor", "MA==")
+        # Build the list of jump-to cursors.
+        # If `next_cursor_list` is supplied we treat each entry as a starting point
+        # and paginate `pages_per_cursor` pages before jumping to the next entry.
+        # If only a single `next_cursor` is supplied we wrap it in a list with an
+        # unlimited page budget so the original behaviour is preserved.
+        next_cursor_list: list[str] | None = filters.get("next_cursor_list")
+        pages_per_cursor: int = filters.get("pages_per_cursor", 5)
 
-        while next_cursor != "LTE=" and len(self._instruments.values()) < filters.get("n_expected_markets", 100):  # GLEB change
+        if next_cursor_list is not None:
+            cursor_queue = list(next_cursor_list)
+            page_limit = pages_per_cursor
+        else:
+            cursor_queue = [filters.get("next_cursor", "MA==")]
+            page_limit = None  # unlimited — original behaviour
 
-            self._log.info(
-                f"Cursor = '{next_cursor}', markets visited = {markets_visited} markets loaded = {len(self._instruments.values())}", )  # GLEB change
-
-            response: dict[str, Any] | str = await asyncio.to_thread(
+        async def _fetch_page(cursor: str) -> dict[str, Any]:
+            resp: dict[str, Any] | str = await asyncio.to_thread(
                 self._client.get_markets,
-                next_cursor=next_cursor,
+                next_cursor=cursor,
             )
-            if isinstance(response, str):
-                raise RuntimeError(f"API error: {response}")  # TBD
+            if isinstance(resp, str):
+                raise RuntimeError(f"API error: {resp}")
+            return resp  # type: ignore[return-value]
 
+        def _process_page(response: dict[str, Any]) -> None:
+            nonlocal markets_visited
             for market_info in response["data"]:
                 try:
                     if any(
-                        False if key not in market_info
+                        False if key in _PROVIDER_FILTER_KEYS or key not in market_info
                         else (market_info[key] not in value if isinstance(value, tuple) else market_info[key] != value)
                         for key, value in filters.items()
                     ):
@@ -202,10 +218,34 @@ class PolymarketInstrumentProvider(InstrumentProvider):
                         self._load_instrument(market_info, token_id, outcome)
                 except ValueError as e:
                     self._log.error(f"Unable to parse market: {e}, {market_info}")
-                    continue
-            next_cursor = response["next_cursor"]
             markets_visited += len(response["data"])
-        self._log.info(f"Loaded the following instruments: {[instrument1.info.get('question', 'Unknown') for instrument1 in list(self._instruments.values())]}")  # GLEB change
+
+        for start_cursor in cursor_queue:
+            if len(self._instruments) >= n_expected:
+                break
+
+            next_cursor = start_cursor
+            pages_done = 0
+
+            while next_cursor != "LTE=" and len(self._instruments) < n_expected:
+                if page_limit is not None and pages_done >= page_limit:
+                    self._log.info(
+                        f"Reached page limit ({page_limit}) for cursor '{start_cursor}', jumping to next cursor in list",
+                    )
+                    break
+
+                self._log.info(
+                    f"Cursor = '{next_cursor}', page {pages_done + 1}"
+                    + (f"/{page_limit}" if page_limit is not None else "")
+                    + f", markets visited = {markets_visited}, markets loaded = {len(self._instruments)}",
+                )
+
+                response = await _fetch_page(next_cursor)
+                _process_page(response)
+                next_cursor = response["next_cursor"]
+                pages_done += 1
+
+        self._log.info(f"Loaded the following instruments: {[i.info.get('question', 'Unknown') for i in self._instruments.values()]}")
 
 
     def _load_instrument(
