@@ -567,6 +567,87 @@ def test_rejected_cancel_keeps_existing_canonical_state(
     assert managed_orders[0]["client_order_id"] == place_reply.claim.client_order_id
 
 
+def test_terminal_place_reject_rolls_back_canonical_state_and_publishes_rejected_lifecycle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = importlib.import_module("flux.execution.transport")
+    wal = importlib.import_module("flux.execution.wal")
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+        active_order_writer_factory=lambda _payload: _FailingVenueWriter(
+            message="{'code': -2010, 'msg': 'Order would immediately match and take.'}",
+        ),
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+    feed = ControllerStateFeedBridge(
+        redis_client=fake_redis,
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id="plumeusdt_binance_spot_makerv3",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-place-reject-terminal",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    store = wal.SQLiteOwnershipWal(
+        db_path=run_controller._controller_wal_path(
+            repo_root=tmp_path,
+            controller_scope_id="tokenmm.binance.pm.main",
+        ),
+    )
+    try:
+        records = store.list_records()
+    finally:
+        store.close()
+
+    lifecycle_payload = json.loads(fake_redis.get(feed.lifecycle_event_key()).decode("utf-8"))
+    canonical_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
+
+    assert reply.status == "accepted"
+    assert reply.claim is not None
+    assert [record.lifecycle_state for record in records] == [
+        ExecutionLifecycleState.OWNED_PRE_WRITE,
+        ExecutionLifecycleState.REJECTED,
+    ]
+    assert lifecycle_payload["lifecycle_state"] == "rejected"
+    assert "immediately match and take" in str(lifecycle_payload["reason"]).lower()
+    assert canonical_payload["managed_maker_orders"] == []
+
+
 def test_successful_cancel_prunes_canonical_state_after_write(
     tmp_path: Path,
     monkeypatch,

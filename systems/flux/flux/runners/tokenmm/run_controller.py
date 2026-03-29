@@ -81,6 +81,11 @@ _TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
     "unknown order sent",
     "order does not exist",
 )
+_TERMINAL_PLACE_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
+    "would immediately match and take",
+    "post only order will be rejected",
+    "could not be executed as maker",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +230,15 @@ class _ResidentRequestReplyControllerService:
         try:
             self._maybe_execute_active_write(request=request, claim=claim)
         except Exception as exc:
+            if self._handle_terminal_place_reject(
+                request=request,
+                claim=claim,
+                reason=exc,
+            ):
+                return ControllerIntentReply.accepted(
+                    claim=claim,
+                    replied_at_ns=time.time_ns(),
+                )
             return ControllerIntentReply.rejected(
                 intent=request.intent,
                 reason=str(exc),
@@ -234,6 +248,52 @@ class _ResidentRequestReplyControllerService:
             claim=claim,
             replied_at_ns=time.time_ns(),
         )
+
+    def _handle_terminal_place_reject(
+        self,
+        *,
+        request: ControllerIntentRequest,
+        claim,
+        reason: object,
+    ) -> bool:
+        command = request.command
+        if command is None or command.command_type != "place":
+            return False
+        if not _is_terminal_place_reject_reason(reason):
+            return False
+
+        rejection_reason = normalize_reason_text(reason) or str(reason)
+        if self._wal is not None:
+            try:
+                self._wal.update_lifecycle(
+                    intent_id=claim.intent_id,
+                    lifecycle_state=ExecutionLifecycleState.REJECTED,
+                    updated_at_ns=time.time_ns(),
+                )
+            except Exception:
+                pass
+
+        feed = None
+        if self._redis_client is not None:
+            try:
+                feed = _feed_bridge_for_claim(
+                    redis_client=self._redis_client,
+                    config=self._config,
+                    claim=claim,
+                )
+                feed.publish_lifecycle_event(
+                    ExecutionLifecycleEvent.from_claim(
+                        claim=claim,
+                        lifecycle_state=ExecutionLifecycleState.REJECTED,
+                        venue_activity_origin="controller",
+                        reason=rejection_reason,
+                    ),
+                )
+            except Exception:
+                feed = None
+
+        self._publish_rejected_place_state(claim=claim, feed=feed)
+        return True
 
     def _publish_request_state(self, *, request: ControllerIntentRequest, claim) -> None:
         feed = None
@@ -339,6 +399,36 @@ class _ResidentRequestReplyControllerService:
             existing_state=self._canonical_state_by_strategy.get(claim.strategy_id),
             prune_canceled_order=prune_canceled_order,
         )
+        self._canonical_state_by_strategy[claim.strategy_id] = state
+        if feed is None:
+            return
+        try:
+            feed.publish_canonical_state(state)
+        except Exception:
+            return
+
+    def _publish_rejected_place_state(
+        self,
+        *,
+        claim,
+        feed: ControllerStateFeedBridge | None,
+    ) -> None:
+        existing_state = dict(self._canonical_state_by_strategy.get(claim.strategy_id) or {})
+        managed_orders = [
+            dict(row)
+            for row in existing_state.get("managed_maker_orders", [])
+            if isinstance(row, dict)
+        ]
+        state = _apply_authority_markers(
+            state=existing_state,
+            claim=claim,
+            snapshot_ts_ms=_now_ms(None),
+        )
+        state["managed_maker_orders"] = [
+            row
+            for row in managed_orders
+            if str(row.get("client_order_id", "")).strip() != claim.client_order_id
+        ]
         self._canonical_state_by_strategy[claim.strategy_id] = state
         if feed is None:
             return
@@ -978,6 +1068,33 @@ def _is_terminal_cancel_reject_reason(reason: object) -> bool:
     return any(fragment in normalized for fragment in _TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS)
 
 
+def _is_terminal_place_reject_reason(reason: object) -> bool:
+    normalized = normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _TERMINAL_PLACE_REJECT_REASON_FRAGMENTS)
+
+
+def _apply_authority_markers(
+    *,
+    state: dict[str, Any],
+    claim,
+    snapshot_ts_ms: int,
+) -> dict[str, Any]:
+    state.update(
+        {
+            "controller_scope_id": claim.controller_scope_id,
+            "controller_epoch": claim.controller_epoch,
+            "controller_seq": claim.controller_seq,
+            "authority_state": "authoritative",
+            "snapshot_ts_ms": int(snapshot_ts_ms),
+            "stale_after_ms": 1_000,
+            "stale": False,
+        },
+    )
+    return state
+
+
 def _venue_order_id_for_canceled_client_order(
     *,
     wal: SQLiteOwnershipWal,
@@ -998,17 +1115,10 @@ def _canonical_state_payload(
     existing_state: dict[str, Any] | None,
     prune_canceled_order: bool = False,
 ) -> dict[str, Any]:
-    state = dict(existing_state or {})
-    state.update(
-        {
-            "controller_scope_id": claim.controller_scope_id,
-            "controller_epoch": claim.controller_epoch,
-            "controller_seq": claim.controller_seq,
-            "authority_state": "authoritative",
-            "snapshot_ts_ms": _now_ms(None),
-            "stale_after_ms": 1_000,
-            "stale": False,
-        },
+    state = _apply_authority_markers(
+        state=dict(existing_state or {}),
+        claim=claim,
+        snapshot_ts_ms=_now_ms(None),
     )
     command = request.command
     if command is None:
