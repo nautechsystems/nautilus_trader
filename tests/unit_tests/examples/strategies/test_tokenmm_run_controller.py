@@ -733,6 +733,152 @@ def test_successful_cancel_prunes_internal_state_even_if_lifecycle_publish_fails
     assert strategy_state["managed_maker_orders"] == []
 
 
+def test_default_runtime_writer_treats_unknown_order_cancel_as_terminal_success(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = importlib.import_module("flux.execution.transport")
+    wal = importlib.import_module("flux.execution.wal")
+    fake_redis = _FakeRedis()
+    spot_cancel_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    class _FakeSpotAccountHttpAPI:
+        def __init__(self, client, clock, account_type) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+
+        async def new_order(self, **_kwargs):
+            return SimpleNamespace(orderId=9_001)
+
+        async def cancel_order(self, **kwargs):
+            spot_cancel_calls.append(kwargs)
+            raise RuntimeError({"code": -2011, "msg": "Unknown order sent."})
+
+    class _FakeFuturesAccountHttpAPI:
+        def __init__(self, client, clock, account_type, private_api_family=None) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+            self.private_api_family = private_api_family
+
+    monkeypatch.setattr(
+        run_controller,
+        "get_cached_binance_http_client",
+        lambda **_kwargs: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceSpotAccountHttpAPI",
+        _FakeSpotAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceFuturesAccountHttpAPI",
+        _FakeFuturesAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+    _write_tokenmm_strategy_configs(tmp_path)
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+    feed = ControllerStateFeedBridge(
+        redis_client=fake_redis,
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id="plumeusdt_binance_spot_makerv3",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    place_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-unknown-place",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    assert place_reply.claim is not None
+
+    cancel_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-unknown",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_457,
+            command=ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                target_client_order_id=place_reply.claim.client_order_id,
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    store = wal.SQLiteOwnershipWal(
+        db_path=run_controller._controller_wal_path(
+            repo_root=tmp_path,
+            controller_scope_id="tokenmm.binance.pm.main",
+        ),
+    )
+    try:
+        records = store.list_records()
+    finally:
+        store.close()
+
+    canonical_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
+
+    assert cancel_reply.status == "accepted"
+    assert spot_cancel_calls == [
+        {
+            "symbol": "PLUMEUSDT",
+            "orig_client_order_id": place_reply.claim.client_order_id,
+            "recv_window": None,
+        },
+    ]
+    assert [record.lifecycle_state for record in records] == [
+        ExecutionLifecycleState.OWNED_PRE_WRITE,
+        ExecutionLifecycleState.SENT_TO_VENUE,
+        ExecutionLifecycleState.OWNED_PRE_WRITE,
+        ExecutionLifecycleState.SENT_TO_VENUE,
+    ]
+    assert canonical_payload["managed_maker_orders"] == []
+
+
 def test_controller_normalizes_nautilus_enum_side_and_tif_values() -> None:
     run_controller = _load_run_controller_module()
 

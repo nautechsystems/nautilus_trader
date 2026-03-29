@@ -55,6 +55,7 @@ from flux.runners.shared.controller_runner import ShadowControllerRunner
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.strategies.shared.venue_protection import normalize_reason_text
 from flux.strategies.makerv4.strategy import ControllerStateFeedBridge
 
 
@@ -74,6 +75,12 @@ _TIME_IN_FORCE_VALUE_NAMES = {
     str(member.value): name.upper()
     for name, member in getattr(TimeInForce, "__members__", {}).items()
 }
+_TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
+    "order not exists",
+    "too late to cancel",
+    "unknown order sent",
+    "order does not exist",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -774,20 +781,26 @@ class _TokenmmBinanceRequestBoundVenueWriter:
             self._command.target_client_order_id,
             "target_client_order_id",
         )
-        response = await self._runtime.account_api.cancel_order(
-            symbol=self._runtime.execution_symbol,
-            orig_client_order_id=target_client_order_id,
-            recv_window=self._runtime.recv_window,
-        )
+        try:
+            response = await self._runtime.account_api.cancel_order(
+                symbol=self._runtime.execution_symbol,
+                orig_client_order_id=target_client_order_id,
+                recv_window=self._runtime.recv_window,
+            )
+        except Exception as exc:
+            if not _is_terminal_cancel_reject_reason(exc):
+                raise
+            return _venue_order_id_for_canceled_client_order(
+                wal=self._wal,
+                target_client_order_id=target_client_order_id,
+            )
         order_id = _optional_text(getattr(response, "orderId", None))
         if order_id is not None:
             return order_id
-        record = self._wal.fetch_by_client_order_id(target_client_order_id)
-        if record is None or record.venue_order_id is None:
-            raise RuntimeError(
-                f"missing venue order id for canceled client_order_id={target_client_order_id!r}",
-            )
-        return record.venue_order_id
+        return _venue_order_id_for_canceled_client_order(
+            wal=self._wal,
+            target_client_order_id=target_client_order_id,
+        )
 
 
 def _resolve_managed_strategy_execution_runtime(
@@ -956,6 +969,26 @@ def _claim_key_for_request(request: ControllerIntentRequest) -> str:
     if command.command_type == "cancel" and command.target_client_order_id:
         return f"{command.order_role}:cancel:{command.target_client_order_id}"
     return f"{command.order_role}:{command.command_type}:{request.intent.intent_id}"
+
+
+def _is_terminal_cancel_reject_reason(reason: object) -> bool:
+    normalized = normalize_reason_text(reason)
+    if not normalized:
+        return False
+    return any(fragment in normalized for fragment in _TERMINAL_CANCEL_REJECT_REASON_FRAGMENTS)
+
+
+def _venue_order_id_for_canceled_client_order(
+    *,
+    wal: SQLiteOwnershipWal,
+    target_client_order_id: str,
+) -> str:
+    record = wal.fetch_by_client_order_id(target_client_order_id)
+    if record is None or record.venue_order_id is None:
+        raise RuntimeError(
+            f"missing venue order id for canceled client_order_id={target_client_order_id!r}",
+        )
+    return record.venue_order_id
 
 
 def _canonical_state_payload(
