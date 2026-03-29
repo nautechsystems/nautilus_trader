@@ -1081,6 +1081,40 @@ def test_store_update_params_records_bot_on_control_revision(
     assert metadata["bot_on_control_revision"].decode("utf-8")
 
 
+def test_store_update_params_rotates_bot_on_control_revision_on_same_value_update(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    first = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    first_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+    second = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    second_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+
+    assert first["updated"] == ["bot_on"]
+    assert second["updated"] == ["bot_on"]
+    assert first["params"]["bot_on"] is True
+    assert second["params"]["bot_on"] is True
+    assert first_revision
+    assert second_revision
+    assert second_revision != first_revision
+
+
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
     monkeypatch,
     flux_config,

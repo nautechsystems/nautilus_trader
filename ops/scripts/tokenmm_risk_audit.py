@@ -17,6 +17,12 @@ from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+for _path in (_REPO_ROOT, _REPO_ROOT / "systems" / "flux"):
+    _path_text = str(_path)
+    if _path_text not in sys.path:
+        sys.path.insert(0, _path_text)
+
 from flux.api.payloads import safe_int
 
 
@@ -578,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         component = components_by_id.get(strategy_id)
         component_local_position_qty = None
         component_local_spot_qty = None
+        component_local_qty_matches_signal = False
         if component is None:
             _append_error(
                 errors,
@@ -595,6 +602,8 @@ def main(argv: list[str] | None = None) -> int:
                     errors,
                     f"{strategy_id}: profile component local_qty_base={component_local_qty} does not match signal local_qty_base={signal_row.local_qty_base}",
                 )
+            else:
+                component_local_qty_matches_signal = component_local_qty is not None
             if _component_is_missing_optional(component) and signal_row.local_qty_base is None:
                 strategy_summaries.append(
                     f"{strategy_id}: local_qty=<missing_optional_component> global_qty={signal_row.global_qty_base} aggregation={signal_row.aggregation_mode or '<missing>'}",
@@ -633,16 +642,23 @@ def main(argv: list[str] | None = None) -> int:
             component_local_position_qty=component_local_position_qty,
             component_local_spot_qty=component_local_spot_qty,
         )
+        summary_source = row_source
         if local_qty_from_rows is None:
-            _append_error(
-                errors,
-                f"{strategy_id}: could not derive local qty from {STRATEGY_BALANCES_PATH_PREFIX}<id> ({row_source})",
-            )
+            if component_local_qty_matches_signal:
+                summary_source = "profile_component_local_qty"
+            else:
+                _append_error(
+                    errors,
+                    f"{strategy_id}: could not derive local qty from {STRATEGY_BALANCES_PATH_PREFIX}<id> ({row_source})",
+                )
         elif local_qty_from_rows != signal_row.local_qty_base:
-            _append_error(
-                errors,
-                f"{strategy_id}: strategy balances local qty={local_qty_from_rows} from {row_source} does not match signal local_qty_base={signal_row.local_qty_base}",
-            )
+            if component_local_qty_matches_signal:
+                summary_source = "profile_component_local_qty"
+            else:
+                _append_error(
+                    errors,
+                    f"{strategy_id}: strategy balances local qty={local_qty_from_rows} from {row_source} does not match signal local_qty_base={signal_row.local_qty_base}",
+                )
 
         job = pulse_jobs.get(f"tokenmm-node-{strategy_id}")
         if job is not None and _decode_text(job.get("status")) == "active":
@@ -657,7 +673,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{strategy_id}: local_qty_base={signal_row.local_qty_base} "
                 f"global_qty_base={signal_row.global_qty_base} "
                 f"state={signal_row.state_name or 'unknown'} "
-                f"balance_source={row_source}"
+                f"balance_source={summary_source}"
             ),
         )
 

@@ -324,3 +324,94 @@ def test_main_success_banner_includes_readiness_freshness_summary(
     assert "TOKENMM RISK AUDIT PASSED" in captured.out
     assert "readiness=1/1" in captured.out
     assert "state_stream_max_age_ms=30000" in captured.out
+
+
+def test_main_prefers_profile_component_local_qty_when_strategy_debug_rows_disagree(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    strategy_id = "plumeusdt_binance_spot_makerv3"
+
+    def _fake_fetch_enveloped_data(*, base_url: str, path: str, timeout: float):
+        assert base_url == "http://127.0.0.1:5022"
+        assert timeout == 5.0
+        if path == module.PROFILE_READINESS_PATH:
+            return {
+                "ok": True,
+                "summary": {
+                    "ready_strategy_count": 1,
+                    "required_strategy_count": 1,
+                    "state_stream_max_age_ms": 30_000,
+                    "failed_checks": [],
+                },
+            }
+        if path == module.PROFILE_SIGNALS_PATH:
+            return {
+                "strategies": [
+                    {
+                        "id": strategy_id,
+                        "meta": {"base_asset": "PLUME"},
+                        "state": {
+                            "state": "running",
+                            "local_qty_base": "-20733.81960162",
+                            "global_qty_base": "65316.70657969",
+                            "global_qty_base_complete": True,
+                            "aggregation_mode": "partial",
+                        },
+                    },
+                ],
+            }
+        if path == module.PROFILE_BALANCES_PATH:
+            return {
+                "source": "portfolio_snapshot",
+                "global_qty_base": "65316.70657969",
+                "global_qty_base_complete": True,
+                "aggregation_mode": "partial",
+                "components": [
+                    {
+                        "strategy_id": strategy_id,
+                        "local_qty_base": "-20733.81960162",
+                        "local_spot_qty": "-20733.81960162",
+                    },
+                ],
+            }
+        if path == module._strategy_balances_path(strategy_id):
+            return {
+                "rows": [
+                    {
+                        "kind": "cash",
+                        "asset": "PLUME",
+                        "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                        "total": "9987.75192185",
+                        "row_id": f"{strategy_id}:evt:0:2",
+                        "ts_ms": 1_700_000_000_001,
+                    },
+                ],
+            }
+        raise AssertionError(f"unexpected path: {path}")
+
+    module._fetch_enveloped_data = _fake_fetch_enveloped_data
+    module._fetch_json = lambda **_: {
+        "jobs": [
+            {
+                "id": f"tokenmm-node-{strategy_id}",
+                "group_key": "tokenmm",
+                "status": "active",
+            },
+        ],
+    }
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(tmp_path / "missing.toml"),
+            "--strategy-id",
+            strategy_id,
+        ],
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "TOKENMM RISK AUDIT PASSED" in captured.out
+    assert "balance_source=profile_component_local_qty" in captured.out
