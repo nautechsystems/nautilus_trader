@@ -75,7 +75,7 @@ MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[5]
 
 
 def _optional_text(value: Any) -> str | None:

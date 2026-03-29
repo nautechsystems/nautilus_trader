@@ -63,6 +63,10 @@ def _install_strategy_spec(
     )
 
 
+def test_repo_root_resolves_checkout_root_for_packaged_node_layout() -> None:
+    assert run_node._repo_root() == _repo_root()
+
+
 def test_tokenmm_startup_lock_uses_descriptor_specific_lock_dir(tmp_path: Path) -> None:
     config = {"identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"}}
 

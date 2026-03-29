@@ -90,6 +90,16 @@ def _shared_config() -> dict[str, object]:
     }
 
 
+def test_repo_root_resolves_checkout_root_for_packaged_controller_layout() -> None:
+    run_controller = _load_run_controller_module()
+
+    assert run_controller._repo_root() == _repo_root()
+    assert run_controller._strategy_runtime_config_path(
+        repo_root=run_controller._repo_root(),
+        strategy_id="plumeusdt_binance_spot_makerv3",
+    ) == (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml")
+
+
 def test_build_runner_starts_resident_request_reply_controller_service(tmp_path: Path) -> None:
     run_controller = _load_run_controller_module()
     transport = importlib.import_module("flux.execution.transport")

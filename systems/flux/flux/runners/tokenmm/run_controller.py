@@ -544,7 +544,7 @@ def build_runner(
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[5]
 
 
 def _now_ms(value: int | None) -> int:
