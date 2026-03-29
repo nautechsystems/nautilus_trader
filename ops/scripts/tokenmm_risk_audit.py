@@ -219,6 +219,16 @@ def _row_ts_ms(row: Mapping[str, Any]) -> int:
         return 0
 
 
+def _row_id_sort_key(value: Any) -> tuple[tuple[int, int | str], ...]:
+    text = _decode_text(value)
+    if not text:
+        return ()
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in text.split(":")
+    )
+
+
 def _position_qty_from_rows(rows: list[Mapping[str, Any]]) -> tuple[Decimal | None, str]:
     position_rows = [
         row for row in rows if _decode_text(row.get("kind")).lower() == "position"
@@ -256,7 +266,7 @@ def _latest_base_asset_qty_from_rows(
 
     latest_row = max(
         base_rows,
-        key=lambda row: (_row_ts_ms(row), _decode_text(row.get("row_id"))),
+        key=lambda row: (_row_ts_ms(row), _row_id_sort_key(row.get("row_id"))),
     )
     qty = _first_decimal(
         latest_row.get("total"),

@@ -77,6 +77,33 @@ def test_strategy_local_qty_from_rows_prefers_latest_base_row_for_spot_component
     assert source == "latest_base_asset_row"
 
 
+def test_latest_base_asset_qty_from_rows_prefers_higher_numeric_event_id_when_timestamps_tie() -> None:
+    module = _load_module()
+
+    qty, source = module._latest_base_asset_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "total": "-3447.93729095",
+                "row_id": "plumeusdt_bitget_spot_makerv3:evt:9:0",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "total": "-3447.95091031",
+                "row_id": "plumeusdt_bitget_spot_makerv3:evt:136:0",
+                "ts_ms": 1_700_000_000_002,
+            },
+        ],
+        base_asset="PLUME",
+    )
+
+    assert qty == module.Decimal("-3447.95091031")
+    assert source == "latest_base_asset_row"
+
+
 def test_strategy_local_qty_from_rows_falls_back_to_component_snapshot_when_rows_missing() -> None:
     module = _load_module()
 

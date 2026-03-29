@@ -3103,6 +3103,55 @@ def test_balances_with_strategy_query_keeps_per_strategy_debug_view(
     assert rows[0].get("row_id") != "tokenmm:cash:bybit:main:USDT"
 
 
+def test_balances_with_strategy_query_allows_audit_sized_limit(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    rows = [
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "exchange": "venue_a",
+            "account": f"acct-{index}",
+            "account_id": f"acct-{index}",
+            "asset": "ABC",
+            "free": str(index),
+            "total": str(index),
+            "row_id": f"row-{index}",
+        }
+        for index in range(250)
+    ]
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(primary_keys.balances_snapshot(), rows)
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/balances",
+            query_string={"strategy": flux_config.identity.strategy_id, "limit": 5000},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["limit"] == 5000
+    assert body["data"]["count"] == 250
+    assert len(body["data"]["rows"]) == 250
+    assert body["data"]["rows"][-1]["row_id"] == "row-249"
+
+
 def test_balances_profile_tokenmm_marks_missing_required_components_as_degraded(
     monkeypatch,
     flux_config,
