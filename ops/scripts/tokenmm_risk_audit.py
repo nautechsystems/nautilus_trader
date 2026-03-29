@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -219,6 +220,34 @@ def _row_ts_ms(row: Mapping[str, Any]) -> int:
         return 0
 
 
+def _row_id_order_key(row_id: Any) -> tuple[tuple[int, int | str], ...]:
+    text = _decode_text(row_id)
+    if not text:
+        return tuple()
+    parts = re.split(r"(\d+)", text)
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in parts
+        if part
+    )
+
+
+def _base_asset_row_account_identity(row: Mapping[str, Any]) -> str:
+    explicit_account = _first_text(
+        row.get("account_scope_id"),
+        row.get("account"),
+        row.get("account_id"),
+        row.get("wallet"),
+        row.get("subaccount"),
+    )
+    if explicit_account is not None:
+        return explicit_account
+    row_id = _decode_text(row.get("row_id"))
+    if ":evt:" in row_id:
+        return row_id.split(":evt:", maxsplit=1)[0]
+    return row_id or "<unknown>"
+
+
 def _position_qty_from_rows(rows: list[Mapping[str, Any]]) -> tuple[Decimal | None, str]:
     position_rows = [
         row for row in rows if _decode_text(row.get("kind")).lower() == "position"
@@ -254,19 +283,35 @@ def _latest_base_asset_qty_from_rows(
     if not base_rows:
         return None, "no_base_asset_rows"
 
-    latest_row = max(
-        base_rows,
-        key=lambda row: (_row_ts_ms(row), _decode_text(row.get("row_id"))),
-    )
-    qty = _first_decimal(
-        latest_row.get("total"),
-        latest_row.get("free"),
-        latest_row.get("quantity"),
-        latest_row.get("qty"),
-    )
-    if qty is None:
-        return None, "base_asset_row_missing_qty"
-    return qty, "latest_base_asset_row"
+    latest_rows_by_account: dict[str, Mapping[str, Any]] = {}
+    for row in base_rows:
+        account_id = _base_asset_row_account_identity(row)
+        previous = latest_rows_by_account.get(account_id)
+        row_key = (_row_ts_ms(row), _row_id_order_key(row.get("row_id")))
+        previous_key = (
+            (_row_ts_ms(previous), _row_id_order_key(previous.get("row_id")))
+            if previous is not None
+            else None
+        )
+        if previous_key is None or row_key > previous_key:
+            latest_rows_by_account[account_id] = row
+
+    total = Decimal("0")
+    for row in latest_rows_by_account.values():
+        qty = _first_decimal(
+            row.get("total"),
+            row.get("free"),
+            row.get("quantity"),
+            row.get("qty"),
+        )
+        if qty is None:
+            return None, "base_asset_row_missing_qty"
+        total += qty
+
+    source = "latest_base_asset_rows_by_account"
+    if len(latest_rows_by_account) == 1:
+        source = "latest_base_asset_row"
+    return total, source
 
 
 def _strategy_local_qty_from_rows(

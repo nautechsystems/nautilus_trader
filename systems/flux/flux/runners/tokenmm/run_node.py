@@ -527,6 +527,7 @@ class _TokenmmControllerManagedBridge:
             schema_version=schema_version,
         )
         self._managed_order_rows: dict[str, dict[str, Any]] = {}
+        self._cancel_intent_seq = 0
         self._feed.bind(
             lifecycle_callback=self._apply_lifecycle_event,
             canonical_state_callback=self._apply_canonical_state,
@@ -554,13 +555,17 @@ class _TokenmmControllerManagedBridge:
         client_order_id = str(getattr(order, "client_order_id", "") or "").strip()
         if not client_order_id:
             raise ValueError("controller-managed TokenMM cancels require client_order_id")
+        requested_at_ns = _strategy_timestamp_ns(self._strategy)
+        self._cancel_intent_seq += 1
         request = ControllerIntentRequest(
             intent=ExecutionIntent(
-                intent_id=f"cancel:{client_order_id}",
+                intent_id=(
+                    f"cancel:{client_order_id}:{requested_at_ns}:{self._cancel_intent_seq}"
+                ),
                 controller_scope_id=self._controller_scope_id,
                 strategy_id=_strategy_runtime_id(self._strategy),
             ),
-            requested_at_ns=_strategy_timestamp_ns(self._strategy),
+            requested_at_ns=requested_at_ns,
             command=ControllerIntentCommandPayload(
                 command_type="cancel",
                 order_role="maker",

@@ -325,6 +325,75 @@ def test_controller_order_snapshot_restores_order_side_enum() -> None:
     assert snapshot.side == OrderSide.BUY
 
 
+def test_controller_managed_bridge_publish_cancel_uses_unique_intent_ids_per_attempt(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    requests = []
+
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    def _fake_send_transport_request(*, paths, request, timeout_s):
+        requests.append((paths, request, timeout_s))
+        claim = request.intent.claim(controller_epoch=4, controller_seq=len(requests))
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+    monkeypatch.setattr(run_node, "send_transport_request", _fake_send_transport_request)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=lambda _client_order_id: None,
+    )
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    client_order_id = "ctl_Q8VVFSv308PCLbcZklA8rxnftgnj8-fq"
+    bridge._managed_order_rows[client_order_id] = {
+        "client_order_id": client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+    order = SimpleNamespace(
+        client_order_id=client_order_id,
+        instrument_id="PLUMEUSDT.BINANCE_SPOT",
+    )
+
+    bridge.publish_cancel(order)
+    bridge.publish_cancel(order)
+
+    assert len(requests) == 2
+    first_request = requests[0][1]
+    second_request = requests[1][1]
+    assert first_request.command is not None
+    assert second_request.command is not None
+    assert first_request.command.target_client_order_id == client_order_id
+    assert second_request.command.target_client_order_id == client_order_id
+    assert first_request.intent.intent_id.startswith(f"cancel:{client_order_id}:")
+    assert second_request.intent.intent_id.startswith(f"cancel:{client_order_id}:")
+    assert first_request.intent.intent_id != second_request.intent.intent_id
+    assert bridge._managed_order_rows[client_order_id]["pending_cancel"] is True
+
+
 def test_build_node_disables_local_execution_for_controller_managed_binance_strategy(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
