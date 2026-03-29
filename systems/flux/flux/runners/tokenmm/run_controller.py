@@ -219,30 +219,29 @@ class _ResidentRequestReplyControllerService:
         )
 
     def _publish_request_state(self, *, request: ControllerIntentRequest, claim) -> None:
-        if self._redis_client is None:
-            return
+        feed = None
         try:
-            feed = _feed_bridge_for_claim(
-                redis_client=self._redis_client,
-                config=self._config,
-                claim=claim,
-            )
-            feed.publish_lifecycle_event(
-                ExecutionLifecycleEvent.from_claim(
+            if self._redis_client is not None:
+                feed = _feed_bridge_for_claim(
+                    redis_client=self._redis_client,
+                    config=self._config,
                     claim=claim,
-                    lifecycle_state=claim.lifecycle_state,
-                    venue_activity_origin="controller",
-                ),
-            )
-            state = _canonical_state_payload(
-                request=request,
-                claim=claim,
-                existing_state=self._canonical_state_by_strategy.get(claim.strategy_id),
-            )
-            self._canonical_state_by_strategy[claim.strategy_id] = state
-            feed.publish_canonical_state(state)
+                )
+                feed.publish_lifecycle_event(
+                    ExecutionLifecycleEvent.from_claim(
+                        claim=claim,
+                        lifecycle_state=claim.lifecycle_state,
+                        venue_activity_origin="controller",
+                    ),
+                )
         except Exception:
-            return
+            feed = None
+        self._publish_canonical_state(
+            request=request,
+            claim=claim,
+            prune_canceled_order=False,
+            feed=feed,
+        )
 
     def _maybe_execute_active_write(self, *, request: ControllerIntentRequest, claim) -> None:
         command = request.command
@@ -285,20 +284,49 @@ class _ResidentRequestReplyControllerService:
                 written_at_ns=time.time_ns(),
             ),
         )
-        if self._redis_client is None:
+        try:
+            feed = None
+            if self._redis_client is not None:
+                feed = _feed_bridge_for_claim(
+                    redis_client=self._redis_client,
+                    config=self._config,
+                    claim=claim,
+                )
+                feed.publish_lifecycle_event(
+                    ExecutionLifecycleEvent.sent_to_venue(
+                        claim=claim,
+                        venue_order_id=_latest_venue_order_id(self._wal, claim.intent_id),
+                    ),
+                )
+            if command.command_type == "cancel":
+                self._publish_canonical_state(
+                    request=request,
+                    claim=claim,
+                    prune_canceled_order=True,
+                    feed=feed,
+                )
+        except Exception:
+            return
+
+    def _publish_canonical_state(
+        self,
+        *,
+        request: ControllerIntentRequest,
+        claim,
+        prune_canceled_order: bool,
+        feed: ControllerStateFeedBridge | None,
+    ) -> None:
+        state = _canonical_state_payload(
+            request=request,
+            claim=claim,
+            existing_state=self._canonical_state_by_strategy.get(claim.strategy_id),
+            prune_canceled_order=prune_canceled_order,
+        )
+        self._canonical_state_by_strategy[claim.strategy_id] = state
+        if feed is None:
             return
         try:
-            feed = _feed_bridge_for_claim(
-                redis_client=self._redis_client,
-                config=self._config,
-                claim=claim,
-            )
-            feed.publish_lifecycle_event(
-                ExecutionLifecycleEvent.sent_to_venue(
-                    claim=claim,
-                    venue_order_id=_latest_venue_order_id(self._wal, claim.intent_id),
-                ),
-            )
+            feed.publish_canonical_state(state)
         except Exception:
             return
 
@@ -903,6 +931,7 @@ def _canonical_state_payload(
     request: ControllerIntentRequest,
     claim,
     existing_state: dict[str, Any] | None,
+    prune_canceled_order: bool = False,
 ) -> dict[str, Any]:
     state = dict(existing_state or {})
     state.update(
@@ -925,18 +954,27 @@ def _canonical_state_payload(
         if isinstance(row, dict)
     ]
     if command.command_type == "place" and command.order_role == "maker":
-        managed_orders = [
-            {
-                "client_order_id": claim.client_order_id,
-                "instrument_id": command.instrument_id,
-                "side": command.side,
-                "quantity": command.quantity,
-                "price": command.limit_price,
-                "post_only": bool(command.post_only),
-                "pending_cancel": False,
-            },
-        ]
-    elif command.command_type == "cancel" and command.target_client_order_id:
+        next_row = {
+            "client_order_id": claim.client_order_id,
+            "instrument_id": command.instrument_id,
+            "side": command.side,
+            "quantity": command.quantity,
+            "price": command.limit_price,
+            "post_only": bool(command.post_only),
+            "pending_cancel": False,
+        }
+        replaced = False
+        next_orders: list[dict[str, Any]] = []
+        for row in managed_orders:
+            if str(row.get("client_order_id", "")).strip() == claim.client_order_id:
+                next_orders.append(next_row)
+                replaced = True
+            else:
+                next_orders.append(row)
+        if not replaced:
+            next_orders.append(next_row)
+        managed_orders = next_orders
+    elif prune_canceled_order and command.command_type == "cancel" and command.target_client_order_id:
         managed_orders = [
             row
             for row in managed_orders
