@@ -229,6 +229,15 @@ def _row_id_sort_key(value: Any) -> tuple[tuple[int, int | str], ...]:
     )
 
 
+def _row_account_key(row: Mapping[str, Any]) -> str:
+    return _first_text(
+        row.get("account_id"),
+        row.get("account"),
+        row.get("wallet"),
+        row.get("subaccount"),
+    ) or ""
+
+
 def _position_qty_from_rows(rows: list[Mapping[str, Any]]) -> tuple[Decimal | None, str]:
     position_rows = [
         row for row in rows if _decode_text(row.get("kind")).lower() == "position"
@@ -264,19 +273,28 @@ def _latest_base_asset_qty_from_rows(
     if not base_rows:
         return None, "no_base_asset_rows"
 
-    latest_row = max(
-        base_rows,
-        key=lambda row: (_row_ts_ms(row), _row_id_sort_key(row.get("row_id"))),
-    )
-    qty = _first_decimal(
-        latest_row.get("total"),
-        latest_row.get("free"),
-        latest_row.get("quantity"),
-        latest_row.get("qty"),
-    )
-    if qty is None:
-        return None, "base_asset_row_missing_qty"
-    return qty, "latest_base_asset_row"
+    latest_rows_by_account: dict[str, Mapping[str, Any]] = {}
+    latest_sort_key_by_account: dict[str, tuple[int, tuple[tuple[int, int | str], ...]]] = {}
+    for row in base_rows:
+        account_key = _row_account_key(row)
+        sort_key = (_row_ts_ms(row), _row_id_sort_key(row.get("row_id")))
+        previous_sort_key = latest_sort_key_by_account.get(account_key)
+        if previous_sort_key is None or sort_key >= previous_sort_key:
+            latest_rows_by_account[account_key] = row
+            latest_sort_key_by_account[account_key] = sort_key
+
+    total = Decimal("0")
+    for latest_row in latest_rows_by_account.values():
+        qty = _first_decimal(
+            latest_row.get("total"),
+            latest_row.get("free"),
+            latest_row.get("quantity"),
+            latest_row.get("qty"),
+        )
+        if qty is None:
+            return None, "base_asset_row_missing_qty"
+        total += qty
+    return total, "latest_base_asset_rows_by_account"
 
 
 def _strategy_local_qty_from_rows(

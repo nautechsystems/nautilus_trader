@@ -74,7 +74,7 @@ def test_strategy_local_qty_from_rows_prefers_latest_base_row_for_spot_component
     )
 
     assert qty == module.Decimal("1045.24669092")
-    assert source == "latest_base_asset_row"
+    assert source == "latest_base_asset_rows_by_account"
 
 
 def test_latest_base_asset_qty_from_rows_prefers_higher_numeric_event_id_when_timestamps_tie() -> None:
@@ -101,7 +101,47 @@ def test_latest_base_asset_qty_from_rows_prefers_higher_numeric_event_id_when_ti
     )
 
     assert qty == module.Decimal("-3447.95091031")
-    assert source == "latest_base_asset_row"
+    assert source == "latest_base_asset_rows_by_account"
+
+
+def test_strategy_local_qty_from_rows_sums_latest_base_rows_by_account_for_spot_component() -> None:
+    module = _load_module()
+
+    qty, source = module._strategy_local_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                "total": "9987.75192185",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:2",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                "total": "9987.75192185",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:1:2",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-MARGIN-master",
+                "total": "-30721.57152347",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:205",
+                "ts_ms": 1_700_000_000_002,
+            },
+        ],
+        base_asset="PLUME",
+        expected_local_qty=None,
+        component_local_position_qty=None,
+        component_local_spot_qty=module.Decimal("-20733.81960162"),
+    )
+
+    assert qty == module.Decimal("-20733.81960162")
+    assert source == "latest_base_asset_rows_by_account"
 
 
 def test_strategy_local_qty_from_rows_falls_back_to_component_snapshot_when_rows_missing() -> None:
