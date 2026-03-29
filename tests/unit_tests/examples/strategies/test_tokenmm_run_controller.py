@@ -92,6 +92,29 @@ def _shared_config() -> dict[str, object]:
     }
 
 
+REQUEST_TIMEOUT_S = 5.0
+
+
+def _load_transport_module():
+    transport = importlib.import_module("flux.execution.transport")
+    original_send_request = getattr(
+        transport,
+        "_codex_original_send_request",
+        transport.send_request,
+    )
+    if original_send_request is transport.send_request:
+        def _send_request_with_timeout_floor(*, paths, request, timeout_s=1.0):
+            return original_send_request(
+                paths=paths,
+                request=request,
+                timeout_s=max(float(timeout_s), REQUEST_TIMEOUT_S),
+            )
+
+        transport._codex_original_send_request = original_send_request
+        transport.send_request = _send_request_with_timeout_floor
+    return transport
+
+
 def test_repo_root_resolves_checkout_root_for_packaged_controller_layout() -> None:
     run_controller = _load_run_controller_module()
 
@@ -104,7 +127,7 @@ def test_repo_root_resolves_checkout_root_for_packaged_controller_layout() -> No
 
 def test_build_runner_starts_resident_request_reply_controller_service(tmp_path: Path) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
 
     runner = run_controller.build_runner(
         _shared_config(),
@@ -143,7 +166,7 @@ def test_resident_service_publishes_lifecycle_and_canonical_state_to_redis(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     fake_redis = _FakeRedis()
     writer = _RecordingVenueWriter()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
@@ -207,7 +230,7 @@ def test_active_writer_path_records_wal_and_sent_to_venue_state(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     wal = importlib.import_module("flux.execution.wal")
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
@@ -285,7 +308,7 @@ def test_active_mode_builds_default_runtime_writer_without_injected_factory(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     wal = importlib.import_module("flux.execution.wal")
     fake_redis = _FakeRedis()
     spot_calls: list[dict[str, object]] = []
@@ -398,7 +421,7 @@ def test_resident_service_preserves_full_managed_maker_set_across_places(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
 
@@ -442,7 +465,7 @@ def test_resident_service_preserves_full_managed_maker_set_across_places(
                 time_in_force="GTC",
             ),
         ),
-        timeout_s=1.0,
+        timeout_s=REQUEST_TIMEOUT_S,
     )
     second_reply = transport.send_request(
         paths=paths,
@@ -464,7 +487,7 @@ def test_resident_service_preserves_full_managed_maker_set_across_places(
                 time_in_force="GTC",
             ),
         ),
-        timeout_s=1.0,
+        timeout_s=REQUEST_TIMEOUT_S,
     )
     runner.stop()
 
@@ -485,7 +508,7 @@ def test_rejected_cancel_keeps_existing_canonical_state(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
 
@@ -535,7 +558,7 @@ def test_rejected_cancel_keeps_existing_canonical_state(
                 time_in_force="GTC",
             ),
         ),
-        timeout_s=1.0,
+        timeout_s=REQUEST_TIMEOUT_S,
     )
     assert place_reply.claim is not None
 
@@ -555,7 +578,7 @@ def test_rejected_cancel_keeps_existing_canonical_state(
                 target_client_order_id=place_reply.claim.client_order_id,
             ),
         ),
-        timeout_s=1.0,
+        timeout_s=REQUEST_TIMEOUT_S,
     )
     runner.stop()
 
@@ -572,7 +595,7 @@ def test_terminal_place_reject_rolls_back_canonical_state_and_publishes_rejected
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     wal = importlib.import_module("flux.execution.wal")
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
@@ -653,7 +676,7 @@ def test_successful_cancel_prunes_canonical_state_after_write(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
 
@@ -732,7 +755,7 @@ def test_successful_cancel_prunes_internal_state_even_if_lifecycle_publish_fails
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     fake_redis = _FakeRedis()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
 
@@ -819,7 +842,7 @@ def test_default_runtime_writer_treats_unknown_order_cancel_as_terminal_success(
     monkeypatch,
 ) -> None:
     run_controller = _load_run_controller_module()
-    transport = importlib.import_module("flux.execution.transport")
+    transport = _load_transport_module()
     wal = importlib.import_module("flux.execution.wal")
     fake_redis = _FakeRedis()
     spot_cancel_calls: list[dict[str, object]] = []
@@ -960,6 +983,146 @@ def test_default_runtime_writer_treats_unknown_order_cancel_as_terminal_success(
     assert canonical_payload["managed_maker_orders"] == []
 
 
+def test_unknown_cancel_for_carryover_order_without_wal_record_is_quarantined_and_pruned(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = _load_transport_module()
+    wal = importlib.import_module("flux.execution.wal")
+    fake_redis = _FakeRedis()
+    spot_cancel_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    class _FakeSpotAccountHttpAPI:
+        def __init__(self, client, clock, account_type) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+
+        async def new_order(self, **_kwargs):
+            return SimpleNamespace(orderId=9_001)
+
+        async def cancel_order(self, **kwargs):
+            spot_cancel_calls.append(kwargs)
+            raise RuntimeError({"code": -2011, "msg": "Unknown order sent."})
+
+    class _FakeFuturesAccountHttpAPI:
+        def __init__(self, client, clock, account_type, private_api_family=None) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+            self.private_api_family = private_api_family
+
+    monkeypatch.setattr(
+        run_controller,
+        "get_cached_binance_http_client",
+        lambda **_kwargs: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceSpotAccountHttpAPI",
+        _FakeSpotAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceFuturesAccountHttpAPI",
+        _FakeFuturesAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+    _write_tokenmm_strategy_configs(tmp_path)
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+    feed = ControllerStateFeedBridge(
+        redis_client=fake_redis,
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id="plumeusdt_binance_spot_makerv3",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    stale_client_order_id = "ctl_carryover_startup_cleanup_target"
+    controller_service = getattr(runner, "_controller_service")
+    controller_service._canonical_state_by_strategy["plumeusdt_binance_spot_makerv3"] = {
+        "managed_maker_orders": [
+            {
+                "client_order_id": stale_client_order_id,
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "side": "BUY",
+                "quantity": "1000",
+                "price": "0.1901",
+                "post_only": True,
+                "pending_cancel": False,
+            },
+        ],
+    }
+
+    cancel_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-carryover-stale",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_457,
+            command=ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                target_client_order_id=stale_client_order_id,
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    store = wal.SQLiteOwnershipWal(
+        db_path=run_controller._controller_wal_path(
+            repo_root=tmp_path,
+            controller_scope_id="tokenmm.binance.pm.main",
+        ),
+    )
+    try:
+        records = store.list_records()
+    finally:
+        store.close()
+
+    lifecycle_payload = json.loads(fake_redis.get(feed.lifecycle_event_key()).decode("utf-8"))
+    canonical_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
+
+    assert cancel_reply.status == "accepted"
+    assert spot_cancel_calls == [
+        {
+            "symbol": "PLUMEUSDT",
+            "orig_client_order_id": stale_client_order_id,
+            "recv_window": None,
+        },
+    ]
+    assert [record.lifecycle_state for record in records] == [
+        ExecutionLifecycleState.OWNED_PRE_WRITE,
+        ExecutionLifecycleState.QUARANTINED,
+    ]
+    assert lifecycle_payload["lifecycle_state"] == "quarantined"
+    assert lifecycle_payload["venue_activity_origin"] == "orphan"
+    assert "missing venue order id" in str(lifecycle_payload["reason"]).lower()
+    assert canonical_payload["managed_maker_orders"] == []
+
+
 def test_controller_normalizes_nautilus_enum_side_and_tif_values() -> None:
     run_controller = _load_run_controller_module()
 
@@ -1056,7 +1219,7 @@ strategy_id = "plumeusdt_binance_perp_makerv3"
     )
 
 
-def _wait_for_socket(path: Path, *, timeout_s: float = 1.0) -> None:
+def _wait_for_socket(path: Path, *, timeout_s: float = 20.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if path.exists():

@@ -35,6 +35,7 @@ from nautilus_trader.model.enums import TimeInForce
 from flux.execution.controller import ControllerRunMode
 from flux.execution.controller import ControllerSnapshotAuthority
 from flux.execution.controller import SnapshotAuthorityState
+from flux.execution.controller import VenueActivityOrigin
 from flux.execution.events import ExecutionLifecycleEvent
 from flux.execution.intents import ExecutionLifecycleState
 from flux.execution.ledger import ExecutionLedger
@@ -115,6 +116,15 @@ class _NullControllerService:
 
     def stop(self) -> None:
         return None
+
+
+class _QuarantinedCancelOrphanError(RuntimeError):
+    def __init__(self, *, target_client_order_id: str) -> None:
+        super().__init__(
+            "missing venue order id for canceled "
+            f"client_order_id={target_client_order_id!r} in current controller WAL",
+        )
+        self.target_client_order_id = target_client_order_id
 
 
 class _ResidentRequestReplyControllerService:
@@ -229,6 +239,16 @@ class _ResidentRequestReplyControllerService:
         self._publish_request_state(request=request, claim=claim)
         try:
             self._maybe_execute_active_write(request=request, claim=claim)
+        except _QuarantinedCancelOrphanError as exc:
+            self._handle_quarantined_cancel_orphan(
+                request=request,
+                claim=claim,
+                reason=exc,
+            )
+            return ControllerIntentReply.accepted(
+                claim=claim,
+                replied_at_ns=time.time_ns(),
+            )
         except Exception as exc:
             if self._handle_terminal_place_reject(
                 request=request,
@@ -294,6 +314,51 @@ class _ResidentRequestReplyControllerService:
 
         self._publish_rejected_place_state(claim=claim, feed=feed)
         return True
+
+    def _handle_quarantined_cancel_orphan(
+        self,
+        *,
+        request: ControllerIntentRequest,
+        claim,
+        reason: object,
+    ) -> None:
+        quarantine_reason = normalize_reason_text(reason) or str(reason)
+        feed = None
+
+        if self._wal is not None:
+            try:
+                self._wal.update_lifecycle(
+                    intent_id=claim.intent_id,
+                    lifecycle_state=ExecutionLifecycleState.QUARANTINED,
+                    updated_at_ns=time.time_ns(),
+                )
+            except Exception:
+                pass
+
+        if self._redis_client is not None:
+            try:
+                feed = _feed_bridge_for_claim(
+                    redis_client=self._redis_client,
+                    config=self._config,
+                    claim=claim,
+                )
+                feed.publish_lifecycle_event(
+                    ExecutionLifecycleEvent.from_claim(
+                        claim=claim,
+                        lifecycle_state=ExecutionLifecycleState.QUARANTINED,
+                        venue_activity_origin=VenueActivityOrigin.ORPHAN,
+                        reason=quarantine_reason,
+                    ),
+                )
+            except Exception:
+                feed = None
+
+        self._publish_canonical_state(
+            request=request,
+            claim=claim,
+            prune_canceled_order=True,
+            feed=feed,
+        )
 
     def _publish_request_state(self, *, request: ControllerIntentRequest, claim) -> None:
         feed = None
@@ -1102,8 +1167,8 @@ def _venue_order_id_for_canceled_client_order(
 ) -> str:
     record = wal.fetch_by_client_order_id(target_client_order_id)
     if record is None or record.venue_order_id is None:
-        raise RuntimeError(
-            f"missing venue order id for canceled client_order_id={target_client_order_id!r}",
+        raise _QuarantinedCancelOrphanError(
+            target_client_order_id=target_client_order_id,
         )
     return record.venue_order_id
 

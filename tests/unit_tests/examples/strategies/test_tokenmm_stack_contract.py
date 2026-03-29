@@ -119,6 +119,12 @@ def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type
     _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
 
 
+def test_tokenmm_live_controller_lease_ttl_is_explicitly_hardened_for_prod() -> None:
+    shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+
+    assert int(shared_config["controller"]["lease_ttl_ms"]) >= 15_000
+
+
 def test_tokenmm_binance_spot_portfolio_margin_variant_preserves_identity_contract() -> None:
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(

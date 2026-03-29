@@ -9,7 +9,8 @@ from flux.persistence.balance_snapshots.schema import INSERT_FLUX_BALANCE_SNAPSH
 
 
 def connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=5.0)
+    conn = sqlite3.connect(path, timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000;")
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn

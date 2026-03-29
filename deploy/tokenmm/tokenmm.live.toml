@@ -143,6 +143,7 @@ controller_scope_id = "tokenmm.binance.pm.main"
 account_scope_id = "binance.pm.main"
 mode = "active"
 write_ownership_enabled = true
+lease_ttl_ms = 15000
 managed_strategy_ids = [
   "plumeusdt_binance_perp_makerv3",
   "plumeusdt_binance_spot_makerv3",
