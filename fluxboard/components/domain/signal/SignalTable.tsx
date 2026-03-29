@@ -764,6 +764,29 @@ function zeroQuoteCounts() {
   };
 }
 
+function normalizeMakerOpenCountsAgainstManagedOrders(
+  row: EnrichedRow,
+  maker?: {
+    bidOpen: number;
+    bidDepth: number;
+    bidBlocked: number;
+    askOpen: number;
+    askDepth: number;
+    askBlocked: number;
+  },
+) {
+  if (!maker) return maker;
+  const managedOrders = coerceFiniteNumber((row as any).managed_orders);
+  if (managedOrders !== 0) return maker;
+  return {
+    ...maker,
+    bidOpen: 0,
+    askOpen: 0,
+    bidBlocked: Math.max(0, maker.bidDepth),
+    askBlocked: Math.max(0, maker.askDepth),
+  };
+}
+
 function shouldShowHedgeQuoteCounts(row: EnrichedRow): boolean {
   const cls = String(row.meta?.class ?? '').trim().toLowerCase();
   return cls.includes('maker') || !!resolveQuoteSnapshot(row);
@@ -777,7 +800,7 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
     const hasMaker = Array.isArray(makerBands) && makerBands.length > 0;
     const hasHedge = Boolean(hedge && typeof hedge === 'object');
     if (hasMaker || hasHedge) {
-      const maker = hasMaker ? {
+      const rawMaker = hasMaker ? {
         bidOpen: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.open), 0),
         bidDepth: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.depth), 0),
         bidBlocked: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.blocked), 0),
@@ -785,6 +808,7 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
         askDepth: makerBands.reduce((s, b) => s + quoteCount(b?.ask?.depth), 0),
         askBlocked: makerBands.reduce((s, b) => s + quoteCount(b?.ask?.blocked), 0),
       } : undefined;
+      const maker = normalizeMakerOpenCountsAgainstManagedOrders(row, rawMaker);
       const hedgeCounts = hasHedge ? {
         bidOpen: quoteCount(hedge?.bid?.open),
         bidDepth: quoteCount(hedge?.bid?.depth),
@@ -804,14 +828,14 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
 
   const qs = row.maker_quote_status as any;
   if (qs && typeof qs === 'object') {
-    const maker = {
+    const maker = normalizeMakerOpenCountsAgainstManagedOrders(row, {
       bidOpen: quoteCount(qs.bid_open),
       bidDepth: quoteCount(qs.bid_depth),
       bidBlocked: quoteCount(qs.bid_blocked),
       askOpen: quoteCount(qs.ask_open),
       askDepth: quoteCount(qs.ask_depth),
       askBlocked: quoteCount(qs.ask_blocked),
-    };
+    });
     const hedge = shouldShowHedgeQuoteCounts(row) ? zeroQuoteCounts() : undefined;
     return {
       source: 'maker_quote_status',

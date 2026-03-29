@@ -452,6 +452,31 @@ describe('SignalTable Behavioral Tests', () => {
       const summary = screen.getAllByText((_, node) => node?.textContent === 'B 1/3 · A 2/4')[0];
       expect(summary).toBeInTheDocument();
     });
+
+    it('does not display stale open quote counts when managed_orders is zero', async () => {
+      const strategy = createMockStrategy('quote_truth_strategy', {
+        managed_orders: 0,
+        maker_quote_status: {
+          bid_open: 4,
+          bid_depth: 5,
+          bid_blocked: 1,
+          ask_open: 5,
+          ask_depth: 5,
+          ask_blocked: 0,
+        },
+      });
+
+      initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      renderSignalTable();
+
+      await waitFor(() => {
+        expect(screen.getByText('quote_truth_strategy')).toBeInTheDocument();
+      });
+
+      const summary = screen.getAllByText((_, node) => node?.textContent === 'B 0/5 · A 0/5')[0];
+      expect(summary).toBeInTheDocument();
+    });
   });
 
   describe('Adj/Skew Column', () => {

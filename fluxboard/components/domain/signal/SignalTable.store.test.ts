@@ -130,6 +130,48 @@ describe('SignalTable Store Merge Logic', () => {
       expect(merged.legs.B.decision_ask).toBe(50150);
     });
 
+    it('clears stale maker quote opens when managed_orders drops to zero without a fresh quote payload', () => {
+      const { useSignalStore } = storeModule;
+
+      const initial: any = {
+        id: 'quote_truth_test',
+        params: { bot_on: '1' },
+        managed_orders: 9,
+        maker_quote_status: {
+          bid_open: 4,
+          ask_open: 5,
+          bid_depth: 5,
+          ask_depth: 5,
+          bid_blocked: 1,
+          ask_blocked: 0,
+        },
+        legs: {
+          A: { coin: 'PLUME', exchange: 'bybit' },
+          B: { coin: 'PLUME', exchange: 'binance' },
+        },
+        balances_ok: true,
+      };
+
+      useSignalStore.getState().setRows([initial]);
+
+      useSignalStore.getState().mergeStrategy({
+        id: 'quote_truth_test',
+        managed_orders: 0,
+        tradeable: false,
+        blocked: true,
+      } as any);
+
+      const merged = useSignalStore.getState().rows.find((row) => row.id === 'quote_truth_test') as any;
+      expect(merged.maker_quote_status).toEqual({
+        bid_open: 0,
+        ask_open: 0,
+        bid_depth: 5,
+        ask_depth: 5,
+        bid_blocked: 5,
+        ask_blocked: 5,
+      });
+    });
+
     it('handles null leg deletion by removing the key', () => {
       const { useSignalStore } = storeModule;
 

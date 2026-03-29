@@ -1148,16 +1148,90 @@ const normalizeSignalTrade = (trade: SignalStrategy['last_trade']): SignalStrate
   };
 };
 
+function normalizeNonNegativeInt(value: unknown): number {
+  const coerced = coerceNumber(value);
+  if (coerced === undefined) return 0;
+  return Math.max(0, Math.trunc(coerced));
+}
+
+function sanitizeMakerQuoteStatusForManagedOrders(
+  makerQuoteStatus: SignalStrategy['maker_quote_status'],
+  managedOrders: unknown,
+): SignalStrategy['maker_quote_status'] {
+  if (!makerQuoteStatus) return makerQuoteStatus;
+  if (normalizeNonNegativeInt(managedOrders) !== 0) return makerQuoteStatus;
+
+  const bidDepth = normalizeNonNegativeInt(makerQuoteStatus.bid_depth);
+  const askDepth = normalizeNonNegativeInt(makerQuoteStatus.ask_depth);
+
+  return {
+    ...makerQuoteStatus,
+    bid_open: 0,
+    ask_open: 0,
+    bid_blocked: bidDepth,
+    ask_blocked: askDepth,
+  };
+}
+
+function sanitizeMakerQuoteStacksForManagedOrders(
+  quoteStacks: SignalStrategy['quote_stacks'],
+  managedOrders: unknown,
+): SignalStrategy['quote_stacks'] {
+  if (!quoteStacks) return quoteStacks;
+  if (normalizeNonNegativeInt(managedOrders) !== 0) return quoteStacks;
+  if (!quoteStacks.maker?.bands) return quoteStacks;
+
+  return {
+    ...quoteStacks,
+    maker: {
+      ...quoteStacks.maker,
+      bands: quoteStacks.maker.bands.map((band) => {
+        const bidDepth = normalizeNonNegativeInt(band?.bid?.depth);
+        const askDepth = normalizeNonNegativeInt(band?.ask?.depth);
+        return {
+          ...band,
+          bid: {
+            ...band.bid,
+            open: 0,
+            blocked: bidDepth,
+          },
+          ask: {
+            ...band.ask,
+            open: 0,
+            blocked: askDepth,
+          },
+        };
+      }),
+    },
+  };
+}
+
+function sanitizeSignalQuoteTelemetry(strategy: SignalStrategy): SignalStrategy {
+  if (!strategy) return strategy;
+
+  return {
+    ...strategy,
+    maker_quote_status: sanitizeMakerQuoteStatusForManagedOrders(
+      strategy.maker_quote_status,
+      strategy.managed_orders,
+    ),
+    quote_stacks: sanitizeMakerQuoteStacksForManagedOrders(
+      strategy.quote_stacks,
+      strategy.managed_orders,
+    ),
+  };
+}
+
 const normalizeSignalStrategy = (strategy: SignalStrategy): SignalStrategy => {
   if (!strategy) return strategy;
   const normalizedLastTrade =
     strategy.last_trade === undefined
       ? undefined
       : normalizeSignalTrade(strategy.last_trade ?? null);
-  return {
+  return sanitizeSignalQuoteTelemetry({
     ...strategy,
     last_trade: normalizedLastTrade,
-  };
+  });
 };
 
 function mergeNestedRecord<T extends Record<string, any> | null | undefined>(
@@ -1251,7 +1325,7 @@ const mergeSignalStrategyRows = (
         : prev.params;
 
     // Sticky edge fields: when WS snapshot momentarily omits decision/edge2, keep last known
-    const merged: SignalStrategy = {
+    const merged = sanitizeSignalQuoteTelemetry({
       ...prev,
       ...normalizedIncoming,
       params: mergedParams as any,
@@ -1271,7 +1345,7 @@ const mergeSignalStrategyRows = (
       ),
       equities_arb: mergeArbSignalPayload(prev.equities_arb, normalizedIncoming.equities_arb),
       maker_v4: mergeArbSignalPayload(prev.maker_v4, normalizedIncoming.maker_v4),
-    };
+    });
 
     // Recompute edge2_bps to maintain invariant: edge2 = decision_edge - required_edge
     // This prevents stale edge2_bps when decision_edge_bps changes but edge2_bps was omitted in update
