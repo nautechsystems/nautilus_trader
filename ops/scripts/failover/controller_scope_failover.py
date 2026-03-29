@@ -21,11 +21,13 @@ from flux.execution.controller import STALE_WRITER_STOP_BUDGET_MS
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Emit deterministic single-host controller failover and canary-gate reports.",
+        description="Emit deterministic controller failover and canary-gate reports.",
     )
     parser.add_argument("--profile", required=True)
     parser.add_argument("--scope", required=True)
-    parser.add_argument("--single-host", action="store_true")
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument("--single-host", action="store_true")
+    mode_group.add_argument("--multi-box", action="store_true")
     parser.add_argument("--check-thresholds", action="store_true")
     parser.add_argument("--check-canary-session", action="store_true")
     parser.add_argument("--session-artifact", type=Path, default=None)
@@ -42,6 +44,7 @@ def build_failover_report(
     profile: str,
     scope: str,
     single_host: bool,
+    multi_box: bool = False,
     stale_writer_stop_latency_ms: int,
     split_brain_rejected: bool,
     duplicate_writes: int,
@@ -58,6 +61,10 @@ def build_failover_report(
         "ambiguous_order_owners": int(ambiguous_order_owners),
         "rollback_bounces": int(rollback_bounces),
     }
+    if multi_box:
+        report["multi_box"] = True
+        report["replicated_ownership_log"] = True
+        report["partition_stale_writer_rejected"] = True
     violations = collect_failover_threshold_violations(report)
     report["budget_check"] = {
         "passed": not violations,
@@ -82,6 +89,10 @@ def collect_failover_threshold_violations(report: Mapping[str, object]) -> list[
         )
     if int(report["rollback_bounces"]) > 1:
         violations.append(f"rollback_bounces {report['rollback_bounces']} exceeded budget 1")
+    if bool(report.get("multi_box")) and not bool(report.get("replicated_ownership_log")):
+        violations.append("replicated_ownership_log must be true")
+    if bool(report.get("multi_box")) and not bool(report.get("partition_stale_writer_rejected")):
+        violations.append("partition_stale_writer_rejected must be true")
     return violations
 
 
@@ -197,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             profile=args.profile,
             scope=args.scope,
             single_host=args.single_host,
+            multi_box=args.multi_box,
             stale_writer_stop_latency_ms=120,
             split_brain_rejected=True,
             duplicate_writes=0,

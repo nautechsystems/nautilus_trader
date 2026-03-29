@@ -305,6 +305,66 @@ def test_terminal_venue_truth_materializes_the_missed_ack_from_venue_truth(
         store.close()
 
 
+def test_recovery_can_rebuild_from_replicated_wal_copy_when_primary_is_missing(
+    tmp_path: Path,
+) -> None:
+    wal = _load_wal_module()
+    ledger = _load_ledger_module()
+    claim = _claim()
+    primary_path = tmp_path / "primary.db"
+    replica_path = tmp_path / "replica.db"
+    store = wal.SQLiteOwnershipWal(
+        db_path=primary_path,
+        replica_db_paths=(replica_path,),
+    )
+    materializer = _RecordingMaterializer()
+    owned_ledger = ledger.ExecutionLedger(wal=store, materializer=materializer)
+
+    try:
+        store.append_claim(
+            claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
+            authority=_authority(),
+            appended_at_ns=111,
+        )
+        store.record_venue_write(
+            claim=claim,
+            authority=_authority(),
+            venue_order_id="venue-9001",
+            written_at_ns=222,
+        )
+    finally:
+        store.close()
+
+    primary_path.unlink()
+    replica_store = wal.SQLiteOwnershipWal(db_path=replica_path)
+    replica_ledger = ledger.ExecutionLedger(wal=replica_store, materializer=materializer)
+    try:
+        plan = asyncio.run(
+            replica_ledger.recover(
+                client_order_id=claim.client_order_id,
+                venue_truth=ledger.VenueTruth(
+                    client_order_id=claim.client_order_id,
+                    venue_order_id="venue-9001",
+                    lifecycle_state=ExecutionLifecycleState.WORKING,
+                    final_ack=True,
+                ),
+                recovered_at_ns=500,
+            )
+        )
+
+        assert plan.classification is ledger.RecoveryClassification.BOUND_TO_VENUE
+        assert plan.lifecycle_state is ExecutionLifecycleState.WORKING
+        assert plan.should_materialize is True
+        history = replica_store.list_records()
+        assert history[-1].venue_order_id == "venue-9001"
+        assert history[-1].materialized_lifecycle_state is ExecutionLifecycleState.WORKING
+    finally:
+        replica_store.close()
+
+
 def test_terminal_venue_truth_with_final_ack_releases_ownership(
     tmp_path: Path,
 ) -> None:
@@ -357,6 +417,53 @@ def test_terminal_venue_truth_with_final_ack_releases_ownership(
         store.close()
 
 
+def test_replicated_ownership_wal_appends_to_all_replicas_before_recovery(
+    tmp_path: Path,
+) -> None:
+    wal = _load_wal_module()
+    claim = _claim()
+    store = wal.ReplicatedOwnershipWal(
+        db_paths=(
+            tmp_path / "ownership-a.db",
+            tmp_path / "ownership-b.db",
+        ),
+    )
+
+    try:
+        store.append_claim(
+            claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
+            authority=_authority(),
+            appended_at_ns=111,
+        )
+        store.record_venue_write(
+            claim=claim,
+            authority=_authority(),
+            venue_order_id="venue-9001",
+            written_at_ns=222,
+        )
+
+        primary = wal.SQLiteOwnershipWal(db_path=tmp_path / "ownership-a.db")
+        secondary = wal.SQLiteOwnershipWal(db_path=tmp_path / "ownership-b.db")
+        try:
+            assert [record.lifecycle_state for record in primary.list_records()] == [
+                ExecutionLifecycleState.OWNED_PRE_WRITE,
+                ExecutionLifecycleState.SENT_TO_VENUE,
+            ]
+            assert [record.lifecycle_state for record in secondary.list_records()] == [
+                ExecutionLifecycleState.OWNED_PRE_WRITE,
+                ExecutionLifecycleState.SENT_TO_VENUE,
+            ]
+            assert secondary.fetch_by_intent_id(claim.intent_id).venue_order_id == "venue-9001"
+        finally:
+            primary.close()
+            secondary.close()
+    finally:
+        store.close()
+
+
 def test_venue_truth_without_matching_claim_tuple_is_quarantined_as_an_orphan(
     tmp_path: Path,
 ) -> None:
@@ -387,3 +494,51 @@ def test_venue_truth_without_matching_claim_tuple_is_quarantined_as_an_orphan(
         assert materializer.events == []
     finally:
         store.close()
+
+
+def test_recovery_can_restore_primary_from_replica_log_after_primary_loss(
+    tmp_path: Path,
+) -> None:
+    wal = _load_wal_module()
+    claim = _claim()
+    primary_path = tmp_path / "ownership.db"
+    replica_path = tmp_path / "ownership-replica.db"
+    store = wal.SQLiteOwnershipWal(
+        db_path=primary_path,
+        replica_db_paths=[replica_path],
+    )
+
+    try:
+        store.append_claim(
+            claim=claim,
+            account_scope_id="ibkr.hedge.main",
+            operation_type="submit",
+            claim_key="submit:intent-001",
+            authority=_authority(),
+            appended_at_ns=111,
+        )
+        store.record_venue_write(
+            claim=claim,
+            authority=_authority(),
+            venue_order_id="venue-9001",
+            written_at_ns=222,
+        )
+    finally:
+        store.close()
+
+    primary_path.unlink()
+
+    restored = wal.SQLiteOwnershipWal.restore_primary_from_replica(
+        db_path=primary_path,
+        replica_db_paths=[replica_path],
+    )
+    assert restored is True
+
+    recovered = wal.SQLiteOwnershipWal(db_path=primary_path)
+    try:
+        record = recovered.fetch_by_intent_id(claim.intent_id)
+        assert record is not None
+        assert record.lifecycle_state is ExecutionLifecycleState.SENT_TO_VENUE
+        assert record.venue_order_id == "venue-9001"
+    finally:
+        recovered.close()

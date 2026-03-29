@@ -103,16 +103,56 @@ def assert_controller_epoch_fence(
 
 
 class SQLiteOwnershipWal:
-    def __init__(self, *, db_path: str | Path) -> None:
-        self._conn = connect(db_path)
+    def __init__(
+        self,
+        *,
+        db_path: str | Path,
+        replica_db_paths: tuple[str | Path, ...] = (),
+    ) -> None:
+        self._db_path = Path(db_path)
+        self._conn = connect(self._db_path)
         ensure_schema(self._conn)
+        seen_paths = {str(self._db_path)}
+        self._replica_wals: tuple[SQLiteOwnershipWal, ...] = tuple(
+            SQLiteOwnershipWal(db_path=path)
+            for path in replica_db_paths
+            if _replica_path_allowed(path=path, seen_paths=seen_paths)
+        )
 
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
 
     def close(self) -> None:
-        self._conn.close()
+        try:
+            self._conn.close()
+        finally:
+            for replica in self._replica_wals:
+                replica.close()
+
+    @classmethod
+    def restore_primary_from_replica(
+        cls,
+        *,
+        db_path: str | Path,
+        replica_db_paths: tuple[str | Path, ...] | list[str | Path],
+    ) -> bool:
+        primary_path = Path(db_path)
+        for replica_path in _dedupe_db_paths(tuple(replica_db_paths)):
+            if not replica_path.exists() or replica_path.stat().st_size == 0:
+                continue
+            primary_path.parent.mkdir(parents=True, exist_ok=True)
+            source = connect(replica_path)
+            try:
+                target = connect(primary_path)
+                try:
+                    source.backup(target)
+                finally:
+                    target.close()
+            finally:
+                source.close()
+            return True
+        return False
 
     def append_claim(
         self,
@@ -131,7 +171,7 @@ class SQLiteOwnershipWal:
         )
         if self.fetch_by_intent_id(claim.intent_id) is not None:
             raise ValueError(f"ownership record already exists for intent_id={claim.intent_id}")
-        return self._insert_record(
+        record = self._insert_record(
             claim=claim,
             account_scope_id=_required_text(account_scope_id, "account_scope_id"),
             operation_type=_required_text(operation_type, "operation_type"),
@@ -143,6 +183,16 @@ class SQLiteOwnershipWal:
             created_at_ns=int(appended_at_ns),
             previous_wal_seq=None,
         )
+        self._replicate(
+            "append_claim",
+            claim=claim,
+            account_scope_id=account_scope_id,
+            operation_type=operation_type,
+            claim_key=claim_key,
+            authority=authority,
+            appended_at_ns=appended_at_ns,
+        )
+        return record
 
     def record_venue_write(
         self,
@@ -160,7 +210,7 @@ class SQLiteOwnershipWal:
         previous = self.fetch_by_intent_id(claim.intent_id)
         if previous is None:
             raise KeyError(f"missing ownership record for intent_id={claim.intent_id}")
-        return self._append_record(
+        record = self._append_record(
             previous=previous,
             lifecycle_state=ExecutionLifecycleState.SENT_TO_VENUE,
             venue_order_id=_required_text(venue_order_id, "venue_order_id"),
@@ -168,6 +218,14 @@ class SQLiteOwnershipWal:
             materialized_at_ns=previous.materialized_at_ns,
             created_at_ns=int(written_at_ns),
         )
+        self._replicate(
+            "record_venue_write",
+            claim=claim,
+            authority=authority,
+            venue_order_id=venue_order_id,
+            written_at_ns=written_at_ns,
+        )
+        return record
 
     def update_lifecycle(
         self,
@@ -180,7 +238,7 @@ class SQLiteOwnershipWal:
         previous = self.fetch_by_intent_id(intent_id)
         if previous is None:
             raise KeyError(f"missing ownership record for intent_id={intent_id}")
-        return self._append_record(
+        record = self._append_record(
             previous=previous,
             lifecycle_state=_coerce_lifecycle_state(lifecycle_state),
             venue_order_id=venue_order_id or previous.venue_order_id,
@@ -188,6 +246,14 @@ class SQLiteOwnershipWal:
             materialized_at_ns=previous.materialized_at_ns,
             created_at_ns=int(updated_at_ns),
         )
+        self._replicate(
+            "update_lifecycle",
+            intent_id=intent_id,
+            lifecycle_state=lifecycle_state,
+            updated_at_ns=updated_at_ns,
+            venue_order_id=venue_order_id,
+        )
+        return record
 
     def mark_materialized(
         self,
@@ -201,7 +267,7 @@ class SQLiteOwnershipWal:
         if previous is None:
             raise KeyError(f"missing ownership record for intent_id={intent_id}")
         timestamp_ns = int(materialized_at_ns)
-        return self._append_record(
+        record = self._append_record(
             previous=previous,
             lifecycle_state=previous.lifecycle_state,
             venue_order_id=venue_order_id or previous.venue_order_id,
@@ -209,6 +275,14 @@ class SQLiteOwnershipWal:
             materialized_at_ns=timestamp_ns,
             created_at_ns=timestamp_ns,
         )
+        self._replicate(
+            "mark_materialized",
+            intent_id=intent_id,
+            lifecycle_state=lifecycle_state,
+            materialized_at_ns=materialized_at_ns,
+            venue_order_id=venue_order_id,
+        )
+        return record
 
     def fetch_by_intent_id(self, intent_id: str) -> OwnershipWalRecord | None:
         return self._fetch_latest(
@@ -345,6 +419,48 @@ class SQLiteOwnershipWal:
         ).fetchone()
         return None if row is None else _record_from_row(row)
 
+    def _replicate(self, method_name: str, /, **kwargs) -> None:
+        for replica in self._replica_wals:
+            getattr(replica, method_name)(**kwargs)
+
+
+class ReplicatedOwnershipWal:
+    def __init__(self, *, db_paths: tuple[str | Path, ...]) -> None:
+        normalized = tuple(_dedupe_db_paths(db_paths))
+        if len(normalized) < 2:
+            raise ValueError("replicated ownership wal requires at least two database paths")
+        self._primary = SQLiteOwnershipWal(
+            db_path=normalized[0],
+            replica_db_paths=normalized[1:],
+        )
+
+    def close(self) -> None:
+        self._primary.close()
+
+    def append_claim(self, **kwargs) -> OwnershipWalRecord:
+        return self._primary.append_claim(**kwargs)
+
+    def record_venue_write(self, **kwargs) -> OwnershipWalRecord:
+        return self._primary.record_venue_write(**kwargs)
+
+    def update_lifecycle(self, **kwargs) -> OwnershipWalRecord:
+        return self._primary.update_lifecycle(**kwargs)
+
+    def mark_materialized(self, **kwargs) -> OwnershipWalRecord:
+        return self._primary.mark_materialized(**kwargs)
+
+    def fetch_by_intent_id(self, intent_id: str) -> OwnershipWalRecord | None:
+        return self._primary.fetch_by_intent_id(intent_id)
+
+    def fetch_by_client_order_id(self, client_order_id: str) -> OwnershipWalRecord | None:
+        return self._primary.fetch_by_client_order_id(client_order_id)
+
+    def fetch_by_venue_order_id(self, venue_order_id: str) -> OwnershipWalRecord | None:
+        return self._primary.fetch_by_venue_order_id(venue_order_id)
+
+    def list_records(self) -> list[OwnershipWalRecord]:
+        return self._primary.list_records()
+
 
 def _coerce_lifecycle_state(
     value: ExecutionLifecycleState | str,
@@ -359,6 +475,27 @@ def _required_text(value: str | Path, field_name: str) -> str:
     if not text:
         raise ValueError(f"`{field_name}` must be a non-empty string")
     return text
+
+
+def _replica_path_allowed(*, path: str | Path, seen_paths: set[str]) -> bool:
+    normalized = str(Path(path))
+    if normalized in seen_paths:
+        return False
+    seen_paths.add(normalized)
+    return True
+
+
+def _dedupe_db_paths(paths: tuple[str | Path, ...]) -> tuple[Path, ...]:
+    seen: set[str] = set()
+    result: list[Path] = []
+    for path in paths:
+        normalized = Path(path)
+        key = str(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(normalized)
+    return tuple(result)
 
 
 def _record_from_row(row: sqlite3.Row) -> OwnershipWalRecord:
@@ -394,6 +531,7 @@ __all__ = (
     "FenceRejectedError",
     "OWNERSHIP_WAL_SCHEMA_SQL",
     "OwnershipWalRecord",
+    "ReplicatedOwnershipWal",
     "SQLiteOwnershipWal",
     "assert_controller_epoch_fence",
     "connect",

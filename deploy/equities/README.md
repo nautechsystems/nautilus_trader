@@ -32,7 +32,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 - Flux runner stop handling is also opt-in: checked-in equities strategy TOMLs set `manage_stop = false`, so live defaults do not auto-flatten on runner stop unless a strategy explicitly enables that policy.
-- The single-host IBKR hedge controller canary is owned by `[controller]` in `equities.live.toml`. Keep `mode = "active"` plus `write_ownership_enabled = true` only while the canary is the intended writer; set `write_ownership_enabled = false` for the one-bounce rollback path without removing the controller service wiring.
+- The `ibkr.hedge.main` controller lane is owned by `[controller]` in `equities.live.toml`. Keep `mode = "active"` plus `write_ownership_enabled = true` only while the canary is the intended writer; set `write_ownership_enabled = false` for the one-bounce rollback path without removing the controller service wiring.
+- Multi-box follow-on hardening keeps the same controller-owned write scope but adds replicated ownership durability and lease-fenced stale-writer rejection before any active/standby rollout. Do not treat a second equities host as an eligible writer until `python ops/scripts/failover/controller_scope_failover.py --profile equities --scope ibkr.hedge.main --multi-box --check-thresholds` passes on the pinned release root.
 
 ## Overnight IBKR Hedge Contract
 
@@ -160,12 +161,13 @@ Installer behavior:
 - rejects mutable git checkouts and requires a metadata-backed release root
 - writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
-- writes `/etc/flux/equities-controller.env` for the single-host IBKR hedge canary controller
+- writes `/etc/flux/equities-controller.env` for the `ibkr.hedge.main` controller lane
 - writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
 - rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the controller canary and every discovered equities node service
 - when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
 - the pilot lane uses the loopback API port `127.0.0.1:5124`
 - when pilot and prod run concurrently on the same Redis host, keep the pilot lane on its own Redis DB (the default is `EQUITIES_REDIS_DB=1`) unless you are intentionally testing a shared-state scenario
+- multi-box controller drills must continue to show `duplicate_writes = 0` before you let a second host participate in failover for `ibkr.hedge.main`
 
 Runtime registration is explicit:
 
