@@ -124,12 +124,14 @@ def test_resident_service_publishes_lifecycle_and_canonical_state_to_redis(
     run_controller = _load_run_controller_module()
     transport = importlib.import_module("flux.execution.transport")
     fake_redis = _FakeRedis()
+    writer = _RecordingVenueWriter()
     monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
 
     runner = run_controller.build_runner(
         _shared_config(),
         owner_id="controller-a",
         repo_root=tmp_path,
+        active_order_writer_factory=lambda payload: writer,
     )
     paths = UdsTransportPaths.for_controller_scope(
         controller_scope_id="tokenmm.binance.pm.main",
@@ -173,7 +175,7 @@ def test_resident_service_publishes_lifecycle_and_canonical_state_to_redis(
     lifecycle_payload = json.loads(fake_redis.get(feed.lifecycle_event_key()).decode("utf-8"))
     canonical_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
 
-    assert lifecycle_payload["lifecycle_state"] == "accepted"
+    assert lifecycle_payload["lifecycle_state"] == "sent_to_venue"
     assert canonical_payload["controller_scope_id"] == "tokenmm.binance.pm.main"
     assert canonical_payload["authority_state"] == "authoritative"
     assert canonical_payload["managed_maker_orders"][0]["client_order_id"] == reply.claim.client_order_id

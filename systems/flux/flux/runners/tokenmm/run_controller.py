@@ -175,7 +175,14 @@ class _ResidentRequestReplyControllerService:
                 controller_seq=self._controller_seq,
             )
         self._publish_request_state(request=request, claim=claim)
-        self._maybe_execute_active_write(request=request, claim=claim)
+        try:
+            self._maybe_execute_active_write(request=request, claim=claim)
+        except Exception as exc:
+            return ControllerIntentReply.rejected(
+                intent=request.intent,
+                reason=str(exc),
+                replied_at_ns=time.time_ns(),
+            )
         return ControllerIntentReply.accepted(
             claim=claim,
             replied_at_ns=time.time_ns(),
@@ -214,7 +221,7 @@ class _ResidentRequestReplyControllerService:
         if self._run_mode is not ControllerRunMode.ACTIVE:
             return
         if self._active_order_writer_factory is None:
-            return
+            raise RuntimeError("TokenMM active controller requires an active order writer")
         if self._wal is None or self._ledger is None:
             raise RuntimeError("controller WAL is not initialized")
 
