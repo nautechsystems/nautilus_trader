@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 import tomllib
 import urllib.request as urllib_request
 import uuid
@@ -115,6 +116,57 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _pulse_status_to_running(status: str) -> bool | None:
+    normalized = _optional_text(status)
+    if normalized is None:
+        return None
+    if normalized == "active":
+        return True
+    if normalized in {"inactive", "failed", "restarting", "stopping"}:
+        return False
+    return None
+
+
+def _build_strategy_running_resolver(
+    *,
+    pulse_control: PulseControlPlane | None = None,
+    cache_ttl_s: float = 1.0,
+):
+    pulse = pulse_control or PulseControlPlane()
+    ttl_s = max(float(cache_ttl_s), 0.0)
+    cached_running: dict[str, bool | None] = {}
+    cache_expires_at = 0.0
+
+    def _resolve(strategy_ids: list[str] | tuple[str, ...]) -> dict[str, bool | None]:
+        nonlocal cache_expires_at, cached_running
+
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = _optional_text(strategy_id)
+            if strategy_text is None or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+        if not deduped_ids:
+            return {}
+
+        refresh_needed = time.monotonic() >= cache_expires_at or any(
+            strategy_id not in cached_running for strategy_id in deduped_ids
+        )
+        if refresh_needed:
+            next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_running)
+            for strategy_id in deduped_ids:
+                status = pulse.get_job_status(f"tokenmm-node-{strategy_id}")
+                next_cache[strategy_id] = _pulse_status_to_running(status)
+            cached_running = next_cache
+            cache_expires_at = time.monotonic() + ttl_s
+
+        return {strategy_id: cached_running.get(strategy_id) for strategy_id in deduped_ids}
+
+    return _resolve
 
 
 def _load_config(path: Path) -> dict[str, Any]:
@@ -743,6 +795,7 @@ def main() -> None:
         strategy_metadata=metadata,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
+        strategy_running_resolver=_build_strategy_running_resolver(),
         strategy_contracts=config.get("strategy_contracts"),
     )
     _attach_tokenmm_readiness_route(

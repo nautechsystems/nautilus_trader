@@ -15,6 +15,7 @@ from flux.runners.tokenmm.run_api import _attach_pulse_routes
 from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
+from flux.runners.tokenmm.run_api import _build_strategy_running_resolver
 from flux.runners.tokenmm.run_api import _load_config
 from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
@@ -129,6 +130,36 @@ def test_tokenmm_profile_summary_reports_effective_strategy_sets() -> None:
     assert "tokenmm_required_strategy_ids=['strategy_a']" in summary
 
 
+def test_build_strategy_running_resolver_maps_pulse_status_to_tokenmm_strategy_ids() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_status(self, job_id: str) -> str:
+            self.calls.append(job_id)
+            return {
+                "tokenmm-node-plumeusdt_binance_spot_makerv3": "active",
+                "tokenmm-node-plumeusdt_binance_perp_makerv3": "failed",
+            }.get(job_id, "unknown")
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_running_resolver(pulse_control=pulse, cache_ttl_s=60.0)
+
+    running = resolver([
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+    ])
+
+    assert running == {
+        "plumeusdt_binance_spot_makerv3": True,
+        "plumeusdt_binance_perp_makerv3": False,
+    }
+    assert pulse.calls == [
+        "tokenmm-node-plumeusdt_binance_spot_makerv3",
+        "tokenmm-node-plumeusdt_binance_perp_makerv3",
+    ]
+
+
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:
     monkeypatch.setattr("sys.argv", ["run_api.py"])
 
@@ -215,6 +246,13 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
     monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
     monkeypatch.setattr(run_api, "_should_enable_pulse_routes", lambda args, api_cfg: False)
     monkeypatch.setattr(run_api, "_resolve_surface_proxy_backends", lambda: {})
+
+    class _FakePulse:
+        def get_job_status(self, job_id: str) -> str:
+            captured["pulse_job_id"] = job_id
+            return "active"
+
+    monkeypatch.setattr(run_api, "PulseControlPlane", lambda: _FakePulse())
     monkeypatch.setattr(
         run_api,
         "_run_with_socketio_if_available",
@@ -224,6 +262,7 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
     def _fake_create_flux_api_app(*args, **kwargs):
         captured["strategy_contracts"] = kwargs["strategy_contracts"]
         captured["profile_strategy_map"] = kwargs["profile_strategy_map"]
+        captured["strategy_running_resolver"] = kwargs["strategy_running_resolver"]
         return Flask(__name__)
 
     monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
@@ -237,6 +276,12 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
             "plumeusdt_binance_perp_makerv3",
         ],
     }
+    running_resolver = captured["strategy_running_resolver"]
+    assert callable(running_resolver)
+    assert running_resolver(["plumeusdt_binance_spot_makerv3"]) == {
+        "plumeusdt_binance_spot_makerv3": True,
+    }
+    assert captured["pulse_job_id"] == "tokenmm-node-plumeusdt_binance_spot_makerv3"
 
 
 def test_tokenmm_run_controller_loads_the_managed_binance_contract() -> None:
