@@ -634,6 +634,93 @@ def test_successful_cancel_prunes_canonical_state_after_write(
     assert canonical_payload["managed_maker_orders"] == []
 
 
+def test_successful_cancel_prunes_internal_state_even_if_lifecycle_publish_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = importlib.import_module("flux.execution.transport")
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    class _LifecycleFailingFeed:
+        def publish_lifecycle_event(self, event) -> None:
+            if event.lifecycle_state == ExecutionLifecycleState.SENT_TO_VENUE:
+                raise RuntimeError("redis unavailable during lifecycle publish")
+
+        def publish_canonical_state(self, state: dict[str, object]) -> None:
+            return None
+
+    monkeypatch.setattr(
+        run_controller,
+        "_feed_bridge_for_claim",
+        lambda **_kwargs: _LifecycleFailingFeed(),
+    )
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+        active_order_writer_factory=lambda payload: _RecordingVenueWriter(),
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    place_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-lifecycle-fail-place",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    assert place_reply.claim is not None
+
+    cancel_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-lifecycle-fail",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_457,
+            command=ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                target_client_order_id=place_reply.claim.client_order_id,
+            ),
+        ),
+        timeout_s=1.0,
+    )
+
+    controller_service = getattr(runner, "_controller_service")
+    strategy_state = controller_service._canonical_state_by_strategy["plumeusdt_binance_spot_makerv3"]
+    runner.stop()
+
+    assert cancel_reply.status == "accepted"
+    assert strategy_state["managed_maker_orders"] == []
+
+
 def _write_tokenmm_strategy_configs(repo_root: Path) -> None:
     strategies_dir = repo_root / "deploy" / "tokenmm" / "strategies"
     strategies_dir.mkdir(parents=True, exist_ok=True)

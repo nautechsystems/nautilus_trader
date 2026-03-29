@@ -284,9 +284,9 @@ class _ResidentRequestReplyControllerService:
                 written_at_ns=time.time_ns(),
             ),
         )
-        try:
-            feed = None
-            if self._redis_client is not None:
+        feed = None
+        if self._redis_client is not None:
+            try:
                 feed = _feed_bridge_for_claim(
                     redis_client=self._redis_client,
                     config=self._config,
@@ -298,15 +298,15 @@ class _ResidentRequestReplyControllerService:
                         venue_order_id=_latest_venue_order_id(self._wal, claim.intent_id),
                     ),
                 )
-            if command.command_type == "cancel":
-                self._publish_canonical_state(
-                    request=request,
-                    claim=claim,
-                    prune_canceled_order=True,
-                    feed=feed,
-                )
-        except Exception:
-            return
+            except Exception:
+                feed = None
+        if command.command_type == "cancel":
+            self._publish_canonical_state(
+                request=request,
+                claim=claim,
+                prune_canceled_order=True,
+                feed=feed,
+            )
 
     def _publish_canonical_state(
         self,
