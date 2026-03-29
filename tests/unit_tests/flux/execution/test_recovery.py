@@ -10,6 +10,7 @@ from nautilus_trader.flux.execution.controller import ControllerCrashRecoveryAct
 from nautilus_trader.flux.execution.controller import ControllerSnapshotAuthority
 from nautilus_trader.flux.execution.controller import SnapshotAuthorityState
 from nautilus_trader.flux.execution.controller import VenueActivityOrigin
+from nautilus_trader.flux.execution.intents import build_client_order_id
 from nautilus_trader.flux.execution.intents import ExecutionIntent
 from nautilus_trader.flux.execution.intents import ExecutionLifecycleState
 
@@ -472,13 +473,19 @@ def test_venue_truth_without_matching_claim_tuple_is_quarantined_as_an_orphan(
     store = wal.SQLiteOwnershipWal(db_path=tmp_path / "ownership.db")
     materializer = _RecordingMaterializer()
     owned_ledger = ledger.ExecutionLedger(wal=store, materializer=materializer)
+    orphan_client_order_id = build_client_order_id(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        intent_id="intent-orphan",
+    )
 
     try:
         plan = asyncio.run(
             owned_ledger.recover(
-                client_order_id="acct.execution.main:7:42:intent-orphan",
+                client_order_id=orphan_client_order_id,
                 venue_truth=ledger.VenueTruth(
-                    client_order_id="acct.execution.main:7:42:intent-orphan",
+                    client_order_id=orphan_client_order_id,
                     venue_order_id="venue-orphan",
                     lifecycle_state=ExecutionLifecycleState.WORKING,
                     final_ack=True,

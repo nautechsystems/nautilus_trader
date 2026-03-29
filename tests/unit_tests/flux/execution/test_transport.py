@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 
 from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import build_client_order_id
 from flux.execution.intents import ExecutionIntent
 import pytest
 
@@ -74,6 +75,12 @@ def test_v1_uds_paths_fallback_to_shared_home_root_when_shortened(
 
 def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
     transport = _load_transport_module()
+    expected_client_order_id = build_client_order_id(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        intent_id="intent-001",
+    )
     intent = ExecutionIntent(
         intent_id="intent-001",
         controller_scope_id="acct.execution.main",
@@ -149,7 +156,7 @@ def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
             "strategy_id": "strategy-01",
             "controller_epoch": 7,
             "controller_seq": 42,
-            "client_order_id": "acct.execution.main:7:42:intent-001",
+            "client_order_id": expected_client_order_id,
             "venue_order_id": None,
             "lifecycle_state": "accepted",
         },
@@ -174,6 +181,12 @@ def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
 
 def test_v1_accepted_reply_rejects_top_level_identity_mismatch_with_claim() -> None:
     transport = _load_transport_module()
+    mismatched_client_order_id = build_client_order_id(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        intent_id="intent-b",
+    )
 
     with pytest.raises(ValueError, match="claim identity"):
         transport.ControllerIntentReply.from_dict(
@@ -192,7 +205,7 @@ def test_v1_accepted_reply_rejects_top_level_identity_mismatch_with_claim() -> N
                     "strategy_id": "strategy-01",
                     "controller_epoch": 7,
                     "controller_seq": 42,
-                    "client_order_id": "acct.execution.main:7:42:intent-b",
+                    "client_order_id": mismatched_client_order_id,
                     "venue_order_id": None,
                     "lifecycle_state": "accepted",
                 },
@@ -233,6 +246,12 @@ def test_v1_uds_event_stream_contract_round_trips_lifecycle_events() -> None:
         event_seq=43,
         emitted_at_ns=125_000,
     )
+    expected_client_order_id = build_client_order_id(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        intent_id="intent-001",
+    )
 
     assert envelope.to_dict() == {
         "schema_version": "v1",
@@ -247,7 +266,7 @@ def test_v1_uds_event_stream_contract_round_trips_lifecycle_events() -> None:
             "strategy_id": "strategy-01",
             "controller_epoch": 7,
             "controller_seq": 42,
-            "client_order_id": "acct.execution.main:7:42:intent-001",
+            "client_order_id": expected_client_order_id,
             "venue_order_id": "venue-9001",
             "lifecycle_state": "sent_to_venue",
             "venue_activity_origin": "controller",

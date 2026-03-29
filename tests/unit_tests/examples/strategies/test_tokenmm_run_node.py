@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from flux.execution.intents import build_client_order_id
 from flux.execution.intents import ExecutionIntent
 from flux.execution.intents import ExecutionLifecycleState
 from flux.execution.transport import ControllerIntentReply
@@ -258,7 +259,12 @@ def test_controller_intent_publisher_routes_via_uds_and_rewrites_client_order_id
     assert request.command.command_type == "place"
     assert request.command.order_role == "maker"
     assert request.command.target_client_order_id is None
-    assert order.client_order_id == "tokenmm.binance.pm.main:4:17:node-owned-order-id"
+    assert order.client_order_id == build_client_order_id(
+        controller_scope_id="tokenmm.binance.pm.main",
+        controller_epoch=4,
+        controller_seq=17,
+        intent_id="node-owned-order-id",
+    )
     assert lifecycle_events
 
 

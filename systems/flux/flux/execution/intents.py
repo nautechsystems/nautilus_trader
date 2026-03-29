@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -66,14 +68,16 @@ def build_client_order_id(
     controller_seq: int,
     intent_id: str,
 ) -> str:
-    return ":".join(
+    ownership_chain = "\x1f".join(
         (
             _required_text(controller_scope_id, "controller_scope_id"),
             str(int(controller_epoch)),
             str(int(controller_seq)),
             _required_text(intent_id, "intent_id"),
-        ),
+        )
     )
+    digest = hashlib.blake2s(ownership_chain.encode("utf-8"), digest_size=24).digest()
+    return "ctl_" + base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 @dataclass(frozen=True, slots=True)

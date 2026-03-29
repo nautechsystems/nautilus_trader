@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from nautilus_trader.flux.execution.controller import VenueActivityOrigin
@@ -8,6 +10,7 @@ from nautilus_trader.flux.execution.intents import EXECUTION_LIFECYCLE_STATES
 from nautilus_trader.flux.execution.intents import ExecutionClaim
 from nautilus_trader.flux.execution.intents import ExecutionIntent
 from nautilus_trader.flux.execution.intents import ExecutionLifecycleState
+from nautilus_trader.flux.execution.intents import build_client_order_id
 
 
 @pytest.fixture
@@ -43,16 +46,24 @@ def test_intent_claim_and_event_schema_preserve_deterministic_id_chain() -> None
         claim=claim,
         venue_order_id="venue-9001",
     )
+    expected_client_order_id = build_client_order_id(
+        controller_scope_id="acct.execution.main",
+        controller_epoch=7,
+        controller_seq=42,
+        intent_id="intent-001",
+    )
 
     assert claim.lifecycle_state is ExecutionLifecycleState.ACCEPTED
-    assert claim.client_order_id == "acct.execution.main:7:42:intent-001"
+    assert claim.client_order_id == expected_client_order_id
+    assert len(claim.client_order_id) <= 36
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", claim.client_order_id)
     assert claim.to_dict() == {
         "intent_id": "intent-001",
         "controller_scope_id": "acct.execution.main",
         "strategy_id": "strategy-01",
         "controller_epoch": 7,
         "controller_seq": 42,
-        "client_order_id": "acct.execution.main:7:42:intent-001",
+        "client_order_id": expected_client_order_id,
         "venue_order_id": None,
         "lifecycle_state": "accepted",
     }
@@ -62,7 +73,7 @@ def test_intent_claim_and_event_schema_preserve_deterministic_id_chain() -> None
         "strategy_id": "strategy-01",
         "controller_epoch": 7,
         "controller_seq": 42,
-        "client_order_id": "acct.execution.main:7:42:intent-001",
+        "client_order_id": expected_client_order_id,
         "venue_order_id": "venue-9001",
         "lifecycle_state": "sent_to_venue",
         "venue_activity_origin": "controller",
@@ -83,7 +94,12 @@ def test_public_execution_schemas_normalize_and_validate_enum_backed_fields() ->
         strategy_id="strategy-01",
         controller_epoch=7,
         controller_seq=42,
-        client_order_id="acct.execution.main:7:42:intent-001",
+        client_order_id=build_client_order_id(
+            controller_scope_id="acct.execution.main",
+            controller_epoch=7,
+            controller_seq=42,
+            intent_id="intent-001",
+        ),
         venue_order_id=None,
         lifecycle_state="accepted",
     )
@@ -133,3 +149,15 @@ def test_execution_claim_rejects_client_order_ids_that_break_deterministic_chain
             venue_order_id=None,
             lifecycle_state=ExecutionLifecycleState.ACCEPTED,
         )
+
+
+def test_build_client_order_id_produces_venue_safe_compact_ids() -> None:
+    client_order_id = build_client_order_id(
+        controller_scope_id="tokenmm.binance.pm.main",
+        controller_epoch=1,
+        controller_seq=1,
+        intent_id="node-owned-order-id",
+    )
+
+    assert len(client_order_id) <= 36
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", client_order_id)
