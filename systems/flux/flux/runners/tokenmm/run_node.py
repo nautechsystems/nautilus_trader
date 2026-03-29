@@ -61,6 +61,8 @@ from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -72,6 +74,14 @@ _MAKERV3_SPEC = get_strategy_spec("makerv3")
 LOGGER = logging.getLogger(__name__)
 MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
 MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
+_ORDER_SIDE_VALUE_NAMES = {
+    str(member.value): name.upper()
+    for name, member in getattr(OrderSide, "__members__", {}).items()
+}
+_TIME_IN_FORCE_VALUE_NAMES = {
+    str(member.value): name.upper()
+    for name, member in getattr(TimeInForce, "__members__", {}).items()
+}
 
 
 def _repo_root() -> Path:
@@ -83,6 +93,36 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_enum_text(value: Any, *, numeric_names: dict[str, str] | None = None) -> str | None:
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip().upper()
+    text = _optional_text(value)
+    if text is None:
+        return None
+    normalized = text.upper()
+    if numeric_names is not None:
+        return numeric_names.get(normalized, normalized)
+    return normalized
+
+
+def _normalize_order_side_text(value: Any) -> str | None:
+    return _normalize_enum_text(value, numeric_names=_ORDER_SIDE_VALUE_NAMES)
+
+
+def _normalize_time_in_force_text(value: Any) -> str | None:
+    return _normalize_enum_text(value, numeric_names=_TIME_IN_FORCE_VALUE_NAMES)
+
+
+def _coerce_order_side_enum(value: Any) -> Any:
+    normalized = _normalize_order_side_text(value)
+    if normalized == "BUY":
+        return OrderSide.BUY
+    if normalized == "SELL":
+        return OrderSide.SELL
+    return value
 
 
 def _markout_component_id(benchmark_name: str) -> str:
@@ -384,7 +424,7 @@ def _controller_order_snapshot(row: dict[str, Any]) -> Any:
     return SimpleNamespace(
         client_order_id=str(row.get("client_order_id", "")).strip(),
         instrument_id=row.get("instrument_id"),
-        side=row.get("side"),
+        side=_coerce_order_side_enum(row.get("side")),
         quantity=row.get("quantity"),
         price=row.get("price"),
         post_only=bool(row.get("post_only", True)),
@@ -420,7 +460,7 @@ def _build_controller_intent_publisher(
                 command_type="place",
                 order_role="maker",
                 instrument_id=str(getattr(order, "instrument_id")),
-                side=None if getattr(order, "side", None) is None else str(getattr(order, "side")),
+                side=_normalize_order_side_text(getattr(order, "side", None)),
                 quantity=(
                     None
                     if getattr(order, "quantity", None) is None
@@ -430,11 +470,7 @@ def _build_controller_intent_publisher(
                     None if getattr(order, "price", None) is None else str(getattr(order, "price"))
                 ),
                 post_only=_order_post_only(order),
-                time_in_force=(
-                    None
-                    if getattr(order, "time_in_force", None) is None
-                    else str(getattr(order, "time_in_force"))
-                ),
+                time_in_force=_normalize_time_in_force_text(getattr(order, "time_in_force", None)),
             ),
         )
         reply = send_request_fn(
@@ -502,7 +538,7 @@ class _TokenmmControllerManagedBridge:
         self._managed_order_rows[reply.claim.client_order_id] = {
             "client_order_id": reply.claim.client_order_id,
             "instrument_id": str(getattr(order, "instrument_id")),
-            "side": None if getattr(order, "side", None) is None else str(getattr(order, "side")),
+            "side": _normalize_order_side_text(getattr(order, "side", None)),
             "quantity": (
                 None if getattr(order, "quantity", None) is None else str(getattr(order, "quantity"))
             ),

@@ -29,6 +29,8 @@ from nautilus_trader.adapters.binance.futures.http.account import BinanceFutures
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.common.component import LiveClock
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 
 from flux.execution.controller import ControllerRunMode
 from flux.execution.controller import ControllerSnapshotAuthority
@@ -64,6 +66,14 @@ elif __name__ == "nautilus_trader.flux.runners.tokenmm.run_controller":
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
+_ORDER_SIDE_VALUE_NAMES = {
+    str(member.value): name.upper()
+    for name, member in getattr(OrderSide, "__members__", {}).items()
+}
+_TIME_IN_FORCE_VALUE_NAMES = {
+    str(member.value): name.upper()
+    for name, member in getattr(TimeInForce, "__members__", {}).items()
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +426,27 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_enum_text(value: Any, *, numeric_names: dict[str, str] | None = None) -> str | None:
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip().upper()
+    text = _optional_text(value)
+    if text is None:
+        return None
+    normalized = text.upper()
+    if numeric_names is not None:
+        return numeric_names.get(normalized, normalized)
+    return normalized
+
+
+def _normalize_order_side_text(value: Any) -> str | None:
+    return _normalize_enum_text(value, numeric_names=_ORDER_SIDE_VALUE_NAMES)
+
+
+def _normalize_time_in_force_text(value: Any) -> str | None:
+    return _normalize_enum_text(value, numeric_names=_TIME_IN_FORCE_VALUE_NAMES)
 
 
 def _required_text(value: Any, field_name: str) -> str:
@@ -855,7 +886,8 @@ def _resolve_binance_environment(venue_cfg: dict[str, Any]) -> BinanceEnvironmen
 
 
 def _coerce_binance_order_side(value: Any) -> BinanceOrderSide:
-    return BinanceOrderSide(_required_text(value, "side").upper())
+    normalized = _normalize_order_side_text(value)
+    return BinanceOrderSide(_required_text(normalized, "side"))
 
 
 def _coerce_binance_time_in_force(
@@ -863,10 +895,10 @@ def _coerce_binance_time_in_force(
     *,
     default: BinanceTimeInForce | None = None,
 ) -> BinanceTimeInForce | None:
-    text = _optional_text(value)
+    text = _normalize_time_in_force_text(value)
     if text is None:
         return default
-    return BinanceTimeInForce(text.upper())
+    return BinanceTimeInForce(text)
 
 
 def _spot_margin_side_effect_fields(
@@ -957,7 +989,7 @@ def _canonical_state_payload(
         next_row = {
             "client_order_id": claim.client_order_id,
             "instrument_id": command.instrument_id,
-            "side": command.side,
+            "side": _normalize_order_side_text(command.side),
             "quantity": command.quantity,
             "price": command.limit_price,
             "post_only": bool(command.post_only),

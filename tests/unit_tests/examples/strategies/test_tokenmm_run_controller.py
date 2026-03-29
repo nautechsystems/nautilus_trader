@@ -12,6 +12,8 @@ from flux.execution.transport import ControllerIntentRequest
 from flux.execution.transport import ControllerIntentCommandPayload
 from flux.execution.transport import UdsTransportPaths
 from flux.strategies.makerv4.strategy import ControllerStateFeedBridge
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 
 
 class _FakeRedis:
@@ -729,6 +731,44 @@ def test_successful_cancel_prunes_internal_state_even_if_lifecycle_publish_fails
 
     assert cancel_reply.status == "accepted"
     assert strategy_state["managed_maker_orders"] == []
+
+
+def test_controller_normalizes_nautilus_enum_side_and_tif_values() -> None:
+    run_controller = _load_run_controller_module()
+
+    assert run_controller._coerce_binance_order_side(str(OrderSide.BUY)).value == "BUY"
+    assert run_controller._coerce_binance_time_in_force(str(TimeInForce.GTC)).value == "GTC"
+
+
+def test_canonical_state_payload_normalizes_numeric_side_codes() -> None:
+    run_controller = _load_run_controller_module()
+    request = ControllerIntentRequest(
+        intent=ExecutionIntent(
+            intent_id="intent-state-normalize-001",
+            controller_scope_id="tokenmm.binance.pm.main",
+            strategy_id="plumeusdt_binance_spot_makerv3",
+        ),
+        requested_at_ns=123_456,
+        command=ControllerIntentCommandPayload(
+            command_type="place",
+            order_role="maker",
+            instrument_id="PLUMEUSDT.BINANCE_SPOT",
+            side=str(OrderSide.SELL),
+            quantity="1000",
+            limit_price="0.1901",
+            post_only=True,
+            time_in_force=str(TimeInForce.GTC),
+        ),
+    )
+    claim = request.intent.claim(controller_epoch=4, controller_seq=17)
+
+    state = run_controller._canonical_state_payload(
+        request=request,
+        claim=claim,
+        existing_state=None,
+    )
+
+    assert state["managed_maker_orders"][0]["side"] == "SELL"
 
 
 def _write_tokenmm_strategy_configs(repo_root: Path) -> None:

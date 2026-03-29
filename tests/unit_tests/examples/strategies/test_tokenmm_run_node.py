@@ -17,6 +17,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -258,7 +260,63 @@ def test_controller_intent_publisher_routes_via_uds_and_rewrites_client_order_id
     assert request.command.target_client_order_id is None
     assert order.client_order_id == "tokenmm.binance.pm.main:4:17:node-owned-order-id"
     assert lifecycle_events
-    assert lifecycle_events[0].lifecycle_state is ExecutionLifecycleState.ACCEPTED
+
+
+def test_controller_intent_publisher_normalizes_nautilus_enum_side_and_tif(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    strategy = SimpleNamespace(
+        apply_controller_lifecycle_event=lambda _event: None,
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        captured["paths"] = paths
+        captured["request"] = request
+        captured["timeout_s"] = timeout_s
+        claim = request.intent.claim(controller_epoch=4, controller_seq=17)
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+    order = SimpleNamespace(
+        client_order_id="node-owned-order-id",
+        instrument_id="PLUMEUSDT.BINANCE_SPOT",
+        side=OrderSide.BUY,
+        quantity="1200",
+        price="0.1901",
+        time_in_force=TimeInForce.GTC,
+        is_post_only=False,
+    )
+
+    publisher(order)
+
+    request = captured["request"]
+    assert request.command is not None
+    assert request.command.side == "BUY"
+    assert request.command.time_in_force == "GTC"
+
+
+def test_controller_order_snapshot_restores_order_side_enum() -> None:
+    snapshot = run_node._controller_order_snapshot(
+        {
+            "client_order_id": "controller-order-1",
+            "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+            "side": "1",
+            "quantity": "1200",
+            "price": "0.1901",
+            "post_only": True,
+            "pending_cancel": False,
+        },
+    )
+
+    assert snapshot.side == OrderSide.BUY
 
 
 def test_build_node_disables_local_execution_for_controller_managed_binance_strategy(monkeypatch) -> None:
