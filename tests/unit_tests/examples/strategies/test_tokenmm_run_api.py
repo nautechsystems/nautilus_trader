@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from argparse import Namespace
+import importlib
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -23,6 +24,10 @@ from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 def _example_config_path() -> Path:
     return Path(__file__).resolve().parents[4] / "examples/live/makerv3/config/makerv3.toml"
+
+
+def _tokenmm_shared_config_path() -> Path:
+    return Path(__file__).resolve().parents[4] / "deploy/tokenmm/tokenmm.live.toml"
 
 
 def test_example_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:
@@ -232,6 +237,35 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
             "plumeusdt_binance_perp_makerv3",
         ],
     }
+
+
+def test_tokenmm_run_controller_loads_the_managed_binance_contract() -> None:
+    run_controller = importlib.import_module("flux.runners.tokenmm.run_controller")
+    config = run_controller._load_config(_tokenmm_shared_config_path())
+
+    contract = run_controller.load_controller_contract(config)
+
+    assert contract.controller_scope_id == "tokenmm.binance.pm.main"
+    assert contract.account_scope_id == "binance.pm.main"
+    assert contract.managed_strategy_ids == (
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    )
+
+
+def test_tokenmm_run_controller_rejects_missing_managed_strategy_bindings() -> None:
+    run_controller = importlib.import_module("flux.runners.tokenmm.run_controller")
+
+    with pytest.raises(ValueError, match="managed_strategy_ids"):
+        run_controller.load_controller_contract(
+            {
+                "controller": {
+                    "controller_scope_id": "tokenmm.binance.pm.main",
+                    "account_scope_id": "binance.pm.main",
+                    "managed_strategy_ids": [],
+                },
+            }
+        )
 
 
 def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path) -> None:

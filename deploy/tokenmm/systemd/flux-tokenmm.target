@@ -3,6 +3,7 @@ Description=Flux TokenMM Stack
 Wants=flux@tokenmm-api.service
 Wants=flux@tokenmm-portfolio.service
 Wants=flux@tokenmm-bridge.service
+Wants=flux@tokenmm-controller.service
 Wants=flux@tokenmm-telemetry-shipper.service
 Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service
 Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service

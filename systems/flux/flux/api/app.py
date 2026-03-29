@@ -256,6 +256,71 @@ def _rows_for_reconciliation(rows: Sequence[Mapping[str, Any]] | None) -> list[d
     return filtered
 
 
+def _balance_row_source_scope(row: Mapping[str, Any]) -> str:
+    return decode_text(row.get("source_scope") or row.get("scope") or "").strip().lower()
+
+
+def prefer_controller_managed_balance_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    controller_scope_by_account_scope: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    normalized_rows = [dict(row) for row in rows if isinstance(row, Mapping)]
+    if not normalized_rows or not controller_scope_by_account_scope:
+        return normalized_rows
+
+    grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any], str]]] = {}
+    for index, row in enumerate(normalized_rows):
+        account_scope_id = decode_text(row.get("account_scope_id")).strip()
+        controller_scope_id = decode_text(controller_scope_by_account_scope.get(account_scope_id)).strip()
+        if not account_scope_id or not controller_scope_id:
+            continue
+        kind = decode_text(row.get("kind")).strip().lower()
+        if kind and kind != "cash":
+            continue
+        asset = decode_text(row.get("asset")).strip().upper()
+        if not asset:
+            continue
+        grouped.setdefault((account_scope_id, asset), []).append(
+            (index, row, controller_scope_id),
+        )
+
+    if not grouped:
+        return normalized_rows
+
+    replacement_rows: dict[int, dict[str, Any]] = {}
+    dropped_indexes: set[int] = set()
+    for group_rows in grouped.values():
+        shared_rows = [
+            (index, row, controller_scope_id)
+            for index, row, controller_scope_id in group_rows
+            if _balance_row_source_scope(row) == "shared_account"
+        ]
+        if not shared_rows:
+            continue
+        winning_index, winning_row, controller_scope_id = max(
+            shared_rows,
+            key=lambda item: (
+                safe_int(item[1].get("ts_ms")) or safe_int(item[1].get("server_ts_ms")) or -1,
+                -item[0],
+            ),
+        )
+        authoritative_row = dict(winning_row)
+        authoritative_row["controller_scope_id"] = controller_scope_id
+        authoritative_row["authority_state"] = "active"
+        replacement_rows[winning_index] = authoritative_row
+        for index, _row, _scope_id in group_rows:
+            if index != winning_index:
+                dropped_indexes.add(index)
+
+    result: list[dict[str, Any]] = []
+    for index, row in enumerate(normalized_rows):
+        if index in dropped_indexes:
+            continue
+        result.append(replacement_rows.get(index, row))
+    return result
+
+
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     ordered: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_PARAMS_ORDER:
@@ -2035,6 +2100,7 @@ def create_flux_api_app(  # noqa: C901
     shared_position_groups_cache: dict[str, dict[str, str]] = {}
     profile_projection_scope_ids_cache: dict[str, tuple[str, ...]] = {}
     execution_account_scope_cache: dict[str, dict[str, str]] = {}
+    controller_scope_by_account_scope_cache: dict[str, dict[str, str]] = {}
 
     def _profile_supports_account_projections(profile: str) -> bool:
         return normalize_profile(profile) in {"equities", "tokenmm"}
@@ -2100,6 +2166,26 @@ def create_flux_api_app(  # noqa: C901
         )
         execution_account_scope_cache[normalized] = result
         return result
+
+    def _controller_scope_by_account_scope_for_profile(profile: str) -> dict[str, str]:
+        normalized = normalize_profile(profile)
+        cached = controller_scope_by_account_scope_cache.get(normalized)
+        if cached is not None:
+            return cached
+        allowlist = _strategy_allowlist_for_profile(normalized)
+        allowlist_set = set(allowlist or ())
+        use_allowlist = allowlist is not None
+        mapping: dict[str, str] = {}
+        for contract in decode_strategy_contracts(strategy_contracts or ()):
+            if use_allowlist and contract.strategy_id not in allowlist_set:
+                continue
+            if contract.controller_scope_id is None:
+                continue
+            mapping.setdefault(contract.execution_account_scope_id, contract.controller_scope_id)
+            if contract.hedge_account_scope_id is not None:
+                mapping.setdefault(contract.hedge_account_scope_id, contract.controller_scope_id)
+        controller_scope_by_account_scope_cache[normalized] = mapping
+        return mapping
 
     def _required_strategy_ids_for_profile(
         profile: str,
@@ -2947,6 +3033,11 @@ def create_flux_api_app(  # noqa: C901
             )
             request_now_ms = now_ms()
             projection_enabled = _profile_supports_account_projections(profile_normalized)
+            controller_scope_by_account_scope = (
+                _controller_scope_by_account_scope_for_profile(profile_normalized)
+                if profile_normalized == "tokenmm"
+                else {}
+            )
             projection_rows: list[dict[str, Any]] = []
             projection_totals: dict[str, Any] = {}
             projection_scope_status: list[dict[str, Any]] = []
@@ -3140,6 +3231,11 @@ def create_flux_api_app(  # noqa: C901
                                     market_rows=market_rows,
                                 ),
                             )
+                        if controller_scope_by_account_scope:
+                            rows = prefer_controller_managed_balance_rows(
+                                rows,
+                                controller_scope_by_account_scope=controller_scope_by_account_scope,
+                            )
                         reconciliation_rows = (
                             _rows_for_reconciliation(rows)
                             if projection_enabled
@@ -3293,6 +3389,11 @@ def create_flux_api_app(  # noqa: C901
                         contracts=store._contracts,
                         market_rows=market_rows,
                     ),
+                )
+            if controller_scope_by_account_scope:
+                rows = prefer_controller_managed_balance_rows(
+                    rows,
+                    controller_scope_by_account_scope=controller_scope_by_account_scope,
                 )
             reconciliation_rows = (
                 _rows_for_reconciliation(rows)

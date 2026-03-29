@@ -271,6 +271,31 @@ def test_tokenmm_live_config_declares_strategy_contracts_for_tokenmm_allowlist()
     assert binance_perp["execution_account_scope_id"] == binance_spot["execution_account_scope_id"]
 
 
+def test_tokenmm_live_config_binds_shared_binance_writer_domains_to_a_controller_scope() -> None:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    controller = config.get("controller", {})
+    contracts_by_strategy = {
+        str(row["strategy_id"]).strip(): row
+        for row in TOKENMM_STRATEGY_CONTRACTS
+        if str(row.get("strategy_id") or "").strip()
+    }
+
+    assert controller["controller_scope_id"] == "tokenmm.binance.pm.main"
+    assert controller["account_scope_id"] == "binance.pm.main"
+    assert controller["mode"] == "active"
+    assert controller["write_ownership_enabled"] is True
+    assert controller["managed_strategy_ids"] == [
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    ]
+    assert contracts_by_strategy["plumeusdt_binance_perp_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
+    assert contracts_by_strategy["plumeusdt_binance_spot_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
+
+
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
@@ -331,6 +356,20 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
     assert "`/etc/flux/common.env`" in runbook
     assert "non-worktree deploy root" in runbook
     assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
+
+
+def test_tokenmm_systemd_contract_adds_a_controller_service_for_managed_binance_domains() -> None:
+    target_unit = _read(_repo_root() / "deploy/tokenmm/systemd/flux-tokenmm.target")
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
+    assert "tokenmm-controller" in install_script
+    assert (
+        "nautilus_trader.flux.runners.tokenmm.run_controller --config ${SHARED_CONFIG} --mode live --confirm-live"
+        in install_script
+    )
+    assert "binance.pm.main" in install_script
+    assert "controller-owned shared Binance writer domains stay on the controller lane" in install_script
 
 
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:

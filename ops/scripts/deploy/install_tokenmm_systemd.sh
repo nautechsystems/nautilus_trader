@@ -144,6 +144,7 @@ build_service_ids() {
     "tokenmm-api"
     "tokenmm-portfolio"
     "tokenmm-bridge"
+    "tokenmm-controller"
     "tokenmm-telemetry-shipper"
   )
   local strategy_id
@@ -227,6 +228,23 @@ render_bridge_env() {
   append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-bridge.env"
 }
 
+render_controller_env() {
+  # controller-owned shared Binance writer domains stay on the controller lane
+  # so binance.pm.main startup reconciliation ownership stays with the controller.
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-controller.env" \
+    "TokenMM shared Binance controller" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_controller --config ${SHARED_CONFIG} --mode live --confirm-live" \
+    "" \
+    "tokenmm-controller"
+  printf 'TOKENMM_CONTROLLER_SCOPE_ID=tokenmm.binance.pm.main\n' >> "${ENV_DIR}/tokenmm-controller.env"
+  printf 'TOKENMM_CONTROLLER_ACCOUNT_SCOPE_ID=binance.pm.main\n' >> "${ENV_DIR}/tokenmm-controller.env"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-controller.env"
+}
+
 render_telemetry_shipper_env() {
   strategy_stack_write_env \
     "${ENV_DIR}/tokenmm-telemetry-shipper.env" \
@@ -281,6 +299,7 @@ main() {
   render_api_env
   render_portfolio_env
   render_bridge_env
+  render_controller_env
   render_telemetry_shipper_env
   render_node_envs
   rebuild_pulse_sudoers

@@ -79,6 +79,30 @@ authoritative operator entrypoint lives under `ops/scripts/`.
 6. Confirm the merged balances rows and totals are the shared portfolio output,
    not independently recomputed strategy rows.
 7. Confirm the API payload exposes backend-authored `risk_groups`, `risk_groups[].rows`, and row `risk_key` / `risk_label` semantics used by Fluxboard drilldown.
+8. Confirm the shared Binance collateral row for `binance.pm.main` appears only once and carries `controller_scope_id = "tokenmm.binance.pm.main"` plus `authority_state = "active"`.
+
+## Controller-owned shared Binance lane
+
+`binance.pm.main` is now a controller-owned shared writer domain. Treat
+`flux@tokenmm-controller.service` as the authoritative owner for:
+
+- shared Binance startup reconciliation
+- shared Binance collateral truth in `balances?profile=tokenmm`
+- shared Binance writer-domain activation and rollback
+
+Do not treat the per-strategy Binance node services as the authoritative
+startup-reconciliation owner for `binance.pm.main` once the controller lane is
+enabled.
+
+Before enabling trading on the shared Binance domain:
+
+1. Confirm `systemctl status flux@tokenmm-controller.service` is active.
+2. Confirm `curl -fsS 'http://127.0.0.1:5022/api/v1/balances?profile=tokenmm'`
+   shows exactly one `binance.pm.main` collateral row for each shared asset.
+3. Confirm the shared Binance row exposes `controller_scope_id` and
+   `authority_state = "active"`.
+4. Confirm `python ops/scripts/failover/controller_scope_failover.py --profile tokenmm --scope binance.pm.main --multi-box --check-thresholds`
+   passes on the exact release root you intend to promote.
 
 ## Degraded metadata
 

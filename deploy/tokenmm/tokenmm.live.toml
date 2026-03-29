@@ -138,6 +138,16 @@ tokenmm_required_strategy_ids = [
   "plumeusdt_bitget_spot_makerv3",
 ]
 
+[controller]
+controller_scope_id = "tokenmm.binance.pm.main"
+account_scope_id = "binance.pm.main"
+mode = "active"
+write_ownership_enabled = true
+managed_strategy_ids = [
+  "plumeusdt_binance_perp_makerv3",
+  "plumeusdt_binance_spot_makerv3",
+]
+
 [telemetry_shipper]
 enabled = true
 enable_local_persistence = true
@@ -200,6 +210,13 @@ api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "PORTFOLIO_MARGIN"
 private_api_family = "PORTFOLIO_MARGIN"
+controller_scope_id = "tokenmm.binance.pm.main"
+
+[[controller_scopes]]
+controller_scope_id = "tokenmm.binance.pm.main"
+profile_id = "tokenmm"
+writer_account_scope_id = "binance.pm.main"
+account_scope_ids = ["binance.pm.main"]
 
 [[strategy_contracts]]
 strategy_id = "plumeusdt_bybit_perp_makerv3"
@@ -244,6 +261,7 @@ maker_instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
 reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 execution_account_scope_id = "binance.pm.main"
 reference_account_scope_id = "binance.pm.main"
+controller_scope_id = "tokenmm.binance.pm.main"
 
 [[strategy_contracts]]
 strategy_id = "plumeusdt_binance_spot_makerv3"
@@ -255,6 +273,7 @@ maker_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 execution_account_scope_id = "binance.pm.main"
 reference_account_scope_id = "binance.pm.main"
+controller_scope_id = "tokenmm.binance.pm.main"
 
 [[strategy_contracts]]
 strategy_id = "plumeusdt_bitget_perp_makerv3"
