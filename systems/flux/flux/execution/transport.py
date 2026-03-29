@@ -7,7 +7,6 @@ import socket
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-import tempfile
 from typing import Any
 
 from .events import ExecutionLifecycleEvent
@@ -59,7 +58,9 @@ def _assert_af_unix_path_length(path: Path) -> None:
 
 def _short_socket_root_dir(root_dir: Path) -> Path:
     digest = hashlib.sha1(os.fsencode(str(root_dir))).hexdigest()[:12]
-    short_root = Path(tempfile.gettempdir()) / "flux-uds" / digest
+    # systemd PrivateTmp isolates /tmp per service, so shortened socket paths
+    # must live under a shared per-user root to remain visible across units.
+    short_root = Path.home() / ".flux-uds" / digest
     short_root.mkdir(parents=True, exist_ok=True)
     return short_root
 

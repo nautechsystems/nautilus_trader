@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
+import tempfile
 
 from flux.execution.events import ExecutionLifecycleEvent
 from flux.execution.intents import ExecutionIntent
@@ -48,6 +50,26 @@ def test_v1_uds_paths_reject_linux_af_unix_pathnames_longer_than_limit() -> None
             controller_scope_id="a" * 90,
             root_dir=Path("/run/flux"),
         )
+
+
+def test_v1_uds_paths_fallback_to_shared_home_root_when_shortened(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    transport = _load_transport_module()
+    fake_home = Path("/home/ubuntu")
+    monkeypatch.setattr(transport.Path, "home", staticmethod(lambda: fake_home))
+
+    long_root = tmp_path / ("a" * 48) / ("b" * 48) / ("c" * 24)
+    paths = transport.UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=long_root,
+    )
+
+    assert paths.root_dir == fake_home / ".flux-uds" / paths.root_dir.name
+    assert str(paths.request_reply_path).startswith(str(fake_home / ".flux-uds"))
+    assert tempfile.gettempdir() not in str(paths.request_reply_path)
+    assert len(os.fsencode(str(paths.request_reply_path))) <= transport.AF_UNIX_MAX_PATH_BYTES
 
 
 def test_v1_uds_request_reply_contract_round_trips_intents_and_claims() -> None:
