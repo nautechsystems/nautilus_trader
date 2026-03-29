@@ -468,6 +468,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_type = mapped_order_type_info
             time_in_force = ib_to_nautilus_time_in_force[ib_order.tif]
 
+        trigger_price, limit_offset, trailing_offset, trailing_offset_type = (
+            self._parse_ib_order_pricing_fields(
+                instrument=instrument,
+                ib_order=ib_order,
+                order_type=order_type,
+                price_magnifier=price_magnifier,
+            )
+        )
+
         order_status = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=instrument.id,
@@ -488,16 +497,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # contingency_type=,
             expire_time=expire_time,
             price=price,
-            trigger_price=(
-                instrument.make_price(
-                    ib_price_to_nautilus_price(ib_order.auxPrice, price_magnifier),
-                )
-                if ib_order.auxPrice != UNSET_DOUBLE
-                else None
-            ),
+            trigger_price=trigger_price,
             trigger_type=TriggerType.BID_ASK,
-            # limit_offset=,
-            # trailing_offset=,
+            limit_offset=limit_offset,
+            trailing_offset=trailing_offset,
+            trailing_offset_type=trailing_offset_type,
         )
         self._log.debug(f"Received {order_status!r}")
 
@@ -1552,14 +1556,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 converted_price = ib_price_to_nautilus_price(order.lmtPrice, price_magnifier)
                 price = instrument.make_price(converted_price)
 
-            trigger_price = None
-
-            if order.auxPrice != UNSET_DOUBLE:
-                converted_trigger_price = ib_price_to_nautilus_price(
-                    order.auxPrice,
-                    price_magnifier,
-                )
-                trigger_price = instrument.make_price(converted_trigger_price)
+            trigger_price, _, _, _ = self._parse_ib_order_pricing_fields(
+                instrument=instrument,
+                ib_order=order,
+                order_type=nautilus_order.order_type,
+                price_magnifier=price_magnifier,
+            )
 
             venue_order_id_modified = bool(
                 nautilus_order.venue_order_id is None
@@ -1583,6 +1585,56 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=nautilus_order,
                 ib_order=order,
             )
+
+    def _parse_ib_order_pricing_fields(
+        self,
+        instrument: Instrument,
+        ib_order: IBOrder,
+        order_type: OrderType,
+        price_magnifier: int,
+    ) -> tuple[
+        Price | None,
+        Decimal | None,
+        Decimal | None,
+        TrailingOffsetType | None,
+    ]:
+        trigger_price = None
+        limit_offset = None
+        trailing_offset = None
+        trailing_offset_type = None
+
+        if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            if ib_order.trailStopPrice != UNSET_DOUBLE:
+                converted_trigger_price = ib_price_to_nautilus_price(
+                    ib_order.trailStopPrice,
+                    price_magnifier,
+                )
+                trigger_price = instrument.make_price(converted_trigger_price)
+
+            if ib_order.auxPrice != UNSET_DOUBLE:
+                trailing_offset = Decimal(str(ib_order.auxPrice))
+                trailing_offset_type = TrailingOffsetType.PRICE
+            elif getattr(ib_order, "trailingPercent", UNSET_DOUBLE) != UNSET_DOUBLE:
+                trailing_offset = Decimal(str(ib_order.trailingPercent)) * 100
+                trailing_offset_type = TrailingOffsetType.BASIS_POINTS
+
+            if (
+                order_type == OrderType.TRAILING_STOP_LIMIT
+                and ib_order.lmtPriceOffset != UNSET_DOUBLE
+            ):
+                limit_offset = Decimal(str(ib_order.lmtPriceOffset))
+                trailing_offset_type = trailing_offset_type or TrailingOffsetType.PRICE
+
+            return trigger_price, limit_offset, trailing_offset, trailing_offset_type
+
+        if ib_order.auxPrice != UNSET_DOUBLE:
+            converted_trigger_price = ib_price_to_nautilus_price(
+                ib_order.auxPrice,
+                price_magnifier,
+            )
+            trigger_price = instrument.make_price(converted_trigger_price)
+
+        return trigger_price, limit_offset, trailing_offset, trailing_offset_type
 
     def _on_order_status(  # noqa: C901 (complexity unavoidable due to IB status handling)
         self,

@@ -14,18 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from ibapi.const import UNSET_DOUBLE
 
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -39,6 +44,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
 def instrument_setup(exec_client, cache, instrument=None, contract_details=None):
@@ -123,6 +129,208 @@ async def test_generate_position_status_reports_flat_when_no_positions(exec_clie
     assert reports[0].position_side == PositionSide.FLAT
     assert reports[0].quantity.as_decimal() == Decimal(0)
     assert reports[0].instrument_id == instrument.id
+
+
+@pytest.mark.asyncio
+async def test_generate_order_status_reports_parses_trailing_stop_market_fields(
+    exec_client,
+    cache,
+):
+    """
+    Test that trailing stop reconciliation preserves the trailing offset fields.
+
+    Verifies fix for IB live restart reconciliation where open TRAIL orders crashed
+    during unpacking because the OrderStatusReport omitted trailing_offset.
+
+    """
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    instrument_setup(exec_client, cache, instrument=instrument)
+
+    ib_order = IBTestExecStubs.aapl_buy_ib_order(total_quantity="5")
+    ib_order.contract = IBTestContractStubs.aapl_equity_ib_contract()
+    ib_order.orderType = "TRAIL"
+    ib_order.tif = "GTC"
+    ib_order.lmtPrice = UNSET_DOUBLE
+    ib_order.auxPrice = 2.5
+    ib_order.trailStopPrice = 185.5
+    ib_order.filledQuantity = Decimal(0)
+    ib_order.order_state = SimpleNamespace(status="Submitted")
+
+    exec_client._client.get_open_orders = AsyncMock(return_value=[ib_order])
+
+    command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=True,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+
+    # Act
+    reports = await exec_client.generate_order_status_reports(command)
+
+    # Assert
+    assert len(reports) == 1
+    assert reports[0].order_type == OrderType.TRAILING_STOP_MARKET
+    assert reports[0].quantity.as_decimal() == Decimal(5)
+    assert reports[0].price is None
+    assert reports[0].trigger_price == Price.from_str("185.50")
+    assert reports[0].trailing_offset == Decimal("2.5")
+    assert reports[0].trailing_offset_type == TrailingOffsetType.PRICE
+    assert reports[0].limit_offset is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    (
+        "ib_order_type",
+        "lmt_price",
+        "aux_price",
+        "trail_stop_price",
+        "lmt_price_offset",
+        "expected_order_type",
+        "expected_price",
+        "expected_trigger_price",
+        "expected_limit_offset",
+        "expected_trailing_offset",
+        "expected_trailing_offset_type",
+    ),
+    [
+        (
+            "MKT",
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.MARKET,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            "LMT",
+            185.5,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.LIMIT,
+            Price.from_str("185.50"),
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            "MIT",
+            UNSET_DOUBLE,
+            180.25,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.MARKET_IF_TOUCHED,
+            None,
+            Price.from_str("180.25"),
+            None,
+            None,
+            None,
+        ),
+        (
+            "LIT",
+            179.5,
+            180.25,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.LIMIT_IF_TOUCHED,
+            Price.from_str("179.50"),
+            Price.from_str("180.25"),
+            None,
+            None,
+            None,
+        ),
+        (
+            "STP",
+            UNSET_DOUBLE,
+            180.25,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.STOP_MARKET,
+            None,
+            Price.from_str("180.25"),
+            None,
+            None,
+            None,
+        ),
+        (
+            "STP LMT",
+            179.5,
+            180.25,
+            UNSET_DOUBLE,
+            UNSET_DOUBLE,
+            OrderType.STOP_LIMIT,
+            Price.from_str("179.50"),
+            Price.from_str("180.25"),
+            None,
+            None,
+            None,
+        ),
+        (
+            "TRAIL LIMIT",
+            UNSET_DOUBLE,
+            2.5,
+            185.5,
+            0.25,
+            OrderType.TRAILING_STOP_LIMIT,
+            None,
+            Price.from_str("185.50"),
+            Decimal("0.25"),
+            Decimal("2.5"),
+            TrailingOffsetType.PRICE,
+        ),
+    ],
+)
+async def test_parse_ib_order_to_order_status_report_maps_pricing_fields_by_order_type(
+    exec_client,
+    cache,
+    ib_order_type,
+    lmt_price,
+    aux_price,
+    trail_stop_price,
+    lmt_price_offset,
+    expected_order_type,
+    expected_price,
+    expected_trigger_price,
+    expected_limit_offset,
+    expected_trailing_offset,
+    expected_trailing_offset_type,
+):
+    # Arrange
+    instrument = IBTestContractStubs.aapl_instrument()
+    instrument_setup(exec_client, cache, instrument=instrument)
+
+    ib_order = IBTestExecStubs.aapl_buy_ib_order(total_quantity="5")
+    ib_order.contract = IBTestContractStubs.aapl_equity_ib_contract()
+    ib_order.orderType = ib_order_type
+    ib_order.tif = "GTC"
+    ib_order.lmtPrice = lmt_price
+    ib_order.auxPrice = aux_price
+    ib_order.trailStopPrice = trail_stop_price
+    ib_order.lmtPriceOffset = lmt_price_offset
+    ib_order.filledQuantity = Decimal(0)
+    ib_order.order_state = SimpleNamespace(status="Submitted")
+
+    # Act
+    report = await exec_client._parse_ib_order_to_order_status_report(ib_order)
+
+    # Assert
+    assert report.order_type == expected_order_type
+    assert report.price == expected_price
+    assert report.trigger_price == expected_trigger_price
+    assert report.limit_offset == expected_limit_offset
+    assert report.trailing_offset == expected_trailing_offset
+    assert report.trailing_offset_type == expected_trailing_offset_type
 
 
 # ---------------------------------------------------------------------------
