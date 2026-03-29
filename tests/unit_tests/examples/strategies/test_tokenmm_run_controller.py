@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import time
 
 from flux.execution.intents import ExecutionIntent
@@ -257,6 +258,177 @@ def test_active_writer_path_records_wal_and_sent_to_venue_state(
     ]
     assert records[-1].venue_order_id == "binance-venue-9001"
     assert canonical_payload["managed_maker_orders"][0]["client_order_id"] == reply.claim.client_order_id
+
+
+def test_active_mode_builds_default_runtime_writer_without_injected_factory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = importlib.import_module("flux.execution.transport")
+    wal = importlib.import_module("flux.execution.wal")
+    fake_redis = _FakeRedis()
+    spot_calls: list[dict[str, object]] = []
+
+    class _FakeSpotAccountHttpAPI:
+        def __init__(self, client, clock, account_type) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+
+        async def new_order(self, **kwargs):
+            spot_calls.append(kwargs)
+            return SimpleNamespace(orderId=9_001)
+
+    class _FakeFuturesAccountHttpAPI:
+        def __init__(self, client, clock, account_type, private_api_family=None) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+            self.private_api_family = private_api_family
+
+        async def new_order(self, **_kwargs):
+            return SimpleNamespace(orderId=8_001)
+
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+    monkeypatch.setattr(
+        run_controller,
+        "get_cached_binance_http_client",
+        lambda **_kwargs: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceSpotAccountHttpAPI",
+        _FakeSpotAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceFuturesAccountHttpAPI",
+        _FakeFuturesAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+    _write_tokenmm_strategy_configs(tmp_path)
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-runtime-writer-001",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    store = wal.SQLiteOwnershipWal(
+        db_path=run_controller._controller_wal_path(
+            repo_root=tmp_path,
+            controller_scope_id="tokenmm.binance.pm.main",
+        ),
+    )
+    try:
+        records = store.list_records()
+    finally:
+        store.close()
+
+    assert reply.status == "accepted"
+    assert reply.claim is not None
+    assert [record.lifecycle_state for record in records] == [
+        ExecutionLifecycleState.OWNED_PRE_WRITE,
+        ExecutionLifecycleState.SENT_TO_VENUE,
+    ]
+    assert len(spot_calls) == 1
+    assert spot_calls[0]["new_client_order_id"] == reply.claim.client_order_id
+    assert spot_calls[0]["side_effect_type"] == "AUTO_BORROW_REPAY"
+    assert spot_calls[0]["auto_repay_at_cancel"] == "FALSE"
+    assert spot_calls[0]["order_type"].value == "LIMIT_MAKER"
+
+
+def _write_tokenmm_strategy_configs(repo_root: Path) -> None:
+    strategies_dir = repo_root / "deploy" / "tokenmm" / "strategies"
+    strategies_dir.mkdir(parents=True, exist_ok=True)
+    (strategies_dir / "plumeusdt_binance_spot_makerv3.toml").write_text(
+        """
+[flux]
+mode = "live"
+confirm_live = true
+
+[identity]
+strategy_id = "plumeusdt_binance_spot_makerv3"
+
+[venues]
+execution_venue = "BINANCE_SPOT"
+execution_symbol = "PLUMEUSDT"
+
+[node.venues.BINANCE_SPOT]
+adapter = "binance"
+execution = true
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+account_type = "PORTFOLIO_MARGIN"
+allow_cash_borrowing = true
+
+[strategy]
+strategy_id = "plumeusdt_binance_spot_makerv3"
+spot_cash_borrowing_policy = "both_sides"
+""".strip(),
+        encoding="utf-8",
+    )
+    (strategies_dir / "plumeusdt_binance_perp_makerv3.toml").write_text(
+        """
+[flux]
+mode = "live"
+confirm_live = true
+
+[identity]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+
+[venues]
+execution_venue = "BINANCE_PERP"
+execution_symbol = "PLUMEUSDT"
+
+[node.venues.BINANCE_PERP]
+adapter = "binance"
+execution = true
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+account_type = "USDT_FUTURES"
+private_api_family = "PORTFOLIO_MARGIN"
+
+[strategy]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+""".strip(),
+        encoding="utf-8",
+    )
 
 
 def _wait_for_socket(path: Path, *, timeout_s: float = 1.0) -> None:

@@ -16,6 +16,20 @@ from typing import Callable
 
 import redis
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+from nautilus_trader.adapters.binance.common.enums import BinanceNewOrderRespType
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
+from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
+from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
+from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
+from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
+from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
+from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
+from nautilus_trader.adapters.env import get_env_key
+from nautilus_trader.common.component import LiveClock
+
 from flux.execution.controller import ControllerRunMode
 from flux.execution.controller import ControllerSnapshotAuthority
 from flux.execution.controller import SnapshotAuthorityState
@@ -32,6 +46,7 @@ from flux.execution.transport import encode_reply_frame
 from flux.execution.wal import SQLiteOwnershipWal
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
 from flux.runners.shared.bootstrap import load_config as load_shared_config
+from flux.runners.shared.bootstrap import merge_shared_tables as merge_shared_tables_from_bootstrap
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.controller_runner import ControllerRunnerConfig
 from flux.runners.shared.controller_runner import ShadowControllerRunner
@@ -60,6 +75,18 @@ class TokenmmControllerContract:
     write_ownership_enabled: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _ManagedStrategyExecutionRuntime:
+    strategy_id: str
+    execution_symbol: str
+    account_type: BinanceAccountType
+    private_api_family: BinancePrivateApiFamily
+    recv_window: str | None
+    allow_cash_borrowing: bool
+    spot_cash_borrowing_policy: str
+    account_api: Any
+
+
 class _NullControllerService:
     def start(self) -> None:
         return None
@@ -86,7 +113,8 @@ class _ResidentRequestReplyControllerService:
         self._repo_root = repo_root
         self._controller_epoch = 1
         self._controller_seq = 0
-        self._run_mode = load_controller_contract(config).mode
+        self._contract = load_controller_contract(config)
+        self._run_mode = self._contract.mode
         self._seq_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._server_socket: socket.socket | None = None
@@ -94,6 +122,7 @@ class _ResidentRequestReplyControllerService:
         self._canonical_state_by_strategy: dict[str, dict[str, Any]] = {}
         self._redis_client = _build_controller_redis_client(self._config)
         self._active_order_writer_factory = active_order_writer_factory
+        self._default_active_order_writer_factory: Callable[[dict[str, Any]], ExecutionVenueWriter] | None = None
         self._wal_path = _controller_wal_path(
             repo_root=repo_root,
             controller_scope_id=controller_scope_id,
@@ -127,9 +156,10 @@ class _ResidentRequestReplyControllerService:
         if sock is not None:
             sock.close()
         _safe_unlink(self._paths.request_reply_path)
+        self._default_active_order_writer_factory = None
 
     def _serve(self) -> None:
-        if self._run_mode is ControllerRunMode.ACTIVE and self._active_order_writer_factory is not None:
+        if self._run_mode is ControllerRunMode.ACTIVE:
             self._wal = _build_controller_wal(
                 repo_root=self._repo_root,
                 controller_scope_id=self._paths.controller_scope_id,
@@ -220,24 +250,33 @@ class _ResidentRequestReplyControllerService:
             return
         if self._run_mode is not ControllerRunMode.ACTIVE:
             return
-        if self._active_order_writer_factory is None:
+        if self._active_order_writer_factory is None and self._default_active_order_writer_factory is None:
+            self._default_active_order_writer_factory = _build_default_active_order_writer_factory(
+                config=self._config,
+                repo_root=self._repo_root,
+                controller_scope_id=self._paths.controller_scope_id,
+            )
+        writer_factory = self._active_order_writer_factory or self._default_active_order_writer_factory
+        if writer_factory is None:
             raise RuntimeError("TokenMM active controller requires an active order writer")
         if self._wal is None or self._ledger is None:
             raise RuntimeError("controller WAL is not initialized")
 
         authority = _authority_for_claim(claim=claim, snapshot_ts_ms=_now_ms(None))
-        writer = self._active_order_writer_factory(
+        writer = writer_factory(
             {
                 "claim": claim,
                 "command": command,
                 "controller_scope_id": self._paths.controller_scope_id,
+                "account_scope_id": self._contract.account_scope_id,
                 "wal_path": self._wal_path,
+                "wal": self._wal,
             },
         )
         asyncio.run(
             self._ledger.write_owned_order(
                 claim=claim,
-                account_scope_id=self._paths.controller_scope_id,
+                account_scope_id=self._contract.account_scope_id,
                 operation_type=_operation_type_for_command(command.command_type),
                 claim_key=_claim_key_for_request(request),
                 append_authority=authority,
@@ -526,6 +565,301 @@ def _controller_wal_path(
     wal_dir = base_root / ".run" / "controller-wal"
     wal_dir.mkdir(parents=True, exist_ok=True)
     return wal_dir / f"{controller_scope_id}.sqlite3"
+
+
+def _strategy_runtime_config_path(*, repo_root: Path, strategy_id: str) -> Path:
+    return repo_root / "deploy" / "tokenmm" / "strategies" / f"{strategy_id}.toml"
+
+
+def _load_strategy_runtime_config(
+    *,
+    repo_root: Path,
+    shared_config: dict[str, Any],
+    strategy_id: str,
+) -> dict[str, Any]:
+    strategy_path = _strategy_runtime_config_path(repo_root=repo_root, strategy_id=strategy_id)
+    if not strategy_path.exists():
+        raise FileNotFoundError(f"missing TokenMM strategy config: {strategy_path}")
+    return merge_shared_tables_from_bootstrap(
+        config=_load_config(strategy_path),
+        shared_config=shared_config,
+        table_names=(
+            "redis",
+            "portfolio",
+            "telemetry_shipper",
+            "controller",
+            "strategy_contracts",
+            "account_scopes",
+            "controller_scopes",
+        ),
+    )
+
+
+def _build_default_active_order_writer_factory(
+    *,
+    config: dict[str, Any],
+    repo_root: Path,
+    controller_scope_id: str,
+) -> Callable[[dict[str, Any]], ExecutionVenueWriter]:
+    contract = load_controller_contract(config)
+    if contract.controller_scope_id != controller_scope_id:
+        raise ValueError(
+            f"controller_scope_id mismatch: expected {contract.controller_scope_id!r}, got {controller_scope_id!r}",
+        )
+    runtimes = {
+        strategy_id: _resolve_managed_strategy_execution_runtime(
+            runtime_config=_load_strategy_runtime_config(
+                repo_root=repo_root,
+                shared_config=config,
+                strategy_id=strategy_id,
+            ),
+            strategy_id=strategy_id,
+        )
+        for strategy_id in contract.managed_strategy_ids
+    }
+
+    def _factory(payload: dict[str, Any]) -> ExecutionVenueWriter:
+        claim = payload.get("claim")
+        if claim is None:
+            raise ValueError("default TokenMM writer factory requires a claim")
+        runtime = runtimes.get(claim.strategy_id)
+        if runtime is None:
+            raise KeyError(f"unmanaged TokenMM strategy for default writer: {claim.strategy_id!r}")
+        command = payload.get("command")
+        if command is None:
+            raise ValueError("default TokenMM writer factory requires a controller command")
+        wal = payload.get("wal")
+        if wal is None or not isinstance(wal, SQLiteOwnershipWal):
+            raise ValueError("default TokenMM writer factory requires a live controller WAL")
+        return _TokenmmBinanceRequestBoundVenueWriter(
+            command=command,
+            runtime=runtime,
+            wal=wal,
+        )
+
+    return _factory
+
+
+class _TokenmmBinanceRequestBoundVenueWriter:
+    def __init__(
+        self,
+        *,
+        command: Any,
+        runtime: _ManagedStrategyExecutionRuntime,
+        wal: SQLiteOwnershipWal,
+    ) -> None:
+        self._command = command
+        self._runtime = runtime
+        self._wal = wal
+
+    async def write_owned_order(self, claim) -> str:
+        if self._command.command_type == "cancel":
+            return await self._cancel_order()
+        return await self._place_order(claim=claim)
+
+    async def _place_order(self, *, claim) -> str:
+        side = _coerce_binance_order_side(self._command.side)
+        quantity = _required_text(self._command.quantity, "quantity")
+        limit_price = _required_text(self._command.limit_price, "limit_price")
+        recv_window = self._runtime.recv_window
+        if self._runtime.account_type.is_spot_or_margin:
+            order_type = BinanceOrderType.LIMIT_MAKER if bool(self._command.post_only) else BinanceOrderType.LIMIT
+            time_in_force = None
+            if order_type is not BinanceOrderType.LIMIT_MAKER:
+                time_in_force = _coerce_binance_time_in_force(
+                    self._command.time_in_force,
+                    default=BinanceTimeInForce.GTC,
+                )
+            side_effect_type, auto_repay_at_cancel = _spot_margin_side_effect_fields(
+                account_type=self._runtime.account_type,
+                allow_cash_borrowing=self._runtime.allow_cash_borrowing,
+                spot_cash_borrowing_policy=self._runtime.spot_cash_borrowing_policy,
+                side=side,
+            )
+            response = await self._runtime.account_api.new_order(
+                symbol=self._runtime.execution_symbol,
+                side=side,
+                order_type=order_type,
+                time_in_force=time_in_force,
+                quantity=quantity,
+                price=limit_price,
+                new_client_order_id=claim.client_order_id,
+                side_effect_type=side_effect_type,
+                auto_repay_at_cancel=auto_repay_at_cancel,
+                new_order_resp_type=BinanceNewOrderRespType.ACK,
+                recv_window=recv_window,
+            )
+        else:
+            response = await self._runtime.account_api.new_order(
+                symbol=self._runtime.execution_symbol,
+                side=side,
+                order_type=BinanceOrderType.LIMIT,
+                time_in_force=(
+                    BinanceTimeInForce.GTX
+                    if bool(self._command.post_only)
+                    else _coerce_binance_time_in_force(
+                        self._command.time_in_force,
+                        default=BinanceTimeInForce.GTC,
+                    )
+                ),
+                quantity=quantity,
+                price=limit_price,
+                new_client_order_id=claim.client_order_id,
+                new_order_resp_type=BinanceNewOrderRespType.ACK,
+                recv_window=recv_window,
+            )
+        return _order_id_from_response(response)
+
+    async def _cancel_order(self) -> str:
+        target_client_order_id = _required_text(
+            self._command.target_client_order_id,
+            "target_client_order_id",
+        )
+        response = await self._runtime.account_api.cancel_order(
+            symbol=self._runtime.execution_symbol,
+            orig_client_order_id=target_client_order_id,
+            recv_window=self._runtime.recv_window,
+        )
+        order_id = _optional_text(getattr(response, "orderId", None))
+        if order_id is not None:
+            return order_id
+        record = self._wal.fetch_by_client_order_id(target_client_order_id)
+        if record is None or record.venue_order_id is None:
+            raise RuntimeError(
+                f"missing venue order id for canceled client_order_id={target_client_order_id!r}",
+            )
+        return record.venue_order_id
+
+
+def _resolve_managed_strategy_execution_runtime(
+    *,
+    runtime_config: dict[str, Any],
+    strategy_id: str,
+) -> _ManagedStrategyExecutionRuntime:
+    venues_cfg = _table(runtime_config, "venues")
+    execution_venue = _required_text(venues_cfg.get("execution_venue"), "execution_venue")
+    execution_symbol = _required_text(venues_cfg.get("execution_symbol"), "execution_symbol")
+    node_cfg = _table(runtime_config, "node")
+    raw_node_venues = node_cfg.get("venues")
+    if not isinstance(raw_node_venues, dict):
+        raise ValueError(f"strategy `{strategy_id}` is missing [node.venues] config")
+    venue_cfg = raw_node_venues.get(execution_venue)
+    if not isinstance(venue_cfg, dict):
+        raise ValueError(
+            f"strategy `{strategy_id}` is missing [node.venues.{execution_venue}] config",
+        )
+    adapter = str(venue_cfg.get("adapter", "")).strip().lower()
+    if adapter != "binance":
+        raise ValueError(
+            f"strategy `{strategy_id}` execution venue must use the Binance adapter",
+        )
+    if not bool(venue_cfg.get("execution", False)):
+        raise ValueError(
+            f"strategy `{strategy_id}` execution venue is not enabled for execution",
+        )
+
+    account_type = _coerce_binance_account_type(venue_cfg.get("account_type"))
+    private_api_family = _coerce_binance_private_api_family(venue_cfg.get("private_api_family"))
+    environment = _resolve_binance_environment(venue_cfg)
+    base_url_http = _optional_text(venue_cfg.get("base_url_http")) or get_private_http_base_url(
+        account_type,
+        private_api_family,
+        environment,
+        False,
+    )
+    api_key_env = _required_text(venue_cfg.get("api_key_env"), "api_key_env")
+    api_secret_env = _required_text(venue_cfg.get("api_secret_env"), "api_secret_env")
+    recv_window_ms = venue_cfg.get("recv_window_ms")
+    recv_window = None if recv_window_ms is None else str(int(recv_window_ms))
+    strategy_cfg = _table(runtime_config, "strategy")
+    clock = LiveClock()
+    client = get_cached_binance_http_client(
+        clock=clock,
+        account_type=account_type,
+        api_key=get_env_key(api_key_env),
+        api_secret=get_env_key(api_secret_env),
+        base_url=base_url_http,
+        environment=environment,
+        proxy_url=_optional_text(venue_cfg.get("http_proxy_url")),
+    )
+    if account_type.is_futures:
+        account_api = BinanceFuturesAccountHttpAPI(
+            client=client,
+            clock=clock,
+            account_type=account_type,
+            private_api_family=private_api_family,
+        )
+    else:
+        account_api = BinanceSpotAccountHttpAPI(
+            client=client,
+            clock=clock,
+            account_type=account_type,
+        )
+    return _ManagedStrategyExecutionRuntime(
+        strategy_id=strategy_id,
+        execution_symbol=execution_symbol,
+        account_type=account_type,
+        private_api_family=private_api_family,
+        recv_window=recv_window,
+        allow_cash_borrowing=bool(venue_cfg.get("allow_cash_borrowing", False)),
+        spot_cash_borrowing_policy=str(strategy_cfg.get("spot_cash_borrowing_policy", "none")),
+        account_api=account_api,
+    )
+
+
+def _coerce_binance_account_type(value: Any) -> BinanceAccountType:
+    return BinanceAccountType(_required_text(value, "account_type"))
+
+
+def _coerce_binance_private_api_family(value: Any) -> BinancePrivateApiFamily:
+    text = _optional_text(value)
+    if text is None:
+        return BinancePrivateApiFamily.AUTO
+    return BinancePrivateApiFamily(text)
+
+
+def _resolve_binance_environment(venue_cfg: dict[str, Any]) -> BinanceEnvironment:
+    if bool(venue_cfg.get("demo", False)):
+        return BinanceEnvironment.DEMO
+    if bool(venue_cfg.get("testnet", False)):
+        return BinanceEnvironment.TESTNET
+    return BinanceEnvironment.LIVE
+
+
+def _coerce_binance_order_side(value: Any) -> BinanceOrderSide:
+    return BinanceOrderSide(_required_text(value, "side").upper())
+
+
+def _coerce_binance_time_in_force(
+    value: Any,
+    *,
+    default: BinanceTimeInForce | None = None,
+) -> BinanceTimeInForce | None:
+    text = _optional_text(value)
+    if text is None:
+        return default
+    return BinanceTimeInForce(text.upper())
+
+
+def _spot_margin_side_effect_fields(
+    *,
+    account_type: BinanceAccountType,
+    allow_cash_borrowing: bool,
+    spot_cash_borrowing_policy: str,
+    side: BinanceOrderSide,
+) -> tuple[str | None, str | None]:
+    if not account_type.is_margin or not allow_cash_borrowing:
+        return None, None
+    policy = spot_cash_borrowing_policy.strip().lower()
+    if policy == "both_sides":
+        return "AUTO_BORROW_REPAY", "FALSE"
+    if policy == "sell_only" and side is BinanceOrderSide.SELL:
+        return "AUTO_BORROW_REPAY", "FALSE"
+    return None, None
+
+
+def _order_id_from_response(response: Any) -> str:
+    return _required_text(getattr(response, "orderId", None), "orderId")
 
 
 def _build_controller_redis_client(config: dict[str, Any]) -> Any | None:
