@@ -261,13 +261,23 @@ render_node_envs() {
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="tokenmm-node-${strategy_id}"
     local strategy_config="${STRATEGIES_DIR}/${strategy_id}.toml"
+    local controller_managed_strategy=0
+    local exec_flag=()
+    case "${strategy_id}" in
+      plumeusdt_binance_perp_makerv3|plumeusdt_binance_spot_makerv3)
+        controller_managed_strategy=1
+        ;;
+    esac
+    if [[ "${controller_managed_strategy}" -eq 0 ]]; then
+      exec_flag+=(--enable-execution)
+    fi
     strategy_stack_write_env \
       "${ENV_DIR}/${service_id}.env" \
       "TokenMM node ${strategy_id}" \
       "tokenmm" \
       "TokenMM" \
       "10" \
-      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live ${exec_flag[*]}"
     append_deploy_root_env_overrides "${ENV_DIR}/${service_id}.env"
   done
 }

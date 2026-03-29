@@ -372,6 +372,15 @@ def test_tokenmm_systemd_contract_adds_a_controller_service_for_managed_binance_
     assert "controller-owned shared Binance writer domains stay on the controller lane" in install_script
 
 
+def test_tokenmm_systemd_contract_skips_local_execution_for_controller_managed_binance_nodes() -> None:
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert 'controller_managed_strategy=0' in install_script
+    assert 'plumeusdt_binance_perp_makerv3|plumeusdt_binance_spot_makerv3' in install_script
+    assert 'exec_flag+=(--enable-execution)' in install_script
+    assert '${exec_flag[*]}' in install_script
+
+
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
     repo_root = _repo_root()
     pyproject = _read(repo_root / "pyproject.toml")

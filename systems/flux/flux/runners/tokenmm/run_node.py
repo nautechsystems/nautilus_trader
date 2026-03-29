@@ -12,6 +12,7 @@ from decimal import Decimal
 import logging
 from pathlib import Path
 import re
+from types import SimpleNamespace
 from typing import Any
 
 import redis
@@ -22,8 +23,20 @@ from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
+from flux.common.strategy_contracts import StrategyContractEntry
+from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.execution.controller import VenueActivityOrigin
+from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import ExecutionIntent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentCommandPayload
+from flux.execution.transport import ControllerIntentRequest
+from flux.execution.transport import ControllerIntentReply
+from flux.execution.transport import UdsTransportPaths
+from flux.execution.transport import REPLY_STATUS_REJECTED
+from flux.execution.transport import send_request as send_transport_request
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
 from flux.runners.shared.bootstrap import build_redis_database_config
@@ -39,6 +52,7 @@ from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
 from flux.strategies import get_strategy_spec
+from flux.strategies.makerv4.strategy import ControllerStateFeedBridge
 from flux.strategies.makerv3.constants import TOPIC_ORDER_INTENT
 from flux.strategies.makerv3 import runtime_params as runtime_params_mod
 from nautilus_trader.live.config import LiveDataEngineConfig
@@ -156,7 +170,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio", "telemetry_shipper"),
+        table_names=("redis", "portfolio", "telemetry_shipper", "controller", "strategy_contracts"),
     )
 
 
@@ -283,6 +297,386 @@ def _resolve_graceful_shutdown_on_exception(*, mode: str, node_cfg: dict[str, An
 
 def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return resolve_flux_strategy_id_from_bootstrap(config)
+
+
+def _strategy_contract_for_strategy(
+    config: dict[str, Any],
+    *,
+    external_strategy_id: str,
+) -> StrategyContractEntry | None:
+    for contract in decode_strategy_contracts(config.get("strategy_contracts") or []):
+        if contract.strategy_id == external_strategy_id:
+            return contract
+    return None
+
+
+def _controller_managed_contract_for_strategy(
+    config: dict[str, Any],
+    *,
+    external_strategy_id: str,
+) -> StrategyContractEntry | None:
+    contract = _strategy_contract_for_strategy(
+        config,
+        external_strategy_id=external_strategy_id,
+    )
+    if contract is None or contract.controller_scope_id is None:
+        return None
+    controller_cfg = config.get("controller")
+    if not isinstance(controller_cfg, dict):
+        return None
+    managed_strategy_ids = controller_cfg.get("managed_strategy_ids")
+    if isinstance(managed_strategy_ids, list | tuple) and external_strategy_id not in {
+        str(item).strip() for item in managed_strategy_ids if str(item).strip()
+    }:
+        return None
+    return contract
+
+
+def _strategy_timestamp_ns(strategy: Any) -> int:
+    clock = getattr(strategy, "clock", None)
+    if clock is None:
+        clock = getattr(strategy, "_clock", None)
+    timestamp_ns = getattr(clock, "timestamp_ns", None)
+    if callable(timestamp_ns):
+        with suppress(Exception):
+            return int(timestamp_ns())
+    return 0
+
+
+def _strategy_runtime_id(strategy: Any) -> str:
+    for attr in ("runtime_strategy_id", "_external_strategy_id"):
+        value = _optional_text(getattr(strategy, attr, None))
+        if value is not None:
+            return value
+    config = getattr(strategy, "config", None)
+    strategy_id = _optional_text(getattr(config, "external_strategy_id", None))
+    if strategy_id is not None:
+        return strategy_id
+    strategy_id = _optional_text(getattr(config, "strategy_id", None))
+    if strategy_id is not None:
+        return strategy_id
+    return "tokenmm"
+
+
+def _set_order_client_order_id(order: Any, client_order_id: str) -> None:
+    try:
+        setattr(order, "client_order_id", client_order_id)
+        return
+    except Exception:
+        pass
+    with suppress(Exception):
+        object.__setattr__(order, "client_order_id", client_order_id)
+
+
+def _order_post_only(order: Any) -> bool | None:
+    for attr in ("is_post_only", "post_only"):
+        value = getattr(order, attr, None)
+        if callable(value):
+            with suppress(Exception):
+                return bool(value())
+        if value is not None:
+            return bool(value)
+    return None
+
+
+def _controller_order_snapshot(row: dict[str, Any]) -> Any:
+    pending_cancel = bool(row.get("pending_cancel", False))
+    return SimpleNamespace(
+        client_order_id=str(row.get("client_order_id", "")).strip(),
+        instrument_id=row.get("instrument_id"),
+        side=row.get("side"),
+        quantity=row.get("quantity"),
+        price=row.get("price"),
+        post_only=bool(row.get("post_only", True)),
+        is_pending_cancel=lambda: pending_cancel,
+        is_closed=lambda: False,
+    )
+
+
+def _build_controller_intent_publisher(
+    *,
+    strategy: Any,
+    controller_scope_id: str,
+    transport_root_dir: Path,
+    send_request_fn=send_transport_request,
+):
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id=controller_scope_id,
+        root_dir=transport_root_dir,
+    )
+
+    def _publish_intent(order: Any) -> ControllerIntentReply:
+        original_client_order_id = str(getattr(order, "client_order_id", "") or "").strip()
+        if not original_client_order_id:
+            raise ValueError("controller-managed TokenMM orders require client_order_id")
+        request = ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id=original_client_order_id,
+                controller_scope_id=controller_scope_id,
+                strategy_id=_strategy_runtime_id(strategy),
+            ),
+            requested_at_ns=_strategy_timestamp_ns(strategy),
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id=str(getattr(order, "instrument_id")),
+                side=None if getattr(order, "side", None) is None else str(getattr(order, "side")),
+                quantity=(
+                    None
+                    if getattr(order, "quantity", None) is None
+                    else str(getattr(order, "quantity"))
+                ),
+                limit_price=(
+                    None if getattr(order, "price", None) is None else str(getattr(order, "price"))
+                ),
+                post_only=_order_post_only(order),
+                time_in_force=(
+                    None
+                    if getattr(order, "time_in_force", None) is None
+                    else str(getattr(order, "time_in_force"))
+                ),
+            ),
+        )
+        reply = send_request_fn(
+            paths=paths,
+            request=request,
+            timeout_s=1.0,
+        )
+        if reply.status == REPLY_STATUS_REJECTED:
+            raise RuntimeError(reply.reason or "controller rejected managed TokenMM request")
+        if reply.claim is None:
+            raise RuntimeError("controller accepted the request without returning a claim")
+        _set_order_client_order_id(order, reply.claim.client_order_id)
+        apply_lifecycle = getattr(strategy, "apply_controller_lifecycle_event", None)
+        if callable(apply_lifecycle):
+            apply_lifecycle(
+                ExecutionLifecycleEvent.from_claim(
+                    claim=reply.claim,
+                    lifecycle_state=ExecutionLifecycleState.ACCEPTED,
+                    venue_activity_origin=VenueActivityOrigin.CONTROLLER,
+                ),
+            )
+        return reply
+
+    return _publish_intent
+
+
+class _TokenmmControllerManagedBridge:
+    def __init__(
+        self,
+        *,
+        strategy: Any,
+        controller_scope_id: str,
+        redis_client: Any,
+        namespace: str,
+        schema_version: str,
+        transport_root_dir: Path,
+    ) -> None:
+        self._strategy = strategy
+        self._controller_scope_id = controller_scope_id
+        self._paths = UdsTransportPaths.for_controller_scope(
+            controller_scope_id=controller_scope_id,
+            root_dir=transport_root_dir,
+        )
+        self._publish_place = _build_controller_intent_publisher(
+            strategy=strategy,
+            controller_scope_id=controller_scope_id,
+            transport_root_dir=transport_root_dir,
+        )
+        self._feed = ControllerStateFeedBridge(
+            redis_client=redis_client,
+            controller_scope_id=controller_scope_id,
+            strategy_id=_strategy_runtime_id(strategy),
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        self._managed_order_rows: dict[str, dict[str, Any]] = {}
+        self._feed.bind(
+            lifecycle_callback=self._apply_lifecycle_event,
+            canonical_state_callback=self._apply_canonical_state,
+        )
+
+    def publish_place(self, order: Any, *_args, **_kwargs) -> None:
+        reply = self._publish_place(order)
+        assert reply.claim is not None
+        self._managed_order_rows[reply.claim.client_order_id] = {
+            "client_order_id": reply.claim.client_order_id,
+            "instrument_id": str(getattr(order, "instrument_id")),
+            "side": None if getattr(order, "side", None) is None else str(getattr(order, "side")),
+            "quantity": (
+                None if getattr(order, "quantity", None) is None else str(getattr(order, "quantity"))
+            ),
+            "price": None if getattr(order, "price", None) is None else str(getattr(order, "price")),
+            "post_only": bool(_order_post_only(order)),
+            "pending_cancel": False,
+        }
+
+    def publish_cancel(self, order: Any, *_args, **_kwargs) -> None:
+        from flux.execution.transport import ControllerIntentCommandPayload
+
+        self._feed.sync_once()
+        client_order_id = str(getattr(order, "client_order_id", "") or "").strip()
+        if not client_order_id:
+            raise ValueError("controller-managed TokenMM cancels require client_order_id")
+        request = ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id=f"cancel:{client_order_id}",
+                controller_scope_id=self._controller_scope_id,
+                strategy_id=_strategy_runtime_id(self._strategy),
+            ),
+            requested_at_ns=_strategy_timestamp_ns(self._strategy),
+            command=ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="maker",
+                instrument_id=str(getattr(order, "instrument_id")),
+                target_client_order_id=client_order_id,
+            ),
+        )
+        reply = send_transport_request(
+            paths=self._paths,
+            request=request,
+            timeout_s=1.0,
+        )
+        if reply.status == REPLY_STATUS_REJECTED:
+            raise RuntimeError(reply.reason or "controller rejected managed TokenMM cancel")
+        row = self._managed_order_rows.get(client_order_id)
+        if row is not None:
+            row["pending_cancel"] = True
+
+    def managed_orders(self) -> list[Any]:
+        self._feed.sync_once()
+        pending_cancel_ids = {
+            str(value)
+            for value in getattr(self._strategy, "_pending_cancel_client_order_ids", set()) or set()
+            if str(value)
+        }
+        return [
+            _controller_order_snapshot(row)
+            for client_order_id, row in self._managed_order_rows.items()
+            if not bool(row.get("pending_cancel", False)) and client_order_id not in pending_cancel_ids
+        ]
+
+    def _apply_canonical_state(self, payload: dict[str, Any]) -> None:
+        managed_rows = payload.get("managed_maker_orders")
+        if not isinstance(managed_rows, list):
+            return
+        next_rows: dict[str, dict[str, Any]] = {}
+        for row in managed_rows:
+            if not isinstance(row, dict):
+                continue
+            client_order_id = str(row.get("client_order_id", "")).strip()
+            if not client_order_id:
+                continue
+            next_rows[client_order_id] = dict(row)
+        self._managed_order_rows = next_rows
+        tracked_ids = getattr(self._strategy, "_managed_client_order_ids", None)
+        if isinstance(tracked_ids, set):
+            tracked_ids.clear()
+            tracked_ids.update(next_rows)
+        clear_pending_cancel = getattr(self._strategy, "_clear_pending_cancel", None)
+        if callable(clear_pending_cancel):
+            for client_order_id in list(getattr(self._strategy, "_pending_cancel_client_order_ids", set()) or set()):
+                if str(client_order_id) not in next_rows:
+                    clear_pending_cancel(client_order_id)
+
+    def _apply_lifecycle_event(self, event: Any) -> None:
+        _ = event
+
+
+def _attach_controller_managed_binance_bridge(
+    *,
+    strategy: Any,
+    controller_scope_id: str,
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    bridge = _TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id=controller_scope_id,
+        redis_client=redis_client,
+        namespace=namespace,
+        schema_version=schema_version,
+        transport_root_dir=_repo_root() / ".run",
+    )
+    strategy.submit_order = bridge.publish_place
+    strategy.cancel_order = bridge.publish_cancel
+    strategy._managed_orders = bridge.managed_orders
+    setattr(strategy, "_controller_managed_binance_bridge", bridge)
+
+
+def _strategy_config_kwargs(
+    *,
+    strategy_spec: FluxStrategySpec,
+    strategy_cfg: dict[str, Any],
+    contract: StrategyContractEntry | None,
+    maker_instrument_id: InstrumentId,
+    reference_instrument_id: InstrumentId,
+    external_strategy_id: str,
+    order_qty: Decimal,
+    qty_unit: str,
+    qty: Decimal | None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "strategy_id": str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
+        "maker_instrument_id": maker_instrument_id,
+        "reference_instrument_id": reference_instrument_id,
+        "external_strategy_id": external_strategy_id,
+        "allowed_submit_instrument_ids": [maker_instrument_id],
+        "external_order_claims": [maker_instrument_id],
+        "manage_stop": bool(strategy_cfg.get("manage_stop", False)),
+        "order_qty": order_qty,
+        "qty_unit": qty_unit,
+        "qty": qty,
+        "bot_on": bool(strategy_cfg.get("bot_on", False)),
+        "des_qty_global": float(strategy_cfg.get("des_qty_global", 0.0)),
+        "max_qty_global": float(strategy_cfg.get("max_qty_global", 40_000.0)),
+        "max_skew_bps_global": float(strategy_cfg.get("max_skew_bps_global", 20.0)),
+        "des_qty_local": float(strategy_cfg.get("des_qty_local", 0.0)),
+        "max_qty_local": float(strategy_cfg.get("max_qty_local", 0.0)),
+        "max_skew_bps_local": float(strategy_cfg.get("max_skew_bps_local", 0.0)),
+        "linear_offset_bps": float(strategy_cfg.get("linear_offset_bps", 0.0)),
+        "max_age_ms": int(strategy_cfg.get("max_age_ms", 10_000)),
+        "bid_edge1": float(strategy_cfg.get("bid_edge1", 10.0)),
+        "ask_edge1": float(strategy_cfg.get("ask_edge1", 10.0)),
+        "place_edge1": float(strategy_cfg.get("place_edge1", 2.0)),
+        "distance1": float(strategy_cfg.get("distance1", 2.0)),
+        "n_orders1": int(strategy_cfg.get("n_orders1", 5)),
+        "bid_edge2": float(strategy_cfg.get("bid_edge2", 25.0)),
+        "ask_edge2": float(strategy_cfg.get("ask_edge2", 25.0)),
+        "place_edge2": float(strategy_cfg.get("place_edge2", 2.0)),
+        "distance2": float(strategy_cfg.get("distance2", 5.0)),
+        "n_orders2": int(strategy_cfg.get("n_orders2", 0)),
+        "bid_edge3": float(strategy_cfg.get("bid_edge3", 50.0)),
+        "ask_edge3": float(strategy_cfg.get("ask_edge3", 50.0)),
+        "place_edge3": float(strategy_cfg.get("place_edge3", 2.0)),
+        "distance3": float(strategy_cfg.get("distance3", 5.0)),
+        "n_orders3": int(strategy_cfg.get("n_orders3", 0)),
+        "quote_fail_critical_after_count": int(
+            strategy_cfg.get("quote_fail_critical_after_count", 3),
+        ),
+        "quote_fail_critical_after_s": float(
+            strategy_cfg.get("quote_fail_critical_after_s", 60.0),
+        ),
+        "spot_cash_borrowing_policy": str(
+            strategy_cfg.get("spot_cash_borrowing_policy", "none"),
+        ),
+        "force_bot_off_on_start": bool(
+            strategy_cfg.get("force_bot_off_on_start", False),
+        ),
+        "cancel_all_instrument_orders": bool(
+            strategy_cfg.get("cancel_all_instrument_orders", False),
+        ),
+        **_client_order_id_config(maker_instrument_id),
+    }
+    if contract is not None:
+        kwargs["portfolio_asset_id"] = contract.portfolio_asset_id
+        kwargs["execution_account_scope_id"] = contract.execution_account_scope_id
+    accepted: set[str] = set()
+    for cls in reversed(getattr(strategy_spec.config_cls, "__mro__", ())):
+        accepted.update(getattr(cls, "__annotations__", {}))
+    return {key: value for key, value in kwargs.items() if not accepted or key in accepted}
 
 
 def _build_telemetry_actor_configs(config: dict[str, Any]) -> list[ImportableActorConfig]:
@@ -440,8 +834,14 @@ def build_node(
     trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
+    managed_contract = _controller_managed_contract_for_strategy(
+        config,
+        external_strategy_id=external_strategy_id,
+    )
 
     enable_execution = bool(node_cfg.get("enable_execution", force_enable_execution))
+    if managed_contract is not None:
+        enable_execution = False
     _enforce_live_startup_reconciliation_guardrails(
         mode=mode,
         node_cfg=node_cfg,
@@ -464,6 +864,9 @@ def build_node(
         mode=mode,
         enable_execution=enable_execution,
     )
+    exec_reconciliation_enabled = bool(node_cfg.get("exec_reconciliation", True))
+    if managed_contract is not None:
+        exec_reconciliation_enabled = False
     _register_cash_borrowing_venues(exec_clients=strategy_venues.exec_clients)
     maker_instrument_id = strategy_venues.execution_instrument_id
     reference_instrument_id = strategy_venues.reference_instrument_id
@@ -481,7 +884,7 @@ def build_node(
             graceful_shutdown_on_exception=graceful_shutdown_on_exception,
         ),
         exec_engine=LiveExecEngineConfig(
-            reconciliation=bool(node_cfg.get("exec_reconciliation", True)),
+            reconciliation=exec_reconciliation_enabled,
             generate_missing_orders=bool(node_cfg.get("exec_generate_missing_orders", False)),
             reconciliation_lookback_mins=reconciliation_lookback_mins,
             reconciliation_instrument_ids=[maker_instrument_id],
@@ -549,59 +952,24 @@ def build_node(
         logger=LOGGER,
     )
     strategy_spec = _resolve_strategy_spec()
+    strategy_contract = _strategy_contract_for_strategy(
+        config,
+        external_strategy_id=external_strategy_id,
+    )
 
     strategy = strategy_spec.strategy_cls(
         config=strategy_spec.config_cls(
-            strategy_id=str(strategy_cfg.get("strategy_id", "MAKERV3-001")),
-            maker_instrument_id=maker_instrument_id,
-            reference_instrument_id=reference_instrument_id,
-            external_strategy_id=external_strategy_id,
-            allowed_submit_instrument_ids=[maker_instrument_id],
-            external_order_claims=[maker_instrument_id],
-            manage_stop=bool(strategy_cfg.get("manage_stop", False)),
-            order_qty=order_qty,
-            qty_unit=qty_unit,
-            qty=qty,
-            bot_on=bool(strategy_cfg.get("bot_on", False)),
-            des_qty_global=float(strategy_cfg.get("des_qty_global", 0.0)),
-            max_qty_global=float(strategy_cfg.get("max_qty_global", 40_000.0)),
-            max_skew_bps_global=float(strategy_cfg.get("max_skew_bps_global", 20.0)),
-            des_qty_local=float(strategy_cfg.get("des_qty_local", 0.0)),
-            max_qty_local=float(strategy_cfg.get("max_qty_local", 0.0)),
-            max_skew_bps_local=float(strategy_cfg.get("max_skew_bps_local", 0.0)),
-            linear_offset_bps=float(strategy_cfg.get("linear_offset_bps", 0.0)),
-            max_age_ms=int(strategy_cfg.get("max_age_ms", 10_000)),
-            bid_edge1=float(strategy_cfg.get("bid_edge1", 10.0)),
-            ask_edge1=float(strategy_cfg.get("ask_edge1", 10.0)),
-            place_edge1=float(strategy_cfg.get("place_edge1", 2.0)),
-            distance1=float(strategy_cfg.get("distance1", 2.0)),
-            n_orders1=int(strategy_cfg.get("n_orders1", 5)),
-            bid_edge2=float(strategy_cfg.get("bid_edge2", 25.0)),
-            ask_edge2=float(strategy_cfg.get("ask_edge2", 25.0)),
-            place_edge2=float(strategy_cfg.get("place_edge2", 2.0)),
-            distance2=float(strategy_cfg.get("distance2", 5.0)),
-            n_orders2=int(strategy_cfg.get("n_orders2", 0)),
-            bid_edge3=float(strategy_cfg.get("bid_edge3", 50.0)),
-            ask_edge3=float(strategy_cfg.get("ask_edge3", 50.0)),
-            place_edge3=float(strategy_cfg.get("place_edge3", 2.0)),
-            distance3=float(strategy_cfg.get("distance3", 5.0)),
-            n_orders3=int(strategy_cfg.get("n_orders3", 0)),
-            quote_fail_critical_after_count=int(
-                strategy_cfg.get("quote_fail_critical_after_count", 3),
+            **_strategy_config_kwargs(
+                strategy_spec=strategy_spec,
+                strategy_cfg=strategy_cfg,
+                contract=strategy_contract,
+                maker_instrument_id=maker_instrument_id,
+                reference_instrument_id=reference_instrument_id,
+                external_strategy_id=external_strategy_id,
+                order_qty=order_qty,
+                qty_unit=qty_unit,
+                qty=qty,
             ),
-            quote_fail_critical_after_s=float(
-                strategy_cfg.get("quote_fail_critical_after_s", 60.0),
-            ),
-            spot_cash_borrowing_policy=str(
-                strategy_cfg.get("spot_cash_borrowing_policy", "none"),
-            ),
-            force_bot_off_on_start=bool(
-                strategy_cfg.get("force_bot_off_on_start", False),
-            ),
-            cancel_all_instrument_orders=bool(
-                strategy_cfg.get("cancel_all_instrument_orders", False),
-            ),
-            **_client_order_id_config(maker_instrument_id),
         ),
     )
     _attach_runtime_params_manager(
@@ -617,6 +985,14 @@ def build_node(
         namespace=namespace,
         schema_version=schema_version,
     )
+    if managed_contract is not None and managed_contract.controller_scope_id is not None:
+        _attach_controller_managed_binance_bridge(
+            strategy=strategy,
+            controller_scope_id=managed_contract.controller_scope_id,
+            redis_cfg=redis_cfg,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
 
     node = TradingNode(config=config_node)
     node.trader.add_strategy(strategy)
