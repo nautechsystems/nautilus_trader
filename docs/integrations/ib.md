@@ -291,17 +291,22 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 #### `symbol_to_mic_venue`
 
-For custom venue mapping, use the `symbol_to_mic_venue` dictionary to override default conversions:
+Symbol-prefix to MIC venue overrides. Applied **first** in venue resolution, independent of `convert_exchange_to_mic_venue`. When a contract's symbol matches a configured prefix, that MIC venue is used; otherwise resolution uses exchange (and optionally MIC conversion if `convert_exchange_to_mic_venue` is True). Useful for OPT contracts with exchange SMART (e.g. SPX -> XCBO) and for aligning with databento-style instrument IDs.
 
 ```python
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
-    convert_exchange_to_mic_venue=True,
     symbol_to_mic_venue={
-        "ES": "XCME",  # All ES futures/options use CME MIC
-        "SPY": "ARCX", # SPY specifically uses ARCA
+        "SPX": "XCBO",  # OPT with exchange SMART -> XCBO
+        "ES": "XCME",   # All ES futures/options use CME MIC
+        "SPY": "ARCX",  # SPY specifically uses ARCA
     },
 )
+# convert_exchange_to_mic_venue can be True or False; symbol_to_mic_venue is applied first
 ```
+
+#### Venue resolution and `_process_contract_details`
+
+When loading instruments via `IBContract`, the provider passes `venue=None` into `_process_contract_details`, so each contract detail gets its own venue (via `symbol_to_mic_venue`, validExchanges, and MIC conversion). Callers that pass a single venue string still get one venue for all details. To get per-detail resolution when you have mixed or SMART-routed results, pass `venue=None`.
 
 ### Supported instrument formats
 

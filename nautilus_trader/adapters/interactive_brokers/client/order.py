@@ -374,6 +374,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
                     avg_fill_price=avg_fill_price,
                     filled=filled,
                     remaining=remaining,
+                    why_held=why_held,
                     ts_order_status_recv_ns=ts_order_status_recv_ns,
                 )
             if status in {"ApiCancelled", "Cancelled", "Inactive", "Rejected"}:

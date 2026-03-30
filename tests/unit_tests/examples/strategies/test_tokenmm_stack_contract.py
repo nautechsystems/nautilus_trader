@@ -796,6 +796,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert 'if [ -n "${PORT:-}" ]; then' in service_template
     assert "SyslogIdentifier=flux-%i" in service_template
     assert "RestartPreventExitStatus=78" in service_template
+    assert "LimitNPROC=16384" in service_template
     assert "NoNewPrivileges=true" not in service_template
 
     assert "[Install]" in target_unit

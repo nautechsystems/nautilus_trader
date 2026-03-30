@@ -83,6 +83,8 @@ DEFAULT_PARAMS_ORDER: tuple[str, ...] = MAKERV3_RUNTIME_PARAM_REGISTRY.names
 _LOG = logging.getLogger(__name__)
 TOKENMM_BALANCES_STALE_AFTER_MS = 30_000
 PARAMS_RUNNING_STALE_AFTER_MS = 3_000
+BALANCES_MAX_LIMIT = 200
+STRATEGY_BALANCES_MAX_LIMIT = 5_000
 
 
 def _tokenmm_trade_rows_require_reset_for_strategies(
@@ -3013,8 +3015,13 @@ def create_flux_api_app(  # noqa: C901
     @app.get("/api/v1/balances")
     def api_balances() -> Response:
         contract_version = _requested_contract_version()
-        limit = _clamp_limit(request.args.get("limit"), default=50, minimum=1, maximum=200)
         requested_strategy = decode_text(request.args.get("strategy")).strip()
+        limit = _clamp_limit(
+            request.args.get("limit"),
+            default=50,
+            minimum=1,
+            maximum=STRATEGY_BALANCES_MAX_LIMIT if requested_strategy else BALANCES_MAX_LIMIT,
+        )
         profile_text = decode_text(request.args.get("profile")).strip()
         profile_normalized = normalize_profile(profile_text)
         profile_strategy_ids = _strategy_ids_for_profile(profile_text) if profile_text else []

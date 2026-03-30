@@ -226,26 +226,29 @@ def _row_ts_ms(row: Mapping[str, Any]) -> int:
         return 0
 
 
-def _row_id_order_key(row_id: Any) -> tuple[tuple[int, int | str], ...]:
-    text = _decode_text(row_id)
+def _row_id_sort_key(value: Any) -> tuple[tuple[int, int | str], ...]:
+    text = _decode_text(value)
     if not text:
-        return tuple()
-    parts = re.split(r"(\d+)", text)
+        return ()
     return tuple(
         (0, int(part)) if part.isdigit() else (1, part)
-        for part in parts
+        for part in re.split(r"(\d+)", text)
         if part
     )
 
 
-def _base_asset_row_account_identity(row: Mapping[str, Any]) -> str:
-    explicit_account = _first_text(
+def _explicit_row_account_key(row: Mapping[str, Any]) -> str | None:
+    return _first_text(
         row.get("account_scope_id"),
-        row.get("account"),
         row.get("account_id"),
+        row.get("account"),
         row.get("wallet"),
         row.get("subaccount"),
     )
+
+
+def _row_account_key(row: Mapping[str, Any]) -> str:
+    explicit_account = _explicit_row_account_key(row)
     if explicit_account is not None:
         return explicit_account
     row_id = _decode_text(row.get("row_id"))
@@ -290,32 +293,31 @@ def _latest_base_asset_qty_from_rows(
         return None, "no_base_asset_rows"
 
     latest_rows_by_account: dict[str, Mapping[str, Any]] = {}
+    latest_sort_key_by_account: dict[str, tuple[int, tuple[tuple[int, int | str], ...]]] = {}
+    used_only_explicit_account_keys = True
     for row in base_rows:
-        account_id = _base_asset_row_account_identity(row)
-        previous = latest_rows_by_account.get(account_id)
-        row_key = (_row_ts_ms(row), _row_id_order_key(row.get("row_id")))
-        previous_key = (
-            (_row_ts_ms(previous), _row_id_order_key(previous.get("row_id")))
-            if previous is not None
-            else None
-        )
-        if previous_key is None or row_key > previous_key:
-            latest_rows_by_account[account_id] = row
+        if _explicit_row_account_key(row) is None:
+            used_only_explicit_account_keys = False
+        account_key = _row_account_key(row)
+        sort_key = (_row_ts_ms(row), _row_id_sort_key(row.get("row_id")))
+        previous_sort_key = latest_sort_key_by_account.get(account_key)
+        if previous_sort_key is None or sort_key >= previous_sort_key:
+            latest_rows_by_account[account_key] = row
+            latest_sort_key_by_account[account_key] = sort_key
 
     total = Decimal("0")
-    for row in latest_rows_by_account.values():
+    for latest_row in latest_rows_by_account.values():
         qty = _first_decimal(
-            row.get("total"),
-            row.get("free"),
-            row.get("quantity"),
-            row.get("qty"),
+            latest_row.get("total"),
+            latest_row.get("free"),
+            latest_row.get("quantity"),
+            latest_row.get("qty"),
         )
         if qty is None:
             return None, "base_asset_row_missing_qty"
         total += qty
-
     source = "latest_base_asset_rows_by_account"
-    if len(latest_rows_by_account) == 1:
+    if len(latest_rows_by_account) == 1 and used_only_explicit_account_keys:
         source = "latest_base_asset_row"
     return total, source
 
