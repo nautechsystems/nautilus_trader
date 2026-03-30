@@ -1018,10 +1018,20 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
 
 function resolveInventoryQuantities(row: SignalStrategy): { globalQty: number | null; localQty: number | null } {
   const adj = findInventorySkewAdjustment(row.pricing_adjustments);
-  const globalQty = adj
-    ? (coerceFiniteNumber(adj.global_qty ?? adj.curr_qty) ?? null)
-    : (coerceFiniteNumber(row.risk_delta) ?? null);
-  const localQty = coerceFiniteNumber(adj?.local_qty) ?? null;
+  const globalQty = coerceFiniteNumber(
+    adj?.global_qty_base
+    ?? adj?.global_qty
+    ?? adj?.curr_qty
+    ?? row.global_qty_base
+    ?? row.global_qty
+    ?? row.risk_delta,
+  ) ?? null;
+  const localQty = coerceFiniteNumber(
+    adj?.local_qty_base
+    ?? adj?.local_qty
+    ?? row.local_qty_base
+    ?? row.local_qty,
+  ) ?? null;
   return { globalQty, localQty };
 }
 

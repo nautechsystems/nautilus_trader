@@ -929,6 +929,27 @@ def test_publish_json_emits_canonical_topic() -> None:
     assert published_topics == [TOPIC_EVENT]
 
 
+def test_publish_json_swallows_transient_msgbus_backpressure() -> None:
+    warnings: list[str] = []
+    strategy = SimpleNamespace(
+        msgbus=SimpleNamespace(
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                BlockingIOError(11, "Resource temporarily unavailable"),
+            ),
+        ),
+        log=SimpleNamespace(
+            warning=lambda message: warnings.append(message),
+        ),
+    )
+    publish_json = MakerV3Strategy._publish_json.__get__(strategy, MakerV3Strategy)
+
+    publish_json(TOPIC_EVENT, {"event": "compat"})
+
+    assert warnings == [
+        "Flux msgbus publish backpressure topic=flux.makerv3.event err=[Errno 11] Resource temporarily unavailable",
+    ]
+
+
 def test_publish_balances_filters_fallback_positions_to_maker_base_asset(
     clocked_strategy_factory,
 ) -> None:

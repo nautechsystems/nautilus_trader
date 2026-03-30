@@ -479,6 +479,27 @@ describe('SignalTable Behavioral Tests', () => {
     });
   });
 
+  describe('Global Qty Column', () => {
+    it('falls back to canonical top-level inventory when pricing adjustments are absent', async () => {
+      const strategy = createMockStrategy('global_qty_strategy', {
+        pricing_adjustments: undefined,
+        risk_delta: undefined,
+        global_qty_base: 12345.6789,
+        global_qty: 12345.6789,
+      } as Partial<SignalStrategy> & Record<string, unknown>);
+
+      initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      renderSignalTable();
+
+      await waitFor(() => {
+        expect(screen.getByText('global_qty_strategy')).toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('12,345.6789')[0]).toBeInTheDocument();
+    });
+  });
+
   describe('Adj/Skew Column', () => {
     it('renders the canonical signed skew_bps value when provided', async () => {
       const strategy = createMockStrategy('skew_strategy', {
