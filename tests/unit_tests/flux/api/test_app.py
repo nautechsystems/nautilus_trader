@@ -5897,6 +5897,10 @@ def test_alerts_profile_tokenmm_can_serve_resolved_rows_without_stream_history(
     assert response.status_code == 200
     assert body["data"]["total"] == 1
     assert [row["row_id"] for row in body["data"]["rows"]] == ["active-block"]
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
+    }
 
 
 def test_alerts_profile_tokenmm_falls_back_to_stream_history_when_active_resolver_fails(
@@ -5989,6 +5993,10 @@ def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
         flux_config.identity.strategy_id: 0,
         "strategy_02": 0,
     }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "history",
+        "clear_mode": "all",
+    }
 
 
 def test_alerts_delete_profile_tokenmm_preserves_remaining_active_rows_when_history_is_disabled(
@@ -6046,6 +6054,10 @@ def test_alerts_delete_profile_tokenmm_preserves_remaining_active_rows_when_hist
     assert body["data"]["remaining"] == 1
     assert body["data"]["remaining_by_strategy"] == {
         flux_config.identity.strategy_id: 1,
+    }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
     }
 
 

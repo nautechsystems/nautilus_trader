@@ -117,6 +117,13 @@ function createStandardAlertsSnapshot(
   });
 }
 
+function attachAlertsCapabilities(
+  rows: Alert[],
+  capabilities: Record<string, unknown>,
+): Alert[] & { capabilities: Record<string, unknown> } {
+  return Object.assign(rows, { capabilities });
+}
+
 describe('Alerts', () => {
   let marketUpdateHandler: ((payload: unknown) => void) | null;
   let standardSubscriptionOptions: Record<string, any> | null;
@@ -798,27 +805,67 @@ describe('Alerts', () => {
 
   it('clears all alerts after confirmation', async () => {
     mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(
+        attachAlertsCapabilities(
+          [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })],
+          { feed_mode: 'history', clear_mode: 'all' },
+        ),
+      )
+      .mockResolvedValueOnce(attachAlertsCapabilities([], { feed_mode: 'history', clear_mode: 'all' }));
+    (apiModule.api.clearAlerts as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      deleted: 1,
+      remaining: 0,
+      capabilities: { feed_mode: 'history', clear_mode: 'all' },
+    });
 
     render(<Alerts />);
+
+    await waitFor(() => {
+      expect(apiModule.api.getAlerts).toHaveBeenCalledTimes(1);
+    });
 
     fireEvent.click(screen.getByText('Clear All'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
 
     await waitFor(() => {
       expect(apiModule.api.clearAlerts).toHaveBeenCalledTimes(1);
-      expect(mockStoreState.clearAlerts).toHaveBeenCalledTimes(1);
+      expect(apiModule.api.getAlerts).toHaveBeenCalledTimes(2);
+      const lastRows = mockStoreState.setRows.mock.calls.at(-1)?.[0] as Alert[] | undefined;
+      expect(Array.isArray(lastRows)).toBe(true);
+      expect(lastRows).toHaveLength(0);
     });
   });
 
-  it('hides Clear All on the tokenmm alerts surface', () => {
-    window.history.replaceState({}, '', '/tokenmm/alerts');
+  it('hides Clear All when the alerts feed only supports history clearing', async () => {
+    window.history.replaceState({}, '', '/alerts');
     mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
-
-    expect(document.location.pathname).toBe('/tokenmm/alerts');
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      attachAlertsCapabilities(
+        [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })],
+        { feed_mode: 'active', clear_mode: 'history_only' },
+      ),
+    );
 
     render(<Alerts />);
 
-    expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps Clear All hidden until the API explicitly advertises full clear support', async () => {
+    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' }),
+    ]);
+
+    render(<Alerts />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
+    });
   });
 
   it('renders summary text for contextual alerts', () => {

@@ -1330,6 +1330,12 @@ export type AlertsResponse = {
   alerts: Alert[];
 };
 
+export type AlertsSurfaceCapabilities = {
+  feed_mode?: string;
+  clear_mode?: string;
+  [key: string]: unknown;
+};
+
 // Raw API response types (before transformation)
 export type RawMarketSnapshot = {
   coin: string;

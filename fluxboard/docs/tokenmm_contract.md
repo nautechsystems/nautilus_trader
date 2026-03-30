@@ -595,7 +595,11 @@ Response `data`:
   "total": 1,
   "limit": 50,
   "offset": 0,
-  "has_more": false
+  "has_more": false,
+  "capabilities": {
+    "feed_mode": "active",
+    "clear_mode": "history_only"
+  }
 }
 ```
 
@@ -604,7 +608,7 @@ Response `data`:
 Semantics:
 
 1. Clears stream-backed alert history for the resolved strategy/profile.
-2. Current active alerts synthesized from live signal state are not dismissed by this route and may remain in `remaining`.
+2. Shared alerts clients must read `capabilities.clear_mode`; when it is `history_only`, currently active resolver-backed rows are not dismissed by this route.
 3. Request body is empty.
 
 Request:
@@ -621,6 +625,10 @@ Response `data`:
   "strategy_id": "maker_v3_01",
   "deleted": 3,
   "remaining": 1,
+  "capabilities": {
+    "feed_mode": "active",
+    "clear_mode": "history_only"
+  },
   "server_ts_ms": 1772607924122
 }
 ```

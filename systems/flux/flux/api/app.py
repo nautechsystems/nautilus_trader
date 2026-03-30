@@ -347,6 +347,22 @@ def _component_inventory_is_fresh(component_payload: Mapping[str, Any] | None) -
     return not bool(component_payload.get("stale"))
 
 
+def _alerts_capabilities(
+    *,
+    has_resolver: bool,
+    include_history: bool,
+) -> dict[str, str]:
+    if has_resolver:
+        return {
+            "feed_mode": "mixed" if include_history else "active",
+            "clear_mode": "history_only",
+        }
+    return {
+        "feed_mode": "history",
+        "clear_mode": "all",
+    }
+
+
 @dataclass(frozen=True)
 class ReadinessSnapshot:
     schema_prefix: str
@@ -1566,6 +1582,12 @@ class FluxApiStore:
             return 1 if removed_rows else 0
 
         return 0
+
+    def alerts_capabilities(self) -> dict[str, str]:
+        return _alerts_capabilities(
+            has_resolver=self._strategy_alerts_resolver is not None,
+            include_history=self._alerts_include_history,
+        )
 
 
 def _request_id() -> str:
@@ -3815,6 +3837,7 @@ def create_flux_api_app(  # noqa: C901
             "limit": limit,
             "offset": offset,
             "has_more": has_more,
+            "capabilities": store.alerts_capabilities(),
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
@@ -3846,6 +3869,7 @@ def create_flux_api_app(  # noqa: C901
                 "strategy_id": strategy_id,
                 "deleted": deleted,
                 "remaining": remaining,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             }
             return _ok(data=payload)
@@ -3865,6 +3889,7 @@ def create_flux_api_app(  # noqa: C901
                 "deleted": deleted_total,
                 "remaining": sum(remaining_by_strategy.values()),
                 "remaining_by_strategy": remaining_by_strategy,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             }
             return _ok(data=payload)
@@ -3878,6 +3903,7 @@ def create_flux_api_app(  # noqa: C901
                 "strategy_id": strategy_id,
                 "deleted": deleted,
                 "remaining": remaining,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             },
         )
