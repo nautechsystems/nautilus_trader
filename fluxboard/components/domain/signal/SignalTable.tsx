@@ -394,6 +394,9 @@ function resolveSignalTransportState(
   if (ageMs > STALE_THRESHOLDS.NORMAL) {
     return recoveryPending ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.STALE;
   }
+  if (ageMs > STALE_THRESHOLDS.FAST) {
+    return RealtimeSurfaceState.LAGGING;
+  }
   return RealtimeSurfaceState.LIVE;
 }
 
@@ -2238,10 +2241,13 @@ export default function SignalTable({
       lastNonEmptyAtMs: lastNonEmptyRef.current,
     });
     const refreshedAtMs = requestStartedAtMs ?? Date.now();
+    const willExposeEmptyView = policy.clearRows || currentRows.length === 0;
     emptySinceRef.current = policy.nextEmptySinceMs;
-    emptyViewAcknowledgedRef.current = policy.clearRows;
-    setLastUpdate(refreshedAtMs);
-    lastUpdateRef.current = refreshedAtMs;
+    emptyViewAcknowledgedRef.current = willExposeEmptyView;
+    if (willExposeEmptyView) {
+      setLastUpdate(refreshedAtMs);
+      lastUpdateRef.current = refreshedAtMs;
+    }
     if (policy.clearRows && currentRows.length > 0) {
       setRows([]);
     }

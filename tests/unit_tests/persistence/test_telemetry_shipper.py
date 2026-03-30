@@ -794,6 +794,55 @@ def test_shipper_ships_sharded_balance_snapshot_tables_from_strategy_dbs(tmp_pat
     ]
 
 
+def test_shipper_ships_legacy_balance_snapshot_db_alongside_shards_during_cutover(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(balance_root)
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["flux_balance_snapshot"].shipped == 3
+    assert result["flux_balance_snapshot_row"].shipped == 3
+    assert [name for name, _rows in sink.insert_calls] == [
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+    ]
+
+
 def test_shipper_resets_sharded_balance_snapshot_cursor_without_legacy_cursor_rows(tmp_path: Path) -> None:
     balance_root = tmp_path / "balance_snapshots.sqlite"
     balance_dir = tmp_path / "balance_snapshots"
@@ -916,6 +965,62 @@ def test_shipper_resets_sharded_balance_snapshot_cursor_without_legacy_cursor_ro
 
     cursor_names = [str(row[0]) for row in cursor_rows]
     assert all("@" in name for name in cursor_names)
+
+
+def test_shipper_migrates_legacy_quote_cycle_cursor_to_path_scoped_key(tmp_path: Path) -> None:
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_db),
+        state_db_path=str(state_db),
+        poll_interval_ms=1_000,
+        max_batch_size=100,
+        prune_retention_hours=24,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    state_conn = sqlite3.connect(state_db)
+    try:
+        state_conn.execute(
+            """
+            INSERT INTO shipper_cursor (table_name, last_rowid, last_identity, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("quote_cycle", 1, "TRADER-001|run-1:1", "2025-01-01T00:00:00.000Z"),
+        )
+        state_conn.commit()
+    finally:
+        state_conn.close()
+
+    result = shipper.ship_once()
+
+    assert result["quote_cycle"].shipped == 1
+    shipped_row = next(rows[0] for name, rows in sink.insert_calls if name == "quote_cycle")
+    assert shipped_row["quote_cycle_id"] == "run-1:2"
+
+    cursor_key = f"quote_cycle@{quote_cycles_db.expanduser()}"
+    migrated_cursor = shipper._state_conn.execute(
+        "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
+        (cursor_key,),
+    ).fetchone()
+    assert migrated_cursor == (2, "TRADER-001|run-1:2")
 
 
 def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_path: Path) -> None:

@@ -102,7 +102,7 @@ class SQLiteToPostgresTelemetryShipper:
     def ship_once(self) -> dict[str, TableShipResult]:
         results: dict[str, TableShipResult] = {}
         for spec in self._table_specs():
-            cursor, last_identity = self._load_cursor(spec.cursor_key)
+            cursor, last_identity = self._load_cursor(spec=spec)
             rows, cursor = self._load_rows_with_cursor_reset(
                 spec=spec,
                 after_rowid=cursor,
@@ -214,17 +214,30 @@ class SQLiteToPostgresTelemetryShipper:
         root = Path(configured_path).expanduser()
         if root.is_dir():
             return tuple(str(path) for path in sorted(root.glob("*.sqlite")))
+
+        paths: list[str] = []
         if root.exists():
-            return (str(root),)
+            paths.append(str(root))
         if root.suffix == ".sqlite":
             shard_root = root.with_suffix("")
             if shard_root.is_dir():
-                return tuple(str(path) for path in sorted(shard_root.glob("*.sqlite")))
+                paths.extend(str(path) for path in sorted(shard_root.glob("*.sqlite")))
+        if paths:
+            return tuple(paths)
         return (str(root),)
 
     @staticmethod
     def _cursor_key(table_name: str, db_path: str) -> str:
         return f"{table_name}@{Path(db_path).expanduser()}"
+
+    def _legacy_cursor_name(self, *, spec: _TelemetryTableSpec) -> str | None:
+        if spec.name in {"flux_balance_snapshot", "flux_balance_snapshot_row"}:
+            configured_path = self._config.balance_snapshots_db_path
+            if configured_path is None:
+                return None
+            if Path(spec.db_path).expanduser() != Path(configured_path).expanduser():
+                return None
+        return spec.name
 
     def _load_rows_with_cursor_reset(
         self,
@@ -368,14 +381,29 @@ class SQLiteToPostgresTelemetryShipper:
         conn.execute("PRAGMA busy_timeout=30000;")
         return conn
 
-    def _load_cursor(self, table_name: str) -> tuple[int, str]:
+    def _load_cursor(self, *, spec: _TelemetryTableSpec) -> tuple[int, str]:
         row = self._state_conn.execute(
             "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
-            (table_name,),
+            (spec.cursor_key,),
         ).fetchone()
-        if row is None:
+        if row is not None:
+            return (int(row[0]), str(row[1] or ""))
+
+        legacy_cursor_name = self._legacy_cursor_name(spec=spec)
+        if legacy_cursor_name is None or legacy_cursor_name == spec.cursor_key:
             return (0, "")
-        return (int(row[0]), str(row[1] or ""))
+
+        legacy_row = self._state_conn.execute(
+            "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
+            (legacy_cursor_name,),
+        ).fetchone()
+        if legacy_row is None:
+            return (0, "")
+
+        last_rowid = int(legacy_row[0])
+        last_identity = str(legacy_row[1] or "")
+        self._store_cursor(spec.cursor_key, last_rowid, last_identity)
+        return (last_rowid, last_identity)
 
     def _store_cursor(self, table_name: str, last_rowid: int, last_identity: str) -> None:
         with self._state_conn:

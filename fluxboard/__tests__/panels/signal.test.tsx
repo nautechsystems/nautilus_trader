@@ -855,6 +855,56 @@ describe('SignalTable Behavioral Tests', () => {
       vi.useRealTimers();
     });
 
+    it('does not refresh held stale rows on an empty market_update during the hold window', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      const staleStrategy = createMockStrategy('lagging_strategy');
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [staleStrategy],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      act(() => {
+        vi.advanceTimersByTime(8_001);
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+
+      act(() => {
+        emitSocketEvent('market_update', {
+          strategies: [],
+          server_ts_ms: Date.parse('2024-01-01T12:00:08.000Z'),
+        });
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+      expect(screen.queryByText('Live (WS)')).not.toBeInTheDocument();
+      vi.useRealTimers();
+    });
+
     it('does not churn recovery snapshots for a legitimately empty realtime view while heartbeats continue', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
@@ -904,6 +954,45 @@ describe('SignalTable Behavioral Tests', () => {
       await flushAsyncRender();
 
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('marks an acknowledged empty realtime view as lagging before it becomes stale', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 0,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      act(() => {
+        vi.advanceTimersByTime(8_001);
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+      expect(screen.queryByText('Live (WS)')).not.toBeInTheDocument();
       vi.useRealTimers();
     });
 
