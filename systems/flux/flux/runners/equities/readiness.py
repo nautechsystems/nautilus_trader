@@ -153,6 +153,32 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _decode_json_mapping(raw: Any) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8")
+    elif isinstance(raw, str):
+        text = raw
+    else:
+        return None
+    payload = json.loads(text)
+    return dict(payload) if isinstance(payload, Mapping) else None
+
+
+def _expected_reference_account_scope_id(
+    strategy_contracts: tuple[StrategyContractEntry, ...],
+) -> str | None:
+    scope_ids = sorted(
+        {
+            scope_id
+            for contract in strategy_contracts
+            if (scope_id := _optional_text(contract.reference_account_scope_id)) is not None
+        },
+    )
+    return scope_ids[0] if len(scope_ids) == 1 else None
+
+
 def _signal_state_name(payload: Mapping[str, Any]) -> str:
     state = _mapping(payload.get("state"))
     return (_optional_text(state.get("state")) or "").lower()
@@ -696,7 +722,11 @@ def evaluate_equities_readiness(
     signals_payload: Mapping[str, Any] | None,
     projection_payloads_by_scope_id: Mapping[str, Mapping[str, Any] | None],
     component_payloads_by_strategy_id: Mapping[str, Any],
+    publisher_status_payload: Mapping[str, Any] | None = None,
     now_ms_value: int,
+    require_ibkr_reference_publisher: bool = False,
+    ibkr_reference_publisher_service_id: str = "ibkr_reference_publisher",
+    ibkr_reference_publisher_account_scope_id: str | None = None,
     thresholds: EquitiesReadinessThresholds | None = None,
 ) -> EquitiesReadinessResult:
     active_thresholds = thresholds or EquitiesReadinessThresholds()
@@ -798,6 +828,76 @@ def evaluate_equities_readiness(
     )
     signals_check = signal_snapshot.check
 
+    publisher_checks: dict[str, ReadinessCheck] = {}
+    if require_ibkr_reference_publisher:
+        expected_publisher_scope_id = (
+            _optional_text(ibkr_reference_publisher_account_scope_id)
+            or _expected_reference_account_scope_id(strategy_contracts)
+        )
+        publisher_data = _mapping(publisher_status_payload)
+        observed_service_id = _optional_text(publisher_data.get("service_id"))
+        observed_account_scope_id = _optional_text(publisher_data.get("account_scope_id"))
+        state = (_optional_text(publisher_data.get("state")) or "").lower()
+        connected = bool(publisher_data.get("connected"))
+        instrument_status = _mapping(publisher_data.get("instrument_status"))
+        unhealthy_instrument_ids = sorted(
+            instrument_id
+            for instrument_id, status_payload in instrument_status.items()
+            if (_optional_text(_mapping(status_payload).get("state")) or "unknown").lower()
+            != "healthy"
+        )
+        stale_after_ms = _safe_int(publisher_data.get("stale_after_ms"))
+        status_ts_ms = _safe_int(publisher_data.get("ts_ms")) or _safe_int(
+            publisher_data.get("last_success_ts_ms"),
+        )
+        stale = (
+            status_ts_ms is None
+            or stale_after_ms is None
+            or stale_after_ms <= 0
+            or (now_ms_value - status_ts_ms) > stale_after_ms
+        )
+        scope_matches = (
+            expected_publisher_scope_id is None
+            or observed_account_scope_id == expected_publisher_scope_id
+        )
+        service_matches = (
+            observed_service_id == ibkr_reference_publisher_service_id
+            if observed_service_id is not None
+            else False
+        )
+        state_ok = state == "publishing"
+        publisher_check = ReadinessCheck(
+            name="ibkr_reference_publisher",
+            ok=(
+                bool(publisher_data)
+                and connected
+                and state_ok
+                and service_matches
+                and scope_matches
+                and not stale
+                and not unhealthy_instrument_ids
+            ),
+            summary=(
+                f"service={ibkr_reference_publisher_service_id} "
+                f"state={state or 'missing'} connected={connected} "
+                f"stale={stale} unhealthy={len(unhealthy_instrument_ids)}"
+            ),
+            details={
+                "missing": not bool(publisher_data),
+                "service_id": ibkr_reference_publisher_service_id,
+                "account_scope_id": expected_publisher_scope_id,
+                "observed_service_id": observed_service_id,
+                "observed_account_scope_id": observed_account_scope_id,
+                "state": state or None,
+                "connected": connected,
+                "stale": stale,
+                "stale_after_ms": stale_after_ms,
+                "status_ts_ms": status_ts_ms,
+                "unhealthy_instrument_ids": unhealthy_instrument_ids,
+            },
+        )
+        publisher_checks[publisher_check.name] = publisher_check
+
     ibkr_auth_check = ReadinessCheck(
         name="ibkr_auth",
         ok=(
@@ -825,6 +925,7 @@ def evaluate_equities_readiness(
         projection_check.name: projection_check,
         component_check.name: component_check,
         signals_check.name: signals_check,
+        **publisher_checks,
         ibkr_auth_check.name: ibkr_auth_check,
     }
     overall_ok = all(check.ok for check in checks.values())
@@ -919,6 +1020,29 @@ def _collect_component_payloads(
     }
 
 
+def _collect_publisher_status_payload(
+    *,
+    redis_client: Any,
+    profile_id: str,
+    account_scope_id: str | None,
+    service_id: str,
+    namespace: str,
+    schema_version: str,
+) -> dict[str, Any] | None:
+    if account_scope_id is None:
+        return None
+    raw_payload = redis_client.get(
+        FluxRedisKeys.profile_market_data_status(
+            profile_id=profile_id,
+            account_scope_id=account_scope_id,
+            service_id=service_id,
+            namespace=namespace,
+            schema_version=schema_version,
+        ),
+    )
+    return _decode_json_mapping(raw_payload)
+
+
 def resolve_api_base_url(config: Mapping[str, Any], *, explicit_base_url: str | None = None) -> str:
     explicit = _optional_text(explicit_base_url)
     if explicit is not None:
@@ -981,6 +1105,7 @@ def main(argv: list[str] | None = None) -> int:
         api_cfg = shared_table(config, "api")
         portfolio_cfg = shared_table(config, "portfolio")
         redis_cfg = shared_table(config, "redis")
+        publisher_cfg = shared_table(config, "ibkr_reference_publisher")
 
         strategy_ids = parse_strategy_ids(api_cfg, descriptor=EQUITIES_DESCRIPTOR)
         required_strategy_ids = tuple(
@@ -1019,6 +1144,14 @@ def main(argv: list[str] | None = None) -> int:
             _optional_text(portfolio_cfg.get("portfolio_id"))
             or EQUITIES_DESCRIPTOR.default_portfolio_id
         )
+        publisher_service_id = (
+            _optional_text(publisher_cfg.get("service_id"))
+            or "ibkr_reference_publisher"
+        )
+        publisher_account_scope_id = (
+            _optional_text(publisher_cfg.get("account_scope_id"))
+            or _expected_reference_account_scope_id(strategy_contracts)
+        )
 
         redis_client = build_redis_client(redis_cfg)
         expected_scope_ids = _expected_projection_scope_ids(
@@ -1037,6 +1170,14 @@ def main(argv: list[str] | None = None) -> int:
             redis_client=redis_client,
             strategy_contracts=strategy_contracts,
             portfolio_id=portfolio_id,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        publisher_status_payload = _collect_publisher_status_payload(
+            redis_client=redis_client,
+            profile_id=EQUITIES_DESCRIPTOR.profile,
+            account_scope_id=publisher_account_scope_id,
+            service_id=publisher_service_id,
             namespace=namespace,
             schema_version=schema_version,
         )
@@ -1060,7 +1201,11 @@ def main(argv: list[str] | None = None) -> int:
             signals_payload=signals_payload,
             projection_payloads_by_scope_id=projection_payloads,
             component_payloads_by_strategy_id=component_payloads,
+            publisher_status_payload=publisher_status_payload,
             now_ms_value=int(time.time() * 1000),
+            require_ibkr_reference_publisher=True,
+            ibkr_reference_publisher_service_id=publisher_service_id,
+            ibkr_reference_publisher_account_scope_id=publisher_account_scope_id,
             thresholds=thresholds,
         )
     except Exception as exc:

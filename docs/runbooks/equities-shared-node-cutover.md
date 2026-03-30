@@ -10,9 +10,9 @@ Use this runbook to cut prod equities from one node per strategy to one node per
 - Treat this market-data recovery V1 as an intra-node hardening wave on top of the grouped-node rollout, not as a fleet-wide market-data redesign.
 - Confirm the shared IBKR reference boundary is healthy before evaluating maker-feed recovery:
   - the live IBKR gateway is authenticated
-  - `chainsaw@md-ibkr-publisher.service` is healthy
+  - `flux@equities-ibkr-reference-publisher.service` is healthy
   - current `/api/v1/readiness?profile=equities` can be captured for comparison
-- Do not restart `chainsaw@md-ibkr-publisher.service` as part of this cutover unless the release explicitly changed publisher config.
+- Do not restart `flux@equities-ibkr-reference-publisher.service` ahead of the coordinated stack restart unless the release explicitly changed publisher config.
 
 ## 1. Capture The Live Baseline
 
@@ -44,7 +44,7 @@ BASELINE="$HOME/archive/equities-shared-node-cutover-${STAMP}.txt"
   bash "$HOME/releases/prod/equities/current/ops/scripts/deploy/check_equities_live_readiness.sh" --json
   echo
   echo "# ibkr / publisher"
-  systemctl is-active chainsaw@md-ibkr-publisher.service || true
+  systemctl is-active flux@equities-ibkr-reference-publisher.service || true
   systemctl is-active nautilus-ib-gateway-live.service || true
 } >"$BASELINE"
 echo "$BASELINE"
@@ -102,9 +102,10 @@ sudo env ROOT_DIR="$PWD" \
 Expected before restart:
 
 - `/etc/flux/equities-node-*.env` count is `19`
+- `/etc/flux/equities-ibkr-reference-publisher.env` exists
 - every grouped node env contains one or two `--config` flags
-- `/etc/systemd/system/flux-equities.target` lists only grouped node services
-- `/etc/sudoers.d/flux-pulse` lists only grouped node services
+- `/etc/systemd/system/flux-equities.target` lists `flux@equities-api.service`, `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-ibkr-reference-publisher.service`, and the grouped node services
+- `/etc/sudoers.d/flux-pulse` lists `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-ibkr-reference-publisher.service`, and the grouped node services
 
 ## 5. Verify The Rendered Operator Surface
 
@@ -114,13 +115,14 @@ sed -n '1,200p' /etc/systemd/system/flux-equities.target
 sed -n '1,200p' /etc/sudoers.d/flux-pulse
 ```
 
-Do not restart anything until the rendered surfaces show exactly `19` grouped node services and no `equities-node-<strategy_id>` leftovers.
+Do not restart anything until the rendered surfaces show exactly `19` grouped node services, one Flux-owned publisher service, and no `equities-node-<strategy_id>` leftovers.
 
 ## 6. Restart The Stack Atomically
 
 ```bash
 sudo systemctl stop 'flux@equities-node-*.service'
 sudo systemctl reset-failed 'flux@equities-node-*.service'
+sudo systemctl restart flux@equities-ibkr-reference-publisher.service
 sudo systemctl restart flux@equities-portfolio.service
 sudo systemctl restart flux@equities-bridge.service
 sudo systemctl start flux-equities.target
@@ -170,7 +172,7 @@ The readiness gate and the human rollout log should prove all of the following:
 
 - `healthy_strategy_count = 38`
 - no maker leg remains in a persistent non-tradeable recovery state: public `feed_state` is never `degraded`, `down`, or `unknown`, public `quote_state` is never `old` or `missing`, and structured recovery logs do not show repeated `bootstrapping`, `blocked`, or `recovering` loops after restart
-- the shared IBKR gateway and `chainsaw@md-ibkr-publisher.service` are healthy and were treated as preconditions, not local maker-feed results
+- the shared IBKR gateway and `flux@equities-ibkr-reference-publisher.service` are healthy and were treated as preconditions, not local maker-feed results
 - historically stale rows now advance quote timestamps after restart
 - balances / projections are no worse than the captured baseline
 
@@ -213,6 +215,7 @@ sudo systemctl reset-failed 'flux@equities-node-*.service'
 4. Restart the previous per-strategy registry:
 
 ```bash
+sudo systemctl restart flux@equities-ibkr-reference-publisher.service
 sudo systemctl restart flux@equities-portfolio.service
 sudo systemctl restart flux@equities-bridge.service
 sudo systemctl start flux-equities.target

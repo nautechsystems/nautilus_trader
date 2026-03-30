@@ -235,7 +235,7 @@ Shared-host recovery order after a repoint:
 1. Run `uv sync --all-groups --all-extras` in the selected immutable release root.
 2. Run `sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" EQUITIES_DEPLOY_LANE=prod ops/scripts/deploy/install_equities_systemd.sh`.
 3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
-4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
+4. Restart `flux@equities-ibkr-reference-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
 5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
 
 For the full grouped-node prod migration procedure, use [`docs/runbooks/equities-shared-node-cutover.md`](../../docs/runbooks/equities-shared-node-cutover.md). That runbook captures the mandatory live baseline, restart order, readiness gate, and rollback steps.
@@ -253,7 +253,7 @@ Primary operator surfaces:
 Read-only live readiness gate:
 
 - Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected immutable release root before any live canary enablement.
-- The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
+- The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical `profile_market_data_status` key for `flux@equities-ibkr-reference-publisher.service`, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
 - Safe defaults are fail-closed: `missing_required` must stay empty, balances must not be degraded, every configured strategy contract must have its canonical component key, the required IBKR shared projections must be present and fresh, and stale/unhealthy signal counts must stay at zero.
 - The host wrapper is session-aware by default for IBKR reference freshness: outside the regular US session (`09:30-16:00 America/New_York`), `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION=1` suppresses off-session reference-age failures while keeping balances, component keys, shared-account projections, and maker-leg freshness fail-closed.
 - Override knobs are env-first for host use: `EQUITIES_READINESS_API_BASE_URL`, `EQUITIES_READY_MAX_STALE_SIGNAL_LEGS`, `EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES`, `EQUITIES_READY_PROJECTION_MAX_AGE_MS`, `EQUITIES_READY_REQUIRED_BALANCE_SOURCE`, and `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION`.

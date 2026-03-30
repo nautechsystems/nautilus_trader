@@ -252,6 +252,82 @@ def test_attach_equities_readiness_route_returns_enveloped_readiness_payload() -
     assert captured["called"] is True
 
 
+def test_load_equities_readiness_uses_flux_owned_publisher_contract(monkeypatch) -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    app = Flask(__name__)
+    captured: dict[str, object] = {}
+    publisher_status_payload = {
+        "profile_id": "equities",
+        "account_scope_id": "ibkr.reference.main",
+        "service_id": "ibkr_reference_publisher",
+        "state": "publishing",
+        "connected": True,
+        "instrument_status": {"AAPL.NASDAQ": {"state": "healthy"}},
+        "last_success_ts_ms": 1_700_000_000_400,
+        "stale_after_ms": 1_500,
+        "ts_ms": 1_700_000_000_500,
+    }
+
+    @app.get("/api/v1/balances")
+    def _balances() -> dict[str, object]:
+        return {
+            "data": {
+                "source": "portfolio_snapshot_v2",
+                "degraded": False,
+                "missing_required": [],
+            },
+        }
+
+    @app.get("/api/v1/signals")
+    def _signals() -> dict[str, object]:
+        return {
+            "data": {
+                "server_ts_ms": 1_700_000_000_500,
+                "strategies": [],
+            },
+        }
+
+    class _FakeResult:
+        def as_dict(self) -> dict[str, object]:
+            return {"ok": True, "summary": {"profile_id": "equities"}, "checks": {}}
+
+    monkeypatch.setattr(run_api, "_equities_profile_name_for_request", lambda: "equities")
+    monkeypatch.setattr(
+        run_api,
+        "_collect_projection_payloads",
+        lambda **kwargs: {"ibkr.reference.main": {"server_ts_ms": 1_700_000_000_500}},
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_collect_component_payloads",
+        lambda **kwargs: {"aapl_tradexyz_maker": object()},
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_collect_publisher_status_payload",
+        lambda **kwargs: publisher_status_payload,
+    )
+
+    def _fake_evaluate_equities_readiness(**kwargs):
+        captured.update(kwargs)
+        return _FakeResult()
+
+    monkeypatch.setattr(run_api, "evaluate_equities_readiness", _fake_evaluate_equities_readiness)
+
+    with app.test_request_context("/api/v1/readiness?profile=equities"):
+        payload = run_api._load_equities_readiness(
+            app=app,
+            config=config,
+            redis_client=object(),
+        )
+
+    assert payload["ok"] is True
+    assert captured["publisher_status_payload"] == publisher_status_payload
+    assert captured["require_ibkr_reference_publisher"] is True
+    assert captured["ibkr_reference_publisher_service_id"] == "ibkr_reference_publisher"
+    assert captured["ibkr_reference_publisher_account_scope_id"] == "ibkr.reference.main"
+
+
 def test_equities_run_api_main_registers_readiness_route(monkeypatch) -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
     args = Namespace(

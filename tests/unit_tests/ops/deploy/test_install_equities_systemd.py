@@ -311,6 +311,49 @@ def test_render_pilot_envs_use_lane_aware_grouped_node_service_ids(tmp_path: Pat
     assert not (env_dir / "equities-pilot-node-aapl_tradexyz_taker.env").exists()
 
 
+def test_render_envs_include_flux_owned_ibkr_reference_publisher_service(tmp_path: Path) -> None:
+    repo_root = _repo_root()
+    env_dir = tmp_path / "etc" / "flux"
+    systemd_dir = tmp_path / "etc" / "systemd" / "system"
+    common_env_path = env_dir / "common.env"
+    deploy_root = tmp_path / "releases/prod/equities/current"
+    env_dir.mkdir(parents=True)
+    systemd_dir.mkdir(parents=True)
+    _make_release_root(deploy_root)
+
+    result = _run_installer_snippet(
+        "\n".join(
+            [
+                "initialize_stack_context",
+                "discover_node_groups",
+                "render_target",
+                "render_publisher_env",
+            ],
+        ),
+        env={
+            **os.environ,
+            "ROOT_DIR": str(repo_root),
+            "SYSTEMD_DIR": str(systemd_dir),
+            "ENV_DIR": str(env_dir),
+            "COMMON_ENV_PATH": str(common_env_path),
+            "EQUITIES_DEPLOY_ROOT": str(deploy_root),
+        },
+    )
+
+    assert result.returncode == 0
+
+    publisher_env = (env_dir / "equities-ibkr-reference-publisher.env").read_text(
+        encoding="utf-8",
+    )
+    target_text = (systemd_dir / "flux-equities.target").read_text(encoding="utf-8")
+
+    assert "PULSE_SELF_SERVICE_ID=equities-ibkr-reference-publisher" in publisher_env
+    assert "run_ibkr_reference_publisher" in publisher_env
+    assert f"--config {deploy_root}/deploy/equities/equities.live.toml" in publisher_env
+    assert f"WORKDIR={deploy_root}" in publisher_env
+    assert "Wants=flux@equities-ibkr-reference-publisher.service" in target_text
+
+
 def test_render_grouped_node_envs_use_node_group_ids_and_multiple_configs(tmp_path: Path) -> None:
     repo_root = _repo_root()
     env_dir = tmp_path / "etc" / "flux"

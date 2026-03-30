@@ -42,7 +42,9 @@ from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.pulse import PulseControlPlane
 from flux.runners.equities.readiness import EquitiesReadinessThresholds
 from flux.runners.equities.readiness import _collect_component_payloads
+from flux.runners.equities.readiness import _collect_publisher_status_payload
 from flux.runners.equities.readiness import _collect_projection_payloads
+from flux.runners.equities.readiness import _expected_reference_account_scope_id
 from flux.runners.equities.readiness import _expected_projection_scope_ids
 from flux.runners.equities.readiness import evaluate_equities_readiness
 from flux.runners.shared.logging import configure_python_logging
@@ -829,6 +831,7 @@ def _load_equities_readiness(
     api_cfg = _table(config, "api")
     portfolio_cfg = _table(config, "portfolio")
     flux_cfg = _table(config, "flux")
+    publisher_cfg = _table(config, "ibkr_reference_publisher")
     strategy_ids = parse_strategy_ids(api_cfg, descriptor=EQUITIES_DESCRIPTOR)
     required_strategy_ids = tuple(
         parse_required_strategy_ids(
@@ -851,6 +854,16 @@ def _load_equities_readiness(
     thresholds = EquitiesReadinessThresholds(
         ignore_reference_freshness_outside_regular_session=True,
     )
+    namespace = _optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE
+    schema_version = _optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION
+    publisher_service_id = (
+        _optional_text(publisher_cfg.get("service_id"))
+        or "ibkr_reference_publisher"
+    )
+    publisher_account_scope_id = (
+        _optional_text(publisher_cfg.get("account_scope_id"))
+        or _expected_reference_account_scope_id(strategy_contracts)
+    )
     expected_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
@@ -860,15 +873,23 @@ def _load_equities_readiness(
         redis_client=redis_client,
         profile_id=profile_id,
         scope_ids=expected_scope_ids,
-        namespace=_optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
-        schema_version=_optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION,
+        namespace=namespace,
+        schema_version=schema_version,
     )
     component_payloads = _collect_component_payloads(
         redis_client=redis_client,
         strategy_contracts=strategy_contracts,
         portfolio_id=portfolio_id,
-        namespace=_optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE,
-        schema_version=_optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    publisher_status_payload = _collect_publisher_status_payload(
+        redis_client=redis_client,
+        profile_id=profile_id,
+        account_scope_id=publisher_account_scope_id,
+        service_id=publisher_service_id,
+        namespace=namespace,
+        schema_version=schema_version,
     )
     with app.test_client() as client:
         balances_response = client.get("/api/v1/balances", query_string={"profile": profile_id})
@@ -892,7 +913,11 @@ def _load_equities_readiness(
         signals_payload=signals_payload if isinstance(signals_payload, dict) else None,
         projection_payloads_by_scope_id=projection_payloads,
         component_payloads_by_strategy_id=component_payloads,
+        publisher_status_payload=publisher_status_payload,
         now_ms_value=now_ms(),
+        require_ibkr_reference_publisher=True,
+        ibkr_reference_publisher_service_id=publisher_service_id,
+        ibkr_reference_publisher_account_scope_id=publisher_account_scope_id,
         thresholds=thresholds,
     )
     return result.as_dict()

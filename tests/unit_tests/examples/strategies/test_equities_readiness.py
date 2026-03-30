@@ -184,6 +184,36 @@ def _healthy_component_payloads() -> dict[str, dict[str, object]]:
     }
 
 
+def _healthy_ibkr_reference_publisher_status_payload() -> dict[str, object]:
+    return {
+        "profile_id": "equities",
+        "account_scope_id": "ibkr.reference.main",
+        "service_id": "ibkr_reference_publisher",
+        "state": "publishing",
+        "connected": True,
+        "instrument_count": 2,
+        "instrument_status": {
+            "AAPL.NASDAQ": {
+                "state": "healthy",
+                "route": "SMART",
+                "age_ms": 50,
+                "ts_event_ms": 1_700_000_000_450,
+            },
+            "MSFT.NASDAQ": {
+                "state": "healthy",
+                "route": "SMART",
+                "age_ms": 60,
+                "ts_event_ms": 1_700_000_000_440,
+            },
+        },
+        "last_success_ts_ms": 1_700_000_000_450,
+        "last_error_type": None,
+        "last_error_message": None,
+        "stale_after_ms": 1_500,
+        "ts_ms": 1_700_000_000_500,
+    }
+
+
 def _split_healthy_signal_payload() -> dict[str, object]:
     return {
         "server_ts_ms": 1_700_000_000_500,
@@ -1696,10 +1726,101 @@ def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
+def test_evaluate_equities_readiness_requires_flux_owned_ibkr_reference_publisher_status() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=None,
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is False
+    assert result.checks["ibkr_reference_publisher"].ok is False
+    assert result.checks["ibkr_reference_publisher"].details["service_id"] == (
+        "ibkr_reference_publisher"
+    )
+    assert result.checks["ibkr_reference_publisher"].details["missing"] is True
+
+
+def test_evaluate_equities_readiness_accepts_healthy_flux_owned_ibkr_reference_publisher_status() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=_healthy_ibkr_reference_publisher_status_payload(),
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is True
+    assert result.checks["ibkr_reference_publisher"].ok is True
+    assert result.checks["ibkr_reference_publisher"].details["missing"] is False
+
+
+def test_evaluate_equities_readiness_requires_publisher_to_be_actively_publishing() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    publisher_status_payload = _healthy_ibkr_reference_publisher_status_payload()
+    publisher_status_payload["state"] = "connected"
+    publisher_status_payload["instrument_status"] = {}
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=publisher_status_payload,
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is False
+    assert result.checks["ibkr_reference_publisher"].ok is False
+    assert result.checks["ibkr_reference_publisher"].details["state"] == "connected"
+
+
 def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -> None:
     repo_root = _repo_root()
     script = _read(repo_root / "ops/scripts/deploy/check_equities_live_readiness.sh")
     readme = _read(repo_root / "deploy/equities/README.md")
+    runbook = _read(repo_root / "docs/runbooks/equities-shared-node-cutover.md")
 
     assert "nautilus_trader.flux.runners.equities.readiness" in script
     assert 'EQUITIES_READINESS_CONFIG_PATH="${EQUITIES_READINESS_CONFIG_PATH:-' in script
@@ -1716,6 +1837,10 @@ def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -
     assert "/api/v1/signals?profile=equities" in readme
     assert "/api/v1/balances?profile=equities" in readme
     assert "regular US session" in readme
+    assert "flux@equities-ibkr-reference-publisher.service" in readme
+    assert "flux@equities-ibkr-reference-publisher.service" in runbook
+    assert "chainsaw@md-ibkr-publisher.service" not in readme
+    assert "chainsaw@md-ibkr-publisher.service" not in runbook
 
 
 def test_equities_binance_perp_runbook_documents_multivenue_canary_sequence() -> None:
