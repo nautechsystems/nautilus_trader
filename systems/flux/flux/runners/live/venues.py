@@ -525,6 +525,37 @@ def _build_client_config(
     return config_cls(**kwargs)
 
 
+def _merge_shared_reference_redis_config(
+    *,
+    config: dict[str, Any],
+    spec: VenueAdapterSpec,
+    venue_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    if spec.adapter_id != "interactive_brokers_shared_reference":
+        return venue_cfg
+
+    redis_cfg = config.get("redis")
+    if not isinstance(redis_cfg, dict):
+        return venue_cfg
+
+    merged = dict(venue_cfg)
+    redis_field_aliases = {
+        "redis_host": "host",
+        "redis_port": "port",
+        "redis_db": "db",
+        "redis_username": "username",
+        "redis_password": "password",
+        "redis_ssl": "ssl",
+        "redis_connect_timeout_secs": "connect_timeout_secs",
+        "redis_read_timeout_secs": "read_timeout_secs",
+    }
+    for field_name, redis_key in redis_field_aliases.items():
+        if merged.get(field_name) is None and redis_cfg.get(redis_key) is not None:
+            merged[field_name] = redis_cfg[redis_key]
+
+    return merged
+
+
 def _ibkr_exec_venue_cfg(
     *,
     venue_name: str,
@@ -695,11 +726,16 @@ def resolve_strategy_venues(
     for venue_name, venue_cfg, data_spec, exec_spec, instrument_id, venue_execution_enabled in venue_records:
         data_enabled = _bool_value(venue_cfg.get("data"), default=True)
         if data_enabled:
+            data_venue_cfg = _merge_shared_reference_redis_config(
+                config=config,
+                spec=data_spec,
+                venue_cfg=venue_cfg,
+            )
             data_clients[venue_name] = _build_client_config(
                 spec=data_spec,
                 config_cls=data_spec.data_config_cls,
                 venue_name=venue_name,
-                venue_cfg=venue_cfg,
+                venue_cfg=data_venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
                 default_routing=venue_name == execution_venue_name,
