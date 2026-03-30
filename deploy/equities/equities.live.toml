@@ -38,6 +38,7 @@ enabled = true
 profile_id = "equities"
 account_scope_id = "ibkr.reference.main"
 service_id = "ibkr_reference_publisher"
+ibg_client_id = 109
 snapshot_interval_ms = 200
 stale_after_ms = 1500
 reconnect_backoff_initial_ms = 1000

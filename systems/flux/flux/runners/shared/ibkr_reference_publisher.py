@@ -192,7 +192,11 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
         ibg_host=scope.ibg_host or "127.0.0.1",
         ibg_port=scope.ibg_port,
         ibg_fallback_ports=scope.ibg_fallback_ports,
-        ibg_client_id=1 if scope.ibg_client_id is None else scope.ibg_client_id,
+        ibg_client_id=_positive_int(
+            publisher_cfg.get("ibg_client_id"),
+            field_name="ibkr_reference_publisher.ibg_client_id",
+            default=1 if scope.ibg_client_id is None else scope.ibg_client_id,
+        ),
         connection_timeout_secs=max(1, scope.ibg_connection_timeout_secs or 5),
         request_timeout_secs=max(1, scope.ibg_request_timeout_secs or 10),
         snapshot_interval_ms=_positive_int(

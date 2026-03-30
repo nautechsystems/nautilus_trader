@@ -119,6 +119,16 @@ def test_build_ibkr_reference_publisher_config_dedupes_universe_and_resolves_sco
     ]
 
 
+def test_build_ibkr_reference_publisher_config_allows_publisher_client_id_override() -> None:
+    raw = _config()
+    raw["ibkr_reference_publisher"]["ibg_client_id"] = 109
+
+    config = build_ibkr_reference_publisher_config(raw)
+
+    assert config.account_scope_id == "ibkr.reference.main"
+    assert config.ibg_client_id == 109
+
+
 def test_classify_ibkr_session_preserves_regular_and_overnight_windows() -> None:
     assert classify_ibkr_session(
         datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc),
