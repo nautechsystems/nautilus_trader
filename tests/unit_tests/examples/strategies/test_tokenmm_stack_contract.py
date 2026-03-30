@@ -159,8 +159,8 @@ def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_binance_perp_strategy_uses_portfolio_margin_private_api_family() -> None:
@@ -193,8 +193,8 @@ def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "sell_only"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
@@ -207,8 +207,15 @@ def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
+
+
+def test_tokenmm_all_live_strategy_configs_resume_quoting_after_clean_restart() -> None:
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        strategy_config = tomllib.load(_strategy_config_path(strategy_id).open("rb"))
+        assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+        assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
@@ -1097,9 +1104,11 @@ def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     assert "allowlist" in readme
     assert "`params` returns the 7 allowlisted strategy IDs" in readme
     assert "`signal` returns seven per-strategy rows." in readme
-    assert "Supported live core for this pass" in readme
-    assert "Binance perp and Binance spot stay allowlisted but parked" in readme
-    assert "Shared portfolio completeness requires only the supported live core" in readme
+    assert "Supported live production set" in readme
+    assert "plumeusdt_binance_perp_makerv3" in readme
+    assert "plumeusdt_binance_spot_makerv3" in readme
+    assert "restart-resilient with `force_bot_off_on_start = false`" in readme
+    assert "Shared portfolio completeness requires all seven allowlisted strategies" in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:

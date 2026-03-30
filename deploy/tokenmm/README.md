@@ -33,14 +33,15 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
 - All seven allowlisted strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
-- Supported live core for this pass:
+- Supported live production set:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
   - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_binance_perp_makerv3`
+  - `plumeusdt_binance_spot_makerv3`
   - `plumeusdt_bitget_perp_makerv3`
   - `plumeusdt_bitget_spot_makerv3`
-- Binance perp and Binance spot stay allowlisted but parked.
-- Shared portfolio completeness requires only the supported live core.
+- Shared portfolio completeness requires all seven allowlisted strategies.
 
 Deploy-root resolution for `install_tokenmm_systemd.sh`:
 
@@ -55,22 +56,18 @@ If the resolved root is a worktree, the installer exits with an error instead of
 Dedicated runbook:
 `docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-`plumeusdt_binance_spot_makerv3` is parked for this pass. Binance spot and
-Binance perp are not part of the supported live core or required completeness
-set. They remain allowlisted in the standard 7-node target and must stay
-`bot_on = false` on this pass. The dedicated Binance runbook is for future
-reintroduction work, not the current supported live core.
+`plumeusdt_binance_spot_makerv3` and `plumeusdt_binance_perp_makerv3` are part
+of the active production TokenMM set. They are required contributors to shared
+portfolio completeness and must restart back into the live quoting posture.
 
 Operating contract:
 
-- keep Binance strategies parked with `force_bot_off_on_start = true` and
-  `bot_on = false`
-- keep Binance nodes enrolled in the standard 7-node target only as parked
-  services; do not use them as the rollout/canary surface for this pass
-- do not treat parked Binance nodes as required contributors to shared tokenmm
-  portfolio completeness
-- if Binance is reintroduced later, do it through a separate rollout branch and
-  dedicated operator review
+- keep Binance strategies restart-resilient with `force_bot_off_on_start = false`
+  and `bot_on = true`
+- keep Binance nodes enrolled in the standard 7-node target as active services
+- treat Binance as a required contributor to shared TokenMM portfolio completeness
+- if quoting must be held, do it explicitly through the params control surface
+  rather than by baking bot-off restart defaults into the production config
 
 ## Bitget Spot + Perp Market-Making Contract
 
@@ -87,8 +84,8 @@ Operating contract:
 - preferred spot behavior: shared-collateral quoting with borrowing only where
   needed, constrained to sell-side borrowing on the first rollout
 - preferred perp behavior: USDT-margined perp in one-way/netting mode
-- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
-  restart and canary
+- keep `force_bot_off_on_start = false` and `bot_on = true` for the production
+  restart-resume contract
 - verify balances through `GET /api/v1/balances?profile=tokenmm` before enabling
   quoting; do not treat invisible Bitget collateral or inventory as production
   ready

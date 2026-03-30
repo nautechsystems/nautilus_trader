@@ -41,17 +41,18 @@ def test_tokenmm_risk_validation_runbook_documents_authoritative_checks_and_roll
     assert "docs/runbooks/tokenmm-risk-validation.md" in contract_doc
 
 
-def test_tokenmm_binance_spot_docs_keep_the_strategy_parked_on_this_pass() -> None:
+def test_tokenmm_binance_spot_docs_define_active_restart_resilient_production_contract() -> None:
     runbook = _read(_repo_root() / "docs/runbooks/tokenmm-binance-spot-market-making.md")
     deploy_readme = _read(_repo_root() / "deploy/tokenmm/README.md")
 
     assert "docs/runbooks/tokenmm-binance-spot-market-making.md" in deploy_readme
-    assert "Binance perp and Binance spot stay allowlisted but parked" in deploy_readme
-    assert "supported live core or required completeness" in deploy_readme
-    assert "`bot_on = false`" in deploy_readme
-    assert "reintroduction work" in deploy_readme
+    assert "restart-resilient with `force_bot_off_on_start = false`" in deploy_readme
+    assert "required contributor to shared TokenMM portfolio completeness" in deploy_readme
+    assert "`bot_on = true`" in deploy_readme
 
-    assert "bot-off restart and canary" in runbook
+    assert "restart continuity" in runbook
+    assert "force_bot_off_on_start = false" in runbook
+    assert "bot_on = true" in runbook
     assert "terminal_order_denied" in runbook
     assert "USDT +1285.28070703" not in runbook
     assert "PLUME -30314.96734613" not in runbook

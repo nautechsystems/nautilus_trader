@@ -82,10 +82,11 @@ Clear these in the Bitget UI or account API before changing `bot_on`:
 Clear these from the local stack before any live enablement:
 
 1. Confirm the deployed config still matches the intended production contract:
-   - `plumeusdt_bitget_spot_makerv3` stays `bot_on = false` with
-     `spot_cash_borrowing_policy = "sell_only"` for the first preferred-path
-     rollout
-   - `plumeusdt_bitget_perp_makerv3` stays `bot_on = false`
+   - `plumeusdt_bitget_spot_makerv3` keeps `bot_on = true` with
+     `spot_cash_borrowing_policy = "sell_only"` for the preferred-path rollout
+   - `plumeusdt_bitget_perp_makerv3` keeps `bot_on = true`
+   - both Bitget strategies keep `force_bot_off_on_start = false` so clean
+     restarts resume the live quoting posture
    - both Bitget strategy TOMLs still target `account_mode = "UTA"` and
      one-way/cross-margin settings
 2. Confirm `/etc/flux/common.env` is populated with the intended live Bitget

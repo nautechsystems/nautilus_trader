@@ -113,12 +113,12 @@ strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
 base_asset = "PLUME"
 quote_asset = "USDT"
-# Phase 1 TokenMM registry contract:
+# Production TokenMM registry contract:
 # - `tokenmm_strategy_ids` values are Flux strategy IDs (`[identity].strategy_id` in per-node configs).
 # - `tokenmm_required_strategy_ids` are the contributors currently required for
 #   shared TokenMM portfolio completeness.
-# - Keep `tokenmm_strategy_ids` as the 7-node allowlist; parked venues can stay
-#   allowlisted without degrading the shared portfolio snapshot.
+# - Keep `tokenmm_strategy_ids` and `tokenmm_required_strategy_ids` aligned to
+#   the full 7-node live production set.
 tokenmm_strategy_ids = [
   "plumeusdt_bybit_perp_makerv3",
   "plumeusdt_bybit_spot_makerv3",
