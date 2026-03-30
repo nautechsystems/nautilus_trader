@@ -26,9 +26,7 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 
-/// Dust threshold: fill qty gaps below this from submitted qty are
-/// closed with a synthetic fill. Equals 10^(-LOT_SIZE_SCALE) = 0.01.
-const DUST_SNAP_THRESHOLD: f64 = 0.01;
+use crate::common::consts::DUST_SNAP_THRESHOLD;
 
 /// Cumulative fill state for a single order.
 #[derive(Debug, Clone, Copy)]

@@ -75,7 +75,7 @@ use self::{
 };
 use crate::{
     common::{
-        consts::{LOT_SIZE_SCALE, POLYMARKET_VENUE, USDC},
+        consts::{DUST_SNAP_THRESHOLD, LOT_SIZE_SCALE, POLYMARKET_VENUE, USDC},
         credential::Secrets,
         enums::SignatureType,
     },
@@ -1251,7 +1251,16 @@ impl ExecutionClient for PolymarketExecutionClient {
         let mut reports = Vec::new();
 
         for pos in &positions {
-            if pos.size <= 0.0 {
+            if pos.size > 0.0 && pos.size < DUST_SNAP_THRESHOLD {
+                log::debug!(
+                    "Filtering dust position: {}-{}, size={}",
+                    pos.condition_id,
+                    pos.asset,
+                    pos.size
+                );
+            }
+
+            if pos.size < DUST_SNAP_THRESHOLD {
                 continue;
             }
 
@@ -1260,10 +1269,10 @@ impl ExecutionClient for PolymarketExecutionClient {
             );
 
             // Filter by requested instrument IDs
-            if let Some(ref filter_id) = cmd.instrument_id {
-                if &instrument_id != filter_id {
-                    continue;
-                }
+            if let Some(ref filter_id) = cmd.instrument_id
+                && &instrument_id != filter_id
+            {
+                continue;
             }
 
             let quantity = Quantity::new(pos.size, LOT_SIZE_SCALE as u8);

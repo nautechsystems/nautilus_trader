@@ -30,7 +30,10 @@ use super::parse::{
     build_maker_fill_report, parse_fill_report, parse_order_status_report, parse_timestamp,
 };
 use crate::{
-    common::{consts::LOT_SIZE_SCALE, enums::PolymarketLiquiditySide},
+    common::{
+        consts::{DUST_SNAP_THRESHOLD, LOT_SIZE_SCALE},
+        enums::PolymarketLiquiditySide,
+    },
     http::{
         clob::PolymarketClobHttpClient,
         data_api::PolymarketDataApiHttpClient,
@@ -239,7 +242,17 @@ pub(crate) async fn generate_mass_status(
 
     let position_reports: Vec<PositionStatusReport> = positions
         .iter()
-        .filter(|p| p.size > 0.0)
+        .filter(|p| {
+            if p.size > 0.0 && p.size < DUST_SNAP_THRESHOLD {
+                log::debug!(
+                    "Filtering dust position: {}-{}, size={}",
+                    p.condition_id,
+                    p.asset,
+                    p.size
+                );
+            }
+            p.size >= DUST_SNAP_THRESHOLD
+        })
         .map(|p| {
             let instrument_id =
                 InstrumentId::from(format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str());
