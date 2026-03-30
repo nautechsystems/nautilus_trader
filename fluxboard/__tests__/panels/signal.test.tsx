@@ -719,9 +719,52 @@ describe('SignalTable Behavioral Tests', () => {
       expect(socket.off).toHaveBeenCalledWith('market_update', expect.any(Function));
     });
 
-    it('does not fall back to watchdog polling while the websocket stays connected and idle', async () => {
+    it('recovers with a snapshot when signal data stays stale even if websocket heartbeats continue', async () => {
       vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
       (socket as any).connected = true;
+
+      const staleStrategy = createMockStrategy('stale_strategy');
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [staleStrategy],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 3,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          strategies: [staleStrategy],
+          server_time: '2024-01-01 12:00:11',
+          server_ts_ms: Date.parse('2024-01-01T12:00:11.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 4,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        });
 
       renderSignalTable();
       await flushAsyncRender();
@@ -729,11 +772,29 @@ describe('SignalTable Behavioral Tests', () => {
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
 
       act(() => {
-        vi.advanceTimersByTime(5_000);
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'heartbeat',
+          seq: 4,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: Date.parse('2024-01-01T12:00:05.000Z'),
+          payload: {},
+        });
+        vi.advanceTimersByTime(9_999);
       });
       await flushAsyncRender();
 
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(2_001);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
 

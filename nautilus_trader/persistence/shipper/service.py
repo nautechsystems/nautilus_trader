@@ -73,6 +73,8 @@ class SQLiteToPostgresTelemetryShipper:
         self._logger = logger or logging.getLogger("nautilus.telemetry.shipper")
         self._state_path = Path(config.state_db_path)
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._prune_interval_seconds = max(60.0, self._config.poll_interval_ms / 1000.0 * 60.0)
+        self._last_prune_at_by_table: dict[str, float] = {}
         self._state_conn = sqlite3.connect(self._state_path)
         self._state_conn.execute(
             """
@@ -110,7 +112,7 @@ class SQLiteToPostgresTelemetryShipper:
                 inserted = self._sink.insert_rows(spec.name, payloads)
                 last_rowid = int(rows[-1]["rowid"])
                 self._store_cursor(spec.name, last_rowid, _row_identity(spec.name, rows[-1]))
-                pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=last_rowid)
+                pruned = self._maybe_prune_old_rows(spec=spec, shipped_through_rowid=last_rowid)
                 results[spec.name] = TableShipResult(
                     shipped=inserted,
                     deduped=len(rows) - inserted,
@@ -119,7 +121,7 @@ class SQLiteToPostgresTelemetryShipper:
                 )
                 continue
 
-            pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=cursor)
+            pruned = self._maybe_prune_old_rows(spec=spec, shipped_through_rowid=cursor)
             results[spec.name] = TableShipResult(pruned=pruned, last_rowid=cursor)
         return results
 
@@ -224,7 +226,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return []
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         conn.row_factory = sqlite3.Row
         try:
             query = f"SELECT rowid, {', '.join(spec.columns)} FROM {spec.source_table_name} WHERE rowid > ? ORDER BY rowid ASC LIMIT ?"  # noqa: S608
@@ -244,7 +246,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return None
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         try:
             query = f"SELECT MAX(rowid) FROM {spec.source_table_name}"  # noqa: S608
             row = conn.execute(query).fetchone()
@@ -264,7 +266,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return ""
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         conn.row_factory = sqlite3.Row
         try:
             query = f"SELECT rowid, {', '.join(spec.columns)} FROM {spec.source_table_name} WHERE rowid = ?"  # noqa: S608
@@ -298,7 +300,7 @@ class SQLiteToPostgresTelemetryShipper:
             return 0
 
         cutoff = _utc_now_minus(hours=self._config.prune_retention_hours)
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         try:
             with conn:
                 delete_sql = f"DELETE FROM {spec.source_table_name} WHERE rowid <= ? AND created_at < ?"  # noqa: S608
@@ -313,6 +315,24 @@ class SQLiteToPostgresTelemetryShipper:
             ) from exc
         finally:
             conn.close()
+
+    def _maybe_prune_old_rows(self, *, spec: _TelemetryTableSpec, shipped_through_rowid: int) -> int:
+        if shipped_through_rowid <= 0:
+            return 0
+
+        now_monotonic = time.monotonic()
+        last_prune_at = self._last_prune_at_by_table.get(spec.name)
+        if last_prune_at is not None and (now_monotonic - last_prune_at) < self._prune_interval_seconds:
+            return 0
+
+        pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=shipped_through_rowid)
+        self._last_prune_at_by_table[spec.name] = now_monotonic
+        return pruned
+
+    def _connect_source_db(self, db_path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000;")
+        return conn
 
     def _load_cursor(self, table_name: str) -> tuple[int, str]:
         row = self._state_conn.execute(

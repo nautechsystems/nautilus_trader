@@ -229,6 +229,23 @@ function buildEnrichedSignalRow(row: SignalStrategy, serverNowMs: number): Enric
   };
 }
 
+function resolveSignalDataFreshnessTsMs(
+  rows: readonly SignalStrategy[],
+  fallbackTsMs: number,
+): number {
+  let freshestTsMs: number | null = null;
+
+  for (const row of rows) {
+    const candidate = computeStrategyAge(row, fallbackTsMs).mostRecentTsMs;
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
+      continue;
+    }
+    freshestTsMs = freshestTsMs == null ? candidate : Math.max(freshestTsMs, candidate);
+  }
+
+  return freshestTsMs ?? fallbackTsMs;
+}
+
 const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
   const a = TRADING_SORT_ORDER[rowA.getValue(columnId) as TradingFilterValue] ?? -1;
   const b = TRADING_SORT_ORDER[rowB.getValue(columnId) as TradingFilterValue] ?? -1;
@@ -311,6 +328,18 @@ function resolveSignalSurfaceStatus(
         label: wsConnected ? 'Recovering' : 'Recovering',
         dotClass: 'bg-warning-light',
         tooltip: 'Signal recovery uses one-shot invalidate snapshots instead of steady-state polling.',
+      };
+    case RealtimeSurfaceState.STALE:
+      return {
+        label: 'Stale',
+        dotClass: 'bg-danger-light',
+        tooltip: 'Signal data stopped advancing. Fluxboard is waiting for a fresh recovery snapshot.',
+      };
+    case RealtimeSurfaceState.LAGGING:
+      return {
+        label: 'Lagging',
+        dotClass: 'bg-warning-light',
+        tooltip: 'Signal data is aging beyond the expected live-update budget.',
       };
     case RealtimeSurfaceState.SYNCING:
       return {
@@ -2199,18 +2228,18 @@ export default function SignalTable({
       const filtered = all.filter(isStrategyVisible);
       applyVisibleSnapshotRows(filtered, requestStartedAtMs);
 
+      const fetchedServerTsMs = typeof (data as any).server_ts_ms === 'number'
+        ? (data as any).server_ts_ms as number
+        : requestStartedAtMs;
+      const nextLastDataTsMs = resolveSignalDataFreshnessTsMs(filtered, fetchedServerTsMs);
+      setLastUpdate(nextLastDataTsMs);
+      lastUpdateRef.current = nextLastDataTsMs;
+
       const fetchedServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
       setServerTime(fetchedServerTime);
       serverTimeRef.current = fetchedServerTime;
 
-      const fetchedServerTsMs = typeof (data as any).server_ts_ms === 'number'
-        ? (data as any).server_ts_ms as number
-        : null;
       setServerClock(fetchedServerTsMs);
-
-      const now = Date.now();
-      setLastUpdate(now);
-      lastUpdateRef.current = now;
       setBalanceSummary(data.balance_summary ?? null);
       if (signalStandardEnabled) {
         if (data.realtime) {
@@ -2291,9 +2320,6 @@ export default function SignalTable({
     if (data?.balance_summary) {
       setBalanceSummary(data.balance_summary);
     }
-    const now = Date.now();
-    setLastUpdate(now);
-    lastUpdateRef.current = now;
   }, [setServerClock]);
 
   const scheduleInvalidation = useCallback((reason: string) => {
@@ -2390,12 +2416,14 @@ export default function SignalTable({
       if (typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)) {
         setServerClock(payload.ts_ms as number);
       }
-      const now = Date.now();
+      const nextLastDataTsMs = typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)
+        ? payload.ts_ms as number
+        : (typeof fallbackTsMs === 'number' && Number.isFinite(fallbackTsMs) ? fallbackTsMs : Date.now());
       if ((useSignalStore.getState().rows || []).length > 0) {
-        markRowsNonEmpty(now);
+        markRowsNonEmpty(nextLastDataTsMs);
       }
-      setLastUpdate(now);
-      lastUpdateRef.current = now;
+      setLastUpdate(nextLastDataTsMs);
+      lastUpdateRef.current = nextLastDataTsMs;
     } catch (error) {
       if (import.meta.env?.DEV) {
         console.error('[signal] Delta handler failed:', error);
@@ -2475,6 +2503,50 @@ export default function SignalTable({
   });
 
   useEffect(() => {
+    if (!signalStandardEnabled) {
+      return undefined;
+    }
+    if (surfaceState === RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (manualRefreshRequiredRef.current) {
+        return;
+      }
+      if (surfaceState === RealtimeSurfaceState.RECOVERING) {
+        return;
+      }
+
+      const lastDataTsMs = lastUpdateRef.current;
+      if (!lastDataTsMs || !Number.isFinite(lastDataTsMs)) {
+        return;
+      }
+
+      const ageMs = Math.max(0, Date.now() - lastDataTsMs);
+      if (ageMs > STALE_THRESHOLDS.NORMAL) {
+        if (!recoveryPending) {
+          scheduleInvalidation('signal.watchdog.stale');
+        } else {
+          setSurfaceState(RealtimeSurfaceState.RECOVERING);
+        }
+        return;
+      }
+
+      if (ageMs > STALE_THRESHOLDS.FAST) {
+        setSurfaceState(RealtimeSurfaceState.LAGGING);
+        return;
+      }
+
+      setSurfaceState(RealtimeSurfaceState.LIVE);
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [recoveryPending, scheduleInvalidation, signalStandardEnabled, surfaceState]);
+
+  useEffect(() => {
     void fetchSnapshot();
 
     const handleMarketUpdate = (data: any) => {
@@ -2498,7 +2570,13 @@ export default function SignalTable({
               if (latestRows.some((row) => !incomingIds.has(row.id))) {
                 setRows(latestRows.filter((row) => incomingIds.has(row.id)));
               }
-              markRowsNonEmpty();
+              const nextLastDataTsMs = resolveSignalDataFreshnessTsMs(
+                filtered,
+                typeof data?.server_ts_ms === 'number' ? data.server_ts_ms as number : Date.now(),
+              );
+              markRowsNonEmpty(nextLastDataTsMs);
+              setLastUpdate(nextLastDataTsMs);
+              lastUpdateRef.current = nextLastDataTsMs;
             } else {
               handleEmptyVisibleSnapshot();
             }

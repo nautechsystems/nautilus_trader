@@ -641,6 +641,63 @@ def test_shipper_prunes_only_old_rows_after_success(tmp_path: Path) -> None:
     assert rows == [("run-1:2",)]
 
 
+def test_shipper_throttles_source_prune_writes_between_close_cycles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_db),
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=24,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    shipper = SQLiteToPostgresTelemetryShipper(
+        config=config,
+        sink=_RecordingSink(),
+        source_host="host-a",
+    )
+
+    monotonic_now = 1000.0
+    monkeypatch.setattr(
+        "nautilus_trader.persistence.shipper.service.time.monotonic",
+        lambda: monotonic_now,
+    )
+
+    prune_calls: list[tuple[str, int]] = []
+    original_prune = shipper._prune_old_rows
+
+    def _recording_prune(*, spec, shipped_through_rowid: int) -> int:
+        prune_calls.append((spec.name, shipped_through_rowid))
+        return original_prune(spec=spec, shipped_through_rowid=shipped_through_rowid)
+
+    monkeypatch.setattr(shipper, "_prune_old_rows", _recording_prune)
+
+    shipper.ship_once()
+    monotonic_now += 1.0
+    shipper.ship_once()
+
+    assert [name for name, _rowid in prune_calls] == ["quote_cycle"]
+
+
 def test_shipper_ships_balance_snapshot_and_portfolio_inventory_tables(tmp_path: Path) -> None:
     balance_db = tmp_path / "balance_snapshots.sqlite"
     portfolio_db = tmp_path / "portfolio_inventory.sqlite"
