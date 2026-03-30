@@ -75,7 +75,7 @@ use self::{
 };
 use crate::{
     common::{
-        consts::{POLYMARKET_VENUE, USDC},
+        consts::{LOT_SIZE_SCALE, POLYMARKET_VENUE, USDC},
         credential::Secrets,
         enums::SignatureType,
     },
@@ -1266,7 +1266,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                 }
             }
 
-            let quantity = Quantity::new(pos.size, 2);
+            let quantity = Quantity::new(pos.size, LOT_SIZE_SCALE as u8);
             let position_side = PositionSideSpecified::Long;
 
             reports.push(PositionStatusReport::new(

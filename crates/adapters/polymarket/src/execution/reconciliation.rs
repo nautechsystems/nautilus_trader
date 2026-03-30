@@ -30,7 +30,7 @@ use super::parse::{
     build_maker_fill_report, parse_fill_report, parse_order_status_report, parse_timestamp,
 };
 use crate::{
-    common::enums::PolymarketLiquiditySide,
+    common::{consts::LOT_SIZE_SCALE, enums::PolymarketLiquiditySide},
     http::{
         clob::PolymarketClobHttpClient,
         data_api::PolymarketDataApiHttpClient,
@@ -247,7 +247,7 @@ pub(crate) async fn generate_mass_status(
                 ctx.account_id,
                 instrument_id,
                 PositionSideSpecified::Long,
-                Quantity::new(p.size, 2),
+                Quantity::new(p.size, LOT_SIZE_SCALE as u8),
                 ts_init,
                 ts_init,
                 None,
