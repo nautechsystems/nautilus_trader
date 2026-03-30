@@ -20,6 +20,7 @@ from flux.runners.equities.run_portfolio import _equities_strategy_ids
 from flux.runners.equities.run_portfolio import _portfolio_base_assets
 from flux.runners.equities.run_portfolio import _required_strategy_ids
 from flux.runners.equities.run_portfolio import _strategy_ids_by_asset
+from flux.runners.shared.ibkr_reference_publisher import build_ibkr_reference_publisher_config
 from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
@@ -319,6 +320,31 @@ def test_strategy_ids_by_asset_groups_distinct_same_asset_variants() -> None:
     ) == {
         "AAPL": ("aapl_tradexyz_maker", "aapl_tradexyz_taker"),
     }
+
+
+def test_equities_live_config_builds_shared_ibkr_reference_publisher_from_shared_tables() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+
+    publisher_config = build_ibkr_reference_publisher_config(config)
+
+    assert publisher_config.profile_id == "equities"
+    assert publisher_config.account_scope_id == "ibkr.reference.main"
+    assert publisher_config.service_id == "ibkr_reference_publisher"
+    assert publisher_config.enabled is True
+    assert publisher_config.snapshot_interval_ms == 200
+    assert publisher_config.stale_after_ms == 1_500
+
+
+def test_equities_live_config_dedupes_shared_reference_instrument_universe() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+
+    publisher_config = build_ibkr_reference_publisher_config(config)
+    instrument_ids = [instrument.instrument_id for instrument in publisher_config.instruments]
+
+    assert instrument_ids == sorted(set(instrument_ids))
+    assert "AAPL.NASDAQ" in instrument_ids
+    assert "PLTR.NASDAQ" in instrument_ids
+    assert len(instrument_ids) < len(config["strategy_contracts"])
 
 
 def test_portfolio_aggregator_sums_allowlisted_component_keys() -> None:
