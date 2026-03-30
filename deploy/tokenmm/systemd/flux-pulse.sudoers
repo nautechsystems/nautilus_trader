@@ -4,6 +4,10 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@tokenmm-api.service, \
   /usr/bin/systemctl restart flux@tokenmm-api.service, \
   /usr/bin/journalctl -u flux@tokenmm-api.service, \
+  /usr/bin/systemctl start flux@tokenmm-controller.service, \
+  /usr/bin/systemctl stop flux@tokenmm-controller.service, \
+  /usr/bin/systemctl restart flux@tokenmm-controller.service, \
+  /usr/bin/journalctl -u flux@tokenmm-controller.service, \
   /usr/bin/systemctl start flux@tokenmm-portfolio.service, \
   /usr/bin/systemctl stop flux@tokenmm-portfolio.service, \
   /usr/bin/systemctl restart flux@tokenmm-portfolio.service, \
@@ -12,6 +16,22 @@ Cmnd_Alias FLUX_PULSE = \
   /usr/bin/systemctl stop flux@tokenmm-bridge.service, \
   /usr/bin/systemctl restart flux@tokenmm-bridge.service, \
   /usr/bin/journalctl -u flux@tokenmm-bridge.service, \
+  /usr/bin/systemctl start flux@tokenmm-prometheus.service, \
+  /usr/bin/systemctl stop flux@tokenmm-prometheus.service, \
+  /usr/bin/systemctl restart flux@tokenmm-prometheus.service, \
+  /usr/bin/journalctl -u flux@tokenmm-prometheus.service, \
+  /usr/bin/systemctl start flux@tokenmm-grafana.service, \
+  /usr/bin/systemctl stop flux@tokenmm-grafana.service, \
+  /usr/bin/systemctl restart flux@tokenmm-grafana.service, \
+  /usr/bin/journalctl -u flux@tokenmm-grafana.service, \
+  /usr/bin/systemctl start flux@tokenmm-liquidity-exporter.service, \
+  /usr/bin/systemctl stop flux@tokenmm-liquidity-exporter.service, \
+  /usr/bin/systemctl restart flux@tokenmm-liquidity-exporter.service, \
+  /usr/bin/journalctl -u flux@tokenmm-liquidity-exporter.service, \
+  /usr/bin/systemctl start flux@tokenmm-markouts-exporter.service, \
+  /usr/bin/systemctl stop flux@tokenmm-markouts-exporter.service, \
+  /usr/bin/systemctl restart flux@tokenmm-markouts-exporter.service, \
+  /usr/bin/journalctl -u flux@tokenmm-markouts-exporter.service, \
   /usr/bin/systemctl start flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service, \
   /usr/bin/systemctl stop flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service, \
   /usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service, \

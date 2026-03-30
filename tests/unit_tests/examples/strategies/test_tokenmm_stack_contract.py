@@ -794,6 +794,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "[Install]" in target_unit
     assert "WantedBy=multi-user.target" in target_unit
     assert "Wants=flux@tokenmm-api.service" in target_unit
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
     assert "Wants=flux@tokenmm-prometheus.service" in target_unit
@@ -824,6 +825,13 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert 'api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"' in install_script
     assert 'api_host="${api_host:-0.0.0.0}"' in install_script
     assert "--host ${api_host}" in install_script
+    assert "tokenmm-controller" in install_script
+    assert "render_controller_env()" in install_script
+    assert "tokenmm-controller.env" in install_script
+    assert (
+        "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_controller "
+        "--config ${SHARED_CONFIG} --mode live --confirm-live" in install_script
+    )
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
@@ -906,20 +914,34 @@ def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible(
 
     assert "install -d /etc/tokenmm-monitoring" not in install_script
     assert "tokenmm-monitoring" in install_script
+    assert 'MONITORING_RUNTIME_ROOT="/opt/tokenmm-monitoring"' in install_script
+    assert 'GRAFANA_VERSION="10.2.3"' in install_script
+    assert 'PROMETHEUS_VERSION="2.48.0"' in install_script
     assert "monitoring/grafana/dashboards" in install_script
     assert "monitoring/grafana/provisioning/dashboards/dashboards.yml" in install_script
     assert "monitoring/grafana/provisioning/datasources/datasources.yml" in install_script
     assert "deploy/tokenmm/systemd/prometheus.yml" in install_script
+    assert "install_monitoring_binaries()" in install_script
+    assert "curl -fsSL" in install_script
+    assert "trap 'rm -rf -- \"${tmpdir}\"' EXIT" in install_script
+    assert "dl.grafana.com/oss/release/grafana-" in install_script
+    assert "github.com/prometheus/prometheus/releases/download/v" in install_script
 
-    assert "docker rm -f tokenmm-grafana" in grafana_wrapper
-    assert "--network host" in grafana_wrapper
-    assert "/etc/tokenmm-monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro" in grafana_wrapper
-    assert "grafana/grafana:10.2.3" in grafana_wrapper
+    assert "docker run" not in grafana_wrapper
+    assert "docker rm -f tokenmm-grafana" not in grafana_wrapper
+    assert 'TOKENMM_GRAFANA_INSTALL_DIR:=/opt/tokenmm-monitoring/grafana/current' in grafana_wrapper
+    assert 'GF_PATHS_DATA="${TOKENMM_GRAFANA_DATA_DIR}"' in grafana_wrapper
+    assert 'GF_PATHS_PROVISIONING="${TOKENMM_GRAFANA_CONFIG_DIR}/provisioning"' in grafana_wrapper
+    assert '"${TOKENMM_GRAFANA_INSTALL_DIR}/bin/grafana-server"' in grafana_wrapper
+    assert '--homepath "${TOKENMM_GRAFANA_INSTALL_DIR}"' in grafana_wrapper
 
-    assert "docker rm -f tokenmm-prometheus" in prometheus_wrapper
-    assert "--network host" in prometheus_wrapper
-    assert "/etc/tokenmm-monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in prometheus_wrapper
-    assert "prom/prometheus:v2.48.0" in prometheus_wrapper
+    assert "docker run" not in prometheus_wrapper
+    assert "docker rm -f tokenmm-prometheus" not in prometheus_wrapper
+    assert 'TOKENMM_PROMETHEUS_INSTALL_DIR:=/opt/tokenmm-monitoring/prometheus/current' in prometheus_wrapper
+    assert '"${TOKENMM_PROMETHEUS_INSTALL_DIR}/prometheus"' in prometheus_wrapper
+    assert '--config.file="${TOKENMM_PROMETHEUS_CONFIG_DIR}/prometheus.yml"' in prometheus_wrapper
+    assert '--storage.tsdb.path="${TOKENMM_PROMETHEUS_DATA_DIR}"' in prometheus_wrapper
+    assert "--web.enable-lifecycle" in prometheus_wrapper
 
     assert 'targets: ["127.0.0.1:9108"]' in prometheus_config
     assert 'targets: ["127.0.0.1:9109"]' in prometheus_config
@@ -930,6 +952,9 @@ def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible(
 
     assert "/etc/tokenmm-monitoring/grafana/dashboards" in dashboards_doc
     assert "/etc/tokenmm-monitoring/prometheus/prometheus.yml" in dashboards_doc
+    assert "/opt/tokenmm-monitoring/grafana/current" in dashboards_doc
+    assert "/opt/tokenmm-monitoring/prometheus/current" in dashboards_doc
+    assert "/var/lib/grafana/dashboards" not in dashboards_doc
 
 
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> (
