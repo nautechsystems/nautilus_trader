@@ -29,7 +29,7 @@ use ustr::Ustr;
 
 use crate::http::{
     error::{Error, Result},
-    models::DataApiTrade,
+    models::{DataApiPosition, DataApiTrade},
 };
 
 const POLYMARKET_DATA_API_URL: &str = "https://data-api.polymarket.com";
@@ -67,6 +67,54 @@ impl PolymarketDataApiHttpClient {
                 .trim_end_matches('/')
                 .to_string(),
         })
+    }
+
+    /// Fetches all positions for a user from the Data API.
+    ///
+    /// Paginates through `GET /positions?user={address}&sizeThreshold=0`
+    /// until a partial page is returned.
+    pub async fn get_positions(&self, user_address: &str) -> Result<Vec<DataApiPosition>> {
+        const PAGE_SIZE: u32 = 100;
+
+        let mut all_positions: Vec<DataApiPosition> = Vec::new();
+        let mut offset: u32 = 0;
+
+        loop {
+            let params = vec![
+                ("user".to_string(), user_address.to_string()),
+                ("limit".to_string(), PAGE_SIZE.to_string()),
+                ("offset".to_string(), offset.to_string()),
+                ("sizeThreshold".to_string(), "0".to_string()),
+                ("sortBy".to_string(), "TOKENS".to_string()),
+                ("sortDirection".to_string(), "DESC".to_string()),
+            ];
+
+            let url = format!("{}/positions", self.base_url);
+            let response = self
+                .client
+                .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+                .await
+                .map_err(Error::from_http_client)?;
+
+            if response.status.is_success() {
+                let page: Vec<DataApiPosition> =
+                    serde_json::from_slice(&response.body).map_err(Error::Serde)?;
+                let count = page.len() as u32;
+                all_positions.extend(page);
+
+                if count < PAGE_SIZE {
+                    break;
+                }
+                offset += count;
+            } else {
+                return Err(Error::from_status_code(
+                    response.status.as_u16(),
+                    &response.body,
+                ));
+            }
+        }
+
+        Ok(all_positions)
     }
 
     /// Fetches trades from the Data API for the given condition ID.
@@ -200,12 +248,70 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::http::models::DataApiTrade;
+    use crate::http::models::{DataApiPosition, DataApiTrade};
+
+    fn load_positions() -> Vec<DataApiPosition> {
+        let path = "test_data/data_api_positions_response.json";
+        let content = std::fs::read_to_string(path).expect("Failed to read test data");
+        serde_json::from_str(&content).expect("Failed to parse test data")
+    }
 
     fn load_trades() -> Vec<DataApiTrade> {
         let path = "test_data/data_api_trades_response.json";
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    fn test_data_api_position_deserialization() {
+        let positions = load_positions();
+
+        assert_eq!(positions.len(), 3);
+        assert_eq!(positions[0].size, 150.5);
+        assert_eq!(
+            positions[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+    }
+
+    #[rstest]
+    fn test_build_position_reports_filters_zero_size() {
+        use nautilus_model::{
+            enums::PositionSideSpecified, identifiers::AccountId, reports::PositionStatusReport,
+            types::Quantity,
+        };
+
+        let positions = load_positions();
+        let account_id = AccountId::from("POLYMARKET-001");
+
+        let reports: Vec<PositionStatusReport> = positions
+            .iter()
+            .filter(|p| p.size > 0.0)
+            .map(|p| {
+                let instrument_id = InstrumentId::from(
+                    format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str(),
+                );
+                let quantity = Quantity::new(p.size, 2);
+                let ts = nautilus_core::UnixNanos::from(1_000_000_000u64);
+
+                PositionStatusReport::new(
+                    account_id,
+                    instrument_id,
+                    PositionSideSpecified::Long,
+                    quantity,
+                    ts,
+                    ts,
+                    None,
+                    None,
+                    None,
+                )
+            })
+            .collect();
+
+        // Only 2 positions have size > 0 (150.5 and 42.0); zero-size is filtered out
+        assert_eq!(reports.len(), 2);
+        assert!(reports[0].is_long());
+        assert!(reports[1].is_long());
     }
 
     #[rstest]

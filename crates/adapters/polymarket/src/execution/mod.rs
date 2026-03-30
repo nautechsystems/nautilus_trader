@@ -48,7 +48,10 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, CurrencyType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, CurrencyType, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSideSpecified, TimeInForce,
+    },
     events::{OrderEventAny, OrderUpdated},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
@@ -79,6 +82,7 @@ use crate::{
     config::PolymarketExecClientConfig,
     http::{
         clob::PolymarketClobHttpClient,
+        data_api::PolymarketDataApiHttpClient,
         query::{CancelResponse, GetBalanceAllowanceParams, GetTradesParams, OrderResponse},
     },
     signing::eip712::OrderSigner,
@@ -97,6 +101,7 @@ pub struct PolymarketExecutionClient {
     config: PolymarketExecClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: PolymarketClobHttpClient,
+    data_api_client: PolymarketDataApiHttpClient,
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
     secrets: Secrets,
@@ -138,6 +143,11 @@ impl PolymarketExecutionClient {
         )
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("failed to create CLOB HTTP client")?;
+
+        let data_api_client =
+            PolymarketDataApiHttpClient::new(Some(config.data_api_url()), config.http_timeout_secs)
+                .map_err(|e| anyhow::anyhow!("{e}"))
+                .context("failed to create Data API HTTP client")?;
 
         let order_signer =
             OrderSigner::new(&secrets.private_key).context("failed to create order signer")?;
@@ -187,6 +197,7 @@ impl PolymarketExecutionClient {
             config,
             emitter,
             http_client,
+            data_api_client,
             submitter,
             ws_client,
             secrets,
@@ -1227,9 +1238,52 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     async fn generate_position_status_reports(
         &self,
-        _cmd: &GeneratePositionStatusReports,
+        cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        Ok(vec![])
+        let ctx = self.fill_context();
+        let positions = self
+            .data_api_client
+            .get_positions(ctx.user_address)
+            .await
+            .context("failed to fetch positions from Data API")?;
+
+        let ts = self.clock.get_time_ns();
+        let mut reports = Vec::new();
+
+        for pos in &positions {
+            if pos.size <= 0.0 {
+                continue;
+            }
+
+            let instrument_id = InstrumentId::from(
+                format!("{}-{}.POLYMARKET", pos.condition_id, pos.asset).as_str(),
+            );
+
+            // Filter by requested instrument IDs
+            if let Some(ref filter_id) = cmd.instrument_id {
+                if &instrument_id != filter_id {
+                    continue;
+                }
+            }
+
+            let quantity = Quantity::new(pos.size, 2);
+            let position_side = PositionSideSpecified::Long;
+
+            reports.push(PositionStatusReport::new(
+                self.core.account_id,
+                instrument_id,
+                position_side,
+                quantity,
+                ts,
+                ts,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        log::info!("Generated {} position status reports", reports.len());
+        Ok(reports)
     }
 
     async fn generate_mass_status(
@@ -1239,6 +1293,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         let ctx = self.fill_context();
         reconciliation::generate_mass_status(
             &self.http_client,
+            &self.data_api_client,
             &self.shared_token_instruments,
             &ctx,
             self.core.client_id,

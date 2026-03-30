@@ -18,11 +18,11 @@
 use anyhow::Context;
 use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
-    enums::LiquiditySide,
+    enums::{LiquiditySide, PositionSideSpecified},
     identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::Currency,
+    types::{Currency, Quantity},
 };
 use ustr::Ustr;
 
@@ -33,6 +33,7 @@ use crate::{
     common::enums::PolymarketLiquiditySide,
     http::{
         clob::PolymarketClobHttpClient,
+        data_api::PolymarketDataApiHttpClient,
         models::{PolymarketOpenOrder, PolymarketTradeReport},
         query::{GetOrdersParams, GetTradesParams},
     },
@@ -203,6 +204,7 @@ pub(crate) fn apply_fill_filters(
 /// Full reconciliation mass status generation.
 pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
+    data_api_client: &PolymarketDataApiHttpClient,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     ctx: &FillContext<'_>,
     client_id: ClientId,
@@ -229,8 +231,31 @@ pub(crate) async fn generate_mass_status(
     let (mut fill_reports, fills_filtered) =
         build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
 
-    // Position reports: empty for cash/prediction markets
-    let position_reports: Vec<PositionStatusReport> = vec![];
+    // Position reports from Data API
+    let positions = data_api_client
+        .get_positions(ctx.user_address)
+        .await
+        .context("failed to fetch positions for mass status")?;
+
+    let position_reports: Vec<PositionStatusReport> = positions
+        .iter()
+        .filter(|p| p.size > 0.0)
+        .map(|p| {
+            let instrument_id =
+                InstrumentId::from(format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str());
+            PositionStatusReport::new(
+                ctx.account_id,
+                instrument_id,
+                PositionSideSpecified::Long,
+                Quantity::new(p.size, 2),
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            )
+        })
+        .collect();
 
     // Apply lookback filter
     if let Some(mins) = lookback_mins {

@@ -175,6 +175,7 @@ pub struct PolymarketExecClientConfig {
     pub signature_type: SignatureType,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
+    pub base_url_data_api: Option<String>,
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     #[builder(default = 3)]
@@ -201,6 +202,7 @@ impl Clone for PolymarketExecClientConfig {
             signature_type: self.signature_type,
             base_url_http: self.base_url_http.clone(),
             base_url_ws: self.base_url_ws.clone(),
+            base_url_data_api: self.base_url_data_api.clone(),
             http_timeout_secs: self.http_timeout_secs,
             max_retries: self.max_retries,
             retry_delay_initial_ms: self.retry_delay_initial_ms,
@@ -223,6 +225,7 @@ impl Debug for PolymarketExecClientConfig {
             .field("signature_type", &self.signature_type)
             .field("base_url_http", &self.base_url_http)
             .field("base_url_ws", &self.base_url_ws)
+            .field("base_url_data_api", &self.base_url_data_api)
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("max_retries", &self.max_retries)
             .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
@@ -267,5 +270,12 @@ impl PolymarketExecClientConfig {
         self.base_url_ws
             .clone()
             .unwrap_or_else(|| urls::clob_ws_url().to_string())
+    }
+
+    #[must_use]
+    pub fn data_api_url(&self) -> String {
+        self.base_url_data_api
+            .clone()
+            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
     }
 }

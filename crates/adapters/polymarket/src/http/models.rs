@@ -319,6 +319,15 @@ pub struct ClobBookResponse {
     pub asks: Vec<ClobBookLevel>,
 }
 
+/// A position from the Polymarket Data API `GET /positions` endpoint.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DataApiPosition {
+    pub asset: String,
+    #[serde(alias = "conditionId", alias = "condition_id")]
+    pub condition_id: String,
+    pub size: f64,
+}
+
 /// A trade from the Polymarket Data API `GET /trades` endpoint.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -633,6 +642,32 @@ mod tests {
     fn test_fee_rate_response_nonzero() {
         let response: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
         assert_eq!(response.base_fee, dec!(150));
+    }
+
+    #[rstest]
+    fn test_data_api_position_deserialization() {
+        let positions: Vec<DataApiPosition> = load("data_api_positions_response.json");
+
+        assert_eq!(positions.len(), 3);
+        assert_eq!(
+            positions[0].asset,
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+        );
+        assert_eq!(
+            positions[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+        assert_eq!(positions[0].size, 150.5);
+
+        // Zero-size position
+        assert_eq!(positions[1].size, 0.0);
+
+        // Third position
+        assert_eq!(
+            positions[2].condition_id,
+            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+        );
+        assert_eq!(positions[2].size, 42.0);
     }
 
     #[rstest]
