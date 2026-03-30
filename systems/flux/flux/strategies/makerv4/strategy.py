@@ -3043,10 +3043,7 @@ class MakerV4Strategy(Strategy):
             subscribed_instrument_ids.append(instrument_id)
             self._last_market_bbo_publish_ns[instrument_id] = 0
             self._prime_cached_quote(instrument_id)
-            if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
-                self._attach_local_quote_topic(instrument_id)
-            else:
-                self.subscribe_quote_ticks(instrument_id=instrument_id)
+            self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         self._register_quote_feed_interest()
         for instrument_id in subscribed_instrument_ids:
@@ -3092,10 +3089,7 @@ class MakerV4Strategy(Strategy):
                 continue
             unsubscribed_instrument_ids.append(instrument_id)
             with suppress(Exception):
-                if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
-                    self._detach_local_quote_topic(instrument_id)
-                else:
-                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
         self._deregister_quote_feed_interest()
         provider_stop = getattr(self._reference_balance_snapshot_provider, "stop", None)
         if callable(provider_stop):

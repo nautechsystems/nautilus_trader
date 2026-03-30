@@ -360,7 +360,7 @@ def test_equities_maker_shared_recovery_attachment_moves_timer_resubscribe_to_su
     ]
 
 
-def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserves_local_attachment(
+def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserves_direct_quote_delivery(
     monkeypatch,
 ) -> None:
     maker_strategy = EquitiesMakerStrategy(config=_config(strategy_id="aapl_tradexyz_maker"))
@@ -373,7 +373,6 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
     strategies = (maker_strategy, taker_strategy)
     supervisor = NodeQuoteFeedSupervisor()
     control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
-    local_attaches: list[tuple[str, InstrumentId]] = []
     direct_subscribes: list[tuple[str, InstrumentId]] = []
 
     for strategy in strategies:
@@ -382,14 +381,6 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
             strategy,
             supervisor=supervisor,
             control_emitter=control_emitter,
-        )
-        monkeypatch.setattr(
-            strategy,
-            "_attach_local_quote_topic",
-            lambda instrument_id, strategy=strategy: local_attaches.append(
-                (strategy.config.external_strategy_id, instrument_id)
-            ),
-            raising=False,
         )
         monkeypatch.setattr(
             strategy,
@@ -402,8 +393,7 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
     maker_strategy.on_start()
     taker_strategy.on_start()
 
-    assert direct_subscribes == []
-    assert sorted(local_attaches) == sorted(
+    assert sorted(direct_subscribes) == sorted(
         [
             ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
             ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
@@ -451,6 +441,7 @@ def test_equities_maker_supervisor_timer_reports_stale_feed_without_direct_resub
         monkeypatch.setattr(strategy, "unsubscribe_quote_ticks", lambda *, instrument_id, client_id=None: direct_unsubscribes.append(instrument_id))
         strategy.on_start()
 
+    direct_subscribes.clear()
     control_emitter.commands.clear()
     maker_strategy.on_time_event(SimpleNamespace(name=maker_strategy._liveness_timer_name))
     taker_strategy.on_time_event(SimpleNamespace(name=taker_strategy._liveness_timer_name))
@@ -478,6 +469,8 @@ def test_equities_maker_supervisor_retries_startup_blocked_feed_after_blocker_cl
         control_emitter=control_emitter,
     )
     monkeypatch.setattr(strategy, "_attach_local_quote_topic", lambda instrument_id: None, raising=False)
+    monkeypatch.setattr(strategy, "subscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
+    monkeypatch.setattr(strategy, "unsubscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
 
     strategy.on_start()
     control_emitter.commands.clear()
@@ -510,6 +503,8 @@ def test_equities_maker_runtime_param_refresh_updates_supervisor_freshness_budge
         control_emitter=control_emitter,
     )
     monkeypatch.setattr(strategy, "_attach_local_quote_topic", lambda instrument_id: None, raising=False)
+    monkeypatch.setattr(strategy, "subscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
+    monkeypatch.setattr(strategy, "unsubscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
     strategy.clock.now = 1_000_000_000
     strategy.on_start()
     control_emitter.commands.clear()
@@ -543,6 +538,7 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
     strategies = (maker_strategy, taker_strategy)
     supervisor = NodeQuoteFeedSupervisor()
     control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    direct_subscribes: list[tuple[str, InstrumentId]] = []
     direct_unsubscribes: list[tuple[str, InstrumentId]] = []
 
     for strategy in strategies:
@@ -552,8 +548,13 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
             supervisor=supervisor,
             control_emitter=control_emitter,
         )
-        monkeypatch.setattr(strategy, "_attach_local_quote_topic", lambda instrument_id: None, raising=False)
-        monkeypatch.setattr(strategy, "_detach_local_quote_topic", lambda instrument_id: None, raising=False)
+        monkeypatch.setattr(
+            strategy,
+            "subscribe_quote_ticks",
+            lambda *, instrument_id, client_id=None, strategy=strategy: direct_subscribes.append(
+                (strategy.config.external_strategy_id, instrument_id)
+            ),
+        )
         monkeypatch.setattr(
             strategy,
             "unsubscribe_quote_ticks",
@@ -563,13 +564,34 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
         )
         strategy.on_start()
 
+    assert sorted(direct_subscribes) == sorted(
+        [
+            ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
+            ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
+            ("aapl_tradexyz_taker", taker_strategy.config.maker_instrument_id),
+            ("aapl_tradexyz_taker", taker_strategy.config.reference_instrument_id),
+        ]
+    )
+
     control_emitter.commands.clear()
     maker_strategy.on_stop()
-    assert direct_unsubscribes == []
+    assert sorted(direct_unsubscribes) == sorted(
+        [
+            ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
+            ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
+        ]
+    )
     assert control_emitter.commands == []
 
     taker_strategy.on_stop()
-    assert direct_unsubscribes == []
+    assert sorted(direct_unsubscribes) == sorted(
+        [
+            ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
+            ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
+            ("aapl_tradexyz_taker", taker_strategy.config.maker_instrument_id),
+            ("aapl_tradexyz_taker", taker_strategy.config.reference_instrument_id),
+        ]
+    )
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("unsubscribe", "maker_quote_ticks"),
         ("unsubscribe", "reference_quote_ticks"),
@@ -714,6 +736,8 @@ def test_equities_maker_on_start_pulls_reclaimed_quotes_when_required_feed_is_bl
         control_emitter=control_emitter,
     )
     monkeypatch.setattr(strategy, "_attach_local_quote_topic", lambda instrument_id: None, raising=False)
+    monkeypatch.setattr(strategy, "subscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
+    monkeypatch.setattr(strategy, "unsubscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
     supervisor.set_blocker("ibkr.shared_publisher", blocked=True, reason="publisher_down")
 
     strategy.on_start()
