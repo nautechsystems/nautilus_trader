@@ -471,6 +471,12 @@ function toFiniteOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function coerceOptionalText(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  return text || undefined;
+}
+
 function normalizeTradingFlag(value: unknown): string | undefined {
   if (value == null) return undefined;
   if (typeof value === 'boolean') return value ? '1' : '0';

@@ -887,6 +887,12 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "tokenmm-markouts-exporter" in deploy_readme
 
 
+def test_flux_service_template_raises_process_limit_for_live_tokenmm_ui_load() -> None:
+    service_template = _read(_repo_root() / "deploy/systemd/flux@.service")
+
+    assert "LimitNPROC=16384" in service_template
+
+
 def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible() -> None:
     repo_root = _repo_root()
     install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
