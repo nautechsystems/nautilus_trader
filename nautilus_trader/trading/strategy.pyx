@@ -1262,13 +1262,6 @@ cdef class Strategy(Actor):
             side=order_side,
         )
 
-        cdef list inflight_orders = self.cache.orders_inflight(
-            venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
-            strategy_id=self.id,
-            side=order_side,
-        )
-
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders and not inflight_orders:
             self.log.info(
