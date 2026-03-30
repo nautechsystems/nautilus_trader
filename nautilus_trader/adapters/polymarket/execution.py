@@ -33,6 +33,7 @@ from py_clob_client.clob_types import PostOrdersArgs
 from py_clob_client.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
@@ -655,11 +656,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         quantities_by_instrument = await self._fetch_quantities_from_gamma_api(instrument_ids)
 
-        # Generate reports from quantities
+        # Generate reports from quantities (filter dust positions)
         for instrument_id, quantity in quantities_by_instrument.items():
-            position_side = PositionSide.LONG if quantity.raw > 0 else PositionSide.FLAT
-            if position_side == PositionSide.LONG:
-                self._log.info(f"Long position for {instrument_id} of {quantity} shares")
+            size = float(quantity)
+            if 0.0 < size < DUST_SNAP_THRESHOLD:
+                self._log.debug(f"Filtering dust position: {instrument_id}, size={size}")
+            if size < DUST_SNAP_THRESHOLD:
+                continue
+            position_side = PositionSide.LONG
+            self._log.info(f"Long position for {instrument_id} of {quantity} shares")
 
             now = self._clock.timestamp_ns()
             report = PositionStatusReport(
