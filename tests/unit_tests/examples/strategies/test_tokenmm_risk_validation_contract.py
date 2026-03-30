@@ -33,6 +33,10 @@ def test_tokenmm_risk_validation_runbook_documents_authoritative_checks_and_roll
     assert "TokenMM group restarted cleanly through Pulse" in runbook
     assert "partial vs strict" in runbook
     assert "startup reconciliation" in runbook
+    assert "operator-visible Signal health" in runbook
+    assert "mode = ON" in runbook
+    assert "tradeable = true" in runbook
+    assert "global_qty_base_complete = true" in runbook
     assert "python ops/scripts/tokenmm_risk_audit.py" in runbook
     assert "python scripts/ops/tokenmm_risk_audit.py" not in runbook
 

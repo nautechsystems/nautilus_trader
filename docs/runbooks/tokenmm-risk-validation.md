@@ -31,9 +31,9 @@ Use it together with `deploy/tokenmm/README.md`,
   Per-strategy debug surface. Use this to confirm the strategy's own published
   local balance source when a single node looks wrong.
 - `GET /api/v1/readiness?profile=tokenmm`
-  Authoritative for profile-level readiness, required-strategy freshness, and
-  whether TokenMM should be treated as safe to run after a restart or publish
-  interruption.
+  Authoritative for profile-level readiness, required-strategy freshness,
+  operator-visible Signal health, and whether TokenMM should be treated as safe
+  to run after a restart or publish interruption.
 - `GET /api/pulse/jobs`
   Authoritative for TokenMM job health and whether the restarted services are
   active, failed, or still recovering. Treat `status = active` as service
@@ -196,14 +196,21 @@ Run these checks after a Pulse restart and before enabling trading:
 2. Confirm `readiness?profile=tokenmm` reports `ok = true`, `failed_checks = []`,
    and `ready_strategy_count == required_strategy_count`.
 3. Confirm `signals?profile=tokenmm` returns all expected strategies.
-4. Confirm `balances?profile=tokenmm` is sourced from `portfolio_snapshot`.
-5. Confirm no strategy remains in `blocked_reconciliation`.
-6. Confirm the local strategy view, per-strategy debug balances view, and shared
+4. Confirm every required Signal row is operator-ready:
+   - `mode = ON`
+   - `blocked = false`
+   - `tradeable = true`
+   - `local_qty_base` and `global_qty_base` are present
+   - `global_qty_base_complete = true`
+   - `maker_quote_status` is populated
+5. Confirm `balances?profile=tokenmm` is sourced from `portfolio_snapshot`.
+6. Confirm no strategy remains in `blocked_reconciliation`.
+7. Confirm the local strategy view, per-strategy debug balances view, and shared
    portfolio component agree for each strategy.
-7. Confirm degraded metadata is either absent or explicitly explained.
-8. Confirm `python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022`
+8. Confirm degraded metadata is either absent or explicitly explained.
+9. Confirm `python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022`
    prints a success banner containing `readiness=<required>/<required>`.
-9. For any node that previously failed startup reconciliation, confirm the
+10. For any node that previously failed startup reconciliation, confirm the
    journal shows either a clean startup with no mismatch or the startup-only
    stale-`EXTERNAL` cleanup signature above.
 
@@ -214,7 +221,7 @@ Required production sign-off:
 1. all targeted unit tests green
 2. TokenMM group restarted cleanly through Pulse
 3. `readiness?profile=tokenmm` is green for all required strategies and shows no
-   failed freshness checks
+   failed freshness or operator-surface checks
 4. `signals`, `balances(profile=tokenmm)`, and `balances(strategy=<id>)` agree
    for each strategy according to contract
 5. partial vs strict `global_qty` semantics are visible and documented
