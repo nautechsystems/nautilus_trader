@@ -426,6 +426,18 @@ class _ResidentRequestReplyControllerService:
                 written_at_ns=time.time_ns(),
             ),
         )
+        venue_order_id = None
+        lifecycle_event = ExecutionLifecycleEvent.from_claim(
+            claim=claim,
+            lifecycle_state=ExecutionLifecycleState.SENT_TO_VENUE,
+            venue_activity_origin=VenueActivityOrigin.CONTROLLER,
+        )
+        if command.command_type == "place":
+            venue_order_id = _latest_venue_order_id(self._wal, claim.intent_id)
+            lifecycle_event = ExecutionLifecycleEvent.sent_to_venue(
+                claim=claim,
+                venue_order_id=venue_order_id,
+            )
         feed = None
         if self._redis_client is not None:
             try:
@@ -434,15 +446,18 @@ class _ResidentRequestReplyControllerService:
                     config=self._config,
                     claim=claim,
                 )
-                feed.publish_lifecycle_event(
-                    ExecutionLifecycleEvent.sent_to_venue(
-                        claim=claim,
-                        venue_order_id=_latest_venue_order_id(self._wal, claim.intent_id),
-                    ),
-                )
+                feed.publish_lifecycle_event(lifecycle_event)
             except Exception:
                 feed = None
-        if command.command_type == "cancel":
+        if command.command_type == "place":
+            self._publish_canonical_state(
+                request=request,
+                claim=claim,
+                prune_canceled_order=False,
+                feed=feed,
+                venue_order_id=venue_order_id,
+            )
+        elif command.command_type == "cancel":
             self._publish_canonical_state(
                 request=request,
                 claim=claim,
@@ -457,12 +472,14 @@ class _ResidentRequestReplyControllerService:
         claim,
         prune_canceled_order: bool,
         feed: ControllerStateFeedBridge | None,
+        venue_order_id: str | None = None,
     ) -> None:
         state = _canonical_state_payload(
             request=request,
             claim=claim,
             existing_state=self._canonical_state_by_strategy.get(claim.strategy_id),
             prune_canceled_order=prune_canceled_order,
+            venue_order_id=venue_order_id,
         )
         self._canonical_state_by_strategy[claim.strategy_id] = state
         if feed is None:
@@ -1197,6 +1214,7 @@ def _canonical_state_payload(
     claim,
     existing_state: dict[str, Any] | None,
     prune_canceled_order: bool = False,
+    venue_order_id: str | None = None,
 ) -> dict[str, Any]:
     state = _apply_authority_markers(
         state=dict(existing_state or {}),
@@ -1218,6 +1236,7 @@ def _canonical_state_payload(
             "side": _normalize_order_side_text(command.side),
             "quantity": command.quantity,
             "price": command.limit_price,
+            "venue_order_id": venue_order_id,
             "post_only": bool(command.post_only),
             "pending_cancel": False,
         }
@@ -1225,6 +1244,8 @@ def _canonical_state_payload(
         next_orders: list[dict[str, Any]] = []
         for row in managed_orders:
             if str(row.get("client_order_id", "")).strip() == claim.client_order_id:
+                if next_row["venue_order_id"] is None:
+                    next_row["venue_order_id"] = _optional_text(row.get("venue_order_id"))
                 next_orders.append(next_row)
                 replaced = True
             else:

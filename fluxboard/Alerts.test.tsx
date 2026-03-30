@@ -59,6 +59,7 @@ function createMockStore(): MockAlertsStore {
     dismissAlert: vi.fn(),
     clearAlerts: vi.fn(() => {
       mockStoreState.rows = [];
+      mockStoreState.dismissedIds = new Set<string>();
     }),
   };
 }
@@ -804,11 +805,24 @@ describe('Alerts', () => {
   });
 
   it('clears all alerts after confirmation', async () => {
-    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    mockStoreState.rows = [
+      createAlert({
+        id: 'alert-visible',
+        title: 'Critical path blocked',
+        message: 'Critical path blocked',
+      }),
+    ];
+    mockStoreState.dismissedIds = new Set(['alert-reused']);
     (apiModule.api.getAlerts as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(
         attachAlertsCapabilities(
-          [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })],
+          [
+            createAlert({
+              id: 'alert-visible',
+              title: 'Critical path blocked',
+              message: 'Critical path blocked',
+            }),
+          ],
           { feed_mode: 'history', clear_mode: 'all' },
         ),
       )
@@ -832,6 +846,8 @@ describe('Alerts', () => {
     await waitFor(() => {
       expect(apiModule.api.clearAlerts).toHaveBeenCalledTimes(1);
       expect(apiModule.api.getAlerts).toHaveBeenCalledTimes(2);
+      expect(mockStoreState.clearAlerts).toHaveBeenCalledTimes(1);
+      expect(mockStoreState.dismissedIds).toEqual(new Set());
       const lastRows = mockStoreState.setRows.mock.calls.at(-1)?.[0] as Alert[] | undefined;
       expect(Array.isArray(lastRows)).toBe(true);
       expect(lastRows).toHaveLength(0);

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from flux.execution.events import ExecutionLifecycleEvent
 from flux.execution.intents import build_client_order_id
 from flux.execution.intents import ExecutionIntent
 from flux.execution.intents import ExecutionLifecycleState
@@ -335,6 +336,125 @@ def test_controller_order_snapshot_restores_order_side_enum() -> None:
     )
 
     assert snapshot.side == OrderSide.BUY
+
+
+def test_controller_managed_bridge_applies_sent_to_venue_venue_order_id(monkeypatch, tmp_path: Path) -> None:
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=lambda _client_order_id: None,
+        _managed_client_order_ids=set(),
+    )
+    claim = ExecutionIntent(
+        intent_id="intent-venue-order-id-001",
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id=strategy.runtime_strategy_id,
+    ).claim(controller_epoch=4, controller_seq=17)
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    bridge._managed_order_rows[claim.client_order_id] = {
+        "client_order_id": claim.client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+
+    bridge._apply_lifecycle_event(
+        ExecutionLifecycleEvent.sent_to_venue(
+            claim=claim,
+            venue_order_id="binance-venue-9001",
+        ),
+    )
+
+    snapshots = bridge.managed_orders()
+
+    assert len(snapshots) == 1
+    assert snapshots[0].venue_order_id == "binance-venue-9001"
+
+
+def test_controller_managed_bridge_removes_terminal_rows_on_lifecycle_event(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    cleared_pending_cancel_ids = []
+
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=cleared_pending_cancel_ids.append,
+        _managed_client_order_ids=set(),
+    )
+    claim = ExecutionIntent(
+        intent_id="intent-terminal-row-001",
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id=strategy.runtime_strategy_id,
+    ).claim(controller_epoch=4, controller_seq=17)
+    strategy._pending_cancel_client_order_ids.add(claim.client_order_id)
+    strategy._managed_client_order_ids.add(claim.client_order_id)
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    bridge._managed_order_rows[claim.client_order_id] = {
+        "client_order_id": claim.client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+
+    bridge._apply_lifecycle_event(
+        ExecutionLifecycleEvent.from_claim(
+            claim=claim,
+            lifecycle_state=ExecutionLifecycleState.FILLED,
+            venue_activity_origin="controller",
+        ),
+    )
+
+    assert bridge._managed_order_rows == {}
+    assert claim.client_order_id not in strategy._managed_client_order_ids
+    assert cleared_pending_cancel_ids == [claim.client_order_id]
 
 
 def test_controller_managed_bridge_publish_cancel_uses_unique_intent_ids_per_attempt(

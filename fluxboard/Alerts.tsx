@@ -100,6 +100,7 @@ export default function Alerts({
   const setLoading = useAlertsStore((state) => state.setLoading);
   const setAuto = useAlertsStore((state) => state.setAuto);
   const dismissAlert = useAlertsStore((state) => state.dismissAlert);
+  const clearAlerts = useAlertsStore((state) => state.clearAlerts);
   const [levelFilter, setLevelFilter] = useState<AlertLevel | 'ALL'>('ALL');
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -495,6 +496,7 @@ export default function Alerts({
       if (result.capabilities?.clear_mode === 'all') {
         const emptyRows = Object.assign([], { capabilities: result.capabilities }) as Alert[];
         setAlertsCapabilities(result.capabilities);
+        clearAlerts();
         alertsController.applySnapshot(emptyRows);
         setRows(emptyRows);
       }
@@ -504,7 +506,7 @@ export default function Alerts({
         console.error('[alerts] Failed to clear alerts:', e);
       }
     }
-  }, [refreshAlertsFromApi]);
+  }, [alertsController, clearAlerts, refreshAlertsFromApi, setRows]);
 
   // Filter alerts by level (memoized to prevent unnecessary re-renders)
   const filteredRows = useMemo(

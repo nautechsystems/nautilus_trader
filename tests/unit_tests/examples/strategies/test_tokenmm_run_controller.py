@@ -336,6 +336,7 @@ def test_active_writer_path_records_wal_and_sent_to_venue_state(
     ]
     assert records[-1].venue_order_id == "binance-venue-9001"
     assert canonical_payload["managed_maker_orders"][0]["client_order_id"] == reply.claim.client_order_id
+    assert canonical_payload["managed_maker_orders"][0]["venue_order_id"] == "binance-venue-9001"
 
 
 def test_active_mode_builds_default_runtime_writer_without_injected_factory(
@@ -870,6 +871,88 @@ def test_successful_cancel_prunes_internal_state_even_if_lifecycle_publish_fails
 
     assert cancel_reply.status == "accepted"
     assert strategy_state["managed_maker_orders"] == []
+
+
+def test_successful_cancel_does_not_require_latest_venue_order_id_lookup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = _load_transport_module()
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    original_lookup = run_controller._latest_venue_order_id
+
+    def _guarded_latest_venue_order_id(wal, intent_id: str) -> str:
+        if intent_id == "intent-cancel-no-lookup":
+            raise AssertionError("cancel path should not require venue_order_id lookup")
+        return original_lookup(wal, intent_id)
+
+    monkeypatch.setattr(
+        run_controller,
+        "_latest_venue_order_id",
+        _guarded_latest_venue_order_id,
+    )
+
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+        active_order_writer_factory=lambda payload: _RecordingVenueWriter(),
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    place_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-no-lookup-place",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    assert place_reply.claim is not None
+
+    cancel_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-cancel-no-lookup",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_457,
+            command=ControllerIntentCommandPayload(
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                target_client_order_id=place_reply.claim.client_order_id,
+            ),
+        ),
+        timeout_s=1.0,
+    )
+    runner.stop()
+
+    assert cancel_reply.status == "accepted"
 
 
 def test_default_runtime_writer_treats_unknown_order_cancel_as_terminal_success(

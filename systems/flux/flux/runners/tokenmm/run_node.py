@@ -447,12 +447,14 @@ def _order_post_only(order: Any) -> bool | None:
 
 def _controller_order_snapshot(row: dict[str, Any]) -> Any:
     pending_cancel = bool(row.get("pending_cancel", False))
+    venue_order_id = str(row.get("venue_order_id", "") or "").strip() or None
     return SimpleNamespace(
         client_order_id=str(row.get("client_order_id", "")).strip(),
         instrument_id=row.get("instrument_id"),
         side=_coerce_order_side_enum(row.get("side")),
         quantity=row.get("quantity"),
         price=row.get("price"),
+        venue_order_id=venue_order_id,
         post_only=bool(row.get("post_only", True)),
         is_pending_cancel=lambda: pending_cancel,
         is_closed=lambda: False,
@@ -570,6 +572,7 @@ class _TokenmmControllerManagedBridge:
                 None if getattr(order, "quantity", None) is None else str(getattr(order, "quantity"))
             ),
             "price": None if getattr(order, "price", None) is None else str(getattr(order, "price")),
+            "venue_order_id": None,
             "post_only": bool(_order_post_only(order)),
             "pending_cancel": False,
         }
@@ -647,7 +650,33 @@ class _TokenmmControllerManagedBridge:
                     clear_pending_cancel(client_order_id)
 
     def _apply_lifecycle_event(self, event: Any) -> None:
-        _ = event
+        if getattr(event, "controller_scope_id", None) != self._controller_scope_id:
+            return
+        if getattr(event, "strategy_id", None) != _strategy_runtime_id(self._strategy):
+            return
+        client_order_id = str(getattr(event, "client_order_id", "") or "").strip()
+        if not client_order_id:
+            return
+        row = self._managed_order_rows.get(client_order_id)
+        venue_order_id = str(getattr(event, "venue_order_id", "") or "").strip() or None
+        if row is not None and venue_order_id is not None:
+            row["venue_order_id"] = venue_order_id
+        lifecycle_state = getattr(event, "lifecycle_state", None)
+        lifecycle_value = getattr(lifecycle_state, "value", lifecycle_state)
+        if lifecycle_value not in {
+            ExecutionLifecycleState.REJECTED.value,
+            ExecutionLifecycleState.CANCELED.value,
+            ExecutionLifecycleState.FILLED.value,
+            ExecutionLifecycleState.QUARANTINED.value,
+        }:
+            return
+        self._managed_order_rows.pop(client_order_id, None)
+        tracked_ids = getattr(self._strategy, "_managed_client_order_ids", None)
+        if isinstance(tracked_ids, set):
+            tracked_ids.discard(client_order_id)
+        clear_pending_cancel = getattr(self._strategy, "_clear_pending_cancel", None)
+        if callable(clear_pending_cancel):
+            clear_pending_cancel(client_order_id)
 
 
 def _attach_controller_managed_binance_bridge(
