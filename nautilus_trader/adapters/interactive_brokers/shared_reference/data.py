@@ -33,6 +33,8 @@ from nautilus_trader.model.identifiers import Symbol
 def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode()
     text = str(value).strip()
     return text or None
 
@@ -163,6 +165,7 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
             config=config,
         )
+        self._client_config = config
         self._redis = redis_client or _redis_client_from_config(config)
         self._pubsub = None
         self._subscriptions: dict[InstrumentId, str] = {}
@@ -195,8 +198,8 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command) -> None:
         channel = shared_reference_quote_channel(
-            profile_id=self.config.profile_id,
-            account_scope_id=self.config.account_scope_id,
+            profile_id=self._client_config.profile_id,
+            account_scope_id=self._client_config.account_scope_id,
             instrument_id=command.instrument_id,
         )
         self._subscriptions[command.instrument_id] = channel
@@ -227,12 +230,12 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
     async def _listen_for_shared_reference_updates(self) -> None:
         while True:
             if self._pubsub is None:
-                await asyncio.sleep(self.config.subscription_poll_interval_secs)
+                await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
                 continue
 
             message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
             if not message:
-                await asyncio.sleep(self.config.subscription_poll_interval_secs)
+                await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
                 continue
 
             channel = _optional_text(message.get("channel"))
