@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import time
 import tomllib
@@ -12,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 from typing import Callable
+from typing import Mapping
 from typing import cast
 from urllib.error import HTTPError
 from urllib.error import URLError
@@ -42,7 +44,11 @@ from flux.common.config import FluxVenuesConfig
 from flux.common.config import validate_identifier_part
 from flux.api.payloads import build_envelope
 from flux.api.payloads import build_error
+from flux.api.payloads import coerce_ts_ms
+from flux.api.payloads import decode_text
 from flux.api.payloads import now_ms
+from flux.api.payloads import safe_bool
+from flux.api.payloads import safe_int
 from flux.pulse import PulseControlPlane
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
@@ -109,6 +115,7 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+_LOG = logging.getLogger(__name__)
 
 
 def _optional_text(value: Any) -> str | None:
@@ -165,6 +172,201 @@ def _build_strategy_running_resolver(
             cache_expires_at = time.monotonic() + ttl_s
 
         return {strategy_id: cached_running.get(strategy_id) for strategy_id in deduped_ids}
+
+    return _resolve
+
+
+def _signal_payload_to_active_alert_rows(
+    signal_payload: Mapping[str, Any] | None,
+    *,
+    now_ms_value: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(signal_payload, Mapping):
+        return []
+
+    strategy_id = _optional_text(signal_payload.get("id") or signal_payload.get("strategy_id"))
+    if strategy_id is None:
+        return []
+
+    state = signal_payload.get("state")
+    state_map = dict(state) if isinstance(state, Mapping) else {}
+    params = signal_payload.get("params")
+    params_map = dict(params) if isinstance(params, Mapping) else {}
+    ts_ms = (
+        coerce_ts_ms(
+            signal_payload.get("ts_ms") or state_map.get("ts_ms") or state_map.get("ts_event"),
+        )
+        or now_ms_value
+    )
+    state_name = decode_text(state_map.get("state")).strip().lower()
+
+    if safe_bool(signal_payload.get("blocked")) is not True:
+        return []
+
+    quote_health = state_map.get("quote_health")
+    quote_health_map = dict(quote_health) if isinstance(quote_health, Mapping) else {}
+    max_age_ms = safe_int(params_map.get("max_age_ms"))
+
+    def _market_data_row(*, leg_role: str, default_reason_code: str) -> list[dict[str, Any]]:
+        leg_health = quote_health_map.get(leg_role)
+        leg_health_map = dict(leg_health) if isinstance(leg_health, Mapping) else {}
+        reason_code = _optional_text(leg_health_map.get("reason_code")) or default_reason_code
+        age_ms = safe_int(leg_health_map.get("quote_age_ms"))
+        details: dict[str, Any] = {
+            "strategy_id": strategy_id,
+            "leg_role": leg_role,
+        }
+        if age_ms is not None:
+            details["age_ms"] = age_ms
+        if max_age_ms is not None:
+            details["max_age_ms"] = max_age_ms
+        message_parts = [
+            f"Quoting blocked ({leg_role} data stale)",
+            f"strategy_id={strategy_id}",
+        ]
+        if age_ms is not None:
+            message_parts.append(f"age_ms={age_ms}")
+        if max_age_ms is not None:
+            message_parts.append(f"max_age_ms={max_age_ms}")
+        row_id = f"active:{strategy_id}:{reason_code}"
+        return [
+            {
+                "strategy_id": strategy_id,
+                "row_id": row_id,
+                "id": row_id,
+                "alert_key": "market_data_blocked",
+                "level": "warning",
+                "code": reason_code,
+                "reason_code": reason_code,
+                "message": " ".join(message_parts),
+                "details": details,
+                "ts_ms": ts_ms,
+                "source": "signals",
+            },
+        ]
+
+    if state_name == "blocked_reference_md":
+        return _market_data_row(
+            leg_role="reference",
+            default_reason_code="blocked_reference_md_stale",
+        )
+    if state_name == "blocked_maker_md":
+        return _market_data_row(
+            leg_role="maker",
+            default_reason_code="blocked_maker_md_stale",
+        )
+
+    reason_code = _optional_text(signal_payload.get("reason")) or state_name or "blocked"
+    row_id = f"active:{strategy_id}:{reason_code}"
+    return [
+        {
+            "strategy_id": strategy_id,
+            "row_id": row_id,
+            "id": row_id,
+            "alert_key": "strategy_blocked",
+            "level": "warning",
+            "code": reason_code,
+            "reason_code": reason_code,
+            "message": f"Strategy blocked ({reason_code.replace('_', ' ')}) strategy_id={strategy_id}",
+            "details": {
+                "strategy_id": strategy_id,
+                "state": state_name or reason_code,
+            },
+            "ts_ms": ts_ms,
+            "source": "signals",
+        },
+    ]
+
+
+def _build_strategy_alerts_resolver(
+    *,
+    flux_config: FluxConfig | None = None,
+    redis_client: RedisClientProtocol | None = None,
+    contract_catalog: tuple[ContractCatalogEntry, ...] | None = None,
+    strategy_metadata: StrategyMetadata | None = None,
+    strategy_running_resolver: Callable[[list[str] | tuple[str, ...]], dict[str, bool | None]] | None = None,
+    store: FluxApiStore | None = None,
+    cache_ttl_s: float = 1.0,
+    now_ms_fn: Callable[[], int] | None = None,
+):
+    if store is None:
+        if (
+            flux_config is None
+            or redis_client is None
+            or contract_catalog is None
+            or strategy_metadata is None
+        ):
+            raise ValueError(
+                "flux_config, redis_client, contract_catalog, and strategy_metadata are required",
+            )
+        store = FluxApiStore(
+            flux_config=flux_config,
+            redis_client=redis_client,
+            contract_catalog=contract_catalog,
+            strategy_running_resolver=strategy_running_resolver,
+            strategy_alerts_resolver=None,
+            alerts_include_history=True,
+            params_schema=DEFAULT_PARAMS_SCHEMA,
+            params_defaults=DEFAULT_PARAMS_DEFAULTS,
+        )
+
+    ttl_s = max(float(cache_ttl_s), 0.0)
+    cached_rows: dict[str, list[dict[str, Any]]] = {}
+    cache_expires_at = 0.0
+    current_now_ms = now_ms_fn or now_ms
+    fallback_metadata = strategy_metadata or StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups=TOKENMM_DESCRIPTOR.profile,
+        base_asset="BASE",
+        quote_asset="QUOTE",
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
+    )
+
+    def _resolve(strategy_ids: list[str] | tuple[str, ...]) -> dict[str, list[dict[str, Any]]]:
+        nonlocal cache_expires_at, cached_rows
+
+        deduped_ids: list[str] = []
+        seen: set[str] = set()
+        for strategy_id in strategy_ids:
+            strategy_text = _optional_text(strategy_id)
+            if strategy_text is None or strategy_text in seen:
+                continue
+            seen.add(strategy_text)
+            deduped_ids.append(strategy_text)
+        if not deduped_ids:
+            return {}
+
+        refresh_needed = time.monotonic() >= cache_expires_at or any(
+            strategy_id not in cached_rows for strategy_id in deduped_ids
+        )
+        if refresh_needed:
+            next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_rows)
+            running_states = store.load_running_states(deduped_ids)
+            now_ms_value = int(current_now_ms())
+            for strategy_id in deduped_ids:
+                try:
+                    signal_payload = store.load_signals_payload(
+                        strategy_id,
+                        fallback_metadata,
+                        running=running_states.get(strategy_id),
+                    )
+                except Exception:
+                    _LOG.exception(
+                        "TokenMM active alert resolver failed strategy_id=%s",
+                        strategy_id,
+                    )
+                    next_cache[strategy_id] = []
+                    continue
+                next_cache[strategy_id] = _signal_payload_to_active_alert_rows(
+                    signal_payload,
+                    now_ms_value=now_ms_value,
+                )
+            cached_rows = next_cache
+            cache_expires_at = time.monotonic() + ttl_s
+
+        return {strategy_id: list(cached_rows.get(strategy_id, ())) for strategy_id in deduped_ids}
 
     return _resolve
 
@@ -790,6 +992,13 @@ def main() -> None:
         decode_responses=False,
     )
     strategy_running_resolver = _build_strategy_running_resolver()
+    strategy_alerts_resolver = _build_strategy_alerts_resolver(
+        flux_config=flux_config,
+        redis_client=cast(RedisClientProtocol, redis_client),
+        contract_catalog=contracts,
+        strategy_metadata=metadata,
+        strategy_running_resolver=strategy_running_resolver,
+    )
 
     app = create_flux_api_app(
         flux_config,
@@ -799,6 +1008,8 @@ def main() -> None:
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
         strategy_running_resolver=strategy_running_resolver,
+        strategy_alerts_resolver=strategy_alerts_resolver,
+        alerts_include_history=False,
         strategy_contracts=config.get("strategy_contracts"),
     )
     _attach_tokenmm_readiness_route(

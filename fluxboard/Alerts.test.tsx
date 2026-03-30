@@ -123,6 +123,7 @@ describe('Alerts', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/alerts');
     mockStoreState = createMockStore();
     alertsStoreRuntime.current = mockStoreState;
     marketUpdateHandler = null;
@@ -807,6 +808,17 @@ describe('Alerts', () => {
       expect(apiModule.api.clearAlerts).toHaveBeenCalledTimes(1);
       expect(mockStoreState.clearAlerts).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('hides Clear All on the tokenmm alerts surface', () => {
+    window.history.replaceState({}, '', '/tokenmm/alerts');
+    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+
+    expect(document.location.pathname).toBe('/tokenmm/alerts');
+
+    render(<Alerts />);
+
+    expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
   });
 
   it('renders summary text for contextual alerts', () => {

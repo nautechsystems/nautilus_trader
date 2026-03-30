@@ -21,6 +21,7 @@ import { Button } from './components/ui/button/Button';
 import { Dialog } from './components/ui/dialog/Dialog';
 import { Switch } from './components/ui/switch';
 import { Select } from './components/ui/select';
+import { resolvePathnameProfile } from './config/uiProfiles';
 import {
   createRealtimeSurfaceController,
   useRealtimeSurfaceController,
@@ -108,6 +109,15 @@ export default function Alerts({
   const { isMobile } = useMobileLayout();
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const activeProfile = (
+    typeof globalThis === 'undefined'
+      ? 'default'
+      : resolvePathnameProfile(
+          globalThis.location?.pathname
+          ?? (typeof document === 'undefined' ? undefined : document.location?.pathname),
+        )
+  );
+  const allowClearAll = activeProfile !== 'tokenmm';
 
   // Track last WebSocket data to prevent redundant updates
   const lastWebSocketDataRef = useRef<string>('');
@@ -530,7 +540,7 @@ export default function Alerts({
       </span>
 
       {/* Clear All Button */}
-      {filteredRows.length > 0 && (
+      {allowClearAll && filteredRows.length > 0 && (
         <Button variant="ghost" size="xs" onClick={() => setShowClearConfirm(true)}>
           Clear All
         </Button>
@@ -596,7 +606,12 @@ export default function Alerts({
       </PanelBody>
 
       {/* Clear All Confirmation Dialog */}
-      <Dialog isOpen={showClearConfirm} onClose={() => setShowClearConfirm(false)} title="Clear All Alerts" size="sm">
+      <Dialog
+        isOpen={allowClearAll && showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        title="Clear All Alerts"
+        size="sm"
+      >
         <p className="text-sm text-text-muted mb-4">
           Are you sure you want to clear all alerts? This action cannot be undone.
         </p>

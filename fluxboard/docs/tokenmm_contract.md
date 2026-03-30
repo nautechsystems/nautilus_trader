@@ -603,8 +603,9 @@ Response `data`:
 
 Semantics:
 
-1. Clears all alerts for the resolved strategy/profile.
-2. Request body is empty.
+1. Clears stream-backed alert history for the resolved strategy/profile.
+2. Current active alerts synthesized from live signal state are not dismissed by this route and may remain in `remaining`.
+3. Request body is empty.
 
 Request:
 
@@ -619,7 +620,7 @@ Response `data`:
   "success": true,
   "strategy_id": "maker_v3_01",
   "deleted": 3,
-  "remaining": 0,
+  "remaining": 1,
   "server_ts_ms": 1772607924122
 }
 ```

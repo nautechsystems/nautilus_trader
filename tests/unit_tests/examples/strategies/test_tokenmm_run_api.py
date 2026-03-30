@@ -14,6 +14,7 @@ from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
 from flux.runners.tokenmm.run_api import _attach_profile_router_proxy
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
 from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
+from flux.runners.tokenmm.run_api import _build_strategy_alerts_resolver
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _build_strategy_running_resolver
@@ -160,6 +161,159 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_tokenmm_strategy_i
         "tokenmm-node-plumeusdt_binance_spot_makerv3",
         "tokenmm-node-plumeusdt_binance_perp_makerv3",
     ]
+
+
+def test_build_strategy_alerts_resolver_emits_current_market_data_block_only() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            if strategy_id == "strategy_blocked":
+                return {
+                    "id": strategy_id,
+                    "ts_ms": 1_774_897_251_000,
+                    "blocked": True,
+                    "tradeable": False,
+                    "reason": "stale_market_data",
+                    "params": {"max_age_ms": 15_000},
+                    "state": {
+                        "state": "blocked_reference_md",
+                        "quote_health": {
+                            "reference": {
+                                "quote_age_ms": 15_250,
+                                "reason_code": "blocked_reference_md_stale",
+                            },
+                        },
+                    },
+                }
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_252_000,
+                "blocked": False,
+                "tradeable": True,
+                "reason": "running",
+                "params": {"max_age_ms": 15_000},
+                "state": {"state": "running"},
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 9_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked", "strategy_recovered"])
+
+    assert rows_by_strategy["strategy_recovered"] == []
+    assert rows_by_strategy["strategy_blocked"] == [
+        {
+            "strategy_id": "strategy_blocked",
+            "row_id": "active:strategy_blocked:blocked_reference_md_stale",
+            "id": "active:strategy_blocked:blocked_reference_md_stale",
+            "alert_key": "market_data_blocked",
+            "level": "warning",
+            "code": "blocked_reference_md_stale",
+            "reason_code": "blocked_reference_md_stale",
+            "message": (
+                "Quoting blocked (reference data stale) "
+                "strategy_id=strategy_blocked age_ms=15250 max_age_ms=15000"
+            ),
+            "details": {
+                "strategy_id": "strategy_blocked",
+                "leg_role": "reference",
+                "age_ms": 15_250,
+                "max_age_ms": 15_000,
+            },
+            "ts_ms": 1_774_897_251_000,
+            "source": "signals",
+        },
+    ]
+
+
+def test_build_strategy_alerts_resolver_omits_none_age_from_message() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_251_000,
+                "blocked": True,
+                "tradeable": False,
+                "reason": "stale_market_data",
+                "params": {"max_age_ms": 15_000},
+                "state": {
+                    "state": "blocked_reference_md",
+                    "quote_health": {"reference": {}},
+                },
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_774_897_259_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked"])
+    row = rows_by_strategy["strategy_blocked"][0]
+
+    assert row["message"] == (
+        "Quoting blocked (reference data stale) "
+        "strategy_id=strategy_blocked max_age_ms=15000"
+    )
+    assert row["details"] == {
+        "strategy_id": "strategy_blocked",
+        "leg_role": "reference",
+        "max_age_ms": 15_000,
+    }
+
+
+def test_build_strategy_alerts_resolver_isolates_single_strategy_failure() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            if strategy_id == "strategy_broken":
+                raise RuntimeError("broken signal")
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_251_000,
+                "blocked": True,
+                "tradeable": False,
+                "reason": "stale_market_data",
+                "params": {"max_age_ms": 15_000},
+                "state": {
+                    "state": "blocked_reference_md",
+                    "quote_health": {
+                        "reference": {
+                            "quote_age_ms": 15_250,
+                            "reason_code": "blocked_reference_md_stale",
+                        },
+                    },
+                },
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_774_897_259_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked", "strategy_broken"])
+
+    assert rows_by_strategy["strategy_broken"] == []
+    assert rows_by_strategy["strategy_blocked"][0]["row_id"] == (
+        "active:strategy_blocked:blocked_reference_md_stale"
+    )
 
 
 def test_load_tokenmm_readiness_uses_runner_truth_for_operator_surface(monkeypatch) -> None:
@@ -375,6 +529,8 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
         captured["strategy_contracts"] = kwargs["strategy_contracts"]
         captured["profile_strategy_map"] = kwargs["profile_strategy_map"]
         captured["strategy_running_resolver"] = kwargs["strategy_running_resolver"]
+        captured["strategy_alerts_resolver"] = kwargs["strategy_alerts_resolver"]
+        captured["alerts_include_history"] = kwargs["alerts_include_history"]
         return Flask(__name__)
 
     monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
@@ -393,6 +549,8 @@ def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> N
     assert running_resolver(["plumeusdt_binance_spot_makerv3"]) == {
         "plumeusdt_binance_spot_makerv3": True,
     }
+    assert callable(captured["strategy_alerts_resolver"])
+    assert captured["alerts_include_history"] is False
     assert captured["pulse_job_id"] == "tokenmm-node-plumeusdt_binance_spot_makerv3"
 
 

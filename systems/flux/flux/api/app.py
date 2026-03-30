@@ -371,6 +371,7 @@ class FluxApiStore:
         contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
         strategy_running_resolver: StrategyRunningResolver | None = None,
         strategy_alerts_resolver: StrategyAlertsResolver | None = None,
+        alerts_include_history: bool = True,
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -410,6 +411,7 @@ class FluxApiStore:
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
         self._strategy_alerts_resolver = strategy_alerts_resolver
+        self._alerts_include_history = bool(alerts_include_history)
         self._tokenmm_trade_reset_cache: dict[str, tuple[tuple[int, str], bool]] = {}
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
@@ -1436,19 +1438,27 @@ class FluxApiStore:
         return requires_reset
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
-        keys = self._keys_for_strategy(strategy_id)
-        fetch_count = max(1, min(2_000, limit * 2))
-        entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
-        rows = extract_stream_rows(entries)
-        rows.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        rows: list[dict[str, Any]] = []
+        if self._alerts_include_history or resolver_failed:
+            keys = self._keys_for_strategy(strategy_id)
+            fetch_count = max(1, min(2_000, limit * 2))
+            entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
+            rows.extend(extract_stream_rows(entries))
+        rows.extend(resolved_rows.get(strategy_id, ()))
         return build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
 
     def load_all_alerts_rows(self, strategy_id: str) -> list[dict[str, Any]]:
-        keys = self._keys_for_strategy(strategy_id)
-        entries = self._redis.xrevrange(keys.alerts())
-        rows = extract_stream_rows(entries)
-        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
-        filtered.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        filtered: list[dict[str, Any]] = []
+        if self._alerts_include_history or resolver_failed:
+            keys = self._keys_for_strategy(strategy_id)
+            entries = self._redis.xrevrange(keys.alerts())
+            rows = extract_stream_rows(entries)
+            filtered.extend(
+                row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id
+            )
+        filtered.extend(resolved_rows.get(strategy_id, ()))
         return build_alerts_rows(
             rows=filtered,
             strategy_id=strategy_id,
@@ -1470,9 +1480,12 @@ class FluxApiStore:
         return None
 
     def alerts_stream_len(self, strategy_id: str) -> int | None:
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        extra_count = len(resolved_rows.get(strategy_id, ()))
+        if not self._alerts_include_history and not resolver_failed:
+            return extra_count or None
         keys = self._keys_for_strategy(strategy_id)
         stream_key = keys.alerts()
-        extra_count = len(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
         xlen_fn = getattr(self._redis, "xlen", None)
         if callable(xlen_fn):
             size = safe_int(xlen_fn(stream_key))
@@ -1487,9 +1500,9 @@ class FluxApiStore:
     def _resolved_alert_rows(
         self,
         strategy_ids: Sequence[str],
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> tuple[dict[str, list[dict[str, Any]]], bool]:
         if self._strategy_alerts_resolver is None:
-            return {}
+            return {}, False
 
         deduped_ids: list[str] = []
         seen: set[str] = set()
@@ -1500,13 +1513,13 @@ class FluxApiStore:
             seen.add(strategy_text)
             deduped_ids.append(strategy_text)
         if not deduped_ids:
-            return {}
+            return {}, False
 
         try:
             resolved_raw = dict(self._strategy_alerts_resolver(deduped_ids))
         except Exception:
             _LOG.exception("Flux API supplemental alert resolver failed strategy_ids=%s", deduped_ids)
-            return {strategy_id: [] for strategy_id in deduped_ids}
+            return {strategy_id: [] for strategy_id in deduped_ids}, True
 
         resolved: dict[str, list[dict[str, Any]]] = {}
         for strategy_id in deduped_ids:
@@ -1520,7 +1533,7 @@ class FluxApiStore:
                     normalized.setdefault("strategy_id", strategy_id)
                     normalized_rows.append(normalized)
             resolved[strategy_id] = normalized_rows
-        return resolved
+        return resolved, False
 
     def clear_alerts(self, strategy_id: str) -> int:
         keys = self._keys_for_strategy(strategy_id)
@@ -1821,6 +1834,7 @@ def create_flux_api_app(  # noqa: C901
     contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
     strategy_running_resolver: StrategyRunningResolver | None = None,
     strategy_alerts_resolver: StrategyAlertsResolver | None = None,
+    alerts_include_history: bool = True,
     strategy_metadata: StrategyMetadata,
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
@@ -1935,6 +1949,7 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog_resolver=contract_catalog_resolver,
         strategy_running_resolver=strategy_running_resolver,
         strategy_alerts_resolver=strategy_alerts_resolver,
+        alerts_include_history=alerts_include_history,
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
