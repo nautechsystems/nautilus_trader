@@ -309,17 +309,20 @@ impl LiveNode {
         self.handle.set_state(NodeState::Starting);
 
         self.kernel.start_async().await;
-        self.kernel.connect_clients().await;
+
+        // Connect data clients first and drain instruments into cache
+        self.kernel.connect_data_clients().await;
+
+        if let Some(runner) = self.runner.as_mut() {
+            runner.drain_pending_data_events();
+        }
+
+        self.kernel.connect_exec_clients().await;
 
         if !self.await_engines_connected().await {
             log::error!("Cannot start trader: engine client(s) not connected");
             self.handle.set_state(NodeState::Running);
             return Ok(());
-        }
-
-        // Process pending data events before reconciliation and starting trader
-        if let Some(runner) = self.runner.as_mut() {
-            runner.drain_pending_data_events();
         }
 
         self.perform_startup_reconciliation().await?;
@@ -619,53 +622,38 @@ impl LiveNode {
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
 
-        // Startup phase: process events while completing startup
+        // Startup phase 1: Connect data clients and drain instrument events into cache.
+        // This ensures the cache is populated before execution clients connect.
         // TODO: Add ctrl_c and stop_handle monitoring here to allow aborting a
         // hanging startup. Currently signals during startup are ignored, and
         // any pending stop_flag is cleared when transitioning to Running.
-        let engines_connected = {
-            let startup_future = self.complete_startup();
-            tokio::pin!(startup_future);
+        drive_with_event_buffering(
+            self.kernel.connect_data_clients(),
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        )
+        .await;
 
-            loop {
-                tokio::select! {
-                    biased;
+        // Drain data events so instruments are in cache for execution clients
+        pending.drain_data();
 
-                    result = &mut startup_future => {
-                        break result?;
-                    }
-                    Some(handler) = time_evt_rx.recv() => {
-                        AsyncRunner::handle_time_event(handler);
-                    }
-                    Some(evt) = data_evt_rx.recv() => {
-                        pending.data_evts.push(evt);
-                    }
-                    Some(cmd) = data_cmd_rx.recv() => {
-                        pending.data_cmds.push(cmd);
-                    }
-                    Some(evt) = exec_evt_rx.recv() => {
-                        // Only Account events are safe during startup, Report and
-                        // Order events need ExecEngine borrow_mut which conflicts
-                        // with the borrow held by connect().await
-                        match evt {
-                            ExecutionEvent::Account(_) => {
-                                AsyncRunner::handle_exec_event(evt);
-                            }
-                            ExecutionEvent::Report(report) => {
-                                pending.exec_reports.push(report);
-                            }
-                            ExecutionEvent::Order(order_evt) => {
-                                pending.order_evts.push(order_evt);
-                            }
-                        }
-                    }
-                    Some(cmd) = exec_cmd_rx.recv() => {
-                        pending.exec_cmds.push(cmd);
-                    }
-                }
-            }
-        };
+        // Startup phase 2: Connect execution clients (instruments now in cache)
+        let engines_connected = drive_with_event_buffering(
+            self.connect_exec_phase(),
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        )
+        .await?;
 
+        // Drain remaining events from exec client connect
         pending.drain();
 
         if engines_connected {
@@ -951,10 +939,12 @@ impl LiveNode {
         }
     }
 
+    /// Connects execution clients and checks all engines are connected.
+    ///
     /// Returns `true` if all engines connected successfully, `false` otherwise.
-    /// Note: Does NOT run reconciliation - that happens after pending events are drained.
-    async fn complete_startup(&mut self) -> anyhow::Result<bool> {
-        self.kernel.connect_clients().await;
+    /// Must be called after data clients are connected and instrument events drained.
+    async fn connect_exec_phase(&mut self) -> anyhow::Result<bool> {
+        self.kernel.connect_exec_clients().await;
 
         if !self.await_engines_connected().await {
             return Ok(false);
@@ -1272,6 +1262,60 @@ impl LiveNode {
     }
 }
 
+/// Drives a future to completion while buffering channel events.
+///
+/// Time events are handled immediately. Account events are forwarded directly.
+/// All other events are buffered in `pending` for later processing.
+async fn drive_with_event_buffering<F: std::future::Future>(
+    future: F,
+    pending: &mut PendingEvents,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+) -> F::Output {
+    tokio::pin!(future);
+
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => {
+                break result;
+            }
+            Some(handler) = time_evt_rx.recv() => {
+                AsyncRunner::handle_time_event(handler);
+            }
+            Some(evt) = data_evt_rx.recv() => {
+                pending.data_evts.push(evt);
+            }
+            Some(cmd) = data_cmd_rx.recv() => {
+                pending.data_cmds.push(cmd);
+            }
+            Some(evt) = exec_evt_rx.recv() => {
+                // Account events are safe to process immediately. Report and
+                // Order events need ExecEngine borrow_mut which may conflict
+                // with the borrow held by the driven future.
+                match evt {
+                    ExecutionEvent::Account(_) => {
+                        AsyncRunner::handle_exec_event(evt);
+                    }
+                    ExecutionEvent::Report(report) => {
+                        pending.exec_reports.push(report);
+                    }
+                    ExecutionEvent::Order(order_evt) => {
+                        pending.order_evts.push(order_evt);
+                    }
+                }
+            }
+            Some(cmd) = exec_cmd_rx.recv() => {
+                pending.exec_cmds.push(cmd);
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct PendingEvents {
     data_cmds: Vec<DataCommand>,
@@ -1282,6 +1326,31 @@ struct PendingEvents {
 }
 
 impl PendingEvents {
+    /// Drains only data events and commands into the cache.
+    ///
+    /// Called between data and execution client connects so that instruments
+    /// are available in the cache when execution clients load them.
+    fn drain_data(&mut self) {
+        let total = self.data_evts.len() + self.data_cmds.len();
+
+        if total > 0 {
+            log::debug!(
+                "Draining {total} data events/commands into cache \
+                 (data_evts={}, data_cmds={})",
+                self.data_evts.len(),
+                self.data_cmds.len(),
+            );
+        }
+
+        for evt in self.data_evts.drain(..) {
+            AsyncRunner::handle_data_event(evt);
+        }
+        for cmd in self.data_cmds.drain(..) {
+            AsyncRunner::handle_data_command(cmd);
+        }
+    }
+
+    /// Drains all remaining pending events.
     fn drain(&mut self) {
         let total = self.data_evts.len()
             + self.data_cmds.len()

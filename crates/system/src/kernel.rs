@@ -551,13 +551,23 @@ impl NautilusKernel {
         }
     }
 
-    /// Connects all engine clients.
+    /// Connects data engine clients.
     ///
-    /// Connection failures are logged but do not prevent the node from running.
+    /// Data clients are connected first so that instruments are published
+    /// and can be drained into the cache before execution clients connect.
     #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
-    pub async fn connect_clients(&mut self) {
-        log::info!("Connecting clients...");
+    pub async fn connect_data_clients(&mut self) {
+        log::info!("Connecting data clients...");
         self.data_engine.borrow_mut().connect().await;
+    }
+
+    /// Connects execution engine clients.
+    ///
+    /// Must be called after data clients are connected and instrument events
+    /// have been drained into the cache, so execution clients can load instruments.
+    #[allow(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
+    pub async fn connect_exec_clients(&mut self) {
+        log::info!("Connecting execution clients...");
         self.exec_engine.borrow_mut().connect().await;
     }
 
