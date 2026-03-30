@@ -146,6 +146,10 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         Determines which API to use for fetching user positions:
         - True: Data API (experimental) - efficient for large workloads, fewer API calls
         - False: CLOB API (stable, default) - balance/allowance endpoint, one request per instrument
+    use_rust : bool, default False
+        If True, uses the Rust py_clob_rust_adaptor for order signing and placement.
+        All other operations (market data, account queries, etc.) will continue using the Python client.
+        Requires py_clob_rust_adaptor to be installed.
 
     """
 
@@ -167,3 +171,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     log_raw_ws_messages: bool = False
     ack_timeout_secs: PositiveFloat = 5.0
     use_data_api: bool = False
+    use_rust: bool = False

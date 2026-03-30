@@ -18,6 +18,7 @@ from typing import Any
 
 import msgspec
 import pandas as pd
+import logging
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide

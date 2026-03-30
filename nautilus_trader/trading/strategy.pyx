@@ -1262,6 +1262,13 @@ cdef class Strategy(Actor):
             side=order_side,
         )
 
+        cdef list inflight_orders = self.cache.orders_inflight(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+            side=order_side,
+        )
+
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
         if not open_orders and not emulated_orders and not inflight_orders:
             self.log.info(
@@ -1293,7 +1300,7 @@ cdef class Strategy(Actor):
         cdef:
             OrderPendingCancel event
             Order order
-        for order in open_orders + emulated_orders:
+        for order in open_orders + emulated_orders + inflight_orders:
             if order.status_c() == OrderStatus.INITIALIZED or order.is_emulated_c():
                 continue
             event = self._generate_order_pending_cancel(order)
