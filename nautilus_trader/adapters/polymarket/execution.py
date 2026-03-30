@@ -653,12 +653,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         else:
             instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
 
-        if self._config.use_data_api:
-            # Fetch all positions once (bulk operation)
-            quantities_by_instrument = await self._fetch_quantities_from_gamma_api(instrument_ids)
-        else:
-            # Fetch positions individually (one API call per instrument)
-            quantities_by_instrument = await self._fetch_quantities_from_clob_api(instrument_ids)
+        quantities_by_instrument = await self._fetch_quantities_from_gamma_api(instrument_ids)
 
         # Generate reports from quantities
         for instrument_id, quantity in quantities_by_instrument.items():
@@ -779,35 +774,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
             size = size_by_asset.get(instrument_id, 0.0)
             # Gamma API returns size as decimal float (e.g., 1.5 shares)
             quantities[instrument_id] = Quantity(float(size), precision=USDC_POS.precision)
-
-        return quantities
-
-    async def _fetch_quantities_from_clob_api(
-        self,
-        instrument_ids: list[InstrumentId],
-    ) -> dict[InstrumentId, Quantity]:
-        """
-        Fetch position quantities using CLOB API (individual queries).
-        """
-        quantities: dict[InstrumentId, Quantity] = {}
-
-        for instrument_id in instrument_ids:
-            self._log.debug(f"Requesting position for {instrument_id} from CLOB API")
-            token_id = str(get_polymarket_token_id(instrument_id))
-
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            response: dict[str, Any] = await asyncio.to_thread(
-                self._http_client.get_balance_allowance,
-                params,
-            )
-            quantities[instrument_id] = Quantity.from_raw(
-                usdce_from_units(int(response["balance"])).raw,
-                precision=USDC_POS.precision,
-            )
 
         return quantities
 

@@ -508,7 +508,6 @@ The following limitations are currently known:
 | `log_raw_ws_messages`                | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 | `instrument_config`                  | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
 | `ws_max_subscriptions_per_connection` | `200`       | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
-| `use_data_api`                       | `False`      | Use the Data API instead of CLOB API for fetching user positions (experimental). |
 
 ### Instrument provider configuration options
 
