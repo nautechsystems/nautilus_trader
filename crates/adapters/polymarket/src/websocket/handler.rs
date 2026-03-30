@@ -250,6 +250,12 @@ impl FeedHandler {
     }
 
     fn parse_messages(&self, text: &str) -> Vec<PolymarketWsMessage> {
+        // When `subscribe_new_markets` is enabled, Polymarket's WSS periodically
+        // sends the plain-text string "NO NEW ASSETS" as a heartbeat/ack.
+        if text == "NO NEW ASSETS" {
+            return vec![];
+        }
+
         match self.channel {
             WsChannel::Market => {
                 if let Ok(msgs) = serde_json::from_str::<Vec<MarketWsMessage>>(text) {
