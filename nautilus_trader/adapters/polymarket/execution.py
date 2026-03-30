@@ -34,6 +34,7 @@ from py_clob_client.exceptions import PolyApiException
 from py_clob_rust_adaptor import PyClobClient
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_BATCH_MAX_SIZE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_CANCEL_ALREADY_DONE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_FINALIZED_TRADE_STATUSES
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
@@ -1280,6 +1281,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
         """
         Sign multiple orders for batch submission.
 
+        If a Rust client is configured, all orders are signed in parallel using
+        asyncio.gather for maximum throughput. Otherwise orders are signed
+        sequentially using the Python client.
+
+        tick_size is read from order.tags[0] (if present) and passed to signing.
+        neg_risk is read from instrument.info.
+
         Returns
         -------
         tuple[list[Order], list[PostOrdersArgs]]
@@ -1287,14 +1295,93 @@ class PolymarketExecutionClient(LiveExecutionClient):
             Orders that fail to sign are rejected and excluded from the result.
 
         """
-        signed_orders_args: list[PostOrdersArgs] = []
-        successfully_signed_orders: list[Order] = []
         signing_start = self._clock.timestamp()
 
+        if self._rust_client is not None:
+            signed_orders, signed_orders_args = await self._sign_orders_for_batch_rust(orders)
+        else:
+            signed_orders, signed_orders_args = await self._sign_orders_for_batch_python(orders)
+
+        interval = self._clock.timestamp() - signing_start
+        self._log.info(
+            f"Signed {len(signed_orders)}/{len(orders)} Polymarket orders "
+            f"in {interval:.3f}s",
+            LogColor.BLUE,
+        )
+        return signed_orders, signed_orders_args
+
+    async def _sign_order_rust(
+        self,
+        order: Order,
+    ) -> tuple[SignedOrderWrapper, str] | Exception:
+        """Sign a single order using the Rust client. Returns (wrapper, order_type) or Exception."""
+        instrument = self._cache.instrument(order.instrument_id)
+        tick_size = order.tags[0] if order.tags else None
+        neg_risk = self._get_neg_risk_for_instrument(instrument)
+        order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
+        signed_order_json = await self._rust_client.create_order(
+            get_polymarket_token_id(order.instrument_id),
+            order_side_to_str(order.side),
+            float(order.quantity),
+            float(order.price),
+            int(nanos_to_secs(order.expire_time_ns)),
+            float(tick_size) if tick_size else 0.01,
+            neg_risk,
+        )
+        return SignedOrderWrapper(json.loads(signed_order_json)), order_type
+
+    async def _sign_orders_for_batch_rust(
+        self,
+        orders: list[Order],
+    ) -> tuple[list[Order], list[PostOrdersArgs]]:
+        """Sign all orders in parallel using the Rust client."""
+        self._log.info(
+            f"Signing {len(orders)} batch orders in parallel via Rust client",
+            LogColor.GREEN,
+        )
+        results = await asyncio.gather(
+            *[self._sign_order_rust(order) for order in orders],
+            return_exceptions=True,
+        )
+        signed_orders: list[Order] = []
+        signed_orders_args: list[PostOrdersArgs] = []
+        for order, result in zip(orders, results):
+            if isinstance(result, Exception):
+                self._log.error(
+                    f"Failed to sign order {order.client_order_id} via Rust: {result}",
+                    LogColor.RED,
+                )
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=f"Order signing failed: {result}",
+                    ts_event=self._clock.timestamp_ns(),
+                )
+            else:
+                signed_order, order_type = result
+                signed_orders_args.append(
+                    PostOrdersArgs(
+                        order=signed_order,
+                        orderType=order_type,
+                        postOnly=order.is_post_only,
+                    ),
+                )
+                signed_orders.append(order)
+        return signed_orders, signed_orders_args
+
+    async def _sign_orders_for_batch_python(
+        self,
+        orders: list[Order],
+    ) -> tuple[list[Order], list[PostOrdersArgs]]:
+        """Sign orders sequentially using the Python client."""
+        signed_orders: list[Order] = []
+        signed_orders_args: list[PostOrdersArgs] = []
         for order in orders:
             try:
                 instrument = self._cache.instrument(order.instrument_id)
-
+                tick_size = order.tags[0] if order.tags else None
+                neg_risk = self._get_neg_risk_for_instrument(instrument)
                 order_args = OrderArgs(
                     price=float(order.price),
                     token_id=get_polymarket_token_id(order.instrument_id),
@@ -1302,16 +1389,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     side=order_side_to_str(order.side),
                     expiration=int(nanos_to_secs(order.expire_time_ns)),
                 )
-
-                neg_risk = self._get_neg_risk_for_instrument(instrument)
-                options = PartialCreateOrderOptions(neg_risk=neg_risk)
-
+                options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
                 signed_order = await asyncio.to_thread(
                     self._http_client.create_order,
                     order_args,
                     options=options,
                 )
-
                 order_type = convert_tif_to_polymarket_order_type(order.time_in_force)
                 signed_orders_args.append(
                     PostOrdersArgs(
@@ -1320,7 +1403,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         postOnly=order.is_post_only,
                     ),
                 )
-                successfully_signed_orders.append(order)
+                signed_orders.append(order)
             except Exception as e:
                 self._log.error(
                     f"Failed to sign order {order.client_order_id}: {e}",
@@ -1333,15 +1416,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     reason=f"Order signing failed: {e}",
                     ts_event=self._clock.timestamp_ns(),
                 )
-
-        interval = self._clock.timestamp() - signing_start
-        self._log.info(
-            f"Signed {len(successfully_signed_orders)}/{len(orders)} Polymarket orders "
-            f"in {interval:.3f}s",
-            LogColor.BLUE,
-        )
-
-        return successfully_signed_orders, signed_orders_args
+        return signed_orders, signed_orders_args
 
     async def _post_signed_orders_batch(
         self,
@@ -1349,30 +1424,45 @@ class PolymarketExecutionClient(LiveExecutionClient):
         signed_orders_args: list[PostOrdersArgs],
     ) -> None:
         """
-        Post a batch of signed orders to Polymarket.
+        Post a batch of signed orders to Polymarket, chunked to POLYMARKET_BATCH_MAX_SIZE.
+
+        Polymarket's post_orders endpoint accepts at most 15 orders per call.
+        Larger batches are split into sequential chunks; each chunk is retried
+        independently so a single chunk failure does not reject the entire batch.
         """
-        retry_manager = await self._retry_manager_pool.acquire()
-        try:
-            client_order_ids = [order.client_order_id for order in orders]
-            response = await retry_manager.run(
-                "submit_orders_batch",
-                client_order_ids,
-                asyncio.to_thread,
-                self._http_client.post_orders,
-                signed_orders_args,
-            )
+        for chunk_start in range(0, len(orders), POLYMARKET_BATCH_MAX_SIZE):
+            chunk_orders = orders[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
+            chunk_args = signed_orders_args[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
 
-            if not response:
-                self._reject_all_orders(orders, str(retry_manager.message))
-                return
+            if len(orders) > POLYMARKET_BATCH_MAX_SIZE:
+                self._log.info(
+                    f"Posting chunk {chunk_start // POLYMARKET_BATCH_MAX_SIZE + 1} "
+                    f"({len(chunk_orders)} orders)",
+                    LogColor.BLUE,
+                )
 
-            self._process_batch_response(orders, response)
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
+                client_order_ids = [order.client_order_id for order in chunk_orders]
+                response = await retry_manager.run(
+                    "submit_orders_batch",
+                    client_order_ids,
+                    asyncio.to_thread,
+                    self._http_client.post_orders,
+                    chunk_args,
+                )
 
-        except Exception as e:
-            self._log.error(f"Error submitting order batch: {e}")
-            self._reject_all_orders(orders, str(e))
-        finally:
-            await self._retry_manager_pool.release(retry_manager)
+                if not response:
+                    self._reject_all_orders(chunk_orders, str(retry_manager.message))
+                    continue
+
+                self._process_batch_response(chunk_orders, response)
+
+            except Exception as e:
+                self._log.error(f"Error submitting order batch chunk: {e}")
+                self._reject_all_orders(chunk_orders, str(e))
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     def _reject_all_orders(self, orders: list[Order], reason: str) -> None:
         """
@@ -2170,49 +2260,58 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning("No orders successfully signed")
             return
 
-        # Step 3: POST all signed orders in a SINGLE HTTP call using post_orders
-        # Always use Python client's post_orders for maximum performance
+        # Step 3: Build PostOrdersArgs and POST in chunks of POLYMARKET_BATCH_MAX_SIZE
         post_start = self._clock.timestamp()
 
-        try:
-            # Build list of PostOrdersArgs for batch POST
-            post_orders_args = []
-            for order, instrument, signed_order in successfully_signed:
-                post_orders_args.append(
-                    PostOrdersArgs(
-                        order=signed_order,
-                        orderType=convert_tif_to_polymarket_order_type(order.time_in_force),
-                    )
-                )
-
-            # POST all orders in a SINGLE HTTP call (regardless of signing method)
-            self._log.info(
-                f"Posting {len(post_orders_args)} orders in single HTTP call",
-                LogColor.CYAN,
+        all_post_args: list[PostOrdersArgs] = [
+            PostOrdersArgs(
+                order=signed_order,
+                orderType=convert_tif_to_polymarket_order_type(order.time_in_force),
             )
+            for order, _instrument, signed_order in successfully_signed
+        ]
 
-            retry_manager = await self._retry_manager_pool.acquire()
+        n_chunks = (len(successfully_signed) + POLYMARKET_BATCH_MAX_SIZE - 1) // POLYMARKET_BATCH_MAX_SIZE
+        self._log.info(
+            f"Posting {len(successfully_signed)} orders in {n_chunks} chunk(s) "
+            f"of up to {POLYMARKET_BATCH_MAX_SIZE}",
+            LogColor.CYAN,
+        )
+
+        for chunk_start in range(0, len(successfully_signed), POLYMARKET_BATCH_MAX_SIZE):
+            chunk = successfully_signed[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
+            chunk_args = all_post_args[chunk_start : chunk_start + POLYMARKET_BATCH_MAX_SIZE]
+
             try:
-                response = await retry_manager.run(
-                    "submit_orders_batch",
-                    [o.client_order_id for o, _, _ in successfully_signed],
-                    asyncio.to_thread,
-                    self._http_client.post_orders,
-                    post_orders_args,
-                )
-            finally:
-                await self._retry_manager_pool.release(retry_manager)
+                retry_manager = await self._retry_manager_pool.acquire()
+                try:
+                    response = await retry_manager.run(
+                        "submit_orders_batch",
+                        [o.client_order_id for o, _, _ in chunk],
+                        asyncio.to_thread,
+                        self._http_client.post_orders,
+                        chunk_args,
+                    )
+                finally:
+                    await self._retry_manager_pool.release(retry_manager)
 
-            # Parse response and generate events
-            if response and isinstance(response, list):
-                for idx, (order, instrument, signed_order) in enumerate(successfully_signed):
+                if not response or not isinstance(response, list):
+                    self._log.error(f"Unexpected response from post_orders: {response}")
+                    for order, _i, _s in chunk:
+                        self.generate_order_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            reason="UNEXPECTED_RESPONSE_FORMAT",
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+                    continue
+
+                for idx, (order, _instrument, _signed_order) in enumerate(chunk):
                     order_response = response[idx] if idx < len(response) else None
-
                     if order_response and order_response.get("success"):
                         venue_order_id = VenueOrderId(order_response["orderID"])
                         self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
-
-                        # Generate OrderAccepted event
                         self.generate_order_accepted(
                             strategy_id=order.strategy_id,
                             instrument_id=order.instrument_id,
@@ -2220,18 +2319,18 @@ class PolymarketExecutionClient(LiveExecutionClient):
                             venue_order_id=venue_order_id,
                             ts_event=self._clock.timestamp_ns(),
                         )
-
-                        # Signal order event
                         event = self._ack_events_order.get(venue_order_id)
                         if event:
                             event.set()
-
-                        # Signal trade event
                         trade_event = self._ack_events_trade.get(venue_order_id)
                         if trade_event:
                             trade_event.set()
                     else:
-                        error_msg = order_response.get("error", "Unknown error") if order_response else "No response"
+                        error_msg = (
+                            order_response.get("error", "Unknown error")
+                            if order_response
+                            else "No response"
+                        )
                         self.generate_order_rejected(
                             strategy_id=order.strategy_id,
                             instrument_id=order.instrument_id,
@@ -2239,29 +2338,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
                             reason=f"POST_ERROR: {error_msg}",
                             ts_event=self._clock.timestamp_ns(),
                         )
-            else:
-                # Response format unexpected
-                self._log.error(f"Unexpected response format from post_orders: {response}")
-                for order, instrument, signed_order in successfully_signed:
+
+            except Exception as e:
+                self._log.error(f"Error in batch POST chunk: {e}")
+                for order, _i, _s in chunk:
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=order.instrument_id,
                         client_order_id=order.client_order_id,
-                        reason="UNEXPECTED_RESPONSE_FORMAT",
+                        reason=f"BATCH_POST_ERROR: {e}",
                         ts_event=self._clock.timestamp_ns(),
                     )
-
-        except Exception as e:
-            self._log.error(f"Error in batch POST: {e}")
-            # Reject all orders
-            for order, instrument, signed_order in successfully_signed:
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=f"BATCH_POST_ERROR: {e}",
-                    ts_event=self._clock.timestamp_ns(),
-                )
 
         post_interval = self._clock.timestamp() - post_start
         batch_total = self._clock.timestamp() - batch_start

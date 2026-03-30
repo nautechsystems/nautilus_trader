@@ -56,3 +56,4 @@ POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = 
 )
 
 POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
+POLYMARKET_BATCH_MAX_SIZE: Final[int] = 15  # max orders per post_orders call
