@@ -4009,6 +4009,10 @@ def test_alerts_profile_equities_merges_synthetic_pulse_alerts_with_stream_rows(
         "a-primary",
     ]
     assert body["data"]["rows"][0]["source"] == "pulse"
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "mixed",
+        "clear_mode": "history_only",
+    }
 
 
 def test_trades_profile_equities_preserves_market_exit_rows(

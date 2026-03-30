@@ -1081,6 +1081,40 @@ def test_store_update_params_records_bot_on_control_revision(
     assert metadata["bot_on_control_revision"].decode("utf-8")
 
 
+def test_store_update_params_rotates_bot_on_control_revision_on_same_value_update(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    first = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    first_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+    second = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    second_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+
+    assert first["updated"] == ["bot_on"]
+    assert second["updated"] == ["bot_on"]
+    assert first["params"]["bot_on"] is True
+    assert second["params"]["bot_on"] is True
+    assert first_revision
+    assert second_revision
+    assert second_revision != first_revision
+
+
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
     monkeypatch,
     flux_config,
@@ -5810,6 +5844,109 @@ def test_alerts_profile_tokenmm_stabilizes_row_id_from_entry_id(
     assert row["row_id"] == row["entry_id"]
 
 
+def test_alerts_profile_tokenmm_can_serve_resolved_rows_without_stream_history(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "startup-history",
+                "alert_key": "startup_position_reconciliation",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: {
+            flux_config.identity.strategy_id: [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "active-block",
+                    "alert_key": "market_data_blocked",
+                    "level": "warning",
+                    "message": "Quoting blocked (reference data stale)",
+                    "ts_ms": 3_000,
+                },
+            ],
+        },
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["total"] == 1
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["active-block"]
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
+    }
+
+
+def test_alerts_profile_tokenmm_falls_back_to_stream_history_when_active_resolver_fails(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "startup-history",
+                "alert_key": "startup_position_reconciliation",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: (_ for _ in ()).throw(RuntimeError("boom")),
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["total"] == 1
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["startup-history"]
+
+
 def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     flux_config,
     redis_client,
@@ -5855,6 +5992,72 @@ def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     assert body["data"]["remaining_by_strategy"] == {
         flux_config.identity.strategy_id: 0,
         "strategy_02": 0,
+    }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "history",
+        "clear_mode": "all",
+    }
+
+
+def test_alerts_delete_profile_tokenmm_preserves_remaining_active_rows_when_history_is_disabled(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "history-alert",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: {
+            flux_config.identity.strategy_id: [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "active-block",
+                    "alert_key": "market_data_blocked",
+                    "code": "blocked_reference_md_stale",
+                    "level": "warning",
+                    "message": "Quoting blocked (reference data stale)",
+                    "ts_ms": 3_000,
+                },
+            ],
+        },
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.delete("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["deleted"] == 1
+    assert body["data"]["remaining"] == 1
+    assert body["data"]["remaining_by_strategy"] == {
+        flux_config.identity.strategy_id: 1,
+    }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
     }
 
 

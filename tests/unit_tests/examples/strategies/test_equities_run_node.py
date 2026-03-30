@@ -6,6 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from flux.execution.controller import VenueActivityOrigin
+from flux.execution.intents import ExecutionIntent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentReply
 from flux.runners.equities import run_node
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
@@ -477,6 +481,235 @@ def test_build_node_attaches_profile_account_projection_feed_from_execution_scop
     assert strategy.projection_feed_kwargs["schema_version"] == "v1"
 
 
+def test_build_node_attaches_controller_endpoint_and_canonical_state_feed(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    controller_redis = SimpleNamespace(client_name="controller-redis")
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+            self.controller_publisher_kwargs: dict[str, object] | None = None
+            self.controller_feed_kwargs: dict[str, object] | None = None
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+        def configure_controller_intent_publisher(self, **kwargs) -> None:
+            self.controller_publisher_kwargs = kwargs
+
+        def configure_controller_canonical_state_feed(self, **kwargs) -> None:
+            self.controller_feed_kwargs = kwargs
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=_CapturedStrategyConfig,
+        strategy_id="makerv4",
+        param_set="makerv4",
+        strategy_family="maker_v4",
+        strategy_version="v4",
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("xyz:AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_profile_account_projection_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_reference_balance_snapshot_provider", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node.redis, "Redis", lambda **_kwargs: controller_redis)
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "external_strategy_id": "aapl_tradexyz_makerv4",
+                "trader_id": "EQUITIES-LIVE-AAPL-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": False},
+            "controller": {
+                "controller_scope_id": "equities.ibkr.hedge.main",
+                "owner_id": "equities-controller",
+                "allow_single_host_canary": True,
+            },
+            "strategy": {
+                "strategy_id": "aapl_tradexyz_makerv4",
+                "param_set": "makerv4",
+                "order_qty": "1",
+            },
+            "strategy_contracts": [
+                {
+                    "strategy_id": "aapl_tradexyz_makerv4",
+                    "portfolio_asset_id": "AAPL",
+                    "maker_venue": "HYPERLIQUID",
+                    "maker_symbol": "AAPL",
+                    "market_type": "perp",
+                    "maker_instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "reference_instrument_id": "AAPL.NASDAQ",
+                    "execution_account_scope_id": "hyperliquid.xyz.main",
+                    "reference_account_scope_id": "ibkr.reference.main",
+                    "hedge_account_scope_id": "ibkr.hedge.main",
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                },
+            ],
+        },
+        mode="paper",
+        force_enable_execution=False,
+    )
+
+    strategy = captured["strategy"]
+    assert strategy.config.controller_scope_id == "equities.ibkr.hedge.main"
+    assert strategy.controller_publisher_kwargs is not None
+    assert strategy.controller_publisher_kwargs["controller_scope_id"] == "equities.ibkr.hedge.main"
+    assert callable(strategy.controller_publisher_kwargs["publish_intent"])
+    assert strategy.controller_feed_kwargs == {
+        "redis_client": controller_redis,
+        "controller_scope_id": "equities.ibkr.hedge.main",
+        "namespace": "flux",
+        "schema_version": "v1",
+    }
+
+
+def test_controller_intent_publisher_routes_via_uds_and_applies_accepted_lifecycle_event(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    lifecycle_events = []
+
+    strategy = SimpleNamespace(
+        _msgbus=SimpleNamespace(
+            request=lambda **_kwargs: pytest.fail("publisher should not use the process-local msgbus"),
+        ),
+        apply_controller_lifecycle_event=lifecycle_events.append,
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        captured["paths"] = paths
+        captured["request"] = request
+        captured["timeout_s"] = timeout_s
+        claim = request.intent.claim(controller_epoch=3, controller_seq=11)
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="equities.ibkr.hedge.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+    command = SimpleNamespace(
+        intent=ExecutionIntent(
+            intent_id="intent-001",
+            controller_scope_id="equities.ibkr.hedge.main",
+            strategy_id="aapl_tradexyz_makerv4",
+        ),
+        command_type="place",
+        order_role="hedge",
+        instrument_id="AAPL.NASDAQ",
+        side="BUY",
+        quantity="2",
+        limit_price="190.04",
+        post_only=False,
+        time_in_force="IOC",
+        target_client_order_id=None,
+        route="SMART",
+        outside_rth=True,
+        include_overnight=False,
+        cancel_after_ms=None,
+    )
+
+    publisher(command)
+
+    paths = captured["paths"]
+    request = captured["request"]
+    assert paths.controller_scope_id == "equities.ibkr.hedge.main"
+    assert paths.request_reply_path.name == "equities.ibkr.hedge.main.intent-rpc.sock"
+    assert request.intent == command.intent
+    assert request.command is not None
+    assert request.command.command_type == "place"
+    assert request.command.instrument_id == "AAPL.NASDAQ"
+    assert lifecycle_events and lifecycle_events[0].lifecycle_state is ExecutionLifecycleState.ACCEPTED
+    assert lifecycle_events[0].venue_activity_origin is VenueActivityOrigin.CONTROLLER
+
+
+def test_controller_intent_publisher_raises_on_rejected_reply(tmp_path: Path) -> None:
+    strategy = SimpleNamespace(
+        _msgbus=SimpleNamespace(
+            request=lambda **_kwargs: pytest.fail("publisher should not use the process-local msgbus"),
+        ),
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        return ControllerIntentReply.rejected(
+            intent=request.intent,
+            reason="controller rejected canary request",
+            replied_at_ns=123_999,
+        )
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="equities.ibkr.hedge.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+
+    with pytest.raises(RuntimeError, match="controller rejected canary request"):
+        publisher(
+            SimpleNamespace(
+                intent=ExecutionIntent(
+                    intent_id="intent-002",
+                    controller_scope_id="equities.ibkr.hedge.main",
+                    strategy_id="aapl_tradexyz_makerv4",
+                ),
+                command_type="cancel",
+                order_role="maker",
+                instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                side=None,
+                quantity=None,
+                limit_price=None,
+                post_only=None,
+                time_in_force=None,
+                target_client_order_id="managed-buy-1",
+                route=None,
+                outside_rth=None,
+                include_overnight=None,
+                cancel_after_ms=None,
+            )
+        )
+
+
 def test_build_node_omits_local_inventory_fields_for_equities_maker(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -798,6 +1031,42 @@ hedge_account_scope_id = "ibkr.hedge.main"
 
     assert kwargs["portfolio_asset_id"] == "AAPL"
     assert kwargs["execution_account_scope_id"] == "hyperliquid.xyz.main"
+
+
+def test_load_runtime_config_merges_controller_table(tmp_path: Path) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[identity]
+strategy_id = "makerv4"
+external_strategy_id = "aapl_tradexyz_makerv4"
+
+[strategy]
+strategy_id = "aapl_tradexyz_makerv4"
+param_set = "makerv4"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[controller]
+controller_scope_id = "equities.ibkr.hedge.main"
+owner_id = "equities-controller"
+allow_single_host_canary = true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["controller"] == {
+        "controller_scope_id": "equities.ibkr.hedge.main",
+        "owner_id": "equities-controller",
+        "allow_single_host_canary": True,
+    }
 
 
 def test_strategy_spec_capabilities_expose_shared_account_projection_support() -> None:

@@ -40,6 +40,7 @@ class AccountScopeConfig:
     http_timeout_secs: int | None = None
     dex: str | None = None
     testnet: bool = False
+    controller_scope_id: str | None = None
 
 
 def _required_text(row: Mapping[str, Any], field_name: str) -> str:
@@ -119,9 +120,26 @@ def decode_account_scopes(rows: Iterable[Mapping[str, Any]]) -> tuple[AccountSco
                 http_timeout_secs=_optional_int(row, "http_timeout_secs"),
                 dex=_optional_text(row, "dex"),
                 testnet=_optional_bool(row, "testnet"),
+                controller_scope_id=_optional_text(row, "controller_scope_id"),
             ),
         )
     return tuple(decoded)
 
 
-__all__ = ("AccountScopeConfig", "decode_account_scopes")
+def writer_domain_identity(scope: AccountScopeConfig) -> tuple[str, ...]:
+    return (
+        scope.provider,
+        scope.venue,
+        scope.account_id or "",
+        scope.account_type or "",
+        scope.private_api_family or "",
+        scope.api_key_env or "",
+        scope.account_address_env or "",
+        scope.vault_address_env or "",
+        scope.base_url_http or "",
+        scope.dex or "",
+        "testnet" if scope.testnet else "mainnet",
+    )
+
+
+__all__ = ("AccountScopeConfig", "decode_account_scopes", "writer_domain_identity")

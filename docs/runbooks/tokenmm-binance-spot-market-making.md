@@ -24,9 +24,10 @@ Use it together with `deploy/tokenmm/README.md` and
 - Keep `[strategy] spot_cash_borrowing_policy = "both_sides"` for the first
   rollout so the strategy uses free balances first and borrows only when needed
   on either side.
-- Keep `[strategy] force_bot_off_on_start = true` during the cutover.
-- Keep `[strategy] bot_on = false` by default until the bot-off restart and
-  canary finish cleanly.
+- Keep `[strategy] force_bot_off_on_start = false` in production so controller
+  or node restarts resume the live quoting posture.
+- Keep `[strategy] bot_on = true` in production. If quoting needs to be held,
+  pause it through the params control surface instead of the deploy config.
 - Do not point live market-making credentials at a Portfolio Margin / PAPI
   account.
 
@@ -48,7 +49,7 @@ Use it together with `deploy/tokenmm/README.md` and
    cross-margin account so the rollout starts from funded inventory rather than
    relying on an empty spot wallet.
 
-## Cutover steps for the bot-off restart and canary
+## Cutover steps for restart continuity
 
 1. Rotate or point the Binance API credentials to the supported cross-margin
    account.
@@ -56,9 +57,9 @@ Use it together with `deploy/tokenmm/README.md` and
    contract:
    - `allow_cash_borrowing = true`
    - `spot_cash_borrowing_policy = "both_sides"`
-   - `force_bot_off_on_start = true`
-   - `bot_on = false`
-3. Restart the Binance spot node in bot-off mode:
+   - `force_bot_off_on_start = false`
+   - `bot_on = true`
+3. Restart the Binance spot node:
 
    ```bash
    sudo systemctl restart flux@tokenmm-node-plumeusdt_binance_spot_makerv3.service
@@ -74,11 +75,11 @@ Use it together with `deploy/tokenmm/README.md` and
 
 5. Verify no `UNSUPPORTED_ACCOUNT_MODE` appears in the journal. Any such line is
    a failed cutover.
-6. Keep the strategy bot-off until the restart is clean and the supported
-   account is confirmed funded.
-7. Enable quoting only after a clean bot-off start, then watch the canary for
-   at least one normal quote replacement window and one borrow-needed edge case.
-8. Collect concrete pass/fail evidence immediately after quoting is enabled:
+6. The strategy should come back quoting automatically once the restart is clean
+   and the supported account is confirmed funded.
+7. Watch the live lane for at least one normal quote replacement window and one
+   borrow-needed edge case after restart.
+8. Collect concrete pass/fail evidence immediately after restart:
 
    ```bash
    curl -fsS 'http://127.0.0.1:5022/api/v1/signals?strategy=plumeusdt_binance_spot_makerv3'
@@ -105,16 +106,14 @@ Use it together with `deploy/tokenmm/README.md` and
 
 - The strategy is pointed at a regular Binance cross-margin account, not
   Portfolio Margin / PAPI.
-- The node starts cleanly in bot-off mode with no `UNSUPPORTED_ACCOUNT_MODE`.
+- The node starts cleanly with quoting restored and no `UNSUPPORTED_ACCOUNT_MODE`.
 - `allow_cash_borrowing = true` and
   `spot_cash_borrowing_policy = "both_sides"` remain in force for the first
   rollout.
 - The existing PM `PLUME` liability is flattened before quoting is enabled.
 - The intended market-making inventory is funded in the supported account.
-- After quoting is enabled, signals show accepted/open orders on at least one
-  side and the alerts/journal checks remain clean.
-- Quoting is enabled only after the clean bot-off restart and canary checks
-  complete.
+- After restart, signals show accepted/open orders on at least one side and the
+  alerts/journal checks remain clean.
 
 ## Rollback criteria
 

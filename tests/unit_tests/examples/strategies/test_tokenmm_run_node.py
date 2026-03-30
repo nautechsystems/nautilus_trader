@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import build_client_order_id
+from flux.execution.intents import ExecutionIntent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentReply
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm import run_node
@@ -14,6 +19,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.node import TradingNodeFatalError
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -58,6 +65,22 @@ def _install_strategy_spec(
         ),
         raising=False,
     )
+
+
+def test_repo_root_resolves_checkout_root_for_packaged_node_layout() -> None:
+    assert run_node._repo_root() == _repo_root()
+
+
+def test_shared_runtime_root_falls_back_to_checkout_run_dir() -> None:
+    repo_root = Path("/home/ubuntu/nautilus_trader/.worktrees/account-execution-controller-platform-cut-20260328")
+
+    assert run_node._shared_runtime_root(repo_root) == repo_root / ".run"
+
+
+def test_shared_runtime_root_uses_stable_release_lane_root() -> None:
+    release_root = Path("/home/ubuntu/releases/prod/tokenmm/releases/20260330T031141Z-d3b169d45d")
+
+    assert run_node._shared_runtime_root(release_root) == Path("/home/ubuntu/releases/prod/tokenmm/runtime")
 
 
 def test_tokenmm_startup_lock_uses_descriptor_specific_lock_dir(tmp_path: Path) -> None:
@@ -157,6 +180,479 @@ def test_attach_portfolio_inventory_feed_wires_shared_portfolio_reader(monkeypat
         "stale_after_ms": 2500,
         "allow_partial_global_risk": False,
     }
+
+
+def test_controller_managed_runtime_config_merges_shared_controller_contract_tables(tmp_path: Path) -> None:
+    strategy_path = tmp_path / "strategy.toml"
+    shared_path = tmp_path / "shared.toml"
+    strategy_path.write_text(
+        """
+[flux]
+mode = "paper"
+
+[identity]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+
+[node]
+enable_execution = true
+""".strip(),
+        encoding="utf-8",
+    )
+    shared_path.write_text(
+        """
+[redis]
+host = "127.0.0.1"
+port = 6380
+db = 0
+
+[controller]
+controller_scope_id = "tokenmm.binance.pm.main"
+account_scope_id = "binance.pm.main"
+managed_strategy_ids = ["plumeusdt_binance_perp_makerv3"]
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "binance.pm.main"
+reference_account_scope_id = "binance.pm.main"
+controller_scope_id = "tokenmm.binance.pm.main"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    merged = run_node._load_runtime_config(strategy_path, shared_config_path=shared_path)
+
+    assert merged["controller"]["controller_scope_id"] == "tokenmm.binance.pm.main"
+    assert merged["strategy_contracts"][0]["controller_scope_id"] == "tokenmm.binance.pm.main"
+
+
+def test_controller_intent_publisher_routes_via_uds_and_rewrites_client_order_id(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    lifecycle_events = []
+    strategy = SimpleNamespace(
+        apply_controller_lifecycle_event=lifecycle_events.append,
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        captured["paths"] = paths
+        captured["request"] = request
+        captured["timeout_s"] = timeout_s
+        claim = request.intent.claim(controller_epoch=4, controller_seq=17)
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+    order = SimpleNamespace(
+        client_order_id="node-owned-order-id",
+        instrument_id="PLUMEUSDT.BINANCE_SPOT",
+        side="BUY",
+        quantity="1200",
+        price="0.1901",
+        time_in_force="GTC",
+        is_post_only=True,
+    )
+
+    publisher(order)
+
+    paths = captured["paths"]
+    request = captured["request"]
+    assert paths.controller_scope_id == "tokenmm.binance.pm.main"
+    assert request.intent.strategy_id == "plumeusdt_binance_spot_makerv3"
+    assert request.command is not None
+    assert request.command.command_type == "place"
+    assert request.command.order_role == "maker"
+    assert request.command.target_client_order_id is None
+    assert order.client_order_id == build_client_order_id(
+        controller_scope_id="tokenmm.binance.pm.main",
+        controller_epoch=4,
+        controller_seq=17,
+        intent_id="node-owned-order-id",
+    )
+    assert lifecycle_events
+
+
+def test_controller_intent_publisher_normalizes_nautilus_enum_side_and_tif(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+    strategy = SimpleNamespace(
+        apply_controller_lifecycle_event=lambda _event: None,
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+    )
+
+    def _fake_send_request(*, paths, request, timeout_s):
+        captured["paths"] = paths
+        captured["request"] = request
+        captured["timeout_s"] = timeout_s
+        claim = request.intent.claim(controller_epoch=4, controller_seq=17)
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    publisher = run_node._build_controller_intent_publisher(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        transport_root_dir=tmp_path,
+        send_request_fn=_fake_send_request,
+    )
+    order = SimpleNamespace(
+        client_order_id="node-owned-order-id",
+        instrument_id="PLUMEUSDT.BINANCE_SPOT",
+        side=OrderSide.BUY,
+        quantity="1200",
+        price="0.1901",
+        time_in_force=TimeInForce.GTC,
+        is_post_only=False,
+    )
+
+    publisher(order)
+
+    request = captured["request"]
+    assert request.command is not None
+    assert request.command.side == "BUY"
+    assert request.command.time_in_force == "GTC"
+
+
+def test_controller_order_snapshot_restores_order_side_enum() -> None:
+    snapshot = run_node._controller_order_snapshot(
+        {
+            "client_order_id": "controller-order-1",
+            "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+            "side": "1",
+            "quantity": "1200",
+            "price": "0.1901",
+            "post_only": True,
+            "pending_cancel": False,
+        },
+    )
+
+    assert snapshot.side == OrderSide.BUY
+
+
+def test_controller_managed_bridge_applies_sent_to_venue_venue_order_id(monkeypatch, tmp_path: Path) -> None:
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=lambda _client_order_id: None,
+        _managed_client_order_ids=set(),
+    )
+    claim = ExecutionIntent(
+        intent_id="intent-venue-order-id-001",
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id=strategy.runtime_strategy_id,
+    ).claim(controller_epoch=4, controller_seq=17)
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    bridge._managed_order_rows[claim.client_order_id] = {
+        "client_order_id": claim.client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+
+    bridge._apply_lifecycle_event(
+        ExecutionLifecycleEvent.sent_to_venue(
+            claim=claim,
+            venue_order_id="binance-venue-9001",
+        ),
+    )
+
+    snapshots = bridge.managed_orders()
+
+    assert len(snapshots) == 1
+    assert snapshots[0].venue_order_id == "binance-venue-9001"
+
+
+def test_controller_managed_bridge_removes_terminal_rows_on_lifecycle_event(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    cleared_pending_cancel_ids = []
+
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=cleared_pending_cancel_ids.append,
+        _managed_client_order_ids=set(),
+    )
+    claim = ExecutionIntent(
+        intent_id="intent-terminal-row-001",
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id=strategy.runtime_strategy_id,
+    ).claim(controller_epoch=4, controller_seq=17)
+    strategy._pending_cancel_client_order_ids.add(claim.client_order_id)
+    strategy._managed_client_order_ids.add(claim.client_order_id)
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    bridge._managed_order_rows[claim.client_order_id] = {
+        "client_order_id": claim.client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+
+    bridge._apply_lifecycle_event(
+        ExecutionLifecycleEvent.from_claim(
+            claim=claim,
+            lifecycle_state=ExecutionLifecycleState.FILLED,
+            venue_activity_origin="controller",
+        ),
+    )
+
+    assert bridge._managed_order_rows == {}
+    assert claim.client_order_id not in strategy._managed_client_order_ids
+    assert cleared_pending_cancel_ids == [claim.client_order_id]
+
+
+def test_controller_managed_bridge_publish_cancel_uses_unique_intent_ids_per_attempt(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    requests = []
+
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    def _fake_send_transport_request(*, paths, request, timeout_s):
+        requests.append((paths, request, timeout_s))
+        claim = request.intent.claim(controller_epoch=4, controller_seq=len(requests))
+        return ControllerIntentReply.accepted(claim=claim, replied_at_ns=123_999)
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+    monkeypatch.setattr(run_node, "send_transport_request", _fake_send_transport_request)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=lambda _client_order_id: None,
+    )
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+    client_order_id = "ctl_Q8VVFSv308PCLbcZklA8rxnftgnj8-fq"
+    bridge._managed_order_rows[client_order_id] = {
+        "client_order_id": client_order_id,
+        "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+        "side": "BUY",
+        "quantity": "1200",
+        "price": "0.1901",
+        "post_only": True,
+        "pending_cancel": False,
+    }
+    order = SimpleNamespace(
+        client_order_id=client_order_id,
+        instrument_id="PLUMEUSDT.BINANCE_SPOT",
+    )
+
+    bridge.publish_cancel(order)
+    bridge.publish_cancel(order)
+
+    assert len(requests) == 2
+    first_request = requests[0][1]
+    second_request = requests[1][1]
+    assert first_request.command is not None
+    assert second_request.command is not None
+    assert first_request.command.target_client_order_id == client_order_id
+    assert second_request.command.target_client_order_id == client_order_id
+    assert first_request.intent.intent_id.startswith(f"cancel:{client_order_id}:")
+    assert second_request.intent.intent_id.startswith(f"cancel:{client_order_id}:")
+    assert first_request.intent.intent_id != second_request.intent.intent_id
+    assert bridge._managed_order_rows[client_order_id]["pending_cancel"] is True
+
+
+def test_attach_controller_managed_binance_bridge_enables_startup_cleanup_bypass(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeBridge:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def publish_place(self, *_args, **_kwargs) -> None:
+            return None
+
+        def publish_cancel(self, *_args, **_kwargs) -> None:
+            return None
+
+        def managed_orders(self) -> list[object]:
+            return []
+
+    monkeypatch.setattr(run_node.redis, "Redis", lambda **_kwargs: object())
+    monkeypatch.setattr(run_node, "_TokenmmControllerManagedBridge", _FakeBridge)
+
+    strategy = SimpleNamespace()
+    run_node._attach_controller_managed_binance_bridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_cfg={"host": "127.0.0.1", "port": 6379, "db": 0},
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    assert strategy._controller_managed_execution_enabled is True
+    assert callable(strategy.submit_order)
+    assert callable(strategy.cancel_order)
+    assert callable(strategy._managed_orders)
+    assert captured["controller_scope_id"] == "tokenmm.binance.pm.main"
+
+
+def test_build_node_disables_local_execution_for_controller_managed_binance_strategy(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(
+                add_strategy=lambda strategy: captured.setdefault("strategy", strategy),
+            )
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategyConfig:
+        def __init__(self, **kwargs) -> None:
+            self.__dict__.update(kwargs)
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+            self.submit_order = lambda *_args, **_kwargs: None
+            self.cancel_order = lambda *_args, **_kwargs: None
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(monkeypatch, _CapturedStrategy, config_cls=_CapturedStrategyConfig)
+    def _fake_resolve_strategy_venues(**kwargs):
+        captured["enable_execution"] = kwargs["enable_execution"]
+        return SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            reference_instrument_id=InstrumentId.from_str("PLUMEUSDT.BINANCE_SPOT"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        )
+
+    monkeypatch.setattr(run_node, "resolve_strategy_venues", _fake_resolve_strategy_venues)
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_controller_managed_binance_bridge", lambda **kwargs: captured.setdefault("bridge", kwargs))
+
+    run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "external_strategy_id": "plumeusdt_binance_spot_makerv3",
+                "trader_id": "TOKENMM-LIVE-BINANCE-SPOT",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 0},
+            "node": {"enable_execution": True, "exec_reconciliation": True},
+            "controller": {
+                "controller_scope_id": "tokenmm.binance.pm.main",
+                "managed_strategy_ids": [
+                    "plumeusdt_binance_perp_makerv3",
+                    "plumeusdt_binance_spot_makerv3",
+                ],
+            },
+            "strategy_contracts": [
+                {
+                    "strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "portfolio_asset_id": "PLUME",
+                    "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                    "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                    "execution_account_scope_id": "binance.pm.main",
+                    "reference_account_scope_id": "binance.pm.main",
+                    "controller_scope_id": "tokenmm.binance.pm.main",
+                },
+            ],
+            "strategy": {"strategy_id": "plumeusdt_binance_spot_makerv3", "order_qty": "1000"},
+        },
+        mode="live",
+        force_enable_execution=True,
+    )
+
+    assert captured["enable_execution"] is False
+    assert captured["config"].exec_engine.reconciliation is False
+    assert captured["bridge"]["controller_scope_id"] == "tokenmm.binance.pm.main"
 
 
 def test_build_node_defaults_live_message_bus_streams_to_autotrim(monkeypatch) -> None:
@@ -1709,6 +2205,58 @@ def test_build_telemetry_actor_configs_includes_markouts_actor() -> None:
     ]
     assert all(actor.config["db_path"] == "/tmp/markouts.sqlite" for actor in markout_actors)
     assert all(actor.config["horizons_s"] == [0, 30, 60, 120] for actor in markout_actors)
+
+
+def test_prepare_telemetry_paths_scopes_balance_snapshot_db_by_strategy(tmp_path: Path) -> None:
+    balance_root = tmp_path / "telemetry" / "balance_snapshots.sqlite"
+    config = {
+        "identity": {
+            "strategy_id": "plumeusdt_binance_spot_makerv3",
+            "external_strategy_id": "plumeusdt_binance_spot_makerv3",
+        },
+        "strategy": {"strategy_id": "plumeusdt_binance_spot_makerv3"},
+        "telemetry_shipper": {
+            "enable_local_persistence": True,
+            "balance_snapshots_db_path": str(balance_root),
+        },
+    }
+
+    run_node._prepare_telemetry_paths(config)
+
+    telemetry = config["telemetry_shipper"]
+    assert telemetry["balance_snapshots_db_path"] == str(
+        tmp_path / "telemetry" / "balance_snapshots" / "plumeusdt_binance_spot_makerv3.sqlite",
+    )
+    assert (tmp_path / "telemetry" / "balance_snapshots").is_dir()
+
+
+def test_build_telemetry_actor_configs_keeps_balance_snapshot_actor_for_tokenmm_nodes() -> None:
+    actors = run_node._build_telemetry_actor_configs(
+        {
+            "telemetry_shipper": {
+                "enable_local_persistence": True,
+                "balance_snapshots_db_path": "/tmp/balance_snapshots/plumeusdt_binance_spot_makerv3.sqlite",
+                "fills_db_path": "/tmp/fills.sqlite",
+                "orders_db_path": "/tmp/orders.sqlite",
+                "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
+            },
+        },
+    )
+
+    assert {
+        actor.actor_path for actor in actors
+    } == {
+        "nautilus_trader.flux.persistence.balance_snapshots.actor:FluxBalanceSnapshotPersistenceActor",
+        "nautilus_trader.persistence.fills.actor:ExecutionFillPersistenceActor",
+        "nautilus_trader.persistence.orders.actor:OrderActionPersistenceActor",
+        "nautilus_trader.flux.persistence.quote_cycles.actor:QuoteCyclePersistenceActor",
+    }
+    balance_actor = next(
+        actor
+        for actor in actors
+        if actor.actor_path.endswith("balance_snapshots.actor:FluxBalanceSnapshotPersistenceActor")
+    )
+    assert balance_actor.config["db_path"] == "/tmp/balance_snapshots/plumeusdt_binance_spot_makerv3.sqlite"
 
 
 def test_prepare_telemetry_paths_creates_markouts_parent_dir_when_enabled(tmp_path: Path) -> None:

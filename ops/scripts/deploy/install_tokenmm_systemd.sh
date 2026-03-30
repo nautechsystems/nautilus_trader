@@ -186,6 +186,7 @@ build_service_ids() {
   # shellcheck disable=SC2034
   out_service_ids=(
     "tokenmm-api"
+    "tokenmm-controller"
     "tokenmm-portfolio"
     "tokenmm-bridge"
     "tokenmm-telemetry-shipper"
@@ -368,6 +369,23 @@ render_bridge_env() {
   append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-bridge.env"
 }
 
+render_controller_env() {
+  # controller-owned shared Binance writer domains stay on the controller lane
+  # so binance.pm.main startup reconciliation ownership stays with the controller.
+  strategy_stack_write_env \
+    "${ENV_DIR}/tokenmm-controller.env" \
+    "TokenMM shared Binance controller" \
+    "tokenmm" \
+    "TokenMM" \
+    "10" \
+    "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_controller --config ${SHARED_CONFIG} --mode live --confirm-live" \
+    "" \
+    "tokenmm-controller"
+  printf 'TOKENMM_CONTROLLER_SCOPE_ID=tokenmm.binance.pm.main\n' >> "${ENV_DIR}/tokenmm-controller.env"
+  printf 'TOKENMM_CONTROLLER_ACCOUNT_SCOPE_ID=binance.pm.main\n' >> "${ENV_DIR}/tokenmm-controller.env"
+  append_deploy_root_env_overrides "${ENV_DIR}/tokenmm-controller.env"
+}
+
 render_telemetry_shipper_env() {
   strategy_stack_write_env \
     "${ENV_DIR}/tokenmm-telemetry-shipper.env" \
@@ -440,13 +458,23 @@ render_node_envs() {
   for strategy_id in "${NODE_STRATEGIES[@]}"; do
     local service_id="tokenmm-node-${strategy_id}"
     local strategy_config="${STRATEGIES_DIR}/${strategy_id}.toml"
+    local controller_managed_strategy=0
+    local exec_flag=()
+    case "${strategy_id}" in
+      plumeusdt_binance_perp_makerv3|plumeusdt_binance_spot_makerv3)
+        controller_managed_strategy=1
+        ;;
+    esac
+    if [[ "${controller_managed_strategy}" -eq 0 ]]; then
+      exec_flag+=(--enable-execution)
+    fi
     strategy_stack_write_env \
       "${ENV_DIR}/${service_id}.env" \
       "TokenMM node ${strategy_id}" \
       "tokenmm" \
       "TokenMM" \
       "10" \
-      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live --enable-execution"
+      "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_node --config ${strategy_config} --shared-config ${SHARED_CONFIG} --mode live --confirm-live ${exec_flag[*]}"
     append_deploy_root_env_overrides "${ENV_DIR}/${service_id}.env"
   done
 }
@@ -480,6 +508,7 @@ main() {
   render_api_env
   render_portfolio_env
   render_bridge_env
+  render_controller_env
   render_telemetry_shipper_env
   render_prometheus_env
   render_grafana_env

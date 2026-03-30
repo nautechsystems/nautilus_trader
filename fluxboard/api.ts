@@ -20,6 +20,7 @@ import type {
   BalanceChildRow,
   CanonicalNamingFields,
   Alert,
+  AlertsSurfaceCapabilities,
   RawStrategy,
   BalanceSummary,
   PnLReport,
@@ -469,6 +470,12 @@ function normalizeBalanceScopeStatus(scopeStatus: unknown): BalanceScopeStatus[]
 function toFiniteOptionalNumber(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function coerceOptionalText(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const text = String(value).trim();
+  return text || undefined;
 }
 
 function normalizeTradingFlag(value: unknown): string | undefined {
@@ -1083,6 +1090,7 @@ function attachAlertsPaginationMetadata(
     next_offset?: number | null;
     next_cursor?: string | null;
     realtime?: RealtimeSnapshotLineage;
+    capabilities?: AlertsSurfaceCapabilities;
   };
   if (!payload || typeof payload !== 'object') {
     return out;
@@ -1105,7 +1113,28 @@ function attachAlertsPaginationMetadata(
   if (nextCursor !== undefined) out.next_cursor = nextCursor;
   const realtime = normalizeRealtimeSnapshotLineage(payload.realtime ?? payload);
   if (realtime) out.realtime = realtime;
+  const capabilities = normalizeAlertsCapabilities(payload.capabilities);
+  if (capabilities) out.capabilities = capabilities;
   return out;
+}
+
+function normalizeAlertsCapabilities(value: unknown): AlertsSurfaceCapabilities | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const feedMode = typeof raw.feed_mode === 'string' ? raw.feed_mode.trim() : '';
+  const clearMode = typeof raw.clear_mode === 'string' ? raw.clear_mode.trim() : '';
+  const normalized: AlertsSurfaceCapabilities = {};
+  if (feedMode) normalized.feed_mode = feedMode;
+  if (clearMode) normalized.clear_mode = clearMode;
+  for (const [key, entry] of Object.entries(raw)) {
+    if (key === 'feed_mode' || key === 'clear_mode') {
+      continue;
+    }
+    normalized[key] = entry;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function normalizeAlertRow(candidate: unknown): Alert | null {
@@ -2239,7 +2268,7 @@ export const api = {
     return unwrapFluxEnvelope(response);
   },
 
-  // Alerts - Flask returns {"alerts": [...]}
+  // Alerts - API returns rows plus pagination and feed capability metadata.
   getAlerts: async (options?: { contractVersion?: number }): Promise<Alert[]> => {
     const qs = new URLSearchParams();
     const contractVersion = options?.contractVersion;
@@ -2275,7 +2304,12 @@ export const api = {
       const extra = await signedJsonHeaders('', { method: 'DELETE', path: '/api/v1/alerts' });
       const qs = new URLSearchParams();
       appendProfileQuery(qs);
-      const result = await fetchJSON<FluxEnvelope<{ success?: boolean; deleted?: number; remaining?: number }>>(
+      const result = await fetchJSON<FluxEnvelope<{
+        success?: boolean;
+        deleted?: number;
+        remaining?: number;
+        capabilities?: AlertsSurfaceCapabilities;
+      }>>(
         `/api/v1/alerts${qs.toString() ? `?${qs.toString()}` : ''}`,
         {
           method: 'DELETE',
@@ -2285,10 +2319,11 @@ export const api = {
       const payload = unwrapFluxEnvelope(result);
       const deleted = typeof payload.deleted === 'number' ? payload.deleted : 0;
       const remaining = typeof payload.remaining === 'number' ? payload.remaining : 0;
+      const capabilities = normalizeAlertsCapabilities(payload.capabilities);
       const success = payload.success ?? deleted >= 0;
       if (success) {
-        toast.success('All alerts cleared');
-        return { success: true, deleted, remaining } as const;
+        toast.success(capabilities?.clear_mode === 'history_only' ? 'Alert history cleared' : 'All alerts cleared');
+        return { success: true, deleted, remaining, capabilities } as const;
       } else {
         throw new Error('Failed to clear alerts');
       }

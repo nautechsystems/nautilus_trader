@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from flux.api._payloads_common import safe_bool
+from flux.api._payloads_common import safe_float
 from flux.api.payloads import decode_text
 from flux.api.payloads import safe_int
 from flux.common.keys import FluxRedisKeys
@@ -12,6 +14,7 @@ from flux.strategies.makerv3.constants import TOPIC_STATE
 
 DEFAULT_STATE_STREAM_MAX_AGE_MS = 30_000
 BLOCKED_RECONCILIATION = "blocked_reconciliation"
+OPERATOR_SURFACE = "operator_surface"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +99,36 @@ def _signal_state_name(payload: Mapping[str, Any]) -> str:
     return decode_text(state.get("state")).strip().lower()
 
 
+def _signal_mode(payload: Mapping[str, Any]) -> str:
+    return decode_text(payload.get("mode")).strip().upper()
+
+
+def _signal_quantity(payload: Mapping[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = safe_float(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _signal_global_qty_complete(payload: Mapping[str, Any]) -> bool | None:
+    for key in ("global_qty_base_complete", "global_qty_complete"):
+        value = safe_bool(payload.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _signal_has_quote_status(payload: Mapping[str, Any]) -> bool:
+    maker_quote_status = _mapping(payload.get("maker_quote_status"))
+    if not maker_quote_status:
+        return False
+    return all(
+        safe_int(maker_quote_status.get(field)) is not None
+        for field in ("bid_open", "ask_open", "bid_depth", "ask_depth")
+    )
+
+
 def _state_stream_ts_ms(entry_id: str | None) -> int | None:
     text = (entry_id or "").strip()
     if not text:
@@ -149,6 +182,15 @@ def evaluate_tokenmm_readiness(
     missing_signal_strategy_ids: list[str] = []
     stale_signal_strategy_ids: list[str] = []
     blocked_reconciliation_strategy_ids: list[str] = []
+    non_running_strategy_ids: list[str] = []
+    non_on_mode_strategy_ids: list[str] = []
+    blocked_signal_strategy_ids: list[str] = []
+    non_tradeable_strategy_ids: list[str] = []
+    balance_not_ready_strategy_ids: list[str] = []
+    missing_local_qty_strategy_ids: list[str] = []
+    missing_global_qty_strategy_ids: list[str] = []
+    incomplete_global_qty_strategy_ids: list[str] = []
+    missing_quote_status_strategy_ids: list[str] = []
     missing_state_stream_strategy_ids: list[str] = []
     stale_state_stream_strategy_ids: list[str] = []
     signal_state_age_ms_by_strategy_id: dict[str, int] = {}
@@ -166,6 +208,24 @@ def evaluate_tokenmm_readiness(
                 stale_signal_strategy_ids.append(strategy_id)
             if _signal_state_name(signal_row) == BLOCKED_RECONCILIATION:
                 blocked_reconciliation_strategy_ids.append(strategy_id)
+            if safe_bool(signal_row.get("running")) is not True:
+                non_running_strategy_ids.append(strategy_id)
+            if _signal_mode(signal_row) != "ON":
+                non_on_mode_strategy_ids.append(strategy_id)
+            if safe_bool(signal_row.get("blocked")) is True:
+                blocked_signal_strategy_ids.append(strategy_id)
+            if safe_bool(signal_row.get("tradeable")) is not True:
+                non_tradeable_strategy_ids.append(strategy_id)
+            if safe_bool(signal_row.get("balances_ok")) is not True:
+                balance_not_ready_strategy_ids.append(strategy_id)
+            if _signal_quantity(signal_row, "local_qty_base", "local_qty") is None:
+                missing_local_qty_strategy_ids.append(strategy_id)
+            if _signal_quantity(signal_row, "global_qty_base", "global_qty") is None:
+                missing_global_qty_strategy_ids.append(strategy_id)
+            if _signal_global_qty_complete(signal_row) is not True:
+                incomplete_global_qty_strategy_ids.append(strategy_id)
+            if not _signal_has_quote_status(signal_row):
+                missing_quote_status_strategy_ids.append(strategy_id)
 
         state_stream = _mapping(state_streams_by_strategy_id.get(strategy_id))
         state_stream_age_ms = safe_int(state_stream.get("age_ms"))
@@ -180,6 +240,15 @@ def evaluate_tokenmm_readiness(
     missing_signal_strategy_ids = _sorted_texts(missing_signal_strategy_ids)
     stale_signal_strategy_ids = _sorted_texts(stale_signal_strategy_ids)
     blocked_reconciliation_strategy_ids = _sorted_texts(blocked_reconciliation_strategy_ids)
+    non_running_strategy_ids = _sorted_texts(non_running_strategy_ids)
+    non_on_mode_strategy_ids = _sorted_texts(non_on_mode_strategy_ids)
+    blocked_signal_strategy_ids = _sorted_texts(blocked_signal_strategy_ids)
+    non_tradeable_strategy_ids = _sorted_texts(non_tradeable_strategy_ids)
+    balance_not_ready_strategy_ids = _sorted_texts(balance_not_ready_strategy_ids)
+    missing_local_qty_strategy_ids = _sorted_texts(missing_local_qty_strategy_ids)
+    missing_global_qty_strategy_ids = _sorted_texts(missing_global_qty_strategy_ids)
+    incomplete_global_qty_strategy_ids = _sorted_texts(incomplete_global_qty_strategy_ids)
+    missing_quote_status_strategy_ids = _sorted_texts(missing_quote_status_strategy_ids)
     missing_state_stream_strategy_ids = _sorted_texts(missing_state_stream_strategy_ids)
     stale_state_stream_strategy_ids = _sorted_texts(stale_state_stream_strategy_ids)
 
@@ -188,6 +257,18 @@ def evaluate_tokenmm_readiness(
         and not stale_signal_strategy_ids
         and not blocked_reconciliation_strategy_ids
     )
+    operator_surface_failures = _sorted_texts(
+        non_running_strategy_ids
+        + non_on_mode_strategy_ids
+        + blocked_signal_strategy_ids
+        + non_tradeable_strategy_ids
+        + balance_not_ready_strategy_ids
+        + missing_local_qty_strategy_ids
+        + missing_global_qty_strategy_ids
+        + incomplete_global_qty_strategy_ids
+        + missing_quote_status_strategy_ids,
+    )
+    operator_surface_ok = not operator_surface_failures
     state_streams_ok = (
         not missing_state_stream_strategy_ids and not stale_state_stream_strategy_ids
     )
@@ -199,7 +280,9 @@ def evaluate_tokenmm_readiness(
     state_stream_failures = _sorted_texts(
         missing_state_stream_strategy_ids + stale_state_stream_strategy_ids,
     )
-    unready_strategy_ids = _sorted_texts(signal_failures + state_stream_failures)
+    unready_strategy_ids = _sorted_texts(
+        signal_failures + operator_surface_failures + state_stream_failures,
+    )
 
     checks = {
         "signals": ReadinessCheck(
@@ -217,6 +300,28 @@ def evaluate_tokenmm_readiness(
                 "stale_signal_strategy_ids": stale_signal_strategy_ids,
                 "blocked_reconciliation_strategy_ids": blocked_reconciliation_strategy_ids,
                 "signal_state_age_ms_by_strategy_id": signal_state_age_ms_by_strategy_id,
+            },
+        ),
+        OPERATOR_SURFACE: ReadinessCheck(
+            name=OPERATOR_SURFACE,
+            ok=operator_surface_ok,
+            summary=(
+                "All required TokenMM strategies expose operator-ready Signal rows."
+                if operator_surface_ok
+                else f"{len(operator_surface_failures)} strategies are present but not operator-ready on Signal."
+            ),
+            details={
+                "now_ms": now_ms_value,
+                "required_strategy_ids": list(required_strategy_ids),
+                "non_running_strategy_ids": non_running_strategy_ids,
+                "non_on_mode_strategy_ids": non_on_mode_strategy_ids,
+                "blocked_signal_strategy_ids": blocked_signal_strategy_ids,
+                "non_tradeable_strategy_ids": non_tradeable_strategy_ids,
+                "balance_not_ready_strategy_ids": balance_not_ready_strategy_ids,
+                "missing_local_qty_strategy_ids": missing_local_qty_strategy_ids,
+                "missing_global_qty_strategy_ids": missing_global_qty_strategy_ids,
+                "incomplete_global_qty_strategy_ids": incomplete_global_qty_strategy_ids,
+                "missing_quote_status_strategy_ids": missing_quote_status_strategy_ids,
             },
         ),
         "state_stream_freshness": ReadinessCheck(
@@ -255,6 +360,15 @@ def evaluate_tokenmm_readiness(
             "missing_signal_strategy_ids": missing_signal_strategy_ids,
             "stale_signal_strategy_ids": stale_signal_strategy_ids,
             "blocked_reconciliation_strategy_ids": blocked_reconciliation_strategy_ids,
+            "non_running_strategy_ids": non_running_strategy_ids,
+            "non_on_mode_strategy_ids": non_on_mode_strategy_ids,
+            "blocked_signal_strategy_ids": blocked_signal_strategy_ids,
+            "non_tradeable_strategy_ids": non_tradeable_strategy_ids,
+            "balance_not_ready_strategy_ids": balance_not_ready_strategy_ids,
+            "missing_local_qty_strategy_ids": missing_local_qty_strategy_ids,
+            "missing_global_qty_strategy_ids": missing_global_qty_strategy_ids,
+            "incomplete_global_qty_strategy_ids": incomplete_global_qty_strategy_ids,
+            "missing_quote_status_strategy_ids": missing_quote_status_strategy_ids,
             "missing_state_stream_strategy_ids": missing_state_stream_strategy_ids,
             "stale_state_stream_strategy_ids": stale_state_stream_strategy_ids,
             "failed_checks": failed_checks,

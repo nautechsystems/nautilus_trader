@@ -88,10 +88,10 @@ describe('AlertsTable Auto-Dismiss', () => {
     expect(10050).toBeLessThanOrEqual(ALERT_AUTO_DISMISS.INFO + 100);
   });
 
-  it('should auto-dismiss WARNING alert after 30s (±100ms)', async () => {
+  it('should keep WARNING alert visible until explicitly cleared', async () => {
     const warningAlert = createMockAlert({ id: 'warn-1', level: 'WARNING', severity: 'WARNING' });
 
-    const { rerender } = render(
+    render(
       <AlertsTable
         alerts={[warningAlert]}
         loading={false}
@@ -105,34 +105,10 @@ describe('AlertsTable Auto-Dismiss', () => {
 
     expect(screen.getByText('Test Alert')).toBeInTheDocument();
 
-    // Advance time just before threshold (29.9s)
-    await vi.advanceTimersByTimeAsync(29900);
-    rerender(
-      <AlertsTable
-        alerts={[warningAlert]}
-        loading={false}
-        dismissedIds={new Set()}
-        levelFilter="ALL"
-        onDismiss={dismissSpy}
-        onRowClick={vi.fn()}
-        expandedAlertId={null}
-      />
-    );
+    // Advance well past the previous warning threshold.
+    await vi.advanceTimersByTimeAsync(60000);
 
-    // Should not be dismissed yet
     expect(dismissSpy).not.toHaveBeenCalled();
-
-    // Advance past threshold (30s total)
-    await vi.advanceTimersByTimeAsync(150);
-
-    // Wait for dismiss
-    await waitFor(() => {
-      expect(dismissSpy).toHaveBeenCalledWith('warn-1');
-    });
-
-    // Verify timing: 29900 + 150 = 30050ms (within 30000ms ± 100ms)
-    expect(30050).toBeGreaterThanOrEqual(ALERT_AUTO_DISMISS.WARNING - 100);
-    expect(30050).toBeLessThanOrEqual(ALERT_AUTO_DISMISS.WARNING + 100);
   });
 
   it('should NOT auto-dismiss CRITICAL alert', async () => {

@@ -3,6 +3,7 @@ Description=Flux Equities Stack
 Wants=flux@equities-api.service
 Wants=flux@equities-portfolio.service
 Wants=flux@equities-bridge.service
+Wants=flux@equities-controller.service
 Wants=flux@equities-node-aapl_tradexyz_maker.service
 Wants=flux@equities-node-aapl_tradexyz_taker.service
 Wants=flux@equities-node-amd_tradexyz_maker.service

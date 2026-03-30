@@ -1381,7 +1381,7 @@ export default function Balances({
           ))}
         </div>
       )}
-      {(degraded || scopeStatus.length > 0) && (
+      {degraded && (
         <div
           className={cn(
             'border-b px-4 py-3',

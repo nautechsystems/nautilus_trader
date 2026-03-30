@@ -942,10 +942,16 @@ def publish_json(strategy: Any, topic: str, payload: dict[str, Any] | list[Any])
     Serialize payload and publish it on `topic` via the message bus.
     """
     payload_json = to_json_safe(payload)
-    if FluxBusPayload is None:
-        strategy.msgbus.publish(topic=topic, msg=payload_json)
-        return
-    strategy.msgbus.publish(
-        topic=topic,
-        msg=FluxBusPayload(topic=topic, payload=payload_json),
-    )
+    try:
+        if FluxBusPayload is None:
+            strategy.msgbus.publish(topic=topic, msg=payload_json)
+            return
+        strategy.msgbus.publish(
+            topic=topic,
+            msg=FluxBusPayload(topic=topic, payload=payload_json),
+        )
+    except BlockingIOError as exc:
+        log = getattr(strategy, "log", None)
+        warning = getattr(log, "warning", None)
+        if callable(warning):
+            warning(f"Flux msgbus publish backpressure topic={topic} err={exc}")

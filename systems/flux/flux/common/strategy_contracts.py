@@ -22,6 +22,7 @@ class StrategyContractEntry:
     maker_venue: str | None = None
     maker_symbol: str | None = None
     market_type: str | None = None
+    controller_scope_id: str | None = None
 
 
 def _required_text(row: Mapping[str, Any], field_name: str) -> str:
@@ -84,9 +85,14 @@ def decode_strategy_contracts(rows: Iterable[Mapping[str, Any]]) -> tuple[Strate
                 maker_venue=_optional_text(row, "maker_venue") or _derive_maker_venue(maker_instrument_id),
                 maker_symbol=_optional_text(row, "maker_symbol") or _derive_maker_symbol(maker_instrument_id),
                 market_type=_optional_text(row, "market_type") or "perp",
+                controller_scope_id=_optional_text(row, "controller_scope_id"),
             ),
         )
     return tuple(decoded)
+
+
+def strategy_writer_account_scope_id(contract: StrategyContractEntry) -> str:
+    return contract.hedge_account_scope_id or contract.execution_account_scope_id
 
 
 def shared_observation_group_by_strategy_id(
@@ -140,4 +146,5 @@ __all__ = (
     "decode_strategy_contracts",
     "execution_account_scope_by_strategy_id",
     "shared_observation_group_by_strategy_id",
+    "strategy_writer_account_scope_id",
 )

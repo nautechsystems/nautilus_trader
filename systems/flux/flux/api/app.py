@@ -258,6 +258,71 @@ def _rows_for_reconciliation(rows: Sequence[Mapping[str, Any]] | None) -> list[d
     return filtered
 
 
+def _balance_row_source_scope(row: Mapping[str, Any]) -> str:
+    return decode_text(row.get("source_scope") or row.get("scope") or "").strip().lower()
+
+
+def prefer_controller_managed_balance_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    controller_scope_by_account_scope: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    normalized_rows = [dict(row) for row in rows if isinstance(row, Mapping)]
+    if not normalized_rows or not controller_scope_by_account_scope:
+        return normalized_rows
+
+    grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any], str]]] = {}
+    for index, row in enumerate(normalized_rows):
+        account_scope_id = decode_text(row.get("account_scope_id")).strip()
+        controller_scope_id = decode_text(controller_scope_by_account_scope.get(account_scope_id)).strip()
+        if not account_scope_id or not controller_scope_id:
+            continue
+        kind = decode_text(row.get("kind")).strip().lower()
+        if kind and kind != "cash":
+            continue
+        asset = decode_text(row.get("asset")).strip().upper()
+        if not asset:
+            continue
+        grouped.setdefault((account_scope_id, asset), []).append(
+            (index, row, controller_scope_id),
+        )
+
+    if not grouped:
+        return normalized_rows
+
+    replacement_rows: dict[int, dict[str, Any]] = {}
+    dropped_indexes: set[int] = set()
+    for group_rows in grouped.values():
+        shared_rows = [
+            (index, row, controller_scope_id)
+            for index, row, controller_scope_id in group_rows
+            if _balance_row_source_scope(row) == "shared_account"
+        ]
+        if not shared_rows:
+            continue
+        winning_index, winning_row, controller_scope_id = max(
+            shared_rows,
+            key=lambda item: (
+                safe_int(item[1].get("ts_ms")) or safe_int(item[1].get("server_ts_ms")) or -1,
+                -item[0],
+            ),
+        )
+        authoritative_row = dict(winning_row)
+        authoritative_row["controller_scope_id"] = controller_scope_id
+        authoritative_row["authority_state"] = "active"
+        replacement_rows[winning_index] = authoritative_row
+        for index, _row, _scope_id in group_rows:
+            if index != winning_index:
+                dropped_indexes.add(index)
+
+    result: list[dict[str, Any]] = []
+    for index, row in enumerate(normalized_rows):
+        if index in dropped_indexes:
+            continue
+        result.append(replacement_rows.get(index, row))
+    return result
+
+
 def _ordered_params_schema(schema: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
     ordered: dict[str, dict[str, Any]] = {}
     for name in DEFAULT_PARAMS_ORDER:
@@ -280,6 +345,22 @@ def _component_inventory_is_fresh(component_payload: Mapping[str, Any] | None) -
     if not isinstance(component_payload, Mapping):
         return False
     return not bool(component_payload.get("stale"))
+
+
+def _alerts_capabilities(
+    *,
+    has_resolver: bool,
+    include_history: bool,
+) -> dict[str, str]:
+    if has_resolver:
+        return {
+            "feed_mode": "mixed" if include_history else "active",
+            "clear_mode": "history_only",
+        }
+    return {
+        "feed_mode": "history",
+        "clear_mode": "all",
+    }
 
 
 @dataclass(frozen=True)
@@ -306,6 +387,7 @@ class FluxApiStore:
         contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
         strategy_running_resolver: StrategyRunningResolver | None = None,
         strategy_alerts_resolver: StrategyAlertsResolver | None = None,
+        alerts_include_history: bool = True,
         params_schema: Mapping[str, Mapping[str, Any]],
         params_defaults: Mapping[str, Any],
         param_set: str = MAKERV3_RUNTIME_PARAM_REGISTRY.param_set,
@@ -345,6 +427,7 @@ class FluxApiStore:
         self._contract_catalog_resolver = contract_catalog_resolver
         self._strategy_running_resolver = strategy_running_resolver
         self._strategy_alerts_resolver = strategy_alerts_resolver
+        self._alerts_include_history = bool(alerts_include_history)
         self._tokenmm_trade_reset_cache: dict[str, tuple[tuple[int, str], bool]] = {}
 
         base_keys = self._keys_for_strategy(self._config.identity.strategy_id)
@@ -1371,19 +1454,27 @@ class FluxApiStore:
         return requires_reset
 
     def load_alerts_rows(self, strategy_id: str, *, limit: int) -> list[dict[str, Any]]:
-        keys = self._keys_for_strategy(strategy_id)
-        fetch_count = max(1, min(2_000, limit * 2))
-        entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
-        rows = extract_stream_rows(entries)
-        rows.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        rows: list[dict[str, Any]] = []
+        if self._alerts_include_history or resolver_failed:
+            keys = self._keys_for_strategy(strategy_id)
+            fetch_count = max(1, min(2_000, limit * 2))
+            entries = self._redis.xrevrange(keys.alerts(), count=fetch_count)
+            rows.extend(extract_stream_rows(entries))
+        rows.extend(resolved_rows.get(strategy_id, ()))
         return build_alerts_rows(rows=rows, strategy_id=strategy_id, limit=limit)
 
     def load_all_alerts_rows(self, strategy_id: str) -> list[dict[str, Any]]:
-        keys = self._keys_for_strategy(strategy_id)
-        entries = self._redis.xrevrange(keys.alerts())
-        rows = extract_stream_rows(entries)
-        filtered = [row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id]
-        filtered.extend(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        filtered: list[dict[str, Any]] = []
+        if self._alerts_include_history or resolver_failed:
+            keys = self._keys_for_strategy(strategy_id)
+            entries = self._redis.xrevrange(keys.alerts())
+            rows = extract_stream_rows(entries)
+            filtered.extend(
+                row for row in rows if strategy_id_from_row(row, strategy_id) == strategy_id
+            )
+        filtered.extend(resolved_rows.get(strategy_id, ()))
         return build_alerts_rows(
             rows=filtered,
             strategy_id=strategy_id,
@@ -1405,9 +1496,12 @@ class FluxApiStore:
         return None
 
     def alerts_stream_len(self, strategy_id: str) -> int | None:
+        resolved_rows, resolver_failed = self._resolved_alert_rows([strategy_id])
+        extra_count = len(resolved_rows.get(strategy_id, ()))
+        if not self._alerts_include_history and not resolver_failed:
+            return extra_count or None
         keys = self._keys_for_strategy(strategy_id)
         stream_key = keys.alerts()
-        extra_count = len(self._resolved_alert_rows([strategy_id]).get(strategy_id, ()))
         xlen_fn = getattr(self._redis, "xlen", None)
         if callable(xlen_fn):
             size = safe_int(xlen_fn(stream_key))
@@ -1422,9 +1516,9 @@ class FluxApiStore:
     def _resolved_alert_rows(
         self,
         strategy_ids: Sequence[str],
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> tuple[dict[str, list[dict[str, Any]]], bool]:
         if self._strategy_alerts_resolver is None:
-            return {}
+            return {}, False
 
         deduped_ids: list[str] = []
         seen: set[str] = set()
@@ -1435,13 +1529,13 @@ class FluxApiStore:
             seen.add(strategy_text)
             deduped_ids.append(strategy_text)
         if not deduped_ids:
-            return {}
+            return {}, False
 
         try:
             resolved_raw = dict(self._strategy_alerts_resolver(deduped_ids))
         except Exception:
             _LOG.exception("Flux API supplemental alert resolver failed strategy_ids=%s", deduped_ids)
-            return {strategy_id: [] for strategy_id in deduped_ids}
+            return {strategy_id: [] for strategy_id in deduped_ids}, True
 
         resolved: dict[str, list[dict[str, Any]]] = {}
         for strategy_id in deduped_ids:
@@ -1455,7 +1549,7 @@ class FluxApiStore:
                     normalized.setdefault("strategy_id", strategy_id)
                     normalized_rows.append(normalized)
             resolved[strategy_id] = normalized_rows
-        return resolved
+        return resolved, False
 
     def clear_alerts(self, strategy_id: str) -> int:
         keys = self._keys_for_strategy(strategy_id)
@@ -1488,6 +1582,12 @@ class FluxApiStore:
             return 1 if removed_rows else 0
 
         return 0
+
+    def alerts_capabilities(self) -> dict[str, str]:
+        return _alerts_capabilities(
+            has_resolver=self._strategy_alerts_resolver is not None,
+            include_history=self._alerts_include_history,
+        )
 
 
 def _request_id() -> str:
@@ -1756,6 +1856,7 @@ def create_flux_api_app(  # noqa: C901
     contract_catalog_resolver: Callable[[str], Sequence[ContractCatalogEntry]] | None = None,
     strategy_running_resolver: StrategyRunningResolver | None = None,
     strategy_alerts_resolver: StrategyAlertsResolver | None = None,
+    alerts_include_history: bool = True,
     strategy_metadata: StrategyMetadata,
     strategy_metadata_resolver: Callable[[str], StrategyMetadata] | None = None,
     profile_strategy_map: Mapping[str, str | Sequence[str]] | None = None,
@@ -1870,6 +1971,7 @@ def create_flux_api_app(  # noqa: C901
         contract_catalog_resolver=contract_catalog_resolver,
         strategy_running_resolver=strategy_running_resolver,
         strategy_alerts_resolver=strategy_alerts_resolver,
+        alerts_include_history=alerts_include_history,
         params_schema=schema,
         params_defaults=defaults,
         param_set=param_set,
@@ -2037,6 +2139,7 @@ def create_flux_api_app(  # noqa: C901
     shared_position_groups_cache: dict[str, dict[str, str]] = {}
     profile_projection_scope_ids_cache: dict[str, tuple[str, ...]] = {}
     execution_account_scope_cache: dict[str, dict[str, str]] = {}
+    controller_scope_by_account_scope_cache: dict[str, dict[str, str]] = {}
 
     def _profile_supports_account_projections(profile: str) -> bool:
         return normalize_profile(profile) in {"equities", "tokenmm"}
@@ -2102,6 +2205,26 @@ def create_flux_api_app(  # noqa: C901
         )
         execution_account_scope_cache[normalized] = result
         return result
+
+    def _controller_scope_by_account_scope_for_profile(profile: str) -> dict[str, str]:
+        normalized = normalize_profile(profile)
+        cached = controller_scope_by_account_scope_cache.get(normalized)
+        if cached is not None:
+            return cached
+        allowlist = _strategy_allowlist_for_profile(normalized)
+        allowlist_set = set(allowlist or ())
+        use_allowlist = allowlist is not None
+        mapping: dict[str, str] = {}
+        for contract in decode_strategy_contracts(strategy_contracts or ()):
+            if use_allowlist and contract.strategy_id not in allowlist_set:
+                continue
+            if contract.controller_scope_id is None:
+                continue
+            mapping.setdefault(contract.execution_account_scope_id, contract.controller_scope_id)
+            if contract.hedge_account_scope_id is not None:
+                mapping.setdefault(contract.hedge_account_scope_id, contract.controller_scope_id)
+        controller_scope_by_account_scope_cache[normalized] = mapping
+        return mapping
 
     def _required_strategy_ids_for_profile(
         profile: str,
@@ -2954,6 +3077,11 @@ def create_flux_api_app(  # noqa: C901
             )
             request_now_ms = now_ms()
             projection_enabled = _profile_supports_account_projections(profile_normalized)
+            controller_scope_by_account_scope = (
+                _controller_scope_by_account_scope_for_profile(profile_normalized)
+                if profile_normalized == "tokenmm"
+                else {}
+            )
             projection_rows: list[dict[str, Any]] = []
             projection_totals: dict[str, Any] = {}
             projection_scope_status: list[dict[str, Any]] = []
@@ -3147,6 +3275,11 @@ def create_flux_api_app(  # noqa: C901
                                     market_rows=market_rows,
                                 ),
                             )
+                        if controller_scope_by_account_scope:
+                            rows = prefer_controller_managed_balance_rows(
+                                rows,
+                                controller_scope_by_account_scope=controller_scope_by_account_scope,
+                            )
                         reconciliation_rows = (
                             _rows_for_reconciliation(rows)
                             if projection_enabled
@@ -3300,6 +3433,11 @@ def create_flux_api_app(  # noqa: C901
                         contracts=store._contracts,
                         market_rows=market_rows,
                     ),
+                )
+            if controller_scope_by_account_scope:
+                rows = prefer_controller_managed_balance_rows(
+                    rows,
+                    controller_scope_by_account_scope=controller_scope_by_account_scope,
                 )
             reconciliation_rows = (
                 _rows_for_reconciliation(rows)
@@ -3699,6 +3837,7 @@ def create_flux_api_app(  # noqa: C901
             "limit": limit,
             "offset": offset,
             "has_more": has_more,
+            "capabilities": store.alerts_capabilities(),
         }
         if has_more:
             payload["next_offset"] = offset + len(rows)
@@ -3730,6 +3869,7 @@ def create_flux_api_app(  # noqa: C901
                 "strategy_id": strategy_id,
                 "deleted": deleted,
                 "remaining": remaining,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             }
             return _ok(data=payload)
@@ -3749,6 +3889,7 @@ def create_flux_api_app(  # noqa: C901
                 "deleted": deleted_total,
                 "remaining": sum(remaining_by_strategy.values()),
                 "remaining_by_strategy": remaining_by_strategy,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             }
             return _ok(data=payload)
@@ -3762,6 +3903,7 @@ def create_flux_api_app(  # noqa: C901
                 "strategy_id": strategy_id,
                 "deleted": deleted,
                 "remaining": remaining,
+                "capabilities": store.alerts_capabilities(),
                 "server_ts_ms": now_ms(),
             },
         )

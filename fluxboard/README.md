@@ -201,8 +201,8 @@ to the bridge as soon as it registers instead of waiting for an unrelated rerend
 - `GET /api/v1/param-schema` - Schema (types, bounds, defaults)
 - `GET /api/v1/params` - Bulk fetch (Fluxboard initial/refresh load)
 - `PATCH /api/v1/params` - Bulk save (Save All / Save Selected)
-- `GET /api/v1/alerts` - Active alerts feed
-- `DELETE /api/v1/alerts` - Clear alerts
+- `GET /api/v1/alerts` - Alerts feed with `capabilities.feed_mode` / `capabilities.clear_mode`
+- `DELETE /api/v1/alerts` - Clear stream-backed alert history; resolver-backed active alerts remain when `clear_mode=history_only`
 
 ## Breaking Changes
 

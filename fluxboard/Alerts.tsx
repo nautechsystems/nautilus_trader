@@ -3,7 +3,7 @@
  *
  * Displays system alerts with level filtering (CRITICAL, ERROR, WARNING, INFO).
  * Updates via WebSocket with fallback to REST API polling.
- * Auto-dismisses INFO (10s) and WARNING (30s) alerts.
+ * Auto-dismisses INFO alerts while keeping higher-severity rows visible until cleared.
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -11,7 +11,7 @@ import { api, normalizeAlertsSnapshotCandidate } from './api';
 import { useAlertsStore } from './stores';
 import { INTERVALS } from './constants';
 import { usePolling, useStandardWebSocketSubscription, useWebSocket } from './hooks/index';
-import type { Alert, AlertLevel, RealtimeSnapshotLineage } from './types';
+import type { Alert, AlertLevel, AlertsSurfaceCapabilities, RealtimeSnapshotLineage } from './types';
 import { AlertsTable, AlertDetails } from './components/domain/alerts';
 import { PanelHeader } from './components/shared/PanelHeader';
 import { PanelBody } from './components/shared/PanelBody';
@@ -67,10 +67,15 @@ type AlertsRealtimeSummary = {
 
 type AlertsSnapshotWithRealtime = Alert[] & {
   realtime?: RealtimeSnapshotLineage;
+  capabilities?: AlertsSurfaceCapabilities;
 };
 
 function getAlertsRealtimeLineage(rows: Alert[]): RealtimeSnapshotLineage | null {
   return ((rows as AlertsSnapshotWithRealtime).realtime ?? null);
+}
+
+function getAlertsCapabilities(rows: Alert[]): AlertsSurfaceCapabilities | null {
+  return ((rows as AlertsSnapshotWithRealtime).capabilities ?? null);
 }
 
 function buildAlertsSummaryKey(summary: AlertsRealtimeSummary | null | undefined, seq?: number): string {
@@ -108,6 +113,8 @@ export default function Alerts({
   const { isMobile } = useMobileLayout();
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [standardLineage, setStandardLineage] = useState<RealtimeSnapshotLineage | null>(null);
+  const [alertsCapabilities, setAlertsCapabilities] = useState<AlertsSurfaceCapabilities | null>(null);
+  const allowClearAll = alertsCapabilities?.clear_mode === 'all';
 
   // Track last WebSocket data to prevent redundant updates
   const lastWebSocketDataRef = useRef<string>('');
@@ -205,7 +212,9 @@ export default function Alerts({
         return;
       }
       const nextLineage = getAlertsRealtimeLineage(data);
+      const nextCapabilities = getAlertsCapabilities(data);
       setStandardLineage(nextLineage);
+      setAlertsCapabilities(nextCapabilities);
       authoritativeRecoveryPendingRef.current = false;
       alertsController.applySnapshot(data);
       setRows(data);
@@ -450,7 +459,9 @@ export default function Alerts({
         return;
       }
       const nextLineage = getAlertsRealtimeLineage(data);
+      const nextCapabilities = getAlertsCapabilities(data);
       setStandardLineage(nextLineage);
+      setAlertsCapabilities(nextCapabilities);
       authoritativeRecoveryPendingRef.current = false;
       alertsController.applySnapshot(data);
       setRows(data);
@@ -480,16 +491,22 @@ export default function Alerts({
 
   const handleClearAll = useCallback(async () => {
     try {
-      await api.clearAlerts();
-      alertsController.applySnapshot([]);
-      clearAlerts();
+      const result = await api.clearAlerts();
       setShowClearConfirm(false);
+      if (result.capabilities?.clear_mode === 'all') {
+        const emptyRows = Object.assign([], { capabilities: result.capabilities }) as Alert[];
+        setAlertsCapabilities(result.capabilities);
+        clearAlerts();
+        alertsController.applySnapshot(emptyRows);
+        setRows(emptyRows);
+      }
+      await refreshAlertsFromApi();
     } catch (e) {
       if (import.meta.env?.DEV) {
         console.error('[alerts] Failed to clear alerts:', e);
       }
     }
-  }, [alertsController, clearAlerts]);
+  }, [alertsController, clearAlerts, refreshAlertsFromApi, setRows]);
 
   // Filter alerts by level (memoized to prevent unnecessary re-renders)
   const filteredRows = useMemo(
@@ -530,7 +547,7 @@ export default function Alerts({
       </span>
 
       {/* Clear All Button */}
-      {filteredRows.length > 0 && (
+      {allowClearAll && filteredRows.length > 0 && (
         <Button variant="ghost" size="xs" onClick={() => setShowClearConfirm(true)}>
           Clear All
         </Button>
@@ -596,7 +613,12 @@ export default function Alerts({
       </PanelBody>
 
       {/* Clear All Confirmation Dialog */}
-      <Dialog isOpen={showClearConfirm} onClose={() => setShowClearConfirm(false)} title="Clear All Alerts" size="sm">
+      <Dialog
+        isOpen={allowClearAll && showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        title="Clear All Alerts"
+        size="sm"
+      >
         <p className="text-sm text-text-muted mb-4">
           Are you sure you want to clear all alerts? This action cannot be undone.
         </p>

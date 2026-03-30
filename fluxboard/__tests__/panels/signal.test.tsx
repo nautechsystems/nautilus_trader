@@ -452,6 +452,52 @@ describe('SignalTable Behavioral Tests', () => {
       const summary = screen.getAllByText((_, node) => node?.textContent === 'B 1/3 · A 2/4')[0];
       expect(summary).toBeInTheDocument();
     });
+
+    it('does not display stale open quote counts when managed_orders is zero', async () => {
+      const strategy = createMockStrategy('quote_truth_strategy', {
+        managed_orders: 0,
+        maker_quote_status: {
+          bid_open: 4,
+          bid_depth: 5,
+          bid_blocked: 1,
+          ask_open: 5,
+          ask_depth: 5,
+          ask_blocked: 0,
+        },
+      });
+
+      initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      renderSignalTable();
+
+      await waitFor(() => {
+        expect(screen.getByText('quote_truth_strategy')).toBeInTheDocument();
+      });
+
+      const summary = screen.getAllByText((_, node) => node?.textContent === 'B 0/5 · A 0/5')[0];
+      expect(summary).toBeInTheDocument();
+    });
+  });
+
+  describe('Global Qty Column', () => {
+    it('falls back to canonical top-level inventory when pricing adjustments are absent', async () => {
+      const strategy = createMockStrategy('global_qty_strategy', {
+        pricing_adjustments: undefined,
+        risk_delta: undefined,
+        global_qty_base: 12345.6789,
+        global_qty: 12345.6789,
+      } as Partial<SignalStrategy> & Record<string, unknown>);
+
+      initSignalState({ rows: [strategy], setRows: mockSetRows, mergeStrategy: mockMergeStrategy });
+
+      renderSignalTable();
+
+      await waitFor(() => {
+        expect(screen.getByText('global_qty_strategy')).toBeInTheDocument();
+      });
+
+      expect(screen.getAllByText('12,345.6789')[0]).toBeInTheDocument();
+    });
   });
 
   describe('Adj/Skew Column', () => {
@@ -694,9 +740,52 @@ describe('SignalTable Behavioral Tests', () => {
       expect(socket.off).toHaveBeenCalledWith('market_update', expect.any(Function));
     });
 
-    it('does not fall back to watchdog polling while the websocket stays connected and idle', async () => {
+    it('recovers with a snapshot when signal data stays stale even if websocket heartbeats continue', async () => {
       vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
       (socket as any).connected = true;
+
+      const staleStrategy = createMockStrategy('stale_strategy');
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [staleStrategy],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 3,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          strategies: [staleStrategy],
+          server_time: '2024-01-01 12:00:11',
+          server_ts_ms: Date.parse('2024-01-01T12:00:11.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 4,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        });
 
       renderSignalTable();
       await flushAsyncRender();
@@ -704,11 +793,287 @@ describe('SignalTable Behavioral Tests', () => {
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
 
       act(() => {
-        vi.advanceTimersByTime(5_000);
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'heartbeat',
+          seq: 4,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: Date.parse('2024-01-01T12:00:05.000Z'),
+          payload: {},
+        });
+        vi.advanceTimersByTime(9_999);
       });
       await flushAsyncRender();
 
       expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(2_001);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it('does not force the surface badge back to live on heartbeat when data is already lagging', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      const staleStrategy = createMockStrategy('lagging_strategy');
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [staleStrategy],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      act(() => {
+        vi.advanceTimersByTime(8_001);
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+
+      act(() => {
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'heartbeat',
+          seq: 4,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: Date.parse('2024-01-01T12:00:08.000Z'),
+          payload: {},
+        });
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+      expect(screen.queryByText('Live (WS)')).not.toBeInTheDocument();
+      vi.useRealTimers();
+    });
+
+    it('does not refresh held stale rows on an empty market_update during the hold window', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      const staleStrategy = createMockStrategy('lagging_strategy');
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [staleStrategy],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 3,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      act(() => {
+        vi.advanceTimersByTime(8_001);
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+
+      act(() => {
+        emitSocketEvent('market_update', {
+          strategies: [],
+          server_ts_ms: Date.parse('2024-01-01T12:00:08.000Z'),
+        });
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+      expect(screen.queryByText('Live (WS)')).not.toBeInTheDocument();
+      vi.useRealTimers();
+    });
+
+    it('does not churn recovery snapshots for a legitimately empty realtime view while heartbeats continue', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 0,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(8_000);
+        emitSocketEvent('realtime_event', {
+          contract_version: 2,
+          surface: 'signal',
+          stream_id: 'signal-main',
+          profile: 'default',
+          kind: 'heartbeat',
+          seq: 1,
+          snapshot_revision: 'signal-snap-1',
+          server_ts_ms: Date.parse('2024-01-01T12:00:08.000Z'),
+          payload: {},
+        });
+        vi.advanceTimersByTime(4_000);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('marks an acknowledged empty realtime view as lagging before it becomes stale', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any).mockResolvedValueOnce({
+        strategies: [],
+        server_time: '2024-01-01 12:00:00',
+        server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+        realtime: {
+          contract_version: 2,
+          surface: 'signal',
+          profile: 'default',
+          surface_query_key: 'signal|profile=default',
+          stream_id: 'signal-main',
+          snapshot_revision: 'signal-snap-1',
+          last_seq: 0,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      act(() => {
+        vi.advanceTimersByTime(8_001);
+      });
+      await flushAsyncRender();
+
+      expect(screen.getByText('Lagging')).toBeInTheDocument();
+      expect(screen.queryByText('Live (WS)')).not.toBeInTheDocument();
+      vi.useRealTimers();
+    });
+
+    it('recovers an acknowledged empty realtime view when the standard stream goes silent', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'));
+      realtimeFlags.signal = true;
+      (socket as any).connected = true;
+
+      (api.getSignalStrategies as any)
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:00',
+          server_ts_ms: Date.parse('2024-01-01T12:00:00.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 0,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          strategies: [],
+          server_time: '2024-01-01 12:00:12',
+          server_ts_ms: Date.parse('2024-01-01T12:00:12.000Z'),
+          realtime: {
+            contract_version: 2,
+            surface: 'signal',
+            profile: 'default',
+            surface_query_key: 'signal|profile=default',
+            stream_id: 'signal-main',
+            snapshot_revision: 'signal-snap-1',
+            last_seq: 0,
+            capabilities: {
+              recovery_mode: 'invalidate_only',
+              replay_supported: false,
+              transport_mode: 'polling_only',
+            },
+          },
+        });
+
+      renderSignalTable();
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(12_000);
+      });
+      await flushAsyncRender();
+
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
 

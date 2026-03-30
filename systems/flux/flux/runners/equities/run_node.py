@@ -18,6 +18,13 @@ import redis
 
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
+from flux.execution.controller import VenueActivityOrigin
+from flux.execution.events import ExecutionLifecycleEvent
+from flux.execution.intents import ExecutionLifecycleState
+from flux.execution.transport import ControllerIntentRequest
+from flux.execution.transport import UdsTransportPaths
+from flux.execution.transport import REPLY_STATUS_REJECTED
+from flux.execution.transport import send_request as send_transport_request
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
@@ -144,7 +151,7 @@ def _load_runtime_config(path: Path, *, shared_config_path: Path | None = None) 
         path,
         shared_config_path=shared_config_path,
         load_config=_load_config,
-        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes"),
+        table_names=("redis", "portfolio", "strategy_contracts", "account_scopes", "controller"),
     )
 
 
@@ -230,6 +237,95 @@ def _attach_profile_account_projection_feed(
         namespace=namespace,
         schema_version=schema_version,
     )
+
+
+def _build_controller_intent_publisher(
+    *,
+    strategy: Any,
+    controller_scope_id: str,
+    transport_root_dir: Path,
+    send_request_fn=send_transport_request,
+):
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id=controller_scope_id,
+        root_dir=transport_root_dir,
+    )
+
+    def _publish_intent(command: Any) -> None:
+        request = ControllerIntentRequest.from_command(
+            command=command,
+            requested_at_ns=_strategy_timestamp_ns(strategy),
+        )
+        reply = send_request_fn(
+            paths=paths,
+            request=request,
+            timeout_s=1.0,
+        )
+        if reply.status == REPLY_STATUS_REJECTED:
+            raise RuntimeError(reply.reason or "controller rejected canary request")
+        if reply.claim is None:
+            raise RuntimeError("controller accepted the request without returning a claim")
+
+        apply_lifecycle = getattr(strategy, "apply_controller_lifecycle_event", None)
+        if callable(apply_lifecycle):
+            apply_lifecycle(
+                ExecutionLifecycleEvent.from_claim(
+                    claim=reply.claim,
+                    lifecycle_state=ExecutionLifecycleState.ACCEPTED,
+                    venue_activity_origin=VenueActivityOrigin.CONTROLLER,
+                ),
+            )
+
+    return _publish_intent
+
+
+def _attach_controller_endpoint_and_canonical_state_feed(
+    *,
+    strategy: Any,
+    config: dict[str, Any],
+    redis_cfg: dict[str, Any],
+    namespace: str,
+    schema_version: str,
+) -> None:
+    controller_cfg = config.get("controller")
+    if not isinstance(controller_cfg, dict) or not controller_cfg:
+        return
+    controller_scope_id = _optional_text(getattr(strategy.config, "controller_scope_id", None))
+    if controller_scope_id is None:
+        return
+
+    configure_intent_publisher = getattr(strategy, "configure_controller_intent_publisher", None)
+    if callable(configure_intent_publisher):
+        configure_intent_publisher(
+            controller_scope_id=controller_scope_id,
+            publish_intent=_build_controller_intent_publisher(
+                strategy=strategy,
+                controller_scope_id=controller_scope_id,
+                transport_root_dir=_repo_root() / ".run",
+            ),
+        )
+
+    configure_canonical_feed = getattr(strategy, "configure_controller_canonical_state_feed", None)
+    if not callable(configure_canonical_feed):
+        return
+    redis_client = redis.Redis(**build_redis_client_kwargs(redis_cfg))
+    configure_canonical_feed(
+        redis_client=redis_client,
+        controller_scope_id=controller_scope_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+
+
+def _strategy_timestamp_ns(strategy: Any) -> int:
+    clock = getattr(strategy, "clock", None)
+    if clock is None:
+        clock = getattr(strategy, "_clock", None)
+    timestamp_ns = getattr(clock, "timestamp_ns", None)
+    if callable(timestamp_ns):
+        with suppress(Exception):
+            return int(timestamp_ns())
+    return 0
 
 
 def _attach_reference_balance_snapshot_provider(
@@ -449,6 +545,7 @@ def _optional_strategy_config_kwargs(
             continue
         candidates["portfolio_asset_id"] = contract.portfolio_asset_id
         candidates["execution_account_scope_id"] = contract.execution_account_scope_id
+        candidates["controller_scope_id"] = contract.controller_scope_id
         break
     return {
         field_name: value
@@ -732,6 +829,13 @@ def build_node(
     )
     _attach_profile_account_projection_feed(
         strategy=strategy,
+        redis_cfg=redis_cfg,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    _attach_controller_endpoint_and_canonical_state_feed(
+        strategy=strategy,
+        config=config,
         redis_cfg=redis_cfg,
         namespace=namespace,
         schema_version=schema_version,

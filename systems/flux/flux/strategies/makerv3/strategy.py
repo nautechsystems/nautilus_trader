@@ -305,6 +305,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._quote_failure_circuit_open = False
             self._terminal_order_denial_circuit_open = False
             self._venue_protection_circuit_open = False
+            self._controller_managed_execution_enabled = False
             self._last_stale_cancel_ns = 0
             self._last_completed_quote_ns = 0
             self._last_order_event_ns = 0
@@ -1254,6 +1255,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
             if not managed_orders:
                 self._startup_cleanup_pending = False
                 self._set_managed_only_stop_safety(False)
+                return
+            if bool(getattr(self, "_controller_managed_execution_enabled", False)):
+                self._startup_cleanup_pending = False
+                self._set_managed_only_stop_safety(False)
+                self._publish_event(
+                    "startup_cleanup_skipped_controller_managed",
+                    managed_orders=len(managed_orders),
+                )
                 return
             self._startup_cleanup_pending = True
             self._set_managed_only_stop_safety(True)
@@ -2976,6 +2985,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _publish_current_state_snapshot(self) -> None:
             current_state = getattr(self, "_last_state_name", None) or "running"
+            if (
+                current_state == "blocked_startup_cleanup"
+                and not self._startup_cleanup_active()
+            ):
+                current_state = "running"
             self._publish_state(current_state, refresh_pricing_debug=False)
 
         def _cancel_managed_quotes(

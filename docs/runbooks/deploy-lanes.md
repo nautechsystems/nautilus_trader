@@ -79,6 +79,7 @@ Each lane must also have distinct:
 
 - deploy from a pinned release only
 - never from a dev checkout or worktree
+- for controller-owned multi-box writers, repoint the standby lane only after the replicated ownership log and stale-writer failover drill both pass on the exact release being promoted
 
 ## Agent Contract
 
@@ -90,6 +91,18 @@ Agents must follow these rules:
 - never point live units at `~/nautilus-trader` or `.worktrees/*`
 - never hot-edit active pilot or prod release roots
 - update docs and runbooks whenever lane names, env contracts, or rollout steps change
+
+## Controller Multi-Box Gate
+
+Before promoting a controller-owned writer from single-host canary into active/standby:
+
+1. keep both hosts on immutable pilot or prod release roots
+2. enable the replicated ownership-log path for the target controller scope
+3. run `python ops/scripts/failover/controller_scope_failover.py --profile <profile> --scope <scope> --multi-box --check-thresholds`
+4. confirm the report shows `replicated_ownership_log=true`, `partition_stale_writer_rejected=true`, and `duplicate_writes=0`
+5. only then allow the standby lane to become eligible for promotion or takeover
+
+If the multi-box failover report does not pass, keep the scope single-writer and do not stage TokenMM migration on that release.
 
 ## Repo And Worktree Hygiene
 

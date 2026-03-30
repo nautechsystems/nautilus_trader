@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from nautilus_trader.flux.api.app import prefer_controller_managed_balance_rows
 from nautilus_trader.flux.api._payloads_balances import combine_portfolio_snapshot_rows
 from nautilus_trader.flux.api.payloads import collapse_balance_display_rows
 from nautilus_trader.flux.api.payloads import merge_portfolio_balances_rows
@@ -562,3 +563,47 @@ def test_collapse_balance_display_rows_keeps_shared_account_stable_cash_spot_sha
     assert row["product_type"] == "spot"
     assert row["display_name_short"] == "USDT"
     assert row["display_name_long"] == "Bitget USDT"
+
+
+def test_prefer_controller_managed_balance_rows_keeps_one_authoritative_binance_shared_row() -> None:
+    rows = prefer_controller_managed_balance_rows(
+        [
+            {
+                "row_id": "tokenmm:cash:binance_spot:BINANCE-old:USDT",
+                "exchange": "binance_spot",
+                "account": "BINANCE-old",
+                "account_id": "BINANCE-old",
+                "account_scope_id": "binance.pm.main",
+                "asset": "USDT",
+                "total": "873.32524016",
+                "product_type": "spot",
+                "source_scope": "strategy_local",
+                "ts_ms": 1_700_000_000_000,
+            },
+            {
+                "row_id": "tokenmm:shared:binance.pm.main:cash:binance_spot:BINANCE-main:USDT",
+                "exchange": "binance_spot",
+                "account": "BINANCE-main",
+                "account_id": "BINANCE-main",
+                "account_scope_id": "binance.pm.main",
+                "asset": "USDT",
+                "total": "910.24627913",
+                "product_type": "spot",
+                "source_scope": "shared_account",
+                "ts_ms": 1_700_000_000_100,
+            },
+        ],
+        controller_scope_by_account_scope={"binance.pm.main": "tokenmm.binance.pm.main"},
+    )
+
+    binance_rows = [
+        row
+        for row in rows
+        if row.get("account_scope_id") == "binance.pm.main" and row.get("asset") == "USDT"
+    ]
+
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["row_id"] == "tokenmm:shared:binance.pm.main:cash:binance_spot:BINANCE-main:USDT"
+    assert row["controller_scope_id"] == "tokenmm.binance.pm.main"
+    assert row["authority_state"] == "active"

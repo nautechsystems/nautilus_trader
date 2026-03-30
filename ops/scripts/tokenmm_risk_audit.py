@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -15,6 +16,12 @@ from urllib.error import HTTPError
 from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import urlopen
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+for _path in (_REPO_ROOT, _REPO_ROOT / "systems" / "flux"):
+    _path_text = str(_path)
+    if _path_text not in sys.path:
+        sys.path.insert(0, _path_text)
 
 from flux.api.payloads import safe_int
 
@@ -225,17 +232,29 @@ def _row_id_sort_key(value: Any) -> tuple[tuple[int, int | str], ...]:
         return ()
     return tuple(
         (0, int(part)) if part.isdigit() else (1, part)
-        for part in text.split(":")
+        for part in re.split(r"(\d+)", text)
+        if part
     )
 
 
-def _row_account_key(row: Mapping[str, Any]) -> str:
+def _explicit_row_account_key(row: Mapping[str, Any]) -> str | None:
     return _first_text(
+        row.get("account_scope_id"),
         row.get("account_id"),
         row.get("account"),
         row.get("wallet"),
         row.get("subaccount"),
-    ) or ""
+    )
+
+
+def _row_account_key(row: Mapping[str, Any]) -> str:
+    explicit_account = _explicit_row_account_key(row)
+    if explicit_account is not None:
+        return explicit_account
+    row_id = _decode_text(row.get("row_id"))
+    if ":evt:" in row_id:
+        return row_id.split(":evt:", maxsplit=1)[0]
+    return row_id or "<unknown>"
 
 
 def _position_qty_from_rows(rows: list[Mapping[str, Any]]) -> tuple[Decimal | None, str]:
@@ -275,7 +294,10 @@ def _latest_base_asset_qty_from_rows(
 
     latest_rows_by_account: dict[str, Mapping[str, Any]] = {}
     latest_sort_key_by_account: dict[str, tuple[int, tuple[tuple[int, int | str], ...]]] = {}
+    used_only_explicit_account_keys = True
     for row in base_rows:
+        if _explicit_row_account_key(row) is None:
+            used_only_explicit_account_keys = False
         account_key = _row_account_key(row)
         sort_key = (_row_ts_ms(row), _row_id_sort_key(row.get("row_id")))
         previous_sort_key = latest_sort_key_by_account.get(account_key)
@@ -294,7 +316,10 @@ def _latest_base_asset_qty_from_rows(
         if qty is None:
             return None, "base_asset_row_missing_qty"
         total += qty
-    return total, "latest_base_asset_rows_by_account"
+    source = "latest_base_asset_rows_by_account"
+    if len(latest_rows_by_account) == 1 and used_only_explicit_account_keys:
+        source = "latest_base_asset_row"
+    return total, source
 
 
 def _strategy_local_qty_from_rows(
@@ -561,6 +586,7 @@ def main(argv: list[str] | None = None) -> int:
         component = components_by_id.get(strategy_id)
         component_local_position_qty = None
         component_local_spot_qty = None
+        component_local_qty_matches_signal = False
         if component is None:
             _append_error(
                 errors,
@@ -578,6 +604,8 @@ def main(argv: list[str] | None = None) -> int:
                     errors,
                     f"{strategy_id}: profile component local_qty_base={component_local_qty} does not match signal local_qty_base={signal_row.local_qty_base}",
                 )
+            else:
+                component_local_qty_matches_signal = component_local_qty is not None
             if _component_is_missing_optional(component) and signal_row.local_qty_base is None:
                 strategy_summaries.append(
                     f"{strategy_id}: local_qty=<missing_optional_component> global_qty={signal_row.global_qty_base} aggregation={signal_row.aggregation_mode or '<missing>'}",
@@ -616,16 +644,23 @@ def main(argv: list[str] | None = None) -> int:
             component_local_position_qty=component_local_position_qty,
             component_local_spot_qty=component_local_spot_qty,
         )
+        summary_source = row_source
         if local_qty_from_rows is None:
-            _append_error(
-                errors,
-                f"{strategy_id}: could not derive local qty from {STRATEGY_BALANCES_PATH_PREFIX}<id> ({row_source})",
-            )
+            if component_local_qty_matches_signal:
+                summary_source = "profile_component_local_qty"
+            else:
+                _append_error(
+                    errors,
+                    f"{strategy_id}: could not derive local qty from {STRATEGY_BALANCES_PATH_PREFIX}<id> ({row_source})",
+                )
         elif local_qty_from_rows != signal_row.local_qty_base:
-            _append_error(
-                errors,
-                f"{strategy_id}: strategy balances local qty={local_qty_from_rows} from {row_source} does not match signal local_qty_base={signal_row.local_qty_base}",
-            )
+            if component_local_qty_matches_signal:
+                summary_source = "profile_component_local_qty"
+            else:
+                _append_error(
+                    errors,
+                    f"{strategy_id}: strategy balances local qty={local_qty_from_rows} from {row_source} does not match signal local_qty_base={signal_row.local_qty_base}",
+                )
 
         job = pulse_jobs.get(f"tokenmm-node-{strategy_id}")
         if job is not None and _decode_text(job.get("status")) == "active":
@@ -640,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{strategy_id}: local_qty_base={signal_row.local_qty_base} "
                 f"global_qty_base={signal_row.global_qty_base} "
                 f"state={signal_row.state_name or 'unknown'} "
-                f"balance_source={row_source}"
+                f"balance_source={summary_source}"
             ),
         )
 

@@ -119,6 +119,12 @@ def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type
     _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
 
 
+def test_tokenmm_live_controller_lease_ttl_is_explicitly_hardened_for_prod() -> None:
+    shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+
+    assert int(shared_config["controller"]["lease_ttl_ms"]) >= 15_000
+
+
 def test_tokenmm_binance_spot_portfolio_margin_variant_preserves_identity_contract() -> None:
     strategy_config = tomllib.load(
         (_repo_root() / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml").open(
@@ -153,8 +159,8 @@ def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_binance_perp_strategy_uses_portfolio_margin_private_api_family() -> None:
@@ -187,8 +193,8 @@ def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "sell_only"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
@@ -201,8 +207,15 @@ def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
+
+
+def test_tokenmm_all_live_strategy_configs_resume_quoting_after_clean_restart() -> None:
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        strategy_config = tomllib.load(_strategy_config_path(strategy_id).open("rb"))
+        assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+        assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
@@ -271,6 +284,31 @@ def test_tokenmm_live_config_declares_strategy_contracts_for_tokenmm_allowlist()
     assert binance_perp["execution_account_scope_id"] == binance_spot["execution_account_scope_id"]
 
 
+def test_tokenmm_live_config_binds_shared_binance_writer_domains_to_a_controller_scope() -> None:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    controller = config.get("controller", {})
+    contracts_by_strategy = {
+        str(row["strategy_id"]).strip(): row
+        for row in TOKENMM_STRATEGY_CONTRACTS
+        if str(row.get("strategy_id") or "").strip()
+    }
+
+    assert controller["controller_scope_id"] == "tokenmm.binance.pm.main"
+    assert controller["account_scope_id"] == "binance.pm.main"
+    assert controller["mode"] == "active"
+    assert controller["write_ownership_enabled"] is True
+    assert controller["managed_strategy_ids"] == [
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    ]
+    assert contracts_by_strategy["plumeusdt_binance_perp_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
+    assert contracts_by_strategy["plumeusdt_binance_spot_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
+
+
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
@@ -331,6 +369,29 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
     assert "`/etc/flux/common.env`" in runbook
     assert "non-worktree deploy root" in runbook
     assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
+
+
+def test_tokenmm_systemd_contract_adds_a_controller_service_for_managed_binance_domains() -> None:
+    target_unit = _read(_repo_root() / "deploy/tokenmm/systemd/flux-tokenmm.target")
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
+    assert "tokenmm-controller" in install_script
+    assert (
+        "nautilus_trader.flux.runners.tokenmm.run_controller --config ${SHARED_CONFIG} --mode live --confirm-live"
+        in install_script
+    )
+    assert "binance.pm.main" in install_script
+    assert "controller-owned shared Binance writer domains stay on the controller lane" in install_script
+
+
+def test_tokenmm_systemd_contract_skips_local_execution_for_controller_managed_binance_nodes() -> None:
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert 'controller_managed_strategy=0' in install_script
+    assert 'plumeusdt_binance_perp_makerv3|plumeusdt_binance_spot_makerv3' in install_script
+    assert 'exec_flag+=(--enable-execution)' in install_script
+    assert '${exec_flag[*]}' in install_script
 
 
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
@@ -741,6 +802,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "[Install]" in target_unit
     assert "WantedBy=multi-user.target" in target_unit
     assert "Wants=flux@tokenmm-api.service" in target_unit
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
     assert "Wants=flux@tokenmm-prometheus.service" in target_unit
@@ -771,6 +833,13 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert 'api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"' in install_script
     assert 'api_host="${api_host:-0.0.0.0}"' in install_script
     assert "--host ${api_host}" in install_script
+    assert "tokenmm-controller" in install_script
+    assert "render_controller_env()" in install_script
+    assert "tokenmm-controller.env" in install_script
+    assert (
+        "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_controller "
+        "--config ${SHARED_CONFIG} --mode live --confirm-live" in install_script
+    )
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
@@ -832,6 +901,12 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "tokenmm-grafana" in deploy_readme
     assert "tokenmm-liquidity-exporter" in deploy_readme
     assert "tokenmm-markouts-exporter" in deploy_readme
+
+
+def test_flux_service_template_raises_process_limit_for_live_tokenmm_ui_load() -> None:
+    service_template = _read(_repo_root() / "deploy/systemd/flux@.service")
+
+    assert "LimitNPROC=16384" in service_template
 
 
 def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible() -> None:
@@ -1030,9 +1105,11 @@ def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     assert "allowlist" in readme
     assert "`params` returns the 7 allowlisted strategy IDs" in readme
     assert "`signal` returns seven per-strategy rows." in readme
-    assert "Supported live core for this pass" in readme
-    assert "Binance perp and Binance spot stay allowlisted but parked" in readme
-    assert "Shared portfolio completeness requires only the supported live core" in readme
+    assert "Supported live production set" in readme
+    assert "plumeusdt_binance_perp_makerv3" in readme
+    assert "plumeusdt_binance_spot_makerv3" in readme
+    assert "restart-resilient with `force_bot_off_on_start = false`" in readme
+    assert "Shared portfolio completeness requires all seven allowlisted strategies" in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:

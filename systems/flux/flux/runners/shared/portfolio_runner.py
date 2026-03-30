@@ -367,7 +367,15 @@ class StrategySetPortfolioAggregator:
                 self._redis.publish(self._aggregate_channel(base_currency=base_currency), encoded)
             snapshot_writer = getattr(self, "_snapshot_writer", None)
             if snapshot_writer is not None:
-                snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
+                try:
+                    snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
+                except Exception as exc:
+                    self._log.warning(
+                        "Failed to persist portfolio inventory snapshot portfolio_id=%s base_currency=%s: %s",
+                        self._portfolio_id,
+                        asset_id,
+                        exc,
+                    )
             inventory_by_asset[base_currency.upper()] = payload
 
         snapshot = build_portfolio_snapshot_v2(
