@@ -60,7 +60,7 @@ class PortfolioInventorySnapshotWriter:
             "missing_required": _as_list(payload.get("missing_required")),
             "stale_required": _as_list(payload.get("stale_required")),
             "null_qty_required": _as_list(payload.get("null_qty_required")),
-            "components": _as_list(payload.get("components")),
+            "components": _components_for_semantic_hash(payload.get("components")),
             "usable_component_count": _int(payload.get("usable_component_count"), default=0),
             "expected_component_count": _int(payload.get("expected_component_count"), default=0),
             "stale_after_ms": _int(payload.get("stale_after_ms"), default=0),
@@ -141,6 +141,23 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return list(value)
     return [value]
+
+
+def _components_for_semantic_hash(value: Any) -> list[Any]:
+    components = _as_list(value)
+    normalized: list[Any] = []
+    for component in components:
+        if isinstance(component, Mapping):
+            normalized.append(
+                {
+                    key: component[key]
+                    for key in sorted(component)
+                    if key != "ts_ms"
+                },
+            )
+        else:
+            normalized.append(component)
+    return normalized
 
 
 def _int(value: Any, *, default: int) -> int:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from sqlite3 import OperationalError
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -359,6 +360,54 @@ def test_tokenmm_portfolio_aggregator_publishes_portfolio_snapshot_with_balances
         FluxRedisKeys.portfolio_snapshot_channel(portfolio_id="tokenmm"),
         raw_snapshot.decode(),
     ) in fake_redis.published
+
+
+def test_tokenmm_portfolio_aggregator_keeps_redis_publication_when_snapshot_persistence_fails() -> None:
+    now_ms_value = int(time.time() * 1000)
+    fake_redis = _FakeRedis(
+        {
+            FluxRedisKeys.portfolio_inventory_component(
+                strategy_id="plumeusdt_bybit_perp_makerv3",
+                portfolio_id="tokenmm",
+                base_currency="PLUME",
+            ): encode_component(
+                StrategyInventoryComponent(
+                    strategy_id="plumeusdt_bybit_perp_makerv3",
+                    portfolio_id="tokenmm",
+                    base_currency="PLUME",
+                    local_qty_base=10,
+                    ts_ms=now_ms_value,
+                    state="running",
+                ),
+            ).encode(),
+        },
+    )
+
+    class _FailingSnapshotWriter:
+        def maybe_persist(self, *, payload, ts_ms):
+            raise OperationalError("database is locked")
+
+    aggregator = TokenMMPortfolioAggregator.__new__(TokenMMPortfolioAggregator)
+    aggregator._namespace = "flux"
+    aggregator._schema_version = "v1"
+    aggregator._mode = "live"
+    aggregator._portfolio_id = "tokenmm"
+    aggregator._stale_after_ms = 3_000
+    aggregator._strategy_ids = ["plumeusdt_bybit_perp_makerv3"]
+    aggregator._required_strategy_ids = set(aggregator._strategy_ids)
+    aggregator._base_assets = ["PLUME"]
+    aggregator._redis = fake_redis
+    aggregator._log = MagicMock()
+    aggregator._snapshot_writer = _FailingSnapshotWriter()
+
+    aggregator.recompute_once()
+
+    payload = decode_portfolio_inventory(
+        fake_redis.get(FluxRedisKeys.portfolio_inventory(portfolio_id="tokenmm", base_currency="PLUME")),
+    )
+    assert payload is not None
+    assert payload["global_qty_base"] == "10.000000"
+    aggregator._log.warning.assert_called()
 
 
 def test_tokenmm_portfolio_aggregator_threads_inventory_aggregation_mode_from_config(
