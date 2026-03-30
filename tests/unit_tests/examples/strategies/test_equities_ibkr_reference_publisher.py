@@ -267,6 +267,66 @@ def test_compute_next_backoff_ms_is_explicit_and_bounded() -> None:
     ) == 15_000
 
 
+def test_runtime_close_waits_for_client_stop_before_stopping_loop(monkeypatch) -> None:
+    from flux.runners.shared import ibkr_reference_publisher as publisher_mod
+
+    class _FakeFuture:
+        def __init__(self) -> None:
+            self.result_timeout: float | None = None
+
+        def result(self, timeout: float | None = None) -> None:
+            self.result_timeout = timeout
+
+    class _FakeLoop:
+        def __init__(self) -> None:
+            self.closed = False
+            self.calls: list[tuple[object, tuple[object, ...]]] = []
+
+        def is_closed(self) -> bool:
+            return self.closed
+
+        def call_soon_threadsafe(self, callback, *args) -> None:
+            self.calls.append((callback, args))
+
+        def stop(self) -> None:
+            return None
+
+    class _FakeThread:
+        def is_alive(self) -> bool:
+            return False
+
+    class _FakeClient:
+        async def _stop_async(self) -> None:
+            return None
+
+    fake_future = _FakeFuture()
+    close_calls: list[tuple[object, object]] = []
+
+    def _fake_run_coroutine_threadsafe(coro, loop):
+        close_calls.append((coro, loop))
+        coro.close()
+        return fake_future
+
+    monkeypatch.setattr(
+        publisher_mod.asyncio,
+        "run_coroutine_threadsafe",
+        _fake_run_coroutine_threadsafe,
+    )
+
+    runtime = publisher_mod._ThreadedIbkrReferenceRuntime.__new__(
+        publisher_mod._ThreadedIbkrReferenceRuntime,
+    )
+    runtime._client = _FakeClient()
+    runtime._loop = _FakeLoop()
+    runtime._thread = _FakeThread()
+
+    runtime.close()
+
+    assert len(close_calls) == 1
+    assert fake_future.result_timeout == 5
+    assert runtime._loop is None
+
+
 def test_module_source_does_not_depend_on_chainsaw_or_configparser() -> None:
     import flux.runners.shared.ibkr_reference_publisher as publisher_mod
 

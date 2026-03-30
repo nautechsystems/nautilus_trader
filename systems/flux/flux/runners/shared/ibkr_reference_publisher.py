@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import sys
 import threading
 import time
@@ -17,7 +18,6 @@ from zoneinfo import ZoneInfo
 
 from ibapi.ticktype import TickTypeEnum
 
-from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
 from flux.common.keys import FluxRedisKeys
 from flux.common.strategy_contracts import decode_strategy_contracts
@@ -80,13 +80,6 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
-
-
-def _required_table(config: Mapping[str, Any], table_name: str) -> dict[str, Any]:
-    value = config.get(table_name)
-    if not isinstance(value, Mapping):
-        raise ValueError(f"`{table_name}` must be a TOML table")
-    return dict(value)
 
 
 def _positive_int(value: Any, *, field_name: str, default: int) -> int:
@@ -168,14 +161,16 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
             f"IBKR reference publisher scope {reference_scope_id!r} has no reference instruments",
         )
 
-    instruments = tuple(
-        IbkrReferenceInstrument(
-            instrument_id=instrument_id,
-            symbol=_parse_reference_instrument_id(instrument_id)[0],
-            primary_exchange=_parse_reference_instrument_id(instrument_id)[1],
+    instruments = []
+    for instrument_id in instrument_ids:
+        symbol, primary_exchange = _parse_reference_instrument_id(instrument_id)
+        instruments.append(
+            IbkrReferenceInstrument(
+                instrument_id=instrument_id,
+                symbol=symbol,
+                primary_exchange=primary_exchange,
+            ),
         )
-        for instrument_id in instrument_ids
-    )
 
     reconnect_backoff_initial_ms = _positive_int(
         publisher_cfg.get("reconnect_backoff_initial_ms"),
@@ -213,7 +208,7 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
         reconnect_backoff_initial_ms=reconnect_backoff_initial_ms,
         reconnect_backoff_max_ms=reconnect_backoff_max_ms,
         dockerized_gateway=dict(scope.dockerized_gateway) if scope.dockerized_gateway else None,
-        instruments=instruments,
+        instruments=tuple(instruments),
     )
 
 
@@ -266,6 +261,8 @@ def _is_fresh(md: Mapping[str, Any] | None, *, now_ms: int, stale_after_ms: int)
     ask = md.get("ask")
     ts_event_ms = _ts_event_ms(md)
     if not isinstance(bid, int | float) or not isinstance(ask, int | float):
+        return False
+    if not math.isfinite(float(bid)) or not math.isfinite(float(ask)):
         return False
     if bid <= 0 or ask <= 0 or ts_event_ms is None:
         return False
@@ -395,6 +392,10 @@ class _RawIbkrReferenceClient(InteractiveBrokersClient):
             return True
         if field_name in {"bid", "ask"} and value <= 0:
             return True
+        if not math.isfinite(value):
+            return True
+        if field_name in {"bid_size", "ask_size"} and value < 0:
+            return True
 
         with self._reference_snapshot_lock:
             snapshot = self._reference_snapshots.setdefault(instrument_id, {}).setdefault(route, {})
@@ -462,7 +463,8 @@ class _ThreadedIbkrReferenceRuntime:
         self._thread = None
         if client is not None and loop is not None and not loop.is_closed():
             with suppress(Exception):
-                loop.call_soon_threadsafe(client._stop)
+                stop_future = asyncio.run_coroutine_threadsafe(client._stop_async(), loop)
+                stop_future.result(timeout=5)
         if loop is not None and not loop.is_closed():
             with suppress(Exception):
                 loop.call_soon_threadsafe(loop.stop)
