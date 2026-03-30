@@ -362,6 +362,41 @@ function resolveSignalSurfaceStatus(
   }
 }
 
+function resolveSignalFreshnessState(
+  lastDataTsMs: number | null | undefined,
+  nowMs: number,
+  recoveryPending: boolean,
+): RealtimeSurfaceState | null {
+  if (!lastDataTsMs || !Number.isFinite(lastDataTsMs)) {
+    return null;
+  }
+
+  const ageMs = Math.max(0, nowMs - lastDataTsMs);
+  if (ageMs > STALE_THRESHOLDS.NORMAL) {
+    return recoveryPending ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.STALE;
+  }
+  if (ageMs > STALE_THRESHOLDS.FAST) {
+    return RealtimeSurfaceState.LAGGING;
+  }
+  return RealtimeSurfaceState.LIVE;
+}
+
+function resolveSignalTransportState(
+  lastActivityTsMs: number | null | undefined,
+  nowMs: number,
+  recoveryPending: boolean,
+): RealtimeSurfaceState | null {
+  if (!lastActivityTsMs || !Number.isFinite(lastActivityTsMs)) {
+    return null;
+  }
+
+  const ageMs = Math.max(0, nowMs - lastActivityTsMs);
+  if (ageMs > STALE_THRESHOLDS.NORMAL) {
+    return recoveryPending ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.STALE;
+  }
+  return RealtimeSurfaceState.LIVE;
+}
+
 const ColumnHeaderWithTooltip: FC<{ label: string; tooltip: string }> = ({ label, tooltip }) => {
   return (
     <span className="inline-flex items-center gap-1">
@@ -2019,10 +2054,13 @@ export default function SignalTable({
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   // Track lastUpdate via ref to avoid resubscribing effects when checking staleness
   const lastUpdateRef = useRef<number>(Date.now());
+  const lastStandardActivityRef = useRef<number>(Date.now());
   // Sticky rows support: remember time of last non-empty dataset
   const lastNonEmptyRef = useRef<number | null>(null);
   // Track when we first saw an empty snapshot while rows existed.
   const emptySinceRef = useRef<number | null>(null);
+  // Distinguish an acknowledged empty realtime view from a stale non-empty one.
+  const emptyViewAcknowledgedRef = useRef<boolean>(false);
   // Keep IDs of currently visible strategies to accept profile-compatible deltas
   // that omit full metadata.
   const visibleIdSetRef = useRef<Set<string>>(new Set());
@@ -2180,6 +2218,12 @@ export default function SignalTable({
     const now = nowMs ?? Date.now();
     lastNonEmptyRef.current = now;
     emptySinceRef.current = null;
+    emptyViewAcknowledgedRef.current = false;
+  }, []);
+
+  const hasAcknowledgedEmptyView = useCallback((): boolean => {
+    const currentRows = useSignalStore.getState().rows || [];
+    return emptyViewAcknowledgedRef.current && currentRows.length === 0;
   }, []);
 
   const handleEmptyVisibleSnapshot = useCallback((requestStartedAtMs?: number) => {
@@ -2193,11 +2237,15 @@ export default function SignalTable({
       requestStartedAtMs,
       lastNonEmptyAtMs: lastNonEmptyRef.current,
     });
+    const refreshedAtMs = requestStartedAtMs ?? Date.now();
     emptySinceRef.current = policy.nextEmptySinceMs;
+    emptyViewAcknowledgedRef.current = policy.clearRows;
+    setLastUpdate(refreshedAtMs);
+    lastUpdateRef.current = refreshedAtMs;
     if (policy.clearRows && currentRows.length > 0) {
       setRows([]);
     }
-  }, [setRows]);
+  }, [setLastUpdate, setRows]);
 
   const applyVisibleSnapshotRows = useCallback((incomingRows: SignalStrategy[], requestStartedAtMs?: number) => {
     if (incomingRows.length > 0) {
@@ -2244,6 +2292,7 @@ export default function SignalTable({
       if (signalStandardEnabled) {
         if (data.realtime) {
           manualRefreshRequiredRef.current = false;
+          lastStandardActivityRef.current = requestStartedAtMs;
           applyStandardSnapshotLineage(data.realtime);
           setSurfaceState(RealtimeSurfaceState.LIVE);
         } else {
@@ -2294,6 +2343,16 @@ export default function SignalTable({
     onRecover: handleRecoveryFetch,
   });
   const recoveryPending = recovery.pending;
+  const resolveAcknowledgedEmptyViewState = useCallback((): RealtimeSurfaceState | null => {
+    if (!hasAcknowledgedEmptyView()) {
+      return null;
+    }
+    return resolveSignalTransportState(
+      lastStandardActivityRef.current,
+      Date.now(),
+      recoveryPending,
+    );
+  }, [hasAcknowledgedEmptyView, recoveryPending]);
   const scheduleRecovery = useCallback((reason?: string) => {
     recovery.scheduler.schedule(reason);
   }, [recovery.scheduler]);
@@ -2438,6 +2497,7 @@ export default function SignalTable({
     reason?: string;
     payload?: any;
   }) => {
+    lastStandardActivityRef.current = Date.now();
     syncRealtimeEnvelope({
       server_ts_ms: event.server_ts_ms,
     });
@@ -2445,7 +2505,19 @@ export default function SignalTable({
 
     if (event.kind === 'heartbeat') {
       if (!manualRefreshRequiredRef.current) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        const emptyViewState = resolveAcknowledgedEmptyViewState();
+        if (emptyViewState != null) {
+          setSurfaceState(emptyViewState);
+          return;
+        }
+        const nextState = resolveSignalFreshnessState(
+          lastUpdateRef.current,
+          Date.now(),
+          recoveryPending,
+        );
+        if (nextState != null) {
+          setSurfaceState(nextState);
+        }
       }
       return;
     }
@@ -2482,7 +2554,7 @@ export default function SignalTable({
     if (!manualRefreshRequiredRef.current) {
       setSurfaceState(RealtimeSurfaceState.LIVE);
     }
-  }, [advanceStandardCursor, applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
+  }, [advanceStandardCursor, applySignalDeltaPayload, resolveAcknowledgedEmptyViewState, recoveryPending, scheduleInvalidation, syncRealtimeEnvelope]);
 
   useStandardWebSocketSubscription({
     enabled: signalStandardEnabled && surfaceState !== RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED,
@@ -2493,11 +2565,24 @@ export default function SignalTable({
       requireManualRefresh();
     },
     onSubscribed: (ack) => {
+      lastStandardActivityRef.current = Date.now();
       if (typeof ack.last_seq === 'number' && Number.isFinite(ack.last_seq)) {
         standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(ack.last_seq));
       }
       if (!manualRefreshRequiredRef.current) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        const emptyViewState = resolveAcknowledgedEmptyViewState();
+        if (emptyViewState != null) {
+          setSurfaceState(emptyViewState);
+          return;
+        }
+        const nextState = resolveSignalFreshnessState(
+          lastUpdateRef.current,
+          Date.now(),
+          recoveryPending,
+        );
+        if (nextState != null) {
+          setSurfaceState(nextState);
+        }
       }
     },
   });
@@ -2517,14 +2602,31 @@ export default function SignalTable({
       if (surfaceState === RealtimeSurfaceState.RECOVERING) {
         return;
       }
-
-      const lastDataTsMs = lastUpdateRef.current;
-      if (!lastDataTsMs || !Number.isFinite(lastDataTsMs)) {
+      const emptyViewState = resolveAcknowledgedEmptyViewState();
+      if (emptyViewState != null) {
+        setSurfaceState(emptyViewState);
+        if (emptyViewState === RealtimeSurfaceState.STALE) {
+          if (!recoveryPending) {
+            scheduleInvalidation('signal.watchdog.stale');
+          } else {
+            setSurfaceState(RealtimeSurfaceState.RECOVERING);
+          }
+        }
         return;
       }
 
-      const ageMs = Math.max(0, Date.now() - lastDataTsMs);
-      if (ageMs > STALE_THRESHOLDS.NORMAL) {
+      const lastDataTsMs = lastUpdateRef.current;
+      const nextState = resolveSignalFreshnessState(
+        lastDataTsMs,
+        Date.now(),
+        recoveryPending,
+      );
+      if (nextState == null) {
+        return;
+      }
+
+      if (nextState === RealtimeSurfaceState.STALE) {
+        setSurfaceState(RealtimeSurfaceState.STALE);
         if (!recoveryPending) {
           scheduleInvalidation('signal.watchdog.stale');
         } else {
@@ -2533,18 +2635,13 @@ export default function SignalTable({
         return;
       }
 
-      if (ageMs > STALE_THRESHOLDS.FAST) {
-        setSurfaceState(RealtimeSurfaceState.LAGGING);
-        return;
-      }
-
-      setSurfaceState(RealtimeSurfaceState.LIVE);
+      setSurfaceState(nextState);
     }, 1_000);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [recoveryPending, scheduleInvalidation, signalStandardEnabled, surfaceState]);
+  }, [recoveryPending, resolveAcknowledgedEmptyViewState, scheduleInvalidation, signalStandardEnabled, surfaceState]);
 
   useEffect(() => {
     void fetchSnapshot();

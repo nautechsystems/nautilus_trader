@@ -339,6 +339,20 @@ def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return resolve_flux_strategy_id_from_bootstrap(config)
 
 
+def _resolve_strategy_scoped_balance_snapshot_db_path(
+    config: dict[str, Any],
+    *,
+    db_path: str,
+) -> str:
+    path = Path(db_path).expanduser()
+    strategy_id = _resolve_flux_strategy_id(config)
+    if path.name == f"{strategy_id}.sqlite":
+        return str(path)
+
+    shard_root = path.with_suffix("") if path.suffix == ".sqlite" else path
+    return str(shard_root / f"{strategy_id}.sqlite")
+
+
 def _strategy_contract_for_strategy(
     config: dict[str, Any],
     *,
@@ -819,6 +833,13 @@ def _prepare_telemetry_paths(config: dict[str, Any]) -> None:
         return
     if not bool(telemetry.get("enable_local_persistence", False)):
         return
+
+    balance_snapshots_db_path = _optional_text(telemetry.get("balance_snapshots_db_path"))
+    if balance_snapshots_db_path is not None:
+        telemetry["balance_snapshots_db_path"] = _resolve_strategy_scoped_balance_snapshot_db_path(
+            config,
+            db_path=balance_snapshots_db_path,
+        )
 
     for key in (
         "balance_snapshots_db_path",

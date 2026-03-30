@@ -2038,6 +2038,58 @@ def test_build_telemetry_actor_configs_includes_markouts_actor() -> None:
     assert all(actor.config["horizons_s"] == [0, 30, 60, 120] for actor in markout_actors)
 
 
+def test_prepare_telemetry_paths_scopes_balance_snapshot_db_by_strategy(tmp_path: Path) -> None:
+    balance_root = tmp_path / "telemetry" / "balance_snapshots.sqlite"
+    config = {
+        "identity": {
+            "strategy_id": "plumeusdt_binance_spot_makerv3",
+            "external_strategy_id": "plumeusdt_binance_spot_makerv3",
+        },
+        "strategy": {"strategy_id": "plumeusdt_binance_spot_makerv3"},
+        "telemetry_shipper": {
+            "enable_local_persistence": True,
+            "balance_snapshots_db_path": str(balance_root),
+        },
+    }
+
+    run_node._prepare_telemetry_paths(config)
+
+    telemetry = config["telemetry_shipper"]
+    assert telemetry["balance_snapshots_db_path"] == str(
+        tmp_path / "telemetry" / "balance_snapshots" / "plumeusdt_binance_spot_makerv3.sqlite",
+    )
+    assert (tmp_path / "telemetry" / "balance_snapshots").is_dir()
+
+
+def test_build_telemetry_actor_configs_keeps_balance_snapshot_actor_for_tokenmm_nodes() -> None:
+    actors = run_node._build_telemetry_actor_configs(
+        {
+            "telemetry_shipper": {
+                "enable_local_persistence": True,
+                "balance_snapshots_db_path": "/tmp/balance_snapshots/plumeusdt_binance_spot_makerv3.sqlite",
+                "fills_db_path": "/tmp/fills.sqlite",
+                "orders_db_path": "/tmp/orders.sqlite",
+                "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
+            },
+        },
+    )
+
+    assert {
+        actor.actor_path for actor in actors
+    } == {
+        "nautilus_trader.flux.persistence.balance_snapshots.actor:FluxBalanceSnapshotPersistenceActor",
+        "nautilus_trader.persistence.fills.actor:ExecutionFillPersistenceActor",
+        "nautilus_trader.persistence.orders.actor:OrderActionPersistenceActor",
+        "nautilus_trader.flux.persistence.quote_cycles.actor:QuoteCyclePersistenceActor",
+    }
+    balance_actor = next(
+        actor
+        for actor in actors
+        if actor.actor_path.endswith("balance_snapshots.actor:FluxBalanceSnapshotPersistenceActor")
+    )
+    assert balance_actor.config["db_path"] == "/tmp/balance_snapshots/plumeusdt_binance_spot_makerv3.sqlite"
+
+
 def test_prepare_telemetry_paths_creates_markouts_parent_dir_when_enabled(tmp_path: Path) -> None:
     markouts_path = tmp_path / "telemetry" / "markouts.sqlite"
     config = {

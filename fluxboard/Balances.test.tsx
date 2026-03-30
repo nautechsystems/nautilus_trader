@@ -221,6 +221,20 @@ describe('Balances component', () => {
     );
   });
 
+  it('renders standard-mode balance rows without falling into the loading empty state', async () => {
+    mockIsRealtimeStandardEnabled.mockReturnValue(true);
+    mockedApi.getBalances.mockResolvedValue(buildStandardPayload() as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Loading balances...')).not.toBeInTheDocument();
+    expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
+  });
+
   it('polls balances at the configured interval', async () => {
     render(<Balances />);
     await waitFor(() => {

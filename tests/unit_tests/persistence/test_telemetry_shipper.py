@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import sys
 import sqlite3
 from pathlib import Path
@@ -747,6 +748,176 @@ def test_shipper_ships_balance_snapshot_and_portfolio_inventory_tables(tmp_path:
     assert portfolio_row["expected_component_count"] == 2
 
 
+def test_shipper_ships_sharded_balance_snapshot_tables_from_strategy_dbs(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["flux_balance_snapshot"].shipped == 2
+    assert result["flux_balance_snapshot_row"].shipped == 2
+    assert [name for name, _rows in sink.insert_calls] == [
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+    ]
+
+
+def test_shipper_resets_sharded_balance_snapshot_cursor_without_legacy_cursor_rows(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    first_shard = balance_dir / "plumeusdt_binance_perp_makerv3.sqlite"
+    second_shard = balance_dir / "plumeusdt_binance_spot_makerv3.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(first_shard)
+    _create_balance_snapshot_source(second_shard)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    first = shipper.ship_once()
+    assert first["flux_balance_snapshot"].shipped == 2
+    assert first["flux_balance_snapshot_row"].shipped == 2
+
+    conn = sqlite3.connect(first_shard)
+    try:
+        conn.execute("DELETE FROM flux_balance_snapshot")
+        conn.execute("DELETE FROM flux_balance_snapshot_row")
+        conn.execute(
+            """
+            INSERT INTO flux_balance_snapshot (
+              trader_id, strategy_id, snapshot_id, topic, snapshot_hash, ts_event_ns, ts_ms,
+              ts_ingest_ns, account_count, position_count, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "TRADER-001",
+                "maker_v3_01",
+                "snapshot-2",
+                "flux.makerv3.balances",
+                "hash-2",
+                2_000_000,
+                2_000,
+                2_100_000,
+                1,
+                1,
+                '{"strategy_id":"maker_v3_01","generation":2}',
+                "2025-01-02T00:00:00.000Z",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO flux_balance_snapshot_row (
+              trader_id, strategy_id, snapshot_id, row_key, kind, exchange, account_id, account,
+              asset, instrument_id, side, signed_qty, quantity, free, locked, total, avg_px_open,
+              avg_px_close, realized_pnl, ts_ms, row_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "TRADER-001",
+                "maker_v3_01",
+                "snapshot-2",
+                "bybit:BYBIT-001:PLUME",
+                "cash",
+                "bybit",
+                "BYBIT-001",
+                "bybit-001",
+                "PLUME",
+                None,
+                None,
+                None,
+                None,
+                "80",
+                "20",
+                "100",
+                None,
+                None,
+                None,
+                2_000,
+                '{"asset":"PLUME","generation":2}',
+                "2025-01-02T00:00:00.000Z",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    sink.insert_calls.clear()
+    second = shipper.ship_once()
+
+    assert second["flux_balance_snapshot"].shipped == 1
+    assert second["flux_balance_snapshot_row"].shipped == 1
+    assert [rows[0]["snapshot_id"] for name, rows in sink.insert_calls if name == "flux_balance_snapshot"] == [
+        "snapshot-2",
+    ]
+
+    state_conn = sqlite3.connect(state_db)
+    try:
+        cursor_rows = state_conn.execute(
+            "SELECT table_name FROM shipper_cursor ORDER BY table_name ASC",
+        ).fetchall()
+    finally:
+        state_conn.close()
+
+    cursor_names = [str(row[0]) for row in cursor_rows]
+    assert all("@" in name for name in cursor_names)
+
+
 def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_path: Path) -> None:
     portfolio_db = tmp_path / "portfolio_inventory.sqlite"
     state_db = tmp_path / "shipper_state.sqlite"
@@ -928,7 +1099,7 @@ def test_shipper_transports_operator_quantity_fields_for_fills_and_orders(tmp_pa
     fill_row = insert_calls["execution_fill"][0]
     order_row = insert_calls["order_action"][0]
 
-    assert fill_row["last_qty"] == "100"
+    assert Decimal(str(fill_row["last_qty"])) == Decimal("100")
     assert fill_row["last_qty_base"] == "100"
     assert fill_row["last_qty_venue"] == "100"
     assert fill_row["qty_conversion_status"] == "identity"
@@ -936,7 +1107,7 @@ def test_shipper_transports_operator_quantity_fields_for_fills_and_orders(tmp_pa
     assert fill_row["source_profile"] == "tokenmm"
     assert fill_row["source_host"] == "host-a"
 
-    assert order_row["order_qty"] == "100"
+    assert Decimal(str(order_row["order_qty"])) == Decimal("100")
     assert order_row["order_qty_base"] == "100"
     assert order_row["order_qty_venue"] == "100"
     assert order_row["qty_conversion_status"] == "identity"
