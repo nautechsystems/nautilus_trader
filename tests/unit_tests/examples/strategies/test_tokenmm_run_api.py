@@ -3,6 +3,7 @@ from __future__ import annotations
 from argparse import Namespace
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 import pytest
@@ -16,6 +17,7 @@ from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
 from flux.runners.tokenmm.run_api import _build_strategy_running_resolver
+from flux.runners.tokenmm.run_api import _load_tokenmm_readiness
 from flux.runners.tokenmm.run_api import _load_config
 from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
@@ -158,6 +160,116 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_tokenmm_strategy_i
         "tokenmm-node-plumeusdt_binance_spot_makerv3",
         "tokenmm-node-plumeusdt_binance_perp_makerv3",
     ]
+
+
+def test_load_tokenmm_readiness_uses_runner_truth_for_operator_surface(monkeypatch) -> None:
+    from flux.api import StrategyMetadata
+    from flux.runners.tokenmm import run_api
+
+    captured: dict[str, object] = {}
+
+    class _FakeStore:
+        def __init__(
+            self,
+            *,
+            flux_config,
+            redis_client,
+            contract_catalog,
+            strategy_running_resolver,
+            strategy_alerts_resolver,
+            params_schema,
+            params_defaults,
+        ) -> None:
+            del flux_config
+            del redis_client
+            del contract_catalog
+            del strategy_alerts_resolver
+            del params_schema
+            del params_defaults
+            captured["resolver"] = strategy_running_resolver
+
+        def load_running_states(self, strategy_ids):
+            resolver = captured["resolver"]
+            assert callable(resolver)
+            running = dict(resolver(strategy_ids))
+            captured["running"] = running
+            return running
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            return {
+                "id": strategy_id,
+                "running": running,
+                "mode": "ON",
+                "blocked": False,
+                "tradeable": True,
+                "balances_ok": True,
+                "local_qty_base": 1.0,
+                "global_qty_base": 2.0,
+                "global_qty_base_complete": True,
+                "maker_quote_status": {
+                    "bid_open": 1,
+                    "ask_open": 1,
+                    "bid_depth": 1,
+                    "ask_depth": 1,
+                },
+                "state": {"state": "running"},
+                "debug": {
+                    "md_health": {
+                        "state_stale": False,
+                        "signal_state_age_ms": 250,
+                    },
+                },
+            }
+
+    monkeypatch.setattr(run_api, "FluxApiStore", _FakeStore)
+    monkeypatch.setattr(
+        run_api,
+        "_build_strategy_running_resolver",
+        lambda: (lambda strategy_ids: {str(strategy_id): True for strategy_id in strategy_ids}),
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_tokenmm_strategy_ids_for_request",
+        lambda **kwargs: (("strategy_a",), ("strategy_a",)),
+    )
+    monkeypatch.setattr(
+        run_api,
+        "load_state_streams_by_strategy_id",
+        lambda **kwargs: {
+            "strategy_a": {
+                "key": "flux:v1:in:stream:live:strategy_a:flux.makerv3.state",
+                "entry_id": "1700000004000-0",
+                "ts_ms": 1_700_000_004_000,
+                "age_ms": 1_000,
+                "present": True,
+            },
+        },
+    )
+
+    result = _load_tokenmm_readiness(
+        flux_config=SimpleNamespace(
+            identity=SimpleNamespace(namespace="flux", schema_version="v1"),
+            mode="live",
+        ),
+        redis_client=object(),
+        contract_catalog=(),
+        strategy_metadata=StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="tokenmm",
+            base_asset="PLUME",
+            quote_asset="USDT",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"tokenmm": ["strategy_a"]},
+        profile_required_strategy_map={"tokenmm": ["strategy_a"]},
+    )
+
+    assert captured["running"] == {"strategy_a": True}
+    assert result["ok"] is True
+    assert result["summary"]["failed_checks"] == []
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

@@ -482,16 +482,18 @@ def _load_tokenmm_readiness(
     strategy_metadata: StrategyMetadata,
     profile_strategy_map: dict[str, list[str]],
     profile_required_strategy_map: dict[str, list[str]],
+    strategy_running_resolver: Callable[[list[str] | tuple[str, ...]], dict[str, bool | None]] | None = None,
 ) -> dict[str, Any]:
     strategy_ids, required_strategy_ids = _tokenmm_strategy_ids_for_request(
         profile_strategy_map=profile_strategy_map,
         profile_required_strategy_map=profile_required_strategy_map,
     )
+    running_resolver = strategy_running_resolver or _build_strategy_running_resolver()
     store = FluxApiStore(
         flux_config=flux_config,
         redis_client=redis_client,
         contract_catalog=contract_catalog,
-        strategy_running_resolver=None,
+        strategy_running_resolver=running_resolver,
         strategy_alerts_resolver=None,
         params_schema=DEFAULT_PARAMS_SCHEMA,
         params_defaults=DEFAULT_PARAMS_DEFAULTS,
@@ -787,6 +789,7 @@ def main() -> None:
         socket_timeout=flux_config.redis.read_timeout_secs,
         decode_responses=False,
     )
+    strategy_running_resolver = _build_strategy_running_resolver()
 
     app = create_flux_api_app(
         flux_config,
@@ -795,7 +798,7 @@ def main() -> None:
         strategy_metadata=metadata,
         profile_strategy_map=profile_strategy_map or None,
         profile_required_strategy_map=profile_required_strategy_map or None,
-        strategy_running_resolver=_build_strategy_running_resolver(),
+        strategy_running_resolver=strategy_running_resolver,
         strategy_contracts=config.get("strategy_contracts"),
     )
     _attach_tokenmm_readiness_route(
@@ -807,6 +810,7 @@ def main() -> None:
             strategy_metadata=metadata,
             profile_strategy_map=profile_strategy_map,
             profile_required_strategy_map=profile_required_strategy_map,
+            strategy_running_resolver=strategy_running_resolver,
         ),
     )
     if _should_enable_pulse_routes(args, api_cfg):
