@@ -70,6 +70,18 @@ def test_repo_root_resolves_checkout_root_for_packaged_node_layout() -> None:
     assert run_node._repo_root() == _repo_root()
 
 
+def test_shared_runtime_root_falls_back_to_checkout_run_dir() -> None:
+    repo_root = Path("/home/ubuntu/nautilus_trader/.worktrees/account-execution-controller-platform-cut-20260328")
+
+    assert run_node._shared_runtime_root(repo_root) == repo_root / ".run"
+
+
+def test_shared_runtime_root_uses_stable_release_lane_root() -> None:
+    release_root = Path("/home/ubuntu/releases/prod/tokenmm/releases/20260330T031141Z-d3b169d45d")
+
+    assert run_node._shared_runtime_root(release_root) == Path("/home/ubuntu/releases/prod/tokenmm/runtime")
+
+
 def test_tokenmm_startup_lock_uses_descriptor_specific_lock_dir(tmp_path: Path) -> None:
     config = {"identity": {"strategy_id": "plumeusdt_bybit_perp_makerv3"}}
 

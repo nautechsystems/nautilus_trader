@@ -705,6 +705,7 @@ def build_runner(
 ) -> TokenmmControllerRunner:
     contract = load_controller_contract(config)
     root = repo_root or _repo_root()
+    runtime_root = _shared_runtime_root(root)
     controller_cfg = _table(config, "controller")
     runner_config = ControllerRunnerConfig(
         controller_scope_id=contract.controller_scope_id,
@@ -716,14 +717,14 @@ def build_runner(
         lease_ttl_ms=int(controller_cfg.get("lease_ttl_ms", 5_000)),
     )
     store = lease_store or LocalControllerLeaseStore(
-        root_dir=root / ".run" / "tokenmm-controller-leases",
+        root_dir=runtime_root / "tokenmm-controller-leases",
     )
     controller_service = (
         controller_service_factory(runner_config)
         if controller_service_factory is not None
         else _ResidentRequestReplyControllerService(
             controller_scope_id=contract.controller_scope_id,
-            transport_root_dir=root / ".run",
+            transport_root_dir=runtime_root,
             repo_root=root,
             config=config,
             active_order_writer_factory=active_order_writer_factory,
@@ -738,6 +739,18 @@ def build_runner(
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
+
+
+def _shared_runtime_root(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _repo_root()).resolve()
+    parts = root.parts
+    try:
+        releases_idx = parts.index("releases")
+    except ValueError:
+        return root / ".run"
+    if releases_idx + 3 < len(parts) and parts[releases_idx + 3] == "releases":
+        return Path(*parts[: releases_idx + 3]) / "runtime"
+    return root / ".run"
 
 
 def _now_ms(value: int | None) -> int:
@@ -780,10 +793,15 @@ def _controller_wal_path(
     root_dir: Path | None = None,
     controller_scope_id: str,
 ) -> Path:
-    base_root = repo_root or root_dir
+    if root_dir is not None:
+        base_root = root_dir
+    elif repo_root is not None:
+        base_root = _shared_runtime_root(repo_root)
+    else:
+        base_root = None
     if base_root is None:
         raise ValueError("`repo_root` or `root_dir` is required")
-    wal_dir = base_root / ".run" / "controller-wal"
+    wal_dir = base_root / "controller-wal"
     wal_dir.mkdir(parents=True, exist_ok=True)
     return wal_dir / f"{controller_scope_id}.sqlite3"
 

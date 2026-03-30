@@ -119,6 +119,41 @@ def test_repo_root_resolves_checkout_root_for_packaged_controller_layout() -> No
     run_controller = _load_run_controller_module()
 
     assert run_controller._repo_root() == _repo_root()
+
+
+def test_shared_runtime_root_falls_back_to_checkout_run_dir() -> None:
+    run_controller = _load_run_controller_module()
+    repo_root = Path("/home/ubuntu/nautilus_trader/.worktrees/account-execution-controller-platform-cut-20260328")
+
+    assert run_controller._shared_runtime_root(repo_root) == repo_root / ".run"
+
+
+def test_shared_runtime_root_uses_stable_release_lane_root() -> None:
+    run_controller = _load_run_controller_module()
+    release_root = Path("/home/ubuntu/releases/prod/tokenmm/releases/20260330T031141Z-d3b169d45d")
+
+    assert run_controller._shared_runtime_root(release_root) == Path("/home/ubuntu/releases/prod/tokenmm/runtime")
+
+
+def test_controller_wal_path_uses_stable_runtime_root_for_release_lane(tmp_path: Path) -> None:
+    run_controller = _load_run_controller_module()
+    release_root = tmp_path / "releases" / "prod" / "tokenmm" / "releases" / "rel-001"
+    release_root.mkdir(parents=True)
+
+    wal_path = run_controller._controller_wal_path(
+        repo_root=release_root,
+        controller_scope_id="tokenmm.binance.pm.main",
+    )
+
+    assert wal_path == (
+        tmp_path
+        / "releases"
+        / "prod"
+        / "tokenmm"
+        / "runtime"
+        / "controller-wal"
+        / "tokenmm.binance.pm.main.sqlite3"
+    )
     assert run_controller._strategy_runtime_config_path(
         repo_root=run_controller._repo_root(),
         strategy_id="plumeusdt_binance_spot_makerv3",

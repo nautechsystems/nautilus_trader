@@ -88,6 +88,18 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
+def _shared_runtime_root(repo_root: Path | None = None) -> Path:
+    root = (repo_root or _repo_root()).resolve()
+    parts = root.parts
+    try:
+        releases_idx = parts.index("releases")
+    except ValueError:
+        return root / ".run"
+    if releases_idx + 3 < len(parts) and parts[releases_idx + 3] == "releases":
+        return Path(*parts[: releases_idx + 3]) / "runtime"
+    return root / ".run"
+
+
 def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -653,7 +665,7 @@ def _attach_controller_managed_binance_bridge(
         redis_client=redis_client,
         namespace=namespace,
         schema_version=schema_version,
-        transport_root_dir=_repo_root() / ".run",
+        transport_root_dir=_shared_runtime_root(),
     )
     strategy.submit_order = bridge.publish_place
     strategy.cancel_order = bridge.publish_cancel
