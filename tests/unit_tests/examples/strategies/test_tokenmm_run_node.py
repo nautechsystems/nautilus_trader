@@ -394,6 +394,43 @@ def test_controller_managed_bridge_publish_cancel_uses_unique_intent_ids_per_att
     assert bridge._managed_order_rows[client_order_id]["pending_cancel"] is True
 
 
+def test_attach_controller_managed_binance_bridge_enables_startup_cleanup_bypass(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeBridge:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def publish_place(self, *_args, **_kwargs) -> None:
+            return None
+
+        def publish_cancel(self, *_args, **_kwargs) -> None:
+            return None
+
+        def managed_orders(self) -> list[object]:
+            return []
+
+    monkeypatch.setattr(run_node.redis, "Redis", lambda **_kwargs: object())
+    monkeypatch.setattr(run_node, "_TokenmmControllerManagedBridge", _FakeBridge)
+
+    strategy = SimpleNamespace()
+    run_node._attach_controller_managed_binance_bridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_cfg={"host": "127.0.0.1", "port": 6379, "db": 0},
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    assert strategy._controller_managed_execution_enabled is True
+    assert callable(strategy.submit_order)
+    assert callable(strategy.cancel_order)
+    assert callable(strategy._managed_orders)
+    assert captured["controller_scope_id"] == "tokenmm.binance.pm.main"
+
+
 def test_build_node_disables_local_execution_for_controller_managed_binance_strategy(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

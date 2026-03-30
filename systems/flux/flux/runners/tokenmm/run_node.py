@@ -658,6 +658,7 @@ def _attach_controller_managed_binance_bridge(
     strategy.submit_order = bridge.publish_place
     strategy.cancel_order = bridge.publish_cancel
     strategy._managed_orders = bridge.managed_orders
+    strategy._controller_managed_execution_enabled = True
     setattr(strategy, "_controller_managed_binance_bridge", bridge)
 
 

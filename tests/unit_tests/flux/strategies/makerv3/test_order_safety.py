@@ -917,3 +917,58 @@ def test_on_start_cancels_existing_claimed_orders_with_managed_only_scope(
     assert immediate_stop_requests == [False, True]
     assert states[-1] == "blocked_startup_cleanup"
     assert strategy._startup_cleanup_pending is True
+
+
+def test_on_start_skips_startup_cleanup_for_controller_managed_orders(
+    strategy_factory,
+    monkeypatch,
+) -> None:
+    strategy = strategy_factory()
+    strategy._controller_managed_execution_enabled = True
+    existing_order = _fake_order(
+        client_order_id="RESTING-1",
+        price="100",
+        side=OrderSide.BUY,
+    )
+
+    cancel_calls: list[tuple[str, bool, bool | None]] = []
+    immediate_stop_requests: list[bool] = []
+    states: list[str] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    strategy._managed_orders = lambda: [existing_order]
+    strategy._cancel_managed_quotes = lambda reason, force=False, **kwargs: cancel_calls.append(
+        (reason, force, kwargs.get("allow_instrument_cancel")),
+    )
+    strategy.request_immediate_stop = lambda value=True: immediate_stop_requests.append(bool(value))
+    strategy._publish_alert = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda event, **kwargs: events.append((event, kwargs))
+    strategy._publish_balances = lambda: None
+    strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy.subscribe_order_book_deltas = lambda *_args, **_kwargs: None
+
+    fake_cache = SimpleNamespace(
+        order=lambda _client_order_id: None,
+        instrument=lambda instrument_id: SimpleNamespace(
+            price_precision=6,
+            raw_symbol=str(instrument_id).split(".", maxsplit=1)[0],
+            make_qty=lambda value: value,
+        ),
+    )
+    fake_clock = SimpleNamespace(
+        timestamp_ns=lambda: 1_700_000_000_000_000_000,
+        set_timer=lambda **_kwargs: None,
+        timer_names=set(),
+        cancel_timer=lambda _name: None,
+    )
+    monkeypatch.setattr(type(strategy), "cache", property(lambda _self: fake_cache))
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+
+    strategy.on_start()
+
+    assert cancel_calls == []
+    assert immediate_stop_requests == [False, False]
+    assert states[-1] == "on_start"
+    assert strategy._startup_cleanup_pending is False
+    assert ("startup_cleanup_skipped_controller_managed", {"managed_orders": 1}) in events
