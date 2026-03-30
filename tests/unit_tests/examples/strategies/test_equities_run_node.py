@@ -2676,6 +2676,9 @@ def test_effective_venue_resolution_config_promotes_ibkr_execution_for_immediate
 
     assert effective["node"]["venues"]["IBKR"]["instrument_id"] == "NVDA.NASDAQ"
     assert effective["node"]["venues"]["IBKR"]["execution"] is True
+    assert effective["node"]["venues"]["IBKR"]["adapter"] == "interactive_brokers"
+    assert effective["node"]["venues"]["IBKR"]["data_adapter"] == "interactive_brokers_shared_reference"
+    assert effective["node"]["venues"]["IBKR"]["exec_adapter"] == "interactive_brokers"
     assert config["node"]["venues"]["IBKR"]["execution"] is False
 
 

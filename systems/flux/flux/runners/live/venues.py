@@ -42,6 +42,12 @@ from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXExecClientConfig
 from nautilus_trader.adapters.okx import OKXLiveDataClientFactory
 from nautilus_trader.adapters.okx import OKXLiveExecClientFactory
+from nautilus_trader.adapters.interactive_brokers.shared_reference import (
+    InteractiveBrokersSharedReferenceDataClientConfig,
+)
+from nautilus_trader.adapters.interactive_brokers.shared_reference import (
+    InteractiveBrokersSharedReferenceLiveDataClientFactory,
+)
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
@@ -307,6 +313,30 @@ def _load_interactive_brokers_spec() -> VenueAdapterSpec:
     )
 
 
+def _load_interactive_brokers_shared_reference_spec() -> VenueAdapterSpec:
+    from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+
+    def _build_instrument_provider(instrument_id: InstrumentId) -> Any:
+        return InstrumentProviderConfig(
+            load_ids=frozenset([instrument_id]),
+        )
+
+    return VenueAdapterSpec(
+        adapter_id="interactive_brokers_shared_reference",
+        venue_key=IB_VENUE,
+        data_config_cls=InteractiveBrokersSharedReferenceDataClientConfig,
+        data_factory_cls=InteractiveBrokersSharedReferenceLiveDataClientFactory,
+        exec_config_cls=None,
+        exec_factory_cls=None,
+        field_aliases={},
+        field_coercers={},
+        secret_fields=(),
+        mode_defaults={},
+        instrument_provider_factory=_build_instrument_provider,
+        multi_venue_execution=False,
+    )
+
+
 SUPPORTED_VENUE_ADAPTERS: dict[str, VenueAdapterSpec] = {
     "binance": VenueAdapterSpec(
         adapter_id="binance",
@@ -420,6 +450,10 @@ except ImportError:
 else:
     SUPPORTED_VENUE_ADAPTERS["interactive_brokers"] = _interactive_brokers_spec
     SUPPORTED_VENUE_ADAPTERS["ibkr"] = _interactive_brokers_spec
+
+SUPPORTED_VENUE_ADAPTERS["interactive_brokers_shared_reference"] = (
+    _load_interactive_brokers_shared_reference_spec()
+)
 
 
 def _instrument_id_from_entry(
@@ -605,17 +639,33 @@ def resolve_strategy_venues(
     instrument_ids: dict[str, InstrumentId] = {}
     data_enabled_venues: set[str] = set()
     exec_enabled_venues: set[str] = set()
-    venue_records: list[tuple[str, dict[str, Any], VenueAdapterSpec, InstrumentId, bool]] = []
+    venue_records: list[
+        tuple[str, dict[str, Any], VenueAdapterSpec, VenueAdapterSpec, InstrumentId, bool]
+    ] = []
 
     for venue_name, venue_cfg in venue_entries.items():
-        adapter_id = (
-            _optional_text(venue_cfg.get("adapter"))
+        data_adapter_id = (
+            _optional_text(venue_cfg.get("data_adapter"))
+            or _optional_text(venue_cfg.get("adapter"))
             or _default_adapter_id(venue_name)
         ).lower()
-        spec = SUPPORTED_VENUE_ADAPTERS.get(adapter_id)
-        if spec is None:
+        exec_adapter_id = _optional_text(venue_cfg.get("exec_adapter"))
+        if exec_adapter_id is None:
+            exec_adapter_id = _optional_text(venue_cfg.get("adapter"))
+        if exec_adapter_id is None and data_adapter_id == "interactive_brokers_shared_reference":
+            exec_adapter_id = "interactive_brokers"
+        exec_adapter_id = (exec_adapter_id or data_adapter_id).lower()
+
+        data_spec = SUPPORTED_VENUE_ADAPTERS.get(data_adapter_id)
+        exec_spec = SUPPORTED_VENUE_ADAPTERS.get(exec_adapter_id)
+        if data_spec is None:
             raise ValueError(
-                f"Unsupported adapter {adapter_id!r} for node.venues.{venue_name}. "
+                f"Unsupported adapter {data_adapter_id!r} for node.venues.{venue_name}. "
+                f"Supported adapters: {sorted(SUPPORTED_VENUE_ADAPTERS)}",
+            )
+        if exec_spec is None:
+            raise ValueError(
+                f"Unsupported adapter {exec_adapter_id!r} for node.venues.{venue_name}. "
                 f"Supported adapters: {sorted(SUPPORTED_VENUE_ADAPTERS)}",
             )
 
@@ -630,35 +680,37 @@ def resolve_strategy_venues(
             venue_cfg.get("execution"),
             default=venue_name == execution_venue_name,
         )
-        venue_records.append((venue_name, venue_cfg, spec, instrument_id, venue_execution_enabled))
+        venue_records.append(
+            (venue_name, venue_cfg, data_spec, exec_spec, instrument_id, venue_execution_enabled),
+        )
 
     suppress_primary_exec_default_routing = any(
         enable_execution
         and venue_execution_enabled
         and venue_name != execution_venue_name
-        and spec.multi_venue_execution
-        for venue_name, _venue_cfg, spec, _instrument_id, venue_execution_enabled in venue_records
+        and exec_spec.multi_venue_execution
+        for venue_name, _venue_cfg, _data_spec, exec_spec, _instrument_id, venue_execution_enabled in venue_records
     )
 
-    for venue_name, venue_cfg, spec, instrument_id, venue_execution_enabled in venue_records:
+    for venue_name, venue_cfg, data_spec, exec_spec, instrument_id, venue_execution_enabled in venue_records:
         data_enabled = _bool_value(venue_cfg.get("data"), default=True)
         if data_enabled:
             data_clients[venue_name] = _build_client_config(
-                spec=spec,
-                config_cls=spec.data_config_cls,
+                spec=data_spec,
+                config_cls=data_spec.data_config_cls,
                 venue_name=venue_name,
                 venue_cfg=venue_cfg,
                 instrument_id=instrument_id,
                 mode=mode,
                 default_routing=venue_name == execution_venue_name,
             )
-            data_factories[venue_name] = spec.data_factory_cls
+            data_factories[venue_name] = data_spec.data_factory_cls
             data_enabled_venues.add(venue_name)
 
         if enable_execution and venue_execution_enabled:
-            if spec.exec_config_cls is None or spec.exec_factory_cls is None:
+            if exec_spec.exec_config_cls is None or exec_spec.exec_factory_cls is None:
                 raise ValueError(
-                    f"Adapter {adapter_id!r} does not support execution for node.venues.{venue_name}",
+                    f"Adapter {exec_spec.adapter_id!r} does not support execution for node.venues.{venue_name}",
                 )
             exec_venue_cfg = (
                 _ibkr_exec_venue_cfg(
@@ -666,12 +718,12 @@ def resolve_strategy_venues(
                     venue_cfg=venue_cfg,
                     data_enabled=data_enabled,
                 )
-                if spec.adapter_id == "interactive_brokers"
+                if exec_spec.adapter_id == "interactive_brokers"
                 else venue_cfg
             )
             exec_clients[venue_name] = _build_client_config(
-                spec=spec,
-                config_cls=spec.exec_config_cls,
+                spec=exec_spec,
+                config_cls=exec_spec.exec_config_cls,
                 venue_name=venue_name,
                 venue_cfg=exec_venue_cfg,
                 instrument_id=instrument_id,
@@ -680,7 +732,7 @@ def resolve_strategy_venues(
                     venue_name == execution_venue_name and not suppress_primary_exec_default_routing
                 ),
             )
-            exec_factories[venue_name] = spec.exec_factory_cls
+            exec_factories[venue_name] = exec_spec.exec_factory_cls
             exec_enabled_venues.add(venue_name)
 
     if execution_venue_name not in data_enabled_venues:
