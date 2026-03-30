@@ -49,7 +49,7 @@ export const UI = {
  */
 export const ALERT_AUTO_DISMISS = {
   INFO: 10000,             // 10s for informational alerts
-  WARNING: 30000,          // 30s for warning alerts
+  WARNING: 0,              // Keep warnings visible until cleared or replaced by the backend
   ERROR: 0,                // Never auto-dismiss actionable errors
   CRITICAL: 0,             // Never auto-dismiss critical alerts
 } as const;
