@@ -87,6 +87,40 @@ class TestFluxRedisKeys:
             "tokenmm:v1:in:stream:paper:maker_v3_01:market_bbo"
         )
 
+    def test_builds_profile_market_last_keys(self) -> None:
+        assert FluxRedisKeys.profile_market_last(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+            exchange="ibkr",
+            instrument_id="AAPL.NASDAQ",
+        ) == "flux:v1:profile:market:last:equities:ibkr.reference.main:ibkr:AAPL.NASDAQ"
+        assert FluxRedisKeys.profile_market_last_channel(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+            exchange="ibkr",
+            instrument_id="AAPL.NASDAQ",
+        ) == (
+            "flux:v1:profile:market:last:equities:ibkr.reference.main:ibkr:AAPL.NASDAQ:changed"
+        )
+
+    def test_builds_profile_market_data_status_keys(self) -> None:
+        assert FluxRedisKeys.profile_market_data_status(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+            service_id="ibkr_reference_publisher",
+        ) == (
+            "flux:v1:profile:market:data_status:equities:ibkr.reference.main:"
+            "ibkr_reference_publisher"
+        )
+        assert FluxRedisKeys.profile_market_data_status_channel(
+            profile_id="equities",
+            account_scope_id="ibkr.reference.main",
+            service_id="ibkr_reference_publisher",
+        ) == (
+            "flux:v1:profile:market:data_status:equities:ibkr.reference.main:"
+            "ibkr_reference_publisher:changed"
+        )
+
     def test_portfolio_snapshot_key_is_profile_scoped_not_last_asset_wins(self) -> None:
         assert FluxRedisKeys.portfolio_snapshot(portfolio_id="equities") == (
             "flux:v1:portfolio:snapshot:equities"

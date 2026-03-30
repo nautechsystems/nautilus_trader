@@ -199,6 +199,96 @@ class FluxRedisKeys:
             + ":changed"
         )
 
+    @classmethod
+    def profile_market_last(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        exchange: str,
+        instrument_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_profile_id = validate_identifier_part(profile_id, "profile_id")
+        safe_account_scope_id = validate_identifier_part(account_scope_id, "account_scope_id")
+        safe_exchange = validate_identifier_part(exchange, "exchange").lower()
+        safe_instrument_id = validate_symbol_part(
+            instrument_id,
+            "instrument_id",
+            allow_colon=True,
+        ).upper()
+        return (
+            f"{safe_namespace}:{safe_schema_version}:profile:market:last:"
+            f"{safe_profile_id}:{safe_account_scope_id}:{safe_exchange}:{safe_instrument_id}"
+        )
+
+    @classmethod
+    def profile_market_last_channel(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        exchange: str,
+        instrument_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.profile_market_last(
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                exchange=exchange,
+                instrument_id=instrument_id,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
+    @classmethod
+    def profile_market_data_status(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        service_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        safe_namespace = validate_identifier_part(namespace, "namespace")
+        safe_schema_version = validate_schema_version(schema_version, "schema_version")
+        safe_profile_id = validate_identifier_part(profile_id, "profile_id")
+        safe_account_scope_id = validate_identifier_part(account_scope_id, "account_scope_id")
+        safe_service_id = validate_identifier_part(service_id, "service_id")
+        return (
+            f"{safe_namespace}:{safe_schema_version}:profile:market:data_status:"
+            f"{safe_profile_id}:{safe_account_scope_id}:{safe_service_id}"
+        )
+
+    @classmethod
+    def profile_market_data_status_channel(
+        cls,
+        *,
+        profile_id: str,
+        account_scope_id: str,
+        service_id: str,
+        namespace: str = FLUX_DEFAULT_NAMESPACE,
+        schema_version: str = FLUX_SCHEMA_VERSION,
+    ) -> str:
+        return (
+            cls.profile_market_data_status(
+                profile_id=profile_id,
+                account_scope_id=account_scope_id,
+                service_id=service_id,
+                namespace=namespace,
+                schema_version=schema_version,
+            )
+            + ":changed"
+        )
+
     def market_last(
         self,
         exchange: str,

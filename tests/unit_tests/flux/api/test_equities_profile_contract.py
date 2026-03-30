@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 from decimal import Decimal
 from pathlib import Path
+import tomllib
 from types import SimpleNamespace
 import time
 
@@ -133,6 +134,20 @@ def test_strategy_contract_module_defines_canonical_account_scope_identity() -> 
     assert "execution_account_scope_id: str" in contract_module
     assert "reference_account_scope_id: str" in contract_module
     assert "hedge_account_scope_id: str | None = None" in contract_module
+
+
+def test_equities_live_config_declares_shared_ibkr_reference_publisher_contract() -> None:
+    path = _repo_root() / "deploy/equities/equities.live.toml"
+
+    with path.open("rb") as handle:
+        config = tomllib.load(handle)
+
+    publisher_cfg = config.get("ibkr_reference_publisher")
+    assert isinstance(publisher_cfg, dict)
+    assert publisher_cfg["enabled"] is True
+    assert publisher_cfg["profile_id"] == "equities"
+    assert publisher_cfg["account_scope_id"] == "ibkr.reference.main"
+    assert publisher_cfg["service_id"] == "ibkr_reference_publisher"
 
 
 def test_decode_strategy_contracts_rejects_blank_required_fields() -> None:

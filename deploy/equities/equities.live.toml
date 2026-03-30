@@ -33,6 +33,16 @@ block_ms = 1000
 read_count = 200
 start_id = "$"
 
+[ibkr_reference_publisher]
+enabled = true
+profile_id = "equities"
+account_scope_id = "ibkr.reference.main"
+service_id = "ibkr_reference_publisher"
+snapshot_interval_ms = 200
+stale_after_ms = 1500
+reconnect_backoff_initial_ms = 1000
+reconnect_backoff_max_ms = 15000
+
 [api]
 host = "0.0.0.0"
 port = 5022
