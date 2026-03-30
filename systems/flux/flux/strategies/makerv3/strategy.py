@@ -2976,6 +2976,11 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _publish_current_state_snapshot(self) -> None:
             current_state = getattr(self, "_last_state_name", None) or "running"
+            if (
+                current_state == "blocked_startup_cleanup"
+                and not self._startup_cleanup_active()
+            ):
+                current_state = "running"
             self._publish_state(current_state, refresh_pricing_debug=False)
 
         def _cancel_managed_quotes(

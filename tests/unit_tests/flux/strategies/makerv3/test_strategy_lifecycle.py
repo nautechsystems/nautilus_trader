@@ -1494,6 +1494,27 @@ def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory
     assert strategy._managed_client_order_ids == set()
 
 
+def test_order_canceled_clears_startup_cleanup_block_after_last_managed_order_leaves(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._startup_cleanup_pending = True
+    strategy._last_state_name = "blocked_startup_cleanup"
+    strategy._last_quote_snapshot = {}
+    strategy._managed_client_order_ids = {"RESTING-1"}
+    strategy._managed_orders = lambda: []
+
+    published: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: published.append((topic, payload))
+
+    strategy.on_order_canceled(SimpleNamespace(client_order_id="RESTING-1", ts_event=1))
+
+    state_payload = next(payload for topic, payload in reversed(published) if topic == "flux.makerv3.state")
+    assert strategy._startup_cleanup_pending is False
+    assert state_payload["state"] == "running"
+    assert state_payload["maker_v3"]["quote_snapshot"]["reason"] == "running"
+
+
 def test_order_rejected_enriches_event_and_alerts_after_threshold(
     clocked_strategy_factory,
 ) -> None:
