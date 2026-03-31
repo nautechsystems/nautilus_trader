@@ -142,6 +142,26 @@ def test_quote_feed_supervisor_fresh_quote_transitions_bootstrap_and_recovery_ba
     assert supervisor.snapshot(feed).state == "healthy"
 
 
+def test_quote_feed_supervisor_successful_recovery_does_not_stick_fresh_feed_in_recovering() -> None:
+    resets: list[str] = []
+    supervisor = NodeQuoteFeedSupervisor()
+    feed = _feed()
+
+    supervisor.register_claimant(
+        feed,
+        claimant_id="maker",
+        unusable_after_ms=3_000,
+        reset=lambda: resets.append("reset"),
+    )
+    supervisor.record_quote(feed, ts_ns=1_000_000_000)
+
+    assert supervisor.request_recovery(feed, now_ns=2_000_000_000, requested_by="maker")
+    snapshot = supervisor.ingest_recovery_result(feed, now_ns=2_000_000_100, ok=True)
+
+    assert resets == ["reset"]
+    assert snapshot.state == "healthy"
+
+
 def test_quote_feed_supervisor_repeated_failed_recovery_transitions_to_down() -> None:
     resets: list[int] = []
     supervisor = NodeQuoteFeedSupervisor(max_attempts=2, recovery_backoff_ns=100)

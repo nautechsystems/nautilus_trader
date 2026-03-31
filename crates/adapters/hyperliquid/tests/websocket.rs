@@ -973,6 +973,60 @@ async fn test_quote_recovery_duplicate_resets_stay_blocked_until_quote_resolutio
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_quotes_skips_duplicate_wire_replay_while_pending() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("initial subscribe failed");
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("duplicate subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|(t, ok)| t == "bbo" && *ok)
+                    .count()
+                    >= 1
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let bbo_subscribes = state
+        .subscription_events()
+        .await
+        .into_iter()
+        .filter(|(topic, ok)| topic == "bbo" && *ok)
+        .count();
+
+    assert_eq!(bbo_subscribes, 1, "duplicate startup subscribes must not hit the wire twice");
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_user_events() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;

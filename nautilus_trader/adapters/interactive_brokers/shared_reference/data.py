@@ -238,9 +238,10 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
         )
         self._snapshot_keys[instrument_id] = snapshot_key
+        snapshot_data = await self._load_snapshot_message(snapshot_key)
         self._ingest_shared_reference_message(
             instrument_id=instrument_id,
-            data=self._redis.get(snapshot_key),
+            data=snapshot_data,
         )
 
     async def _unsubscribe_quote_ticks(self, command) -> None:
@@ -266,24 +267,66 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
         )
         self._handle_data(tick)
 
+    async def recover_quote_ticks(self, instrument_id: InstrumentId) -> dict[str, object]:
+        channel = self._subscriptions.get(instrument_id)
+        if channel is None:
+            return {
+                "instrument_id": instrument_id.value,
+                "ok": False,
+                "status": "not_subscribed",
+                "error_summary": None,
+                "cache_refreshed": False,
+            }
+
+        pubsub = self._ensure_pubsub()
+        with suppress(Exception):
+            pubsub.unsubscribe(channel)
+        pubsub.subscribe(channel)
+        snapshot_key = self._snapshot_keys.get(instrument_id)
+        cache_refreshed = False
+        if snapshot_key is not None:
+            self._last_snapshot_messages.pop(instrument_id, None)
+            snapshot_data = await self._load_snapshot_message(snapshot_key)
+            self._ingest_shared_reference_message(
+                instrument_id=instrument_id,
+                data=snapshot_data,
+            )
+            cache_refreshed = True
+        return {
+            "instrument_id": instrument_id.value,
+            "ok": True,
+            "status": "replayed",
+            "error_summary": None,
+            "cache_refreshed": cache_refreshed,
+        }
+
     async def _listen_for_shared_reference_updates(self) -> None:
         while True:
-            if self._pubsub is None:
-                await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
-                continue
+            try:
+                if self._pubsub is None:
+                    self._rebuild_pubsub_subscriptions()
+                    await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
+                    continue
 
-            message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
-            if message:
-                channel = _optional_text(message.get("channel"))
-                if channel is not None:
-                    instrument_id = self._channel_to_instrument_id.get(channel)
-                    if instrument_id is not None:
-                        self._ingest_shared_reference_message(
-                            instrument_id=instrument_id,
-                            data=message.get("data"),
-                        )
+                message = await self._get_pubsub_message()
+                if message:
+                    channel = _optional_text(message.get("channel"))
+                    if channel is not None:
+                        instrument_id = self._channel_to_instrument_id.get(channel)
+                        if instrument_id is not None:
+                            self._ingest_shared_reference_message(
+                                instrument_id=instrument_id,
+                                data=message.get("data"),
+                            )
 
-            self._poll_snapshot_keys()
+                await self._poll_snapshot_keys()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._log.warning(
+                    f"Shared reference listener error; rebuilding subscriptions: {exc}"
+                )
+                self._reset_pubsub()
             await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
 
     def _ensure_pubsub(self):
@@ -291,11 +334,38 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             self._pubsub = self._redis.pubsub()
         return self._pubsub
 
-    def _poll_snapshot_keys(self) -> None:
-        for instrument_id, snapshot_key in tuple(self._snapshot_keys.items()):
+    def _reset_pubsub(self) -> None:
+        pubsub = self._pubsub
+        self._pubsub = None
+        if pubsub is not None:
+            with suppress(Exception):
+                pubsub.close()
+
+    def _rebuild_pubsub_subscriptions(self) -> None:
+        pubsub = self._ensure_pubsub()
+        for channel in self._subscriptions.values():
+            pubsub.subscribe(channel)
+
+    async def _get_pubsub_message(self) -> Any:
+        pubsub = self._pubsub
+        if pubsub is None:
+            return None
+        return await asyncio.to_thread(pubsub.get_message, True, 0)
+
+    async def _load_snapshot_message(self, snapshot_key: str) -> Any:
+        return await asyncio.to_thread(self._redis.get, snapshot_key)
+
+    def _read_snapshot_messages(self) -> list[tuple[InstrumentId, Any]]:
+        return [
+            (instrument_id, self._redis.get(snapshot_key))
+            for instrument_id, snapshot_key in tuple(self._snapshot_keys.items())
+        ]
+
+    async def _poll_snapshot_keys(self) -> None:
+        for instrument_id, data in await asyncio.to_thread(self._read_snapshot_messages):
             self._ingest_shared_reference_message(
                 instrument_id=instrument_id,
-                data=self._redis.get(snapshot_key),
+                data=data,
             )
 
     def _ingest_shared_reference_message(

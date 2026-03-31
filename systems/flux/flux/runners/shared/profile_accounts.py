@@ -17,6 +17,7 @@ from flux.api._payloads_common import canonical_naming_fields
 from flux.common.account_projection import ProfileAccountProviderBinding
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
+from flux.common.controller_scopes import decode_controller_scopes
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.runners.live.hyperliquid_account import _post_hyperliquid_info
 from flux.runners.live.hyperliquid_account import resolve_hyperliquid_user
@@ -1031,15 +1032,25 @@ def _decode_account_scope_map(
     return decoded, by_id
 
 
+def _controller_owned_writer_scope_ids(config: Mapping[str, Any]) -> set[str]:
+    return {
+        scope.writer_account_scope_id
+        for scope in decode_controller_scopes(config.get("controller_scopes") or [])
+    }
+
+
 def build_profile_account_provider_bindings(
     *,
     config: Mapping[str, Any],
 ) -> tuple[ProfileAccountProviderBinding, ...]:
     contracts = decode_strategy_contracts(config.get("strategy_contracts") or [])
     scope_configs, scope_config_by_id = _decode_account_scope_map(config)
+    controller_owned_writer_scope_ids = _controller_owned_writer_scope_ids(config)
     grouped_strategy_ids: dict[str, list[str]] = {}
     for contract in contracts:
         for account_scope_id in _scope_candidates(contract):
+            if account_scope_id in controller_owned_writer_scope_ids:
+                continue
             strategy_ids = grouped_strategy_ids.setdefault(account_scope_id, [])
             if contract.strategy_id not in strategy_ids:
                 strategy_ids.append(contract.strategy_id)

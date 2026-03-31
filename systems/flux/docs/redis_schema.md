@@ -22,7 +22,7 @@ This document defines the production Redis contract for Flux integrations.
 
 | Key / channel | Type | Producer | Consumer | Retention / TTL | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` | Stream | Strategy runtime, adapters, or ingress writers | Flux bridge consumers | `XADD MAXLEN ~ 50_000` default (`10_000-250_000`) | Input convention for bridge ingestion. Every entry must carry `ts_ms`. `strategy_id` is carried by the stream key scope and may optionally be duplicated in the payload. |
+| `flux:v1:in:stream:{environment}:{strategy_id}:{topic}` | Stream | Strategy runtime, adapters, or ingress writers | Flux bridge consumers | `XADD MAXLEN ~ 5_000` default for current live runners (configurable; `1_000-250_000`) | Input convention for bridge ingestion. Every entry must carry `ts_ms`. `strategy_id` is carried by the stream key scope and may optionally be duplicated in the payload. |
 | `flux:v1:state:{strategy_id}` | String (JSON snapshot) | Flux bridge | Flux API, ops tools | Latest-only overwrite; optional `EX 86_400` for stale cleanup | Authoritative latest strategy state snapshot. |
 | `flux:v1:events:{strategy_id}` | Stream | Flux bridge | Flux API, monitoring | `XADD MAXLEN ~ 5_000` default (`1_000-50_000`) | High-churn operational events. |
 | `flux:v1:alerts:{strategy_id}` | Stream | Flux bridge | Flux API, alerting systems | `XADD MAXLEN ~ 2_000` default (`200-20_000`) | Human/actionable alerts, bounded history. |

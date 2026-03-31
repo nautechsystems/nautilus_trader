@@ -332,7 +332,7 @@ def test_equities_live_config_builds_shared_ibkr_reference_publisher_from_shared
     assert publisher_config.service_id == "ibkr_reference_publisher"
     assert publisher_config.enabled is True
     assert publisher_config.snapshot_interval_ms == 200
-    assert publisher_config.stale_after_ms == 1_500
+    assert publisher_config.stale_after_ms == 10_000
 
 
 def test_equities_live_config_dedupes_shared_reference_instrument_universe() -> None:
@@ -466,6 +466,49 @@ def test_build_profile_account_provider_bindings_uses_shared_account_scopes(
     assert captured_provider_configs[1].ibg_client_id == 8
     assert captured_provider_configs[1].connection_timeout == 5
     assert captured_provider_configs[1].request_timeout_secs == 10
+
+
+def test_build_profile_account_provider_bindings_skips_controller_owned_writer_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_provider_configs: list[object] = []
+
+    def _fake_cached_ibkr_provider(provider_config):
+        captured_provider_configs.append(provider_config)
+        return _CountingAccountProjectionProvider(rows=[])
+
+    monkeypatch.setattr(
+        "flux.runners.shared.profile_accounts.get_cached_ibkr_reference_balance_provider",
+        _fake_cached_ibkr_provider,
+    )
+
+    bindings = build_profile_account_provider_bindings(
+        config={
+            "account_scopes": _account_scopes(),
+            "controller_scopes": [
+                {
+                    "controller_scope_id": "equities.ibkr.hedge.main",
+                    "profile_id": "equities",
+                    "writer_account_scope_id": "ibkr.hedge.main",
+                    "account_scope_ids": ["ibkr.hedge.main"],
+                    "canary": True,
+                },
+            ],
+            "strategy_contracts": [
+                _strategy_contract(
+                    "aapl_tradexyz_makerv4",
+                    reference_account_scope_id="ibkr.reference.main",
+                ),
+            ],
+        },
+    )
+
+    assert [binding.account_scope_id for binding in bindings] == [
+        "hyperliquid.xyz.main",
+        "ibkr.reference.main",
+    ]
+    assert len(captured_provider_configs) == 1
+    assert captured_provider_configs[0].ibg_client_id == 7
 
 
 def test_build_profile_account_provider_bindings_supports_binance_futures_scope(

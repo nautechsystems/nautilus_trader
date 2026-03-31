@@ -69,6 +69,7 @@ class IbkrReferencePublisherConfig:
     request_timeout_secs: int
     snapshot_interval_ms: int
     stale_after_ms: int
+    non_rth_stale_after_ms: int
     reconnect_backoff_initial_ms: int
     reconnect_backoff_max_ms: int
     dockerized_gateway: dict[str, Any] | None
@@ -183,6 +184,11 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
         default=15_000,
     )
     reconnect_backoff_max_ms = max(reconnect_backoff_initial_ms, reconnect_backoff_max_ms)
+    stale_after_ms = _positive_int(
+        publisher_cfg.get("stale_after_ms"),
+        field_name="ibkr_reference_publisher.stale_after_ms",
+        default=10_000,
+    )
 
     return IbkrReferencePublisherConfig(
         enabled=bool(publisher_cfg.get("enabled", True)),
@@ -204,10 +210,11 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
             field_name="ibkr_reference_publisher.snapshot_interval_ms",
             default=200,
         ),
-        stale_after_ms=_positive_int(
-            publisher_cfg.get("stale_after_ms"),
-            field_name="ibkr_reference_publisher.stale_after_ms",
-            default=1_500,
+        stale_after_ms=stale_after_ms,
+        non_rth_stale_after_ms=_positive_int(
+            publisher_cfg.get("non_rth_stale_after_ms"),
+            field_name="ibkr_reference_publisher.non_rth_stale_after_ms",
+            default=stale_after_ms,
         ),
         reconnect_backoff_initial_ms=reconnect_backoff_initial_ms,
         reconnect_backoff_max_ms=reconnect_backoff_max_ms,
@@ -639,6 +646,15 @@ class IbkrReferencePublisherService:
                 self._runtime.close()
             self._runtime = None
 
+    def _stale_after_ms_for_session(self, session: str) -> int:
+        normalized = str(session).strip().upper()
+        if normalized == "RTH":
+            return self._config.stale_after_ms
+        return self._config.non_rth_stale_after_ms
+
+    def _status_stale_after_ms(self) -> int:
+        return max(1_500, self._config.snapshot_interval_ms * 5)
+
     def publish_from_snapshot_map(
         self,
         snapshot_map: Mapping[str, Mapping[str, Mapping[str, Any]]],
@@ -647,6 +663,7 @@ class IbkrReferencePublisherService:
         now_ms: int | None = None,
     ) -> dict[str, Any]:
         publish_ts_ms = self._time_ms() if now_ms is None else int(now_ms)
+        stale_after_ms = self._stale_after_ms_for_session(session)
         instrument_status: dict[str, dict[str, Any]] = {}
         healthy_count = 0
         healthy_ts_values: list[int] = []
@@ -660,7 +677,7 @@ class IbkrReferencePublisherService:
                 smart_md=smart_md,
                 overnight_md=overnight_md,
                 now_ms=publish_ts_ms,
-                stale_after_ms=self._config.stale_after_ms,
+                stale_after_ms=stale_after_ms,
             )
 
             if route is None or not isinstance(selected_md, Mapping):
@@ -734,6 +751,7 @@ class IbkrReferencePublisherService:
             state=state,
             connected=True,
             instrument_status=instrument_status,
+            stale_after_ms=stale_after_ms,
             now_ms=publish_ts_ms,
         )
 
@@ -749,6 +767,7 @@ class IbkrReferencePublisherService:
             state="down",
             connected=False,
             instrument_status={},
+            stale_after_ms=self._config.stale_after_ms,
             now_ms=self._time_ms() if now_ms is None else int(now_ms),
         )
 
@@ -758,6 +777,7 @@ class IbkrReferencePublisherService:
                 state="down",
                 connected=False,
                 instrument_status={},
+                stale_after_ms=self._config.stale_after_ms,
                 now_ms=self._time_ms(),
             )
             self._log.info("IBKR reference publisher disabled via config")
@@ -767,6 +787,7 @@ class IbkrReferencePublisherService:
             state="starting",
             connected=False,
             instrument_status={},
+            stale_after_ms=self._config.stale_after_ms,
             now_ms=self._time_ms(),
         )
 
@@ -781,6 +802,7 @@ class IbkrReferencePublisherService:
                     state="connected",
                     connected=True,
                     instrument_status={},
+                    stale_after_ms=self._config.stale_after_ms,
                     now_ms=self._time_ms(),
                 )
 
@@ -822,6 +844,7 @@ class IbkrReferencePublisherService:
         state: str,
         connected: bool,
         instrument_status: Mapping[str, Any],
+        stale_after_ms: int,
         now_ms: int,
     ) -> dict[str, Any]:
         payload = {
@@ -835,7 +858,8 @@ class IbkrReferencePublisherService:
             "last_success_ts_ms": self._last_success_ts_ms,
             "last_error_type": self._last_error_type,
             "last_error_message": self._last_error_message,
-            "stale_after_ms": self._config.stale_after_ms,
+            "stale_after_ms": stale_after_ms,
+            "status_stale_after_ms": self._status_stale_after_ms(),
             "ts_ms": now_ms,
         }
         self._write_json(

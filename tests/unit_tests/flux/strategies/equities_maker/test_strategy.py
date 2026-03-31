@@ -243,6 +243,20 @@ def test_equities_maker_forces_maker_mode_and_preserves_overnight_immediate_hedg
     assert order.cancel_after_ms is None
 
 
+def test_equities_maker_record_maker_fill_surfaces_wide_ibkr_spread_reason() -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+
+    order = strategy.record_maker_fill(
+        fill=_fill(),
+        quote=_quote(bid="93.10", ask="93.44", age_ms=25),
+        maker_fee_bps=Decimal("0.25"),
+    )
+
+    assert order is None
+    assert strategy.hedge_disabled_reason == "spread_too_wide"
+    assert strategy.snapshot_state()["hedge_backlog"]["blocked_reason"] == "spread_too_wide"
+
+
 def test_equities_maker_seeds_runtime_params_from_config() -> None:
     strategy = EquitiesMakerStrategy(
         config=_config(
@@ -271,6 +285,13 @@ def test_equities_maker_seeds_runtime_params_from_config() -> None:
     assert strategy._runtime_params["ask_edge1"] == 8.0
     assert strategy._runtime_params["place_edge1"] == 0.5
     assert strategy._runtime_params["n_orders1"] == 2
+
+
+def test_equities_maker_uses_equities_liveness_defaults() -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+
+    assert strategy._runtime_params["quote_liveness_stall_after_ms"] == 30_000
+    assert strategy._runtime_params["quote_liveness_recover_after_ms"] == 5_000
 
 
 def test_equities_maker_timer_resubscribes_stalled_quotes(
@@ -373,6 +394,7 @@ def test_equities_maker_shared_recovery_attachment_moves_timer_resubscribe_to_su
     assert subscribed == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("reset", "maker_quote_ticks"),
+        ("reset", "reference_quote_ticks"),
     ]
 
 
@@ -476,6 +498,7 @@ def test_equities_maker_supervisor_timer_reports_stale_feed_without_direct_resub
     assert direct_unsubscribes == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("reset", "maker_quote_ticks"),
+        ("reset", "reference_quote_ticks"),
     ]
 
 
@@ -534,11 +557,14 @@ def test_equities_maker_supervisor_bootstrap_waits_for_liveness_budget_before_re
 
     strategy.clock.now = 12_000_000_000
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
-    assert control_emitter.commands == []
+    assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
+        ("reset", "reference_quote_ticks"),
+    ]
 
     strategy.clock.now = 13_100_000_000
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
+        ("reset", "reference_quote_ticks"),
         ("reset", "maker_quote_ticks"),
     ]
 
@@ -790,10 +816,10 @@ def test_equities_maker_local_quote_handler_delivers_quotes_while_degraded(monke
     assert calls == [("on_quote_tick", maker_id)]
 
 
-def test_equities_maker_local_quote_handler_ignores_running_delivery(monkeypatch) -> None:
+def test_equities_maker_local_quote_handler_delivers_quotes_while_running(monkeypatch) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
     maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
-    forwarded: list[object] = []
+    calls: list[object] = []
 
     monkeypatch.setattr(
         type(strategy),
@@ -804,14 +830,20 @@ def test_equities_maker_local_quote_handler_ignores_running_delivery(monkeypatch
     monkeypatch.setattr(
         strategy,
         "handle_quote_tick",
-        lambda tick, historical=False: forwarded.append((tick, historical)),
+        lambda *_args, **_kwargs: pytest.fail("running local handler should bypass handle_quote_tick gating"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "on_quote_tick",
+        lambda tick: calls.append(("on_quote_tick", tick.instrument_id)),
         raising=False,
     )
 
     tick = _quote_tick(instrument_id=maker_id)
     strategy._handle_local_quote_tick(tick)
 
-    assert forwarded == []
+    assert calls == [("on_quote_tick", maker_id)]
 
 
 def test_equities_maker_supervisor_timer_primes_missing_quotes_from_cache_and_publishes_state(
@@ -946,7 +978,7 @@ def test_equities_maker_supervisor_timer_recovers_stale_quotes_from_newer_cache(
     assert published_state == [{"now_ns": strategy.clock.now}]
 
 
-def test_equities_maker_supervisor_timer_does_not_replace_fresh_local_quotes_with_cache(
+def test_equities_maker_supervisor_timer_syncs_newer_cached_quotes_into_local_state(
     monkeypatch,
 ) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
@@ -991,9 +1023,9 @@ def test_equities_maker_supervisor_timer_does_not_replace_fresh_local_quotes_wit
 
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
 
-    assert strategy._latest_quotes[maker_id]["ts_ns"] == 9_500_000_000
-    assert strategy._latest_quotes[ref_id]["ts_ns"] == 9_600_000_000
-    assert published_state == []
+    assert strategy._latest_quotes[maker_id]["ts_ns"] == 9_700_000_000
+    assert strategy._latest_quotes[ref_id]["ts_ns"] == 9_800_000_000
+    assert published_state == [{"now_ns": strategy.clock.now}]
 
 
 def test_equities_maker_supervisor_on_start_subscribes_actor_and_local_runtime(
@@ -1092,6 +1124,110 @@ def test_equities_maker_supervisor_non_tradeable_pair_pulls_working_quotes(
     assert cancelled == [maker_id]
     assert strategy.tradeable is False
     assert strategy.hedge_disabled_reason == "stale_quote"
+
+
+def test_equities_maker_supervisor_surfaces_wide_ibkr_spread_as_distinct_block_reason(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quotes(strategy)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy._runtime_params["bot_on"] = True
+    _install_lifecycle_clock(strategy, monkeypatch, now_ns=2_500_000_000)
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    for claim_spec in strategy.quote_feed_claim_specs():
+        supervisor.register_claimant(
+            claim_spec.feed_identity,
+            claimant_id=claim_spec.claimant_id,
+            unusable_after_ms=claim_spec.unusable_after_ms,
+            reset=(lambda: None) if claim_spec.node_scoped_lifecycle else None,
+            blocker_key=claim_spec.blocker_key,
+        )
+        supervisor.record_quote(
+            claim_spec.feed_identity,
+            ts_ns=2_000_000_000,
+        )
+
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("190.00"), "ask": Decimal("190.02"), "ts_ns": 2_000_000_000},
+        ref_id: {"bid": Decimal("93.10"), "ask": Decimal("93.44"), "ts_ns": 2_000_000_000},
+    }
+
+    assert strategy._refresh_quote_tradeability(now_ns=2_500_000_000) is False
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "spread_too_wide"
+
+
+def test_equities_maker_supervisor_recovers_after_wide_ibkr_spread_normalizes(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quotes(strategy)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy._runtime_params["bot_on"] = True
+    _install_lifecycle_clock(strategy, monkeypatch, now_ns=2_500_000_000)
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    for claim_spec in strategy.quote_feed_claim_specs():
+        supervisor.register_claimant(
+            claim_spec.feed_identity,
+            claimant_id=claim_spec.claimant_id,
+            unusable_after_ms=claim_spec.unusable_after_ms,
+            reset=(lambda: None) if claim_spec.node_scoped_lifecycle else None,
+            blocker_key=claim_spec.blocker_key,
+        )
+        supervisor.record_quote(
+            claim_spec.feed_identity,
+            ts_ns=2_000_000_000,
+        )
+
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("190.00"), "ask": Decimal("190.02"), "ts_ns": 2_000_000_000},
+        ref_id: {"bid": Decimal("93.10"), "ask": Decimal("93.44"), "ts_ns": 2_000_000_000},
+    }
+
+    assert strategy._refresh_quote_tradeability(now_ns=2_500_000_000) is False
+    assert strategy.hedge_disabled_reason == "spread_too_wide"
+
+    supervisor.record_quote(
+        strategy.quote_feed_claim_specs()[0].feed_identity,
+        ts_ns=2_700_000_000,
+    )
+    supervisor.record_quote(
+        strategy.quote_feed_claim_specs()[1].feed_identity,
+        ts_ns=2_700_000_000,
+    )
+    strategy._latest_quotes[maker_id] = {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 2_700_000_000,
+    }
+    strategy._latest_quotes[ref_id] = {
+        "bid": Decimal("93.10"),
+        "ask": Decimal("93.12"),
+        "ts_ns": 2_700_000_000,
+    }
+
+    assert strategy._refresh_quote_tradeability(now_ns=2_700_000_000) is True
+    assert strategy.tradeable is True
+    assert strategy.hedge_disabled_reason is None
 
 
 def test_equities_maker_on_start_pulls_reclaimed_quotes_when_required_feed_is_blocked(

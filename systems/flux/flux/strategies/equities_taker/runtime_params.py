@@ -44,6 +44,8 @@ _EQUITIES_TAKER_DEFAULT_OVERRIDES: dict[str, bool | int | float] = {
     "qty": 1.0,
     "max_qty_global": 100.0,
     "max_skew_bps_global": 10.0,
+    "quote_liveness_stall_after_ms": 30_000,
+    "quote_liveness_recover_after_ms": 5_000,
 }
 
 

@@ -412,7 +412,20 @@ async fn drain_buffer(
             stream_key.to_string()
         };
         staged_stream_keys.push(stream_key.clone());
-        pipe.xadd(&stream_key, "*", &items);
+        if let Some(stream_maxlen) = stream_maxlen {
+            let mut cmd = redis::cmd("XADD");
+            cmd.arg(&stream_key)
+                .arg("MAXLEN")
+                .arg("~")
+                .arg(stream_maxlen)
+                .arg("*");
+            for (field, value) in &items {
+                cmd.arg(field).arg(value);
+            }
+            pipe.add_command(cmd);
+        } else {
+            pipe.xadd(&stream_key, "*", &items);
+        }
     }
 
     let result: Result<(), redis::RedisError> = pipe.query_async(conn).await;
@@ -1020,18 +1033,27 @@ mod serial_tests {
 
         tx.send(BusMessage::new_close()).unwrap();
         handle.await.unwrap();
-
         let length: usize = redis::cmd("XLEN")
             .arg(&stream_key)
             .query_async(&mut con)
             .await
             .unwrap();
+        let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).await.unwrap();
+        let stream_msgs = messages[0].get(&stream_key).unwrap();
+        let decoded_message = decode_bus_message(stream_msgs[0].values().next().unwrap()).unwrap();
 
         flush_redis(&mut con).await.unwrap();
 
         assert!(
             length == 1_000,
             "stream length should honor the configured exact stream_maxlen bound, got {length}",
+        );
+        assert_eq!(decoded_message.topic, "test_topic");
+        assert!(
+            decoded_message
+                .payload
+                .starts_with(&Bytes::from_static(b"test_payload_")),
+            "MAXLEN stream entries should remain decodable, got {decoded_message:?}",
         );
     }
 

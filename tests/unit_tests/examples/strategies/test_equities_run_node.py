@@ -298,6 +298,84 @@ def test_build_node_defaults_live_message_bus_streams_to_autotrim(monkeypatch) -
     assert config.message_bus.stream_maxlen == 5_000
 
 
+def test_build_node_propagates_redis_db_to_cache_and_message_bus(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _CapturedNode:
+        def __init__(self, config) -> None:
+            captured["config"] = config
+            self.trader = SimpleNamespace(add_strategy=lambda _strategy: None)
+
+        def add_data_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def add_exec_client_factory(self, _venue, _factory) -> None:
+            return None
+
+        def build(self) -> None:
+            return None
+
+    class _CapturedStrategy:
+        def __init__(self, *, config) -> None:
+            self.config = config
+
+        def set_params_manager_factory(self, _factory) -> None:
+            return None
+
+        def configure_portfolio_inventory_feed(self, **_kwargs) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "TradingNode", _CapturedNode)
+    _install_strategy_spec(
+        monkeypatch,
+        _CapturedStrategy,
+        config_cls=run_node.MakerV3StrategyConfig,
+        strategy_id="makerv3",
+        param_set="makerv3",
+        strategy_family="maker_v3",
+        strategy_version="v3",
+    )
+    monkeypatch.setattr(
+        run_node,
+        "resolve_strategy_venues",
+        lambda **_kwargs: SimpleNamespace(
+            execution_instrument_id=InstrumentId.from_str("AAPL-USD-PERP.HYPERLIQUID"),
+            reference_instrument_id=InstrumentId.from_str("AAPL-USD-PERP.HYPERLIQUID"),
+            data_clients={},
+            exec_clients={},
+            data_factories={},
+            exec_factories={},
+        ),
+    )
+    monkeypatch.setattr(run_node, "_attach_runtime_params_manager", lambda **_kwargs: None)
+    monkeypatch.setattr(run_node, "_attach_portfolio_inventory_feed", lambda **_kwargs: None)
+
+    node = run_node.build_node(
+        {
+            "flux": {"namespace": "flux", "schema_version": "v1"},
+            "identity": {
+                "strategy_id": "aapl_tradexyz_makerv3",
+                "external_strategy_id": "aapl_tradexyz_makerv3",
+                "trader_id": "EQUITIES-LIVE-TRADEXYZ",
+            },
+            "redis": {"host": "127.0.0.1", "port": 6379, "db": 9},
+            "node": {"enable_execution": False},
+            "strategy": {"strategy_id": "aapl_tradexyz_makerv3", "order_qty": "1000"},
+        },
+        mode="live",
+        force_enable_execution=False,
+    )
+
+    assert node is not None
+    config = captured["config"]
+    assert config.cache is not None
+    assert config.cache.database is not None
+    assert config.cache.database.db == 9
+    assert config.message_bus is not None
+    assert config.message_bus.database is not None
+    assert config.message_bus.database.db == 9
+
+
 def test_build_node_resolves_strategy_via_registry(monkeypatch) -> None:
     captured: dict[str, object] = {}
     resolve_calls: list[str] = []

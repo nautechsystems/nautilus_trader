@@ -1267,7 +1267,6 @@ git commit -m "test: lock borrow cap safety contract"
 ```
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
-
 ### Task 2: Extract shared venue-policy parsing and migrate Makerv3
 
 **Files:**
@@ -3254,4 +3253,3 @@ git commit -m "docs: record pr7 verification and rollback"
 ```
 
 **Progress Updates:** After finishing any step that changes task state, commit state, or verification state, update the Progress Tracker before moving on.
-

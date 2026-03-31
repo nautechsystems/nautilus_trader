@@ -307,6 +307,34 @@ def test_makerv4_strategy_state_snapshot_surfaces_fee_assumptions_in_state_and_q
     assert quote_snapshot["hedge_leg"]["fee_assumptions"] == expected_fee_assumptions
 
 
+def test_makerv4_quote_snapshot_publishes_configured_ibkr_quote_age_budget() -> None:
+    strategy = MakerV4Strategy(config=_config(max_ibkr_quote_age_ms=300_000))
+    strategy._runtime_params["max_age_ms"] = 30_000
+    maker_id = strategy.config.maker_instrument_id
+    ref_id = strategy.config.reference_instrument_id
+    strategy._instruments = {
+        maker_id: _instrument(raw_symbol="AAPL/USD"),
+        ref_id: _instrument(raw_symbol="AAPL"),
+    }
+    strategy._latest_quotes = {
+        maker_id: {
+            "bid": Decimal("189.90"),
+            "ask": Decimal("190.10"),
+            "ts_ns": 1_000_000_000,
+        },
+        ref_id: {
+            "bid": Decimal("190.00"),
+            "ask": Decimal("190.04"),
+            "ts_ns": 1_000_000_000,
+        },
+    }
+
+    payload = strategy._quote_snapshot_payload(now_ns=1_050_000_000)
+
+    assert payload["max_ibkr_quote_age_ms"] == 300_000
+    assert payload["max_maker_quote_age_ms"] == 30_000
+
+
 def test_makerv4_quote_targets_move_when_maker_maker_fee_assumption_changes() -> None:
     strategy = MakerV4Strategy(config=_config())
     maker_id = strategy.config.maker_instrument_id

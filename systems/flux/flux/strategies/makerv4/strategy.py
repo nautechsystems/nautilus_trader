@@ -422,7 +422,13 @@ class MakerV4Strategy(Strategy):
                 or 10_000
             ),
         )
-        reference_budget_ms = max(1, int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)))
+        reference_budget_ms = max(
+            1,
+            min(
+                int(self._runtime_params.get("max_age_ms", 10_000) or 10_000),
+                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
+            ),
+        )
 
         return (
             QuoteFeedClaimSpec(
@@ -444,7 +450,6 @@ class MakerV4Strategy(Strategy):
                 claimant_id=self._external_strategy_id,
                 unusable_after_ms=reference_budget_ms,
                 blocker_key=reference_scope,
-                node_scoped_lifecycle=False,
             ),
         )
 
@@ -507,8 +512,6 @@ class MakerV4Strategy(Strategy):
             return
 
         state = getattr(self, "state", None)
-        if state == PyComponentState.RUNNING:
-            return
         if state == PyComponentState.STARTING:
             self._update_quote_snapshot(
                 instrument_id=instrument_id,
@@ -522,7 +525,7 @@ class MakerV4Strategy(Strategy):
             )
             return
 
-        if state == PyComponentState.DEGRADED:
+        if state in (PyComponentState.RUNNING, PyComponentState.DEGRADED):
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
@@ -1175,14 +1178,15 @@ class MakerV4Strategy(Strategy):
         reference_quote = self._reference_quote_snapshot(now_ns=now_ns)
         if reference_quote is None:
             return False, "stale_quote"
-        if validate_ibkr_quote(
+        quote_error = validate_ibkr_quote(
             bid=reference_quote.bid,
             ask=reference_quote.ask,
             quote_age_ms=reference_quote.age_ms,
             max_quote_age_ms=int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
             max_spread_bps=Decimal(str(getattr(self.config, "max_ibkr_spread_bps", "25"))),
-        ) is not None:
-            return False, "stale_quote"
+        )
+        if quote_error is not None:
+            return False, quote_error
 
         if not isinstance(maker_snapshot, Mapping):
             return False, "stale_quote"
@@ -1215,7 +1219,7 @@ class MakerV4Strategy(Strategy):
         if tradeable:
             if (
                 self.tradeable is False
-                and self.hedge_disabled_reason == "stale_quote"
+                and self._is_retryable_hedge_block_reason(self.hedge_disabled_reason)
                 and self._pending_hedge is None
                 and self._hedge_backlog is None
             ):
@@ -2102,21 +2106,6 @@ class MakerV4Strategy(Strategy):
             if existing_ts_ns <= 0:
                 continue
 
-            stale_after_ms = (
-                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000))
-                if self._instrument_id_matches(instrument_id, self.config.reference_instrument_id)
-                else int(
-                    self._runtime_params.get(
-                        "quote_liveness_stall_after_ms",
-                        self._runtime_params.get("max_age_ms", 10_000),
-                    )
-                    or self._runtime_params.get("max_age_ms", 10_000)
-                    or 10_000
-                )
-            )
-            if max(0, int(now_ns)) - existing_ts_ns <= max(1, stale_after_ms) * 1_000_000:
-                continue
-
             tick = None
             with suppress(Exception):
                 tick = quote_lookup(instrument_id)
@@ -2336,7 +2325,7 @@ class MakerV4Strategy(Strategy):
                 - float(assumed_hedge_fee_bps)
                 - float(hedge_slippage_bps or 0.0)
             )
-        return publisher_mod.build_quote_snapshot_payload(
+        payload = publisher_mod.build_quote_snapshot_payload(
             maker_leg=maker_leg,
             hedge_leg=hedge_leg,
             ref_leg=ref_leg,
@@ -2370,6 +2359,13 @@ class MakerV4Strategy(Strategy):
             ts_ms=max(0, int(now_ns)) // 1_000_000,
             fee_assumptions=fee_assumptions,
         )
+        payload["max_ibkr_quote_age_ms"] = int(
+            getattr(self.config, "max_ibkr_quote_age_ms", 1_000),
+        )
+        payload["max_maker_quote_age_ms"] = int(
+            self._runtime_params.get("max_age_ms", 10_000),
+        )
+        return payload
 
     def _maker_quote_health(self, *, now_ns: int):
         maker_leg = self._quote_leg_snapshot(
@@ -3716,7 +3712,8 @@ class MakerV4Strategy(Strategy):
             self._prime_cached_quote(instrument_id)
             if self._uses_supervisor_owned_quote_feed_lifecycle():
                 self._attach_local_quote_topic(instrument_id)
-            self.subscribe_quote_ticks(instrument_id=instrument_id)
+            else:
+                self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         self._register_quote_feed_interest()
         for instrument_id in subscribed_instrument_ids:
