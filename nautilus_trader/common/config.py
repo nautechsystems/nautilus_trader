@@ -319,6 +319,8 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         The database host address. If `None` then should use the typical default.
     port : int, optional
         The database port. If `None` then should use the typical default.
+    db : int, optional
+        The database index for backends that support logical databases, such as Redis.
     username : str, optional
         The account username for the database connection.
     password : str, optional
@@ -338,6 +340,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     type: str = "redis"
     host: str | None = None
     port: int | None = None
+    db: int | None = None
     username: str | None = None
     password: str | None = None
     ssl: bool = False
@@ -355,6 +358,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
             f"type={self.type}, "
             f"host={self.host}, "
             f"port={self.port}, "
+            f"db={self.db}, "
             f"username={self.username}, "
             f"password={redacted_password}, "
             f"ssl={self.ssl}, "
@@ -385,6 +389,9 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2 or higher; otherwise it will result
         in a command syntax error.
+    stream_maxlen : PositiveInt, optional
+        The maximum retained length for externally published streams.
+        When set, published streams are trimmed to this exact bound after each write batch.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for stream names.
     use_trader_id : bool, default True
@@ -413,6 +420,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
+    stream_maxlen: PositiveInt | None = None
     use_trader_prefix: bool = True
     use_trader_id: bool = True
     use_instance_id: bool = False

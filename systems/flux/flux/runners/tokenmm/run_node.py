@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers import TraderId
 
 SAFE_MODES = frozenset({"paper", "testnet", "live"})
 DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS = 30
+DEFAULT_LIVE_MESSAGE_BUS_STREAM_MAXLEN = 5_000
 TOKENMM_DESCRIPTOR = get_strategy_set_descriptor("tokenmm")
 _MAKERV3_SPEC = get_strategy_spec("makerv3")
 LOGGER = logging.getLogger(__name__)
@@ -341,6 +342,17 @@ def _resolve_message_bus_autotrim_mins(*, mode: str, node_cfg: dict[str, Any]) -
     if value > 0:
         return value
     return DEFAULT_LIVE_MESSAGE_BUS_AUTOTRIM_MINS if mode == "live" else None
+
+
+def _resolve_message_bus_stream_maxlen(*, mode: str, node_cfg: dict[str, Any]) -> int | None:
+    raw_value = node_cfg.get("message_bus_stream_maxlen")
+    if raw_value is None:
+        return DEFAULT_LIVE_MESSAGE_BUS_STREAM_MAXLEN if mode == "live" else None
+
+    value = int(raw_value)
+    if value > 0:
+        return value
+    return DEFAULT_LIVE_MESSAGE_BUS_STREAM_MAXLEN if mode == "live" else None
 
 
 def _resolve_graceful_shutdown_on_exception(*, mode: str, node_cfg: dict[str, Any]) -> bool:
@@ -972,6 +984,7 @@ def build_node(
         node_cfg,
     )
     message_bus_autotrim_mins = _resolve_message_bus_autotrim_mins(mode=mode, node_cfg=node_cfg)
+    message_bus_stream_maxlen = _resolve_message_bus_stream_maxlen(mode=mode, node_cfg=node_cfg)
     graceful_shutdown_on_exception = _resolve_graceful_shutdown_on_exception(
         mode=mode,
         node_cfg=node_cfg,
@@ -1044,6 +1057,7 @@ def build_node(
             database=redis_database,
             encoding="json",
             autotrim_mins=message_bus_autotrim_mins,
+            stream_maxlen=message_bus_stream_maxlen,
             use_trader_prefix=False,
             use_trader_id=False,
             use_instance_id=False,

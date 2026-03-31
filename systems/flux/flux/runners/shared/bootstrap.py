@@ -152,6 +152,7 @@ def build_redis_database_kwargs(redis_cfg: dict[str, Any]) -> dict[str, Any]:
         "type": "redis",
         "host": str(redis_cfg.get("host", "127.0.0.1")),
         "port": int(redis_cfg.get("port", 6380)),
+        "db": int(redis_cfg.get("db", 0)),
         "username": optional_text(redis_cfg.get("username")),
         "password": optional_text(redis_cfg.get("password")),
         "ssl": bool(redis_cfg.get("ssl", False)),

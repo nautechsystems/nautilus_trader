@@ -75,6 +75,7 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
 pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     let host = config.host.unwrap_or("127.0.0.1".to_string());
     let port = config.port.unwrap_or(6379);
+    let db = config.db;
     let username = config.username.unwrap_or_default();
     let password = config.password.unwrap_or_default();
     let ssl = config.ssl;
@@ -110,9 +111,10 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     };
 
     let scheme = if ssl { "rediss" } else { "redis" };
+    let db_suffix = db.map_or_else(String::new, |db| format!("/{db}"));
 
-    let url = format!("{scheme}://{auth}{host}:{port}");
-    let redacted_url = format!("{scheme}://{auth_redacted}{host}:{port}");
+    let url = format!("{scheme}://{auth}{host}:{port}{db_suffix}");
+    let redacted_url = format!("{scheme}://{auth_redacted}{host}:{port}{db_suffix}");
 
     (url, redacted_url)
 }
@@ -305,6 +307,20 @@ mod tests {
         let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://username:password@example.com:6380");
         assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_includes_database_suffix_when_configured() {
+        let config_json = json!({
+            "host": "example.com",
+            "port": 6380,
+            "password": "secretpw",
+            "db": 1,
+        });
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
+        assert_eq!(url, "redis://:secretpw@example.com:6380/1");
+        assert_eq!(redacted_url, "redis://:se...pw@example.com:6380/1");
     }
 
     #[rstest]

@@ -21,6 +21,8 @@ pub struct DatabaseConfig {
     pub host: Option<String>,
     /// The database port. If `None`, the typical default should be used.
     pub port: Option<u16>,
+    /// The logical database index for backends that support it, such as Redis.
+    pub db: Option<u16>,
     /// The account username for the database connection.
     pub username: Option<String>,
     /// The account password for the database connection.
@@ -48,6 +50,7 @@ impl Default for DatabaseConfig {
             database_type: "redis".to_string(),
             host: None,
             port: None,
+            db: None,
             username: None,
             password: None,
             ssl: false,
@@ -80,6 +83,9 @@ pub struct MessageBusConfig {
     /// The actual window may extend up to one minute beyond the specified value since streams are trimmed at most once every minute.
     /// This feature requires Redis version 6.2 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
+    /// The maximum retained length for externally published streams.
+    /// When set, writes are followed by an exact Redis `XTRIM MAXLEN` bound.
+    pub stream_maxlen: Option<usize>,
     /// If a 'trader-' prefix is used for stream names.
     pub use_trader_prefix: bool,
     /// If the trader's ID is used for stream names.
@@ -108,6 +114,7 @@ impl Default for MessageBusConfig {
             timestamps_as_iso8601: false,
             buffer_interval_ms: None,
             autotrim_mins: None,
+            stream_maxlen: None,
             use_trader_prefix: true,
             use_trader_id: true,
             use_instance_id: false,
@@ -155,6 +162,7 @@ mod tests {
         assert_eq!(config.database_type, "redis");
         assert_eq!(config.host, None);
         assert_eq!(config.port, None);
+        assert_eq!(config.db, None);
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
         assert!(!config.ssl);
@@ -172,6 +180,7 @@ mod tests {
             "type": "redis",
             "host": "localhost",
             "port": 6379,
+            "db": 1,
             "username": "user",
             "password": "pass",
             "ssl": true,
@@ -186,6 +195,7 @@ mod tests {
         assert_eq!(config.database_type, "redis");
         assert_eq!(config.host, Some("localhost".to_string()));
         assert_eq!(config.port, Some(6379));
+        assert_eq!(config.db, Some(1));
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert!(config.ssl);
@@ -204,6 +214,7 @@ mod tests {
         assert!(!config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, None);
         assert_eq!(config.autotrim_mins, None);
+        assert_eq!(config.stream_maxlen, None);
         assert!(config.use_trader_prefix);
         assert!(config.use_trader_id);
         assert!(!config.use_instance_id);
@@ -234,6 +245,7 @@ mod tests {
             "timestamps_as_iso8601": true,
             "buffer_interval_ms": 100,
             "autotrim_mins": 60,
+            "stream_maxlen": 5000,
             "use_trader_prefix": false,
             "use_trader_id": false,
             "use_instance_id": true,
@@ -247,6 +259,7 @@ mod tests {
         assert!(config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, Some(100));
         assert_eq!(config.autotrim_mins, Some(60));
+        assert_eq!(config.stream_maxlen, Some(5000));
         assert!(!config.use_trader_prefix);
         assert!(!config.use_trader_id);
         assert!(config.use_instance_id);
