@@ -507,8 +507,6 @@ class MakerV4Strategy(Strategy):
             return
 
         state = getattr(self, "state", None)
-        if state == PyComponentState.RUNNING:
-            return
         if state == PyComponentState.STARTING:
             self._update_quote_snapshot(
                 instrument_id=instrument_id,
@@ -522,7 +520,7 @@ class MakerV4Strategy(Strategy):
             )
             return
 
-        if state == PyComponentState.DEGRADED:
+        if state in (PyComponentState.RUNNING, PyComponentState.DEGRADED):
             try:
                 self.on_quote_tick(tick)
             except Exception as e:

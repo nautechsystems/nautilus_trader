@@ -797,10 +797,10 @@ def test_equities_maker_local_quote_handler_delivers_quotes_while_degraded(monke
     assert calls == [("on_quote_tick", maker_id)]
 
 
-def test_equities_maker_local_quote_handler_ignores_running_delivery(monkeypatch) -> None:
+def test_equities_maker_local_quote_handler_delivers_quotes_while_running(monkeypatch) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
     maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
-    forwarded: list[object] = []
+    calls: list[object] = []
 
     monkeypatch.setattr(
         type(strategy),
@@ -811,14 +811,20 @@ def test_equities_maker_local_quote_handler_ignores_running_delivery(monkeypatch
     monkeypatch.setattr(
         strategy,
         "handle_quote_tick",
-        lambda tick, historical=False: forwarded.append((tick, historical)),
+        lambda *_args, **_kwargs: pytest.fail("running local handler should bypass handle_quote_tick gating"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "on_quote_tick",
+        lambda tick: calls.append(("on_quote_tick", tick.instrument_id)),
         raising=False,
     )
 
     tick = _quote_tick(instrument_id=maker_id)
     strategy._handle_local_quote_tick(tick)
 
-    assert forwarded == []
+    assert calls == [("on_quote_tick", maker_id)]
 
 
 def test_equities_maker_supervisor_timer_primes_missing_quotes_from_cache_and_publishes_state(
