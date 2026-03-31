@@ -21,6 +21,7 @@ use nautilus_model::{
     events::{OrderCancelRejected, OrderModifyRejected, OrderRejected},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    types::Currency,
 };
 use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
@@ -170,6 +171,7 @@ pub(super) struct FeedHandler {
     pending_amend_requests: DashMap<String, AmendRequestData>,
     pending_batch_place_requests: DashMap<String, Vec<BatchOrderData>>,
     pending_batch_cancel_requests: DashMap<String, Vec<BatchCancelData>>,
+    execution_fee_currency_cache: AHashMap<Ustr, Currency>,
     message_queue: VecDeque<NautilusWsMessage>,
 }
 
@@ -213,6 +215,7 @@ impl FeedHandler {
             pending_amend_requests: DashMap::new(),
             pending_batch_place_requests: DashMap::new(),
             pending_batch_cancel_requests: DashMap::new(),
+            execution_fee_currency_cache: AHashMap::new(),
             message_queue: VecDeque::new(),
         }
     }
@@ -228,6 +231,19 @@ impl FeedHandler {
 
     fn generate_unique_request_id(&self) -> String {
         UUID4::new().to_string()
+    }
+
+    fn cache_order_fee_currency(&mut self, order_id: Ustr, fee_currency: &str) {
+        if fee_currency.is_empty() {
+            return;
+        }
+
+        self.execution_fee_currency_cache
+            .insert(order_id, crate::common::parse::get_currency(fee_currency));
+    }
+
+    fn execution_fee_currency(&self, order_id: &Ustr) -> Option<Currency> {
+        self.execution_fee_currency_cache.get(order_id).cloned()
     }
 
     fn find_and_remove_place_request_by_client_order_id(
@@ -1096,6 +1112,8 @@ impl FeedHandler {
                 if let Some(account_id) = account_id {
                     let mut reports = Vec::new();
                     for order in &msg.data {
+                        self.cache_order_fee_currency(order.order_id, order.fee_currency.as_str());
+
                         let raw_symbol = order.symbol;
                         let symbol = make_bybit_symbol(raw_symbol, order.category);
 
@@ -1124,13 +1142,15 @@ impl FeedHandler {
                     for execution in &msg.data {
                         let raw_symbol = execution.symbol;
                         let symbol = make_bybit_symbol(raw_symbol, execution.category);
+                        let fee_currency_override =
+                            self.execution_fee_currency(&execution.order_id);
 
                         if let Some(instrument) = instruments.get(&symbol) {
                             match parse_ws_fill_report(
                                 execution,
                                 account_id,
                                 instrument,
-                                None,
+                                fee_currency_override,
                                 ts_init,
                             ) {
                                 Ok(report) => reports.push(report),
