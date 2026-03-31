@@ -2105,21 +2105,6 @@ class MakerV4Strategy(Strategy):
             if existing_ts_ns <= 0:
                 continue
 
-            stale_after_ms = (
-                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000))
-                if self._instrument_id_matches(instrument_id, self.config.reference_instrument_id)
-                else int(
-                    self._runtime_params.get(
-                        "quote_liveness_stall_after_ms",
-                        self._runtime_params.get("max_age_ms", 10_000),
-                    )
-                    or self._runtime_params.get("max_age_ms", 10_000)
-                    or 10_000
-                )
-            )
-            if max(0, int(now_ns)) - existing_ts_ns <= max(1, stale_after_ms) * 1_000_000:
-                continue
-
             tick = None
             with suppress(Exception):
                 tick = quote_lookup(instrument_id)

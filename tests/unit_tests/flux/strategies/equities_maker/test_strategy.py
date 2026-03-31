@@ -964,7 +964,7 @@ def test_equities_maker_supervisor_timer_recovers_stale_quotes_from_newer_cache(
     assert published_state == [{"now_ns": strategy.clock.now}]
 
 
-def test_equities_maker_supervisor_timer_does_not_replace_fresh_local_quotes_with_cache(
+def test_equities_maker_supervisor_timer_syncs_newer_cached_quotes_into_local_state(
     monkeypatch,
 ) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
@@ -1009,9 +1009,9 @@ def test_equities_maker_supervisor_timer_does_not_replace_fresh_local_quotes_wit
 
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
 
-    assert strategy._latest_quotes[maker_id]["ts_ns"] == 9_500_000_000
-    assert strategy._latest_quotes[ref_id]["ts_ns"] == 9_600_000_000
-    assert published_state == []
+    assert strategy._latest_quotes[maker_id]["ts_ns"] == 9_700_000_000
+    assert strategy._latest_quotes[ref_id]["ts_ns"] == 9_800_000_000
+    assert published_state == [{"now_ns": strategy.clock.now}]
 
 
 def test_equities_maker_supervisor_on_start_subscribes_actor_and_local_runtime(
