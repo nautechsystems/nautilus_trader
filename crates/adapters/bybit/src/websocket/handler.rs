@@ -148,6 +148,8 @@ type BatchOrderData = (ClientOrderId, PlaceRequestData);
 /// Data for a single cancel in a batch request.
 type BatchCancelData = (ClientOrderId, CancelRequestData);
 
+const EXECUTION_FEE_CURRENCY_CACHE_CAPACITY: usize = 4096;
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -172,6 +174,7 @@ pub(super) struct FeedHandler {
     pending_batch_place_requests: DashMap<String, Vec<BatchOrderData>>,
     pending_batch_cancel_requests: DashMap<String, Vec<BatchCancelData>>,
     execution_fee_currency_cache: AHashMap<Ustr, Currency>,
+    execution_fee_currency_cache_order: VecDeque<Ustr>,
     message_queue: VecDeque<NautilusWsMessage>,
 }
 
@@ -216,6 +219,7 @@ impl FeedHandler {
             pending_batch_place_requests: DashMap::new(),
             pending_batch_cancel_requests: DashMap::new(),
             execution_fee_currency_cache: AHashMap::new(),
+            execution_fee_currency_cache_order: VecDeque::new(),
             message_queue: VecDeque::new(),
         }
     }
@@ -240,6 +244,16 @@ impl FeedHandler {
 
         self.execution_fee_currency_cache
             .insert(order_id, crate::common::parse::get_currency(fee_currency));
+        self.execution_fee_currency_cache_order
+            .retain(|cached_order_id| *cached_order_id != order_id);
+        self.execution_fee_currency_cache_order.push_back(order_id);
+
+        while self.execution_fee_currency_cache_order.len() > EXECUTION_FEE_CURRENCY_CACHE_CAPACITY
+        {
+            if let Some(evicted_order_id) = self.execution_fee_currency_cache_order.pop_front() {
+                self.execution_fee_currency_cache.remove(&evicted_order_id);
+            }
+        }
     }
 
     fn execution_fee_currency(&self, order_id: &Ustr) -> Option<Currency> {
@@ -1740,6 +1754,79 @@ mod tests {
             );
         }
         assert_eq!(ids.len(), 100);
+    }
+
+    #[rstest]
+    fn handler_fee_currency_cache_is_bounded() {
+        let mut handler = create_test_handler();
+
+        for i in 0..=EXECUTION_FEE_CURRENCY_CACHE_CAPACITY {
+            let order_id = Ustr::from(format!("order-{i}").as_str());
+            handler.cache_order_fee_currency(order_id, "BTC");
+        }
+
+        assert_eq!(
+            handler.execution_fee_currency_cache.len(),
+            EXECUTION_FEE_CURRENCY_CACHE_CAPACITY
+        );
+        assert!(handler.execution_fee_currency(&Ustr::from("order-0")).is_none());
+        assert_eq!(
+            handler
+                .execution_fee_currency(&Ustr::from(format!(
+                    "order-{EXECUTION_FEE_CURRENCY_CACHE_CAPACITY}"
+                ).as_str()))
+                .unwrap()
+                .code
+                .as_str(),
+            "BTC"
+        );
+    }
+
+    #[rstest]
+    fn handler_fee_currency_cache_refreshes_existing_order() {
+        let mut handler = create_test_handler();
+        let sticky_order_id = Ustr::from("sticky-order");
+
+        handler.cache_order_fee_currency(sticky_order_id, "BTC");
+
+        for i in 1..EXECUTION_FEE_CURRENCY_CACHE_CAPACITY {
+            let order_id = Ustr::from(format!("order-{i}").as_str());
+            handler.cache_order_fee_currency(order_id, "BTC");
+        }
+
+        handler.cache_order_fee_currency(sticky_order_id, "BTC");
+        handler.cache_order_fee_currency(Ustr::from("overflow-order"), "BTC");
+
+        assert_eq!(
+            handler
+                .execution_fee_currency(&sticky_order_id)
+                .unwrap()
+                .code
+                .as_str(),
+            "BTC"
+        );
+        assert!(handler.execution_fee_currency(&Ustr::from("order-1")).is_none());
+    }
+
+    #[rstest]
+    fn handler_fee_currency_cache_refresh_does_not_grow_queue() {
+        let mut handler = create_test_handler();
+        let sticky_order_id = Ustr::from("sticky-order");
+
+        for _ in 0..(EXECUTION_FEE_CURRENCY_CACHE_CAPACITY * 2) {
+            handler.cache_order_fee_currency(sticky_order_id, "BTC");
+        }
+
+        assert_eq!(handler.execution_fee_currency_cache.len(), 1);
+        assert_eq!(handler.execution_fee_currency_cache_order.len(), 1);
+        assert_eq!(
+            handler
+                .execution_fee_currency(&sticky_order_id)
+                .unwrap()
+                .code
+                .as_str(),
+            "BTC"
+        );
     }
 
     #[tokio::test]

@@ -724,7 +724,7 @@ pub fn parse_ws_fill_report(
     execution: &BybitWsAccountExecution,
     account_id: AccountId,
     instrument: &InstrumentAny,
-    _fee_currency_override: Option<Currency>,
+    fee_currency_override: Option<Currency>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
@@ -752,7 +752,7 @@ pub fn parse_ws_fill_report(
 
     let commission = parse_execution_commission(
         &execution.exec_fee,
-        _fee_currency_override,
+        fee_currency_override,
         instrument.quote_currency(),
         "websocket",
     )?;
