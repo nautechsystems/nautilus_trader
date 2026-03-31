@@ -3723,7 +3723,8 @@ class MakerV4Strategy(Strategy):
             self._prime_cached_quote(instrument_id)
             if self._uses_supervisor_owned_quote_feed_lifecycle():
                 self._attach_local_quote_topic(instrument_id)
-            self.subscribe_quote_ticks(instrument_id=instrument_id)
+            else:
+                self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         self._register_quote_feed_interest()
         for instrument_id in subscribed_instrument_ids:

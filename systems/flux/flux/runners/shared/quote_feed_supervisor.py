@@ -386,7 +386,17 @@ class NodeQuoteFeedSupervisor:
         if not record.desired:
             return self.snapshot(feed_identity)
         if ok:
-            record.state = "recovering"
+            record.backoff_until = None
+            record.last_error_summary = None
+            strictest_ns = record.strictest_unusable_after_ns
+            quote_is_fresh = (
+                record.last_quote_ns is not None
+                and (
+                    strictest_ns is None
+                    or max(0, int(now_ns)) - record.last_quote_ns <= strictest_ns
+                )
+            )
+            record.state = "healthy" if quote_is_fresh else "recovering"
             return self.snapshot(feed_identity)
         record.attempt_count += 1
         record.last_error_summary = error_summary

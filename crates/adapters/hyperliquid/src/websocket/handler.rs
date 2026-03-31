@@ -282,7 +282,10 @@ impl FeedHandler {
                             self.maybe_start_initial_validation().await;
                             for subscription in subscriptions {
                                 let key = subscription_to_key(&subscription);
-                                self.subscriptions.mark_subscribe(&key);
+                                if !self.subscriptions.try_mark_subscribe(&key) {
+                                    log::debug!("Skipping duplicate subscribe request for {key}");
+                                    continue;
+                                }
                                 let use_buffered = self
                                     .client
                                     .as_ref()
