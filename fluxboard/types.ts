@@ -520,6 +520,39 @@ export type BalanceScopeStatus = {
   projection_status?: BalanceProjectionStatus | null;
 };
 
+export type BalanceInventoryComponent = {
+  strategy_id?: string | null;
+  venue?: string | null;
+  [key: string]: unknown;
+};
+
+export type TokenMMBalanceDisplayStatus = 'OK' | 'STALE' | 'PARTIAL' | 'MISSING';
+
+export type TokenMMBalanceChildDisplayStatus = TokenMMBalanceDisplayStatus;
+
+export type TokenMMBalanceRowType = 'spot' | 'perp' | 'cash';
+
+export type TokenMMBalanceSectionKey = 'stables' | 'trading';
+
+export type TokenMMBalancesVenueOption = {
+  value: string;
+  label: string;
+};
+
+export type TokenMMBalanceSummaryCard = {
+  key: string;
+  label: string;
+  value: string;
+  tone?: 'default' | 'muted' | 'warning';
+};
+
+export type TokenMMBalancesToolbarState = {
+  search: string;
+  venue: string;
+  type: 'all' | TokenMMBalanceRowType;
+  hideZero: boolean;
+};
+
 export type RiskGroup = {
   risk_key: string;
   label: string;
@@ -551,6 +584,13 @@ export type BalancesPayload = {
   totals: BalancesTotals;
   generated_at: string;
   view: string;
+  source?: string | null;
+  stale_after_ms?: number | null;
+  aggregation_mode?: string | null;
+  components?: BalanceInventoryComponent[];
+  missing_required?: string[];
+  stale_required?: string[];
+  null_qty_required?: string[];
   risk_groups?: RiskGroup[];
   realtime?: RealtimeSnapshotLineage;
   degraded?: boolean;

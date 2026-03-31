@@ -14,6 +14,7 @@ import type {
   FxPair,
   SignalStrategy,
   BalancesPayload,
+  BalanceInventoryComponent,
   BalanceScopeStatus,
   BalancesResponse,
   BalanceParentRow,
@@ -465,6 +466,20 @@ function normalizeBalanceScopeStatus(scopeStatus: unknown): BalanceScopeStatus[]
       };
     })
     .filter((entry) => entry.account_scope_id);
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => coerceOptionalText(entry))
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function normalizeBalanceComponents(value: unknown): BalanceInventoryComponent[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    .map((entry) => ({ ...entry }));
 }
 
 function toFiniteOptionalNumber(value: unknown): number | undefined {
@@ -2055,6 +2070,13 @@ export const api = {
       totals: payload.totals ?? { mv_raw: totalMv, mv_display: formatMoneyDisplay(totalMv) },
       generated_at: generatedAt,
       view: payload.view ?? 'parents_only',
+      source: coerceOptionalText((payload as Record<string, unknown>).source) ?? null,
+      stale_after_ms: toFiniteOptionalNumber((payload as Record<string, unknown>).stale_after_ms) ?? null,
+      aggregation_mode: coerceOptionalText((payload as Record<string, unknown>).aggregation_mode) ?? null,
+      components: normalizeBalanceComponents((payload as Record<string, unknown>).components),
+      missing_required: normalizeStringList((payload as Record<string, unknown>).missing_required),
+      stale_required: normalizeStringList((payload as Record<string, unknown>).stale_required),
+      null_qty_required: normalizeStringList((payload as Record<string, unknown>).null_qty_required),
       risk_groups: normalizeRiskGroups(payload.risk_groups),
       realtime,
       degraded: Boolean((payload as Record<string, unknown>).degraded),

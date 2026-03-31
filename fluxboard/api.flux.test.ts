@@ -703,6 +703,131 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('preserves tokenmm balances inventory metadata and backend-authored canonical naming', async () => {
+    setPathname('/tokenmm/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [
+          {
+            id: 'USDC_LOGICAL',
+            coin: 'USDC_LOGICAL',
+            canonical: 'USDC',
+            is_parent: true,
+            stable: true,
+            qty_display: '1000',
+            qty_raw: 1000,
+            mv_display: '$1000.00',
+            mv_raw: 1000,
+            mark_display: '1.00',
+            mark_raw: 1,
+            time_display: '2026-03-31T00:00:00.000Z',
+            time_iso: '2026-03-31T00:00:00.000Z',
+            last_ts: 1774915200000,
+            children: [
+              {
+                id: 'USDC_LOGICAL:bybit:USDC',
+                parent_id: 'USDC_LOGICAL',
+                coin: 'USDC',
+                venue: 'bybit',
+                wallet: 'bybit-main',
+                qty_display: '1000',
+                qty_raw: 1000,
+                mv_display: '$1000.00',
+                mv_raw: 1000,
+                mark_display: '1.00',
+                mark_raw: 1,
+                time_display: '2026-03-31T00:00:00.000Z',
+                time_iso: '2026-03-31T00:00:00.000Z',
+                last_ts: 1774915200000,
+                display_name_short: 'Bybit USDC Spot',
+                display_name_long: 'Bybit USDC Unified Spot Balance',
+                product_type: 'spot',
+                contract_type: 'cash',
+                raw_symbol: 'USDC',
+              },
+            ],
+            raw: { qty: 1000, mv_usd: 1000, mark: 1 },
+          },
+        ],
+        total: 1,
+        totals: {
+          mv_raw: 1000,
+          mv_display: '$1000.00',
+        },
+        generated_at: '2026-03-31T00:00:10.000Z',
+        view: 'parents_only',
+        source: 'portfolio_snapshot',
+        stale_after_ms: 15000,
+        degraded: true,
+        aggregation_mode: 'partial',
+        components: [
+          {
+            strategy_id: 'plume_mm',
+            venue: 'bybit',
+            local_qty_base: '1000',
+          },
+        ],
+        missing_required: ['okx_mm'],
+        stale_required: ['binance_mm'],
+        null_qty_required: ['coinbase_mm'],
+        scope_status: [
+          {
+            account_scope_id: 'binance.pm.main',
+            source_scope: 'shared_account',
+            projection_status: {
+              healthy: false,
+              last_success_ts_ms: 1774915195000,
+              last_attempt_ts_ms: 1774915200000,
+              last_error_type: 'projection_timeout',
+              last_error_message: 'projection lagged',
+              stale_after_ms: 15000,
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(api.getBalances()).resolves.toMatchObject({
+      source: 'portfolio_snapshot',
+      stale_after_ms: 15000,
+      degraded: true,
+      aggregation_mode: 'partial',
+      components: [
+        {
+          strategy_id: 'plume_mm',
+          venue: 'bybit',
+          local_qty_base: '1000',
+        },
+      ],
+      missing_required: ['okx_mm'],
+      stale_required: ['binance_mm'],
+      null_qty_required: ['coinbase_mm'],
+      scope_status: [
+        {
+          account_scope_id: 'binance.pm.main',
+          projection_status: {
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+      rows: [
+        expect.objectContaining({
+          canonical: 'USDC',
+          children: [
+            expect.objectContaining({
+              display_name_short: 'Bybit USDC Spot',
+              display_name_long: 'Bybit USDC Unified Spot Balance',
+              product_type: 'spot',
+              contract_type: 'cash',
+              raw_symbol: 'USDC',
+            }),
+          ],
+        }),
+      ],
+    });
+  });
+
   it('appends profile to alerts request on equities routes', async () => {
     setPathname('/equities/alerts');
     fetchJSONMock.mockResolvedValue({
