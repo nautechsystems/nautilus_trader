@@ -71,6 +71,7 @@ from flux.strategies.shared.venue_protection import extract_hyperliquid_request_
 from flux.strategies.shared.venue_protection import is_venue_protection_reason
 from flux.strategies.shared.venue_protection import normalize_reason_text
 from nautilus_trader.adapters.interactive_brokers.common import IB_CLIENT_ID
+from nautilus_trader.common.component import PyComponentState
 from flux.strategies.makerv4.wire import HedgeExecutionReport
 from flux.strategies.makerv4.wire import MakerFill
 from flux.strategies.makerv3.strategy import MakerV3StrategyConfig
@@ -288,7 +289,7 @@ class MakerV4Strategy(Strategy):
             return
         msgbus = getattr(self, "_msgbus", None)
         topic_cache = getattr(self, "_topic_cache", None)
-        handler = getattr(self, "handle_quote_tick", None)
+        handler = getattr(self, "_handle_local_quote_tick", None)
         if msgbus is None or topic_cache is None or not callable(handler):
             return
         subscribe = getattr(msgbus, "subscribe", None)
@@ -306,7 +307,7 @@ class MakerV4Strategy(Strategy):
             return
         msgbus = getattr(self, "_msgbus", None)
         topic_cache = getattr(self, "_topic_cache", None)
-        handler = getattr(self, "handle_quote_tick", None)
+        handler = getattr(self, "_handle_local_quote_tick", None)
         if msgbus is None or topic_cache is None or not callable(handler):
             self._local_quote_topics_attached.discard(instrument_id)
             return
@@ -321,6 +322,39 @@ class MakerV4Strategy(Strategy):
         )
         self._local_quote_topics_attached.discard(instrument_id)
 
+    def _handle_local_quote_tick(self, tick: Any) -> None:
+        instrument_id = getattr(tick, "instrument_id", None)
+        if instrument_id is None:
+            return
+
+        indicators = getattr(self, "_indicators_for_quotes", {}).get(instrument_id)
+        if indicators:
+            self._handle_indicators_for_quote(indicators, tick)
+
+        state = getattr(self, "state", None)
+        if state == PyComponentState.STARTING:
+            self._update_quote_snapshot(
+                instrument_id=instrument_id,
+                bid=self._decimal_or_none(getattr(tick, "bid_price", None)),
+                ask=self._decimal_or_none(getattr(tick, "ask_price", None)),
+                ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
+            )
+            self._record_supervisor_quote_observation(
+                instrument_id=instrument_id,
+                ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
+            )
+            return
+
+        if state == PyComponentState.DEGRADED:
+            try:
+                self.on_quote_tick(tick)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(tick)}", e)
+                raise
+            return
+
+        self.handle_quote_tick(tick)
+
     def _register_quote_feed_interest(self) -> None:
         if self._quote_feed_interest_registered or self._quote_feed_supervisor is None:
             return
@@ -330,12 +364,14 @@ class MakerV4Strategy(Strategy):
     def _sync_quote_feed_interest(self) -> None:
         if self._quote_feed_supervisor is None:
             return
+        now_ns = int(self.clock.timestamp_ns())
         for claim_spec in self.quote_feed_claim_specs():
             self._quote_feed_supervisor.register_claimant(
                 claim_spec.feed_identity,
                 claimant_id=claim_spec.claimant_id,
                 unusable_after_ms=claim_spec.unusable_after_ms,
                 blocker_key=claim_spec.blocker_key,
+                now_ns=now_ns,
             )
 
     def _deregister_quote_feed_interest(self) -> None:

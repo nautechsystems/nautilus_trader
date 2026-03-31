@@ -67,6 +67,21 @@ def shared_reference_quote_channel(
     )
 
 
+def shared_reference_quote_key(
+    *,
+    profile_id: str,
+    account_scope_id: str,
+    instrument_id: InstrumentId | str,
+) -> str:
+    resolved_instrument_id = _coerce_instrument_id(instrument_id)
+    return FluxRedisKeys.profile_market_last(
+        profile_id=profile_id,
+        account_scope_id=account_scope_id,
+        exchange="ibkr",
+        instrument_id=str(resolved_instrument_id),
+    )
+
+
 def build_shared_reference_quote_tick(
     *,
     payload: Mapping[str, Any],
@@ -197,14 +212,26 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
                 close()
 
     async def _subscribe_quote_ticks(self, command) -> None:
+        instrument_id = command.instrument_id
         channel = shared_reference_quote_channel(
             profile_id=self._client_config.profile_id,
             account_scope_id=self._client_config.account_scope_id,
-            instrument_id=command.instrument_id,
+            instrument_id=instrument_id,
         )
-        self._subscriptions[command.instrument_id] = channel
-        self._channel_to_instrument_id[channel] = command.instrument_id
+        self._subscriptions[instrument_id] = channel
+        self._channel_to_instrument_id[channel] = instrument_id
         self._ensure_pubsub().subscribe(channel)
+        snapshot_key = shared_reference_quote_key(
+            profile_id=self._client_config.profile_id,
+            account_scope_id=self._client_config.account_scope_id,
+            instrument_id=instrument_id,
+        )
+        snapshot_payload = _decode_shared_reference_message(self._redis.get(snapshot_key))
+        if snapshot_payload is not None:
+            self.handle_shared_reference_snapshot(
+                instrument_id=instrument_id,
+                payload=snapshot_payload,
+            )
 
     async def _unsubscribe_quote_ticks(self, command) -> None:
         channel = self._subscriptions.pop(command.instrument_id, None)
@@ -274,5 +301,6 @@ __all__ = [
     "InteractiveBrokersSharedReferenceDataClient",
     "SharedReferenceInstrumentProvider",
     "build_shared_reference_quote_tick",
+    "shared_reference_quote_key",
     "shared_reference_quote_channel",
 ]

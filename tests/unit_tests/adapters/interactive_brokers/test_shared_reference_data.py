@@ -57,11 +57,15 @@ class StubPubSub:
 
 
 class StubRedis:
-    def __init__(self, pubsub: StubPubSub) -> None:
+    def __init__(self, pubsub: StubPubSub, *, values: dict[str, bytes | str] | None = None) -> None:
         self._pubsub = pubsub
+        self._values = dict(values or {})
 
     def pubsub(self) -> StubPubSub:
         return self._pubsub
+
+    def get(self, key: str) -> bytes | str | None:
+        return self._values.get(key)
 
     def close(self) -> None:
         return None
@@ -71,6 +75,7 @@ def _make_shared_reference_client(
     *,
     loop: asyncio.AbstractEventLoop,
     pubsub: StubPubSub,
+    values: dict[str, bytes | str] | None = None,
 ) -> InteractiveBrokersSharedReferenceDataClient:
     clock = LiveClock()
     msgbus = MessageBus(
@@ -88,7 +93,7 @@ def _make_shared_reference_client(
             account_scope_id="ibkr.reference.main",
             subscription_poll_interval_secs=0.001,
         ),
-        redis_client=StubRedis(pubsub),
+        redis_client=StubRedis(pubsub, values=values),
     )
 
 
@@ -161,6 +166,48 @@ async def test_shared_reference_data_client_subscribe_quote_ticks_uses_typed_con
     )
     assert client._subscriptions[instrument_id] == expected_channel
     assert pubsub.subscribed == [expected_channel]
+
+
+@pytest.mark.asyncio
+async def test_shared_reference_data_client_subscribe_quote_ticks_replays_current_snapshot() -> None:
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    expected_channel = shared_reference_quote_channel(
+        profile_id="equities",
+        account_scope_id="ibkr.reference.main",
+        instrument_id=instrument_id,
+    )
+    expected_key = expected_channel.removesuffix(":changed")
+    expected_payload = {
+        "instrument_id": "AAPL.NASDAQ",
+        "bid": 190.25,
+        "ask": 190.50,
+        "bid_size": 7,
+        "ask_size": 9,
+        "ts_event_ms": 9_900,
+    }
+    pubsub = StubPubSub()
+    client = _make_shared_reference_client(
+        loop=asyncio.get_running_loop(),
+        pubsub=pubsub,
+        values={expected_key: json.dumps(expected_payload)},
+    )
+
+    observed: list[tuple[InstrumentId, dict[str, object]]] = []
+
+    def _capture_snapshot(*, instrument_id: InstrumentId, payload: dict[str, object]) -> None:
+        observed.append((instrument_id, payload))
+
+    client.handle_shared_reference_snapshot = _capture_snapshot  # type: ignore[method-assign]
+
+    await client._subscribe_quote_ticks(
+        _subscribe_quote_ticks_command(
+            instrument_id=instrument_id,
+            ts_init=client._clock.timestamp_ns(),
+        ),
+    )
+
+    assert pubsub.subscribed == [expected_channel]
+    assert observed == [(instrument_id, expected_payload)]
 
 
 @pytest.mark.asyncio

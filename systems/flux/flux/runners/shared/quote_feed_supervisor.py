@@ -61,6 +61,7 @@ class _QuoteFeedRecord:
     last_error_summary: str | None = None
     last_quote_ns: int | None = None
     startup_retry_pending: bool = False
+    startup_recovery_earliest_ns: int | None = None
     claimants: dict[str, int] | None = None
 
     def __post_init__(self) -> None:
@@ -199,6 +200,7 @@ class NodeQuoteFeedSupervisor:
         *,
         claimant_id: str,
         unusable_after_ms: int,
+        now_ns: int | None = None,
         reset: Any | None = None,
         subscribe: Any | None = None,
         unsubscribe: Any | None = None,
@@ -229,11 +231,14 @@ class NodeQuoteFeedSupervisor:
             record.last_error_summary = self._blocker_reason(record)
             if record.last_quote_ns is None and callable(record.reset):
                 record.startup_retry_pending = True
+                record.startup_recovery_earliest_ns = 0
         elif record.last_quote_ns is not None and record.state == "bootstrapping":
             record.state = "healthy"
         elif not was_desired and callable(record.subscribe):
             record.subscribe()
             record.startup_retry_pending = callable(record.reset)
+            strictest_ns = record.strictest_unusable_after_ns or 0
+            record.startup_recovery_earliest_ns = max(0, int(now_ns or 0)) + strictest_ns
         return self.snapshot(feed_identity)
 
     def unregister_claimant(
@@ -252,6 +257,7 @@ class NodeQuoteFeedSupervisor:
             record.last_error_summary = None
             record.last_quote_ns = None
             record.startup_retry_pending = False
+            record.startup_recovery_earliest_ns = None
             if was_desired and callable(record.unsubscribe):
                 record.unsubscribe()
         return self.snapshot(feed_identity)
@@ -271,6 +277,7 @@ class NodeQuoteFeedSupervisor:
         record.last_error_summary = None
         record.state = "healthy"
         record.startup_retry_pending = False
+        record.startup_recovery_earliest_ns = None
         return self.snapshot(feed_identity)
 
     def refresh(self, feed_identity: QuoteFeedIdentity, *, now_ns: int) -> QuoteFeedSnapshot:
@@ -284,6 +291,9 @@ class NodeQuoteFeedSupervisor:
         if record.state == "down":
             return self.snapshot(feed_identity)
         if record.last_quote_ns is None:
+            if record.attempt_count > 0 or record.backoff_until is not None:
+                record.state = "stale"
+                return self.snapshot(feed_identity)
             record.state = "bootstrapping"
             return self.snapshot(feed_identity)
         strictest_ns = record.strictest_unusable_after_ns
@@ -298,6 +308,7 @@ class NodeQuoteFeedSupervisor:
 
     def should_attempt_recovery(self, feed_identity: QuoteFeedIdentity, *, now_ns: int) -> bool:
         record = self._feeds[feed_identity]
+        previous_state = record.state
         snapshot = self.refresh(feed_identity, now_ns=now_ns)
         if snapshot.state == "stale":
             return True
@@ -307,6 +318,11 @@ class NodeQuoteFeedSupervisor:
             and record.desired
             and callable(record.reset)
             and not self._is_blocked(record)
+            and self._startup_retry_due(
+                record,
+                now_ns=now_ns,
+                previous_state=previous_state,
+            )
         )
 
     def request_recovery(
@@ -318,9 +334,20 @@ class NodeQuoteFeedSupervisor:
     ) -> bool:
         del requested_by
         record = self._feeds[feed_identity]
+        previous_state = record.state
         self.refresh(feed_identity, now_ns=now_ns)
         if self._is_blocked(record):
             record.state = "blocked"
+            return False
+        if (
+            record.state == "bootstrapping"
+            and record.startup_retry_pending
+            and not self._startup_retry_due(
+                record,
+                now_ns=now_ns,
+                previous_state=previous_state,
+            )
+        ):
             return False
         if not callable(record.reset):
             return False
@@ -333,6 +360,7 @@ class NodeQuoteFeedSupervisor:
         record.state = "recovering"
         record.backoff_until = None
         record.startup_retry_pending = False
+        record.startup_recovery_earliest_ns = None
         try:
             if callable(record.reset):
                 record.reset()
@@ -390,6 +418,22 @@ class NodeQuoteFeedSupervisor:
             return None
         _blocked, reason = self._blockers.get(record.blocker_key, (False, None))
         return reason
+
+    def _startup_retry_due(
+        self,
+        record: _QuoteFeedRecord,
+        *,
+        now_ns: int,
+        previous_state: QuoteFeedState | None = None,
+    ) -> bool:
+        if previous_state == "blocked":
+            record.startup_recovery_earliest_ns = 0
+            return True
+        if record.startup_recovery_earliest_ns is None:
+            strictest_ns = record.strictest_unusable_after_ns or 0
+            record.startup_recovery_earliest_ns = max(0, int(now_ns)) + strictest_ns
+            return False
+        return max(0, int(now_ns)) >= record.startup_recovery_earliest_ns
 
 
 if __name__ == "flux.runners.shared.quote_feed_supervisor":

@@ -8,6 +8,7 @@ import pytest
 
 from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
 from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
+from nautilus_trader.common.component import PyComponentState
 from nautilus_trader.flux.strategies import EquitiesMakerStrategy as EquitiesMakerStrategyFromRoot
 from nautilus_trader.flux.strategies import (
     EquitiesMakerStrategyConfig as EquitiesMakerStrategyConfigFromRoot,
@@ -20,7 +21,10 @@ from nautilus_trader.flux.strategies.makerv4.wire import MakerFill
 from nautilus_trader.flux.strategies.registry import get_strategy_identity
 from nautilus_trader.flux.strategies.registry import get_strategy_spec
 from nautilus_trader.flux.strategies.registry import resolve_strategy_spec_for_strategy_id
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 _OVERNIGHT_TS_MS = 1_742_176_800_000
@@ -79,6 +83,18 @@ def _instrument(*, raw_symbol: str, multiplier: str = "1") -> SimpleNamespace:
         make_qty=lambda value: Decimal(str(value)),
         make_price=lambda value: Decimal(str(value)),
         calculate_base_exposure_qty=lambda qty, _price=None: Decimal(str(qty)),
+    )
+
+
+def _quote_tick(*, instrument_id: InstrumentId, ts_event: int = 2_000_000_000) -> QuoteTick:
+    return QuoteTick(
+        instrument_id=instrument_id,
+        bid_price=Price.from_str("190.00"),
+        ask_price=Price.from_str("190.02"),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=ts_event,
+        ts_init=ts_event,
     )
 
 
@@ -493,6 +509,40 @@ def test_equities_maker_supervisor_retries_startup_blocked_feed_after_blocker_cl
     ]
 
 
+def test_equities_maker_supervisor_bootstrap_waits_for_liveness_budget_before_reset(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    _prepare_strategy_lifecycle(strategy, monkeypatch)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+
+    strategy._runtime_params["quote_liveness_stall_after_ms"] = 3_000
+    strategy._runtime_params["quote_liveness_recover_after_ms"] = 900
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    monkeypatch.setattr(strategy, "_attach_local_quote_topic", lambda instrument_id: None, raising=False)
+    monkeypatch.setattr(strategy, "subscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
+    monkeypatch.setattr(strategy, "unsubscribe_quote_ticks", lambda *, instrument_id, client_id=None: None)
+
+    strategy.clock.now = 10_000_000_000
+    strategy.on_start()
+    control_emitter.commands.clear()
+
+    strategy.clock.now = 12_000_000_000
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+    assert control_emitter.commands == []
+
+    strategy.clock.now = 13_100_000_000
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+    assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
+        ("reset", "maker_quote_ticks"),
+    ]
+
+
 def test_equities_maker_runtime_param_refresh_updates_supervisor_freshness_budget(
     monkeypatch,
 ) -> None:
@@ -663,6 +713,109 @@ def test_equities_maker_on_quote_tick_reports_fresh_timestamp_to_supervisor(monk
     )
 
     assert supervisor.snapshot(maker_feed).state == "healthy"
+
+
+def test_equities_maker_local_quote_handler_primes_startup_quote_snapshot(monkeypatch) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    maker_feed = strategy.quote_feed_claim_specs()[0].feed_identity
+
+    supervisor.register_claimant(
+        maker_feed,
+        claimant_id="aapl_tradexyz_maker",
+        unusable_after_ms=3_000,
+        reset=lambda: None,
+    )
+    strategy.configure_quote_feed_runtime(
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    monkeypatch.setattr(
+        type(strategy),
+        "state",
+        property(lambda _self: PyComponentState.STARTING),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "handle_quote_tick",
+        lambda *_args, **_kwargs: pytest.fail("startup local handler should not delegate to handle_quote_tick"),
+        raising=False,
+    )
+
+    strategy._handle_local_quote_tick(_quote_tick(instrument_id=maker_id))
+
+    assert strategy._latest_quotes[maker_id] == {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 2_000_000_000,
+    }
+    assert supervisor.refresh(maker_feed, now_ns=2_000_000_000).state == "healthy"
+
+
+def test_equities_maker_local_quote_handler_delivers_quotes_while_degraded(monkeypatch) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
+    calls: list[object] = []
+
+    strategy._indicators_for_quotes = {maker_id: [object()]}
+    monkeypatch.setattr(
+        type(strategy),
+        "state",
+        property(lambda _self: PyComponentState.DEGRADED),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "_handle_indicators_for_quote",
+        lambda indicators, tick: calls.append(("indicator", tick.instrument_id)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "handle_quote_tick",
+        lambda *_args, **_kwargs: pytest.fail("degraded local handler should bypass handle_quote_tick gating"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "on_quote_tick",
+        lambda tick: calls.append(("on_quote_tick", tick.instrument_id)),
+        raising=False,
+    )
+
+    strategy._handle_local_quote_tick(_quote_tick(instrument_id=maker_id))
+
+    assert calls == [
+        ("indicator", maker_id),
+        ("on_quote_tick", maker_id),
+    ]
+
+
+def test_equities_maker_local_quote_handler_delegates_to_actor_when_running(monkeypatch) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
+    forwarded: list[object] = []
+
+    monkeypatch.setattr(
+        type(strategy),
+        "state",
+        property(lambda _self: PyComponentState.RUNNING),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        strategy,
+        "handle_quote_tick",
+        lambda tick, historical=False: forwarded.append((tick, historical)),
+        raising=False,
+    )
+
+    tick = _quote_tick(instrument_id=maker_id)
+    strategy._handle_local_quote_tick(tick)
+
+    assert forwarded == [(tick, False)]
 
 
 def test_equities_maker_supervisor_non_tradeable_pair_pulls_working_quotes(

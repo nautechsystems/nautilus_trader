@@ -235,8 +235,10 @@ def test_quote_feed_supervisor_retries_bootstrap_feed_when_first_quote_never_arr
 
     assert commands == ["subscribe"]
     assert snapshot.state == "bootstrapping"
-    assert supervisor.should_attempt_recovery(feed, now_ns=1_000)
-    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert not supervisor.should_attempt_recovery(feed, now_ns=1_000)
+    assert not supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert supervisor.should_attempt_recovery(feed, now_ns=3_000_001_000)
+    assert supervisor.request_recovery(feed, now_ns=3_000_001_000, requested_by="maker")
     assert commands == ["subscribe", "reset"]
     assert supervisor.snapshot(feed).state == "recovering"
 
@@ -257,11 +259,13 @@ def test_quote_feed_supervisor_failed_startup_recovery_returns_to_retryable_stat
         unusable_after_ms=3_000,
     )
 
-    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert not supervisor.should_attempt_recovery(feed, now_ns=1_000)
+    assert supervisor.should_attempt_recovery(feed, now_ns=3_000_001_000)
+    assert supervisor.request_recovery(feed, now_ns=3_000_001_000, requested_by="maker")
 
     snapshot = supervisor.ingest_recovery_result(
         feed,
-        now_ns=1_100,
+        now_ns=3_000_001_100,
         ok=False,
         error_summary="not_desired",
     )
@@ -270,9 +274,9 @@ def test_quote_feed_supervisor_failed_startup_recovery_returns_to_retryable_stat
     assert snapshot.state == "stale"
     assert snapshot.attempt_count == 1
     assert snapshot.last_error_summary == "not_desired"
-    assert supervisor.should_attempt_recovery(feed, now_ns=1_201)
-    assert not supervisor.request_recovery(feed, now_ns=1_199, requested_by="maker")
-    assert supervisor.request_recovery(feed, now_ns=1_201, requested_by="maker")
+    assert supervisor.should_attempt_recovery(feed, now_ns=3_000_001_201)
+    assert not supervisor.request_recovery(feed, now_ns=3_000_001_199, requested_by="maker")
+    assert supervisor.request_recovery(feed, now_ns=3_000_001_201, requested_by="maker")
     assert commands == ["subscribe", "reset", "reset"]
 
 
@@ -427,12 +431,12 @@ def test_quote_feed_supervisor_ignores_late_recovery_result_after_final_unsubscr
         unusable_after_ms=3_000,
     )
 
-    assert supervisor.request_recovery(feed, now_ns=1_000, requested_by="maker")
+    assert supervisor.request_recovery(feed, now_ns=3_000_001_000, requested_by="maker")
     supervisor.unregister_claimant(feed, claimant_id="maker")
 
     late_snapshot = supervisor.ingest_recovery_result(
         feed,
-        now_ns=1_100,
+        now_ns=3_000_001_100,
         ok=False,
         error_summary="late-boom",
     )
