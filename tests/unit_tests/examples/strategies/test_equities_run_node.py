@@ -295,6 +295,7 @@ def test_build_node_defaults_live_message_bus_streams_to_autotrim(monkeypatch) -
     config = captured["config"]
     assert config.message_bus is not None
     assert config.message_bus.autotrim_mins == 30
+    assert config.message_bus.stream_maxlen == 5_000
 
 
 def test_build_node_propagates_redis_db_to_cache_and_message_bus(monkeypatch) -> None:

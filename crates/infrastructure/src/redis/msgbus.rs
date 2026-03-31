@@ -266,6 +266,7 @@ pub async fn publish_messages(
         .autotrim_mins
         .filter(|&mins| mins > 0)
         .map(|mins| Duration::from_secs(u64::from(mins) * 60));
+    let stream_maxlen = config.stream_maxlen.filter(|&maxlen| maxlen > 0);
     let mut last_trim_index: HashMap<String, usize> = HashMap::new();
 
     // Buffering
@@ -290,6 +291,7 @@ pub async fn publish_messages(
                                 &mut con,
                                 &stream_key,
                                 config.stream_per_topic,
+                                stream_maxlen,
                                 autotrim_duration,
                                 &mut last_trim_index,
                                 &mut buffer,
@@ -307,6 +309,7 @@ pub async fn publish_messages(
                             &mut con,
                             &stream_key,
                             config.stream_per_topic,
+                            stream_maxlen,
                             autotrim_duration,
                             &mut last_trim_index,
                             &mut buffer,
@@ -326,6 +329,7 @@ pub async fn publish_messages(
                         &mut con,
                         &stream_key,
                         config.stream_per_topic,
+                        stream_maxlen,
                         autotrim_duration,
                         &mut last_trim_index,
                         &mut buffer,
@@ -345,6 +349,7 @@ pub async fn publish_messages(
             &mut con,
             &stream_key,
             config.stream_per_topic,
+            stream_maxlen,
             autotrim_duration,
             &mut last_trim_index,
             &mut buffer,
@@ -382,6 +387,7 @@ async fn drain_buffer(
     conn: &mut redis::aio::ConnectionManager,
     stream_key: &str,
     stream_per_topic: bool,
+    stream_maxlen: Option<usize>,
     autotrim_duration: Option<Duration>,
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
@@ -406,7 +412,21 @@ async fn drain_buffer(
             stream_key.to_string()
         };
         staged_stream_keys.push(stream_key.clone());
-        pipe.xadd(&stream_key, "*", &items);
+        if let Some(stream_maxlen) = stream_maxlen {
+            let topic: &str = msg.topic.as_str();
+            pipe.cmd("XADD")
+                .arg(&stream_key)
+                .arg("MAXLEN")
+                .arg("~")
+                .arg(stream_maxlen)
+                .arg("*")
+                .arg("topic")
+                .arg(topic)
+                .arg("payload")
+                .arg(msg.payload.as_ref());
+        } else {
+            pipe.xadd(&stream_key, "*", &items);
+        }
     }
 
     let result: Result<(), redis::RedisError> = pipe.query_async(conn).await;
@@ -952,6 +972,72 @@ mod serial_tests {
         flush_redis(&mut con).await.unwrap();
     }
 
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_caps_stream_length_when_stream_maxlen_is_set(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let _lock = acquire_redis_test_lock().await;
+        let mut con = redis_connection.await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = MessageBusConfig {
+            database: Some(DatabaseConfig::default()),
+            stream_per_topic: false,
+            stream_maxlen: Some(1_000),
+            ..Default::default()
+        };
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+
+        let handle = tokio::spawn(async move {
+            publish_messages(rx, trader_id, instance_id, config)
+                .await
+                .unwrap();
+        });
+
+        for i in 0..20_000 {
+            tx.send(BusMessage::with_str_topic(
+                "test_topic",
+                Bytes::from(format!("test_payload_{i}")),
+            ))
+            .unwrap();
+        }
+
+        wait_until_async(
+            || {
+                let mut con = con.clone();
+                let stream_key = stream_key.clone();
+                async move {
+                    let length: usize = redis::cmd("XLEN")
+                        .arg(&stream_key)
+                        .query_async(&mut con)
+                        .await
+                        .unwrap_or_default();
+                    length >= 1_000
+                }
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        let length: usize = redis::cmd("XLEN")
+            .arg(&stream_key)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+
+        tx.send(BusMessage::new_close()).unwrap();
+        handle.await.unwrap();
+        flush_redis(&mut con).await.unwrap();
+
+        assert!(
+            length >= 1_000 && length <= 1_100,
+            "stream length should stay bounded near the configured maxlen for Redis XADD ~ trimming, got {length}",
+        );
+    }
+
     // Tradeable node state must never silently stop publishing while the process keeps running.
     #[rstest]
     fn test_publish_retry_budget_is_bounded_for_msgbus_publishers() {
@@ -986,6 +1072,7 @@ mod serial_tests {
             &mut con,
             stream_key,
             false,
+            None,
             None,
             &mut last_trim_index,
             &mut buffer,

@@ -209,6 +209,7 @@ Runtime registration is explicit:
 - Production hosts should inject that dedicated equities ElastiCache endpoint through `EQUITIES_REDIS_HOST`, `EQUITIES_REDIS_PORT`, `EQUITIES_REDIS_USERNAME`, `EQUITIES_REDIS_PASSWORD`, and `EQUITIES_REDIS_SSL` in `/etc/flux/common.env`.
 - Live validation and debugging should always use that managed ElastiCache endpoint as the source of truth; `redis-cli` is only the client process used to inspect it.
 - `EQUITIES_REDIS_DB` applies uniformly to Redis-backed cache/message-bus paths and direct Redis clients; if you override it for pilot, verify the running units, inbound stream keys, state keys, and profile snapshots all land in the intended logical DB before treating the lane as isolated.
+- Live node message-bus input streams are bounded by runtime default with `message_bus_stream_maxlen=5000` unless you override it explicitly in the node TOML; keep that cap in place when debugging feed lag or Redis growth.
 - `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` stay in `/etc/flux/common.env`; do not inline them into strategy TOMLs.
 - Shared-host Pulse control lives at `tokenmm-api`; the equities installer does not provision a second public API on `:5022`.
 - Set `EQUITIES_API_BACKEND_URL=http://127.0.0.1:5024` in `/etc/flux/common.env` so the public `tokenmm-api` process can proxy `/equities`, equities-profile `/api/v1/*`, and equities-profile `/socket.io` to the hidden backend.

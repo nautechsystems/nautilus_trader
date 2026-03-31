@@ -83,6 +83,9 @@ pub struct MessageBusConfig {
     /// The actual window may extend up to one minute beyond the specified value since streams are trimmed at most once every minute.
     /// This feature requires Redis version 6.2 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
+    /// The maximum retained length for externally published streams.
+    /// Uses Redis `XADD MAXLEN ~` semantics when set.
+    pub stream_maxlen: Option<usize>,
     /// If a 'trader-' prefix is used for stream names.
     pub use_trader_prefix: bool,
     /// If the trader's ID is used for stream names.
@@ -111,6 +114,7 @@ impl Default for MessageBusConfig {
             timestamps_as_iso8601: false,
             buffer_interval_ms: None,
             autotrim_mins: None,
+            stream_maxlen: None,
             use_trader_prefix: true,
             use_trader_id: true,
             use_instance_id: false,
@@ -207,6 +211,7 @@ mod tests {
         assert!(!config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, None);
         assert_eq!(config.autotrim_mins, None);
+        assert_eq!(config.stream_maxlen, None);
         assert!(config.use_trader_prefix);
         assert!(config.use_trader_id);
         assert!(!config.use_instance_id);
@@ -237,6 +242,7 @@ mod tests {
             "timestamps_as_iso8601": true,
             "buffer_interval_ms": 100,
             "autotrim_mins": 60,
+            "stream_maxlen": 5000,
             "use_trader_prefix": false,
             "use_trader_id": false,
             "use_instance_id": true,
@@ -250,6 +256,7 @@ mod tests {
         assert!(config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, Some(100));
         assert_eq!(config.autotrim_mins, Some(60));
+        assert_eq!(config.stream_maxlen, Some(5000));
         assert!(!config.use_trader_prefix);
         assert!(!config.use_trader_id);
         assert!(config.use_instance_id);

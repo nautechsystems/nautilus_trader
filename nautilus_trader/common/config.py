@@ -389,6 +389,9 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2 or higher; otherwise it will result
         in a command syntax error.
+    stream_maxlen : PositiveInt, optional
+        The maximum retained length for externally published streams.
+        When set, each published message is written with Redis `XADD MAXLEN ~`.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for stream names.
     use_trader_id : bool, default True
@@ -417,6 +420,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601: bool = False
     buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
+    stream_maxlen: PositiveInt | None = None
     use_trader_prefix: bool = True
     use_trader_id: bool = True
     use_instance_id: bool = False
