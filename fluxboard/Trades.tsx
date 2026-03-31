@@ -1173,7 +1173,9 @@ export default function Trades({
           typeof response.last_seq === 'number'
             ? Math.max(0, response.last_seq)
             : 0;
-        const snapshotLastSeq = Math.max(lineageLastSeq, responseLastSeq, snapshotRowsMaxSeq);
+        const snapshotLastSeq = requestUsesStandardLineage
+          ? Math.max(lineageLastSeq, responseLastSeq)
+          : Math.max(lineageLastSeq, responseLastSeq, snapshotRowsMaxSeq);
         const snapshotEpochChanged =
           (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
           && !matchesTradeStreamEpoch(currentStreamCursor, responseStreamId, responseSnapshotRevision);
@@ -1472,6 +1474,20 @@ export default function Trades({
         return;
       }
       try {
+        const standardReplaySupported = Boolean(
+          tradesStandardActiveView
+          && standardLineageRef.current?.capabilities?.replay_supported,
+        );
+        if (
+          tradesStandardEnabled
+          && tradesStandardActiveView
+          && !standardReplaySupported
+        ) {
+          if (socketConnectedRef.current) {
+            recoverStandardSnapshot('snapshot_refresh');
+          }
+          return;
+        }
         const pollResyncId = resyncIdRef.current;
         const requestCursor = { ...streamCursorRef.current };
         const requestedSinceSeq = requestCursor.lastSeq;
@@ -1723,7 +1739,18 @@ export default function Trades({
         schedulePoll();
       }
     }, delay);
-  }, [applyControllerDelta, fetchPage, playSoundForSeq, advanceTradeReplayCursor, setRecoveryReason, syncSurfaceState, reconcileGapRecoveryTarget]);
+  }, [
+    applyControllerDelta,
+    fetchPage,
+    playSoundForSeq,
+    advanceTradeReplayCursor,
+    recoverStandardSnapshot,
+    setRecoveryReason,
+    syncSurfaceState,
+    reconcileGapRecoveryTarget,
+    tradesStandardActiveView,
+    tradesStandardEnabled,
+  ]);
 
   useEffect(() => {
     schedulePoll();

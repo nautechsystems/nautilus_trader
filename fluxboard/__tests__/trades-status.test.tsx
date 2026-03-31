@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getTrades, getTradesDelta, realtimeFlags, socketMock } = vi.hoisted(() => ({
@@ -129,5 +129,64 @@ describe('Trades status banner', () => {
     expect(screen.getByText('LIVE')).toBeInTheDocument();
     expect(screen.queryByText('RECOVERING')).toBeNull();
     expect(screen.queryByText(/RECOVERING - Replaying/i)).toBeNull();
+  });
+
+  it('uses snapshot recovery instead of delta replay for invalidate-only standard trades', async () => {
+    realtimeFlags.trades = true;
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    getTrades.mockResolvedValue({
+      rows: [
+        {
+          ...baseRows[0],
+          seq: 7270118480769024,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      has_more: false,
+      next_cursor: null,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'tokenmm',
+        surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        snapshot_revision: 1,
+        last_seq: 1,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(1));
+
+    const disconnectHandler = socketMock.on.mock.calls.find(([event]) => event === 'disconnect')?.[1];
+    const connectHandler = socketMock.on.mock.calls.find(([event]) => event === 'connect')?.[1];
+    expect(disconnectHandler).toBeTypeOf('function');
+    expect(connectHandler).toBeTypeOf('function');
+
+    await act(async () => {
+      socketMock.connected = false;
+      disconnectHandler?.('transport close');
+    });
+    await act(async () => {
+      socketMock.connected = true;
+      connectHandler?.();
+    });
+
+    getTradesDelta.mockClear();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(2));
+    expect(getTradesDelta).not.toHaveBeenCalled();
   });
 });
