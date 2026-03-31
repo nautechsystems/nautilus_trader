@@ -1612,28 +1612,61 @@ class MakerV4Strategy(Strategy):
             ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
         )
 
-    def _prime_missing_local_quotes_from_cache(self) -> bool:
-        primed = False
+    def _refresh_local_quotes_from_cache(self) -> bool:
+        refreshed = False
         for instrument_id in (
             self.config.maker_instrument_id,
             self.config.reference_instrument_id,
         ):
             snapshot = self._latest_quotes.get(instrument_id)
-            if isinstance(snapshot, Mapping) and self._quote_ts_ns(snapshot.get("ts_ns")) > 0:
+            cache = self._strategy_cache()
+            quote_lookup = getattr(cache, "quote_tick", None)
+            if not callable(quote_lookup):
                 continue
-            self._prime_cached_quote(instrument_id)
-            snapshot = self._latest_quotes.get(instrument_id)
-            if not isinstance(snapshot, Mapping):
+            tick = None
+            with suppress(Exception):
+                tick = quote_lookup(instrument_id)
+            if tick is None:
                 continue
-            ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
+            bid = self._decimal_or_none(getattr(tick, "bid_price", None))
+            ask = self._decimal_or_none(getattr(tick, "ask_price", None))
+            ts_ns = self._quote_ts_ns(getattr(tick, "ts_event", 0))
             if ts_ns <= 0:
                 continue
+            existing_ts_ns = (
+                self._quote_ts_ns(snapshot.get("ts_ns"))
+                if isinstance(snapshot, Mapping)
+                else 0
+            )
+            existing_bid = (
+                self._decimal_or_none(snapshot.get("bid"))
+                if isinstance(snapshot, Mapping)
+                else None
+            )
+            existing_ask = (
+                self._decimal_or_none(snapshot.get("ask"))
+                if isinstance(snapshot, Mapping)
+                else None
+            )
+            if (
+                isinstance(snapshot, Mapping)
+                and existing_ts_ns >= ts_ns
+                and existing_bid == bid
+                and existing_ask == ask
+            ):
+                continue
+            self._update_quote_snapshot(
+                instrument_id=instrument_id,
+                bid=bid,
+                ask=ask,
+                ts_ns=ts_ns,
+            )
             self._record_supervisor_quote_observation(
                 instrument_id=instrument_id,
                 ts_ns=ts_ns,
             )
-            primed = True
-        return primed
+            refreshed = True
+        return refreshed
 
     def _quote_leg_snapshot(
         self,
@@ -3179,11 +3212,11 @@ class MakerV4Strategy(Strategy):
             tradeable_before = bool(self.tradeable)
             hedge_disabled_reason_before = self.hedge_disabled_reason
             lifecycle_state_before = self._quote_feed_lifecycle_state
-            primed_quotes = self._prime_missing_local_quotes_from_cache()
+            refreshed_quotes = self._refresh_local_quotes_from_cache()
             self._observe_quote_liveness(now_ns=now_ns)
             self._refresh_quote_tradeability(now_ns=now_ns)
             if (
-                primed_quotes
+                refreshed_quotes
                 or self.tradeable != tradeable_before
                 or self.hedge_disabled_reason != hedge_disabled_reason_before
                 or self._quote_feed_lifecycle_state != lifecycle_state_before
