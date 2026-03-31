@@ -1190,9 +1190,13 @@ export default function Trades({
         const snapshotEpochChanged =
           (currentStreamCursor.streamId != null || currentStreamCursor.snapshotRevision != null)
           && !matchesTradeStreamEpoch(currentStreamCursor, responseStreamId, responseSnapshotRevision);
-        const nextLastSeq = snapshotEpochChanged
+        const nextLastSeq = requestUsesStandardLineage
           ? snapshotLastSeq
-          : Math.max(currentStreamCursor.lastSeq, snapshotLastSeq);
+          : (
+              snapshotEpochChanged
+                ? snapshotLastSeq
+                : Math.max(currentStreamCursor.lastSeq, snapshotLastSeq)
+            );
         if (requestUsesStandardLineage) {
           standardResumeSeqRef.current = snapshotLastSeq > 0
             ? snapshotLastSeq
