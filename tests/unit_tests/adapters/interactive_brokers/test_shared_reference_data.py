@@ -107,6 +107,17 @@ class RotatingStubRedis(StubRedis):
         return self._pubsubs[index]
 
 
+def _install_recording_to_thread(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, tuple, dict]]:
+    calls: list[tuple[str, tuple, dict]] = []
+
+    async def _fake_to_thread(func, /, *args, **kwargs):
+        calls.append((getattr(func, "__name__", repr(func)), args, kwargs))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+    return calls
+
+
 def _make_shared_reference_client(
     *,
     loop: asyncio.AbstractEventLoop,
@@ -205,7 +216,9 @@ async def test_shared_reference_data_client_subscribe_quote_ticks_uses_typed_con
 
 
 @pytest.mark.asyncio
-async def test_shared_reference_data_client_subscribe_quote_ticks_replays_current_snapshot() -> None:
+async def test_shared_reference_data_client_subscribe_quote_ticks_replays_current_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     expected_channel = shared_reference_quote_channel(
         profile_id="equities",
@@ -227,6 +240,7 @@ async def test_shared_reference_data_client_subscribe_quote_ticks_replays_curren
         pubsub=pubsub,
         values={expected_key: json.dumps(expected_payload)},
     )
+    calls = _install_recording_to_thread(monkeypatch)
 
     observed: list[tuple[InstrumentId, dict[str, object]]] = []
 
@@ -244,6 +258,7 @@ async def test_shared_reference_data_client_subscribe_quote_ticks_replays_curren
 
     assert pubsub.subscribed == [expected_channel]
     assert observed == [(instrument_id, expected_payload)]
+    assert ("get", (expected_key,), {}) in calls
 
 
 @pytest.mark.asyncio
@@ -302,7 +317,9 @@ async def test_shared_reference_data_client_listener_decodes_bytes_channel() -> 
 
 
 @pytest.mark.asyncio
-async def test_shared_reference_data_client_listener_polls_snapshot_key_when_pubsub_silent() -> None:
+async def test_shared_reference_data_client_listener_polls_snapshot_key_when_pubsub_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     expected_channel = shared_reference_quote_channel(
         profile_id="equities",
@@ -336,6 +353,7 @@ async def test_shared_reference_data_client_listener_polls_snapshot_key_when_pub
         values={expected_key: json.dumps(initial_payload)},
     )
     client._redis = redis_client
+    calls = _install_recording_to_thread(monkeypatch)
 
     await client._subscribe_quote_ticks(
         _subscribe_quote_ticks_command(
@@ -363,6 +381,8 @@ async def test_shared_reference_data_client_listener_polls_snapshot_key_when_pub
 
     assert observed_instrument_id == instrument_id
     assert observed_payload == updated_payload
+    assert any(name == "get_message" for name, _, _ in calls)
+    assert any(name == "get" and args == (expected_key,) for name, args, _ in calls)
 
 
 @pytest.mark.asyncio
@@ -519,7 +539,9 @@ async def test_shared_reference_data_client_listener_recovers_from_pubsub_failur
 
 
 @pytest.mark.asyncio
-async def test_shared_reference_data_client_recover_quote_ticks_rebuilds_pubsub_and_replays_snapshot() -> None:
+async def test_shared_reference_data_client_recover_quote_ticks_replays_single_subscription_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     expected_channel = shared_reference_quote_channel(
         profile_id="equities",
@@ -548,6 +570,7 @@ async def test_shared_reference_data_client_recover_quote_ticks_rebuilds_pubsub_
         values={expected_key: json.dumps(expected_payload)},
     )
     client._redis = redis_client
+    calls = _install_recording_to_thread(monkeypatch)
 
     await client._connect()
     await client._subscribe_quote_ticks(
@@ -569,9 +592,11 @@ async def test_shared_reference_data_client_recover_quote_ticks_rebuilds_pubsub_
     finally:
         await client._disconnect()
 
-    assert redis_client.pubsub_calls == 2
-    assert second_pubsub.subscribed == [expected_channel]
+    assert redis_client.pubsub_calls == 1
+    assert first_pubsub.unsubscribed == [expected_channel]
+    assert first_pubsub.subscribed == [expected_channel, expected_channel]
     assert observed == [(instrument_id, expected_payload)]
+    assert any(name == "get" and args == (expected_key,) for name, args, _ in calls)
     assert result == {
         "instrument_id": instrument_id.value,
         "ok": True,

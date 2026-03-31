@@ -238,9 +238,10 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
         )
         self._snapshot_keys[instrument_id] = snapshot_key
+        snapshot_data = await self._load_snapshot_message(snapshot_key)
         self._ingest_shared_reference_message(
             instrument_id=instrument_id,
-            data=self._redis.get(snapshot_key),
+            data=snapshot_data,
         )
 
     async def _unsubscribe_quote_ticks(self, command) -> None:
@@ -267,7 +268,8 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
         self._handle_data(tick)
 
     async def recover_quote_ticks(self, instrument_id: InstrumentId) -> dict[str, object]:
-        if instrument_id not in self._subscriptions:
+        channel = self._subscriptions.get(instrument_id)
+        if channel is None:
             return {
                 "instrument_id": instrument_id.value,
                 "ok": False,
@@ -276,15 +278,18 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
                 "cache_refreshed": False,
             }
 
-        self._reset_pubsub()
-        self._rebuild_pubsub_subscriptions()
+        pubsub = self._ensure_pubsub()
+        with suppress(Exception):
+            pubsub.unsubscribe(channel)
+        pubsub.subscribe(channel)
         snapshot_key = self._snapshot_keys.get(instrument_id)
         cache_refreshed = False
         if snapshot_key is not None:
             self._last_snapshot_messages.pop(instrument_id, None)
+            snapshot_data = await self._load_snapshot_message(snapshot_key)
             self._ingest_shared_reference_message(
                 instrument_id=instrument_id,
-                data=self._redis.get(snapshot_key),
+                data=snapshot_data,
             )
             cache_refreshed = True
         return {
@@ -303,7 +308,7 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
                     await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
                     continue
 
-                message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
+                message = await self._get_pubsub_message()
                 if message:
                     channel = _optional_text(message.get("channel"))
                     if channel is not None:
@@ -314,7 +319,7 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
                                 data=message.get("data"),
                             )
 
-                self._poll_snapshot_keys()
+                await self._poll_snapshot_keys()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -341,11 +346,26 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
         for channel in self._subscriptions.values():
             pubsub.subscribe(channel)
 
-    def _poll_snapshot_keys(self) -> None:
-        for instrument_id, snapshot_key in tuple(self._snapshot_keys.items()):
+    async def _get_pubsub_message(self) -> Any:
+        pubsub = self._pubsub
+        if pubsub is None:
+            return None
+        return await asyncio.to_thread(pubsub.get_message, True, 0)
+
+    async def _load_snapshot_message(self, snapshot_key: str) -> Any:
+        return await asyncio.to_thread(self._redis.get, snapshot_key)
+
+    def _read_snapshot_messages(self) -> list[tuple[InstrumentId, Any]]:
+        return [
+            (instrument_id, self._redis.get(snapshot_key))
+            for instrument_id, snapshot_key in tuple(self._snapshot_keys.items())
+        ]
+
+    async def _poll_snapshot_keys(self) -> None:
+        for instrument_id, data in await asyncio.to_thread(self._read_snapshot_messages):
             self._ingest_shared_reference_message(
                 instrument_id=instrument_id,
-                data=self._redis.get(snapshot_key),
+                data=data,
             )
 
     def _ingest_shared_reference_message(
