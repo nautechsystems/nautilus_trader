@@ -160,7 +160,7 @@ class SQLiteToPostgresTelemetryShipper:
     def _durable_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
         specs: list[_TelemetryTableSpec] = []
         if self._config.balance_snapshots_db_path:
-            for db_path in self._resolve_balance_snapshot_db_paths(self._config.balance_snapshots_db_path):
+            for db_path in self._resolve_sharded_db_paths(self._config.balance_snapshots_db_path):
                 specs.append(
                     _TelemetryTableSpec(
                         name="flux_balance_snapshot",
@@ -214,7 +214,7 @@ class SQLiteToPostgresTelemetryShipper:
             )
         return tuple(specs)
 
-    def _resolve_balance_snapshot_db_paths(self, configured_path: str) -> tuple[str, ...]:
+    def _resolve_sharded_db_paths(self, configured_path: str) -> tuple[str, ...]:
         root = Path(configured_path).expanduser()
         if root.is_dir():
             return tuple(str(path) for path in sorted(root.glob("*.sqlite")))
@@ -246,14 +246,15 @@ class SQLiteToPostgresTelemetryShipper:
     def _raw_quote_cycle_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
         if not self._config.raw_quote_cycles_enabled or not self._config.quote_cycles_db_path:
             return ()
-        return (
+        return tuple(
             _TelemetryTableSpec(
                 name="quote_cycle",
                 source_table_name="quote_cycle",
                 columns=QUOTE_CYCLE_COLUMN_NAMES,
-                db_path=self._config.quote_cycles_db_path,
-                cursor_key=self._cursor_key("quote_cycle", self._config.quote_cycles_db_path),
-            ),
+                db_path=db_path,
+                cursor_key=self._cursor_key("quote_cycle", db_path),
+            )
+            for db_path in self._resolve_sharded_db_paths(self._config.quote_cycles_db_path)
         )
 
     def _load_rows_with_cursor_reset(

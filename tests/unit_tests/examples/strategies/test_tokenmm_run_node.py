@@ -2230,6 +2230,27 @@ def test_prepare_telemetry_paths_scopes_balance_snapshot_db_by_strategy(tmp_path
     assert (tmp_path / "telemetry" / "balance_snapshots").is_dir()
 
 
+def test_prepare_telemetry_paths_scopes_quote_cycle_db_by_strategy(tmp_path: Path) -> None:
+    config = {
+        "identity": {
+            "strategy_id": "plumeusdt_binance_spot_makerv3",
+            "external_strategy_id": "plumeusdt_binance_spot_makerv3",
+        },
+        "strategy": {"strategy_id": "plumeusdt_binance_spot_makerv3"},
+        "telemetry_shipper": {
+            "enable_local_persistence": True,
+            "quote_cycles_db_path": str(tmp_path / "telemetry" / "quote_cycles.sqlite"),
+        },
+    }
+
+    run_node._prepare_telemetry_paths(config)
+
+    telemetry = config["telemetry_shipper"]
+    assert telemetry["quote_cycles_db_path"] == str(
+        tmp_path / "telemetry" / "quote_cycles" / "plumeusdt_binance_spot_makerv3.sqlite",
+    )
+
+
 def test_build_telemetry_actor_configs_keeps_balance_snapshot_actor_for_tokenmm_nodes() -> None:
     actors = run_node._build_telemetry_actor_configs(
         {

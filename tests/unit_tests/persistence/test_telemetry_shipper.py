@@ -844,6 +844,49 @@ def test_shipper_ships_legacy_balance_snapshot_db_alongside_shards_during_cutove
     ]
 
 
+def test_shipper_ships_sharded_quote_cycle_tables_from_strategy_dbs(tmp_path: Path) -> None:
+    quote_cycles_root = tmp_path / "quote_cycles.sqlite"
+    quote_cycles_dir = tmp_path / "quote_cycles"
+    state_db = tmp_path / "shipper_state.sqlite"
+    quote_cycles_dir.mkdir()
+    _create_quote_cycle_source(quote_cycles_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_quote_cycle_source(quote_cycles_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=None,
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_root),
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["quote_cycle"].shipped == 4
+    assert [name for name, _rows in sink.insert_calls] == [
+        "quote_cycle",
+        "quote_cycle",
+    ]
+
+
 def test_shipper_resets_sharded_balance_snapshot_cursor_without_legacy_cursor_rows(tmp_path: Path) -> None:
     balance_root = tmp_path / "balance_snapshots.sqlite"
     balance_dir = tmp_path / "balance_snapshots"

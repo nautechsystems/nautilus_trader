@@ -1702,6 +1702,28 @@ def test_quote_failure_circuit_breaker_stops_even_if_side_effects_raise(
     assert stopped == [True]
 
 
+def test_quote_failure_ignored_while_strategy_is_exiting(strategy_factory) -> None:
+    strategy = strategy_factory()
+
+    published: list[tuple[str, dict[str, object]]] = []
+    canceled: list[tuple[str, bool]] = []
+    stopped: list[bool] = []
+    strategy.is_exiting = lambda: True
+    strategy._publish_event = lambda name, **payload: published.append((name, payload))
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append(
+        (reason, force),
+    )
+    strategy.stop_immediately = lambda: stopped.append(True)
+
+    strategy._handle_quote_failure(now_ns=1_000_000_000, exc=RuntimeError("boom"), context="test")
+
+    assert strategy._quote_failures_ns == []
+    assert strategy._quote_failure_circuit_open is False
+    assert published == []
+    assert canceled == []
+    assert stopped == []
+
+
 def test_on_stop_during_startup_cleanup_keeps_managed_only_cancel_scope(strategy_factory) -> None:
     strategy = strategy_factory(cancel_all_instrument_orders=True)
     strategy._startup_cleanup_pending = True
@@ -1751,8 +1773,10 @@ def test_timer_triggers_fallback_requote_when_books_are_fresh_and_quiet(
     strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
     strategy._effective_bot_on = lambda: True
     strategy._last_bot_on = True
+    strategy.is_exiting = lambda: False
     strategy._enforce_stale_market_data = lambda **_kwargs: None
     strategy._quote_failure_circuit_open = False
+    strategy._books_fresh_for_quoting = lambda **_kwargs: True
     strategy.INTERNAL_REQUOTE_THROTTLE_MS = 100
     strategy._last_requote_ns = 0
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 450_000_000
