@@ -1178,14 +1178,15 @@ class MakerV4Strategy(Strategy):
         reference_quote = self._reference_quote_snapshot(now_ns=now_ns)
         if reference_quote is None:
             return False, "stale_quote"
-        if validate_ibkr_quote(
+        quote_error = validate_ibkr_quote(
             bid=reference_quote.bid,
             ask=reference_quote.ask,
             quote_age_ms=reference_quote.age_ms,
             max_quote_age_ms=int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
             max_spread_bps=Decimal(str(getattr(self.config, "max_ibkr_spread_bps", "25"))),
-        ) is not None:
-            return False, "stale_quote"
+        )
+        if quote_error is not None:
+            return False, quote_error
 
         if not isinstance(maker_snapshot, Mapping):
             return False, "stale_quote"

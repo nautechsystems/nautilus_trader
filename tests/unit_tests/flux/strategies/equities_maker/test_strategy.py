@@ -243,6 +243,20 @@ def test_equities_maker_forces_maker_mode_and_preserves_overnight_immediate_hedg
     assert order.cancel_after_ms is None
 
 
+def test_equities_maker_record_maker_fill_surfaces_wide_ibkr_spread_reason() -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+
+    order = strategy.record_maker_fill(
+        fill=_fill(),
+        quote=_quote(bid="93.10", ask="93.44", age_ms=25),
+        maker_fee_bps=Decimal("0.25"),
+    )
+
+    assert order is None
+    assert strategy.hedge_disabled_reason == "spread_too_wide"
+    assert strategy.snapshot_state()["hedge_backlog"]["blocked_reason"] == "spread_too_wide"
+
+
 def test_equities_maker_seeds_runtime_params_from_config() -> None:
     strategy = EquitiesMakerStrategy(
         config=_config(
@@ -1110,6 +1124,47 @@ def test_equities_maker_supervisor_non_tradeable_pair_pulls_working_quotes(
     assert cancelled == [maker_id]
     assert strategy.tradeable is False
     assert strategy.hedge_disabled_reason == "stale_quote"
+
+
+def test_equities_maker_supervisor_surfaces_wide_ibkr_spread_as_distinct_block_reason(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quotes(strategy)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy._runtime_params["bot_on"] = True
+    _install_lifecycle_clock(strategy, monkeypatch, now_ns=2_500_000_000)
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    for claim_spec in strategy.quote_feed_claim_specs():
+        supervisor.register_claimant(
+            claim_spec.feed_identity,
+            claimant_id=claim_spec.claimant_id,
+            unusable_after_ms=claim_spec.unusable_after_ms,
+            reset=(lambda: None) if claim_spec.node_scoped_lifecycle else None,
+            blocker_key=claim_spec.blocker_key,
+        )
+        supervisor.record_quote(
+            claim_spec.feed_identity,
+            ts_ns=2_000_000_000,
+        )
+
+    strategy._latest_quotes = {
+        maker_id: {"bid": Decimal("190.00"), "ask": Decimal("190.02"), "ts_ns": 2_000_000_000},
+        ref_id: {"bid": Decimal("93.10"), "ask": Decimal("93.44"), "ts_ns": 2_000_000_000},
+    }
+
+    assert strategy._refresh_quote_tradeability(now_ns=2_500_000_000) is False
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "spread_too_wide"
 
 
 def test_equities_maker_on_start_pulls_reclaimed_quotes_when_required_feed_is_blocked(

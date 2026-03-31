@@ -642,7 +642,7 @@ def _build_signal_health_snapshot(
         unhealthy = (
             state_stale
             or bool(unhealthy_leg_ids)
-            or state_name.startswith("blocked_")
+            or _signal_state_denotes_feed_unhealthy_block(state_name)
         )
         if unhealthy:
             unhealthy_strategy_ids.append(strategy_id)
@@ -716,6 +716,16 @@ def _build_signal_health_snapshot(
         healthy_strategy_count=healthy_strategy_count,
         reference_unhealthy_strategy_ids=sorted(set(reference_unhealthy_strategy_ids)),
     )
+
+
+def _signal_state_denotes_feed_unhealthy_block(state_name: str) -> bool:
+    normalized = str(state_name or "").strip().lower()
+    if not normalized:
+        return False
+    return normalized.startswith(("blocked_reference", "blocked_maker")) or normalized in {
+        "blocked_stale_quote",
+        "blocked_missing_ref_quote",
+    }
 
 
 def evaluate_equities_readiness(
