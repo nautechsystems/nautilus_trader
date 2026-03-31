@@ -33,8 +33,8 @@ use crate::common::{
         BybitTriggerDirection,
     },
     parse::{
-        get_currency, parse_book_level, parse_millis_timestamp, parse_price_with_precision,
-        parse_quantity_with_precision,
+        get_currency, parse_book_level, parse_execution_commission, parse_millis_timestamp,
+        parse_price_with_precision, parse_quantity_with_precision,
     },
 };
 
@@ -750,18 +750,12 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Taker
     };
 
-    let fee_decimal: Decimal = execution
-        .exec_fee
-        .parse()
-        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
-
-    let commission_currency = instrument.quote_currency();
-    let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
-        format!(
-            "Failed to create commission from execFee='{}'",
-            execution.exec_fee
-        )
-    })?;
+    let commission = parse_execution_commission(
+        &execution.exec_fee,
+        _fee_currency_override,
+        instrument.quote_currency(),
+        "websocket",
+    )?;
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
 
     let client_order_id = if execution.order_link_id.is_empty() {

@@ -744,17 +744,14 @@ pub fn parse_fill_report(
         "execution.execQty",
     )?;
 
-    let fee_decimal: Decimal = execution
-        .exec_fee
-        .parse()
-        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
-    let currency = get_currency(&execution.fee_currency);
-    let commission = Money::from_decimal(fee_decimal, currency).with_context(|| {
-        format!(
-            "Failed to create commission from execFee='{}'",
-            execution.exec_fee
-        )
-    })?;
+    let explicit_fee_currency =
+        (!execution.fee_currency.is_empty()).then(|| get_currency(&execution.fee_currency));
+    let commission = parse_execution_commission(
+        &execution.exec_fee,
+        explicit_fee_currency,
+        instrument.quote_currency(),
+        "http",
+    )?;
 
     // Determine liquidity side from is_maker flag
     let liquidity_side = if execution.is_maker {
@@ -982,6 +979,31 @@ pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> anyhow::Result
         .checked_mul(NANOSECONDS_IN_MILLISECOND)
         .context("millisecond timestamp overflowed when converting to nanoseconds")?;
     Ok(UnixNanos::from(nanos))
+}
+
+pub(crate) fn parse_execution_commission(
+    exec_fee: &str,
+    explicit_fee_currency: Option<Currency>,
+    fallback_currency: Currency,
+    source: &'static str,
+) -> anyhow::Result<Money> {
+    let fee_decimal: Decimal = exec_fee
+        .parse()
+        .with_context(|| format!("Failed to parse execFee='{exec_fee}'"))?;
+
+    let commission_currency = match explicit_fee_currency {
+        Some(currency) => currency,
+        None => {
+            log::warn!(
+                "Bybit {source} execution missing explicit fee currency, falling back to {}",
+                fallback_currency.code.as_str()
+            );
+            fallback_currency
+        }
+    };
+
+    Money::from_decimal(fee_decimal, commission_currency)
+        .with_context(|| format!("Failed to create commission from execFee='{exec_fee}'"))
 }
 
 fn resolve_settlement_currency(
