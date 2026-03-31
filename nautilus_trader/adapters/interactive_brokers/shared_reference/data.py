@@ -268,28 +268,49 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
 
     async def _listen_for_shared_reference_updates(self) -> None:
         while True:
-            if self._pubsub is None:
-                await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
-                continue
+            try:
+                if self._pubsub is None:
+                    self._rebuild_pubsub_subscriptions()
+                    await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
+                    continue
 
-            message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
-            if message:
-                channel = _optional_text(message.get("channel"))
-                if channel is not None:
-                    instrument_id = self._channel_to_instrument_id.get(channel)
-                    if instrument_id is not None:
-                        self._ingest_shared_reference_message(
-                            instrument_id=instrument_id,
-                            data=message.get("data"),
-                        )
+                message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
+                if message:
+                    channel = _optional_text(message.get("channel"))
+                    if channel is not None:
+                        instrument_id = self._channel_to_instrument_id.get(channel)
+                        if instrument_id is not None:
+                            self._ingest_shared_reference_message(
+                                instrument_id=instrument_id,
+                                data=message.get("data"),
+                            )
 
-            self._poll_snapshot_keys()
+                self._poll_snapshot_keys()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._log.warning(
+                    f"Shared reference listener error; rebuilding subscriptions: {exc}"
+                )
+                self._reset_pubsub()
             await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
 
     def _ensure_pubsub(self):
         if self._pubsub is None:
             self._pubsub = self._redis.pubsub()
         return self._pubsub
+
+    def _reset_pubsub(self) -> None:
+        pubsub = self._pubsub
+        self._pubsub = None
+        if pubsub is not None:
+            with suppress(Exception):
+                pubsub.close()
+
+    def _rebuild_pubsub_subscriptions(self) -> None:
+        pubsub = self._ensure_pubsub()
+        for channel in self._subscriptions.values():
+            pubsub.subscribe(channel)
 
     def _poll_snapshot_keys(self) -> None:
         for instrument_id, snapshot_key in tuple(self._snapshot_keys.items()):
