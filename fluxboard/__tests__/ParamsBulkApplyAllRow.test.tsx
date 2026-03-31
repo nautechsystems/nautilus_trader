@@ -167,8 +167,11 @@ describe('Params bulk apply row', () => {
 
     const bulkQty = await screen.findByTestId('bulk-param-qty');
     fireEvent.change(bulkQty, { target: { value: '12' } });
-    expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('5');
-    expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('6');
+
+    await waitFor(() => {
+      expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('12');
+      expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('12');
+    });
 
     const saveAll = screen.getByRole('button', { name: /Save All/i });
     fireEvent.click(saveAll);
@@ -187,13 +190,23 @@ describe('Params bulk apply row', () => {
     );
   });
 
+  it('mirrors a typed bulk qty draft into filtered child rows before save', async () => {
+    await renderFilteredParams();
+
+    const bulkQty = await screen.findByTestId('bulk-param-qty');
+    fireEvent.change(bulkQty, { target: { value: '12' } });
+
+    await waitFor(() => {
+      expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('12');
+      expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('12');
+    });
+  });
+
   it('updates visible filtered qty cells when Save All flushes a typed bulk draft', async () => {
     await renderFilteredParams();
 
     const bulkQty = await screen.findByTestId('bulk-param-qty');
     fireEvent.change(bulkQty, { target: { value: '12' } });
-    expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('5');
-    expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('6');
 
     const saveAll = screen.getByRole('button', { name: /Save All/i });
     fireEvent.click(saveAll);
@@ -284,8 +297,8 @@ describe('Params bulk apply row', () => {
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
 
     await waitFor(() => {
-      expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('5');
-      expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('6');
+      expect(getStrategyParamInput('futu_hl_a', 'qty')).toHaveValue('13');
+      expect(getStrategyParamInput('futu_hl_b', 'qty')).toHaveValue('13');
     });
 
     expect(screen.getByRole('button', { name: /Save All/i })).toBeEnabled();
