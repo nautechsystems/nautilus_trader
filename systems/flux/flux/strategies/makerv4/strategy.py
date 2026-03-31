@@ -1612,6 +1612,29 @@ class MakerV4Strategy(Strategy):
             ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
         )
 
+    def _prime_missing_local_quotes_from_cache(self) -> bool:
+        primed = False
+        for instrument_id in (
+            self.config.maker_instrument_id,
+            self.config.reference_instrument_id,
+        ):
+            snapshot = self._latest_quotes.get(instrument_id)
+            if isinstance(snapshot, Mapping) and self._quote_ts_ns(snapshot.get("ts_ns")) > 0:
+                continue
+            self._prime_cached_quote(instrument_id)
+            snapshot = self._latest_quotes.get(instrument_id)
+            if not isinstance(snapshot, Mapping):
+                continue
+            ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
+            if ts_ns <= 0:
+                continue
+            self._record_supervisor_quote_observation(
+                instrument_id=instrument_id,
+                ts_ns=ts_ns,
+            )
+            primed = True
+        return primed
+
     def _quote_leg_snapshot(
         self,
         instrument_id: Any,
@@ -3153,8 +3176,19 @@ class MakerV4Strategy(Strategy):
         now_ns = int(self.clock.timestamp_ns())
         self._refresh_runtime_params_if_due(now_ns=now_ns)
         if self._quote_feed_supervisor is not None and self._quote_feed_control_emitter is not None:
+            tradeable_before = bool(self.tradeable)
+            hedge_disabled_reason_before = self.hedge_disabled_reason
+            lifecycle_state_before = self._quote_feed_lifecycle_state
+            primed_quotes = self._prime_missing_local_quotes_from_cache()
             self._observe_quote_liveness(now_ns=now_ns)
             self._refresh_quote_tradeability(now_ns=now_ns)
+            if (
+                primed_quotes
+                or self.tradeable != tradeable_before
+                or self.hedge_disabled_reason != hedge_disabled_reason_before
+                or self._quote_feed_lifecycle_state != lifecycle_state_before
+            ):
+                self._publish_state_snapshot(now_ns=now_ns)
         else:
             self._resubscribe_stalled_quote_ticks(now_ns=now_ns)
         self._publish_balances_if_due()
