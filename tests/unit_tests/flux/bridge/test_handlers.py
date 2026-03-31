@@ -51,6 +51,31 @@ def test_transform_state_adds_correlation_context_and_ts_ms() -> None:
     assert op.value["ts_ms"] == 1700000000000
 
 
+def test_transform_state_prefers_payload_strategy_id_over_stream_context() -> None:
+    context = CorrelationContext(
+        strategy_id="aapl_tradexyz",
+        topic="state",
+        entry_id="1700000001000-0",
+        ts_ms=1700000001000,
+    )
+
+    ops = transform_state(
+        {
+            "strategy_id": "aapl_tradexyz_maker",
+            "mode": "quote",
+            "timestamp": "1700000000",
+        },
+        context,
+    )
+
+    assert len(ops) == 1
+    op = ops[0]
+    assert type(op).__name__ == "SetJSONOp"
+    assert op.key == "flux:v1:state:aapl_tradexyz_maker"
+    assert isinstance(op.value, dict)
+    assert op.value["strategy_id"] == "aapl_tradexyz_maker"
+
+
 def test_transform_event_writes_bounded_stream_rows() -> None:
     ops = transform_event({"event": "quote_refresh"}, _context("event"))
 
@@ -148,6 +173,36 @@ def test_transform_market_bbo_supports_extended_quote_suffixes() -> None:
     op = ops[0]
     assert isinstance(op, SetJSONOp)
     assert op.key == "flux:v1:market:last:maker_v3_01:bybit:PLUME_PUSD"
+
+
+def test_transform_market_bbo_prefers_payload_strategy_id_over_stream_context() -> None:
+    context = CorrelationContext(
+        strategy_id="aapl_tradexyz",
+        topic="market_bbo",
+        entry_id="1700000001000-0",
+        ts_ms=1700000001000,
+    )
+    payload = {
+        "strategy_id": "aapl_tradexyz_maker",
+        "exchange": "HYPERLIQUID",
+        "symbol": "xyz:AAPL-USD-PERP",
+        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+        "bid": "1.0",
+        "ask": "1.1",
+        "timestamp": "1700000000",
+    }
+
+    ops = transform_market_bbo(payload, context)
+
+    assert len(ops) == 2
+    instrument_op, legacy_op = ops
+    assert type(instrument_op).__name__ == "SetJSONOp"
+    assert instrument_op.key.startswith("flux:v1:market:last:aapl_tradexyz_maker:hyperliquid:")
+    assert instrument_op.key.endswith(".HYPERLIQUID")
+    assert isinstance(instrument_op.value, dict)
+    assert instrument_op.value["strategy_id"] == "aapl_tradexyz_maker"
+    assert type(legacy_op).__name__ == "SetJSONOp"
+    assert legacy_op.key.startswith("flux:v1:market:last:aapl_tradexyz_maker:hyperliquid:")
 
 
 def test_transform_balances_writes_snapshot_and_rows_hash() -> None:
