@@ -2336,7 +2336,7 @@ class MakerV4Strategy(Strategy):
                 - float(assumed_hedge_fee_bps)
                 - float(hedge_slippage_bps or 0.0)
             )
-        return publisher_mod.build_quote_snapshot_payload(
+        payload = publisher_mod.build_quote_snapshot_payload(
             maker_leg=maker_leg,
             hedge_leg=hedge_leg,
             ref_leg=ref_leg,
@@ -2370,6 +2370,10 @@ class MakerV4Strategy(Strategy):
             ts_ms=max(0, int(now_ns)) // 1_000_000,
             fee_assumptions=fee_assumptions,
         )
+        payload["max_ibkr_quote_age_ms"] = int(
+            getattr(self.config, "max_ibkr_quote_age_ms", 1_000),
+        )
+        return payload
 
     def _maker_quote_health(self, *, now_ns: int):
         maker_leg = self._quote_leg_snapshot(

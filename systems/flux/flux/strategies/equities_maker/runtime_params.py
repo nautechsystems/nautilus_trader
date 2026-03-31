@@ -34,6 +34,8 @@ _EQUITIES_MAKER_DEFAULT_OVERRIDES: dict[str, bool | int | float] = {
     "place_edge1": 1.0,
     "n_orders2": 0,
     "n_orders3": 0,
+    "quote_liveness_stall_after_ms": 30_000,
+    "quote_liveness_recover_after_ms": 5_000,
 }
 
 

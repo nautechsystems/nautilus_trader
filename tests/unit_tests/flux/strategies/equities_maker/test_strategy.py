@@ -273,6 +273,13 @@ def test_equities_maker_seeds_runtime_params_from_config() -> None:
     assert strategy._runtime_params["n_orders1"] == 2
 
 
+def test_equities_maker_uses_equities_liveness_defaults() -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+
+    assert strategy._runtime_params["quote_liveness_stall_after_ms"] == 30_000
+    assert strategy._runtime_params["quote_liveness_recover_after_ms"] == 5_000
+
+
 def test_equities_maker_timer_resubscribes_stalled_quotes(
     monkeypatch,
 ) -> None:

@@ -148,6 +148,7 @@ def test_equities_live_config_declares_shared_ibkr_reference_publisher_contract(
     assert publisher_cfg["profile_id"] == "equities"
     assert publisher_cfg["account_scope_id"] == "ibkr.reference.main"
     assert publisher_cfg["service_id"] == "ibkr_reference_publisher"
+    assert publisher_cfg["non_rth_stale_after_ms"] == 300_000
 
 
 def test_decode_strategy_contracts_rejects_blank_required_fields() -> None:

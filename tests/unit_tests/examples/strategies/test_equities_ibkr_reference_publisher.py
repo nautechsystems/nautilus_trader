@@ -38,6 +38,7 @@ def _config(*, instruments: tuple[str, ...] = ("AAPL.NASDAQ", "AMD.NASDAQ")) -> 
             "service_id": "ibkr_reference_publisher",
             "snapshot_interval_ms": 200,
             "stale_after_ms": 1_500,
+            "non_rth_stale_after_ms": 300_000,
             "reconnect_backoff_initial_ms": 1_000,
             "reconnect_backoff_max_ms": 15_000,
         },
@@ -257,6 +258,33 @@ def test_publish_from_snapshot_map_marks_service_degraded_when_any_required_inst
     assert status_payload["state"] == "degraded"
     assert status_payload["instrument_status"]["AAPL.NASDAQ"]["state"] == "healthy"
     assert status_payload["instrument_status"]["AMD.NASDAQ"]["state"] == "missing"
+
+
+def test_publish_from_snapshot_map_uses_non_rth_freshness_budget_outside_regular_hours() -> None:
+    redis_client = _FakeRedis()
+    config = build_ibkr_reference_publisher_config(_config(instruments=("AAPL.NASDAQ",)))
+    service = IbkrReferencePublisherService(config=config, redis_client=redis_client)
+
+    status_payload = service.publish_from_snapshot_map(
+        {
+            "AAPL.NASDAQ": {
+                "SMART": {
+                    "bid": 190.25,
+                    "ask": 190.5,
+                    "bid_size": 7.0,
+                    "ask_size": 9.0,
+                    "ts_event_ms": 20_000,
+                },
+            },
+        },
+        session="POST",
+        now_ms=50_000,
+    )
+
+    assert status_payload["state"] == "publishing"
+    assert status_payload["stale_after_ms"] == 300_000
+    assert status_payload["instrument_status"]["AAPL.NASDAQ"]["state"] == "healthy"
+    assert status_payload["instrument_status"]["AAPL.NASDAQ"]["age_ms"] == 30_000
 
 
 def test_compute_next_backoff_ms_is_explicit_and_bounded() -> None:

@@ -263,6 +263,13 @@ def test_equities_taker_seeds_runtime_params_from_config() -> None:
     assert strategy._runtime_params["take_cooldown_ms"] == 2_500
 
 
+def test_equities_taker_uses_equities_liveness_defaults() -> None:
+    strategy = EquitiesTakerStrategy(config=_config())
+
+    assert strategy._runtime_params["quote_liveness_stall_after_ms"] == 30_000
+    assert strategy._runtime_params["quote_liveness_recover_after_ms"] == 5_000
+
+
 def test_equities_taker_seeds_runtime_qty_from_order_qty_when_qty_is_omitted() -> None:
     strategy = EquitiesTakerStrategy(config=_config(order_qty=Decimal("7"), qty=None))
 
