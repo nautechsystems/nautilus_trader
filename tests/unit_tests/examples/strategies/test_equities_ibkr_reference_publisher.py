@@ -37,7 +37,7 @@ def _config(*, instruments: tuple[str, ...] = ("AAPL.NASDAQ", "AMD.NASDAQ")) -> 
             "account_scope_id": "ibkr.reference.main",
             "service_id": "ibkr_reference_publisher",
             "snapshot_interval_ms": 200,
-            "stale_after_ms": 1_500,
+            "stale_after_ms": 5_000,
             "non_rth_stale_after_ms": 300_000,
             "reconnect_backoff_initial_ms": 1_000,
             "reconnect_backoff_max_ms": 15_000,
@@ -130,6 +130,15 @@ def test_build_ibkr_reference_publisher_config_allows_publisher_client_id_overri
     assert config.ibg_client_id == 109
 
 
+def test_build_ibkr_reference_publisher_config_defaults_to_less_aggressive_rth_staleness() -> None:
+    raw = _config()
+    raw["ibkr_reference_publisher"].pop("stale_after_ms")
+
+    config = build_ibkr_reference_publisher_config(raw)
+
+    assert config.stale_after_ms == 5_000
+
+
 def test_classify_ibkr_session_preserves_regular_and_overnight_windows() -> None:
     assert classify_ibkr_session(
         datetime(2026, 3, 30, 12, 0, tzinfo=timezone.utc),
@@ -155,7 +164,7 @@ def test_select_reference_feed_prefers_session_route_and_falls_back_to_fresh_alt
         smart_md=smart_md,
         overnight_md=overnight_md,
         now_ms=now_ms,
-        stale_after_ms=1_500,
+        stale_after_ms=5_000,
     )
     assert route == "SMART"
     assert selected == smart_md
@@ -163,9 +172,9 @@ def test_select_reference_feed_prefers_session_route_and_falls_back_to_fresh_alt
     route, selected = select_reference_feed(
         session="OVERNIGHT",
         smart_md=smart_md,
-        overnight_md={**overnight_md, "ts_event_ms": 8_000},
+        overnight_md={**overnight_md, "ts_event_ms": 4_000},
         now_ms=now_ms,
-        stale_after_ms=1_500,
+        stale_after_ms=5_000,
     )
     assert route == "SMART"
     assert selected == smart_md

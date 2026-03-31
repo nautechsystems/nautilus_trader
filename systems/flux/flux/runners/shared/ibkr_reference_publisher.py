@@ -187,7 +187,7 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
     stale_after_ms = _positive_int(
         publisher_cfg.get("stale_after_ms"),
         field_name="ibkr_reference_publisher.stale_after_ms",
-        default=1_500,
+        default=5_000,
     )
 
     return IbkrReferencePublisherConfig(
