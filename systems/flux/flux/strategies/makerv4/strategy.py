@@ -2373,6 +2373,9 @@ class MakerV4Strategy(Strategy):
         payload["max_ibkr_quote_age_ms"] = int(
             getattr(self.config, "max_ibkr_quote_age_ms", 1_000),
         )
+        payload["max_maker_quote_age_ms"] = int(
+            self._runtime_params.get("max_age_ms", 10_000),
+        )
         return payload
 
     def _maker_quote_health(self, *, now_ns: int):

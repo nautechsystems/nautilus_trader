@@ -859,14 +859,20 @@ def _derive_quote_snapshot_v4(
         or safe_int(params.get("max_ibkr_quote_age_ms"))
         or 1_000
     )
+    maker_max_quote_age_ms = (
+        safe_int(quote_snapshot.get("max_maker_quote_age_ms"))
+        or safe_int(params.get("max_age_ms"))
+        or 10_000
+    )
     quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
+    quote_snapshot["max_maker_quote_age_ms"] = maker_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
             quote_snapshot.get("maker_leg") if isinstance(quote_snapshot.get("maker_leg"), Mapping) else None,
             maker_leg,
         ),
         leg_role="maker",
-        max_quote_age_ms=safe_int(params.get("max_age_ms")) or 10_000,
+        max_quote_age_ms=maker_max_quote_age_ms,
     )
     quote_snapshot["hedge_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
