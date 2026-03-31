@@ -8,6 +8,7 @@ from nautilus_trader.flux.common.keys import FluxRedisKeys
 from nautilus_trader.flux.common.portfolio_inventory import encode_portfolio_inventory
 from nautilus_trader.flux.strategies.makerv3 import inventory as inventory_mod
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
@@ -1135,6 +1136,8 @@ def test_refresh_quotes_blocks_when_controller_private_path_is_stale(
         "state": "stale",
         "last_error_type": "TimeoutError",
         "timeout_count": 2,
+        "last_attempt_ts_ms": 1_499,
+        "stale_after_ms": 1_000,
     }
 
     now_ns = 1_500_000_000
@@ -1154,7 +1157,59 @@ def test_refresh_quotes_blocks_when_controller_private_path_is_stale(
 
     assert cancels == ["private_path_unavailable:False"]
     assert states == ["blocked_private_path"]
-    assert alerts[-1]["reason_code"] == "blocked_private_path_unavailable"
+    assert alerts[-1]["reason_code"] == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+
+
+def test_refresh_quotes_allows_private_path_recovery_probe_after_cooloff(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_500_000_000])
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=strategy.config.maker_instrument_id,
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: strategy._maker_instrument,
+        strategy.config.reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=strategy.config.reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = lambda: []
+    strategy._place_missing_levels = lambda **_kwargs: 0
+    strategy._publish_json = lambda *_args, **_kwargs: None
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._publish_actionable_alert = lambda **_kwargs: True
+    strategy._controller_private_path_health = {
+        "healthy": False,
+        "state": "stale",
+        "last_error_type": "TimeoutError",
+        "timeout_count": 2,
+        "last_attempt_ts_ms": 1,
+        "stale_after_ms": 1_000,
+    }
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    refreshes: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._place_missing_levels = lambda **kwargs: refreshes.append(kwargs) or 0
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == []
+    assert states == []
+    assert len(refreshes) == 2
 
 
 def test_refresh_quotes_allows_partial_shared_portfolio_inventory_when_enabled(

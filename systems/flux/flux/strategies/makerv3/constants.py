@@ -31,7 +31,7 @@ REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE = "blocked_maker_book_unavailable"
 REASON_BLOCKED_MAKER_MD_STALE = "blocked_maker_md_stale"
 REASON_BLOCKED_REFERENCE_MD_STALE = "blocked_reference_md_stale"
 REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE = "blocked_portfolio_inventory_unavailable"
-REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE = "blocked_private_path_unavailable"
+REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE = "private_path_unavailable"
 REASON_BLOCKED_STARTUP_CLEANUP = "blocked_startup_cleanup"
 REASON_BLOCKED_PENDING_CANCEL = "pending_cancel_stuck"
 

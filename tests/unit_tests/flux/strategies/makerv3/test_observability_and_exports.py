@@ -40,6 +40,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
@@ -663,7 +664,7 @@ def test_publish_state_exports_private_path_blocker_metadata(clocked_strategy_fa
     strategy._publish_state("blocked_private_path")
 
     state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
-    assert state_payload["quote_blockers"][0]["reason_code"] == "private_path_stale"
+    assert state_payload["quote_blockers"][0]["reason_code"] == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
     assert state_payload["quote_blockers"][0]["last_error_type"] == "TimeoutError"
     assert state_payload["quote_blockers"][0]["timeout_count"] == 2
 

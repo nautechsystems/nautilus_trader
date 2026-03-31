@@ -954,12 +954,16 @@ if _NAUTILUS_IMPORT_ERROR is None:
         def _quote_blockers_payload(self, *, state: str | None = None) -> list[dict[str, Any]]:
             blockers: list[dict[str, Any]] = []
             private_path_health = getattr(self, "_controller_private_path_health", None)
+            private_path_blocked = self._controller_private_path_block_reason(
+                state=state,
+            ) == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
             if (
                 isinstance(private_path_health, Mapping)
                 and not bool(private_path_health.get("healthy", True))
+                and (private_path_blocked or str(state or "").strip().lower() == "blocked_private_path")
             ):
                 blocker = {
-                    "reason_code": "private_path_stale",
+                    "reason_code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
                     "state": str(private_path_health.get("state") or "stale"),
                 }
                 for field_name in (
@@ -999,12 +1003,40 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
             return blockers
 
-        def _controller_private_path_block_reason(self) -> str | None:
+        def _controller_private_path_block_reason(
+            self,
+            *,
+            now_ns: int | None = None,
+            state: str | None = None,
+        ) -> str | None:
             private_path_health = getattr(self, "_controller_private_path_health", None)
             if not isinstance(private_path_health, Mapping):
                 return None
             if bool(private_path_health.get("healthy", True)):
                 return None
+            state_name = str(state or getattr(self, "_last_state_name", None) or "").strip().lower()
+            if state_name == "blocked_private_path":
+                return REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+            try:
+                last_attempt_ts_ms = int(private_path_health.get("last_attempt_ts_ms") or 0)
+            except Exception:
+                last_attempt_ts_ms = 0
+            try:
+                stale_after_ms = max(1, int(private_path_health.get("stale_after_ms") or 0))
+            except Exception:
+                stale_after_ms = 0
+            if last_attempt_ts_ms > 0 and stale_after_ms > 0:
+                current_ns = now_ns
+                if current_ns is None:
+                    with suppress(Exception):
+                        current_ns = int(self.clock.timestamp_ns())
+                current_ts_ms = (
+                    max(0, int(current_ns) // 1_000_000)
+                    if current_ns is not None and int(current_ns) > 0
+                    else 0
+                )
+                if current_ts_ms > 0 and current_ts_ms - last_attempt_ts_ms >= stale_after_ms:
+                    return None
             return REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 
         def _resolve_order_side(

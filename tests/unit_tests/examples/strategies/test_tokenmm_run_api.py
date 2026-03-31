@@ -35,6 +35,7 @@ from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
 from flux.runners.tokenmm.run_api import _should_enable_pulse_routes
 from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 
 
 def _example_config_path() -> Path:
@@ -345,7 +346,7 @@ def test_build_strategy_alerts_resolver_emits_current_private_path_block_only() 
                     "state": "blocked_private_path",
                     "quote_blockers": [
                         {
-                            "reason_code": "private_path_stale",
+                            "reason_code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
                             "last_error_type": "TimeoutError",
                             "timeout_count": 2,
                         },
@@ -364,12 +365,12 @@ def test_build_strategy_alerts_resolver_emits_current_private_path_block_only() 
     assert rows_by_strategy["strategy_blocked"] == [
         {
             "strategy_id": "strategy_blocked",
-            "row_id": "active:strategy_blocked:private_path_stale",
-            "id": "active:strategy_blocked:private_path_stale",
+            "row_id": f"active:strategy_blocked:{REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE}",
+            "id": f"active:strategy_blocked:{REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE}",
             "alert_key": "private_path_blocked",
             "level": "warning",
-            "code": "private_path_stale",
-            "reason_code": "private_path_stale",
+            "code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+            "reason_code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
             "message": (
                 "Quoting blocked (controller private path unavailable) "
                 "strategy_id=strategy_blocked last_error_type=TimeoutError timeout_count=2"

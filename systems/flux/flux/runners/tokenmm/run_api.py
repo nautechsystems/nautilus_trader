@@ -58,6 +58,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.shared.surface_proxy import SurfaceProxyDescriptor
 from flux.runners.shared.surface_proxy import resolve_surface_backends
 from flux.runners.shared.surface_proxy import resolve_surface_proxy_descriptor
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from flux.runners.tokenmm.readiness import evaluate_tokenmm_readiness
 from flux.runners.tokenmm.readiness import load_state_streams_by_strategy_id
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
@@ -264,11 +265,14 @@ def _signal_payload_to_active_alert_rows(
                 dict(row)
                 for row in quote_blockers_list
                 if isinstance(row, Mapping)
-                and _optional_text(row.get("reason_code")) == "private_path_stale"
+                and _optional_text(row.get("reason_code")) == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
             ),
             {},
         )
-        reason_code = _optional_text(blocker.get("reason_code")) or "private_path_stale"
+        reason_code = (
+            _optional_text(blocker.get("reason_code"))
+            or REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+        )
         details: dict[str, Any] = {
             "strategy_id": strategy_id,
             "state": state_name,

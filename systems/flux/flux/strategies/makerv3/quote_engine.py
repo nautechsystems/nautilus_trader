@@ -668,7 +668,7 @@ def refresh_quotes(  # noqa: C901
                 managed_orders=active_orders,
             )
             return
-    if strategy._controller_private_path_block_reason() == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE:
+    if strategy._controller_private_path_block_reason(now_ns=now_ns) == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE:
         handle_private_path_block(
             strategy,
             now_ns=now_ns,
