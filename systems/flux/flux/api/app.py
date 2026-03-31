@@ -3706,6 +3706,11 @@ def create_flux_api_app(  # noqa: C901
 
         if multi_strategy_profile_fanout:
             if since_seq is not None:
+                # Preserve stale client cursors for TokenMM multi-strategy profiles
+                # instead of forcing an endless snapshot-reset loop. We still do not
+                # claim a synthetic global cursor or delta payload here.
+                if profile_text == "tokenmm":
+                    return _delta_ok(rows=[], last_seq=int(since_seq), reset_required=False)
                 # Safe Phase 1 behavior: multi-strategy profile delta does not claim
                 # a synthetic global cursor; clients should resync to snapshot.
                 return _delta_ok(rows=[], last_seq=0, reset_required=since_seq > 0)

@@ -1946,8 +1946,8 @@ def test_trades_delta_profile_tokenmm_since_seq_uses_safe_reset_semantics(
     assert since_zero_body["data"]["reset_required"] is False
     assert since_positive_response.status_code == 200
     assert since_positive_body["data"]["rows"] == []
-    assert since_positive_body["data"]["last_seq"] == 0
-    assert since_positive_body["data"]["reset_required"] is True
+    assert since_positive_body["data"]["last_seq"] == 1
+    assert since_positive_body["data"]["reset_required"] is False
 
 
 def test_trades_delta_profile_tokenmm_after_preserves_oldest_unseen_rows_across_strategies(

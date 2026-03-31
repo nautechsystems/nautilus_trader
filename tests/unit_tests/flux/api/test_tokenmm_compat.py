@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import ModuleType
 
 import pytest
 
 from nautilus_trader.flux.api import ContractCatalogEntry
 from nautilus_trader.flux.api._payloads_common import tokenmm_trade_rows_require_reset
+
+if "nautilus_trader.adapters.interactive_brokers.common" not in sys.modules:
+    class _IBOrderTagsStub:
+        def __init__(self, **kwargs) -> None:
+            self.value = json.dumps(kwargs, sort_keys=True)
+
+    ib_common_stub = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+    ib_common_stub.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+    ib_common_stub.IBOrderTags = _IBOrderTagsStub
+    sys.modules["nautilus_trader.adapters.interactive_brokers.common"] = ib_common_stub
+
 from nautilus_trader.flux.api import create_flux_api_app
 from nautilus_trader.flux.common.keys import FluxRedisKeys
 
@@ -606,6 +619,72 @@ def test_tokenmm_trades_delta_requires_reset_when_legacy_rows_fall_outside_bound
     assert body["data"]["reset_required"] is False
     assert [row["row_id"] for row in body["data"]["rows"]] == ["t-2001"]
     assert body["data"]["last_seq"] == 2_001
+
+
+def test_tokenmm_profile_trades_delta_preserves_since_seq_for_multi_strategy_clients(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    secondary_keys = FluxRedisKeys(
+        strategy_id="strategy_02",
+        namespace=flux_config.identity.namespace,
+        schema_version=flux_config.identity.schema_version,
+    )
+    redis_client.add_stream_rows(
+        primary_keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "t-01",
+                "seq": 1,
+                "ts_ms": 1_000,
+                "qty": "1",
+                "qty_base": "1",
+                "qty_venue": "1",
+            },
+        ],
+    )
+    redis_client.add_stream_rows(
+        secondary_keys.trades_stream(),
+        [
+            {
+                "strategy_id": "strategy_02",
+                "row_id": "t-02",
+                "seq": 1,
+                "ts_ms": 2_000,
+                "qty": "1",
+                "qty_base": "1",
+                "qty_venue": "1",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id, "strategy_02"]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/trades/delta",
+            query_string={"profile": "tokenmm", "since_seq": 7270132899536896, "limit": 10},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["rows"] == []
+    assert body["data"]["last_seq"] == 7270132899536896
+    assert body["data"]["reset_required"] is False
 
 
 def test_trades_delta_sets_reset_required_when_gap_exceeds_bounded_scan(
