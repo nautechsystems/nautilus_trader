@@ -327,11 +327,9 @@ class MakerV4Strategy(Strategy):
         if instrument_id is None:
             return
 
-        indicators = getattr(self, "_indicators_for_quotes", {}).get(instrument_id)
-        if indicators:
-            self._handle_indicators_for_quote(indicators, tick)
-
         state = getattr(self, "state", None)
+        if state == PyComponentState.RUNNING:
+            return
         if state == PyComponentState.STARTING:
             self._update_quote_snapshot(
                 instrument_id=instrument_id,
@@ -352,8 +350,6 @@ class MakerV4Strategy(Strategy):
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
             return
-
-        self.handle_quote_tick(tick)
 
     def _register_quote_feed_interest(self) -> None:
         if self._quote_feed_interest_registered or self._quote_feed_supervisor is None:
@@ -1612,61 +1608,28 @@ class MakerV4Strategy(Strategy):
             ts_ns=self._quote_ts_ns(getattr(tick, "ts_event", 0)),
         )
 
-    def _refresh_local_quotes_from_cache(self) -> bool:
-        refreshed = False
+    def _prime_missing_local_quotes_from_cache(self) -> bool:
+        primed = False
         for instrument_id in (
             self.config.maker_instrument_id,
             self.config.reference_instrument_id,
         ):
             snapshot = self._latest_quotes.get(instrument_id)
-            cache = self._strategy_cache()
-            quote_lookup = getattr(cache, "quote_tick", None)
-            if not callable(quote_lookup):
+            if isinstance(snapshot, Mapping) and self._quote_ts_ns(snapshot.get("ts_ns")) > 0:
                 continue
-            tick = None
-            with suppress(Exception):
-                tick = quote_lookup(instrument_id)
-            if tick is None:
+            self._prime_cached_quote(instrument_id)
+            snapshot = self._latest_quotes.get(instrument_id)
+            if not isinstance(snapshot, Mapping):
                 continue
-            bid = self._decimal_or_none(getattr(tick, "bid_price", None))
-            ask = self._decimal_or_none(getattr(tick, "ask_price", None))
-            ts_ns = self._quote_ts_ns(getattr(tick, "ts_event", 0))
+            ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
             if ts_ns <= 0:
                 continue
-            existing_ts_ns = (
-                self._quote_ts_ns(snapshot.get("ts_ns"))
-                if isinstance(snapshot, Mapping)
-                else 0
-            )
-            existing_bid = (
-                self._decimal_or_none(snapshot.get("bid"))
-                if isinstance(snapshot, Mapping)
-                else None
-            )
-            existing_ask = (
-                self._decimal_or_none(snapshot.get("ask"))
-                if isinstance(snapshot, Mapping)
-                else None
-            )
-            if (
-                isinstance(snapshot, Mapping)
-                and existing_ts_ns >= ts_ns
-                and existing_bid == bid
-                and existing_ask == ask
-            ):
-                continue
-            self._update_quote_snapshot(
-                instrument_id=instrument_id,
-                bid=bid,
-                ask=ask,
-                ts_ns=ts_ns,
-            )
             self._record_supervisor_quote_observation(
                 instrument_id=instrument_id,
                 ts_ns=ts_ns,
             )
-            refreshed = True
-        return refreshed
+            primed = True
+        return primed
 
     def _quote_leg_snapshot(
         self,
@@ -3143,8 +3106,7 @@ class MakerV4Strategy(Strategy):
             self._prime_cached_quote(instrument_id)
             if self._uses_supervisor_owned_quote_feed_lifecycle():
                 self._attach_local_quote_topic(instrument_id)
-            else:
-                self.subscribe_quote_ticks(instrument_id=instrument_id)
+            self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         self._register_quote_feed_interest()
         for instrument_id in subscribed_instrument_ids:
@@ -3192,9 +3154,8 @@ class MakerV4Strategy(Strategy):
             if self._uses_supervisor_owned_quote_feed_lifecycle():
                 with suppress(Exception):
                     self._detach_local_quote_topic(instrument_id)
-            else:
-                with suppress(Exception):
-                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+            with suppress(Exception):
+                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
         self._deregister_quote_feed_interest()
         provider_stop = getattr(self._reference_balance_snapshot_provider, "stop", None)
         if callable(provider_stop):
@@ -3212,11 +3173,11 @@ class MakerV4Strategy(Strategy):
             tradeable_before = bool(self.tradeable)
             hedge_disabled_reason_before = self.hedge_disabled_reason
             lifecycle_state_before = self._quote_feed_lifecycle_state
-            refreshed_quotes = self._refresh_local_quotes_from_cache()
+            primed_quotes = self._prime_missing_local_quotes_from_cache()
             self._observe_quote_liveness(now_ns=now_ns)
             self._refresh_quote_tradeability(now_ns=now_ns)
             if (
-                refreshed_quotes
+                primed_quotes
                 or self.tradeable != tradeable_before
                 or self.hedge_disabled_reason != hedge_disabled_reason_before
                 or self._quote_feed_lifecycle_state != lifecycle_state_before

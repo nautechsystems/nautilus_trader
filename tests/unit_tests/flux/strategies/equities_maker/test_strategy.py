@@ -760,7 +760,6 @@ def test_equities_maker_local_quote_handler_delivers_quotes_while_degraded(monke
     maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
     calls: list[object] = []
 
-    strategy._indicators_for_quotes = {maker_id: [object()]}
     monkeypatch.setattr(
         type(strategy),
         "state",
@@ -788,13 +787,10 @@ def test_equities_maker_local_quote_handler_delivers_quotes_while_degraded(monke
 
     strategy._handle_local_quote_tick(_quote_tick(instrument_id=maker_id))
 
-    assert calls == [
-        ("indicator", maker_id),
-        ("on_quote_tick", maker_id),
-    ]
+    assert calls == [("on_quote_tick", maker_id)]
 
 
-def test_equities_maker_local_quote_handler_delegates_to_actor_when_running(monkeypatch) -> None:
+def test_equities_maker_local_quote_handler_ignores_running_delivery(monkeypatch) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
     maker_id, _ref_id = _configure_strategy_for_quotes(strategy)
     forwarded: list[object] = []
@@ -815,10 +811,10 @@ def test_equities_maker_local_quote_handler_delegates_to_actor_when_running(monk
     tick = _quote_tick(instrument_id=maker_id)
     strategy._handle_local_quote_tick(tick)
 
-    assert forwarded == [(tick, False)]
+    assert forwarded == []
 
 
-def test_equities_maker_supervisor_timer_refreshes_missing_quotes_from_cache_and_publishes_state(
+def test_equities_maker_supervisor_timer_primes_missing_quotes_from_cache_and_publishes_state(
     monkeypatch,
 ) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
@@ -837,6 +833,7 @@ def test_equities_maker_supervisor_timer_refreshes_missing_quotes_from_cache_and
     strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
     strategy._publish_balances_if_due = lambda: None
     strategy._refresh_quote_tradeability = lambda **_kwargs: None
+    strategy.subscribe_quote_ticks = lambda instrument_id: None
 
     _wire_shared_quote_runtime(
         strategy,
@@ -860,64 +857,6 @@ def test_equities_maker_supervisor_timer_refreshes_missing_quotes_from_cache_and
         "bid": Decimal("190.00"),
         "ask": Decimal("190.02"),
         "ts_ns": 9_600_000_000,
-    }
-    assert published_state == [{"now_ns": strategy.clock.now}]
-    for claim_spec in strategy.quote_feed_claim_specs():
-        assert supervisor.refresh(claim_spec.feed_identity, now_ns=strategy.clock.now).state == "healthy"
-
-
-def test_equities_maker_supervisor_timer_refreshes_newer_cached_quotes_and_publishes_state(
-    monkeypatch,
-) -> None:
-    strategy = EquitiesMakerStrategy(config=_config())
-    maker_id, ref_id = _prepare_strategy_lifecycle(strategy, monkeypatch)
-    supervisor = NodeQuoteFeedSupervisor()
-    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
-    cached_quotes: dict[InstrumentId, QuoteTick] = {}
-    published_state: list[dict[str, object]] = []
-
-    strategy._cache = SimpleNamespace(
-        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
-        positions_open=lambda *args, **kwargs: [],
-        accounts=lambda: [],
-        quote_tick=lambda instrument_id: cached_quotes.get(instrument_id),
-    )
-    strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
-    strategy._publish_balances_if_due = lambda: None
-    strategy._refresh_quote_tradeability = lambda **_kwargs: None
-
-    _wire_shared_quote_runtime(
-        strategy,
-        supervisor=supervisor,
-        control_emitter=control_emitter,
-    )
-    strategy.on_start()
-    published_state.clear()
-
-    strategy._latest_quotes[maker_id] = {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_500_000_000,
-    }
-    strategy._latest_quotes[ref_id] = {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_600_000_000,
-    }
-    cached_quotes[maker_id] = _quote_tick(instrument_id=maker_id, ts_event=9_700_000_000)
-    cached_quotes[ref_id] = _quote_tick(instrument_id=ref_id, ts_event=9_800_000_000)
-
-    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
-
-    assert strategy._latest_quotes[maker_id] == {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_700_000_000,
-    }
-    assert strategy._latest_quotes[ref_id] == {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_800_000_000,
     }
     assert published_state == [{"now_ns": strategy.clock.now}]
     for claim_spec in strategy.quote_feed_claim_specs():
@@ -942,6 +881,7 @@ def test_equities_maker_supervisor_timer_skips_state_publish_without_recovery_or
     strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
     strategy._publish_balances_if_due = lambda: None
     strategy._refresh_quote_tradeability = lambda **_kwargs: None
+    strategy.subscribe_quote_ticks = lambda instrument_id: None
 
     _wire_shared_quote_runtime(
         strategy,
@@ -956,25 +896,27 @@ def test_equities_maker_supervisor_timer_skips_state_publish_without_recovery_or
     assert published_state == []
 
 
-def test_equities_maker_supervisor_timer_skips_state_publish_when_cache_matches_local_quotes(
+def test_equities_maker_supervisor_on_start_subscribes_actor_and_local_runtime(
     monkeypatch,
 ) -> None:
     strategy = EquitiesMakerStrategy(config=_config())
     maker_id, ref_id = _prepare_strategy_lifecycle(strategy, monkeypatch)
     supervisor = NodeQuoteFeedSupervisor()
     control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
-    published_state: list[dict[str, object]] = []
-    cached_quotes: dict[InstrumentId, QuoteTick] = {}
+    subscribed: list[InstrumentId] = []
+    attached: list[InstrumentId] = []
 
     strategy._cache = SimpleNamespace(
         instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
         positions_open=lambda *args, **kwargs: [],
         accounts=lambda: [],
-        quote_tick=lambda instrument_id: cached_quotes.get(instrument_id),
+        quote_tick=lambda _instrument_id: None,
     )
-    strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
-    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy._publish_balances = lambda: None
     strategy._refresh_quote_tradeability = lambda **_kwargs: None
+    strategy.subscribe_quote_ticks = lambda instrument_id: subscribed.append(instrument_id)
+    strategy._attach_local_quote_topic = lambda instrument_id: attached.append(instrument_id)
 
     _wire_shared_quote_runtime(
         strategy,
@@ -982,24 +924,8 @@ def test_equities_maker_supervisor_timer_skips_state_publish_when_cache_matches_
         control_emitter=control_emitter,
     )
     strategy.on_start()
-    published_state.clear()
-
-    cached_quotes[maker_id] = _quote_tick(instrument_id=maker_id, ts_event=9_500_000_000)
-    cached_quotes[ref_id] = _quote_tick(instrument_id=ref_id, ts_event=9_600_000_000)
-    strategy._latest_quotes[maker_id] = {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_500_000_000,
-    }
-    strategy._latest_quotes[ref_id] = {
-        "bid": Decimal("190.00"),
-        "ask": Decimal("190.02"),
-        "ts_ns": 9_600_000_000,
-    }
-
-    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
-
-    assert published_state == []
+    assert subscribed == [maker_id, ref_id]
+    assert attached == [maker_id, ref_id]
 
 
 def test_equities_maker_supervisor_non_tradeable_pair_pulls_working_quotes(
