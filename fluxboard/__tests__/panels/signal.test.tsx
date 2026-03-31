@@ -1137,7 +1137,7 @@ describe('SignalTable Behavioral Tests', () => {
       vi.useRealTimers();
     });
 
-    it('does not schedule recovery snapshots for changed-id equities market_update payloads on the legacy signal stream', async () => {
+    it('schedules recovery snapshots for changed-id equities market_update payloads on the legacy signal stream', async () => {
       vi.useFakeTimers();
       (socket as any).connected = true;
 
@@ -1162,12 +1162,19 @@ describe('SignalTable Behavioral Tests', () => {
         });
       });
 
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
       act(() => {
-        vi.advanceTimersByTime(5_000);
+        vi.advanceTimersByTime(999);
+      });
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        vi.advanceTimersByTime(1);
       });
       await flushAsyncRender();
 
-      expect(api.getSignalStrategies).toHaveBeenCalledTimes(1);
+      expect(api.getSignalStrategies).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
 

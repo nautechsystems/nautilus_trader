@@ -2738,9 +2738,6 @@ export default function SignalTable({
           : [];
         if (changed.length > 0) {
           syncRealtimeEnvelope(data);
-          if (pathProfile === 'equities' && !signalStandardEnabled) {
-            return;
-          }
           scheduleInvalidation('market_update.invalidate');
         }
 

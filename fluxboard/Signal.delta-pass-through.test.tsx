@@ -143,6 +143,8 @@ describe('signal_delta field pass-through wiring', () => {
           },
         },
         meta: {
+          chain: 'equities',
+          strategy_groups: 'equities',
           class: 'equities_maker',
           external_strategy_id: 'equities_maker_external',
         },
