@@ -19,6 +19,8 @@ Typical use cases:
 - `equities-pilot` appears as its own Pulse group
 - `equities-pilot` may be bounced independently of equities prod
 - `equities-pilot` binds its hidden API to `127.0.0.1:5124` and defaults to `EQUITIES_REDIS_DB=1` so pilot state stays out of prod Redis DB `0`
+- Live validation and debugging should use the managed equities ElastiCache endpoint from `/etc/flux/common.env` as the source of truth; `redis-cli` is only the client process used to inspect it.
+- `EQUITIES_REDIS_DB` applies to the Redis-backed cache, message bus, bridge/API reads, and direct profile/runtime writers, so pilot lane DB overrides must be validated end to end before restart.
 
 ## Deploy To Pilot
 

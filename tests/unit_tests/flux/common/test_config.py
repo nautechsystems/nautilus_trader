@@ -4,9 +4,24 @@ from nautilus_trader.flux.common.config import FluxConfig
 from nautilus_trader.flux.common.config import FluxIdentityConfig
 from nautilus_trader.flux.common.config import FluxRedisConfig
 from nautilus_trader.flux.common.config import FluxVenuesConfig
+from nautilus_trader.flux.runners.shared.bootstrap import build_redis_database_config
 
 
 class TestFluxConfig:
+    def test_build_redis_database_config_preserves_db_override(self) -> None:
+        config = build_redis_database_config(
+            {
+                "host": "127.0.0.1",
+                "port": 6379,
+                "db": 1,
+                "username": "default",
+                "password": "secret",
+                "ssl": True,
+            },
+        )
+
+        assert config.db == 1
+
     def test_creates_flux_config_with_required_sections(self) -> None:
         # Arrange
         identity = FluxIdentityConfig(

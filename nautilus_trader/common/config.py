@@ -319,6 +319,8 @@ class DatabaseConfig(NautilusConfig, frozen=True):
         The database host address. If `None` then should use the typical default.
     port : int, optional
         The database port. If `None` then should use the typical default.
+    db : int, optional
+        The Redis logical database index. If `None` then should use the server default.
     username : str, optional
         The account username for the database connection.
     password : str, optional
@@ -338,6 +340,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     type: str = "redis"
     host: str | None = None
     port: int | None = None
+    db: int | None = None
     username: str | None = None
     password: str | None = None
     ssl: bool = False
@@ -355,6 +358,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
             f"type={self.type}, "
             f"host={self.host}, "
             f"port={self.port}, "
+            f"db={self.db}, "
             f"username={self.username}, "
             f"password={redacted_password}, "
             f"ssl={self.ssl}, "

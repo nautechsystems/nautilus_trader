@@ -21,6 +21,8 @@ pub struct DatabaseConfig {
     pub host: Option<String>,
     /// The database port. If `None`, the typical default should be used.
     pub port: Option<u16>,
+    /// The Redis logical database index. If `None`, the server default is used.
+    pub db: Option<u16>,
     /// The account username for the database connection.
     pub username: Option<String>,
     /// The account password for the database connection.
@@ -48,6 +50,7 @@ impl Default for DatabaseConfig {
             database_type: "redis".to_string(),
             host: None,
             port: None,
+            db: None,
             username: None,
             password: None,
             ssl: false,
