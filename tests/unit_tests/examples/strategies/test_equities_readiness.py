@@ -1787,7 +1787,7 @@ def test_evaluate_equities_readiness_keeps_feed_healthy_when_strategy_blocked_on
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
-def test_evaluate_equities_readiness_marks_locked_reference_quotes_unhealthy() -> None:
+def test_evaluate_equities_readiness_keeps_feed_healthy_when_strategy_blocked_only_by_locked_or_crossed_quotes() -> None:
     from flux.runners.equities.readiness import evaluate_equities_readiness
 
     signals_payload = _healthy_signal_payload()
@@ -1841,10 +1841,8 @@ def test_evaluate_equities_readiness_marks_locked_reference_quotes_unhealthy() -
         now_ms_value=1_700_000_000_500,
     )
 
-    assert result.ok is False
-    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
-        "aapl_tradexyz_makerv4",
-    ]
+    assert result.ok is True
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
 def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None:

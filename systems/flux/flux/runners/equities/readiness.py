@@ -723,7 +723,6 @@ def _signal_state_denotes_feed_unhealthy_block(state_name: str) -> bool:
     if not normalized:
         return False
     return normalized.startswith(("blocked_reference", "blocked_maker")) or normalized in {
-        "blocked_locked_or_crossed",
         "blocked_missing_ask",
         "blocked_missing_bid",
         "blocked_missing_midpoint",
