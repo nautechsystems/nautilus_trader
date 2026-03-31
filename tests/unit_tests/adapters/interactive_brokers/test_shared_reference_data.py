@@ -74,6 +74,23 @@ class StubRedis:
         self._values[key] = value
 
 
+class RotatingStubRedis(StubRedis):
+    def __init__(
+        self,
+        pubsubs: list[StubPubSub],
+        *,
+        values: dict[str, bytes | str] | None = None,
+    ) -> None:
+        super().__init__(pubsubs[0], values=values)
+        self._pubsubs = list(pubsubs)
+        self.pubsub_calls = 0
+
+    def pubsub(self) -> StubPubSub:
+        index = min(self.pubsub_calls, len(self._pubsubs) - 1)
+        self.pubsub_calls += 1
+        return self._pubsubs[index]
+
+
 def _make_shared_reference_client(
     *,
     loop: asyncio.AbstractEventLoop,
@@ -382,3 +399,36 @@ async def test_shared_reference_data_client_listener_dedupes_unchanged_polled_sn
             await listener_task
 
     assert observed == []
+
+
+@pytest.mark.asyncio
+async def test_shared_reference_data_client_disconnect_clears_listener_state_for_reconnect() -> None:
+    first_pubsub = StubPubSub()
+    second_pubsub = StubPubSub()
+    redis_client = RotatingStubRedis([first_pubsub, second_pubsub])
+    client = _make_shared_reference_client(
+        loop=asyncio.get_running_loop(),
+        pubsub=first_pubsub,
+    )
+    client._redis = redis_client
+
+    await client._connect()
+    first_listener_task = client._listener_task
+
+    assert client._pubsub is first_pubsub
+    assert first_listener_task is not None
+    assert redis_client.pubsub_calls == 1
+
+    await client._disconnect()
+
+    assert client._pubsub is None
+    assert client._listener_task is None
+
+    await client._connect()
+    try:
+        assert client._pubsub is second_pubsub
+        assert client._listener_task is not None
+        assert client._listener_task is not first_listener_task
+        assert redis_client.pubsub_calls == 2
+    finally:
+        await client._disconnect()

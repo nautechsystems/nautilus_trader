@@ -195,6 +195,8 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         await self.instrument_provider.initialize()
+        if self._listener_task is not None and self._listener_task.done():
+            self._listener_task = None
         self._ensure_pubsub()
         if self._listener_task is None:
             self._listener_task = self.create_task(
@@ -203,11 +205,18 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             )
 
     async def _disconnect(self) -> None:
-        if self._pubsub is not None:
+        pubsub = self._pubsub
+        self._pubsub = None
+        if pubsub is not None:
             with suppress(Exception):
-                self._pubsub.close()
-        if self._listener_task is not None and not self._listener_task.done():
-            self._listener_task.cancel()
+                pubsub.close()
+        listener_task = self._listener_task
+        self._listener_task = None
+        if listener_task is not None:
+            if not listener_task.done():
+                listener_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await listener_task
         close = getattr(self._redis, "close", None)
         if callable(close):
             with suppress(Exception):
