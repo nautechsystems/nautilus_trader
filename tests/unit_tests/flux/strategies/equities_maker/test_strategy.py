@@ -380,6 +380,7 @@ def test_equities_maker_shared_recovery_attachment_moves_timer_resubscribe_to_su
     assert subscribed == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("reset", "maker_quote_ticks"),
+        ("reset", "reference_quote_ticks"),
     ]
 
 
@@ -483,6 +484,7 @@ def test_equities_maker_supervisor_timer_reports_stale_feed_without_direct_resub
     assert direct_unsubscribes == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("reset", "maker_quote_ticks"),
+        ("reset", "reference_quote_ticks"),
     ]
 
 
@@ -541,11 +543,14 @@ def test_equities_maker_supervisor_bootstrap_waits_for_liveness_budget_before_re
 
     strategy.clock.now = 12_000_000_000
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
-    assert control_emitter.commands == []
+    assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
+        ("reset", "reference_quote_ticks"),
+    ]
 
     strategy.clock.now = 13_100_000_000
     strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
+        ("reset", "reference_quote_ticks"),
         ("reset", "maker_quote_ticks"),
     ]
 

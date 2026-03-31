@@ -422,7 +422,13 @@ class MakerV4Strategy(Strategy):
                 or 10_000
             ),
         )
-        reference_budget_ms = max(1, int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)))
+        reference_budget_ms = max(
+            1,
+            min(
+                int(self._runtime_params.get("max_age_ms", 10_000) or 10_000),
+                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
+            ),
+        )
 
         return (
             QuoteFeedClaimSpec(
@@ -444,7 +450,6 @@ class MakerV4Strategy(Strategy):
                 claimant_id=self._external_strategy_id,
                 unusable_after_ms=reference_budget_ms,
                 blocker_key=reference_scope,
-                node_scoped_lifecycle=False,
             ),
         )
 

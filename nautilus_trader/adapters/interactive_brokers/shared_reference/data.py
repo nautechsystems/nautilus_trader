@@ -266,6 +266,35 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
         )
         self._handle_data(tick)
 
+    async def recover_quote_ticks(self, instrument_id: InstrumentId) -> dict[str, object]:
+        if instrument_id not in self._subscriptions:
+            return {
+                "instrument_id": instrument_id.value,
+                "ok": False,
+                "status": "not_subscribed",
+                "error_summary": None,
+                "cache_refreshed": False,
+            }
+
+        self._reset_pubsub()
+        self._rebuild_pubsub_subscriptions()
+        snapshot_key = self._snapshot_keys.get(instrument_id)
+        cache_refreshed = False
+        if snapshot_key is not None:
+            self._last_snapshot_messages.pop(instrument_id, None)
+            self._ingest_shared_reference_message(
+                instrument_id=instrument_id,
+                data=self._redis.get(snapshot_key),
+            )
+            cache_refreshed = True
+        return {
+            "instrument_id": instrument_id.value,
+            "ok": True,
+            "status": "replayed",
+            "error_summary": None,
+            "cache_refreshed": cache_refreshed,
+        }
+
     async def _listen_for_shared_reference_updates(self) -> None:
         while True:
             try:

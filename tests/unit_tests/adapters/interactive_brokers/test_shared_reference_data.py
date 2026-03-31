@@ -516,3 +516,66 @@ async def test_shared_reference_data_client_listener_recovers_from_pubsub_failur
         assert not client._listener_task.done()
     finally:
         await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_shared_reference_data_client_recover_quote_ticks_rebuilds_pubsub_and_replays_snapshot() -> None:
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    expected_channel = shared_reference_quote_channel(
+        profile_id="equities",
+        account_scope_id="ibkr.reference.main",
+        instrument_id=instrument_id,
+    )
+    expected_key = expected_channel.removesuffix(":changed")
+    expected_payload = {
+        "instrument_id": "AAPL.NASDAQ",
+        "bid": 190.35,
+        "ask": 190.60,
+        "bid_size": 11,
+        "ask_size": 13,
+        "ts_event_ms": 10_100,
+        "ts_publish_ms": 10_200,
+    }
+    first_pubsub = StubPubSub()
+    second_pubsub = StubPubSub()
+    redis_client = RotatingStubRedis(
+        [first_pubsub, second_pubsub],
+        values={expected_key: json.dumps(expected_payload)},
+    )
+    client = _make_shared_reference_client(
+        loop=asyncio.get_running_loop(),
+        pubsub=first_pubsub,
+        values={expected_key: json.dumps(expected_payload)},
+    )
+    client._redis = redis_client
+
+    await client._connect()
+    await client._subscribe_quote_ticks(
+        _subscribe_quote_ticks_command(
+            instrument_id=instrument_id,
+            ts_init=client._clock.timestamp_ns(),
+        ),
+    )
+    observed: list[tuple[InstrumentId, dict[str, object]]] = []
+
+    def _capture_snapshot(*, instrument_id: InstrumentId, payload: dict[str, object]) -> None:
+        observed.append((instrument_id, payload))
+
+    client.handle_shared_reference_snapshot = _capture_snapshot  # type: ignore[method-assign]
+    client._last_snapshot_messages[instrument_id] = b"stale"
+
+    try:
+        result = await client.recover_quote_ticks(instrument_id)
+    finally:
+        await client._disconnect()
+
+    assert redis_client.pubsub_calls == 2
+    assert second_pubsub.subscribed == [expected_channel]
+    assert observed == [(instrument_id, expected_payload)]
+    assert result == {
+        "instrument_id": instrument_id.value,
+        "ok": True,
+        "status": "replayed",
+        "error_summary": None,
+        "cache_refreshed": True,
+    }
