@@ -93,7 +93,8 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `qty_conversion_status`
    - `qty_conversion_source`
 4. For TokenMM `trade_update` payloads, bare `qty` is operator-facing base quantity.
-5. The current `qty_conversion_status` space is:
+5. Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields.
+6. The current `qty_conversion_status` space is:
    - `identity`
    - `exact_multiplier`
    - `price_based`
@@ -101,6 +102,7 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `missing_metadata`
    - `missing_price`
    - `non_integral_venue_qty`
+7. Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection.
 
 ## Shared Portfolio Ownership
 
@@ -317,6 +319,8 @@ Delete example:
    - persist `(last_trade_ts_ms, last_trade_row_id, last_trade_version)`
    - dedupe by `row_id` with highest `version` winning
    - drop rows where tuple `(ts_ms, row_id, version)` is `<=` persisted cursor tuple
+   - use `GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted
+   - use `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available
 8. If `seq` gap is detected, client MUST run the same bounded REST resync.
 9. `trade_update` idempotency key is `row_id` with highest `version` winning.
 10. `signal_delta` applies only when `seq` is newer than the last applied `seq`.
