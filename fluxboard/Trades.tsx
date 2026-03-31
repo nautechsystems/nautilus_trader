@@ -694,6 +694,7 @@ export default function Trades({
   const latestTradeTsMsRef = useRef<number>(0);
   const latestTradeReplayCursorRef = useRef<TradeReplayCursor | null>(null);
   const streamCursorRef = useRef<TradeStreamCursor>({ lastSeq });
+  const standardResumeSeqRef = useRef<number>(0);
   const gapRecoveryTargetSeqRef = useRef<number | null>(null);
   const gapRecoveryBaseSeqRef = useRef<number | null>(null);
   const gapRecoveryObservedReplaySeqsRef = useRef<Set<number>>(new Set());
@@ -1182,6 +1183,14 @@ export default function Trades({
         const nextLastSeq = snapshotEpochChanged
           ? snapshotLastSeq
           : Math.max(currentStreamCursor.lastSeq, snapshotLastSeq);
+        if (requestUsesStandardLineage) {
+          standardResumeSeqRef.current = snapshotLastSeq > 0
+            ? snapshotLastSeq
+            : Math.max(
+              standardResumeSeqRef.current,
+              typeof realtimeLineage?.last_seq === 'number' ? realtimeLineage.last_seq : 0,
+            );
+        }
         streamCursorRef.current = {
           contractVersion:
             typeof realtimeLineage?.contract_version === 'number'
@@ -1478,10 +1487,14 @@ export default function Trades({
           tradesStandardActiveView
           && standardLineageRef.current?.capabilities?.replay_supported,
         );
-        if (
+        const requiresTokenmmSnapshotRefresh = Boolean(
           tradesStandardEnabled
           && tradesStandardActiveView
-          && !standardReplaySupported
+          && standardLineageRef.current?.profile === 'tokenmm'
+          && standardLineageRef.current?.capabilities?.replay_supported === false,
+        );
+        if (
+          requiresTokenmmSnapshotRefresh
         ) {
           if (socketConnectedRef.current) {
             recoverStandardSnapshot('snapshot_refresh');
@@ -2071,7 +2084,17 @@ export default function Trades({
     };
   }, [processTradeMessage, tradesStandardEnabled]);
 
-  const getStandardResumeFromSeq = useCallback(() => streamCursorRef.current.lastSeq, []);
+  const getStandardResumeFromSeq = useCallback(() => {
+    const standardResumeSeq = standardResumeSeqRef.current;
+    if (standardResumeSeq > 0) {
+      return standardResumeSeq;
+    }
+    const lineageLastSeq = standardLineageRef.current?.last_seq;
+    if (typeof lineageLastSeq === 'number' && lineageLastSeq > 0) {
+      return lineageLastSeq;
+    }
+    return streamCursorRef.current.lastSeq;
+  }, []);
 
   const handleStandardRealtimeFailure = useCallback((failure: StandardSocketFailure) => {
     if (failure.type === 'recovery_required' && failure.reason === 'trade_gap') {
@@ -2088,6 +2111,9 @@ export default function Trades({
   const handleStandardRealtimeEvent = useCallback((event: StandardSocketEventEnvelope<any>) => {
     const currentStreamCursor = streamCursorRef.current;
     const eventSeq = typeof event.seq === 'number' ? event.seq : currentStreamCursor.lastSeq;
+    if (typeof eventSeq === 'number' && Number.isFinite(eventSeq)) {
+      standardResumeSeqRef.current = Math.max(standardResumeSeqRef.current, eventSeq);
+    }
     const hasEnvelopeSeqGap =
       typeof eventSeq === 'number'
       && currentStreamCursor.streamId != null
@@ -2167,6 +2193,19 @@ export default function Trades({
     onEvent: handleStandardRealtimeEvent,
     onFailure: handleStandardRealtimeFailure,
     onSubscribed: (ack) => {
+      const acceptedSeq =
+        typeof ack.accepted_start_seq === 'number'
+          ? Math.max(0, ack.accepted_start_seq)
+          : 0;
+      const ackLastSeq =
+        typeof ack.last_seq === 'number'
+          ? Math.max(acceptedSeq, ack.last_seq)
+          : acceptedSeq;
+      standardResumeSeqRef.current = Math.max(
+        standardResumeSeqRef.current,
+        acceptedSeq,
+        ackLastSeq,
+      );
       const currentStreamCursor = streamCursorRef.current;
       streamCursorRef.current = {
         contractVersion:

@@ -253,6 +253,7 @@ const flushTradeSocketFrame = async () => {
 
 describe('Trades integration flows', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/trades');
     window.sessionStorage.clear();
     getTrades.mockReset();
     getTradesDelta.mockReset();
@@ -845,6 +846,67 @@ describe('Trades integration flows', () => {
         resume_from_seq: 9,
       });
     });
+  });
+
+  it('does not resubscribe invalidate-only tokenmm trades with row-level snapshot seq values', async () => {
+    realtimeFlags.trades = true;
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    setNextSubscribeAck({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'tokenmm',
+      surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+      stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+      snapshot_revision: 1,
+      accepted_start_seq: 4,
+      last_seq: 4,
+      requested_resume_from_seq: 4,
+      capabilities: {
+        recovery_mode: 'invalidate_only',
+        replay_supported: false,
+        transport_mode: 'polling_only',
+      },
+    });
+    getTrades.mockResolvedValue({
+      rows: [{ ...baseRows[0], seq: 7270124501831680 }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'tokenmm',
+        surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        snapshot_revision: 1,
+        last_seq: 4,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => {
+      const subscribeCalls = socketMock.emit.mock.calls.filter(([event]) => event === 'subscribe');
+      expect(subscribeCalls.length).toBeGreaterThanOrEqual(1);
+      expect(subscribeCalls[0]?.[1]).toMatchObject({
+        surface: 'trades',
+        profile: 'tokenmm',
+        resume_from_seq: 4,
+      });
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+
+    expect(getTrades).toHaveBeenCalledTimes(1);
   });
 
   it('does not start a second reconnect snapshot while a standard trade-gap recovery snapshot is already in flight', async () => {
