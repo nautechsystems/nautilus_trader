@@ -896,6 +896,106 @@ def test_equities_maker_supervisor_timer_skips_state_publish_without_recovery_or
     assert published_state == []
 
 
+def test_equities_maker_supervisor_timer_recovers_stale_quotes_from_newer_cache(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _prepare_strategy_lifecycle(strategy, monkeypatch)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    cached_quotes: dict[InstrumentId, QuoteTick] = {}
+    published_state: list[dict[str, object]] = []
+
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+        quote_tick=lambda instrument_id: cached_quotes.get(instrument_id),
+    )
+    strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
+    strategy._publish_balances_if_due = lambda: None
+    strategy._refresh_quote_tradeability = lambda **_kwargs: None
+    strategy.subscribe_quote_ticks = lambda instrument_id: None
+
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    strategy.on_start()
+    published_state.clear()
+    _install_lifecycle_clock(strategy, monkeypatch, now_ns=15_000_000_000)
+
+    strategy._latest_quotes[maker_id] = {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 9_500_000_000,
+    }
+    strategy._latest_quotes[ref_id] = {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 9_600_000_000,
+    }
+    cached_quotes[maker_id] = _quote_tick(instrument_id=maker_id, ts_event=14_000_000_000)
+    cached_quotes[ref_id] = _quote_tick(instrument_id=ref_id, ts_event=14_500_000_000)
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+
+    assert strategy._latest_quotes[maker_id]["ts_ns"] == 14_000_000_000
+    assert strategy._latest_quotes[ref_id]["ts_ns"] == 14_500_000_000
+    assert published_state == [{"now_ns": strategy.clock.now}]
+
+
+def test_equities_maker_supervisor_timer_does_not_replace_fresh_local_quotes_with_cache(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesMakerStrategy(config=_config())
+    maker_id, ref_id = _prepare_strategy_lifecycle(strategy, monkeypatch)
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    cached_quotes: dict[InstrumentId, QuoteTick] = {}
+    published_state: list[dict[str, object]] = []
+
+    strategy._cache = SimpleNamespace(
+        instrument=lambda instrument_id: strategy._instruments.get(instrument_id),
+        positions_open=lambda *args, **kwargs: [],
+        accounts=lambda: [],
+        quote_tick=lambda instrument_id: cached_quotes.get(instrument_id),
+    )
+    strategy._publish_state_snapshot = lambda **kwargs: published_state.append(kwargs)
+    strategy._publish_balances_if_due = lambda: None
+    strategy._refresh_quote_tradeability = lambda **_kwargs: None
+    strategy.subscribe_quote_ticks = lambda instrument_id: None
+
+    _wire_shared_quote_runtime(
+        strategy,
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    strategy.on_start()
+    published_state.clear()
+    _install_lifecycle_clock(strategy, monkeypatch, now_ns=10_000_000_000)
+
+    strategy._latest_quotes[maker_id] = {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 9_500_000_000,
+    }
+    strategy._latest_quotes[ref_id] = {
+        "bid": Decimal("190.00"),
+        "ask": Decimal("190.02"),
+        "ts_ns": 9_600_000_000,
+    }
+    cached_quotes[maker_id] = _quote_tick(instrument_id=maker_id, ts_event=9_700_000_000)
+    cached_quotes[ref_id] = _quote_tick(instrument_id=ref_id, ts_event=9_800_000_000)
+
+    strategy.on_time_event(SimpleNamespace(name=strategy._liveness_timer_name))
+
+    assert strategy._latest_quotes[maker_id]["ts_ns"] == 9_500_000_000
+    assert strategy._latest_quotes[ref_id]["ts_ns"] == 9_600_000_000
+    assert published_state == []
+
+
 def test_equities_maker_supervisor_on_start_subscribes_actor_and_local_runtime(
     monkeypatch,
 ) -> None:

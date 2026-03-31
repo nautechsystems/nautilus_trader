@@ -1631,6 +1631,60 @@ class MakerV4Strategy(Strategy):
             primed = True
         return primed
 
+    def _recover_stale_local_quotes_from_cache(self, *, now_ns: int) -> bool:
+        recovered = False
+        cache = self._strategy_cache()
+        quote_lookup = getattr(cache, "quote_tick", None)
+        if not callable(quote_lookup):
+            return False
+
+        for instrument_id in (
+            self.config.maker_instrument_id,
+            self.config.reference_instrument_id,
+        ):
+            snapshot = self._latest_quotes.get(instrument_id)
+            if not isinstance(snapshot, Mapping):
+                continue
+            existing_ts_ns = self._quote_ts_ns(snapshot.get("ts_ns"))
+            if existing_ts_ns <= 0:
+                continue
+
+            stale_after_ms = (
+                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000))
+                if self._instrument_id_matches(instrument_id, self.config.reference_instrument_id)
+                else int(
+                    self._runtime_params.get(
+                        "quote_liveness_stall_after_ms",
+                        self._runtime_params.get("max_age_ms", 10_000),
+                    )
+                    or self._runtime_params.get("max_age_ms", 10_000)
+                    or 10_000
+                )
+            )
+            if max(0, int(now_ns)) - existing_ts_ns <= max(1, stale_after_ms) * 1_000_000:
+                continue
+
+            tick = None
+            with suppress(Exception):
+                tick = quote_lookup(instrument_id)
+            if tick is None:
+                continue
+            cache_ts_ns = self._quote_ts_ns(getattr(tick, "ts_event", 0))
+            if cache_ts_ns <= existing_ts_ns:
+                continue
+            self._update_quote_snapshot(
+                instrument_id=instrument_id,
+                bid=self._decimal_or_none(getattr(tick, "bid_price", None)),
+                ask=self._decimal_or_none(getattr(tick, "ask_price", None)),
+                ts_ns=cache_ts_ns,
+            )
+            self._record_supervisor_quote_observation(
+                instrument_id=instrument_id,
+                ts_ns=cache_ts_ns,
+            )
+            recovered = True
+        return recovered
+
     def _quote_leg_snapshot(
         self,
         instrument_id: Any,
@@ -3174,10 +3228,12 @@ class MakerV4Strategy(Strategy):
             hedge_disabled_reason_before = self.hedge_disabled_reason
             lifecycle_state_before = self._quote_feed_lifecycle_state
             primed_quotes = self._prime_missing_local_quotes_from_cache()
+            recovered_quotes = self._recover_stale_local_quotes_from_cache(now_ns=now_ns)
             self._observe_quote_liveness(now_ns=now_ns)
             self._refresh_quote_tradeability(now_ns=now_ns)
             if (
                 primed_quotes
+                or recovered_quotes
                 or self.tradeable != tradeable_before
                 or self.hedge_disabled_reason != hedge_disabled_reason_before
                 or self._quote_feed_lifecycle_state != lifecycle_state_before
