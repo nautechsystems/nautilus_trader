@@ -221,6 +221,8 @@ api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
 account_type = "PORTFOLIO_MARGIN"
 private_api_family = "PORTFOLIO_MARGIN"
+# Shared-account refresh timeout for the controller-managed Binance private path.
+http_timeout_secs = 10
 controller_scope_id = "tokenmm.binance.pm.main"
 
 [[controller_scopes]]

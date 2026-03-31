@@ -3,11 +3,22 @@ from __future__ import annotations
 from argparse import Namespace
 import importlib
 from pathlib import Path
+import sys
 from types import SimpleNamespace
+from types import ModuleType
 from urllib.error import HTTPError
 
 import pytest
 from flask import Flask
+
+_IB_PACKAGE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers")
+_IB_PACKAGE_STUB.__path__ = []
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+_IB_COMMON_STUB.IBOrderTags = lambda **_kwargs: None
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+_IB_COMMON_STUB.IB_VENUE = "INTERACTIVE_BROKERS"
+sys.modules.setdefault(_IB_PACKAGE_STUB.__name__, _IB_PACKAGE_STUB)
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
 
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
@@ -24,6 +35,7 @@ from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
 from flux.runners.tokenmm.run_api import _should_enable_pulse_routes
 from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 
 
 def _example_config_path() -> Path:
@@ -314,6 +326,80 @@ def test_build_strategy_alerts_resolver_isolates_single_strategy_failure() -> No
     assert rows_by_strategy["strategy_blocked"][0]["row_id"] == (
         "active:strategy_blocked:blocked_reference_md_stale"
     )
+
+
+def test_build_strategy_alerts_resolver_emits_current_private_path_block_only() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_251_000,
+                "blocked": True,
+                "tradeable": False,
+                "reason": "blocked_private_path",
+                "state": {
+                    "state": "blocked_private_path",
+                    "quote_blockers": [
+                        {
+                            "reason_code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+                            "last_error_type": "TimeoutError",
+                            "timeout_count": 2,
+                        },
+                    ],
+                },
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 9_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked"])
+
+    assert rows_by_strategy["strategy_blocked"] == [
+        {
+            "strategy_id": "strategy_blocked",
+            "row_id": f"active:strategy_blocked:{REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE}",
+            "id": f"active:strategy_blocked:{REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE}",
+            "alert_key": "private_path_blocked",
+            "level": "warning",
+            "code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+            "reason_code": REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+            "message": (
+                "Quoting blocked (controller private path unavailable) "
+                "strategy_id=strategy_blocked last_error_type=TimeoutError timeout_count=2"
+            ),
+            "details": {
+                "strategy_id": "strategy_blocked",
+                "state": "blocked_private_path",
+                "last_error_type": "TimeoutError",
+                "timeout_count": 2,
+            },
+            "ts_ms": 1_774_897_251_000,
+            "source": "signals",
+        },
+    ]
+
+
+def test_tokenmm_live_configs_expose_binance_http_timeout_knobs() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    shared_config = (repo_root / "deploy/tokenmm/tokenmm.live.toml").read_text(encoding="utf-8")
+    spot_config = (
+        repo_root / "deploy/tokenmm/strategies/plumeusdt_binance_spot_makerv3.toml"
+    ).read_text(encoding="utf-8")
+    perp_config = (
+        repo_root / "deploy/tokenmm/strategies/plumeusdt_binance_perp_makerv3.toml"
+    ).read_text(encoding="utf-8")
+
+    assert "http_timeout_secs = 10" in shared_config
+    assert "http_timeout_secs = 10" in spot_config
+    assert "http_timeout_secs = 10" in perp_config
 
 
 def test_load_tokenmm_readiness_uses_runner_truth_for_operator_surface(monkeypatch) -> None:

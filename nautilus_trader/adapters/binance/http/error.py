@@ -1,5 +1,6 @@
 from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_ERRORS
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.core.nautilus_pyo3 import HttpTimeoutError
 
 
 class BinanceError(Exception):
@@ -30,6 +31,22 @@ class BinanceClientError(BinanceError):
 
     def __init__(self, status, message, headers):
         super().__init__(status, message, headers)
+
+
+def is_transport_timeout_error(error: BaseException) -> bool:
+    """
+    Return whether the error is a transport timeout from the Python or pyo3 HTTP layer.
+    """
+    return isinstance(error, (TimeoutError, HttpTimeoutError))
+
+
+def classify_transport_error_type(error: BaseException) -> str | None:
+    """
+    Normalize transport errors to stable type names for logs and health payloads.
+    """
+    if is_transport_timeout_error(error):
+        return "TimeoutError"
+    return None
 
 
 def get_binance_error_code(error: BaseException) -> BinanceErrorCode | None:

@@ -25,6 +25,8 @@ from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamil
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance.http.error import classify_transport_error_type
+from nautilus_trader.adapters.binance.http.error import is_transport_timeout_error
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.env import get_env_key
@@ -87,6 +89,7 @@ _TERMINAL_PLACE_REJECT_REASON_FRAGMENTS: tuple[str, ...] = (
     "post only order will be rejected",
     "could not be executed as maker",
 )
+_PRIVATE_PATH_STALE_AFTER_MS = 5_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,6 +253,12 @@ class _ResidentRequestReplyControllerService:
                 replied_at_ns=time.time_ns(),
             )
         except Exception as exc:
+            if is_transport_timeout_error(exc):
+                self._publish_private_path_failure_state(
+                    request=request,
+                    claim=claim,
+                    reason=exc,
+                )
             if self._handle_terminal_place_reject(
                 request=request,
                 claim=claim,
@@ -456,6 +465,9 @@ class _ResidentRequestReplyControllerService:
                 prune_canceled_order=False,
                 feed=feed,
                 venue_order_id=venue_order_id,
+                private_path_health=_private_path_health_success(
+                    attempt_ts_ms=_now_ms(None),
+                ),
             )
         elif command.command_type == "cancel":
             self._publish_canonical_state(
@@ -463,7 +475,39 @@ class _ResidentRequestReplyControllerService:
                 claim=claim,
                 prune_canceled_order=True,
                 feed=feed,
+                private_path_health=_private_path_health_success(
+                    attempt_ts_ms=_now_ms(None),
+                ),
             )
+
+    def _publish_private_path_failure_state(
+        self,
+        *,
+        request: ControllerIntentRequest,
+        claim,
+        reason: BaseException,
+    ) -> None:
+        feed = None
+        if self._redis_client is not None:
+            try:
+                feed = _feed_bridge_for_claim(
+                    redis_client=self._redis_client,
+                    config=self._config,
+                    claim=claim,
+                )
+            except Exception:
+                feed = None
+        self._publish_canonical_state(
+            request=request,
+            claim=claim,
+            prune_canceled_order=False,
+            feed=feed,
+            private_path_health=_private_path_health_failure(
+                self._canonical_state_by_strategy.get(claim.strategy_id),
+                reason,
+                attempt_ts_ms=_now_ms(None),
+            ),
+        )
 
     def _publish_canonical_state(
         self,
@@ -473,6 +517,7 @@ class _ResidentRequestReplyControllerService:
         prune_canceled_order: bool,
         feed: ControllerStateFeedBridge | None,
         venue_order_id: str | None = None,
+        private_path_health: dict[str, Any] | None = None,
     ) -> None:
         state = _canonical_state_payload(
             request=request,
@@ -480,6 +525,7 @@ class _ResidentRequestReplyControllerService:
             existing_state=self._canonical_state_by_strategy.get(claim.strategy_id),
             prune_canceled_order=prune_canceled_order,
             venue_order_id=venue_order_id,
+            private_path_health=private_path_health,
         )
         self._canonical_state_by_strategy[claim.strategy_id] = state
         if feed is None:
@@ -1033,6 +1079,7 @@ def _resolve_managed_strategy_execution_runtime(
     api_secret_env = _required_text(venue_cfg.get("api_secret_env"), "api_secret_env")
     recv_window_ms = venue_cfg.get("recv_window_ms")
     recv_window = None if recv_window_ms is None else str(int(recv_window_ms))
+    http_timeout_secs = venue_cfg.get("http_timeout_secs")
     strategy_cfg = _table(runtime_config, "strategy")
     clock = LiveClock()
     client = get_cached_binance_http_client(
@@ -1043,6 +1090,7 @@ def _resolve_managed_strategy_execution_runtime(
         base_url=base_url_http,
         environment=environment,
         proxy_url=_optional_text(venue_cfg.get("http_proxy_url")),
+        timeout_secs=None if http_timeout_secs is None else int(http_timeout_secs),
     )
     if account_type.is_futures:
         account_api = BinanceFuturesAccountHttpAPI(
@@ -1215,6 +1263,7 @@ def _canonical_state_payload(
     existing_state: dict[str, Any] | None,
     prune_canceled_order: bool = False,
     venue_order_id: str | None = None,
+    private_path_health: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     state = _apply_authority_markers(
         state=dict(existing_state or {}),
@@ -1260,7 +1309,58 @@ def _canonical_state_payload(
             if str(row.get("client_order_id", "")).strip() != command.target_client_order_id
         ]
     state["managed_maker_orders"] = managed_orders
+    if private_path_health is not None:
+        state["private_path_health"] = dict(private_path_health)
     return state
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return None if value is None else int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _private_path_health_success(
+    *,
+    attempt_ts_ms: int,
+) -> dict[str, Any]:
+    return {
+        "healthy": True,
+        "state": "healthy",
+        "last_success_ts_ms": int(attempt_ts_ms),
+        "last_attempt_ts_ms": int(attempt_ts_ms),
+        "stale_after_ms": _PRIVATE_PATH_STALE_AFTER_MS,
+        "timeout_count": 0,
+        "last_error_type": None,
+        "last_error_message": None,
+    }
+
+
+def _private_path_health_failure(
+    existing_state: dict[str, Any] | None,
+    exc: BaseException,
+    *,
+    attempt_ts_ms: int,
+) -> dict[str, Any]:
+    existing_health = existing_state.get("private_path_health") if existing_state else None
+    timeout_count = _optional_int(
+        existing_health.get("timeout_count") if isinstance(existing_health, dict) else None,
+    ) or 0
+    if is_transport_timeout_error(exc):
+        timeout_count += 1
+    return {
+        "healthy": False,
+        "state": "stale",
+        "last_success_ts_ms": _optional_int(
+            existing_health.get("last_success_ts_ms") if isinstance(existing_health, dict) else None,
+        ),
+        "last_attempt_ts_ms": int(attempt_ts_ms),
+        "stale_after_ms": _PRIVATE_PATH_STALE_AFTER_MS,
+        "timeout_count": timeout_count,
+        "last_error_type": classify_transport_error_type(exc) or type(exc).__name__,
+        "last_error_message": str(exc),
+    }
 
 
 def _feed_bridge_for_claim(

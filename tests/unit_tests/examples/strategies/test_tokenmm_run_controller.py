@@ -3,8 +3,19 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
+from types import ModuleType
 import time
+
+_IB_PACKAGE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers")
+_IB_PACKAGE_STUB.__path__ = []
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+_IB_COMMON_STUB.IBOrderTags = lambda **_kwargs: None
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+_IB_COMMON_STUB.IB_VENUE = "INTERACTIVE_BROKERS"
+sys.modules.setdefault(_IB_PACKAGE_STUB.__name__, _IB_PACKAGE_STUB)
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
 
 from flux.execution.intents import ExecutionIntent
 from flux.execution.intents import ExecutionLifecycleState
@@ -450,6 +461,166 @@ def test_active_mode_builds_default_runtime_writer_without_injected_factory(
     assert spot_calls[0]["side_effect_type"] == "AUTO_BORROW_REPAY"
     assert spot_calls[0]["auto_repay_at_cancel"] == "FALSE"
     assert spot_calls[0]["order_type"].value == "LIMIT_MAKER"
+
+
+def test_resolve_managed_strategy_execution_runtime_forwards_http_timeout_secs(
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    captured_kwargs: dict[str, object] = {}
+
+    class _FakeSpotAccountHttpAPI:
+        def __init__(self, client, clock, account_type) -> None:
+            self.client = client
+            self.clock = clock
+            self.account_type = account_type
+
+    monkeypatch.setattr(
+        run_controller,
+        "get_cached_binance_http_client",
+        lambda **kwargs: captured_kwargs.update(kwargs) or object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        run_controller,
+        "BinanceSpotAccountHttpAPI",
+        _FakeSpotAccountHttpAPI,
+        raising=False,
+    )
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+
+    runtime = run_controller._resolve_managed_strategy_execution_runtime(
+        runtime_config={
+            "venues": {
+                "execution_venue": "BINANCE_SPOT",
+                "execution_symbol": "PLUMEUSDT",
+            },
+            "node": {
+                "venues": {
+                    "BINANCE_SPOT": {
+                        "adapter": "binance",
+                        "execution": True,
+                        "api_key_env": "BINANCE_API_KEY",
+                        "api_secret_env": "BINANCE_API_SECRET",
+                        "account_type": "PORTFOLIO_MARGIN",
+                        "http_timeout_secs": 17,
+                    },
+                },
+            },
+            "strategy": {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+            },
+        },
+        strategy_id="plumeusdt_binance_spot_makerv3",
+    )
+
+    assert runtime.execution_symbol == "PLUMEUSDT"
+    assert captured_kwargs["timeout_secs"] == 17
+
+
+def test_timeout_failure_publishes_private_path_health_and_success_resets_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run_controller = _load_run_controller_module()
+    transport = _load_transport_module()
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(run_controller.redis, "Redis", lambda **_kwargs: fake_redis)
+
+    class _FlakyVenueWriter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def write_owned_order(self, claim) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("binance private path timed out")
+            return "binance-venue-9001"
+
+    writer = _FlakyVenueWriter()
+    runner = run_controller.build_runner(
+        _shared_config(),
+        owner_id="controller-a",
+        repo_root=tmp_path,
+        active_order_writer_factory=lambda _payload: writer,
+    )
+    paths = UdsTransportPaths.for_controller_scope(
+        controller_scope_id="tokenmm.binance.pm.main",
+        root_dir=tmp_path / ".run",
+    )
+    feed = ControllerStateFeedBridge(
+        redis_client=fake_redis,
+        controller_scope_id="tokenmm.binance.pm.main",
+        strategy_id="plumeusdt_binance_spot_makerv3",
+        namespace="flux",
+        schema_version="v1",
+    )
+
+    runner.start(now_ms=1_000)
+    _wait_for_socket(paths.request_reply_path)
+    failed_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-private-path-timeout-001",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_456,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="BUY",
+                quantity="1000",
+                limit_price="0.1901",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=REQUEST_TIMEOUT_S,
+    )
+    failed_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
+
+    recovered_reply = transport.send_request(
+        paths=paths,
+        request=ControllerIntentRequest(
+            intent=ExecutionIntent(
+                intent_id="intent-private-path-timeout-002",
+                controller_scope_id="tokenmm.binance.pm.main",
+                strategy_id="plumeusdt_binance_spot_makerv3",
+            ),
+            requested_at_ns=123_457,
+            command=ControllerIntentCommandPayload(
+                command_type="place",
+                order_role="maker",
+                instrument_id="PLUMEUSDT.BINANCE_SPOT",
+                side="SELL",
+                quantity="900",
+                limit_price="0.1902",
+                post_only=True,
+                time_in_force="GTC",
+            ),
+        ),
+        timeout_s=REQUEST_TIMEOUT_S,
+    )
+    recovered_payload = json.loads(fake_redis.get(feed.canonical_state_key()).decode("utf-8"))
+    runner.stop()
+
+    assert failed_reply.status == "rejected"
+    assert failed_payload["private_path_health"]["healthy"] is False
+    assert failed_payload["private_path_health"]["state"] == "stale"
+    assert failed_payload["private_path_health"]["last_error_type"] == "TimeoutError"
+    assert failed_payload["private_path_health"]["timeout_count"] == 1
+    assert failed_payload["private_path_health"]["stale_after_ms"] == 5_000
+
+    assert recovered_reply.status == "accepted"
+    assert recovered_payload["private_path_health"]["healthy"] is True
+    assert recovered_payload["private_path_health"]["state"] == "healthy"
+    assert recovered_payload["private_path_health"]["last_error_type"] is None
+    assert recovered_payload["private_path_health"]["timeout_count"] == 0
+    assert recovered_payload["private_path_health"]["last_success_ts_ms"] is not None
 
 
 def test_resident_service_preserves_full_managed_maker_set_across_places(

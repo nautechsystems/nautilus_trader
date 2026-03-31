@@ -96,6 +96,7 @@ def get_cached_binance_http_client(
     environment: BinanceEnvironment = BinanceEnvironment.LIVE,
     is_us: bool = False,
     proxy_url: str | None = None,
+    timeout_secs: int | None = None,
 ) -> BinanceHttpClient:
     """
     Cache and return a Binance HTTP client with the given key and secret.
@@ -124,6 +125,8 @@ def get_cached_binance_http_client(
         If the client is connecting to Binance US.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    timeout_secs : int, optional
+        The request timeout in seconds for underlying HTTP calls.
 
     Returns
     -------
@@ -157,6 +160,7 @@ def get_cached_binance_http_client(
         ratelimiter_quotas=ratelimiter_quotas,
         ratelimiter_default_quota=ratelimiter_default_quota,
         proxy_url=proxy_url,
+        timeout_secs=timeout_secs,
     )
 
 

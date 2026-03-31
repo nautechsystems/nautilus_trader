@@ -40,6 +40,7 @@ from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from nautilus_trader.flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_COMPLETED_REBALANCED
@@ -641,6 +642,31 @@ def test_publish_state_exports_spot_borrow_blocker_metadata(clocked_strategy_fac
     assert state_payload["quote_blockers"][0]["reason_code"] == "spot_borrow_cap"
     assert state_payload["quote_blockers"][0]["blocked_side"] == "SELL"
     assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
+
+
+def test_publish_state_exports_private_path_blocker_metadata(clocked_strategy_factory) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._controller_private_path_health = {
+        "healthy": False,
+        "state": "stale",
+        "last_error_type": "TimeoutError",
+        "timeout_count": 2,
+        "last_attempt_ts_ms": 999,
+        "stale_after_ms": 5_000,
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("blocked_private_path")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_blockers"][0]["reason_code"] == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+    assert state_payload["quote_blockers"][0]["last_error_type"] == "TimeoutError"
+    assert state_payload["quote_blockers"][0]["timeout_count"] == 2
 
 
 def test_spot_borrow_block_alerts_are_rate_limited_until_recovery_transition(
