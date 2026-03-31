@@ -105,16 +105,50 @@ def test_track_stream_key_pins_latest_source_entry_when_trade_stream_already_mat
     assert consumer._stream_ids[stream_key] == "1700000001000-9"
 
 
-def test_track_stream_key_pins_latest_source_entry_for_non_trade_topics() -> None:
-    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.state"
+def test_track_stream_key_replays_latest_snapshot_entry_for_market_bbo_topics() -> None:
+    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.market_bbo"
     consumer = FluxBridgeStreamConsumer(
         redis_client=_TrackStreamRedis(
             stream_types={stream_key: "stream"},
             latest_entries={stream_key: "1700000001001-4"},
         ),
         environment="live",
-        handlers={"flux.makerv3.state": lambda payload, context: []},
-        topics=["flux.makerv3.state"],
+        handlers={"flux.makerv3.market_bbo": lambda payload, context: []},
+        topics=["flux.makerv3.market_bbo"],
+    )
+
+    consumer._track_stream_key(stream_key)
+
+    assert consumer._stream_ids[stream_key] == "1700000001001-3"
+
+
+def test_track_stream_key_replays_seq_zero_snapshot_entry_from_previous_millisecond() -> None:
+    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.market_bbo"
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_TrackStreamRedis(
+            stream_types={stream_key: "stream"},
+            latest_entries={stream_key: "1700000001001-0"},
+        ),
+        environment="live",
+        handlers={"flux.makerv3.market_bbo": lambda payload, context: []},
+        topics=["flux.makerv3.market_bbo"],
+    )
+
+    consumer._track_stream_key(stream_key)
+
+    assert consumer._stream_ids[stream_key] == "1700000001000-0"
+
+
+def test_track_stream_key_keeps_latest_pin_for_non_snapshot_non_trade_topics() -> None:
+    stream_key = "flux:v1:in:stream:live:nvda_tradexyz_makerv4:flux.makerv3.alert"
+    consumer = FluxBridgeStreamConsumer(
+        redis_client=_TrackStreamRedis(
+            stream_types={stream_key: "stream"},
+            latest_entries={stream_key: "1700000001001-4"},
+        ),
+        environment="live",
+        handlers={"flux.makerv3.alert": lambda payload, context: []},
+        topics=["flux.makerv3.alert"],
     )
 
     consumer._track_stream_key(stream_key)

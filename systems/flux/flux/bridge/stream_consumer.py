@@ -41,6 +41,26 @@ def _to_json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=_json_default)
 
 
+REPLAY_LATEST_ENTRY_TOPIC_SUFFIXES = frozenset({"market_bbo"})
+
+
+def _entry_id_before(entry_id: str) -> str | None:
+    try:
+        ms_text, seq_text = decode_text(entry_id).strip().split("-", maxsplit=1)
+        ms = int(ms_text)
+        seq = int(seq_text)
+    except (TypeError, ValueError):
+        return None
+
+    if ms < 0 or seq < 0:
+        return None
+    if seq > 0:
+        return f"{ms}-{seq - 1}"
+    if ms > 0:
+        return f"{ms - 1}-0"
+    return "0-0"
+
+
 @dataclass(frozen=True)
 class StreamCoordinates:
     environment: str
@@ -275,12 +295,15 @@ class FluxBridgeStreamConsumer:
             return self._start_id
 
         topic_suffix = coordinates.topic.rsplit(".", maxsplit=1)[-1]
+        latest_entry_id = self._latest_stream_entry_id(stream_key)
+        if topic_suffix in REPLAY_LATEST_ENTRY_TOPIC_SUFFIXES:
+            return _entry_id_before(latest_entry_id or "") or latest_entry_id or self._start_id
         if topic_suffix != "trade":
-            return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
 
         xlen_fn = getattr(self._redis, "xlen", None)
         if not callable(xlen_fn):
-            return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
 
         target_stream_key = FluxRedisKeys(
             strategy_id=coordinates.strategy_id,
@@ -291,8 +314,8 @@ class FluxBridgeStreamConsumer:
             if int(xlen_fn(target_stream_key) or 0) == 0:
                 return "0-0"
         except Exception:
-            return self._latest_stream_entry_id(stream_key) or self._start_id
-        return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
+        return latest_entry_id or self._start_id
 
     def _refresh_streams(self, *, force: bool = False) -> None:
         now = time.time()
