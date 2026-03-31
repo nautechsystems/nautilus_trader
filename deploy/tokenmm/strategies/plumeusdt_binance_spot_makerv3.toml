@@ -44,6 +44,8 @@ instrument_id = "PLUMEUSDT.BINANCE_SPOT"
 execution = true
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
+# Controller-managed Binance private HTTP timeout for order/account calls.
+http_timeout_secs = 10
 account_type = "PORTFOLIO_MARGIN"
 allow_cash_borrowing = true
 

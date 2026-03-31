@@ -14,12 +14,14 @@ from flux.strategies.makerv3 import rebalancing as rebalancing_mod
 from flux.strategies.makerv3.constants import ALERT_COOLDOWN_BLOCKED_MS
 from flux.strategies.makerv3.constants import ALERT_KEY_MARKET_DATA_BLOCKED
 from flux.strategies.makerv3.constants import ALERT_KEY_PORTFOLIO_INVENTORY_BLOCKED
+from flux.strategies.makerv3.constants import ALERT_KEY_PRIVATE_PATH_BLOCKED
 from flux.strategies.makerv3.constants import ALERT_KEY_QUOTE_LIVENESS_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_BLOCKED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_COMPLETED
 from flux.strategies.makerv3.constants import QUOTE_CYCLE_EVENT_SKIPPED
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PENDING_CANCEL
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
@@ -27,6 +29,7 @@ from flux.strategies.makerv3.constants import REASON_BLOCKED_STARTUP_CLEANUP
 from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_CANCEL_MAKER_MD_STALE
 from flux.strategies.makerv3.constants import REASON_CANCEL_NO_TARGETS
+from flux.strategies.makerv3.constants import REASON_CANCEL_PRIVATE_PATH_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_CANCEL_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_ACTIONS
 from flux.strategies.makerv3.constants import REASON_COMPLETED_NO_TARGETS
@@ -467,6 +470,64 @@ def handle_portfolio_inventory_block(
     strategy._last_requote_ns = now_ns
 
 
+def handle_private_path_block(
+    strategy: MakerV3Strategy,
+    *,
+    now_ns: int,
+    quote_cycle: QuoteCycleContext | None = None,
+    quote_cycle_id: str | None = None,
+    managed_orders: list[Any],
+) -> None:
+    """
+    Block quoting when the controller-managed private execution path is unhealthy.
+    """
+    state = "blocked_private_path"
+    from_state = getattr(strategy, "_last_state_name", None)
+    blocked_transition = not bool(getattr(strategy, "_state_is_blocked", False))
+    strategy._cancel_managed_quotes(
+        REASON_CANCEL_PRIVATE_PATH_UNAVAILABLE.removeprefix("cancel_"),
+        managed_orders=managed_orders,
+        now_ns=now_ns,
+        quote_cycle=quote_cycle,
+        quote_cycle_id=quote_cycle_id,
+        decision_context_json=strategy._quote_cycle_decision_context(
+            managed_orders=managed_orders,
+        ),
+    )
+    strategy._publish_state(
+        state,
+        managed_orders_count=len(managed_orders),
+        managed_orders=managed_orders,
+    )
+    strategy._publish_quote_cycle_event(
+        now_ns=now_ns,
+        quote_cycle_event=QUOTE_CYCLE_EVENT_BLOCKED,
+        reason_code=REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+        quote_cycle=quote_cycle,
+        quote_cycle_id=quote_cycle_id,
+        payload={
+            "from_state": from_state,
+            "to_state": state,
+            "blocked_transition": blocked_transition,
+            "managed_orders": len(managed_orders),
+        },
+    )
+    if blocked_transition:
+        strategy._publish_actionable_alert(
+            alert_key=ALERT_KEY_PRIVATE_PATH_BLOCKED,
+            message=(
+                "Quoting blocked (controller private path unavailable) "
+                f"strategy_id={strategy._external_strategy_id}"
+            ),
+            level="warning",
+            reason_code=REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE,
+            cooldown_ms=ALERT_COOLDOWN_BLOCKED_MS,
+            transition=f"{from_state}->{state}",
+            now_ns=now_ns,
+        )
+    strategy._last_requote_ns = now_ns
+
+
 def refresh_quotes(  # noqa: C901
     strategy: MakerV3Strategy,
     *,
@@ -607,6 +668,15 @@ def refresh_quotes(  # noqa: C901
                 managed_orders=active_orders,
             )
             return
+    if strategy._controller_private_path_block_reason() == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE:
+        handle_private_path_block(
+            strategy,
+            now_ns=now_ns,
+            quote_cycle=quote_cycle,
+            quote_cycle_id=quote_cycle_id,
+            managed_orders=active_orders,
+        )
+        return
     publish_recovery_state_if_blocked(
         strategy,
         managed_orders_count=len(active_orders),

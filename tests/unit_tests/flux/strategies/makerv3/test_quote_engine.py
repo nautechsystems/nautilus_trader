@@ -1111,6 +1111,52 @@ def test_refresh_quotes_blocks_when_shared_portfolio_inventory_is_degraded(
     assert alerts[-1]["reason_code"] == "blocked_portfolio_inventory_unavailable"
 
 
+def test_refresh_quotes_blocks_when_controller_private_path_is_stale(
+    strategy_factory,
+) -> None:
+    strategy = strategy_factory()
+    strategy._maker_instrument = SimpleNamespace(
+        base_currency=SimpleNamespace(code="PLUME"),
+        price_increment=SimpleNamespace(as_decimal=lambda: Decimal("0.01")),
+        make_price=lambda value: Decimal(str(value)),
+        id=strategy.config.maker_instrument_id,
+    )
+    strategy._instruments = {
+        strategy.config.maker_instrument_id: strategy._maker_instrument,
+        strategy.config.reference_instrument_id: SimpleNamespace(
+            base_currency=SimpleNamespace(code="PLUME"),
+            id=strategy.config.reference_instrument_id,
+        ),
+    }
+    strategy._best_bid_ask = lambda _instrument_id: (Decimal(100), Decimal(101))
+    strategy._managed_orders = list
+    strategy._controller_private_path_health = {
+        "healthy": False,
+        "state": "stale",
+        "last_error_type": "TimeoutError",
+        "timeout_count": 2,
+    }
+
+    now_ns = 1_500_000_000
+    strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = now_ns - 10_000_000
+    strategy._last_bbo_ts_ns[strategy.config.reference_instrument_id] = now_ns - 10_000_000
+
+    cancels: list[str] = []
+    states: list[str] = []
+    alerts: list[dict[str, object]] = []
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: cancels.append(
+        f"{reason}:{force}",
+    )
+    strategy._publish_state = lambda state, **_kwargs: states.append(state)
+    strategy._publish_actionable_alert = lambda **kwargs: alerts.append(kwargs) or True
+
+    strategy._refresh_quotes(now_ns=now_ns)
+
+    assert cancels == ["private_path_unavailable:False"]
+    assert states == ["blocked_private_path"]
+    assert alerts[-1]["reason_code"] == "blocked_private_path_unavailable"
+
+
 def test_refresh_quotes_allows_partial_shared_portfolio_inventory_when_enabled(
     clocked_strategy_factory,
 ) -> None:

@@ -44,6 +44,8 @@ instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
 execution = true
 api_key_env = "BINANCE_API_KEY"
 api_secret_env = "BINANCE_API_SECRET"
+# Controller-managed Binance private HTTP timeout for order/account calls.
+http_timeout_secs = 10
 account_type = "USDT_FUTURES"
 private_api_family = "PORTFOLIO_MARGIN"
 

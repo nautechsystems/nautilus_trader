@@ -37,6 +37,7 @@ from flux.strategies.makerv3.constants import ALERT_KEY_ORDER_REJECTED_BURST
 from flux.strategies.makerv3.constants import ALERT_KEY_TERMINAL_ORDER_DENIED
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_BOOK_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_MAKER_MD_STALE
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_PORTFOLIO_INVENTORY_UNAVAILABLE
 from flux.strategies.makerv3.constants import REASON_BLOCKED_REFERENCE_MD_STALE
 from flux.strategies.makerv3.constants import REASON_CANCEL_BOT_OFF
@@ -306,6 +307,7 @@ if _NAUTILUS_IMPORT_ERROR is None:
             self._terminal_order_denial_circuit_open = False
             self._venue_protection_circuit_open = False
             self._controller_managed_execution_enabled = False
+            self._controller_private_path_health: dict[str, Any] | None = None
             self._last_stale_cancel_ns = 0
             self._last_completed_quote_ns = 0
             self._last_order_event_ns = 0
@@ -951,6 +953,27 @@ if _NAUTILUS_IMPORT_ERROR is None:
 
         def _quote_blockers_payload(self, *, state: str | None = None) -> list[dict[str, Any]]:
             blockers: list[dict[str, Any]] = []
+            private_path_health = getattr(self, "_controller_private_path_health", None)
+            if (
+                isinstance(private_path_health, Mapping)
+                and not bool(private_path_health.get("healthy", True))
+            ):
+                blocker = {
+                    "reason_code": "private_path_stale",
+                    "state": str(private_path_health.get("state") or "stale"),
+                }
+                for field_name in (
+                    "last_error_type",
+                    "timeout_count",
+                    "last_attempt_ts_ms",
+                    "last_success_ts_ms",
+                    "stale_after_ms",
+                ):
+                    field_value = private_path_health.get(field_name)
+                    if field_value is not None:
+                        blocker[field_name] = field_value
+                blockers.append(blocker)
+
             pending_cancel_count = len(self._pending_cancel_client_order_ids)
             if pending_cancel_count > 0:
                 state_name = str(state or getattr(self, "_last_state_name", None) or "").strip().lower()
@@ -975,6 +998,14 @@ if _NAUTILUS_IMPORT_ERROR is None:
                     blockers.append(dict(blocker))
 
             return blockers
+
+        def _controller_private_path_block_reason(self) -> str | None:
+            private_path_health = getattr(self, "_controller_private_path_health", None)
+            if not isinstance(private_path_health, Mapping):
+                return None
+            if bool(private_path_health.get("healthy", True)):
+                return None
+            return REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 
         def _resolve_order_side(
             self,

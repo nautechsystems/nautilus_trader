@@ -643,6 +643,31 @@ def test_publish_state_exports_spot_borrow_blocker_metadata(clocked_strategy_fac
     assert state_payload["quote_blockers"][0]["exchange_code"] == "51006"
 
 
+def test_publish_state_exports_private_path_blocker_metadata(clocked_strategy_factory) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._publish_event = lambda *_args, **_kwargs: None
+    strategy._managed_orders = lambda: []
+    strategy._runtime_params["n_orders1"] = 5
+    strategy._controller_private_path_health = {
+        "healthy": False,
+        "state": "stale",
+        "last_error_type": "TimeoutError",
+        "timeout_count": 2,
+        "last_attempt_ts_ms": 999,
+        "stale_after_ms": 5_000,
+    }
+
+    payloads: list[tuple[str, dict[str, Any]]] = []
+    strategy._publish_json = lambda topic, payload: payloads.append((topic, payload))
+
+    strategy._publish_state("blocked_private_path")
+
+    state_payload = next(payload for topic, payload in payloads if topic == TOPIC_STATE)
+    assert state_payload["quote_blockers"][0]["reason_code"] == "private_path_stale"
+    assert state_payload["quote_blockers"][0]["last_error_type"] == "TimeoutError"
+    assert state_payload["quote_blockers"][0]["timeout_count"] == 2
+
+
 def test_spot_borrow_block_alerts_are_rate_limited_until_recovery_transition(
     clocked_strategy_factory,
 ) -> None:
