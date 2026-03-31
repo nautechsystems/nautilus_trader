@@ -224,6 +224,39 @@ async def test_recover_quote_subscription_reports_transport_result(
 
 
 @pytest.mark.asyncio
+async def test_recover_quote_subscription_supports_legacy_result_ingress_signature(
+    data_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    ws_client.recover_quote_subscription = AsyncMock(
+        return_value=("transport_unhealthy", False, "transport inactive"),
+    )
+    ingress_calls: list[tuple[int, bool, str | None]] = []
+
+    def result_ingress(*, now_ns: int, ok: bool, error_summary: str | None) -> None:
+        ingress_calls.append((now_ns, ok, error_summary))
+
+    client.set_quote_feed_result_ingress(result_ingress)
+
+    await client._connect()
+    try:
+        await client.recover_quote_subscription(
+            InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        )
+
+        assert len(ingress_calls) == 1
+        _, ok, error_summary = ingress_calls[0]
+        assert ok is False
+        assert error_summary == "transport inactive"
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_recover_quote_ticks_reports_explicit_feed_identity(
     data_client_builder,
     monkeypatch,

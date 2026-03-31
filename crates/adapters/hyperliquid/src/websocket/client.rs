@@ -96,6 +96,32 @@ impl QuoteSubscriptionRecoveryResult {
     }
 }
 
+struct QuoteRecoveryInflightGuard {
+    inflight: Arc<DashMap<String, ()>>,
+    key: Option<String>,
+}
+
+impl QuoteRecoveryInflightGuard {
+    fn new(inflight: Arc<DashMap<String, ()>>, key: String) -> Self {
+        Self {
+            inflight,
+            key: Some(key),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.key = None;
+    }
+}
+
+impl Drop for QuoteRecoveryInflightGuard {
+    fn drop(&mut self) {
+        if let Some(key) = self.key.take() {
+            self.inflight.remove(&key);
+        }
+    }
+}
+
 /// Represents the different data types available from asset context subscriptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum AssetContextDataType {
@@ -674,15 +700,17 @@ impl HyperliquidWebSocketClient {
         if !self.try_begin_quote_recovery(&recovery_key) {
             return QuoteSubscriptionRecoveryResult::already_inflight();
         }
+        let mut inflight_guard = QuoteRecoveryInflightGuard::new(
+            Arc::clone(&self.quote_recovery_inflight),
+            recovery_key,
+        );
 
         if !self.is_quote_recovery_transport_healthy() {
-            self.quote_recovery_inflight.remove(&recovery_key);
             return QuoteSubscriptionRecoveryResult::transport_unhealthy();
         }
 
         let cmd_tx = self.cmd_tx.read().await;
         if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument.clone())) {
-            self.quote_recovery_inflight.remove(&recovery_key);
             return QuoteSubscriptionRecoveryResult::send_failed(format!(
                 "Failed to queue quote recovery instrument update: {e}"
             ));
@@ -691,12 +719,12 @@ impl HyperliquidWebSocketClient {
         if let Err(e) = cmd_tx.send(HandlerCommand::RestoreSubscriptions {
             subscriptions: vec![subscription],
         }) {
-            self.quote_recovery_inflight.remove(&recovery_key);
             return QuoteSubscriptionRecoveryResult::send_failed(format!(
                 "Failed to queue quote recovery replay: {e}"
             ));
         }
 
+        inflight_guard.disarm();
         QuoteSubscriptionRecoveryResult::replayed()
     }
 

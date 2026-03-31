@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
@@ -215,18 +216,26 @@ class HyperliquidDataClient(LiveMarketDataClient):
             return
 
         now_ns = self._clock.timestamp_ns()
+        extended_kwargs = {
+            "now_ns": now_ns,
+            "ok": bool(result["ok"]),
+            "error_summary": result.get("error_summary"),
+            "feed_identity": result.get("feed_identity"),
+            "instrument_id": result.get("instrument_id"),
+            "status": result.get("status"),
+            "cache_refreshed": bool(result.get("cache_refreshed", False)),
+            "result": dict(result),
+        }
+        if self._ingress_supports_extended_quote_feed_result(ingress):
+            try:
+                ingress(**extended_kwargs)
+            except Exception as e:  # pragma: no cover - defensive logging
+                self._log.exception("Error reporting quote-feed recovery result", e)
+            return
+
+        # Keep the older `(now_ns, ok, error_summary)` contract working for legacy
+        # result ingresses while avoiding broad TypeError swallowing from the callback body.
         try:
-            ingress(
-                now_ns=now_ns,
-                ok=bool(result["ok"]),
-                error_summary=result.get("error_summary"),
-                feed_identity=result.get("feed_identity"),
-                instrument_id=result.get("instrument_id"),
-                status=result.get("status"),
-                cache_refreshed=bool(result.get("cache_refreshed", False)),
-                result=dict(result),
-            )
-        except TypeError:
             ingress(
                 now_ns=now_ns,
                 ok=bool(result["ok"]),
@@ -234,6 +243,34 @@ class HyperliquidDataClient(LiveMarketDataClient):
             )
         except Exception as e:  # pragma: no cover - defensive logging
             self._log.exception("Error reporting quote-feed recovery result", e)
+
+    @staticmethod
+    def _ingress_supports_extended_quote_feed_result(ingress: Any) -> bool:
+        try:
+            parameters = inspect.signature(ingress).parameters.values()
+        except (TypeError, ValueError):
+            return True
+
+        for parameter in parameters:
+            if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+
+        accepted_names = {
+            parameter.name
+            for parameter in parameters
+            if parameter.kind
+            in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+        }
+        return {
+            "feed_identity",
+            "instrument_id",
+            "status",
+            "cache_refreshed",
+            "result",
+        }.issubset(accepted_names)
 
     def _handle_msg(self, msg: Any) -> None:
         try:
