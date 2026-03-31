@@ -185,6 +185,8 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
         self._pubsub = None
         self._subscriptions: dict[InstrumentId, str] = {}
         self._channel_to_instrument_id: dict[str, InstrumentId] = {}
+        self._snapshot_keys: dict[InstrumentId, str] = {}
+        self._last_snapshot_messages: dict[InstrumentId, bytes] = {}
         self._listener_task: asyncio.Task | None = None
 
     @property
@@ -226,14 +228,15 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
             account_scope_id=self._client_config.account_scope_id,
             instrument_id=instrument_id,
         )
-        snapshot_payload = _decode_shared_reference_message(self._redis.get(snapshot_key))
-        if snapshot_payload is not None:
-            self.handle_shared_reference_snapshot(
-                instrument_id=instrument_id,
-                payload=snapshot_payload,
-            )
+        self._snapshot_keys[instrument_id] = snapshot_key
+        self._ingest_shared_reference_message(
+            instrument_id=instrument_id,
+            data=self._redis.get(snapshot_key),
+        )
 
     async def _unsubscribe_quote_ticks(self, command) -> None:
+        self._snapshot_keys.pop(command.instrument_id, None)
+        self._last_snapshot_messages.pop(command.instrument_id, None)
         channel = self._subscriptions.pop(command.instrument_id, None)
         if channel is None or self._pubsub is None:
             return
@@ -261,28 +264,50 @@ class InteractiveBrokersSharedReferenceDataClient(LiveMarketDataClient):
                 continue
 
             message = self._pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
-            if not message:
-                await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
-                continue
+            if message:
+                channel = _optional_text(message.get("channel"))
+                if channel is not None:
+                    instrument_id = self._channel_to_instrument_id.get(channel)
+                    if instrument_id is not None:
+                        self._ingest_shared_reference_message(
+                            instrument_id=instrument_id,
+                            data=message.get("data"),
+                        )
 
-            channel = _optional_text(message.get("channel"))
-            if channel is None:
-                continue
-            instrument_id = self._channel_to_instrument_id.get(channel)
-            if instrument_id is None:
-                continue
-            payload = _decode_shared_reference_message(message.get("data"))
-            if payload is None:
-                continue
-            self.handle_shared_reference_snapshot(
-                instrument_id=instrument_id,
-                payload=payload,
-            )
+            self._poll_snapshot_keys()
+            await asyncio.sleep(self._client_config.subscription_poll_interval_secs)
 
     def _ensure_pubsub(self):
         if self._pubsub is None:
             self._pubsub = self._redis.pubsub()
         return self._pubsub
+
+    def _poll_snapshot_keys(self) -> None:
+        for instrument_id, snapshot_key in tuple(self._snapshot_keys.items()):
+            self._ingest_shared_reference_message(
+                instrument_id=instrument_id,
+                data=self._redis.get(snapshot_key),
+            )
+
+    def _ingest_shared_reference_message(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        data: Any,
+    ) -> None:
+        normalized = _normalize_shared_reference_message(data)
+        if normalized is None:
+            return
+        if self._last_snapshot_messages.get(instrument_id) == normalized:
+            return
+        payload = _decode_shared_reference_message(normalized)
+        if payload is None:
+            return
+        self._last_snapshot_messages[instrument_id] = normalized
+        self.handle_shared_reference_snapshot(
+            instrument_id=instrument_id,
+            payload=payload,
+        )
 
 
 def _decode_shared_reference_message(data: Any) -> dict[str, Any] | None:
@@ -294,6 +319,20 @@ def _decode_shared_reference_message(data: Any) -> dict[str, Any] | None:
         return json.loads(data)
     if isinstance(data, Mapping):
         return dict(data)
+    return None
+
+
+def _normalize_shared_reference_message(data: Any) -> bytes | None:
+    if data is None:
+        return None
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, bytearray):
+        return bytes(data)
+    if isinstance(data, str):
+        return data.encode()
+    if isinstance(data, Mapping):
+        return json.dumps(dict(data), sort_keys=True).encode()
     return None
 
 

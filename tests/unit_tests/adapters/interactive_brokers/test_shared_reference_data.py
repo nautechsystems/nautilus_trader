@@ -70,6 +70,9 @@ class StubRedis:
     def close(self) -> None:
         return None
 
+    def set_value(self, key: str, value: bytes | str) -> None:
+        self._values[key] = value
+
 
 def _make_shared_reference_client(
     *,
@@ -263,3 +266,119 @@ async def test_shared_reference_data_client_listener_decodes_bytes_channel() -> 
 
     assert observed_instrument_id == instrument_id
     assert observed_payload == expected_payload
+
+
+@pytest.mark.asyncio
+async def test_shared_reference_data_client_listener_polls_snapshot_key_when_pubsub_silent() -> None:
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    expected_channel = shared_reference_quote_channel(
+        profile_id="equities",
+        account_scope_id="ibkr.reference.main",
+        instrument_id=instrument_id,
+    )
+    expected_key = expected_channel.removesuffix(":changed")
+    initial_payload = {
+        "instrument_id": "AAPL.NASDAQ",
+        "bid": 190.25,
+        "ask": 190.50,
+        "bid_size": 7,
+        "ask_size": 9,
+        "ts_event_ms": 9_900,
+        "ts_publish_ms": 10_000,
+    }
+    updated_payload = {
+        "instrument_id": "AAPL.NASDAQ",
+        "bid": 190.35,
+        "ask": 190.60,
+        "bid_size": 11,
+        "ask_size": 13,
+        "ts_event_ms": 10_100,
+        "ts_publish_ms": 10_200,
+    }
+    pubsub = StubPubSub()
+    redis_client = StubRedis(pubsub, values={expected_key: json.dumps(initial_payload)})
+    client = _make_shared_reference_client(
+        loop=asyncio.get_running_loop(),
+        pubsub=pubsub,
+        values={expected_key: json.dumps(initial_payload)},
+    )
+    client._redis = redis_client
+
+    await client._subscribe_quote_ticks(
+        _subscribe_quote_ticks_command(
+            instrument_id=instrument_id,
+            ts_init=client._clock.timestamp_ns(),
+        ),
+    )
+
+    received: asyncio.Future[tuple[InstrumentId, dict]] = asyncio.get_running_loop().create_future()
+
+    def _capture_snapshot(*, instrument_id: InstrumentId, payload: dict) -> None:
+        if not received.done():
+            received.set_result((instrument_id, payload))
+
+    client.handle_shared_reference_snapshot = _capture_snapshot  # type: ignore[method-assign]
+    redis_client.set_value(expected_key, json.dumps(updated_payload))
+
+    listener_task = asyncio.create_task(client._listen_for_shared_reference_updates())
+    try:
+        observed_instrument_id, observed_payload = await asyncio.wait_for(received, timeout=0.2)
+    finally:
+        listener_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await listener_task
+
+    assert observed_instrument_id == instrument_id
+    assert observed_payload == updated_payload
+
+
+@pytest.mark.asyncio
+async def test_shared_reference_data_client_listener_dedupes_unchanged_polled_snapshot() -> None:
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    expected_channel = shared_reference_quote_channel(
+        profile_id="equities",
+        account_scope_id="ibkr.reference.main",
+        instrument_id=instrument_id,
+    )
+    expected_key = expected_channel.removesuffix(":changed")
+    expected_payload = {
+        "instrument_id": "AAPL.NASDAQ",
+        "bid": 190.25,
+        "ask": 190.50,
+        "bid_size": 7,
+        "ask_size": 9,
+        "ts_event_ms": 9_900,
+        "ts_publish_ms": 10_000,
+    }
+    pubsub = StubPubSub()
+    redis_client = StubRedis(pubsub, values={expected_key: json.dumps(expected_payload)})
+    client = _make_shared_reference_client(
+        loop=asyncio.get_running_loop(),
+        pubsub=pubsub,
+        values={expected_key: json.dumps(expected_payload)},
+    )
+    client._redis = redis_client
+
+    await client._subscribe_quote_ticks(
+        _subscribe_quote_ticks_command(
+            instrument_id=instrument_id,
+            ts_init=client._clock.timestamp_ns(),
+        ),
+    )
+
+    observed: list[tuple[InstrumentId, dict]] = []
+
+    def _capture_snapshot(*, instrument_id: InstrumentId, payload: dict) -> None:
+        observed.append((instrument_id, payload))
+
+    client.handle_shared_reference_snapshot = _capture_snapshot  # type: ignore[method-assign]
+
+    listener_task = asyncio.create_task(client._listen_for_shared_reference_updates())
+    try:
+        await asyncio.sleep(0.05)
+    finally:
+        listener_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await listener_task
+
+    assert observed == []
