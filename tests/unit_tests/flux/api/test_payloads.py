@@ -3189,6 +3189,8 @@ def test_build_signals_payload_prefers_live_equities_arb_leg_quotes_over_stale_s
     assert hedge_leg["age_ms"] == 50
     assert quote_snapshot["ts_ms"] == 1700000099950
     assert payload["ts_ms"] == 1700000099950
+    assert payload["mode"] == "OFF"
+    assert payload["reason"] == "bot_off"
 
 
 def test_build_signals_payload_preserves_explicit_ibkr_quote_health_within_runtime_budget() -> None:

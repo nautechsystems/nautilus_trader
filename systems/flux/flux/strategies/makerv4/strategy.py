@@ -360,6 +360,12 @@ class MakerV4Strategy(Strategy):
             ts_ns=ts_ns,
         )
 
+    def _uses_supervisor_owned_quote_feed_lifecycle(self) -> bool:
+        return (
+            self._quote_feed_supervisor is not None
+            and self._quote_feed_control_emitter is not None
+        )
+
     @property
     def hedge_request_count(self) -> int:
         return len(self._hedge_requests)
@@ -3043,7 +3049,10 @@ class MakerV4Strategy(Strategy):
             subscribed_instrument_ids.append(instrument_id)
             self._last_market_bbo_publish_ns[instrument_id] = 0
             self._prime_cached_quote(instrument_id)
-            self.subscribe_quote_ticks(instrument_id=instrument_id)
+            if self._uses_supervisor_owned_quote_feed_lifecycle():
+                self._attach_local_quote_topic(instrument_id)
+            else:
+                self.subscribe_quote_ticks(instrument_id=instrument_id)
 
         self._register_quote_feed_interest()
         for instrument_id in subscribed_instrument_ids:
@@ -3088,8 +3097,12 @@ class MakerV4Strategy(Strategy):
             if instrument_id in unsubscribed_instrument_ids:
                 continue
             unsubscribed_instrument_ids.append(instrument_id)
-            with suppress(Exception):
-                self.unsubscribe_quote_ticks(instrument_id=instrument_id)
+            if self._uses_supervisor_owned_quote_feed_lifecycle():
+                with suppress(Exception):
+                    self._detach_local_quote_topic(instrument_id)
+            else:
+                with suppress(Exception):
+                    self.unsubscribe_quote_ticks(instrument_id=instrument_id)
         self._deregister_quote_feed_interest()
         provider_stop = getattr(self._reference_balance_snapshot_provider, "stop", None)
         if callable(provider_stop):

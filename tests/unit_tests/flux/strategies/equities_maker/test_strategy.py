@@ -360,7 +360,7 @@ def test_equities_maker_shared_recovery_attachment_moves_timer_resubscribe_to_su
     ]
 
 
-def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserves_direct_quote_delivery(
+def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserves_local_quote_delivery(
     monkeypatch,
 ) -> None:
     maker_strategy = EquitiesMakerStrategy(config=_config(strategy_id="aapl_tradexyz_maker"))
@@ -373,6 +373,7 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
     strategies = (maker_strategy, taker_strategy)
     supervisor = NodeQuoteFeedSupervisor()
     control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    attached_topics: list[tuple[str, InstrumentId]] = []
     direct_subscribes: list[tuple[str, InstrumentId]] = []
 
     for strategy in strategies:
@@ -381,6 +382,14 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
             strategy,
             supervisor=supervisor,
             control_emitter=control_emitter,
+        )
+        monkeypatch.setattr(
+            strategy,
+            "_attach_local_quote_topic",
+            lambda instrument_id, strategy=strategy: attached_topics.append(
+                (strategy.config.external_strategy_id, instrument_id)
+            ),
+            raising=False,
         )
         monkeypatch.setattr(
             strategy,
@@ -393,7 +402,7 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
     maker_strategy.on_start()
     taker_strategy.on_start()
 
-    assert sorted(direct_subscribes) == sorted(
+    assert sorted(attached_topics) == sorted(
         [
             ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
             ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
@@ -401,6 +410,7 @@ def test_equities_maker_supervisor_runtime_dedupes_startup_interest_and_preserve
             ("aapl_tradexyz_taker", taker_strategy.config.reference_instrument_id),
         ]
     )
+    assert direct_subscribes == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("subscribe", "maker_quote_ticks"),
         ("subscribe", "reference_quote_ticks"),
@@ -538,6 +548,8 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
     strategies = (maker_strategy, taker_strategy)
     supervisor = NodeQuoteFeedSupervisor()
     control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    attached_topics: list[tuple[str, InstrumentId]] = []
+    detached_topics: list[tuple[str, InstrumentId]] = []
     direct_subscribes: list[tuple[str, InstrumentId]] = []
     direct_unsubscribes: list[tuple[str, InstrumentId]] = []
 
@@ -547,6 +559,22 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
             strategy,
             supervisor=supervisor,
             control_emitter=control_emitter,
+        )
+        monkeypatch.setattr(
+            strategy,
+            "_attach_local_quote_topic",
+            lambda instrument_id, strategy=strategy: attached_topics.append(
+                (strategy.config.external_strategy_id, instrument_id)
+            ),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            strategy,
+            "_detach_local_quote_topic",
+            lambda instrument_id, strategy=strategy: detached_topics.append(
+                (strategy.config.external_strategy_id, instrument_id)
+            ),
+            raising=False,
         )
         monkeypatch.setattr(
             strategy,
@@ -564,7 +592,7 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
         )
         strategy.on_start()
 
-    assert sorted(direct_subscribes) == sorted(
+    assert sorted(attached_topics) == sorted(
         [
             ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
             ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
@@ -572,19 +600,21 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
             ("aapl_tradexyz_taker", taker_strategy.config.reference_instrument_id),
         ]
     )
+    assert direct_subscribes == []
 
     control_emitter.commands.clear()
     maker_strategy.on_stop()
-    assert sorted(direct_unsubscribes) == sorted(
+    assert sorted(detached_topics) == sorted(
         [
             ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
             ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
         ]
     )
+    assert direct_unsubscribes == []
     assert control_emitter.commands == []
 
     taker_strategy.on_stop()
-    assert sorted(direct_unsubscribes) == sorted(
+    assert sorted(detached_topics) == sorted(
         [
             ("aapl_tradexyz_maker", maker_strategy.config.maker_instrument_id),
             ("aapl_tradexyz_maker", maker_strategy.config.reference_instrument_id),
@@ -592,6 +622,7 @@ def test_equities_maker_supervisor_runtime_keeps_unsubscribe_ownership_in_superv
             ("aapl_tradexyz_taker", taker_strategy.config.reference_instrument_id),
         ]
     )
+    assert direct_unsubscribes == []
     assert [(command.action, command.feed_identity.topic) for command in control_emitter.commands] == [
         ("unsubscribe", "maker_quote_ticks"),
         ("unsubscribe", "reference_quote_ticks"),
