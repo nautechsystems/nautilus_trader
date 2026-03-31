@@ -2208,6 +2208,9 @@ def test_build_node_passes_equities_maker_hedge_config_fields(monkeypatch) -> No
                 "strategy_id": "aapl_tradexyz_maker",
                 "param_set": "equities_maker",
                 "order_qty": "1",
+                "max_age_ms": 900000,
+                "quote_liveness_stall_after_ms": 900000,
+                "quote_liveness_recover_after_ms": 15000,
                 "outside_rth_hedge_enabled": True,
                 "hedge_price_tick_size": "0.05",
                 "hedge_min_share_increment": "1",
@@ -2221,6 +2224,9 @@ def test_build_node_passes_equities_maker_hedge_config_fields(monkeypatch) -> No
     )
 
     strategy = captured["strategy"]
+    assert strategy.config.max_age_ms == 900000
+    assert strategy.config.quote_liveness_stall_after_ms == 900000
+    assert strategy.config.quote_liveness_recover_after_ms == 15000
     assert strategy.config.outside_rth_hedge_enabled is True
     assert strategy.config.hedge_price_tick_size == Decimal("0.05")
     assert strategy.config.max_ibkr_quote_age_ms == 2500
@@ -2277,6 +2283,9 @@ def test_build_node_passes_equities_taker_family_config_fields(monkeypatch) -> N
                 "strategy_id": "aapl_tradexyz_taker",
                 "param_set": "equities_taker",
                 "order_qty": "1",
+                "max_age_ms": 900000,
+                "quote_liveness_stall_after_ms": 900000,
+                "quote_liveness_recover_after_ms": 15000,
                 "bid_edge_take_bps": "6",
                 "ask_edge_take_bps": "7",
                 "take_cooldown_ms": 2500,
@@ -2294,6 +2303,9 @@ def test_build_node_passes_equities_taker_family_config_fields(monkeypatch) -> N
     )
 
     strategy = captured["strategy"]
+    assert strategy.config.max_age_ms == 900000
+    assert strategy.config.quote_liveness_stall_after_ms == 900000
+    assert strategy.config.quote_liveness_recover_after_ms == 15000
     assert strategy.config.bid_edge_take_bps == 6.0
     assert strategy.config.ask_edge_take_bps == 7.0
     assert strategy.config.take_cooldown_ms == 2500

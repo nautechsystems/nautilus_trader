@@ -424,10 +424,7 @@ class MakerV4Strategy(Strategy):
         )
         reference_budget_ms = max(
             1,
-            min(
-                int(self._runtime_params.get("max_age_ms", 10_000) or 10_000),
-                int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
-            ),
+            int(getattr(self.config, "max_ibkr_quote_age_ms", 1_000)),
         )
 
         return (

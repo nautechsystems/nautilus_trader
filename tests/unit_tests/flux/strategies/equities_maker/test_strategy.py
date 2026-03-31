@@ -294,6 +294,20 @@ def test_equities_maker_uses_equities_liveness_defaults() -> None:
     assert strategy._runtime_params["quote_liveness_recover_after_ms"] == 5_000
 
 
+def test_equities_maker_reference_claim_uses_explicit_ibkr_quote_budget() -> None:
+    strategy = EquitiesMakerStrategy(
+        config=_config(
+            max_age_ms=30_000,
+            max_ibkr_quote_age_ms=300_000,
+        )
+    )
+
+    maker_claim, reference_claim = strategy.quote_feed_claim_specs()
+
+    assert maker_claim.unusable_after_ms == 30_000
+    assert reference_claim.unusable_after_ms == 300_000
+
+
 def test_equities_maker_timer_resubscribes_stalled_quotes(
     monkeypatch,
 ) -> None:

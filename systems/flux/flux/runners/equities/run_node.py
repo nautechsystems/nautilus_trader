@@ -1039,6 +1039,16 @@ def _strategy_config_kwargs(
         "spot_cash_borrowing_policy": str(
             strategy_cfg.get("spot_cash_borrowing_policy", "none"),
         ),
+        "quote_liveness_stall_after_ms": (
+            None
+            if strategy_cfg.get("quote_liveness_stall_after_ms") is None
+            else int(strategy_cfg.get("quote_liveness_stall_after_ms"))
+        ),
+        "quote_liveness_recover_after_ms": (
+            None
+            if strategy_cfg.get("quote_liveness_recover_after_ms") is None
+            else int(strategy_cfg.get("quote_liveness_recover_after_ms"))
+        ),
         "force_bot_off_on_start": bool(
             strategy_cfg.get("force_bot_off_on_start", False),
         ),
