@@ -26,6 +26,8 @@ from flux.api.payloads import contract_id_for_leg
 from flux.common.account_projection import decode_profile_account_snapshot
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.account_scopes import decode_account_scopes
+from flux.common.controller_scopes import ControllerScopeConfig
+from flux.common.controller_scopes import decode_controller_scopes
 from flux.common.keys import FluxRedisKeys
 from flux.common.portfolio_inventory import StrategyInventoryComponent
 from flux.common.portfolio_inventory import decode_component
@@ -220,6 +222,7 @@ def _expected_projection_scope_ids(
     *,
     strategy_contracts: tuple[StrategyContractEntry, ...],
     account_scopes: tuple[AccountScopeConfig, ...],
+    controller_scopes: tuple[ControllerScopeConfig, ...] = (),
     overrides: tuple[str, ...],
     providers: frozenset[str] | None = None,
 ) -> list[str]:
@@ -250,6 +253,10 @@ def _expected_projection_scope_ids(
         contract.execution_account_scope_id
         for contract in strategy_contracts
         if contract.execution_account_scope_id in configured_projection_scope_ids
+    )
+    referenced_scope_ids.difference_update(
+        scope.writer_account_scope_id
+        for scope in controller_scopes
     )
     return sorted(referenced_scope_ids)
 
@@ -717,6 +724,7 @@ def evaluate_equities_readiness(
     portfolio_id: str,
     strategy_contracts: tuple[StrategyContractEntry, ...],
     account_scopes: tuple[AccountScopeConfig, ...],
+    controller_scopes: tuple[ControllerScopeConfig, ...] = (),
     required_strategy_ids: tuple[str, ...],
     balances_payload: Mapping[str, Any] | None,
     signals_payload: Mapping[str, Any] | None,
@@ -743,11 +751,13 @@ def evaluate_equities_readiness(
     expected_projection_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
+        controller_scopes=controller_scopes,
         overrides=active_thresholds.expected_projection_scope_ids,
     )
     expected_ibkr_projection_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
+        controller_scopes=controller_scopes,
         overrides=tuple(
             scope_id
             for scope_id in active_thresholds.expected_projection_scope_ids
@@ -1122,6 +1132,7 @@ def main(argv: list[str] | None = None) -> int:
             if contract.strategy_id in strategy_id_set
         )
         account_scopes = decode_account_scopes(config.get("account_scopes") or [])
+        controller_scopes = decode_controller_scopes(config.get("controller_scopes") or [])
         thresholds = EquitiesReadinessThresholds(
             max_stale_signal_legs=args.max_stale_signal_legs,
             max_unhealthy_strategies=args.max_unhealthy_strategies,
@@ -1157,6 +1168,7 @@ def main(argv: list[str] | None = None) -> int:
         expected_scope_ids = _expected_projection_scope_ids(
             strategy_contracts=strategy_contracts,
             account_scopes=account_scopes,
+            controller_scopes=controller_scopes,
             overrides=thresholds.expected_projection_scope_ids,
         )
         projection_payloads = _collect_projection_payloads(
@@ -1196,6 +1208,7 @@ def main(argv: list[str] | None = None) -> int:
             portfolio_id=portfolio_id,
             strategy_contracts=strategy_contracts,
             account_scopes=account_scopes,
+            controller_scopes=controller_scopes,
             required_strategy_ids=required_strategy_ids,
             balances_payload=balances_payload,
             signals_payload=signals_payload,

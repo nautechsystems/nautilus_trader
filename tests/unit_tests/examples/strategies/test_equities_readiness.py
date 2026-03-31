@@ -9,6 +9,7 @@ from flux.api.payloads import StrategyMetadata
 from flux.api.payloads import build_legs_payload
 from flux.api.payloads import build_signals_payload
 from flux.common.account_scopes import AccountScopeConfig
+from flux.common.controller_scopes import ControllerScopeConfig
 from flux.common.strategy_contracts import StrategyContractEntry
 
 
@@ -88,6 +89,18 @@ def _account_scopes() -> tuple[AccountScopeConfig, ...]:
             scope_id="ibkr.hedge.main",
             provider="ibkr",
             venue="IBKR",
+        ),
+    )
+
+
+def _controller_scopes() -> tuple[ControllerScopeConfig, ...]:
+    return (
+        ControllerScopeConfig(
+            controller_scope_id="equities.ibkr.hedge.main",
+            profile_id="equities",
+            writer_account_scope_id="ibkr.hedge.main",
+            account_scope_ids=("ibkr.hedge.main",),
+            canary=True,
         ),
     )
 
@@ -325,6 +338,39 @@ def test_evaluate_equities_readiness_passes_when_contract_surfaces_are_healthy()
     assert result.checks["component_keys"].ok is True
     assert result.checks["profile_account_projections"].ok is True
     assert result.checks["signals"].ok is True
+    assert result.checks["ibkr_auth"].ok is True
+
+
+def test_evaluate_equities_readiness_ignores_controller_owned_writer_scopes_for_projections() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        controller_scopes=_controller_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id={
+            "ibkr.reference.main": _healthy_projection_payloads()["ibkr.reference.main"],
+        },
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is True
+    assert result.summary["expected_projection_scope_ids"] == [
+        "ibkr.reference.main",
+    ]
+    assert result.checks["profile_account_projections"].ok is True
     assert result.checks["ibkr_auth"].ok is True
 
 

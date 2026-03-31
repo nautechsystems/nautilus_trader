@@ -29,6 +29,7 @@ from flux.api.payloads import build_envelope
 from flux.api.payloads import build_error
 from flux.api.payloads import now_ms
 from flux.common.account_scopes import decode_account_scopes
+from flux.common.controller_scopes import decode_controller_scopes
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.config import FluxConfig
@@ -847,6 +848,7 @@ def _load_equities_readiness(
         if contract.strategy_id in strategy_id_set
     )
     account_scopes = decode_account_scopes(config.get("account_scopes") or [])
+    controller_scopes = decode_controller_scopes(config.get("controller_scopes") or [])
     portfolio_id = (
         _optional_text(portfolio_cfg.get("portfolio_id"))
         or EQUITIES_DESCRIPTOR.default_portfolio_id
@@ -867,6 +869,7 @@ def _load_equities_readiness(
     expected_scope_ids = _expected_projection_scope_ids(
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
+        controller_scopes=controller_scopes,
         overrides=thresholds.expected_projection_scope_ids,
     )
     projection_payloads = _collect_projection_payloads(
@@ -908,6 +911,7 @@ def _load_equities_readiness(
         portfolio_id=portfolio_id,
         strategy_contracts=strategy_contracts,
         account_scopes=account_scopes,
+        controller_scopes=controller_scopes,
         required_strategy_ids=required_strategy_ids,
         balances_payload=balances_payload if isinstance(balances_payload, dict) else None,
         signals_payload=signals_payload if isinstance(signals_payload, dict) else None,
