@@ -21,7 +21,7 @@ pub struct DatabaseConfig {
     pub host: Option<String>,
     /// The database port. If `None`, the typical default should be used.
     pub port: Option<u16>,
-    /// The Redis logical database index. If `None`, the server default is used.
+    /// The logical database index for backends that support it, such as Redis.
     pub db: Option<u16>,
     /// The account username for the database connection.
     pub username: Option<String>,

@@ -744,17 +744,14 @@ pub fn parse_fill_report(
         "execution.execQty",
     )?;
 
-    let fee_decimal: Decimal = execution
-        .exec_fee
-        .parse()
-        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
-    let currency = get_currency(&execution.fee_currency);
-    let commission = Money::from_decimal(fee_decimal, currency).with_context(|| {
-        format!(
-            "Failed to create commission from execFee='{}'",
-            execution.exec_fee
-        )
-    })?;
+    let explicit_fee_currency =
+        (!execution.fee_currency.is_empty()).then(|| get_currency(&execution.fee_currency));
+    let commission = parse_execution_commission(
+        &execution.exec_fee,
+        explicit_fee_currency,
+        instrument.quote_currency(),
+        "http",
+    )?;
 
     // Determine liquidity side from is_maker flag
     let liquidity_side = if execution.is_maker {
@@ -982,6 +979,31 @@ pub(crate) fn parse_millis_timestamp(value: &str, field: &str) -> anyhow::Result
         .checked_mul(NANOSECONDS_IN_MILLISECOND)
         .context("millisecond timestamp overflowed when converting to nanoseconds")?;
     Ok(UnixNanos::from(nanos))
+}
+
+pub(crate) fn parse_execution_commission(
+    exec_fee: &str,
+    explicit_fee_currency: Option<Currency>,
+    fallback_currency: Currency,
+    source: &'static str,
+) -> anyhow::Result<Money> {
+    let fee_decimal: Decimal = exec_fee
+        .parse()
+        .with_context(|| format!("Failed to parse execFee='{exec_fee}'"))?;
+
+    let commission_currency = match explicit_fee_currency {
+        Some(currency) => currency,
+        None => {
+            log::warn!(
+                "Bybit {source} execution missing explicit fee currency, falling back to {}",
+                fallback_currency.code.as_str()
+            );
+            fallback_currency
+        }
+    };
+
+    Money::from_decimal(fee_decimal, commission_currency)
+        .with_context(|| format!("Failed to create commission from execFee='{exec_fee}'"))
 }
 
 fn resolve_settlement_currency(
@@ -1299,7 +1321,7 @@ mod tests {
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitTradesResponse,
+            BybitTradeHistoryResponse, BybitTradesResponse,
         },
     };
 
@@ -1327,6 +1349,14 @@ mod tests {
         parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
     }
 
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.001", "0.001", Some("BTC"));
+        parse_spot_instrument(instrument, &fee_rate, TS, TS).unwrap()
+    }
+
     #[rstest]
     fn parse_spot_instrument_builds_currency_pair() {
         let json = load_test_json("http_get_instruments_spot.json");
@@ -1345,6 +1375,20 @@ mod tests {
             }
             _ => panic!("expected CurrencyPair"),
         }
+    }
+
+    #[rstest]
+    fn parse_http_spot_execution_preserves_fee_currency() {
+        let instrument = spot_instrument();
+        let json = load_test_json("http_get_executions_spot_fee_currency.json");
+        let response: BybitTradeHistoryResponse = serde_json::from_str(&json).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.commission.currency.code.as_str(), "BTC");
+        assert_eq!(report.commission.as_f64(), 0.000025);
     }
 
     #[rstest]

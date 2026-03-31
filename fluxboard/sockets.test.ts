@@ -632,6 +632,81 @@ describe('sockets status state machine', () => {
     expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
   });
 
+  it('accepts accepted_start_seq clamping for invalidate-only subscriptions', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onFailure = vi.fn();
+    const onSubscribed = vi.fn();
+    const onEvent = vi.fn();
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'tokenmm',
+        surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        snapshot_revision: 1,
+        last_seq: 3,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+      resumeFromSeq: 7270149420310528,
+      onEvent,
+      onFailure,
+      onSubscribed,
+    });
+
+    const ack = control.socket.emit.mock.calls[0]?.[2];
+    ack?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'tokenmm',
+      surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+      stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+      snapshot_revision: 1,
+      accepted_start_seq: 3,
+      last_seq: 3,
+      requested_resume_from_seq: 7270149420310528,
+      capabilities: {
+        recovery_mode: 'invalidate_only',
+        replay_supported: false,
+        transport_mode: 'polling_only',
+      },
+    });
+
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(onSubscribed).toHaveBeenCalledWith(expect.objectContaining({
+      accepted: true,
+      accepted_start_seq: 3,
+      last_seq: 3,
+    }));
+    expect(control.socket.emit).not.toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
+
+    control.emit('realtime_event', {
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'tokenmm',
+      stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+      snapshot_revision: 1,
+      kind: 'heartbeat',
+      seq: 3,
+      server_ts_ms: 1_700_000_000_003,
+      payload: {},
+    });
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'heartbeat',
+      seq: 3,
+    }));
+  });
+
   it('emits unsubscribe and removes the local subscription when trades recovery is required', async () => {
     const sockets = await import('./sockets');
     const control = createFakeSocket();

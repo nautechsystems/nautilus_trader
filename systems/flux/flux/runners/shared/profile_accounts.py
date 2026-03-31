@@ -32,6 +32,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamily
 from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance.http.error import classify_transport_error_type
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
@@ -63,6 +64,7 @@ class BinanceFuturesAccountProjectionProviderConfig:
     environment: BinanceEnvironment = BinanceEnvironment.LIVE
     base_url_http: str | None = None
     recv_window_ms: int = 5000
+    http_timeout_secs: int = 10
     http_proxy_url: str | None = None
     refresh_interval_secs: float = 15.0
 
@@ -76,6 +78,7 @@ class BinanceSpotMarginAccountProjectionProviderConfig:
     environment: BinanceEnvironment = BinanceEnvironment.LIVE
     base_url_http: str | None = None
     recv_window_ms: int = 5000
+    http_timeout_secs: int = 10
     http_proxy_url: str | None = None
     refresh_interval_secs: float = 15.0
 
@@ -237,7 +240,7 @@ def _annotate_projection_refresh_failure(
         "healthy": False,
         "last_success_ts_ms": last_success_ts_ms,
         "last_attempt_ts_ms": attempt_ts_ms,
-        "last_error_type": type(exc).__name__,
+        "last_error_type": classify_transport_error_type(exc) or type(exc).__name__,
         "last_error_message": str(exc),
         "stale_after_ms": stale_after_ms,
     }
@@ -676,6 +679,7 @@ class BinanceFuturesAccountProjectionProvider:
             base_url=resolved_base_url,
             environment=config.environment,
             proxy_url=config.http_proxy_url,
+            timeout_secs=config.http_timeout_secs,
         )
         self._http_account = BinanceFuturesAccountHttpAPI(
             client=self._client,
@@ -788,6 +792,7 @@ class BinanceSpotMarginAccountProjectionProvider:
             base_url=base_url_http,
             environment=config.environment,
             proxy_url=config.http_proxy_url,
+            timeout_secs=config.http_timeout_secs,
         )
         self._http_account = BinanceSpotAccountHttpAPI(
             client=self._client,
@@ -931,6 +936,7 @@ def _build_binance_futures_account_provider(
             environment=BinanceEnvironment.TESTNET if scope_config.testnet else BinanceEnvironment.LIVE,
             base_url_http=scope_config.base_url_http,
             recv_window_ms=scope_config.recv_window_ms or 5000,
+            http_timeout_secs=scope_config.http_timeout_secs or 10,
             http_proxy_url=scope_config.http_proxy_url,
         ),
     )
@@ -957,6 +963,7 @@ def _build_binance_spot_margin_account_provider(
             environment=BinanceEnvironment.TESTNET if scope_config.testnet else BinanceEnvironment.LIVE,
             base_url_http=scope_config.base_url_http,
             recv_window_ms=scope_config.recv_window_ms or 5000,
+            http_timeout_secs=scope_config.http_timeout_secs or 10,
             http_proxy_url=scope_config.http_proxy_url,
         ),
     )

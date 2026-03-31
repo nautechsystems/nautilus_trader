@@ -1,13 +1,32 @@
 from __future__ import annotations
 
+import sys
+from types import ModuleType
+
 import pytest
 
-import nautilus_trader.flux.runners.shared.profile_accounts as profile_accounts_module
+_IB_PACKAGE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers")
+_IB_PACKAGE_STUB.__path__ = []
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+_IB_COMMON_STUB.IBOrderTags = lambda **_kwargs: None
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+_IB_COMMON_STUB.IB_VENUE = "INTERACTIVE_BROKERS"
+_IB_CONFIG_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.config")
+_IB_CONFIG_STUB.DockerizedIBGatewayConfig = object
+_IB_SHARED_REFERENCE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.shared_reference")
+_IB_SHARED_REFERENCE_STUB.InteractiveBrokersSharedReferenceDataClientConfig = object
+_IB_SHARED_REFERENCE_STUB.InteractiveBrokersSharedReferenceLiveDataClientFactory = object
+sys.modules.setdefault(_IB_PACKAGE_STUB.__name__, _IB_PACKAGE_STUB)
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
+sys.modules.setdefault(_IB_CONFIG_STUB.__name__, _IB_CONFIG_STUB)
+sys.modules.setdefault(_IB_SHARED_REFERENCE_STUB.__name__, _IB_SHARED_REFERENCE_STUB)
+
+import flux.runners.shared.profile_accounts as profile_accounts_module
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinancePortfolioMarginBalanceInfo
 from nautilus_trader.flux.common.account_scopes import AccountScopeConfig
-from nautilus_trader.flux.runners.shared.profile_accounts import (
+from flux.runners.shared.profile_accounts import (
     _build_binance_spot_margin_account_snapshot,
 )
 
@@ -165,6 +184,7 @@ def test_build_account_projection_provider_routes_binance_portfolio_margin_priva
         api_secret_env="BINANCE_API_SECRET",
         account_type="PORTFOLIO_MARGIN",
         private_api_family="PORTFOLIO_MARGIN",
+        http_timeout_secs=17,
     )
 
     provider = profile_accounts_module.build_account_projection_provider(
@@ -176,6 +196,7 @@ def test_build_account_projection_provider_routes_binance_portfolio_margin_priva
     assert isinstance(provider, profile_accounts_module.BinanceSpotMarginAccountProjectionProvider)
     assert captured_kwargs["account_type"] == BinanceAccountType.PORTFOLIO_MARGIN
     assert captured_kwargs["base_url"] == "https://papi.binance.com"
+    assert captured_kwargs["timeout_secs"] == 17
 
 
 def test_build_account_projection_provider_rejects_binance_isolated_margin_scope(

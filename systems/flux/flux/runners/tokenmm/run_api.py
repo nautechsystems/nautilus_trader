@@ -58,6 +58,7 @@ from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.shared.surface_proxy import SurfaceProxyDescriptor
 from flux.runners.shared.surface_proxy import resolve_surface_backends
 from flux.runners.shared.surface_proxy import resolve_surface_proxy_descriptor
+from flux.strategies.makerv3.constants import REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
 from flux.runners.tokenmm.readiness import evaluate_tokenmm_readiness
 from flux.runners.tokenmm.readiness import load_state_streams_by_strategy_id
 from flux.runners.tokenmm.redis_runtime import apply_redis_env_overrides
@@ -206,6 +207,8 @@ def _signal_payload_to_active_alert_rows(
 
     quote_health = state_map.get("quote_health")
     quote_health_map = dict(quote_health) if isinstance(quote_health, Mapping) else {}
+    quote_blockers = state_map.get("quote_blockers")
+    quote_blockers_list = list(quote_blockers) if isinstance(quote_blockers, list) else []
     max_age_ms = safe_int(params_map.get("max_age_ms"))
 
     def _market_data_row(*, leg_role: str, default_reason_code: str) -> list[dict[str, Any]]:
@@ -256,6 +259,54 @@ def _signal_payload_to_active_alert_rows(
             leg_role="maker",
             default_reason_code="blocked_maker_md_stale",
         )
+    if state_name == "blocked_private_path":
+        blocker = next(
+            (
+                dict(row)
+                for row in quote_blockers_list
+                if isinstance(row, Mapping)
+                and _optional_text(row.get("reason_code")) == REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+            ),
+            {},
+        )
+        reason_code = (
+            _optional_text(blocker.get("reason_code"))
+            or REASON_BLOCKED_PRIVATE_PATH_UNAVAILABLE
+        )
+        details: dict[str, Any] = {
+            "strategy_id": strategy_id,
+            "state": state_name,
+        }
+        last_error_type = _optional_text(blocker.get("last_error_type"))
+        timeout_count = safe_int(blocker.get("timeout_count"))
+        if last_error_type is not None:
+            details["last_error_type"] = last_error_type
+        if timeout_count is not None:
+            details["timeout_count"] = timeout_count
+        message_parts = [
+            "Quoting blocked (controller private path unavailable)",
+            f"strategy_id={strategy_id}",
+        ]
+        if last_error_type is not None:
+            message_parts.append(f"last_error_type={last_error_type}")
+        if timeout_count is not None:
+            message_parts.append(f"timeout_count={timeout_count}")
+        row_id = f"active:{strategy_id}:{reason_code}"
+        return [
+            {
+                "strategy_id": strategy_id,
+                "row_id": row_id,
+                "id": row_id,
+                "alert_key": "private_path_blocked",
+                "level": "warning",
+                "code": reason_code,
+                "reason_code": reason_code,
+                "message": " ".join(message_parts),
+                "details": details,
+                "ts_ms": ts_ms,
+                "source": "signals",
+            },
+        ]
 
     reason_code = _optional_text(signal_payload.get("reason")) or state_name or "blocked"
     row_id = f"active:{strategy_id}:{reason_code}"

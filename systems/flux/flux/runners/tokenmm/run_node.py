@@ -650,6 +650,12 @@ class _TokenmmControllerManagedBridge:
         managed_rows = payload.get("managed_maker_orders")
         if not isinstance(managed_rows, list):
             return
+        private_path_health = payload.get("private_path_health")
+        setattr(
+            self._strategy,
+            "_controller_private_path_health",
+            dict(private_path_health) if isinstance(private_path_health, dict) else None,
+        )
         next_rows: dict[str, dict[str, Any]] = {}
         for row in managed_rows:
             if not isinstance(row, dict):

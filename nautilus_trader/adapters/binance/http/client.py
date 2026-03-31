@@ -46,6 +46,8 @@ class BinanceHttpClient:
         The default rate limiter quota for the client.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
+    timeout_secs : int, optional
+        The request timeout in seconds for underlying HTTP calls.
 
     """
 
@@ -60,6 +62,7 @@ class BinanceHttpClient:
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
         proxy_url: str | None = None,
+        timeout_secs: int | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -67,6 +70,7 @@ class BinanceHttpClient:
 
         self._base_url: str = base_url
         self._secret: str | None = api_secret
+        self._timeout_secs: int | None = timeout_secs
         self._rsa_private_key: str | None = rsa_private_key
         self._ed25519_private_key: bytes | None = None
         if ed25519_private_key:
@@ -87,6 +91,7 @@ class BinanceHttpClient:
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
+            timeout_secs=timeout_secs,
             proxy_url=proxy_url,
         )
 
@@ -195,6 +200,7 @@ class BinanceHttpClient:
             headers=self._headers,
             body=msgspec.json.encode(payload) if payload else None,
             keys=ratelimiter_keys,
+            timeout_secs=self._timeout_secs,
         )
 
         response_body = response.body

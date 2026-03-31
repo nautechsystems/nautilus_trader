@@ -2,8 +2,31 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from pathlib import Path
+import sys
+from types import ModuleType
 
 import pytest
+
+_IB_PACKAGE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers")
+_IB_PACKAGE_STUB.__path__ = []
+_IB_COMMON_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.common")
+class _IBOrderTagsStub:
+    def __init__(self, **kwargs) -> None:
+        self._kwargs = kwargs
+
+    @property
+    def value(self) -> str:
+        return ";".join(f"{key}={value}" for key, value in sorted(self._kwargs.items()))
+
+_IB_COMMON_STUB.IBOrderTags = _IBOrderTagsStub
+_IB_COMMON_STUB.IB_VENUE = "INTERACTIVE_BROKERS"
+_IB_COMMON_STUB.IB_CLIENT_ID = "INTERACTIVE_BROKERS"
+_IB_SHARED_REFERENCE_STUB = ModuleType("nautilus_trader.adapters.interactive_brokers.shared_reference")
+_IB_SHARED_REFERENCE_STUB.InteractiveBrokersSharedReferenceDataClientConfig = object
+_IB_SHARED_REFERENCE_STUB.InteractiveBrokersSharedReferenceLiveDataClientFactory = object
+sys.modules.setdefault(_IB_PACKAGE_STUB.__name__, _IB_PACKAGE_STUB)
+sys.modules.setdefault(_IB_COMMON_STUB.__name__, _IB_COMMON_STUB)
+sys.modules.setdefault(_IB_SHARED_REFERENCE_STUB.__name__, _IB_SHARED_REFERENCE_STUB)
 
 from flux.execution.events import ExecutionLifecycleEvent
 from flux.execution.intents import build_client_order_id
@@ -455,6 +478,59 @@ def test_controller_managed_bridge_removes_terminal_rows_on_lifecycle_event(
     assert bridge._managed_order_rows == {}
     assert claim.client_order_id not in strategy._managed_client_order_ids
     assert cleared_pending_cancel_ids == [claim.client_order_id]
+
+
+def test_controller_managed_bridge_applies_private_path_health_from_canonical_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    class _FakeFeed:
+        def __init__(self, **_kwargs) -> None:
+            return None
+
+        def bind(self, **_kwargs) -> None:
+            return None
+
+        def sync_once(self) -> None:
+            return None
+
+    monkeypatch.setattr(run_node, "ControllerStateFeedBridge", _FakeFeed)
+
+    strategy = SimpleNamespace(
+        runtime_strategy_id="plumeusdt_binance_spot_makerv3",
+        _clock=SimpleNamespace(timestamp_ns=lambda: 123_456_789),
+        _pending_cancel_client_order_ids=set(),
+        _clear_pending_cancel=lambda _client_order_id: None,
+        _managed_client_order_ids=set(),
+        _controller_private_path_health=None,
+    )
+    bridge = run_node._TokenmmControllerManagedBridge(
+        strategy=strategy,
+        controller_scope_id="tokenmm.binance.pm.main",
+        redis_client=object(),
+        namespace="flux",
+        schema_version="v1",
+        transport_root_dir=tmp_path,
+    )
+
+    bridge._apply_canonical_state(
+        {
+            "managed_maker_orders": [],
+            "private_path_health": {
+                "healthy": False,
+                "state": "stale",
+                "last_error_type": "TimeoutError",
+                "timeout_count": 1,
+            },
+        },
+    )
+
+    assert strategy._controller_private_path_health == {
+        "healthy": False,
+        "state": "stale",
+        "last_error_type": "TimeoutError",
+        "timeout_count": 1,
+    }
 
 
 def test_controller_managed_bridge_publish_cancel_uses_unique_intent_ids_per_attempt(

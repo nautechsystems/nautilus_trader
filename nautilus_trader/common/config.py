@@ -320,7 +320,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     port : int, optional
         The database port. If `None` then should use the typical default.
     db : int, optional
-        The Redis logical database index. If `None` then should use the server default.
+        The database index for backends that support logical databases, such as Redis.
     username : str, optional
         The account username for the database connection.
     password : str, optional

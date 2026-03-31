@@ -6,6 +6,7 @@ import {
   socket,
   type StandardSocketEventEnvelope,
   type StandardSocketFailure,
+  type StandardSocketSubscribeAck,
 } from './sockets';
 import {
   useTradesStore,
@@ -78,6 +79,13 @@ type TradesRecoveryReason =
   | 'socket_reconnect'
   | 'trade_gap'
   | null;
+
+const isInvalidateOnlyRealtimeCapabilities = (
+  capabilities: RealtimeSnapshotLineage['capabilities'] | StandardSocketSubscribeAck['capabilities'] | undefined,
+): boolean => {
+  const recoveryMode = String(capabilities?.recovery_mode ?? '').trim().toLowerCase();
+  return recoveryMode === 'invalidate_only' || capabilities?.replay_supported === false;
+};
 
 const coerceFiniteNumber = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -2105,11 +2113,19 @@ export default function Trades({
   }, [processTradeMessage, tradesStandardEnabled]);
 
   const getStandardResumeFromSeq = useCallback(() => {
+    const lineage = standardLineageRef.current;
+    if (isInvalidateOnlyRealtimeCapabilities(lineage?.capabilities)) {
+      const lineageLastSeq = lineage?.last_seq;
+      if (typeof lineageLastSeq === 'number' && lineageLastSeq > 0) {
+        return lineageLastSeq;
+      }
+      return streamCursorRef.current.lastSeq;
+    }
     const standardResumeSeq = standardResumeSeqRef.current;
     if (standardResumeSeq > 0) {
       return standardResumeSeq;
     }
-    const lineageLastSeq = standardLineageRef.current?.last_seq;
+    const lineageLastSeq = lineage?.last_seq;
     if (typeof lineageLastSeq === 'number' && lineageLastSeq > 0) {
       return lineageLastSeq;
     }
@@ -2221,11 +2237,13 @@ export default function Trades({
         typeof ack.last_seq === 'number'
           ? Math.max(acceptedSeq, ack.last_seq)
           : acceptedSeq;
-      standardResumeSeqRef.current = Math.max(
-        standardResumeSeqRef.current,
-        acceptedSeq,
-        ackLastSeq,
-      );
+      standardResumeSeqRef.current = isInvalidateOnlyRealtimeCapabilities(ack.capabilities)
+        ? ackLastSeq
+        : Math.max(
+          standardResumeSeqRef.current,
+          acceptedSeq,
+          ackLastSeq,
+        );
       const currentStreamCursor = streamCursorRef.current;
       streamCursorRef.current = {
         contractVersion:
