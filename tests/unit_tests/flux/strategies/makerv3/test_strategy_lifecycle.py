@@ -1494,6 +1494,27 @@ def test_lifecycle_handlers_reconcile_local_managed_order_state(strategy_factory
     assert strategy._managed_client_order_ids == set()
 
 
+def test_order_canceled_clears_startup_cleanup_block_after_last_managed_order_leaves(
+    clocked_strategy_factory,
+) -> None:
+    strategy = clocked_strategy_factory([1_000_000_000])
+    strategy._startup_cleanup_pending = True
+    strategy._last_state_name = "blocked_startup_cleanup"
+    strategy._last_quote_snapshot = {}
+    strategy._managed_client_order_ids = {"RESTING-1"}
+    strategy._managed_orders = lambda: []
+
+    published: list[tuple[str, dict[str, object]]] = []
+    strategy._publish_json = lambda topic, payload: published.append((topic, payload))
+
+    strategy.on_order_canceled(SimpleNamespace(client_order_id="RESTING-1", ts_event=1))
+
+    state_payload = next(payload for topic, payload in reversed(published) if topic == "flux.makerv3.state")
+    assert strategy._startup_cleanup_pending is False
+    assert state_payload["state"] == "running"
+    assert state_payload["maker_v3"]["quote_snapshot"]["reason"] == "running"
+
+
 def test_order_rejected_enriches_event_and_alerts_after_threshold(
     clocked_strategy_factory,
 ) -> None:
@@ -1681,6 +1702,28 @@ def test_quote_failure_circuit_breaker_stops_even_if_side_effects_raise(
     assert stopped == [True]
 
 
+def test_quote_failure_ignored_while_strategy_is_exiting(strategy_factory) -> None:
+    strategy = strategy_factory()
+
+    published: list[tuple[str, dict[str, object]]] = []
+    canceled: list[tuple[str, bool]] = []
+    stopped: list[bool] = []
+    strategy.is_exiting = lambda: True
+    strategy._publish_event = lambda name, **payload: published.append((name, payload))
+    strategy._cancel_managed_quotes = lambda reason, force=False, **_kwargs: canceled.append(
+        (reason, force),
+    )
+    strategy.stop_immediately = lambda: stopped.append(True)
+
+    strategy._handle_quote_failure(now_ns=1_000_000_000, exc=RuntimeError("boom"), context="test")
+
+    assert strategy._quote_failures_ns == []
+    assert strategy._quote_failure_circuit_open is False
+    assert published == []
+    assert canceled == []
+    assert stopped == []
+
+
 def test_on_stop_during_startup_cleanup_keeps_managed_only_cancel_scope(strategy_factory) -> None:
     strategy = strategy_factory(cancel_all_instrument_orders=True)
     strategy._startup_cleanup_pending = True
@@ -1730,8 +1773,10 @@ def test_timer_triggers_fallback_requote_when_books_are_fresh_and_quiet(
     strategy._publish_portfolio_inventory_component = lambda *_args, **_kwargs: None
     strategy._effective_bot_on = lambda: True
     strategy._last_bot_on = True
+    strategy.is_exiting = lambda: False
     strategy._enforce_stale_market_data = lambda **_kwargs: None
     strategy._quote_failure_circuit_open = False
+    strategy._books_fresh_for_quoting = lambda **_kwargs: True
     strategy.INTERNAL_REQUOTE_THROTTLE_MS = 100
     strategy._last_requote_ns = 0
     strategy._last_bbo_ts_ns[strategy.config.maker_instrument_id] = 450_000_000

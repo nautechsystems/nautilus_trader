@@ -174,6 +174,14 @@ def test_runtime_param_schema_describes_linear_offset_as_quoted_fv_adjustment() 
     assert "reference market" in description.lower()
 
 
+def test_runtime_param_schema_describes_max_age_ms_as_market_data_freshness_only() -> None:
+    description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["max_age_ms"]["description"]
+
+    assert "market-data" in description.lower()
+    assert "freshness" in description.lower()
+    assert "replace managed orders" not in description.lower()
+
+
 def test_runtime_param_schema_describes_skew_caps_as_inventory_driven_quoted_fv_components() -> None:
     global_description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["max_skew_bps_global"]["description"]
     local_description = MAKERV3_RUNTIME_PARAM_REGISTRY.schema["max_skew_bps_local"]["description"]

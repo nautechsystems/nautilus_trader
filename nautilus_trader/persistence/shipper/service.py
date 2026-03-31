@@ -46,6 +46,7 @@ class _TelemetryTableSpec:
     source_table_name: str
     columns: tuple[str, ...]
     db_path: str
+    cursor_key: str
 
 
 SOURCE_IDENTITY_COLUMNS: dict[str, tuple[str, ...]] = {
@@ -73,6 +74,8 @@ class SQLiteToPostgresTelemetryShipper:
         self._logger = logger or logging.getLogger("nautilus.telemetry.shipper")
         self._state_path = Path(config.state_db_path)
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        self._prune_interval_seconds = max(60.0, self._config.poll_interval_ms / 1000.0 * 60.0)
+        self._last_prune_at_by_table: dict[str, float] = {}
         self._state_conn = sqlite3.connect(self._state_path)
         self._state_conn.execute(
             """
@@ -94,12 +97,23 @@ class SQLiteToPostgresTelemetryShipper:
         self._state_conn.close()
 
     def configured_table_names(self) -> tuple[str, ...]:
-        return tuple(spec.name for spec in self._table_specs())
+        return tuple(dict.fromkeys(spec.name for spec in self._table_specs()))
+
+    def durable_table_names(self) -> tuple[str, ...]:
+        return tuple(spec.name for spec in self._durable_table_specs())
+
+    def raw_quote_cycle_table_names(self) -> tuple[str, ...]:
+        return tuple(spec.name for spec in self._raw_quote_cycle_table_specs())
+
+    def local_retention_hours_for_table(self, table_name: str) -> int:
+        if table_name == "quote_cycle":
+            return int(self._config.raw_quote_cycle_local_hours)
+        return int(self._config.prune_retention_hours)
 
     def ship_once(self) -> dict[str, TableShipResult]:
         results: dict[str, TableShipResult] = {}
         for spec in self._table_specs():
-            cursor, last_identity = self._load_cursor(spec.name)
+            cursor, last_identity = self._load_cursor(spec=spec)
             rows, cursor = self._load_rows_with_cursor_reset(
                 spec=spec,
                 after_rowid=cursor,
@@ -109,18 +123,25 @@ class SQLiteToPostgresTelemetryShipper:
                 payloads = [self._payload_from_row(spec.name, row) for row in rows]
                 inserted = self._sink.insert_rows(spec.name, payloads)
                 last_rowid = int(rows[-1]["rowid"])
-                self._store_cursor(spec.name, last_rowid, _row_identity(spec.name, rows[-1]))
-                pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=last_rowid)
+                self._store_cursor(spec.cursor_key, last_rowid, _row_identity(spec.name, rows[-1]))
+                pruned = self._maybe_prune_old_rows(spec=spec, shipped_through_rowid=last_rowid)
+                previous = results.get(spec.name, TableShipResult())
                 results[spec.name] = TableShipResult(
-                    shipped=inserted,
-                    deduped=len(rows) - inserted,
-                    pruned=pruned,
-                    last_rowid=last_rowid,
+                    shipped=previous.shipped + inserted,
+                    deduped=previous.deduped + (len(rows) - inserted),
+                    pruned=previous.pruned + pruned,
+                    last_rowid=max(previous.last_rowid, last_rowid),
                 )
                 continue
 
-            pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=cursor)
-            results[spec.name] = TableShipResult(pruned=pruned, last_rowid=cursor)
+            pruned = self._maybe_prune_old_rows(spec=spec, shipped_through_rowid=cursor)
+            previous = results.get(spec.name, TableShipResult())
+            results[spec.name] = TableShipResult(
+                shipped=previous.shipped,
+                deduped=previous.deduped,
+                pruned=previous.pruned + pruned,
+                last_rowid=max(previous.last_rowid, cursor),
+            )
         return results
 
     def run_forever(self) -> None:
@@ -134,24 +155,30 @@ class SQLiteToPostgresTelemetryShipper:
             time.sleep(self._config.poll_interval_ms / 1000.0)
 
     def _table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
+        return tuple([*self._durable_table_specs(), *self._raw_quote_cycle_table_specs()])
+
+    def _durable_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
         specs: list[_TelemetryTableSpec] = []
         if self._config.balance_snapshots_db_path:
-            specs.extend(
-                [
+            for db_path in self._resolve_sharded_db_paths(self._config.balance_snapshots_db_path):
+                specs.append(
                     _TelemetryTableSpec(
                         name="flux_balance_snapshot",
                         source_table_name="flux_balance_snapshot",
                         columns=FLUX_BALANCE_SNAPSHOT_COLUMN_NAMES,
-                        db_path=self._config.balance_snapshots_db_path,
+                        db_path=db_path,
+                        cursor_key=self._cursor_key("flux_balance_snapshot", db_path),
                     ),
+                )
+                specs.append(
                     _TelemetryTableSpec(
                         name="flux_balance_snapshot_row",
                         source_table_name="flux_balance_snapshot_row",
                         columns=FLUX_BALANCE_SNAPSHOT_ROW_COLUMN_NAMES,
-                        db_path=self._config.balance_snapshots_db_path,
+                        db_path=db_path,
+                        cursor_key=self._cursor_key("flux_balance_snapshot_row", db_path),
                     ),
-                ],
-            )
+                )
         if self._config.fills_db_path:
             specs.append(
                 _TelemetryTableSpec(
@@ -159,6 +186,7 @@ class SQLiteToPostgresTelemetryShipper:
                     source_table_name="execution_fill",
                     columns=EXECUTION_FILL_COLUMN_NAMES,
                     db_path=self._config.fills_db_path,
+                    cursor_key=self._cursor_key("execution_fill", self._config.fills_db_path),
                 ),
             )
         if self._config.orders_db_path:
@@ -168,15 +196,7 @@ class SQLiteToPostgresTelemetryShipper:
                     source_table_name="order_action",
                     columns=ORDER_ACTION_COLUMN_NAMES,
                     db_path=self._config.orders_db_path,
-                ),
-            )
-        if self._config.quote_cycles_db_path:
-            specs.append(
-                _TelemetryTableSpec(
-                    name="quote_cycle",
-                    source_table_name="quote_cycle",
-                    columns=QUOTE_CYCLE_COLUMN_NAMES,
-                    db_path=self._config.quote_cycles_db_path,
+                    cursor_key=self._cursor_key("order_action", self._config.orders_db_path),
                 ),
             )
         if self._config.portfolio_inventory_db_path:
@@ -186,9 +206,56 @@ class SQLiteToPostgresTelemetryShipper:
                     source_table_name="portfolio_inventory_snapshot",
                     columns=PORTFOLIO_INVENTORY_SNAPSHOT_COLUMN_NAMES,
                     db_path=self._config.portfolio_inventory_db_path,
+                    cursor_key=self._cursor_key(
+                        "portfolio_inventory_snapshot",
+                        self._config.portfolio_inventory_db_path,
+                    ),
                 ),
             )
         return tuple(specs)
+
+    def _resolve_sharded_db_paths(self, configured_path: str) -> tuple[str, ...]:
+        root = Path(configured_path).expanduser()
+        if root.is_dir():
+            return tuple(str(path) for path in sorted(root.glob("*.sqlite")))
+
+        paths: list[str] = []
+        if root.exists():
+            paths.append(str(root))
+        if root.suffix == ".sqlite":
+            shard_root = root.with_suffix("")
+            if shard_root.is_dir():
+                paths.extend(str(path) for path in sorted(shard_root.glob("*.sqlite")))
+        if paths:
+            return tuple(paths)
+        return (str(root),)
+
+    @staticmethod
+    def _cursor_key(table_name: str, db_path: str) -> str:
+        return f"{table_name}@{Path(db_path).expanduser()}"
+
+    def _legacy_cursor_name(self, *, spec: _TelemetryTableSpec) -> str | None:
+        if spec.name in {"flux_balance_snapshot", "flux_balance_snapshot_row"}:
+            configured_path = self._config.balance_snapshots_db_path
+            if configured_path is None:
+                return None
+            if Path(spec.db_path).expanduser() != Path(configured_path).expanduser():
+                return None
+        return spec.name
+
+    def _raw_quote_cycle_table_specs(self) -> tuple[_TelemetryTableSpec, ...]:
+        if not self._config.raw_quote_cycles_enabled or not self._config.quote_cycles_db_path:
+            return ()
+        return tuple(
+            _TelemetryTableSpec(
+                name="quote_cycle",
+                source_table_name="quote_cycle",
+                columns=QUOTE_CYCLE_COLUMN_NAMES,
+                db_path=db_path,
+                cursor_key=self._cursor_key("quote_cycle", db_path),
+            )
+            for db_path in self._resolve_sharded_db_paths(self._config.quote_cycles_db_path)
+        )
 
     def _load_rows_with_cursor_reset(
         self,
@@ -210,7 +277,7 @@ class SQLiteToPostgresTelemetryShipper:
         if current_identity == "" or current_identity == last_identity:
             return rows, after_rowid
 
-        self._store_cursor(spec.name, 0, "")
+        self._store_cursor(spec.cursor_key, 0, "")
         self._logger.warning(
             "Resetting telemetry shipper cursor for %s after rowid restart (cursor=%s max_rowid=%s)",
             spec.name,
@@ -224,7 +291,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return []
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         conn.row_factory = sqlite3.Row
         try:
             query = f"SELECT rowid, {', '.join(spec.columns)} FROM {spec.source_table_name} WHERE rowid > ? ORDER BY rowid ASC LIMIT ?"  # noqa: S608
@@ -244,7 +311,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return None
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         try:
             query = f"SELECT MAX(rowid) FROM {spec.source_table_name}"  # noqa: S608
             row = conn.execute(query).fetchone()
@@ -264,7 +331,7 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return ""
 
-        conn = sqlite3.connect(db_path)
+        conn = self._connect_source_db(db_path)
         conn.row_factory = sqlite3.Row
         try:
             query = f"SELECT rowid, {', '.join(spec.columns)} FROM {spec.source_table_name} WHERE rowid = ?"  # noqa: S608
@@ -297,8 +364,8 @@ class SQLiteToPostgresTelemetryShipper:
         if not db_path.exists():
             return 0
 
-        cutoff = _utc_now_minus(hours=self._config.prune_retention_hours)
-        conn = sqlite3.connect(db_path)
+        cutoff = _utc_now_minus(hours=self.local_retention_hours_for_table(spec.name))
+        conn = self._connect_source_db(db_path)
         try:
             with conn:
                 delete_sql = f"DELETE FROM {spec.source_table_name} WHERE rowid <= ? AND created_at < ?"  # noqa: S608
@@ -314,14 +381,47 @@ class SQLiteToPostgresTelemetryShipper:
         finally:
             conn.close()
 
-    def _load_cursor(self, table_name: str) -> tuple[int, str]:
+    def _maybe_prune_old_rows(self, *, spec: _TelemetryTableSpec, shipped_through_rowid: int) -> int:
+        if shipped_through_rowid <= 0:
+            return 0
+
+        now_monotonic = time.monotonic()
+        last_prune_at = self._last_prune_at_by_table.get(spec.cursor_key)
+        if last_prune_at is not None and (now_monotonic - last_prune_at) < self._prune_interval_seconds:
+            return 0
+
+        pruned = self._prune_old_rows(spec=spec, shipped_through_rowid=shipped_through_rowid)
+        self._last_prune_at_by_table[spec.cursor_key] = now_monotonic
+        return pruned
+
+    def _connect_source_db(self, db_path: Path) -> sqlite3.Connection:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.execute("PRAGMA busy_timeout=30000;")
+        return conn
+
+    def _load_cursor(self, *, spec: _TelemetryTableSpec) -> tuple[int, str]:
         row = self._state_conn.execute(
             "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
-            (table_name,),
+            (spec.cursor_key,),
         ).fetchone()
-        if row is None:
+        if row is not None:
+            return (int(row[0]), str(row[1] or ""))
+
+        legacy_cursor_name = self._legacy_cursor_name(spec=spec)
+        if legacy_cursor_name is None or legacy_cursor_name == spec.cursor_key:
             return (0, "")
-        return (int(row[0]), str(row[1] or ""))
+
+        legacy_row = self._state_conn.execute(
+            "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
+            (legacy_cursor_name,),
+        ).fetchone()
+        if legacy_row is None:
+            return (0, "")
+
+        last_rowid = int(legacy_row[0])
+        last_identity = str(legacy_row[1] or "")
+        self._store_cursor(spec.cursor_key, last_rowid, last_identity)
+        return (last_rowid, last_identity)
 
     def _store_cursor(self, table_name: str, last_rowid: int, last_identity: str) -> None:
         with self._state_conn:

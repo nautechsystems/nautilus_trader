@@ -21,7 +21,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=flux-%i
 LimitNOFILE=65536
-LimitNPROC=4096
+LimitNPROC=16384
 PrivateTmp=true
 UMask=0022
 

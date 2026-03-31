@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import sys
 import sqlite3
 from pathlib import Path
@@ -17,6 +18,7 @@ from nautilus_trader.persistence.orders.sqlite import ensure_schema as ensure_or
 from nautilus_trader.persistence.orders.sqlite import insert_many
 from nautilus_trader.persistence.shipper.config import TelemetryPostgresConfig
 from nautilus_trader.persistence.shipper.config import TelemetryShipperConfig
+from nautilus_trader.persistence.shipper.config import build_telemetry_shipper_config
 from nautilus_trader.persistence.shipper.postgres import TelemetryPostgresSink
 from nautilus_trader.persistence.shipper.postgres import TABLE_CREATE_SQL
 from nautilus_trader.persistence.shipper.postgres import TABLE_PRIMARY_KEYS
@@ -641,6 +643,63 @@ def test_shipper_prunes_only_old_rows_after_success(tmp_path: Path) -> None:
     assert rows == [("run-1:2",)]
 
 
+def test_shipper_throttles_source_prune_writes_between_close_cycles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_db),
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=24,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    shipper = SQLiteToPostgresTelemetryShipper(
+        config=config,
+        sink=_RecordingSink(),
+        source_host="host-a",
+    )
+
+    monotonic_now = 1000.0
+    monkeypatch.setattr(
+        "nautilus_trader.persistence.shipper.service.time.monotonic",
+        lambda: monotonic_now,
+    )
+
+    prune_calls: list[tuple[str, int]] = []
+    original_prune = shipper._prune_old_rows
+
+    def _recording_prune(*, spec, shipped_through_rowid: int) -> int:
+        prune_calls.append((spec.name, shipped_through_rowid))
+        return original_prune(spec=spec, shipped_through_rowid=shipped_through_rowid)
+
+    monkeypatch.setattr(shipper, "_prune_old_rows", _recording_prune)
+
+    shipper.ship_once()
+    monotonic_now += 1.0
+    shipper.ship_once()
+
+    assert [name for name, _rowid in prune_calls] == ["quote_cycle"]
+
+
 def test_shipper_ships_balance_snapshot_and_portfolio_inventory_tables(tmp_path: Path) -> None:
     balance_db = tmp_path / "balance_snapshots.sqlite"
     portfolio_db = tmp_path / "portfolio_inventory.sqlite"
@@ -688,6 +747,324 @@ def test_shipper_ships_balance_snapshot_and_portfolio_inventory_tables(tmp_path:
     assert portfolio_row["aggregation_mode"] == "partial"
     assert portfolio_row["stale_required_json"] == '["maker_v3_02"]'
     assert portfolio_row["expected_component_count"] == 2
+
+
+def test_shipper_ships_sharded_balance_snapshot_tables_from_strategy_dbs(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["flux_balance_snapshot"].shipped == 2
+    assert result["flux_balance_snapshot_row"].shipped == 2
+    assert [name for name, _rows in sink.insert_calls] == [
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+    ]
+
+
+def test_shipper_ships_legacy_balance_snapshot_db_alongside_shards_during_cutover(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(balance_root)
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_balance_snapshot_source(balance_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["flux_balance_snapshot"].shipped == 3
+    assert result["flux_balance_snapshot_row"].shipped == 3
+    assert [name for name, _rows in sink.insert_calls] == [
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+        "flux_balance_snapshot",
+        "flux_balance_snapshot_row",
+    ]
+
+
+def test_shipper_ships_sharded_quote_cycle_tables_from_strategy_dbs(tmp_path: Path) -> None:
+    quote_cycles_root = tmp_path / "quote_cycles.sqlite"
+    quote_cycles_dir = tmp_path / "quote_cycles"
+    state_db = tmp_path / "shipper_state.sqlite"
+    quote_cycles_dir.mkdir()
+    _create_quote_cycle_source(quote_cycles_dir / "plumeusdt_binance_spot_makerv3.sqlite")
+    _create_quote_cycle_source(quote_cycles_dir / "plumeusdt_binance_perp_makerv3.sqlite")
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=None,
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_root),
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    result = shipper.ship_once()
+
+    assert result["quote_cycle"].shipped == 4
+    assert [name for name, _rows in sink.insert_calls] == [
+        "quote_cycle",
+        "quote_cycle",
+    ]
+
+
+def test_shipper_resets_sharded_balance_snapshot_cursor_without_legacy_cursor_rows(tmp_path: Path) -> None:
+    balance_root = tmp_path / "balance_snapshots.sqlite"
+    balance_dir = tmp_path / "balance_snapshots"
+    state_db = tmp_path / "shipper_state.sqlite"
+    first_shard = balance_dir / "plumeusdt_binance_perp_makerv3.sqlite"
+    second_shard = balance_dir / "plumeusdt_binance_spot_makerv3.sqlite"
+    balance_dir.mkdir()
+    _create_balance_snapshot_source(first_shard)
+    _create_balance_snapshot_source(second_shard)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        balance_snapshots_db_path=str(balance_root),
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=None,
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    first = shipper.ship_once()
+    assert first["flux_balance_snapshot"].shipped == 2
+    assert first["flux_balance_snapshot_row"].shipped == 2
+
+    conn = sqlite3.connect(first_shard)
+    try:
+        conn.execute("DELETE FROM flux_balance_snapshot")
+        conn.execute("DELETE FROM flux_balance_snapshot_row")
+        conn.execute(
+            """
+            INSERT INTO flux_balance_snapshot (
+              trader_id, strategy_id, snapshot_id, topic, snapshot_hash, ts_event_ns, ts_ms,
+              ts_ingest_ns, account_count, position_count, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "TRADER-001",
+                "maker_v3_01",
+                "snapshot-2",
+                "flux.makerv3.balances",
+                "hash-2",
+                2_000_000,
+                2_000,
+                2_100_000,
+                1,
+                1,
+                '{"strategy_id":"maker_v3_01","generation":2}',
+                "2025-01-02T00:00:00.000Z",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO flux_balance_snapshot_row (
+              trader_id, strategy_id, snapshot_id, row_key, kind, exchange, account_id, account,
+              asset, instrument_id, side, signed_qty, quantity, free, locked, total, avg_px_open,
+              avg_px_close, realized_pnl, ts_ms, row_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "TRADER-001",
+                "maker_v3_01",
+                "snapshot-2",
+                "bybit:BYBIT-001:PLUME",
+                "cash",
+                "bybit",
+                "BYBIT-001",
+                "bybit-001",
+                "PLUME",
+                None,
+                None,
+                None,
+                None,
+                "80",
+                "20",
+                "100",
+                None,
+                None,
+                None,
+                2_000,
+                '{"asset":"PLUME","generation":2}',
+                "2025-01-02T00:00:00.000Z",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    sink.insert_calls.clear()
+    second = shipper.ship_once()
+
+    assert second["flux_balance_snapshot"].shipped == 1
+    assert second["flux_balance_snapshot_row"].shipped == 1
+    assert [rows[0]["snapshot_id"] for name, rows in sink.insert_calls if name == "flux_balance_snapshot"] == [
+        "snapshot-2",
+    ]
+
+    state_conn = sqlite3.connect(state_db)
+    try:
+        cursor_rows = state_conn.execute(
+            "SELECT table_name FROM shipper_cursor ORDER BY table_name ASC",
+        ).fetchall()
+    finally:
+        state_conn.close()
+
+    cursor_names = [str(row[0]) for row in cursor_rows]
+    assert all("@" in name for name in cursor_names)
+
+
+def test_shipper_migrates_legacy_quote_cycle_cursor_to_path_scoped_key(tmp_path: Path) -> None:
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        fills_db_path=None,
+        orders_db_path=None,
+        quote_cycles_db_path=str(quote_cycles_db),
+        state_db_path=str(state_db),
+        poll_interval_ms=1_000,
+        max_batch_size=100,
+        prune_retention_hours=24,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    sink = _RecordingSink()
+    shipper = SQLiteToPostgresTelemetryShipper(config=config, sink=sink, source_host="host-a")
+
+    state_conn = sqlite3.connect(state_db)
+    try:
+        state_conn.execute(
+            """
+            INSERT INTO shipper_cursor (table_name, last_rowid, last_identity, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("quote_cycle", 1, "TRADER-001|run-1:1", "2025-01-01T00:00:00.000Z"),
+        )
+        state_conn.commit()
+    finally:
+        state_conn.close()
+
+    result = shipper.ship_once()
+
+    assert result["quote_cycle"].shipped == 1
+    shipped_row = next(rows[0] for name, rows in sink.insert_calls if name == "quote_cycle")
+    assert shipped_row["quote_cycle_id"] == "run-1:2"
+
+    cursor_key = f"quote_cycle@{quote_cycles_db.expanduser()}"
+    migrated_cursor = shipper._state_conn.execute(
+        "SELECT last_rowid, last_identity FROM shipper_cursor WHERE table_name = ?",
+        (cursor_key,),
+    ).fetchone()
+    assert migrated_cursor == (2, "TRADER-001|run-1:2")
 
 
 def test_shipper_resets_cursor_when_rowid_restarts_after_source_table_reuse(tmp_path: Path) -> None:
@@ -871,7 +1248,7 @@ def test_shipper_transports_operator_quantity_fields_for_fills_and_orders(tmp_pa
     fill_row = insert_calls["execution_fill"][0]
     order_row = insert_calls["order_action"][0]
 
-    assert fill_row["last_qty"] == "100"
+    assert Decimal(str(fill_row["last_qty"])) == Decimal("100")
     assert fill_row["last_qty_base"] == "100"
     assert fill_row["last_qty_venue"] == "100"
     assert fill_row["qty_conversion_status"] == "identity"
@@ -879,7 +1256,7 @@ def test_shipper_transports_operator_quantity_fields_for_fills_and_orders(tmp_pa
     assert fill_row["source_profile"] == "tokenmm"
     assert fill_row["source_host"] == "host-a"
 
-    assert order_row["order_qty"] == "100"
+    assert Decimal(str(order_row["order_qty"])) == Decimal("100")
     assert order_row["order_qty_base"] == "100"
     assert order_row["order_qty_venue"] == "100"
     assert order_row["qty_conversion_status"] == "identity"
@@ -997,6 +1374,84 @@ def test_shipper_resets_cursor_when_source_rowids_restart_after_full_prune(tmp_p
     assert sink.insert_calls[-1][1][0]["quote_cycle_id"] == "run-2:1"
 
 
+def test_shipper_classifies_durable_tables_separately_from_quote_cycles(tmp_path: Path) -> None:
+    orders_db = tmp_path / "orders.sqlite"
+    quote_cycles_db = tmp_path / "quote_cycles.sqlite"
+    state_db = tmp_path / "shipper_state.sqlite"
+    _create_order_action_source(orders_db)
+    _create_quote_cycle_source(quote_cycles_db)
+
+    config = TelemetryShipperConfig(
+        enabled=True,
+        enable_local_persistence=True,
+        source_profile="tokenmm",
+        durable_sink="postgres",
+        raw_quote_cycles_enabled=True,
+        raw_quote_cycle_local_hours=48,
+        raw_quote_cycle_s3_days=7,
+        core_history_s3_days=365,
+        structured_local_cap_gb=8,
+        quote_cycle_local_cap_gb=12,
+        balance_snapshots_db_path=None,
+        fills_db_path=None,
+        orders_db_path=str(orders_db),
+        quote_cycles_db_path=str(quote_cycles_db),
+        portfolio_inventory_db_path=None,
+        state_db_path=str(state_db),
+        poll_interval_ms=1_000,
+        max_batch_size=100,
+        prune_retention_hours=168,
+        postgres=TelemetryPostgresConfig(
+            host="localhost",
+            port=5432,
+            database="nautilus_telemetry",
+            schema="telemetry",
+            username="nautilus",
+            password="pass",
+            sslmode="require",
+        ),
+    )
+    shipper = SQLiteToPostgresTelemetryShipper(
+        config=config,
+        sink=_RecordingSink(),
+        source_host="host-a",
+    )
+
+    assert shipper.durable_table_names() == ("order_action",)
+    assert shipper.raw_quote_cycle_table_names() == ("quote_cycle",)
+    assert shipper.local_retention_hours_for_table("order_action") == 168
+    assert shipper.local_retention_hours_for_table("quote_cycle") == 48
+
+
+def test_build_shipper_config_accepts_s3_athena_sink_without_postgres_env() -> None:
+    config = build_telemetry_shipper_config(
+        {
+            "enabled": True,
+            "enable_local_persistence": True,
+            "source_profile": "tokenmm",
+            "durable_sink": "s3_athena",
+            "archive_s3_bucket": "unit-test-telemetry",
+            "archive_s3_prefix": "nautilus/telemetry/tokenmm",
+            "athena_database": "nautilus_telemetry",
+            "athena_workgroup": "primary",
+            "raw_quote_cycles_enabled": True,
+            "raw_quote_cycle_local_hours": 48,
+            "raw_quote_cycle_s3_days": 7,
+            "core_history_s3_days": 365,
+            "structured_local_cap_gb": 8,
+            "quote_cycle_local_cap_gb": 12,
+            "orders_db_path": "/tmp/orders.sqlite",
+            "quote_cycles_db_path": "/tmp/quote_cycles.sqlite",
+            "state_db_path": "/tmp/shipper_state.sqlite",
+        },
+        env={},
+    )
+
+    assert config.durable_sink == "s3_athena"
+    assert config.archive_s3_bucket == "unit-test-telemetry"
+    assert config.postgres is None
+
+
 def test_shipper_run_exits_78_on_missing_postgres_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "tokenmm.live.toml"
     config_path.write_text(
@@ -1005,6 +1460,68 @@ def test_shipper_run_exits_78_on_missing_postgres_env(tmp_path: Path, monkeypatc
 enabled = true
 enable_local_persistence = true
 source_profile = "tokenmm"
+orders_db_path = "/tmp/orders.sqlite"
+state_db_path = "/tmp/shipper_state.sqlite"
+""".strip(),
+        encoding="utf-8",
+    )
+    for key in (
+        "NAUTILUS_TELEMETRY_PG_HOST",
+        "NAUTILUS_TELEMETRY_PG_PORT",
+        "NAUTILUS_TELEMETRY_PG_DATABASE",
+        "NAUTILUS_TELEMETRY_PG_SCHEMA",
+        "NAUTILUS_TELEMETRY_PG_USERNAME",
+        "NAUTILUS_TELEMETRY_PG_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["shipper.run", "--config", str(config_path)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        shipper_run.main()
+
+    assert exc_info.value.code == 78
+
+
+def test_shipper_run_is_noop_for_s3_athena(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "tokenmm.live.toml"
+    config_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+durable_sink = "s3_athena"
+archive_s3_bucket = "unit-test-telemetry"
+orders_db_path = "/tmp/orders.sqlite"
+state_db_path = "/tmp/shipper_state.sqlite"
+""".strip(),
+        encoding="utf-8",
+    )
+    for key in (
+        "NAUTILUS_TELEMETRY_PG_HOST",
+        "NAUTILUS_TELEMETRY_PG_PORT",
+        "NAUTILUS_TELEMETRY_PG_DATABASE",
+        "NAUTILUS_TELEMETRY_PG_SCHEMA",
+        "NAUTILUS_TELEMETRY_PG_USERNAME",
+        "NAUTILUS_TELEMETRY_PG_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["shipper.run", "--config", str(config_path)])
+
+    result = shipper_run.main()
+
+    assert result == 0
+
+
+def test_shipper_run_exits_78_on_unsupported_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "tokenmm.live.toml"
+    config_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+durable_sink = "bad_sink"
 orders_db_path = "/tmp/orders.sqlite"
 state_db_path = "/tmp/shipper_state.sqlite"
 """.strip(),

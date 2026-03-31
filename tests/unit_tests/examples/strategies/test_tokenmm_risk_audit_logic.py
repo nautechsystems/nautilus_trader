@@ -74,6 +74,137 @@ def test_strategy_local_qty_from_rows_prefers_latest_base_row_for_spot_component
     )
 
     assert qty == module.Decimal("1045.24669092")
+    assert source == "latest_base_asset_rows_by_account"
+
+
+def test_latest_base_asset_qty_from_rows_prefers_higher_numeric_event_id_when_timestamps_tie() -> None:
+    module = _load_module()
+
+    qty, source = module._latest_base_asset_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "total": "-3447.93729095",
+                "row_id": "plumeusdt_bitget_spot_makerv3:evt:9:0",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "total": "-3447.95091031",
+                "row_id": "plumeusdt_bitget_spot_makerv3:evt:136:0",
+                "ts_ms": 1_700_000_000_002,
+            },
+        ],
+        base_asset="PLUME",
+    )
+
+    assert qty == module.Decimal("-3447.95091031")
+    assert source == "latest_base_asset_rows_by_account"
+
+
+def test_strategy_local_qty_from_rows_sums_latest_base_rows_by_account_for_spot_component() -> None:
+    module = _load_module()
+
+    qty, source = module._strategy_local_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                "total": "9987.75192185",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:2",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                "total": "9987.75192185",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:1:2",
+                "ts_ms": 1_700_000_000_002,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-MARGIN-master",
+                "total": "-30721.57152347",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:205",
+                "ts_ms": 1_700_000_000_002,
+            },
+        ],
+        base_asset="PLUME",
+        expected_local_qty=None,
+        component_local_position_qty=None,
+        component_local_spot_qty=module.Decimal("-20733.81960162"),
+    )
+
+    assert qty == module.Decimal("-20733.81960162")
+    assert source == "latest_base_asset_rows_by_account"
+
+
+def test_strategy_local_qty_from_rows_sums_latest_base_rows_across_accounts() -> None:
+    module = _load_module()
+
+    qty, source = module._strategy_local_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                "total": "9987.75192185",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:2",
+                "ts_ms": 1_700_000_000_001,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BINANCE_SPOT-MARGIN-master",
+                "total": "-30721.57152347",
+                "row_id": "plumeusdt_binance_spot_makerv3:evt:0:205",
+                "ts_ms": 1_700_000_000_001,
+            },
+        ],
+        base_asset="PLUME",
+        expected_local_qty=None,
+        component_local_position_qty=None,
+        component_local_spot_qty=module.Decimal("-20733.81960162"),
+    )
+
+    assert qty == module.Decimal("-20733.81960162")
+    assert source == "latest_base_asset_rows_by_account"
+
+
+def test_strategy_local_qty_from_rows_orders_event_row_ids_numerically() -> None:
+    module = _load_module()
+
+    qty, source = module._strategy_local_qty_from_rows(
+        rows=[
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BYBIT-UNIFIED",
+                "total": "-78925.11949891",
+                "row_id": "plumeusdt_bybit_spot_makerv3:evt:81:0",
+                "ts_ms": 1_700_000_000_001,
+            },
+            {
+                "kind": "cash",
+                "asset": "PLUME",
+                "account_id": "BYBIT-UNIFIED",
+                "total": "-71928.31949891",
+                "row_id": "plumeusdt_bybit_spot_makerv3:evt:720:0",
+                "ts_ms": 1_700_000_000_001,
+            },
+        ],
+        base_asset="PLUME",
+        expected_local_qty=None,
+        component_local_position_qty=None,
+        component_local_spot_qty=module.Decimal("-71928.31949891"),
+    )
+
+    assert qty == module.Decimal("-71928.31949891")
     assert source == "latest_base_asset_row"
 
 
@@ -260,3 +391,94 @@ def test_main_success_banner_includes_readiness_freshness_summary(
     assert "TOKENMM RISK AUDIT PASSED" in captured.out
     assert "readiness=1/1" in captured.out
     assert "state_stream_max_age_ms=30000" in captured.out
+
+
+def test_main_prefers_profile_component_local_qty_when_strategy_debug_rows_disagree(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    module = _load_module()
+    strategy_id = "plumeusdt_binance_spot_makerv3"
+
+    def _fake_fetch_enveloped_data(*, base_url: str, path: str, timeout: float):
+        assert base_url == "http://127.0.0.1:5022"
+        assert timeout == 5.0
+        if path == module.PROFILE_READINESS_PATH:
+            return {
+                "ok": True,
+                "summary": {
+                    "ready_strategy_count": 1,
+                    "required_strategy_count": 1,
+                    "state_stream_max_age_ms": 30_000,
+                    "failed_checks": [],
+                },
+            }
+        if path == module.PROFILE_SIGNALS_PATH:
+            return {
+                "strategies": [
+                    {
+                        "id": strategy_id,
+                        "meta": {"base_asset": "PLUME"},
+                        "state": {
+                            "state": "running",
+                            "local_qty_base": "-20733.81960162",
+                            "global_qty_base": "65316.70657969",
+                            "global_qty_base_complete": True,
+                            "aggregation_mode": "partial",
+                        },
+                    },
+                ],
+            }
+        if path == module.PROFILE_BALANCES_PATH:
+            return {
+                "source": "portfolio_snapshot",
+                "global_qty_base": "65316.70657969",
+                "global_qty_base_complete": True,
+                "aggregation_mode": "partial",
+                "components": [
+                    {
+                        "strategy_id": strategy_id,
+                        "local_qty_base": "-20733.81960162",
+                        "local_spot_qty": "-20733.81960162",
+                    },
+                ],
+            }
+        if path == module._strategy_balances_path(strategy_id):
+            return {
+                "rows": [
+                    {
+                        "kind": "cash",
+                        "asset": "PLUME",
+                        "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                        "total": "9987.75192185",
+                        "row_id": f"{strategy_id}:evt:0:2",
+                        "ts_ms": 1_700_000_000_001,
+                    },
+                ],
+            }
+        raise AssertionError(f"unexpected path: {path}")
+
+    module._fetch_enveloped_data = _fake_fetch_enveloped_data
+    module._fetch_json = lambda **_: {
+        "jobs": [
+            {
+                "id": f"tokenmm-node-{strategy_id}",
+                "group_key": "tokenmm",
+                "status": "active",
+            },
+        ],
+    }
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(tmp_path / "missing.toml"),
+            "--strategy-id",
+            strategy_id,
+        ],
+    )
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "TOKENMM RISK AUDIT PASSED" in captured.out
+    assert "balance_source=profile_component_local_qty" in captured.out

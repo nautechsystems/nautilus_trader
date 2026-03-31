@@ -32,6 +32,7 @@ from nautilus_trader.adapters.binance.common.enums import BinancePrivateApiFamil
 from nautilus_trader.adapters.binance.common.urls import get_private_http_base_url
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
+from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
 from nautilus_trader.adapters.hyperliquid.factories import get_cached_hyperliquid_http_client
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.common.component import LiveClock
@@ -65,6 +66,19 @@ class BinanceFuturesAccountProjectionProviderConfig:
     refresh_interval_secs: float = 15.0
 
 
+@dataclass(frozen=True)
+class BinanceSpotMarginAccountProjectionProviderConfig:
+    api_key: str
+    api_secret: str
+    account_type: BinanceAccountType = BinanceAccountType.SPOT
+    private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO
+    environment: BinanceEnvironment = BinanceEnvironment.LIVE
+    base_url_http: str | None = None
+    recv_window_ms: int = 5000
+    http_proxy_url: str | None = None
+    refresh_interval_secs: float = 15.0
+
+
 def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
@@ -87,6 +101,13 @@ def _safe_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return out if out == out and out not in (float("inf"), float("-inf")) else None
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _money_display(value: float) -> str:
@@ -131,6 +152,95 @@ def _locked_balance_text(total: Any, free: Any) -> str:
     if locked < 0:
         locked = Decimal("0")
     return _decimal_text(locked)
+
+
+def _projection_stale_after_ms(refresh_interval_secs: float) -> int:
+    return max(1_000, int(refresh_interval_secs * 1_000))
+
+
+def _projection_last_success_ts_ms(snapshot: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(snapshot, Mapping):
+        return None
+    projection_status = snapshot.get("projection_status")
+    if isinstance(projection_status, Mapping):
+        value = _safe_int(projection_status.get("last_success_ts_ms"))
+        if value is not None:
+            return value
+    rows = snapshot.get("rows")
+    if not isinstance(rows, Sequence) or isinstance(rows, str | bytes):
+        return None
+    row_ts_values = [
+        ts_ms
+        for row in rows
+        if isinstance(row, Mapping)
+        for ts_ms in [_safe_int(row.get("ts_ms"))]
+        if ts_ms is not None
+    ]
+    return max(row_ts_values) if row_ts_values else None
+
+
+def _annotate_projection_refresh_success(
+    snapshot: Mapping[str, Any],
+    *,
+    attempt_ts_ms: int,
+    refresh_interval_secs: float,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(dict(snapshot))
+    rows = payload.get("rows")
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict):
+                row.setdefault("stale", False)
+                row.setdefault("include_in_reconciliation", True)
+    payload.setdefault("source_scope", "shared_account")
+    payload["projection_status"] = {
+        "healthy": True,
+        "last_success_ts_ms": attempt_ts_ms,
+        "last_attempt_ts_ms": attempt_ts_ms,
+        "last_error_type": None,
+        "last_error_message": None,
+        "stale_after_ms": _projection_stale_after_ms(refresh_interval_secs),
+    }
+    return payload
+
+
+def _annotate_projection_refresh_failure(
+    snapshot: Mapping[str, Any] | None,
+    exc: Exception,
+    *,
+    attempt_ts_ms: int,
+    refresh_interval_secs: float,
+) -> dict[str, Any]:
+    payload = copy.deepcopy(dict(snapshot)) if isinstance(snapshot, Mapping) else {}
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        rows = []
+    stale_after_ms = _projection_stale_after_ms(refresh_interval_secs)
+    last_success_ts_ms = _projection_last_success_ts_ms(payload)
+    scope_stale = (
+        last_success_ts_ms is None
+        or (attempt_ts_ms - last_success_ts_ms) > stale_after_ms
+    )
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if scope_stale:
+            row["stale"] = True
+            row["include_in_reconciliation"] = False
+        else:
+            row.setdefault("stale", False)
+            row.setdefault("include_in_reconciliation", True)
+    payload["rows"] = rows
+    payload.setdefault("source_scope", "shared_account")
+    payload["projection_status"] = {
+        "healthy": False,
+        "last_success_ts_ms": last_success_ts_ms,
+        "last_attempt_ts_ms": attempt_ts_ms,
+        "last_error_type": type(exc).__name__,
+        "last_error_message": str(exc),
+        "stale_after_ms": stale_after_ms,
+    }
+    return payload
 
 
 def _parse_binance_account_type(value: str | None) -> BinanceAccountType:
@@ -254,6 +364,72 @@ def _extract_binance_futures_positions(payload: Any, *, account_id: str) -> list
     return rows
 
 
+def _build_binance_spot_margin_account_snapshot(
+    *,
+    account_info: Any,
+    account_id: str,
+    exchange: str,
+    ts_ms: int,
+) -> dict[str, Any]:
+    balances: list[dict[str, Any]] = []
+    parse_to_account_balances = getattr(account_info, "parse_to_account_balances", None)
+    if callable(parse_to_account_balances):
+        for balance in parse_to_account_balances():
+            raw_balance = balance.to_dict()
+            currency = _optional_text(raw_balance.get("currency"))
+            total = _optional_text(raw_balance.get("total"))
+            free = _optional_text(raw_balance.get("free"))
+            locked = _optional_text(raw_balance.get("locked"))
+            if currency is None or total is None or free is None or locked is None:
+                continue
+            if total == "0" and free == "0" and locked == "0":
+                continue
+            balances.append(
+                {
+                    "currency": currency,
+                    "free": free,
+                    "locked": locked,
+                    "total": total,
+                },
+            )
+
+    payload: dict[str, Any] = {
+        "market_type": "spot",
+        "accounts": [
+            {
+                "account_id": account_id,
+                "venue": exchange,
+                "events": [
+                    {
+                        "account_id": account_id,
+                        "venue": exchange,
+                        "balances": balances,
+                        "ts_ms": ts_ms,
+                    },
+                ],
+            },
+        ],
+        "ts_ms": ts_ms,
+    }
+    rows = build_balances_rows(
+        raw_snapshot=payload,
+        strategy_id="shared_account",
+    )
+    for row in rows:
+        asset = _optional_text(row.get("asset") or row.get("coin") or row.get("base"))
+        total = _safe_decimal(row.get("total"))
+        if asset is None or total is None:
+            continue
+        if asset.upper() in {"USD", "USDT", "USDC", "DAI", "FDUSD", "USDE"}:
+            row["mark_raw"] = 1.0
+            row["mv_raw"] = float(total)
+    return {
+        "source_scope": "shared_account",
+        "rows": rows,
+        "totals": {},
+    }
+
+
 def _extract_hyperliquid_account_totals(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         return {}
@@ -346,14 +522,25 @@ class HyperliquidAccountProjectionProvider:
         ):
             return self.snapshot()
 
+        attempt_ts_ms = int(time.time() * 1000)
         try:
-            self._latest_snapshot = asyncio.run(self._fetch_snapshot())
-            self._last_refresh_monotonic = time.monotonic()
+            self._latest_snapshot = _annotate_projection_refresh_success(
+                asyncio.run(self._fetch_snapshot()),
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
         except Exception as exc:
             _ACCOUNT_PROJECTION_LOG.warning(
                 "Hyperliquid shared-account refresh failed: %s",
                 exc,
             )
+            self._latest_snapshot = _annotate_projection_refresh_failure(
+                self._latest_snapshot,
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
+        self._last_refresh_monotonic = time.monotonic()
         return self.snapshot()
 
     def _request_kwargs(self) -> dict[str, Any]:
@@ -514,14 +701,25 @@ class BinanceFuturesAccountProjectionProvider:
         ):
             return self.snapshot()
 
+        attempt_ts_ms = int(time.time() * 1000)
         try:
-            self._latest_snapshot = asyncio.run(self._fetch_snapshot())
-            self._last_refresh_monotonic = time.monotonic()
+            self._latest_snapshot = _annotate_projection_refresh_success(
+                asyncio.run(self._fetch_snapshot()),
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
         except Exception as exc:
             _ACCOUNT_PROJECTION_LOG.warning(
                 "Binance futures shared-account refresh failed: %s",
                 exc,
             )
+            self._latest_snapshot = _annotate_projection_refresh_failure(
+                self._latest_snapshot,
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
+        self._last_refresh_monotonic = time.monotonic()
         return self.snapshot()
 
     async def _fetch_snapshot(self) -> dict[str, Any]:
@@ -569,6 +767,84 @@ class BinanceFuturesAccountProjectionProvider:
             "rows": rows,
             "totals": _extract_binance_account_totals(account_info),
         }
+
+
+class BinanceSpotMarginAccountProjectionProvider:
+    def __init__(self, config: BinanceSpotMarginAccountProjectionProviderConfig) -> None:
+        self._config = config
+        self._clock = LiveClock()
+        base_url_http = config.base_url_http or get_private_http_base_url(
+            config.account_type,
+            config.private_api_family,
+            config.environment,
+            False,
+        )
+        self._client = get_cached_binance_http_client(
+            clock=self._clock,
+            account_type=config.account_type,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            base_url=base_url_http,
+            environment=config.environment,
+            proxy_url=config.http_proxy_url,
+        )
+        self._http_account = BinanceSpotAccountHttpAPI(
+            client=self._client,
+            clock=self._clock,
+            account_type=config.account_type,
+        )
+        self._latest_snapshot: dict[str, Any] | None = None
+        self._last_refresh_monotonic = 0.0
+
+    def stop(self) -> None:
+        return None
+
+    def snapshot(self) -> dict[str, Any] | None:
+        if self._latest_snapshot is None:
+            return None
+        return copy.deepcopy(self._latest_snapshot)
+
+    def refresh(self) -> dict[str, Any] | None:
+        now = time.monotonic()
+        if (
+            self._latest_snapshot is not None
+            and (now - self._last_refresh_monotonic) < self._config.refresh_interval_secs
+        ):
+            return self.snapshot()
+
+        attempt_ts_ms = int(time.time() * 1000)
+        try:
+            self._latest_snapshot = _annotate_projection_refresh_success(
+                asyncio.run(self._fetch_snapshot()),
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
+        except Exception as exc:
+            _ACCOUNT_PROJECTION_LOG.warning(
+                "Binance spot/margin shared-account refresh failed: %s",
+                exc,
+            )
+            self._latest_snapshot = _annotate_projection_refresh_failure(
+                self._latest_snapshot,
+                exc,
+                attempt_ts_ms=attempt_ts_ms,
+                refresh_interval_secs=self._config.refresh_interval_secs,
+            )
+        self._last_refresh_monotonic = time.monotonic()
+        return self.snapshot()
+
+    async def _fetch_snapshot(self) -> dict[str, Any]:
+        recv_window = str(self._config.recv_window_ms)
+        account_info = await self._http_account.query_spot_account_info(
+            recv_window=recv_window,
+        )
+        ts_ms = _safe_int(getattr(account_info, "event_time_ms", None)) or int(time.time() * 1000)
+        return _build_binance_spot_margin_account_snapshot(
+            account_info=account_info,
+            account_id="BINANCE-main",
+            exchange="binance_spot",
+            ts_ms=ts_ms,
+        )
 
 
 def _build_ibkr_account_provider(
@@ -659,6 +935,32 @@ def _build_binance_futures_account_provider(
     )
 
 
+def _build_binance_spot_margin_account_provider(
+    *,
+    scope_config: AccountScopeConfig,
+    account_scope_id: str,
+    source_strategy_ids: tuple[str, ...],
+) -> BinanceSpotMarginAccountProjectionProvider | None:
+    _ = (account_scope_id, source_strategy_ids)
+    api_key = _env_value(scope_config.api_key_env)
+    api_secret = _env_value(scope_config.api_secret_env)
+    if api_key is None or api_secret is None:
+        return None
+
+    return BinanceSpotMarginAccountProjectionProvider(
+        BinanceSpotMarginAccountProjectionProviderConfig(
+            api_key=api_key,
+            api_secret=api_secret,
+            account_type=_parse_binance_account_type(scope_config.account_type),
+            private_api_family=_parse_binance_private_api_family(scope_config.private_api_family),
+            environment=BinanceEnvironment.TESTNET if scope_config.testnet else BinanceEnvironment.LIVE,
+            base_url_http=scope_config.base_url_http,
+            recv_window_ms=scope_config.recv_window_ms or 5000,
+            http_proxy_url=scope_config.http_proxy_url,
+        ),
+    )
+
+
 def build_account_projection_provider(
     *,
     scope_config: AccountScopeConfig,
@@ -679,11 +981,25 @@ def build_account_projection_provider(
             source_strategy_ids=source_strategy_ids,
         )
     if provider_id == "binance":
-        return _build_binance_futures_account_provider(
-            scope_config=scope_config,
-            account_scope_id=account_scope_id,
-            source_strategy_ids=source_strategy_ids,
-        )
+        account_type = _parse_binance_account_type(scope_config.account_type)
+        if account_type.is_futures:
+            return _build_binance_futures_account_provider(
+                scope_config=scope_config,
+                account_scope_id=account_scope_id,
+                source_strategy_ids=source_strategy_ids,
+            )
+        if account_type == BinanceAccountType.ISOLATED_MARGIN:
+            raise ValueError(
+                "Binance shared-account scopes do not support ISOLATED_MARGIN; "
+                "use SPOT, MARGIN, or PORTFOLIO_MARGIN",
+            )
+        if account_type.is_spot_or_margin:
+            return _build_binance_spot_margin_account_provider(
+                scope_config=scope_config,
+                account_scope_id=account_scope_id,
+                source_strategy_ids=source_strategy_ids,
+            )
+        return None
     return None
 
 

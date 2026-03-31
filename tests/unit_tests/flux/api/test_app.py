@@ -143,6 +143,27 @@ def test_response_encoding_sanitizes_non_finite_values(
     assert body["data"] == {"bad": None, "nested": [None, {"x": None}]}
 
 
+def test_create_flux_api_app_accepts_strategy_contracts_kwarg(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_contracts=[],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    assert app is not None
+
+
 def test_readyz_returns_503_with_missing_flux_schema_keys(
     flux_config,
     redis_client,
@@ -1060,6 +1081,40 @@ def test_store_update_params_records_bot_on_control_revision(
     assert metadata["bot_on_control_revision"].decode("utf-8")
 
 
+def test_store_update_params_rotates_bot_on_control_revision_on_same_value_update(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    params_schema,
+    params_defaults,
+) -> None:
+    store = app_module.FluxApiStore(
+        flux_config=flux_config,
+        redis_client=redis_client,
+        contract_catalog=contract_catalog,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    first = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    first_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+    second = store.update_params(flux_config.identity.strategy_id, {"bot_on": True})
+    second_revision = redis_client.hashes[keys.params_metadata_key()]["bot_on_control_revision"].decode(
+        "utf-8",
+    )
+
+    assert first["updated"] == ["bot_on"]
+    assert second["updated"] == ["bot_on"]
+    assert first["params"]["bot_on"] is True
+    assert second["params"]["bot_on"] is True
+    assert first_revision
+    assert second_revision
+    assert second_revision != first_revision
+
+
 def test_balances_profile_tokenmm_honors_explicit_required_subset(
     monkeypatch,
     flux_config,
@@ -1891,8 +1946,8 @@ def test_trades_delta_profile_tokenmm_since_seq_uses_safe_reset_semantics(
     assert since_zero_body["data"]["reset_required"] is False
     assert since_positive_response.status_code == 200
     assert since_positive_body["data"]["rows"] == []
-    assert since_positive_body["data"]["last_seq"] == 0
-    assert since_positive_body["data"]["reset_required"] is True
+    assert since_positive_body["data"]["last_seq"] == 1
+    assert since_positive_body["data"]["reset_required"] is False
 
 
 def test_trades_delta_profile_tokenmm_after_preserves_oldest_unseen_rows_across_strategies(
@@ -3080,6 +3135,55 @@ def test_balances_with_strategy_query_keeps_per_strategy_debug_view(
     assert len(rows) == 1
     assert rows[0]["strategy_id"] == "strategy_02"
     assert rows[0].get("row_id") != "tokenmm:cash:bybit:main:USDT"
+
+
+def test_balances_with_strategy_query_allows_audit_sized_limit(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    rows = [
+        {
+            "strategy_id": flux_config.identity.strategy_id,
+            "exchange": "venue_a",
+            "account": f"acct-{index}",
+            "account_id": f"acct-{index}",
+            "asset": "ABC",
+            "free": str(index),
+            "total": str(index),
+            "row_id": f"row-{index}",
+        }
+        for index in range(250)
+    ]
+    redis_client.set_hash_json(primary_keys.params_hash_key(), {"qty": "1.0"})
+    redis_client.set_json(primary_keys.balances_snapshot(), rows)
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get(
+            "/api/v1/balances",
+            query_string={"strategy": flux_config.identity.strategy_id, "limit": 5000},
+        )
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["limit"] == 5000
+    assert body["data"]["count"] == 250
+    assert len(body["data"]["rows"]) == 250
+    assert body["data"]["rows"][-1]["row_id"] == "row-249"
 
 
 def test_balances_profile_tokenmm_marks_missing_required_components_as_degraded(
@@ -5109,6 +5213,445 @@ def test_balances_profile_tokenmm_portfolio_snapshot_canonicalizes_shared_stable
     assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(440.735561)
 
 
+def test_balances_profile_tokenmm_portfolio_snapshot_prefers_shared_account_overlay_for_binance_cash(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    redis_client.set_json(
+        FluxRedisKeys.portfolio_snapshot(
+            portfolio_id="tokenmm",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "portfolio_id": "tokenmm",
+            "base_currency": "PLUME",
+            "inventory": {
+                "portfolio_id": "tokenmm",
+                "base_currency": "PLUME",
+                "global_qty_base": "79577.70469832",
+                "global_qty": "79577.70469832",
+                "aggregation_mode": "partial",
+                "global_qty_base_complete": True,
+                "global_qty_complete": True,
+                "missing_required": [],
+                "stale_required": [],
+                "null_qty_required": [],
+                "degraded": False,
+                "ts_ms": 122_000,
+                "stale_after_ms": 3_000,
+                "components": [],
+            },
+            "components": [],
+            "balances": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:cash:binance_spot:binance.execution.main:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "binance_spot",
+                        "account": "binance.execution.main",
+                        "account_id": "binance.execution.main",
+                        "account_scope_id": "binance.execution.main",
+                        "asset": "USDT",
+                        "free": "873.32524016",
+                        "total": "873.32524016",
+                        "product_type": "spot",
+                        "scope": "shared_account",
+                        "source_strategy_ids": [
+                            "plumeusdt_binance_perp_makerv3",
+                            "plumeusdt_binance_spot_makerv3",
+                        ],
+                        "mark_raw": 1.0,
+                        "mv_raw": 873.32524016,
+                        "ts_ms": 122_000,
+                    },
+                ],
+                "totals": {
+                    "mv_raw": 873.32524016,
+                    "mv_display": "$873.33",
+                },
+            },
+            "accounts": {
+                "rows": [
+                    {
+                        "row_id": "tokenmm:shared:binance.execution.main:cash:binance_spot:BINANCE-main:USDT",
+                        "strategy_id": "tokenmm",
+                        "exchange": "binance_spot",
+                        "account": "BINANCE-main",
+                        "account_id": "BINANCE-main",
+                        "account_scope_id": "binance.execution.main",
+                        "source_scope": "shared_account",
+                        "source_strategy_ids": [
+                            "plumeusdt_binance_perp_makerv3",
+                            "plumeusdt_binance_spot_makerv3",
+                        ],
+                        "asset": "USDT",
+                        "free": "1285.28070703",
+                        "total": "1285.28070703",
+                        "product_type": "spot",
+                        "mark_raw": 1.0,
+                        "mv_raw": 1285.28070703,
+                        "ts_ms": 122_100,
+                    },
+                ],
+            },
+            "server_ts_ms": 122_500,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_contracts=[
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "spot",
+            },
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "perp",
+            },
+        ],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    binance_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "binance_spot" and row.get("asset") == "USDT"
+    ]
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["account"] == "BINANCE-main"
+    assert row["account_scope_id"] == "binance.execution.main"
+    assert row["source_scope"] == "shared_account"
+    assert row["total"] == "1285.28070703"
+    risk_groups = {group["risk_key"]: group for group in body["data"]["risk_groups"]}
+    assert risk_groups["USD_CASH"]["net_mv"] == pytest.approx(1285.28070703)
+    assert risk_groups["USD_CASH"]["gross_mv"] == pytest.approx(1285.28070703)
+
+
+def test_balances_profile_tokenmm_fallback_merges_shared_account_projection_rows_for_binance_cash(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    strategy_ids = [
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+    ]
+    for strategy_id in strategy_ids:
+        keys = FluxRedisKeys(
+            strategy_id=strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        )
+        redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0"})
+
+    redis_client.set_json(
+        FluxRedisKeys(
+            strategy_id="plumeusdt_binance_spot_makerv3",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ).balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "exchange": "binance_spot",
+                "account": "binance.execution.main",
+                "account_id": "binance.execution.main",
+                "asset": "USDT",
+                "free": "873.32524016",
+                "total": "873.32524016",
+                "product_type": "spot",
+                "scope": "shared_account",
+                "mark_raw": 1.0,
+                "mv_raw": 873.32524016,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys(
+            strategy_id="plumeusdt_binance_perp_makerv3",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ).balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "exchange": "binance_spot",
+                "account": "binance.execution.main",
+                "account_id": "binance.execution.main",
+                "asset": "USDT",
+                "free": "873.32524016",
+                "total": "873.32524016",
+                "product_type": "spot",
+                "scope": "shared_account",
+                "mark_raw": 1.0,
+                "mv_raw": 873.32524016,
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="tokenmm",
+            account_scope_id="binance.execution.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "tokenmm",
+            "account_scope_ids": ["binance.execution.main"],
+            "rows": [
+                {
+                    "row_id": "tokenmm:shared:binance.execution.main:cash:binance_spot:BINANCE-main:USDT",
+                    "exchange": "binance_spot",
+                    "account": "BINANCE-main",
+                    "account_id": "BINANCE-main",
+                    "account_scope_id": "binance.execution.main",
+                    "source_scope": "shared_account",
+                    "source_strategy_ids": strategy_ids,
+                    "asset": "USDT",
+                    "free": "1285.28070703",
+                    "total": "1285.28070703",
+                    "product_type": "spot",
+                    "mark_raw": 1.0,
+                    "mv_raw": 1285.28070703,
+                    "ts_ms": 123_120,
+                },
+            ],
+            "server_ts_ms": 123_130,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": strategy_ids},
+        strategy_contracts=[
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "spot",
+            },
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "perp",
+            },
+        ],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    binance_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "binance_spot" and row.get("asset") == "USDT"
+    ]
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["account"] == "BINANCE-main"
+    assert row["account_scope_id"] == "binance.execution.main"
+    assert row["source_scope"] == "shared_account"
+    assert row["total"] == "1285.28070703"
+    assert body["data"]["totals"]["mv_raw"] == pytest.approx(1285.28070703)
+
+
+def test_balances_profile_tokenmm_fallback_discovers_strategy_ids_before_shared_account_overlay(
+    monkeypatch,
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    monkeypatch.setattr(app_module, "now_ms", lambda: 123_456)
+    strategy_ids = [
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+    ]
+    for strategy_id in strategy_ids:
+        keys = FluxRedisKeys(
+            strategy_id=strategy_id,
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        )
+        redis_client.set_hash_json(keys.params_hash_key(), {"qty": "1.0"})
+
+    redis_client.set_json(
+        FluxRedisKeys(
+            strategy_id="plumeusdt_binance_spot_makerv3",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ).balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "exchange": "binance_spot",
+                "account": "binance.execution.main",
+                "account_id": "binance.execution.main",
+                "asset": "USDT",
+                "free": "873.32524016",
+                "total": "873.32524016",
+                "product_type": "spot",
+                "scope": "shared_account",
+                "mark_raw": 1.0,
+                "mv_raw": 873.32524016,
+                "ts_ms": 123_000,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys(
+            strategy_id="plumeusdt_binance_perp_makerv3",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ).balances_snapshot(),
+        [
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "exchange": "binance_spot",
+                "account": "binance.execution.main",
+                "account_id": "binance.execution.main",
+                "asset": "USDT",
+                "free": "873.32524016",
+                "total": "873.32524016",
+                "product_type": "spot",
+                "scope": "shared_account",
+                "mark_raw": 1.0,
+                "mv_raw": 873.32524016,
+                "ts_ms": 123_100,
+            },
+        ],
+    )
+    redis_client.set_json(
+        FluxRedisKeys.profile_account_projection(
+            profile_id="tokenmm",
+            account_scope_id="binance.execution.main",
+            namespace=flux_config.identity.namespace,
+            schema_version=flux_config.identity.schema_version,
+        ),
+        {
+            "profile_id": "tokenmm",
+            "account_scope_ids": ["binance.execution.main"],
+            "rows": [
+                {
+                    "row_id": "tokenmm:shared:binance.execution.main:cash:binance_spot:BINANCE-main:USDT",
+                    "exchange": "binance_spot",
+                    "account": "BINANCE-main",
+                    "account_id": "BINANCE-main",
+                    "account_scope_id": "binance.execution.main",
+                    "source_scope": "shared_account",
+                    "source_strategy_ids": strategy_ids,
+                    "asset": "USDT",
+                    "free": "1285.28070703",
+                    "total": "1285.28070703",
+                    "product_type": "spot",
+                    "mark_raw": 1.0,
+                    "mv_raw": 1285.28070703,
+                    "ts_ms": 123_120,
+                },
+            ],
+            "server_ts_ms": 123_130,
+        },
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        strategy_contracts=[
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "spot",
+            },
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+                "market_type": "perp",
+            },
+        ],
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/balances", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    binance_rows = [
+        row
+        for row in body["data"]["rows"]
+        if row.get("exchange") == "binance_spot" and row.get("asset") == "USDT"
+    ]
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["account"] == "BINANCE-main"
+    assert row["account_scope_id"] == "binance.execution.main"
+    assert row["source_scope"] == "shared_account"
+    assert row["total"] == "1285.28070703"
+
+
 def test_balances_profile_tokenmm_uses_event_balance_timestamps_for_freshness(
     monkeypatch,
     flux_config,
@@ -5301,6 +5844,109 @@ def test_alerts_profile_tokenmm_stabilizes_row_id_from_entry_id(
     assert row["row_id"] == row["entry_id"]
 
 
+def test_alerts_profile_tokenmm_can_serve_resolved_rows_without_stream_history(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "startup-history",
+                "alert_key": "startup_position_reconciliation",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: {
+            flux_config.identity.strategy_id: [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "active-block",
+                    "alert_key": "market_data_blocked",
+                    "level": "warning",
+                    "message": "Quoting blocked (reference data stale)",
+                    "ts_ms": 3_000,
+                },
+            ],
+        },
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["total"] == 1
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["active-block"]
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
+    }
+
+
+def test_alerts_profile_tokenmm_falls_back_to_stream_history_when_active_resolver_fails(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "startup-history",
+                "alert_key": "startup_position_reconciliation",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: (_ for _ in ()).throw(RuntimeError("boom")),
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.get("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["total"] == 1
+    assert [row["row_id"] for row in body["data"]["rows"]] == ["startup-history"]
+
+
 def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     flux_config,
     redis_client,
@@ -5346,6 +5992,72 @@ def test_alerts_delete_profile_tokenmm_clears_all_allowlisted_strategies(
     assert body["data"]["remaining_by_strategy"] == {
         flux_config.identity.strategy_id: 0,
         "strategy_02": 0,
+    }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "history",
+        "clear_mode": "all",
+    }
+
+
+def test_alerts_delete_profile_tokenmm_preserves_remaining_active_rows_when_history_is_disabled(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    primary_keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        primary_keys.alerts(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "history-alert",
+                "level": "ERROR",
+                "message": "historical startup cleanup",
+                "ts_ms": 1_000,
+            },
+        ],
+    )
+
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        profile_strategy_map={"tokenmm": [flux_config.identity.strategy_id]},
+        strategy_alerts_resolver=lambda strategy_ids: {
+            flux_config.identity.strategy_id: [
+                {
+                    "strategy_id": flux_config.identity.strategy_id,
+                    "row_id": "active-block",
+                    "alert_key": "market_data_blocked",
+                    "code": "blocked_reference_md_stale",
+                    "level": "warning",
+                    "message": "Quoting blocked (reference data stale)",
+                    "ts_ms": 3_000,
+                },
+            ],
+        },
+        alerts_include_history=False,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+
+    with app.test_client() as client:
+        response = client.delete("/api/v1/alerts", query_string={"profile": "tokenmm"})
+        body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["data"]["deleted"] == 1
+    assert body["data"]["remaining"] == 1
+    assert body["data"]["remaining_by_strategy"] == {
+        flux_config.identity.strategy_id: 1,
+    }
+    assert body["data"]["capabilities"] == {
+        "feed_mode": "active",
+        "clear_mode": "history_only",
     }
 
 

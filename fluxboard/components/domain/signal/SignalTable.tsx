@@ -230,6 +230,23 @@ function buildEnrichedSignalRow(row: SignalStrategy, serverNowMs: number): Enric
   };
 }
 
+function resolveSignalDataFreshnessTsMs(
+  rows: readonly SignalStrategy[],
+  fallbackTsMs: number,
+): number {
+  let freshestTsMs: number | null = null;
+
+  for (const row of rows) {
+    const candidate = computeStrategyAge(row, fallbackTsMs).mostRecentTsMs;
+    if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
+      continue;
+    }
+    freshestTsMs = freshestTsMs == null ? candidate : Math.max(freshestTsMs, candidate);
+  }
+
+  return freshestTsMs ?? fallbackTsMs;
+}
+
 const tradingSortingFn: SortingFn<EnrichedRow> = (rowA, rowB, columnId) => {
   const a = TRADING_SORT_ORDER[rowA.getValue(columnId) as TradingFilterValue] ?? -1;
   const b = TRADING_SORT_ORDER[rowB.getValue(columnId) as TradingFilterValue] ?? -1;
@@ -313,6 +330,18 @@ function resolveSignalSurfaceStatus(
         dotClass: 'bg-warning-light',
         tooltip: 'Signal recovery uses one-shot invalidate snapshots instead of steady-state polling.',
       };
+    case RealtimeSurfaceState.STALE:
+      return {
+        label: 'Stale',
+        dotClass: 'bg-danger-light',
+        tooltip: 'Signal data stopped advancing. Fluxboard is waiting for a fresh recovery snapshot.',
+      };
+    case RealtimeSurfaceState.LAGGING:
+      return {
+        label: 'Lagging',
+        dotClass: 'bg-warning-light',
+        tooltip: 'Signal data is aging beyond the expected live-update budget.',
+      };
     case RealtimeSurfaceState.SYNCING:
       return {
         label: 'Syncing',
@@ -332,6 +361,44 @@ function resolveSignalSurfaceStatus(
           : 'WebSocket disconnected. Recovery uses scheduled invalidate snapshots instead of steady-state polling.',
       };
   }
+}
+
+function resolveSignalFreshnessState(
+  lastDataTsMs: number | null | undefined,
+  nowMs: number,
+  recoveryPending: boolean,
+): RealtimeSurfaceState | null {
+  if (!lastDataTsMs || !Number.isFinite(lastDataTsMs)) {
+    return null;
+  }
+
+  const ageMs = Math.max(0, nowMs - lastDataTsMs);
+  if (ageMs > STALE_THRESHOLDS.NORMAL) {
+    return recoveryPending ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.STALE;
+  }
+  if (ageMs > STALE_THRESHOLDS.FAST) {
+    return RealtimeSurfaceState.LAGGING;
+  }
+  return RealtimeSurfaceState.LIVE;
+}
+
+function resolveSignalTransportState(
+  lastActivityTsMs: number | null | undefined,
+  nowMs: number,
+  recoveryPending: boolean,
+): RealtimeSurfaceState | null {
+  if (!lastActivityTsMs || !Number.isFinite(lastActivityTsMs)) {
+    return null;
+  }
+
+  const ageMs = Math.max(0, nowMs - lastActivityTsMs);
+  if (ageMs > STALE_THRESHOLDS.NORMAL) {
+    return recoveryPending ? RealtimeSurfaceState.RECOVERING : RealtimeSurfaceState.STALE;
+  }
+  if (ageMs > STALE_THRESHOLDS.FAST) {
+    return RealtimeSurfaceState.LAGGING;
+  }
+  return RealtimeSurfaceState.LIVE;
 }
 
 const ColumnHeaderWithTooltip: FC<{ label: string; tooltip: string }> = ({ label, tooltip }) => {
@@ -765,6 +832,29 @@ function zeroQuoteCounts() {
   };
 }
 
+function normalizeMakerOpenCountsAgainstManagedOrders(
+  row: EnrichedRow,
+  maker?: {
+    bidOpen: number;
+    bidDepth: number;
+    bidBlocked: number;
+    askOpen: number;
+    askDepth: number;
+    askBlocked: number;
+  },
+) {
+  if (!maker) return maker;
+  const managedOrders = coerceFiniteNumber((row as any).managed_orders);
+  if (managedOrders !== 0) return maker;
+  return {
+    ...maker,
+    bidOpen: 0,
+    askOpen: 0,
+    bidBlocked: Math.max(0, maker.bidDepth),
+    askBlocked: Math.max(0, maker.askDepth),
+  };
+}
+
 function shouldShowHedgeQuoteCounts(row: EnrichedRow): boolean {
   const cls = String(row.meta?.class ?? '').trim().toLowerCase();
   return cls.includes('maker') || !!resolveQuoteSnapshot(row);
@@ -778,7 +868,7 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
     const hasMaker = Array.isArray(makerBands) && makerBands.length > 0;
     const hasHedge = Boolean(hedge && typeof hedge === 'object');
     if (hasMaker || hasHedge) {
-      const maker = hasMaker ? {
+      const rawMaker = hasMaker ? {
         bidOpen: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.open), 0),
         bidDepth: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.depth), 0),
         bidBlocked: makerBands.reduce((s, b) => s + quoteCount(b?.bid?.blocked), 0),
@@ -786,6 +876,7 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
         askDepth: makerBands.reduce((s, b) => s + quoteCount(b?.ask?.depth), 0),
         askBlocked: makerBands.reduce((s, b) => s + quoteCount(b?.ask?.blocked), 0),
       } : undefined;
+      const maker = normalizeMakerOpenCountsAgainstManagedOrders(row, rawMaker);
       const hedgeCounts = hasHedge ? {
         bidOpen: quoteCount(hedge?.bid?.open),
         bidDepth: quoteCount(hedge?.bid?.depth),
@@ -805,14 +896,14 @@ function getQuoteCounts(row: EnrichedRow): QuoteCounts {
 
   const qs = row.maker_quote_status as any;
   if (qs && typeof qs === 'object') {
-    const maker = {
+    const maker = normalizeMakerOpenCountsAgainstManagedOrders(row, {
       bidOpen: quoteCount(qs.bid_open),
       bidDepth: quoteCount(qs.bid_depth),
       bidBlocked: quoteCount(qs.bid_blocked),
       askOpen: quoteCount(qs.ask_open),
       askDepth: quoteCount(qs.ask_depth),
       askBlocked: quoteCount(qs.ask_blocked),
-    };
+    });
     const hedge = shouldShowHedgeQuoteCounts(row) ? zeroQuoteCounts() : undefined;
     return {
       source: 'maker_quote_status',
@@ -928,10 +1019,20 @@ function buildInventorySkewSummary(adj?: InventorySkewAdjustment): string | null
 
 function resolveInventoryQuantities(row: SignalStrategy): { globalQty: number | null; localQty: number | null } {
   const adj = findInventorySkewAdjustment(row.pricing_adjustments);
-  const globalQty = adj
-    ? (coerceFiniteNumber(adj.global_qty ?? adj.curr_qty) ?? null)
-    : (coerceFiniteNumber(row.risk_delta) ?? null);
-  const localQty = coerceFiniteNumber(adj?.local_qty) ?? null;
+  const globalQty = coerceFiniteNumber(
+    adj?.global_qty_base
+    ?? adj?.global_qty
+    ?? adj?.curr_qty
+    ?? row.global_qty_base
+    ?? row.global_qty
+    ?? row.risk_delta,
+  ) ?? null;
+  const localQty = coerceFiniteNumber(
+    adj?.local_qty_base
+    ?? adj?.local_qty
+    ?? row.local_qty_base
+    ?? row.local_qty,
+  ) ?? null;
   return { globalQty, localQty };
 }
 
@@ -1978,10 +2079,13 @@ export default function SignalTable({
   const [lastUpdate, setLastUpdate] = useState<number>(Date.now());
   // Track lastUpdate via ref to avoid resubscribing effects when checking staleness
   const lastUpdateRef = useRef<number>(Date.now());
+  const lastStandardActivityRef = useRef<number>(Date.now());
   // Sticky rows support: remember time of last non-empty dataset
   const lastNonEmptyRef = useRef<number | null>(null);
   // Track when we first saw an empty snapshot while rows existed.
   const emptySinceRef = useRef<number | null>(null);
+  // Distinguish an acknowledged empty realtime view from a stale non-empty one.
+  const emptyViewAcknowledgedRef = useRef<boolean>(false);
   // Keep IDs of currently visible strategies to accept profile-compatible deltas
   // that omit full metadata.
   const visibleIdSetRef = useRef<Set<string>>(new Set());
@@ -2139,6 +2243,12 @@ export default function SignalTable({
     const now = nowMs ?? Date.now();
     lastNonEmptyRef.current = now;
     emptySinceRef.current = null;
+    emptyViewAcknowledgedRef.current = false;
+  }, []);
+
+  const hasAcknowledgedEmptyView = useCallback((): boolean => {
+    const currentRows = useSignalStore.getState().rows || [];
+    return emptyViewAcknowledgedRef.current && currentRows.length === 0;
   }, []);
 
   const handleEmptyVisibleSnapshot = useCallback((requestStartedAtMs?: number) => {
@@ -2152,11 +2262,18 @@ export default function SignalTable({
       requestStartedAtMs,
       lastNonEmptyAtMs: lastNonEmptyRef.current,
     });
+    const refreshedAtMs = requestStartedAtMs ?? Date.now();
+    const willExposeEmptyView = policy.clearRows || currentRows.length === 0;
     emptySinceRef.current = policy.nextEmptySinceMs;
+    emptyViewAcknowledgedRef.current = willExposeEmptyView;
+    if (willExposeEmptyView) {
+      setLastUpdate(refreshedAtMs);
+      lastUpdateRef.current = refreshedAtMs;
+    }
     if (policy.clearRows && currentRows.length > 0) {
       setRows([]);
     }
-  }, [setRows]);
+  }, [setLastUpdate, setRows]);
 
   const applyVisibleSnapshotRows = useCallback((incomingRows: SignalStrategy[], requestStartedAtMs?: number) => {
     if (incomingRows.length > 0) {
@@ -2187,22 +2304,23 @@ export default function SignalTable({
       const filtered = all.filter(isStrategyVisible);
       applyVisibleSnapshotRows(filtered, requestStartedAtMs);
 
+      const fetchedServerTsMs = typeof (data as any).server_ts_ms === 'number'
+        ? (data as any).server_ts_ms as number
+        : requestStartedAtMs;
+      const nextLastDataTsMs = resolveSignalDataFreshnessTsMs(filtered, fetchedServerTsMs);
+      setLastUpdate(nextLastDataTsMs);
+      lastUpdateRef.current = nextLastDataTsMs;
+
       const fetchedServerTime = data.server_time || new Date().toISOString().slice(0, 19).replace('T', ' ');
       setServerTime(fetchedServerTime);
       serverTimeRef.current = fetchedServerTime;
 
-      const fetchedServerTsMs = typeof (data as any).server_ts_ms === 'number'
-        ? (data as any).server_ts_ms as number
-        : null;
       setServerClock(fetchedServerTsMs);
-
-      const now = Date.now();
-      setLastUpdate(now);
-      lastUpdateRef.current = now;
       setBalanceSummary(data.balance_summary ?? null);
       if (signalStandardEnabled) {
         if (data.realtime) {
           manualRefreshRequiredRef.current = false;
+          lastStandardActivityRef.current = requestStartedAtMs;
           applyStandardSnapshotLineage(data.realtime);
           setSurfaceState(RealtimeSurfaceState.LIVE);
         } else {
@@ -2253,6 +2371,16 @@ export default function SignalTable({
     onRecover: handleRecoveryFetch,
   });
   const recoveryPending = recovery.pending;
+  const resolveAcknowledgedEmptyViewState = useCallback((): RealtimeSurfaceState | null => {
+    if (!hasAcknowledgedEmptyView()) {
+      return null;
+    }
+    return resolveSignalTransportState(
+      lastStandardActivityRef.current,
+      Date.now(),
+      recoveryPending,
+    );
+  }, [hasAcknowledgedEmptyView, recoveryPending]);
   const scheduleRecovery = useCallback((reason?: string) => {
     recovery.scheduler.schedule(reason);
   }, [recovery.scheduler]);
@@ -2279,9 +2407,6 @@ export default function SignalTable({
     if (data?.balance_summary) {
       setBalanceSummary(data.balance_summary);
     }
-    const now = Date.now();
-    setLastUpdate(now);
-    lastUpdateRef.current = now;
   }, [setServerClock]);
 
   const scheduleInvalidation = useCallback((reason: string) => {
@@ -2378,12 +2503,14 @@ export default function SignalTable({
       if (typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)) {
         setServerClock(payload.ts_ms as number);
       }
-      const now = Date.now();
+      const nextLastDataTsMs = typeof payload.ts_ms === 'number' && Number.isFinite(payload.ts_ms)
+        ? payload.ts_ms as number
+        : (typeof fallbackTsMs === 'number' && Number.isFinite(fallbackTsMs) ? fallbackTsMs : Date.now());
       if ((useSignalStore.getState().rows || []).length > 0) {
-        markRowsNonEmpty(now);
+        markRowsNonEmpty(nextLastDataTsMs);
       }
-      setLastUpdate(now);
-      lastUpdateRef.current = now;
+      setLastUpdate(nextLastDataTsMs);
+      lastUpdateRef.current = nextLastDataTsMs;
     } catch (error) {
       if (import.meta.env?.DEV) {
         console.error('[signal] Delta handler failed:', error);
@@ -2398,6 +2525,7 @@ export default function SignalTable({
     reason?: string;
     payload?: any;
   }) => {
+    lastStandardActivityRef.current = Date.now();
     syncRealtimeEnvelope({
       server_ts_ms: event.server_ts_ms,
     });
@@ -2405,7 +2533,19 @@ export default function SignalTable({
 
     if (event.kind === 'heartbeat') {
       if (!manualRefreshRequiredRef.current) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        const emptyViewState = resolveAcknowledgedEmptyViewState();
+        if (emptyViewState != null) {
+          setSurfaceState(emptyViewState);
+          return;
+        }
+        const nextState = resolveSignalFreshnessState(
+          lastUpdateRef.current,
+          Date.now(),
+          recoveryPending,
+        );
+        if (nextState != null) {
+          setSurfaceState(nextState);
+        }
       }
       return;
     }
@@ -2442,7 +2582,7 @@ export default function SignalTable({
     if (!manualRefreshRequiredRef.current) {
       setSurfaceState(RealtimeSurfaceState.LIVE);
     }
-  }, [advanceStandardCursor, applySignalDeltaPayload, scheduleInvalidation, syncRealtimeEnvelope]);
+  }, [advanceStandardCursor, applySignalDeltaPayload, resolveAcknowledgedEmptyViewState, recoveryPending, scheduleInvalidation, syncRealtimeEnvelope]);
 
   const handleStandardRealtimeFailure = useCallback((failure: StandardSocketFailure) => {
     if (failure.type === 'lineage_mismatch') {
@@ -2463,11 +2603,24 @@ export default function SignalTable({
     onEvent: handleStandardRealtimeEvent,
     onFailure: handleStandardRealtimeFailure,
     onSubscribed: (ack) => {
+      lastStandardActivityRef.current = Date.now();
       if (typeof ack.last_seq === 'number' && Number.isFinite(ack.last_seq)) {
         standardCursorSeqRef.current = Math.max(standardCursorSeqRef.current, Math.trunc(ack.last_seq));
       }
       if (!manualRefreshRequiredRef.current) {
-        setSurfaceState(RealtimeSurfaceState.LIVE);
+        const emptyViewState = resolveAcknowledgedEmptyViewState();
+        if (emptyViewState != null) {
+          setSurfaceState(emptyViewState);
+          return;
+        }
+        const nextState = resolveSignalFreshnessState(
+          lastUpdateRef.current,
+          Date.now(),
+          recoveryPending,
+        );
+        if (nextState != null) {
+          setSurfaceState(nextState);
+        }
       }
     },
   });
@@ -2479,6 +2632,62 @@ export default function SignalTable({
     5000,
     signalStandardPollingEnabled,
   );
+
+  useEffect(() => {
+    if (!signalStandardEnabled) {
+      return undefined;
+    }
+    if (surfaceState === RealtimeSurfaceState.MANUAL_REFRESH_REQUIRED) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (manualRefreshRequiredRef.current) {
+        return;
+      }
+      if (surfaceState === RealtimeSurfaceState.RECOVERING) {
+        return;
+      }
+      const emptyViewState = resolveAcknowledgedEmptyViewState();
+      if (emptyViewState != null) {
+        setSurfaceState(emptyViewState);
+        if (emptyViewState === RealtimeSurfaceState.STALE) {
+          if (!recoveryPending) {
+            scheduleInvalidation('signal.watchdog.stale');
+          } else {
+            setSurfaceState(RealtimeSurfaceState.RECOVERING);
+          }
+        }
+        return;
+      }
+
+      const lastDataTsMs = lastUpdateRef.current;
+      const nextState = resolveSignalFreshnessState(
+        lastDataTsMs,
+        Date.now(),
+        recoveryPending,
+      );
+      if (nextState == null) {
+        return;
+      }
+
+      if (nextState === RealtimeSurfaceState.STALE) {
+        setSurfaceState(RealtimeSurfaceState.STALE);
+        if (!recoveryPending) {
+          scheduleInvalidation('signal.watchdog.stale');
+        } else {
+          setSurfaceState(RealtimeSurfaceState.RECOVERING);
+        }
+        return;
+      }
+
+      setSurfaceState(nextState);
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [recoveryPending, resolveAcknowledgedEmptyViewState, scheduleInvalidation, signalStandardEnabled, surfaceState]);
 
   useEffect(() => {
     void fetchSnapshot();
@@ -2504,7 +2713,13 @@ export default function SignalTable({
               if (latestRows.some((row) => !incomingIds.has(row.id))) {
                 setRows(latestRows.filter((row) => incomingIds.has(row.id)));
               }
-              markRowsNonEmpty();
+              const nextLastDataTsMs = resolveSignalDataFreshnessTsMs(
+                filtered,
+                typeof data?.server_ts_ms === 'number' ? data.server_ts_ms as number : Date.now(),
+              );
+              markRowsNonEmpty(nextLastDataTsMs);
+              setLastUpdate(nextLastDataTsMs);
+              lastUpdateRef.current = nextLastDataTsMs;
             } else {
               handleEmptyVisibleSnapshot();
             }

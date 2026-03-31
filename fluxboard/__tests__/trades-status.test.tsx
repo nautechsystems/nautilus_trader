@@ -1,44 +1,192 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock sockets with disconnected state for OFFLINE
-vi.mock('../sockets', () => ({ socket: { on: () => {}, off: () => {}, connected: false } }));
+const { getTrades, getTradesDelta, realtimeFlags, socketMock } = vi.hoisted(() => ({
+  getTrades: vi.fn(),
+  getTradesDelta: vi.fn(),
+  realtimeFlags: {
+    trades: false,
+  },
+  socketMock: {
+    on: vi.fn(),
+    off: vi.fn(),
+    emit: vi.fn(),
+    connected: true,
+  },
+}));
 
-// Mock store with minimal rows
-vi.mock('../stores', async (importOriginal) => {
+vi.mock('../api', async (importOriginal) => {
   const mod = await importOriginal<any>();
-  const mockRows: any[] = [];
   return {
     ...mod,
-    useTradesStore: (selector?: any) => {
-      const state = {
-        rows: mockRows,
-        byId: new Map(),
-        order: [],
-        lastSeq: 0,
-        lastUpdate: Date.now(),
-        setSnapshot: () => {},
-        applyDelta: () => ({ upserts: 0, deletes: 0, changed: false }),
-        appendHistorical: () => {},
-        clear: () => {},
-      };
-      return selector ? selector(state) : state;
+    api: {
+      ...mod.api,
+      getTrades,
+      getTradesDelta,
     },
-    selectTradesRows: (s: any) => s.rows,
-    selectTradesLastSeq: (s: any) => s.lastSeq,
-    shallow: (a: any, b: any) => a === b,
+    deriveCanonicalNaming: vi.fn(() => ({})),
   };
 });
+
+vi.mock('../sockets', () => ({
+  socket: socketMock,
+  standardSocketClient: {
+    subscribe: vi.fn(() => () => undefined),
+  },
+}));
+
+vi.mock('../config/featureFlags', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    isRealtimeStandardEnabled: (surface: string) => surface === 'trades' && realtimeFlags.trades,
+  };
+});
+
+vi.mock('../utils/sound', () => ({
+  playTradeClick: vi.fn(),
+}));
 
 vi.mock('../components/trades/TradesTable', () => ({
   TradesTable: () => <div data-testid="trades-table" />,
 }));
 
 import Trades from '../Trades';
+import { useResyncStore, useTradesStore } from '../stores';
 
-describe('Trades LIVE/STALE/OFFLINE banner', () => {
-  it('shows OFFLINE banner when socket disconnected', () => {
+const baseRows = [
+  {
+    row_id: 'trade-1',
+    seq: 1,
+    version: 1,
+    ts: 1,
+    time: '2025-01-01T00:00:01Z',
+    coin: 'PLUME/USDT',
+    exchange: 'bybit',
+    side: 'buy',
+    price: 100,
+  },
+];
+
+describe('Trades status banner', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    getTrades.mockReset();
+    getTradesDelta.mockReset();
+    socketMock.on.mockClear();
+    socketMock.off.mockClear();
+    socketMock.emit.mockClear();
+    socketMock.connected = true;
+    realtimeFlags.trades = false;
+    useTradesStore.getState().clear();
+    useResyncStore.getState().resetResyncState();
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 100,
+      last_seq: 1,
+      has_more: false,
+      next_cursor: null,
+    });
+    getTradesDelta.mockResolvedValue({
+      rows: [],
+      last_seq: 1,
+      reset_required: false,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows LIVE after a fresh snapshot-only load even when the socket starts disconnected', async () => {
+    socketMock.connected = false;
+
     render(<Trades />);
-    expect(screen.getByText(/OFFLINE — Reconnecting…/)).toBeInTheDocument();
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    expect(screen.getByText('LIVE')).toBeInTheDocument();
+    expect(screen.queryByText(/OFFLINE - Reconnecting/i)).toBeNull();
+  });
+
+  it('shows LIVE for a fresh non-canonical snapshot view without realtime lineage', async () => {
+    realtimeFlags.trades = true;
+    window.sessionStorage.setItem('trades_filters', JSON.stringify({ exchange: 'bybit' }));
+    getTrades.mockResolvedValue({
+      rows: baseRows,
+      total: baseRows.length,
+      page: 1,
+      page_size: 50,
+      last_seq: 1,
+      has_more: false,
+      next_cursor: null,
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalled());
+    expect(screen.getByText('LIVE')).toBeInTheDocument();
+    expect(screen.queryByText('RECOVERING')).toBeNull();
+    expect(screen.queryByText(/RECOVERING - Replaying/i)).toBeNull();
+  });
+
+  it('uses snapshot recovery instead of delta replay for invalidate-only standard trades', async () => {
+    realtimeFlags.trades = true;
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    getTrades.mockResolvedValue({
+      rows: [
+        {
+          ...baseRows[0],
+          seq: 7270118480769024,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      has_more: false,
+      next_cursor: null,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'tokenmm',
+        surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        snapshot_revision: 1,
+        last_seq: 1,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+        },
+      },
+    });
+
+    render(<Trades />);
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(1));
+
+    const disconnectHandler = socketMock.on.mock.calls.find(([event]) => event === 'disconnect')?.[1];
+    const connectHandler = socketMock.on.mock.calls.find(([event]) => event === 'connect')?.[1];
+    expect(disconnectHandler).toBeTypeOf('function');
+    expect(connectHandler).toBeTypeOf('function');
+
+    await act(async () => {
+      socketMock.connected = false;
+      disconnectHandler?.('transport close');
+    });
+    await act(async () => {
+      socketMock.connected = true;
+      connectHandler?.();
+    });
+
+    getTradesDelta.mockClear();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+
+    await waitFor(() => expect(getTrades).toHaveBeenCalledTimes(2));
+    expect(getTradesDelta).not.toHaveBeenCalled();
   });
 });

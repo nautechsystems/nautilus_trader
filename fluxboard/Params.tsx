@@ -3842,9 +3842,9 @@ export default function Params({
                       idx={virtualRow.index}
                       strategyColumnWidth={strategyColumnWidth}
                       orderedParamDefs={orderedParamDefs}
-                      stratParams={paramValues.get(strategy.strategy_id) || EMPTY_PARAMS}
-                      stratDirty={dirtyParams.get(strategy.strategy_id) || EMPTY_DIRTY_SET}
-                      stratErrors={errorParams.get(strategy.strategy_id) || EMPTY_ERRORS}
+                      stratParams={effectiveBulkState.paramValues.get(strategy.strategy_id) || EMPTY_PARAMS}
+                      stratDirty={effectiveBulkState.dirtyParams.get(strategy.strategy_id) || EMPTY_DIRTY_SET}
+                      stratErrors={effectiveBulkState.errorParams.get(strategy.strategy_id) || EMPTY_ERRORS}
                       isSaving={saving.has(strategy.strategy_id)}
                       isFlashing={flashingRows.has(strategy.strategy_id)}
                       isSelected={selectedSet.has(strategy.strategy_id)}

@@ -22,6 +22,7 @@ KNOWN_BASE_EXPOSURE_MODES = {
     "price_based",
     "unsupported",
 }
+DEGRADED_QTY_CONVERSION_STATUSES = frozenset({"missing_metadata", "missing_price", "unsupported"})
 VALID_ORDER_QTY_UNITS = frozenset({"venue", "base"})
 
 
@@ -199,7 +200,7 @@ def exposure_from_venue_qty(
         raise ValueError("venue_qty is required")
 
     status, source = _classify_conversion(instrument, last_px=last_px)
-    if status in {"missing_metadata", "missing_price", "unsupported"}:
+    if status in DEGRADED_QTY_CONVERSION_STATUSES:
         return _degraded_result(
             venue_qty=venue_qty_dec,
             base_qty=None,
@@ -253,7 +254,7 @@ def venue_qty_from_base_qty(
         raise ValueError("base_qty is required")
 
     status, source = _classify_conversion(instrument, last_px=last_px)
-    if status in {"missing_metadata", "missing_price", "unsupported"}:
+    if status in DEGRADED_QTY_CONVERSION_STATUSES:
         return _degraded_result(
             venue_qty=None,
             base_qty=base_qty_dec,
@@ -326,6 +327,7 @@ def venue_qty_from_base_qty(
 
 
 __all__ = [
+    "DEGRADED_QTY_CONVERSION_STATUSES",
     "QuantityExposure",
     "exposure_from_venue_qty",
     "normalize_order_qty_unit",

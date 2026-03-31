@@ -11,6 +11,7 @@ This directory is the deploy root for the dedicated `equities` stack.
   - `flux.runners.equities.run_node`
   - `flux.runners.equities.run_portfolio`
   - `flux.runners.equities.run_bridge`
+  - `flux.runners.equities.run_controller`
   - `flux.runners.equities.run_api`
 - Systemd assets:
   - `systemd/flux-equities.target`
@@ -34,6 +35,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `ops/scripts/deploy/equities_stack.sh` is local smoke only and refuses live deploys.
 - Live trading is opt-in only when `EQUITIES_MODE=live`, `EQUITIES_CONFIRM_LIVE=1`, and `EQUITIES_ENABLE_EXECUTION=1` are set together through systemd/Pulse-managed services.
 - Flux runner stop handling is also opt-in: checked-in equities strategy TOMLs set `manage_stop = false`, so live defaults do not auto-flatten on runner stop unless a strategy explicitly enables that policy.
+- The `ibkr.hedge.main` controller lane is owned by `[controller]` in `equities.live.toml`. Keep `mode = "active"` plus `write_ownership_enabled = true` only while the canary is the intended writer; set `write_ownership_enabled = false` for the one-bounce rollback path without removing the controller service wiring.
+- Multi-box follow-on hardening keeps the same controller-owned write scope but adds replicated ownership durability and lease-fenced stale-writer rejection before any active/standby rollout. Do not treat a second equities host as an eligible writer until `python ops/scripts/failover/controller_scope_failover.py --profile equities --scope ibkr.hedge.main --multi-box --check-thresholds` passes on the pinned release root.
 
 ## Overnight IBKR Hedge Contract
 
@@ -183,10 +186,13 @@ Installer behavior:
 - writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
 - writes one `/etc/flux/equities-node-<node_group_id>.env` per grouped node, with one or two `--config` flags for the member strategy TOMLs
-- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the grouped `equities-node-*` service registry
+- writes `/etc/flux/equities-controller.env` for the `ibkr.hedge.main` controller lane
+- writes `/etc/flux/equities-ibkr-reference-publisher.env` for the shared IBKR reference lane
+- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the IBKR reference publisher, the controller canary, and the grouped `equities-node-*` registry
 - when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
 - the pilot lane uses the loopback API port `127.0.0.1:5124`
 - when pilot and prod run concurrently on the same Redis host, keep the pilot lane on its own Redis DB (the default is `EQUITIES_REDIS_DB=1`) unless you are intentionally testing a shared-state scenario
+- multi-box controller drills must continue to show `duplicate_writes = 0` before you let a second host participate in failover for `ibkr.hedge.main`
 
 Runtime registration is explicit:
 
@@ -195,7 +201,7 @@ Runtime registration is explicit:
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
-- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, and every discovered `equities-node-*` service
+- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, `equities-ibkr-reference-publisher`, `equities-controller`, and every discovered grouped `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
 - Production equities Redis is the dedicated ElastiCache replication group `equities` in `ap-southeast-1`.
 - The write endpoint is `master.equities.wapqos.apse1.cache.amazonaws.com:6379` and the read endpoint is `replica.equities.wapqos.apse1.cache.amazonaws.com:6379`.
@@ -210,6 +216,8 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-api.env`
 - `sed -n '1,120p' /etc/flux/equities-portfolio.env`
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
+- `sed -n '1,120p' /etc/flux/equities-controller.env`
+- `sed -n '1,120p' /etc/flux/equities-ibkr-reference-publisher.env`
 - `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
 - `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
@@ -235,7 +243,7 @@ Shared-host recovery order after a repoint:
 1. Run `uv sync --all-groups --all-extras` in the selected immutable release root.
 2. Run `sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" EQUITIES_DEPLOY_LANE=prod ops/scripts/deploy/install_equities_systemd.sh`.
 3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
-4. Restart `flux@equities-ibkr-reference-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
+4. Restart `flux@equities-ibkr-reference-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-controller.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
 5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
 
 For the full grouped-node prod migration procedure, use [`docs/runbooks/equities-shared-node-cutover.md`](../../docs/runbooks/equities-shared-node-cutover.md). That runbook captures the mandatory live baseline, restart order, readiness gate, and rollback steps.

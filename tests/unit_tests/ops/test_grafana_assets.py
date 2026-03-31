@@ -19,7 +19,7 @@ def test_dashboard_provider_points_grafana_at_repo_dashboards_path() -> None:
     assert len(providers) == 1
     provider = providers[0]
     assert provider["type"] == "file"
-    assert provider["options"]["path"] == "/var/lib/grafana/dashboards"
+    assert provider["options"]["path"] == "/etc/tokenmm-monitoring/grafana/dashboards"
 
 
 def test_prometheus_datasource_uses_stable_uid() -> None:

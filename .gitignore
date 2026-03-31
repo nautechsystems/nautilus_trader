@@ -77,6 +77,9 @@ env/
 *.sh
 !fluxboard/deploy.sh
 !ops/scripts/deploy/*.sh
+!scripts/sync_upstream.sh
+!tooling/dev/prepare-nautilus-upgrade.sh
+!tooling/dev/test-prepare-nautilus-upgrade.sh
 *tmp/
 *temp/
 

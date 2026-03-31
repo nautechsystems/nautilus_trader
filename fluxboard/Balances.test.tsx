@@ -221,6 +221,20 @@ describe('Balances component', () => {
     );
   });
 
+  it('renders standard-mode balance rows without falling into the loading empty state', async () => {
+    mockIsRealtimeStandardEnabled.mockReturnValue(true);
+    mockedApi.getBalances.mockResolvedValue(buildStandardPayload() as any);
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(screen.getByText('PLUME')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Loading balances...')).not.toBeInTheDocument();
+    expect(screen.queryByText('No balances found')).not.toBeInTheDocument();
+  });
+
   it('polls balances at the configured interval', async () => {
     render(<Balances />);
     await waitFor(() => {
@@ -287,6 +301,34 @@ describe('Balances component', () => {
     await screen.findByText('Degraded reconciliation');
     expect(screen.getByText(/ibkr\.reference\.main stale · TimeoutError/i)).toBeInTheDocument();
     expect(screen.getByText(/binance\.futures\.main healthy/i)).toBeInTheDocument();
+  });
+
+  it('does not render a healthy shared-account banner when reconciliation is healthy', async () => {
+    mockedApi.getBalances.mockResolvedValueOnce({
+      ...buildPayload(),
+      degraded: false,
+      scope_status: [
+        {
+          account_scope_id: 'binance.pm.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: true,
+            last_success_ts_ms: 1704067216000,
+            last_attempt_ts_ms: 1704067216000,
+            last_error_type: null,
+            last_error_message: null,
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    } as any);
+
+    render(<Balances />);
+
+    await screen.findByText('PLUME');
+    expect(screen.queryByText('Shared-account scopes healthy')).not.toBeInTheDocument();
+    expect(screen.queryByText(/publishing healthy shared-account state/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/binance\.pm\.main healthy/i)).not.toBeInTheDocument();
   });
 
   it('keeps non-zero quantity rows visible when market value is temporarily unavailable', async () => {

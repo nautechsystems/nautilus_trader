@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from argparse import Namespace
+import importlib
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 import pytest
@@ -12,8 +14,11 @@ from flux.runners.tokenmm.run_api import _attach_fluxboard_tokenmm_routes
 from flux.runners.tokenmm.run_api import _attach_profile_router_proxy
 from flux.runners.tokenmm.run_api import _attach_pulse_routes
 from flux.runners.tokenmm.run_api import _attach_tokenmm_readiness_route
+from flux.runners.tokenmm.run_api import _build_strategy_alerts_resolver
 from flux.runners.tokenmm.run_api import _build_flux_config
 from flux.runners.tokenmm.run_api import _build_profile_strategy_maps
+from flux.runners.tokenmm.run_api import _build_strategy_running_resolver
+from flux.runners.tokenmm.run_api import _load_tokenmm_readiness
 from flux.runners.tokenmm.run_api import _load_config
 from flux.runners.tokenmm.run_api import _parse_args
 from flux.runners.tokenmm.run_api import _resolve_bind_host
@@ -23,6 +28,10 @@ from flux.runners.tokenmm.run_api import _tokenmm_profile_summary
 
 def _example_config_path() -> Path:
     return Path(__file__).resolve().parents[4] / "examples/live/makerv3/config/makerv3.toml"
+
+
+def _tokenmm_shared_config_path() -> Path:
+    return Path(__file__).resolve().parents[4] / "deploy/tokenmm/tokenmm.live.toml"
 
 
 def test_example_config_builds_flux_config_with_strategy_identity_uniqueness() -> None:
@@ -124,6 +133,299 @@ def test_tokenmm_profile_summary_reports_effective_strategy_sets() -> None:
     assert "tokenmm_required_strategy_ids=['strategy_a']" in summary
 
 
+def test_build_strategy_running_resolver_maps_pulse_status_to_tokenmm_strategy_ids() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_status(self, job_id: str) -> str:
+            self.calls.append(job_id)
+            return {
+                "tokenmm-node-plumeusdt_binance_spot_makerv3": "active",
+                "tokenmm-node-plumeusdt_binance_perp_makerv3": "failed",
+            }.get(job_id, "unknown")
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_running_resolver(pulse_control=pulse, cache_ttl_s=60.0)
+
+    running = resolver([
+        "plumeusdt_binance_spot_makerv3",
+        "plumeusdt_binance_perp_makerv3",
+    ])
+
+    assert running == {
+        "plumeusdt_binance_spot_makerv3": True,
+        "plumeusdt_binance_perp_makerv3": False,
+    }
+    assert pulse.calls == [
+        "tokenmm-node-plumeusdt_binance_spot_makerv3",
+        "tokenmm-node-plumeusdt_binance_perp_makerv3",
+    ]
+
+
+def test_build_strategy_alerts_resolver_emits_current_market_data_block_only() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            if strategy_id == "strategy_blocked":
+                return {
+                    "id": strategy_id,
+                    "ts_ms": 1_774_897_251_000,
+                    "blocked": True,
+                    "tradeable": False,
+                    "reason": "stale_market_data",
+                    "params": {"max_age_ms": 15_000},
+                    "state": {
+                        "state": "blocked_reference_md",
+                        "quote_health": {
+                            "reference": {
+                                "quote_age_ms": 15_250,
+                                "reason_code": "blocked_reference_md_stale",
+                            },
+                        },
+                    },
+                }
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_252_000,
+                "blocked": False,
+                "tradeable": True,
+                "reason": "running",
+                "params": {"max_age_ms": 15_000},
+                "state": {"state": "running"},
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 9_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked", "strategy_recovered"])
+
+    assert rows_by_strategy["strategy_recovered"] == []
+    assert rows_by_strategy["strategy_blocked"] == [
+        {
+            "strategy_id": "strategy_blocked",
+            "row_id": "active:strategy_blocked:blocked_reference_md_stale",
+            "id": "active:strategy_blocked:blocked_reference_md_stale",
+            "alert_key": "market_data_blocked",
+            "level": "warning",
+            "code": "blocked_reference_md_stale",
+            "reason_code": "blocked_reference_md_stale",
+            "message": (
+                "Quoting blocked (reference data stale) "
+                "strategy_id=strategy_blocked age_ms=15250 max_age_ms=15000"
+            ),
+            "details": {
+                "strategy_id": "strategy_blocked",
+                "leg_role": "reference",
+                "age_ms": 15_250,
+                "max_age_ms": 15_000,
+            },
+            "ts_ms": 1_774_897_251_000,
+            "source": "signals",
+        },
+    ]
+
+
+def test_build_strategy_alerts_resolver_omits_none_age_from_message() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_251_000,
+                "blocked": True,
+                "tradeable": False,
+                "reason": "stale_market_data",
+                "params": {"max_age_ms": 15_000},
+                "state": {
+                    "state": "blocked_reference_md",
+                    "quote_health": {"reference": {}},
+                },
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_774_897_259_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked"])
+    row = rows_by_strategy["strategy_blocked"][0]
+
+    assert row["message"] == (
+        "Quoting blocked (reference data stale) "
+        "strategy_id=strategy_blocked max_age_ms=15000"
+    )
+    assert row["details"] == {
+        "strategy_id": "strategy_blocked",
+        "leg_role": "reference",
+        "max_age_ms": 15_000,
+    }
+
+
+def test_build_strategy_alerts_resolver_isolates_single_strategy_failure() -> None:
+    class _FakeStore:
+        def load_running_states(self, strategy_ids):
+            return {str(strategy_id): True for strategy_id in strategy_ids}
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            del running
+            if strategy_id == "strategy_broken":
+                raise RuntimeError("broken signal")
+            return {
+                "id": strategy_id,
+                "ts_ms": 1_774_897_251_000,
+                "blocked": True,
+                "tradeable": False,
+                "reason": "stale_market_data",
+                "params": {"max_age_ms": 15_000},
+                "state": {
+                    "state": "blocked_reference_md",
+                    "quote_health": {
+                        "reference": {
+                            "quote_age_ms": 15_250,
+                            "reason_code": "blocked_reference_md_stale",
+                        },
+                    },
+                },
+            }
+
+    resolver = _build_strategy_alerts_resolver(
+        store=_FakeStore(),
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_774_897_259_000,
+    )
+
+    rows_by_strategy = resolver(["strategy_blocked", "strategy_broken"])
+
+    assert rows_by_strategy["strategy_broken"] == []
+    assert rows_by_strategy["strategy_blocked"][0]["row_id"] == (
+        "active:strategy_blocked:blocked_reference_md_stale"
+    )
+
+
+def test_load_tokenmm_readiness_uses_runner_truth_for_operator_surface(monkeypatch) -> None:
+    from flux.api import StrategyMetadata
+    from flux.runners.tokenmm import run_api
+
+    captured: dict[str, object] = {}
+
+    class _FakeStore:
+        def __init__(
+            self,
+            *,
+            flux_config,
+            redis_client,
+            contract_catalog,
+            strategy_running_resolver,
+            strategy_alerts_resolver,
+            params_schema,
+            params_defaults,
+        ) -> None:
+            del flux_config
+            del redis_client
+            del contract_catalog
+            del strategy_alerts_resolver
+            del params_schema
+            del params_defaults
+            captured["resolver"] = strategy_running_resolver
+
+        def load_running_states(self, strategy_ids):
+            resolver = captured["resolver"]
+            assert callable(resolver)
+            running = dict(resolver(strategy_ids))
+            captured["running"] = running
+            return running
+
+        def load_signals_payload(self, strategy_id, strategy_metadata, *, running=None):
+            del strategy_metadata
+            return {
+                "id": strategy_id,
+                "running": running,
+                "mode": "ON",
+                "blocked": False,
+                "tradeable": True,
+                "balances_ok": True,
+                "local_qty_base": 1.0,
+                "global_qty_base": 2.0,
+                "global_qty_base_complete": True,
+                "maker_quote_status": {
+                    "bid_open": 1,
+                    "ask_open": 1,
+                    "bid_depth": 1,
+                    "ask_depth": 1,
+                },
+                "state": {"state": "running"},
+                "debug": {
+                    "md_health": {
+                        "state_stale": False,
+                        "signal_state_age_ms": 250,
+                    },
+                },
+            }
+
+    monkeypatch.setattr(run_api, "FluxApiStore", _FakeStore)
+    monkeypatch.setattr(
+        run_api,
+        "_build_strategy_running_resolver",
+        lambda: (lambda strategy_ids: {str(strategy_id): True for strategy_id in strategy_ids}),
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_tokenmm_strategy_ids_for_request",
+        lambda **kwargs: (("strategy_a",), ("strategy_a",)),
+    )
+    monkeypatch.setattr(
+        run_api,
+        "load_state_streams_by_strategy_id",
+        lambda **kwargs: {
+            "strategy_a": {
+                "key": "flux:v1:in:stream:live:strategy_a:flux.makerv3.state",
+                "entry_id": "1700000004000-0",
+                "ts_ms": 1_700_000_004_000,
+                "age_ms": 1_000,
+                "present": True,
+            },
+        },
+    )
+
+    result = _load_tokenmm_readiness(
+        flux_config=SimpleNamespace(
+            identity=SimpleNamespace(namespace="flux", schema_version="v1"),
+            mode="live",
+        ),
+        redis_client=object(),
+        contract_catalog=(),
+        strategy_metadata=StrategyMetadata(
+            strategy_class="maker_v3",
+            strategy_groups="tokenmm",
+            base_asset="PLUME",
+            quote_asset="USDT",
+            param_set="makerv3",
+            strategy_family="maker_v3",
+            strategy_version="v3",
+        ),
+        profile_strategy_map={"tokenmm": ["strategy_a"]},
+        profile_required_strategy_map={"tokenmm": ["strategy_a"]},
+    )
+
+    assert captured["running"] == {"strategy_a": True}
+    assert result["ok"] is True
+    assert result["summary"]["failed_checks"] == []
+
+
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:
     monkeypatch.setattr("sys.argv", ["run_api.py"])
 
@@ -141,6 +443,144 @@ def test_parse_args_describes_shared_fluxboard_static_contract(monkeypatch, caps
     assert "/static/fluxboard/*" in captured.out
     assert "/tokenmm" in captured.out
     assert "/lp" in captured.out
+
+
+def test_main_passes_strategy_contracts_to_create_flux_api_app(monkeypatch) -> None:
+    from flux.runners.tokenmm import run_api
+
+    captured: dict[str, object] = {}
+    config = {
+        "flux": {"mode": "paper"},
+        "identity": {"strategy_id": "tokenmm_api"},
+        "redis": {"host": "localhost", "port": 6379, "db": 0},
+        "venues": {
+            "execution_venue": "binance",
+            "reference_venue": "binance",
+            "execution_symbol": "PLUMEUSDT",
+            "reference_symbol": "PLUMEUSDT",
+        },
+        "api": {
+            "tokenmm_strategy_ids": [
+                "plumeusdt_binance_spot_makerv3",
+                "plumeusdt_binance_perp_makerv3",
+            ],
+        },
+        "strategy_contracts": [
+            {
+                "strategy_id": "plumeusdt_binance_spot_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+            },
+            {
+                "strategy_id": "plumeusdt_binance_perp_makerv3",
+                "portfolio_asset_id": "PLUME",
+                "maker_instrument_id": "PLUMEUSDT-PERP.BINANCE_PERP",
+                "reference_instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+                "execution_account_scope_id": "binance.execution.main",
+                "reference_account_scope_id": "binance.execution.main",
+            },
+        ],
+        "contracts": [
+            {
+                "exchange": "binance_spot",
+                "symbol": "PLUME/USDT",
+                "instrument_id": "PLUMEUSDT.BINANCE_SPOT",
+            },
+        ],
+    }
+    args = Namespace(
+        config=Path("tokenmm.toml"),
+        mode=None,
+        confirm_live=False,
+        log_level=None,
+        host=None,
+        port=None,
+        serve_fluxboard=False,
+        fluxboard_dist=None,
+        serve_pulse=False,
+        pulse_dist=None,
+    )
+
+    monkeypatch.setattr(run_api, "_parse_args", lambda: args)
+    monkeypatch.setattr(run_api, "_load_config", lambda path: config)
+    monkeypatch.setattr(run_api, "_resolve_mode", lambda cfg, parsed: "paper")
+    monkeypatch.setattr(run_api, "configure_python_logging", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "emit_startup_banner", lambda **kwargs: None)
+    monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
+    monkeypatch.setattr(run_api, "_should_enable_pulse_routes", lambda args, api_cfg: False)
+    monkeypatch.setattr(run_api, "_resolve_surface_proxy_backends", lambda: {})
+
+    class _FakePulse:
+        def get_job_status(self, job_id: str) -> str:
+            captured["pulse_job_id"] = job_id
+            return "active"
+
+    monkeypatch.setattr(run_api, "PulseControlPlane", lambda: _FakePulse())
+    monkeypatch.setattr(
+        run_api,
+        "_run_with_socketio_if_available",
+        lambda app, *, host, port: captured.update({"host": host, "port": port}),
+    )
+
+    def _fake_create_flux_api_app(*args, **kwargs):
+        captured["strategy_contracts"] = kwargs["strategy_contracts"]
+        captured["profile_strategy_map"] = kwargs["profile_strategy_map"]
+        captured["strategy_running_resolver"] = kwargs["strategy_running_resolver"]
+        captured["strategy_alerts_resolver"] = kwargs["strategy_alerts_resolver"]
+        captured["alerts_include_history"] = kwargs["alerts_include_history"]
+        return Flask(__name__)
+
+    monkeypatch.setattr(run_api, "create_flux_api_app", _fake_create_flux_api_app)
+
+    run_api.main()
+
+    assert captured["strategy_contracts"] == config["strategy_contracts"]
+    assert captured["profile_strategy_map"] == {
+        "tokenmm": [
+            "plumeusdt_binance_spot_makerv3",
+            "plumeusdt_binance_perp_makerv3",
+        ],
+    }
+    running_resolver = captured["strategy_running_resolver"]
+    assert callable(running_resolver)
+    assert running_resolver(["plumeusdt_binance_spot_makerv3"]) == {
+        "plumeusdt_binance_spot_makerv3": True,
+    }
+    assert callable(captured["strategy_alerts_resolver"])
+    assert captured["alerts_include_history"] is False
+    assert captured["pulse_job_id"] == "tokenmm-node-plumeusdt_binance_spot_makerv3"
+
+
+def test_tokenmm_run_controller_loads_the_managed_binance_contract() -> None:
+    run_controller = importlib.import_module("flux.runners.tokenmm.run_controller")
+    config = run_controller._load_config(_tokenmm_shared_config_path())
+
+    contract = run_controller.load_controller_contract(config)
+
+    assert contract.controller_scope_id == "tokenmm.binance.pm.main"
+    assert contract.account_scope_id == "binance.pm.main"
+    assert contract.managed_strategy_ids == (
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    )
+
+
+def test_tokenmm_run_controller_rejects_missing_managed_strategy_bindings() -> None:
+    run_controller = importlib.import_module("flux.runners.tokenmm.run_controller")
+
+    with pytest.raises(ValueError, match="managed_strategy_ids"):
+        run_controller.load_controller_contract(
+            {
+                "controller": {
+                    "controller_scope_id": "tokenmm.binance.pm.main",
+                    "account_scope_id": "binance.pm.main",
+                    "managed_strategy_ids": [],
+                },
+            }
+        )
 
 
 def test_attach_fluxboard_tokenmm_routes_redirects_tokenm_aliases(tmp_path: Path) -> None:

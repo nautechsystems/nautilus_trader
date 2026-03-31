@@ -187,11 +187,28 @@ ibg_client_id = 908
 ibg_connection_timeout_secs = 5
 ibg_request_timeout_secs = 10
 account_id = "U10015777"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [account_scopes.dockerized_gateway]
 trading_mode = "live"
 read_only_api = true
 manage_container = false
+
+[[controller_scopes]]
+controller_scope_id = "equities.ibkr.hedge.main"
+profile_id = "equities"
+writer_account_scope_id = "ibkr.hedge.main"
+account_scope_ids = ["ibkr.hedge.main"]
+canary = true
+
+[controller]
+controller_scope_id = "equities.ibkr.hedge.main"
+owner_id = "equities-controller:equities.ibkr.hedge.main"
+mode = "active"
+allow_single_host_canary = true
+# Set false to roll the canary back to shadow ownership without removing the service.
+write_ownership_enabled = true
+preserve_compatibility_outputs = true
 
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_maker"
@@ -204,6 +221,7 @@ reference_instrument_id = "AAPL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "aapl_tradexyz_taker"
@@ -216,6 +234,7 @@ reference_instrument_id = "AAPL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amd_tradexyz_maker"
@@ -228,6 +247,7 @@ reference_instrument_id = "AMD.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amd_tradexyz_taker"
@@ -240,6 +260,7 @@ reference_instrument_id = "AMD.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amzn_tradexyz_maker"
@@ -252,6 +273,7 @@ reference_instrument_id = "AMZN.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amzn_tradexyz_taker"
@@ -264,6 +286,7 @@ reference_instrument_id = "AMZN.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "googl_tradexyz_maker"
@@ -276,6 +299,7 @@ reference_instrument_id = "GOOGL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "googl_tradexyz_taker"
@@ -288,6 +312,7 @@ reference_instrument_id = "GOOGL.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "meta_tradexyz_maker"
@@ -300,6 +325,7 @@ reference_instrument_id = "META.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "meta_tradexyz_taker"
@@ -312,6 +338,7 @@ reference_instrument_id = "META.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "msft_tradexyz_maker"
@@ -324,6 +351,7 @@ reference_instrument_id = "MSFT.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "msft_tradexyz_taker"
@@ -336,6 +364,7 @@ reference_instrument_id = "MSFT.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "nvda_tradexyz_maker"
@@ -348,6 +377,7 @@ reference_instrument_id = "NVDA.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "nvda_tradexyz_taker"
@@ -360,6 +390,7 @@ reference_instrument_id = "NVDA.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "orcl_tradexyz_maker"
@@ -372,6 +403,7 @@ reference_instrument_id = "ORCL.NYSE"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "orcl_tradexyz_taker"
@@ -384,6 +416,7 @@ reference_instrument_id = "ORCL.NYSE"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "pltr_tradexyz_maker"
@@ -396,6 +429,7 @@ reference_instrument_id = "PLTR.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "pltr_tradexyz_taker"
@@ -408,6 +442,7 @@ reference_instrument_id = "PLTR.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "tsla_tradexyz_maker"
@@ -420,6 +455,7 @@ reference_instrument_id = "TSLA.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "tsla_tradexyz_taker"
@@ -432,6 +468,7 @@ reference_instrument_id = "TSLA.NASDAQ"
 execution_account_scope_id = "hyperliquid.xyz.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amzn_binance_perp_maker"
@@ -444,6 +481,7 @@ reference_instrument_id = "AMZN.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "amzn_binance_perp_taker"
@@ -456,6 +494,7 @@ reference_instrument_id = "AMZN.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "coin_binance_perp_maker"
@@ -468,6 +507,7 @@ reference_instrument_id = "COIN.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "coin_binance_perp_taker"
@@ -480,6 +520,7 @@ reference_instrument_id = "COIN.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "crcl_binance_perp_maker"
@@ -492,6 +533,7 @@ reference_instrument_id = "CRCL.NYSE"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "crcl_binance_perp_taker"
@@ -504,6 +546,7 @@ reference_instrument_id = "CRCL.NYSE"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "ewy_binance_perp_maker"
@@ -516,6 +559,7 @@ reference_instrument_id = "EWY.NYSE"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "ewy_binance_perp_taker"
@@ -528,6 +572,7 @@ reference_instrument_id = "EWY.NYSE"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "hood_binance_perp_maker"
@@ -540,6 +585,7 @@ reference_instrument_id = "HOOD.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "hood_binance_perp_taker"
@@ -552,6 +598,7 @@ reference_instrument_id = "HOOD.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "intc_binance_perp_maker"
@@ -564,6 +611,7 @@ reference_instrument_id = "INTC.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "intc_binance_perp_taker"
@@ -576,6 +624,7 @@ reference_instrument_id = "INTC.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "mstr_binance_perp_maker"
@@ -588,6 +637,7 @@ reference_instrument_id = "MSTR.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "mstr_binance_perp_taker"
@@ -600,6 +650,7 @@ reference_instrument_id = "MSTR.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "pltr_binance_perp_maker"
@@ -612,6 +663,7 @@ reference_instrument_id = "PLTR.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "pltr_binance_perp_taker"
@@ -624,6 +676,7 @@ reference_instrument_id = "PLTR.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "tsla_binance_perp_maker"
@@ -636,6 +689,7 @@ reference_instrument_id = "TSLA.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[strategy_contracts]]
 strategy_id = "tsla_binance_perp_taker"
@@ -648,6 +702,7 @@ reference_instrument_id = "TSLA.NASDAQ"
 execution_account_scope_id = "binance.futures.main"
 reference_account_scope_id = "ibkr.reference.main"
 hedge_account_scope_id = "ibkr.hedge.main"
+controller_scope_id = "equities.ibkr.hedge.main"
 
 [[contracts]]
 exchange = "hyperliquid"

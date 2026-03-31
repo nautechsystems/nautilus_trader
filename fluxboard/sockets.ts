@@ -373,6 +373,9 @@ export function createStandardSocketClient(
         }
 
         if (event.kind === 'recovery_required') {
+          const socketTarget = boundSocket;
+          removeSubscription(subscription.id);
+          emitSurfaceUnsubscribeIfUnused(subscription.request.surface, socketTarget);
           subscription.onFailure?.({
             type: 'recovery_required',
             reason: String(event.reason ?? 'recovery_required'),

@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { toast } from 'sonner';
 import { api } from '../api';
 import { APIError } from '../apiClient';
 import type { ParamUpdate } from '../types';
@@ -466,15 +467,32 @@ describe('API Client - Param Methods', () => {
       (window.location as any).pathname = '/tokenmm/alerts';
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, data: { rows: [], total: 0 }, error: null }),
+        json: async () => ({
+          ok: true,
+          data: {
+            rows: [],
+            total: 0,
+            capabilities: {
+              feed_mode: 'active',
+              clear_mode: 'history_only',
+            },
+          },
+          error: null,
+        }),
       });
 
-      await api.getAlerts();
+      const result = await api.getAlerts();
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringMatching(/\/api\/v1\/alerts\?profile=tokenmm$/),
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
+      expect((result as typeof result & {
+        capabilities?: { feed_mode?: string; clear_mode?: string };
+      }).capabilities).toEqual({
+        feed_mode: 'active',
+        clear_mode: 'history_only',
+      });
     });
 
     it('normalizes clearAlerts response and includes tokenmm profile query', async () => {
@@ -483,7 +501,16 @@ describe('API Client - Param Methods', () => {
         ok: true,
         json: async () => ({
           ok: true,
-          data: { deleted: 2, remaining: 0, strategy_id: 'strategy_01', server_ts_ms: 1234 },
+          data: {
+            deleted: 2,
+            remaining: 1,
+            strategy_id: 'strategy_01',
+            server_ts_ms: 1234,
+            capabilities: {
+              feed_mode: 'active',
+              clear_mode: 'history_only',
+            },
+          },
           error: null,
         }),
       });
@@ -497,7 +524,16 @@ describe('API Client - Param Methods', () => {
           headers: { 'Content-Type': 'application/json' },
         }),
       );
-      expect(result).toEqual({ success: true, deleted: 2, remaining: 0 });
+      expect(result).toEqual({
+        success: true,
+        deleted: 2,
+        remaining: 1,
+        capabilities: {
+          feed_mode: 'active',
+          clear_mode: 'history_only',
+        },
+      });
+      expect(toast.success).toHaveBeenCalledWith('Alert history cleared');
     });
   });
 

@@ -12,11 +12,10 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CASH
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CRYPTO
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FOP_ORIGINAL
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_ORIGINAL
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_FUT_UNDERLYING
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_OPT_UNPADDED
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CASH
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_CRYPTO
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
@@ -302,36 +301,32 @@ def test_regular_expression_crypto():
     ("symbol", "expected"),
     [
         (
-            "AAPL230217P00155000",
+            "SPXW  260120P06835000",  # databento/OCC: exactly 6-char root then expiry+right+strike+decimal
             {
-                "symbol": "AAPL",
-                "expiry": "230217",
+                "symbol": "SPXW  ",
+                "expiry": "260120",
                 "right": "P",
-                "strike": "00155",
+                "strike": "06835",
                 "decimal": "000",
             },
         ),
         (
-            "A230217P00150000",
-            {"symbol": "A", "expiry": "230217", "right": "P", "strike": "00150", "decimal": "000"},
-        ),
-        (
-            "CMCSA230217P00039500",
+            "SPXW  260313P06630000",
             {
-                "symbol": "CMCSA",
-                "expiry": "230217",
+                "symbol": "SPXW  ",
+                "expiry": "260313",
                 "right": "P",
-                "strike": "00039",
-                "decimal": "500",
+                "strike": "06630",
+                "decimal": "000",
             },
         ),
         (
-            "SPXW  260120P06835000",  # OCC compliant with space padding
+            "AAPL  230217P00155000",
             {
-                "symbol": "SPXW",
-                "expiry": "260120",
+                "symbol": "AAPL  ",
+                "expiry": "230217",
                 "right": "P",
-                "strike": "06835",
+                "strike": "00155",
                 "decimal": "000",
             },
         ),
@@ -343,6 +338,45 @@ def test_regular_expression_option(symbol, expected):
 
     # Act, Assert
     assert result == expected
+
+
+def test_regular_expression_option_requires_six_char_root():
+    """RE_OPT only matches databento format: exactly 6-char root then option spec (no space in between)."""
+    assert RE_OPT.match("AAPL230217P00155000") is None
+    assert RE_OPT.match("SPXW 260120P06835000") is None  # one space = only 5-char root
+    assert RE_OPT.match("SPXW  260120P06835000") is not None
+
+
+@pytest.mark.parametrize(
+    ("local_symbol", "expected_root", "expected_suffix"),
+    [
+        ("AAPL230217P00155000", "AAPL", "230217P00155000"),
+        ("SPXW260120P06835000", "SPXW", "260120P06835000"),
+    ],
+)
+def test_regular_expression_option_unpadded(local_symbol, expected_root, expected_suffix):
+    """
+    RE_OPT_UNPADDED matches IB unpadded option localSymbol (1-6 char root + OCC suffix).
+    """
+    m = RE_OPT_UNPADDED.match(local_symbol)
+    assert m is not None
+    assert m.group(1) == expected_root
+    assert m.group(2) == expected_suffix
+
+
+def test_ib_contract_to_instrument_id_unpadded_option_normalizes_to_six_char_root():
+    """
+    Unpadded IB option localSymbol (e.g. AAPL230217P00155000) normalizes to 6-char OCC
+    root.
+    """
+    contract = IBContract(
+        secType="OPT",
+        exchange="SMART",
+        localSymbol="AAPL230217P00155000",
+        currency="USD",
+    )
+    result = ib_contract_to_instrument_id(contract, "SMART")
+    assert result == InstrumentId.from_str("AAPL  230217P00155000.SMART")
 
 
 @pytest.mark.parametrize(
@@ -363,51 +397,15 @@ def test_regular_expression_index(symbol, expected):
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        ("ESH23", {"symbol": "ES", "month": "H", "year": "23"}),
-        ("M6EH23", {"symbol": "M6E", "month": "H", "year": "23"}),
-    ],
-)
-def test_regular_expression_future(symbol, expected):
-    # Arrange, Act
-    result = RE_FUT.match(symbol).groupdict()
-
-    # Act, Assert
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("symbol", "expected"),
-    [
         ("ESH3", {"symbol": "ES", "month": "H", "year": "3"}),
         ("M6EH3", {"symbol": "M6E", "month": "H", "year": "3"}),
     ],
 )
 def test_regular_expression_future_original(symbol, expected):
     # Arrange, Act
-    result = RE_FUT_ORIGINAL.match(symbol).groupdict()
+    result = RE_FUT.match(symbol).groupdict()
 
     # Act, Assert
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("symbol", "expected"),
-    [
-        (
-            "EX2G23P4080",
-            {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"},
-        ),
-        (
-            "DXH23P103.5",
-            {"symbol": "DX", "month": "H", "year": "23", "right": "P", "strike": "103.5"},
-        ),
-    ],
-)
-def test_regular_expression_future_options(symbol, expected):
-    # Arrange, Act
-    result = RE_FOP.match(symbol).groupdict()
-
-    # Assert
     assert result == expected
 
 
@@ -426,7 +424,7 @@ def test_regular_expression_future_options(symbol, expected):
 )
 def test_regular_expression_future_options_original(symbol, expected):
     # Arrange, Act
-    result = RE_FOP_ORIGINAL.match(symbol).groupdict()
+    result = RE_FOP.match(symbol).groupdict()
 
     # Assert
     assert result == expected

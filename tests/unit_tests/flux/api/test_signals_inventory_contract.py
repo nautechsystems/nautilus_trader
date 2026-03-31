@@ -454,6 +454,54 @@ def test_build_signals_payload_marks_explicit_quote_snapshot_stale_without_leg_t
     assert payload["managed_orders"] == 0
 
 
+def test_build_signals_payload_prefers_fresher_state_epoch_over_stale_quote_snapshot(
+    contract_catalog,
+) -> None:
+    now_ms = int(time.time() * 1000)
+    metadata = StrategyMetadata(
+        strategy_class="maker_v3",
+        strategy_groups="tokenmm",
+        base_asset="ABC",
+        quote_asset="USDT",
+    )
+
+    payload = build_signals_payload(
+        strategy_id="strategy_01",
+        metadata=metadata,
+        state={
+            "bot_on": True,
+            "managed_orders": 2,
+            "state": "running",
+            "ts_ms": now_ms - 500,
+            "maker_v3": {
+                "quote_snapshot": {
+                    "ts_ms": now_ms - 40_000,
+                    "mode": "ON",
+                    "reason": "blocked_portfolio_inventory",
+                    "place_bid": 98.5,
+                    "place_ask": 100.5,
+                    "ref_bid": 101.0,
+                    "ref_ask": 102.0,
+                },
+            },
+        },
+        fv_row={"fv": 101.5},
+        params={"qty": 1.0},
+        balances=[],
+        legs=build_legs_payload(
+            contracts=contract_catalog,
+            market_rows={},
+            now_ms_value=now_ms,
+        ),
+    )
+
+    assert payload["ts_ms"] == now_ms - 500
+    assert payload["debug"]["md_health"]["state_stale"] is False
+    assert payload["mode"] == "ON"
+    assert payload["reason"] == "blocked_portfolio_inventory"
+    assert payload["managed_orders"] == 2
+
+
 def test_build_signals_payload_keeps_paused_makerv4_rows_reviewable_with_fresh_quote_snapshot(
 ) -> None:
     now_ms = int(time.time() * 1000)

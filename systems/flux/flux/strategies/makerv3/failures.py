@@ -80,6 +80,12 @@ def handle_quote_failure(
     """
     Record a quote-cycle failure and stop after circuit-breaker thresholds are exceeded.
     """
+    quote_management_suspended = getattr(strategy, "_quote_management_suspended", None)
+    if callable(quote_management_suspended):
+        with suppress(Exception):
+            if bool(quote_management_suspended()):
+                return
+
     if not hasattr(strategy, "_quote_failure_circuit_open"):
         strategy._quote_failure_circuit_open = False
     if not hasattr(strategy, "_quote_failures_ns"):

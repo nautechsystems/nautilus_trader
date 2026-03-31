@@ -1,6 +1,7 @@
 # TokenMM Telemetry RDS Runbook
 
-This runbook covers shipping local TokenMM SQLite telemetry into Postgres.
+This runbook covers the current lean default of `S3 + Athena` archival plus the optional
+RDS path for environments that still need PostgreSQL.
 
 ## Local sources
 
@@ -33,12 +34,13 @@ That updates `/etc/flux/common.env` with `TOKENMM_AWS_REGION`,
 `NAUTILUS_TELEMETRY_PG_SECRET_ID`, and the active endpoint metadata. The shipper
 loads the actual credentials from AWS Secrets Manager at runtime.
 
-The live shared config keeps local SQLite as a 48-hour spool:
+The live shared config keeps local SQLite as a short spool and tags the archive policy:
 
 ```toml
 [telemetry_shipper]
 enabled = true
 source_profile = "tokenmm"
+durable_sink = "postgres"
 orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"
 fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
 quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"
@@ -46,6 +48,9 @@ state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
 poll_interval_ms = 1000
 max_batch_size = 1000
 prune_retention_hours = 48
+raw_quote_cycle_local_hours = 48
+raw_quote_cycle_s3_days = 7
+core_history_s3_days = 365
 ```
 
 Reference env fragment:
@@ -70,7 +75,27 @@ Run a one-time cutover after the sink is healthy:
 sudo systemctl start flux@tokenmm-telemetry-shipper.service
 sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py \
   --wait-for-catchup \
-  --delete-local-after-cutover
+  --archive-quote-cycles \
+  --archive-s3-bucket tokenmm-telemetry-archive
+```
+
+That stages Parquet locally, uploads it to `S3`, creates the Athena table if needed, and
+registers the exact partition written by the cutover so queries work without manual repair.
+
+## Verify in Athena
+
+```bash
+aws athena start-query-execution \
+  --work-group primary \
+  --query-string "SELECT strategy_id, action_type, reason_code, ts_event FROM nautilus_telemetry.tokenmm_order_action ORDER BY ts_event DESC LIMIT 20;" \
+  --result-configuration OutputLocation=s3://tokenmm-telemetry-archive/nautilus/telemetry/tokenmm/athena-query-results/
+```
+
+```bash
+aws athena start-query-execution \
+  --work-group primary \
+  --query-string "SELECT strategy_id, quote_cycle_id, quote_cycle_event, reason_code, created_at FROM nautilus_telemetry.tokenmm_quote_cycle ORDER BY created_at DESC LIMIT 20;" \
+  --result-configuration OutputLocation=s3://tokenmm-telemetry-archive/nautilus/telemetry/tokenmm/athena-query-results/
 ```
 
 If you need an ad hoc `POSTGRES_URL` for `psql`, load the secret first:

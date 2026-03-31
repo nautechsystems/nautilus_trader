@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from flux.common.strategy_contracts import execution_account_scope_by_strategy_id
 from flux.persistence.portfolio_inventory_snapshots.sqlite import PortfolioInventorySnapshotWriter
 from flux.runners.shared.bootstrap import load_config as load_shared_config
 from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
@@ -15,6 +16,7 @@ from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
 from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.portfolio_runner import portfolio_base_assets
 from flux.runners.shared.portfolio_runner import StrategySetPortfolioAggregator
+from flux.runners.shared.profile_accounts import build_profile_account_provider_bindings
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 
 
@@ -73,6 +75,15 @@ class TokenMMPortfolioAggregator(StrategySetPortfolioAggregator):
             mode=mode,
             logger=logger,
             descriptor=TOKENMM_DESCRIPTOR,
+        )
+        self._profile_account_bindings = build_profile_account_provider_bindings(config=config)
+        self.account_scope_ids = [
+            binding.account_scope_id
+            for binding in self._profile_account_bindings
+        ]
+        self._execution_account_scope_by_strategy_id = execution_account_scope_by_strategy_id(
+            config.get("strategy_contracts") or [],
+            allowlist=self._strategy_ids,
         )
         self._snapshot_writer = _build_portfolio_inventory_snapshot_writer(config)
 

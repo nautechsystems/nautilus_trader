@@ -61,6 +61,7 @@ from nautilus_trader.live.reconciliation import collapse_duplicate_netting_posit
 from nautilus_trader.live.reconciliation import get_existing_fill_for_trade_id
 from nautilus_trader.live.reconciliation import is_external_reconciliation_artifact_position
 from nautilus_trader.live.reconciliation import is_within_single_unit_tolerance
+from nautilus_trader.live.reconciliation import report_has_synthetic_reconciliation_lineage
 from nautilus_trader.model.book import py_should_handle_own_book_order
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -241,6 +242,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._startup_unmatched_fill_reports: dict[
             tuple[AccountId | None, InstrumentId],
             list[FillReport],
+        ] = {}
+        self._startup_orders_missing_at_venue: dict[
+            tuple[AccountId | None, InstrumentId],
+            set[StartupOrderReference],
         ] = {}
         self._startup_reconciliation_event: asyncio.Event = asyncio.Event()
         self._filtered_external_orders_count: int = 0
@@ -1035,11 +1040,12 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("No execution clients to check position consistency, early return")
             return
 
-        venue_positions = await self._query_position_status_reports()
+        venue_positions, failed_position_report_venues = await self._query_position_status_reports()
 
         await self._process_cached_position_discrepancies(
             positions_by_instrument,
             venue_positions,
+            failed_position_report_venues,
         )
 
         await self._process_venue_reported_positions(
@@ -1053,8 +1059,10 @@ class LiveExecutionEngine(ExecutionEngine):
         for iid in stale:
             self._position_recon_retries.pop(iid, None)
 
-    async def _query_position_status_reports(self) -> dict[InstrumentId, PositionStatusReport]:
-        clients = self._clients.values()
+    async def _query_position_status_reports(
+        self,
+    ) -> tuple[dict[InstrumentId, PositionStatusReport], set[Venue | None]]:
+        clients = list(self._clients.values())
 
         tasks = [
             c.generate_position_status_reports(
@@ -1074,14 +1082,17 @@ class LiveExecutionEngine(ExecutionEngine):
             position_reports_all = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             self._log.error(f"Failed to gather position status reports: {e}")
-            return {}
+            return {}, {client.venue for client in clients}
 
         # Build mapping: instrument_id -> venue report
         venue_positions: dict[InstrumentId, PositionStatusReport] = {}
-        for reports_or_exception in position_reports_all:
+        failed_venues: set[Venue | None] = set()
+        for client, reports_or_exception in zip(clients, position_reports_all, strict=True):
             if isinstance(reports_or_exception, Exception):
+                failed_venues.add(client.venue)
                 self._log.error(
-                    f"Failed to generate position status reports: {reports_or_exception}",
+                    f"Failed to generate position status reports for venue {client.venue}: "
+                    f"{reports_or_exception}",
                 )
                 continue
 
@@ -1092,12 +1103,13 @@ class LiveExecutionEngine(ExecutionEngine):
             for report in reports:
                 venue_positions[report.instrument_id] = report
 
-        return venue_positions
+        return venue_positions, failed_venues
 
     async def _process_cached_position_discrepancies(
         self,
         positions_by_instrument: dict[InstrumentId, list[Position]],
         venue_positions: dict[InstrumentId, PositionStatusReport],
+        failed_position_report_venues: set[Venue | None] | None = None,
     ) -> None:
         clients = self._clients.values()
 
@@ -1109,6 +1121,17 @@ class LiveExecutionEngine(ExecutionEngine):
                 instrument_id=instrument_id,
                 venue_qty=venue_qty,
             )
+
+            if venue_report is None and self._did_position_status_query_fail(
+                instrument_id,
+                failed_position_report_venues,
+            ):
+                self._log.warning(
+                    f"Skipping position reconciliation for {instrument_id}: "
+                    f"failed to query venue position status for {instrument_id.venue}",
+                    LogColor.YELLOW,
+                )
+                continue
 
             has_discrepancy = self._check_position_discrepancy(
                 cached_positions,
@@ -1168,7 +1191,11 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.YELLOW,
             )
 
-            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            missing_fills, had_fill_query_errors = await self._query_and_find_missing_fills(
+                instrument_id,
+                clients,
+            )
+
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-read positions from cache (may have changed during reconciliation)
@@ -1179,6 +1206,27 @@ class LiveExecutionEngine(ExecutionEngine):
                 instrument_id,
             )
             if still_discrepant:
+                reconciliation_report = venue_report or self._create_flat_position_report(
+                    instrument_id=instrument_id,
+                    account_id=cached_positions[0].account_id,
+                )
+
+                if (
+                    not had_fill_query_errors
+                    and self.generate_missing_orders
+                    and self._reconcile_position_report(reconciliation_report)
+                ):
+                    current_positions = self._cache.positions_open(instrument_id=instrument_id)
+                    still_discrepant = self._check_position_discrepancy(
+                        current_positions,
+                        venue_report,
+                        instrument_id,
+                    )
+
+                if not still_discrepant:
+                    self._position_recon_retries.pop(instrument_id, None)
+                    continue
+
                 self._position_recon_retries[instrument_id] = retries + 1
                 if retries + 1 >= self.position_check_retries:
                     self._log.error(
@@ -1187,7 +1235,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"(cached_qty={cached_qty}, venue_qty={venue_qty}); "
                         f"no further reconciliation attempts will be made",
                     )
-                elif not missing_fills:
+                elif not missing_fills and not had_fill_query_errors:
                     self._log.warning(
                         f"Position discrepancy for {instrument_id} persists but no missing fills found; "
                         f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
@@ -1196,6 +1244,38 @@ class LiveExecutionEngine(ExecutionEngine):
                     )
             else:
                 self._position_recon_retries.pop(instrument_id, None)
+
+    def _did_position_status_query_fail(
+        self,
+        instrument_id: InstrumentId,
+        failed_position_report_venues: set[Venue | None] | None,
+    ) -> bool:
+        if not failed_position_report_venues:
+            return False
+
+        return (
+            None in failed_position_report_venues
+            or instrument_id.venue in failed_position_report_venues
+        )
+
+    def _create_flat_position_report(
+        self,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+    ) -> PositionStatusReport:
+        ts_now = self._clock.timestamp_ns()
+        instrument = self._cache.instrument(instrument_id)
+        quantity = instrument.make_qty(0) if instrument is not None else Quantity.zero()
+
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=PositionSide.FLAT,
+            quantity=quantity,
+            report_id=UUID4(),
+            ts_last=ts_now,
+            ts_init=ts_now,
+        )
 
     def _check_position_discrepancy(
         self,
@@ -1300,7 +1380,10 @@ class LiveExecutionEngine(ExecutionEngine):
                 LogColor.YELLOW,
             )
 
-            missing_fills = await self._query_and_find_missing_fills(instrument_id, clients)
+            missing_fills, had_fill_query_errors = await self._query_and_find_missing_fills(
+                instrument_id,
+                clients,
+            )
             await self._reconcile_missing_fills(missing_fills, instrument_id)
 
             # Re-check using tolerance-aware comparison
@@ -1320,7 +1403,7 @@ class LiveExecutionEngine(ExecutionEngine):
                         f"(cached_qty={cached_qty_now}, venue_qty={venue_qty}); "
                         f"no further reconciliation attempts will be made",
                     )
-                elif not missing_fills:
+                elif not missing_fills and not had_fill_query_errors:
                     self._log.warning(
                         f"Position discrepancy for {instrument_id} persists but no missing fills found; "
                         f"possible causes: fills outside lookback window ({self.position_check_lookback_mins}min), "
@@ -1334,7 +1417,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         instrument_id: InstrumentId,
         clients: Iterable[ExecutionClient],
-    ) -> list[FillReport]:
+    ) -> tuple[list[FillReport], bool]:
         fill_lookback_start = self._clock.utc_now() - pd.Timedelta(
             minutes=self.position_check_lookback_mins,
         )
@@ -1356,8 +1439,10 @@ class LiveExecutionEngine(ExecutionEngine):
         fill_reports_all = await asyncio.gather(*fill_tasks, return_exceptions=True)
 
         venue_fills: list[FillReport] = []
+        had_fill_query_errors = False
         for fills_or_exception in fill_reports_all:
             if isinstance(fills_or_exception, Exception):
+                had_fill_query_errors = True
                 self._log.error(
                     f"Failed to generate fill reports for {instrument_id}: {fills_or_exception}",
                 )
@@ -1380,7 +1465,7 @@ class LiveExecutionEngine(ExecutionEngine):
             and fill.trade_id not in self._recent_fills_cache
         ]
 
-        return missing_fills
+        return missing_fills, had_fill_query_errors
 
     async def _reconcile_missing_fills(
         self,
@@ -1765,6 +1850,7 @@ class LiveExecutionEngine(ExecutionEngine):
     def _clear_startup_reconciliation_snapshot(self) -> None:
         self._startup_reconciliation_snapshot.clear()
         self._startup_unmatched_fill_reports.clear()
+        self._startup_orders_missing_at_venue.clear()
 
     def _capture_startup_reconciliation_snapshot(self) -> None:
         snapshot_data: dict[tuple[AccountId | None, InstrumentId, StrategyId], dict[str, Any]] = {}
@@ -1862,6 +1948,19 @@ class LiveExecutionEngine(ExecutionEngine):
             instrument_id=instrument_id,
             strategy_snapshots=self._startup_snapshot_strategy_entries(account_id, instrument_id),
         )
+
+    def _startup_missing_order_refs_for_instrument(
+        self,
+        account_id: AccountId | None,
+        instrument_id: InstrumentId,
+    ) -> set[StartupOrderReference]:
+        matching_refs: set[StartupOrderReference] = set()
+        for (missing_account_id, missing_instrument_id), refs in self._startup_orders_missing_at_venue.items():
+            if missing_instrument_id != instrument_id:
+                continue
+            if account_id is None or missing_account_id in {account_id, None}:
+                matching_refs.update(refs)
+        return matching_refs
 
     @staticmethod
     def _signed_decimal_qty_for_fill_report(fill_report: FillReport) -> Decimal:
@@ -2075,6 +2174,15 @@ class LiveExecutionEngine(ExecutionEngine):
                         "marking cached order as missing at venue",
                         LogColor.BLUE,
                     )
+                    self._startup_orders_missing_at_venue.setdefault(
+                        (client.account_id, instrument_id),
+                        set(),
+                    ).add(
+                        StartupOrderReference(
+                            client_order_id=command.client_order_id,
+                            venue_order_id=command.venue_order_id,
+                        ),
+                    )
                     self._resolve_cached_order_missing_at_venue(
                         cached_order,
                         ts_now=command.ts_init,
@@ -2216,6 +2324,42 @@ class LiveExecutionEngine(ExecutionEngine):
             log_prefix=log_prefix,
         )
         return [synthetic_report] if synthetic_report is not None else []
+
+    @staticmethod
+    def _position_report_with_account_scope(
+        report: PositionStatusReport,
+        account_id: AccountId | None,
+    ) -> PositionStatusReport:
+        if report.account_id is not None or account_id is None:
+            return report
+
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=report.instrument_id,
+            position_side=report.position_side,
+            quantity=report.quantity,
+            report_id=report.id,
+            ts_last=report.ts_last,
+            ts_init=report.ts_init,
+            venue_position_id=report.venue_position_id,
+            avg_px_open=report.avg_px_open,
+        )
+
+    def _normalize_mass_status_position_report_account_scopes(
+        self,
+        mass_status: ExecutionMassStatus,
+    ) -> None:
+        fallback_account_id = mass_status.account_id
+        if fallback_account_id is None:
+            return
+
+        mass_status._position_reports = {
+            instrument_id: [
+                self._position_report_with_account_scope(report, fallback_account_id)
+                for report in position_reports
+            ]
+            for instrument_id, position_reports in mass_status._position_reports.items()
+        }
 
     async def reconcile_execution_state(
         self,
@@ -2605,6 +2749,8 @@ class LiveExecutionEngine(ExecutionEngine):
             color=LogColor.BLUE,
         )
 
+        self._normalize_mass_status_position_report_account_scopes(mass_status)
+
         # Adjust fills for instruments with incomplete first lifecycles
         self._adjust_mass_status_fills(
             mass_status,
@@ -2653,7 +2799,14 @@ class LiveExecutionEngine(ExecutionEngine):
 
             try:
                 # Apply all fills - let position cycle naturally through all lifecycles
-                result = self._reconcile_order_report(order_report, trades)
+                result = self._reconcile_order_report(
+                    order_report,
+                    trades,
+                    is_external=not report_has_synthetic_reconciliation_lineage(
+                        order_report,
+                        trades,
+                    ),
+                )
             except InvalidStateTrigger as e:
                 self._log.error(str(e))
                 result = False
@@ -2879,6 +3032,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
             # Also check by venue_order_id if client_order_id lookup failed or wasn't provided
             if order_report.venue_order_id is not None and order_report.client_order_id is None:
+                if report_has_synthetic_reconciliation_lineage(
+                    order_report,
+                    mass_status._fill_reports.get(venue_order_id, []),
+                ):
+                    continue
+
                 cached_client_id = self._cache.client_order_id(order_report.venue_order_id)
                 if cached_client_id is not None:
                     cached_order = self._cache.order(cached_client_id)
@@ -3633,10 +3792,15 @@ class LiveExecutionEngine(ExecutionEngine):
             return False
 
         snapshot = self._startup_snapshot_for_instrument(account_id, instrument_id)
+        startup_orders_missing_at_venue = self._startup_missing_order_refs_for_instrument(
+            account_id=account_id,
+            instrument_id=instrument_id,
+        )
         current_startup_open_orders = [
             order
             for ref in snapshot.open_order_refs
-            if (
+            if ref not in startup_orders_missing_at_venue
+            and (
                 order := self._cache.order(ref.client_order_id)
             ) is not None
             and order.is_open
@@ -3660,7 +3824,8 @@ class LiveExecutionEngine(ExecutionEngine):
             f"Treating startup netting positions as stale cached positions for "
             f"{instrument_id}: position_ids={[position.id.value for position in positions_open]}, "
             f"snapshot_open_orders={snapshot.total_open_order_count}, "
-            f"current_startup_open_orders={len(current_startup_open_orders)}",
+            f"current_startup_open_orders={len(current_startup_open_orders)}, "
+            f"startup_orders_missing_at_venue={len(startup_orders_missing_at_venue)}",
             LogColor.BLUE,
         )
         return True
@@ -4327,7 +4492,10 @@ class LiveExecutionEngine(ExecutionEngine):
         if self._is_shutting_down:
             return True  # Skip reconciliation during shutdown
 
-        client_order_id = self._resolve_client_order_id(report)
+        client_order_id = self._resolve_client_order_id(
+            report,
+            bind_cached_venue_order_id=is_external,
+        )
 
         # Reset retry count
         self._clear_recon_tracking(client_order_id)
@@ -4389,29 +4557,35 @@ class LiveExecutionEngine(ExecutionEngine):
         # Handle fill quantity mismatches
         return self._handle_fill_quantity_mismatch(order, report, instrument, client_order_id)
 
-    def _resolve_client_order_id(self, report: OrderStatusReport) -> ClientOrderId:
+    def _resolve_client_order_id(
+        self,
+        report: OrderStatusReport,
+        *,
+        bind_cached_venue_order_id: bool = True,
+    ) -> ClientOrderId:
         client_order_id: ClientOrderId | None = report.client_order_id
         if client_order_id is None:
-            client_order_id = self._cache.client_order_id(report.venue_order_id)
-            if client_order_id is None and report.venue_order_id is not None:
-                # Check if an external order with this venue_order_id already exists
-                # by searching cached orders (handles cases where index might not be built yet)
-                cached_order = self._find_order_by_venue_order_id(
-                    venue_order_id=report.venue_order_id,
-                    instrument_id=report.instrument_id,
-                    order_side=report.order_side,
-                )
-                if cached_order is not None:
-                    client_order_id = cached_order.client_order_id
-                    self._log.debug(
-                        f"Found existing external order {client_order_id} by venue_order_id "
-                        f"{report.venue_order_id}, reusing",
-                    )
-                    # Ensure mapping is indexed
-                    self._ensure_venue_order_id_indexed(
-                        client_order_id=client_order_id,
+            if bind_cached_venue_order_id:
+                client_order_id = self._cache.client_order_id(report.venue_order_id)
+                if client_order_id is None and report.venue_order_id is not None:
+                    # Check if an external order with this venue_order_id already exists
+                    # by searching cached orders (handles cases where index might not be built yet)
+                    cached_order = self._find_order_by_venue_order_id(
                         venue_order_id=report.venue_order_id,
+                        instrument_id=report.instrument_id,
+                        order_side=report.order_side,
                     )
+                    if cached_order is not None:
+                        client_order_id = cached_order.client_order_id
+                        self._log.debug(
+                            f"Found existing external order {client_order_id} by venue_order_id "
+                            f"{report.venue_order_id}, reusing",
+                        )
+                        # Ensure mapping is indexed
+                        self._ensure_venue_order_id_indexed(
+                            client_order_id=client_order_id,
+                            venue_order_id=report.venue_order_id,
+                        )
 
             if client_order_id is None:
                 # Generate external client order ID

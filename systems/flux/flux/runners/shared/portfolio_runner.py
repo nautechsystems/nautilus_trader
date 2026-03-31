@@ -329,6 +329,11 @@ class StrategySetPortfolioAggregator:
             portfolio_id=self._portfolio_id,
             balance_rows_by_strategy=balance_rows_by_strategy,
             shared_position_groups_by_strategy=shared_observation_group_by_strategy_id,
+            execution_account_scope_by_strategy=getattr(
+                self,
+                "_execution_account_scope_by_strategy_id",
+                None,
+            ),
         )
         inventory_by_asset: dict[str, dict[str, Any]] = {}
         for base_currency in self._base_assets:
@@ -368,7 +373,15 @@ class StrategySetPortfolioAggregator:
                 self._redis.publish(self._aggregate_channel(base_currency=base_currency), encoded)
             snapshot_writer = getattr(self, "_snapshot_writer", None)
             if snapshot_writer is not None:
-                snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
+                try:
+                    snapshot_writer.maybe_persist(payload=payload, ts_ms=now_ms_value)
+                except Exception as exc:
+                    self._log.warning(
+                        "Failed to persist portfolio inventory snapshot portfolio_id=%s base_currency=%s: %s",
+                        self._portfolio_id,
+                        asset_id,
+                        exc,
+                    )
             inventory_by_asset[base_currency.upper()] = payload
 
         snapshot = build_portfolio_snapshot_v2(

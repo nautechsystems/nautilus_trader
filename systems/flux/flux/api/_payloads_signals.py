@@ -1312,11 +1312,14 @@ def _top_level_signal_ts_ms(
     quote_snapshot: Mapping[str, Any] | None,
     fallback_ts_ms: int | None,
 ) -> int | None:
+    state_ts_ms = coerce_ts_ms(state.get("ts_ms") or state.get("ts_event") or fallback_ts_ms)
     if isinstance(quote_snapshot, Mapping):
         quoted_ts_ms = coerce_ts_ms(quote_snapshot.get("ts_ms"))
+        if quoted_ts_ms is not None and state_ts_ms is not None:
+            return max(quoted_ts_ms, state_ts_ms)
         if quoted_ts_ms is not None:
             return quoted_ts_ms
-    return coerce_ts_ms(state.get("ts_ms") or state.get("ts_event") or fallback_ts_ms)
+    return state_ts_ms
 
 
 def _top_level_signal_mode(
@@ -1632,6 +1635,13 @@ def build_signals_payload_impl(
             ref_leg=ref_leg,
         )
     )
+    preserve_operator_off_mode = (
+        leg_clock_ts_ms is None
+        and explicit_quote_snapshot
+        and isinstance(quote_snapshot, Mapping)
+        and not bot_on
+        and decode_text(quote_snapshot.get("mode")).strip().upper() == "OFF"
+    )
 
     if state_stale and not suppress_state_stale_block:
         managed = 0
@@ -1647,7 +1657,7 @@ def build_signals_payload_impl(
         }
     md_health["state_stale"] = state_stale
 
-    if state_stale and not suppress_state_stale_block:
+    if state_stale and not suppress_state_stale_block and not preserve_operator_off_mode:
         top_level_mode = "STALE"
         top_level_reason = "stale_state"
         top_level_skew_bps = None

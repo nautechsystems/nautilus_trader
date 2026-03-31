@@ -57,11 +57,11 @@ account_type = "SPOT"
 [strategy]
 strategy_id = "plumeusdt_binance_perp_makerv3"
 manage_stop = false
-force_bot_off_on_start = true
+force_bot_off_on_start = false
 order_qty = "1000"
 qty = "1000"
 qty_unit = "base"
-bot_on = false
+bot_on = true
 max_age_ms = 10000
 des_qty_global = 0.0
 max_qty_global = 40000.0

@@ -24,6 +24,9 @@ exporters that poll existing Redis state and local SQLite telemetry out of band.
 - `monitoring/grafana/dashboards/tokenmm_markouts_v1.json`
 - `monitoring/grafana/provisioning/dashboards/dashboards.yml`
 - `monitoring/grafana/provisioning/datasources/datasources.yml`
+- `deploy/tokenmm/systemd/prometheus.yml`
+- `deploy/tokenmm/systemd/tokenmm-grafana-run.sh`
+- `deploy/tokenmm/systemd/tokenmm-prometheus-run.sh`
 
 ## Exporters
 
@@ -53,7 +56,7 @@ python3 ops/scripts/exporters/tokenmm_metrics_exporter.py \
 python3 ops/scripts/exporters/tokenmm_markouts_exporter.py \
   --env prod \
   --profile tokenmm \
-  --port 9094 \
+  --port 9109 \
   --benchmark-name fv_market_mid,local_mkt_mid \
   --poll-interval-s 30 \
   --window-hours 24
@@ -93,7 +96,15 @@ Operational notes:
   `monitoring/grafana/provisioning/dashboards/dashboards.yml`
 - Datasource config:
   `monitoring/grafana/provisioning/datasources/datasources.yml`
-- Dashboard JSON directory inside Grafana: `/var/lib/grafana/dashboards`
+- Installed host Grafana config root: `/etc/tokenmm-monitoring/grafana`
+- Installed host dashboard directory: `/etc/tokenmm-monitoring/grafana/dashboards`
+- Installed host Prometheus config: `/etc/tokenmm-monitoring/prometheus/prometheus.yml`
+- Installed native Grafana runtime root: `/opt/tokenmm-monitoring/grafana/current`
+- Installed native Prometheus runtime root: `/opt/tokenmm-monitoring/prometheus/current`
+- Installed wrapper scripts:
+  `/usr/local/bin/tokenmm-grafana-run.sh`,
+  `/usr/local/bin/tokenmm-prometheus-run.sh`
+- Dashboard JSON directory inside Grafana: `/etc/tokenmm-monitoring/grafana/dashboards`
 
 ## Validation
 

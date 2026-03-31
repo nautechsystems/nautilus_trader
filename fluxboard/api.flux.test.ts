@@ -659,6 +659,50 @@ describe('profile-scoped read APIs', () => {
     });
   });
 
+  it('normalizes balances scope status without throwing on optional text fields', async () => {
+    setPathname('/tokenmm/balances');
+    fetchJSONMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        rows: [],
+        total: 0,
+        totals: {
+          mv_raw: 0,
+          mv_display: '$0.00',
+        },
+        scope_status: [
+          {
+            account_scope_id: 'binance.pm.main',
+            source_scope: 'shared_account',
+            projection_status: {
+              healthy: true,
+              last_success_ts_ms: 1774834067610,
+              last_attempt_ts_ms: 1774834067610,
+              last_error_type: null,
+              last_error_message: null,
+              stale_after_ms: 15000,
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(api.getBalances()).resolves.toMatchObject({
+      scope_status: [
+        {
+          account_scope_id: 'binance.pm.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: true,
+            last_error_type: null,
+            last_error_message: null,
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    });
+  });
+
   it('appends profile to alerts request on equities routes', async () => {
     setPathname('/equities/alerts');
     fetchJSONMock.mockResolvedValue({

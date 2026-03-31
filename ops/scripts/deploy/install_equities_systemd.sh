@@ -175,6 +175,7 @@ build_target_service_ids() {
     "${STACK_SERVICE_PREFIX}-portfolio"
     "${STACK_SERVICE_PREFIX}-bridge"
     "${STACK_SERVICE_PREFIX}-ibkr-reference-publisher"
+    "${STACK_SERVICE_PREFIX}-controller"
   )
   local group_line=""
   local node_group_id=""
@@ -208,6 +209,7 @@ cleanup_obsolete_envs() {
   rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env"
   rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env"
   rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-ibkr-reference-publisher.env"
+  rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-controller.env"
   find "${ENV_DIR}" -maxdepth 1 -type f -name "${STACK_SERVICE_PREFIX}-node-*.env" -delete
 }
 
@@ -275,6 +277,19 @@ render_publisher_env() {
   append_deploy_root_env_overrides "${ENV_DIR}/${publisher_service_id}.env"
 }
 
+render_controller_env() {
+  strategy_stack_write_env \
+    "${ENV_DIR}/${STACK_SERVICE_PREFIX}-controller.env" \
+    "Equities controller canary" \
+    "${PULSE_GROUP_KEY}" \
+    "${PULSE_GROUP_LABEL}" \
+    "${PULSE_GROUP_ORDER}" \
+    "${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_controller --config ${SHARED_CONFIG} --allow-single-host-canary" \
+    "" \
+    "${STACK_SERVICE_PREFIX}-controller"
+  append_deploy_root_env_overrides "${ENV_DIR}/${STACK_SERVICE_PREFIX}-controller.env"
+}
+
 render_node_envs() {
   local group_line=""
   local group_parts=()
@@ -329,6 +344,7 @@ main() {
   render_portfolio_env
   render_bridge_env
   render_publisher_env
+  render_controller_env
   render_node_envs
   rebuild_pulse_sudoers
   enable_stack

@@ -54,6 +54,77 @@ def test_filter_external_reconciliation_artifacts_keeps_external_with_non_reconc
     assert filtered == [owned_position, external_position]
 
 
+def test_filter_external_reconciliation_artifacts_drops_strategy_owned_synthetic_lineage_when_owned_position_exists() -> None:
+    owned_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-OWNED",
+    )
+    synthetic_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-SYNTHETIC",
+    )
+
+    filtered = filter_external_reconciliation_artifacts(
+        [owned_position, synthetic_position],
+        order_lookup=lambda position_id: (
+            [SimpleNamespace(tags=None, venue_order_id="S-RECON-001")]
+            if position_id == "P-SYNTHETIC"
+            else [SimpleNamespace(tags=None, venue_order_id="V-OWNED-001")]
+        ),
+    )
+
+    assert filtered == [owned_position]
+
+
+def test_filter_external_reconciliation_artifacts_drops_strategy_owned_synthetic_position_events_when_order_index_missing() -> None:
+    owned_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-OWNED",
+        events=[SimpleNamespace(venue_order_id="V-OWNED-001", trade_id="T-OWNED-001")],
+    )
+    synthetic_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-SYNTHETIC",
+        events=[SimpleNamespace(venue_order_id="S-RECON-001", trade_id="S-RECON-TRADE-001")],
+    )
+
+    filtered = filter_external_reconciliation_artifacts(
+        [owned_position, synthetic_position],
+        order_lookup=lambda _position_id: [],
+    )
+
+    assert filtered == [owned_position]
+
+
+def test_filter_external_reconciliation_artifacts_keeps_strategy_owned_position_with_mixed_real_and_synthetic_events() -> None:
+    owned_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-MIXED",
+        events=[
+            SimpleNamespace(venue_order_id="V-OWNED-001", trade_id="T-OWNED-001", reconciliation=False),
+            SimpleNamespace(venue_order_id="S-RECON-001", trade_id="S-RECON-TRADE-001", reconciliation=True),
+        ],
+    )
+    other_owned_position = SimpleNamespace(
+        instrument_id="PLUMEUSDT-PERP.BINANCE",
+        strategy_id="maker",
+        position_id="P-OTHER",
+        events=[SimpleNamespace(venue_order_id="V-OWNED-002", trade_id="T-OWNED-002", reconciliation=False)],
+    )
+
+    filtered = filter_external_reconciliation_artifacts(
+        [other_owned_position, owned_position],
+        order_lookup=lambda _position_id: [],
+    )
+
+    assert filtered == [other_owned_position, owned_position]
+
+
 def test_collapse_duplicate_netting_position_reports_prefers_newest_nonzero_duplicate() -> None:
     reports, collapse_events = collapse_duplicate_netting_position_reports(
         [

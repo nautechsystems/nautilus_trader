@@ -2,13 +2,12 @@
 
 # TokenMM Socket.IO Contract (`tokenmm:v1`)
 
-This document freezes the target TokenMM Socket.IO contract for Fluxboard migration.
-REST remains authoritative for initial load and recovery.
+This document freezes the TokenMM Socket.IO contract for Fluxboard migration.
+REST remains authoritative for initial load and bounded recovery.
 
-As of March 7, 2026, this document is the rollout target rather than a claim that every
-TokenMM producer already emits the full contract before Tasks 4-6 in
-`docs/plans/2026-03-07-tokenmm-risk-and-portfolio-productionization.md` land and the
-remaining verification gaps are closed.
+As of March 26, 2026, canonical `tokenmm.trades` uses the standard realtime contract in steady
+state. Non-canonical trades views remain REST-only, and the legacy `trade_update` path is still
+retained for rollback and compatibility clients until the remaining cleanup wave lands.
 
 ## Scope
 
@@ -94,7 +93,8 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `qty_conversion_status`
    - `qty_conversion_source`
 4. For TokenMM `trade_update` payloads, bare `qty` is operator-facing base quantity.
-5. The current `qty_conversion_status` space is:
+5. Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields.
+6. The current `qty_conversion_status` space is:
    - `identity`
    - `exact_multiplier`
    - `price_based`
@@ -102,6 +102,7 @@ Socket payloads follow the same unit rules as TokenMM HTTP.
    - `missing_metadata`
    - `missing_price`
    - `non_integral_venue_qty`
+7. Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection.
 
 ## Shared Portfolio Ownership
 
@@ -137,12 +138,13 @@ For `profile=tokenmm`, socket risk-facing fields must align with the shared port
 
 Fluxboard's global resync completion contract is owned by [`stores.ts`](../stores.ts).
 
-1. The authoritative acknowledgement consumers are `trades` and `order-view`.
+1. Acknowledgement ownership is surface-aware, not globally hard-coded.
 2. `bumpGlobalResync` opens a new resync epoch and `markGlobalResyncApplied` records per-consumer acknowledgement for that epoch.
-3. `isResyncing` must remain `true` until both `trades` and `order-view` have acknowledged the current epoch.
-4. One consumer acknowledging the current epoch must not clear the resync by itself.
-5. A stale acknowledgement from an older epoch may remain recorded for that consumer, but it must not clear a newer active epoch.
-6. Trades and Order View own only their local apply decisions; they do not own the global clear rule.
+3. For `tokenmm.trades` and `equities.trades`, the authoritative acknowledgement consumer is `trades` only.
+4. `order-view` is explicitly excluded from TokenMM resync ownership because the profile does not expose an order-view route or panel.
+5. If a future surface mounts both trades and order-view together, both mounted consumers must acknowledge the same epoch before it clears.
+6. One consumer acknowledging the current epoch must not clear the resync for a multi-consumer surface by itself.
+7. A stale acknowledgement from an older epoch may remain recorded for that consumer, but it must not clear a newer active epoch.
 
 ## Event: `market_update`
 
@@ -174,7 +176,8 @@ Payload example:
 Optional recovery hint:
 
 1. Server may include `recovery: {required, reason}` in `market_update` when it detects a replay boundary.
-2. Clients must treat `seq` gap detection as the definitive resync trigger; the recovery hint is additive.
+2. Clients must treat `seq` gap detection and explicit `recovery_required` events as the definitive resync triggers; the recovery hint is additive.
+3. Unchanged legacy/cursor conditions should emit at most one repeated hint per condition until the condition changes or the profile is re-armed.
 
 ## Event: `signal_delta`
 
@@ -284,8 +287,9 @@ Trade quantity note:
 1. For TokenMM `trade_update` payloads, `trade.qty` is operator-facing base quantity.
 2. When normalized trade exposure is available, `trade.qty_base`, `trade.qty_venue`, `trade.qty_conversion_status`, and `trade.qty_conversion_source` must accompany it.
 3. Shared producer bare `qty` remains venue/native size; TokenMM socket projection is the layer that flips bare `qty` to the base-first operator contract.
-4. Legacy Redis trade rows cannot be safely reinterpreted without producer-supplied normalized fields.
-5. Rollout requires a TokenMM trade-stream cutover/reset before enabling the base-first socket projection.
+4. Degraded conversion statuses such as `unsupported`, `missing_metadata`, `missing_price`, and `non_integral_venue_qty` are still valid normalized rows when `trade.qty_venue`, `trade.qty_conversion_status`, and `trade.qty_conversion_source` are present.
+5. Only retained Redis trade rows missing normalized quantity fields are legacy compatibility rows.
+6. Rollout still requires a TokenMM trade-stream cutover/reset before removing the last compatibility warning from production.
 
 Delete example:
 
@@ -306,16 +310,17 @@ Delete example:
 
 1. On every reconnect, client MUST emit `set_profile` again.
 2. Client MUST assume events can be dropped while disconnected.
-3. After reconnect, client MUST resync via REST:
-   - `GET /api/v1/signals?profile=tokenmm`
-   - `GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted
-   - `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available
-   - `GET /api/v1/alerts?profile=tokenmm`
-4. Trade cursor fallback is deterministic:
+3. Canonical `tokenmm.trades` reconnects resume the standard subscription from the latest acknowledged surface cursor when fresh lineage is still available.
+4. REST recovery is required only when lineage is missing, subscribe fails closed, `recovery_required.reason=trade_gap` arrives, `invalidate` / lineage mismatch occurs, or a seq gap is detected.
+5. Non-canonical trades views remain REST snapshot mode and do not establish the standard subscription.
+6. One reconnect should yield one bounded recovery sequence; duplicate unchanged recovery hints are additive only and must not create repeated snapshot churn by themselves.
+7. Trade cursor fallback is deterministic when REST recovery runs:
    - prefer persisted `last_seq` for reconnect-safe replay
    - persist `(last_trade_ts_ms, last_trade_row_id, last_trade_version)`
    - dedupe by `row_id` with highest `version` winning
    - drop rows where tuple `(ts_ms, row_id, version)` is `<=` persisted cursor tuple
-5. If `seq` gap is detected, client MUST run the same REST resync.
-6. `trade_update` idempotency key is `row_id` with highest `version` winning.
-7. `signal_delta` applies only when `seq` is newer than the last applied `seq`.
+   - use `GET /api/v1/trades/delta?profile=tokenmm&since_seq=<last_seq>` when a usable `last_seq` was persisted
+   - use `GET /api/v1/trades/delta?profile=tokenmm&after=max(0,last_trade_ts_ms-1)` only when no usable `last_seq` is available
+8. If `seq` gap is detected, client MUST run the same bounded REST resync.
+9. `trade_update` idempotency key is `row_id` with highest `version` winning.
+10. `signal_delta` applies only when `seq` is newer than the last applied `seq`.

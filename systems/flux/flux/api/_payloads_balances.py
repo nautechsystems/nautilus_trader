@@ -513,14 +513,37 @@ def _cash_row_key(
     return (exchange, account, asset, merge_scope)
 
 
-def _cash_row_identity(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
-    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
-    account = decode_text(
+def _row_account_scope_id(
+    row: Mapping[str, Any],
+    *,
+    execution_account_scope_by_strategy: Mapping[str, str] | None = None,
+) -> str:
+    explicit = decode_text(row.get("account_scope_id")).strip()
+    if explicit:
+        return explicit
+    if execution_account_scope_by_strategy is None:
+        return ""
+    strategy_id = strategy_id_from_row(row, "")
+    if not strategy_id:
+        return ""
+    return decode_text(execution_account_scope_by_strategy.get(strategy_id)).strip()
+
+
+def _balance_account_identity(row: Mapping[str, Any]) -> str:
+    account_scope_id = decode_text(row.get("account_scope_id")).strip()
+    if account_scope_id:
+        return account_scope_id
+    return decode_text(
         row.get("account")
         or row.get("account_id")
         or row.get("wallet")
         or row.get("subaccount"),
     ).strip()
+
+
+def _cash_row_identity(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
+    account = _balance_account_identity(row)
     asset = decode_text(row.get("asset") or row.get("coin") or row.get("base")).strip().upper()
     if not asset:
         return None
@@ -955,6 +978,7 @@ def merge_portfolio_balances_rows(
     portfolio_id: str = "tokenmm",
     preserve_product_scope_cash: bool = False,
     shared_position_groups_by_strategy: Mapping[str, str] | None = None,
+    execution_account_scope_by_strategy: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Merge per-strategy balance rows into a single portfolio-level balance view."""
 
@@ -991,6 +1015,12 @@ def merge_portfolio_balances_rows(
             if not isinstance(source_row, Mapping):
                 continue
             row = dict(source_row)
+            account_scope_id = _row_account_scope_id(
+                row,
+                execution_account_scope_by_strategy=execution_account_scope_by_strategy,
+            )
+            if account_scope_id:
+                row["account_scope_id"] = account_scope_id
 
             if _is_position_row(row):
                 shared_position_key = _shared_position_snapshot_key(
@@ -1048,6 +1078,7 @@ def merge_portfolio_balances_rows(
                 merged["exchange"] = cash_key[0]
                 if cash_key[1]:
                     merged["account"] = cash_key[1]
+                    merged["account_id"] = cash_key[1]
                 merged["asset"] = cash_key[2]
                 merged["coin"] = cash_key[2]
                 merged["base"] = cash_key[2]
@@ -1063,11 +1094,15 @@ def merge_portfolio_balances_rows(
             carried = dict(latest_row)
         else:
             carried = _carry_forward_cash_mark(dict(latest_row), marked_previous)
+        source_strategy_ids = sorted(cash_source_strategy_ids.get(cash_key, set()))
+        if source_strategy_ids:
+            carried["source_strategy_ids"] = source_strategy_ids
         if cash_key[1] and (
-            len(cash_source_strategy_ids.get(cash_key, set())) > 1
+            len(source_strategy_ids) > 1
             or cash_key[:3] in scoped_cash_conflicts
         ):
             carried["scope"] = "shared_account"
+            carried["source_scope"] = "shared_account"
         cash_latest[cash_key] = (latest_ts_ms, carried)
 
     _collapse_duplicate_cash_scope_rows(cash_latest, cash_source_strategy_ids)
@@ -1142,10 +1177,15 @@ def _normalize_portfolio_snapshot_row(
 
 def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
     exchange = decode_text(row.get("exchange") or row.get("venue")).strip().lower()
-    account = _canonical_portfolio_snapshot_account(
-        exchange=exchange,
-        account=row.get("account") or row.get("account_id"),
-    )
+    account_scope_id = decode_text(row.get("account_scope_id")).strip()
+    source_scope = decode_text(row.get("source_scope") or row.get("scope")).strip().lower()
+    if source_scope == "shared_account" and account_scope_id:
+        account = account_scope_id
+    else:
+        account = _canonical_portfolio_snapshot_account(
+            exchange=exchange,
+            account=row.get("account") or row.get("account_id"),
+        )
     if _is_position_row(dict(row)):
         instrument = decode_text(
             row.get("instrument_id")
@@ -1169,6 +1209,8 @@ def _portfolio_snapshot_row_identity(row: Mapping[str, Any]) -> tuple[Any, ...] 
         row_id = decode_text(row.get("row_id")).strip()
         return ("row_id", row_id) if row_id else None
     kind = decode_text(row.get("kind")).strip().lower() or "cash"
+    if kind == "cash" and account_scope_id:
+        return ("scope_cash", account_scope_id, asset, "")
     return (kind, exchange, account, asset)
 
 
@@ -1211,6 +1253,9 @@ def _default_portfolio_snapshot_row_id(
     if row_kind == "position" and len(identity) == 4:
         _kind, exchange, account, instrument = identity
         return f"{portfolio_id}:pos:{exchange}:{account}:{instrument}"
+    if row_kind == "scope_cash" and len(identity) == 4:
+        _kind, account_scope_id, asset, _unused = identity
+        return _portfolio_cash_row_id(portfolio_id, ("scope", account_scope_id, asset, ""))
     if len(identity) != 4:
         return None
     kind, exchange, account, asset = identity

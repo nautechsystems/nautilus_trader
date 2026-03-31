@@ -5,6 +5,10 @@ import tomllib
 from pathlib import Path
 
 from nautilus_trader.flux.runners.equities.node_groups import load_equities_node_groups
+from nautilus_trader.flux.common.account_scopes import decode_account_scopes
+from nautilus_trader.flux.common.controller_scopes import decode_controller_scopes
+from nautilus_trader.flux.common.controller_scopes import validate_controller_scope_contracts
+from nautilus_trader.flux.common.strategy_contracts import decode_strategy_contracts
 
 ACTIVE_STRATEGY_CLASS = "equities_maker"
 ACTIVE_PARAM_SET = "equities_maker"
@@ -483,9 +487,12 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
         "redis",
         "venues",
         "bridge",
+        "ibkr_reference_publisher",
         "api",
         "portfolio",
         "account_scopes",
+        "controller_scopes",
+        "controller",
         "strategy_contracts",
         "contracts",
     }
@@ -681,6 +688,38 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert scopes["ibkr.hedge.main"]["account_id"] == "U10015777"
     assert hedge_gateway["manage_container"] is False
     assert "twofa_timeout_action" not in hedge_gateway
+
+
+def test_equities_controller_scope_contract_declares_ibkr_hedge_canary_first() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    controller_scopes = decode_controller_scopes(config["controller_scopes"])
+    canaries = [scope for scope in controller_scopes if scope.canary]
+
+    assert canaries
+    assert canaries[0].controller_scope_id == "equities.ibkr.hedge.main"
+    assert canaries[0].profile_id == "equities"
+    assert canaries[0].writer_account_scope_id == "ibkr.hedge.main"
+    assert canaries[0].account_scope_ids == ("ibkr.hedge.main",)
+
+
+def test_equities_controller_scope_contract_validates_strategy_writer_domain_mappings() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    account_scopes = decode_account_scopes(config["account_scopes"])
+    strategy_contracts = decode_strategy_contracts(config["strategy_contracts"])
+    controller_scopes = decode_controller_scopes(config["controller_scopes"])
+    scopes_by_id = {scope.scope_id: scope for scope in account_scopes}
+
+    validate_controller_scope_contracts(
+        account_scopes=account_scopes,
+        strategy_contracts=strategy_contracts,
+        controller_scopes=controller_scopes,
+    )
+
+    assert scopes_by_id["ibkr.reference.main"].controller_scope_id is None
+    assert scopes_by_id["ibkr.hedge.main"].controller_scope_id == "equities.ibkr.hedge.main"
+    assert {contract.controller_scope_id for contract in strategy_contracts} == {
+        "equities.ibkr.hedge.main",
+    }
 
 
 def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset() -> None:

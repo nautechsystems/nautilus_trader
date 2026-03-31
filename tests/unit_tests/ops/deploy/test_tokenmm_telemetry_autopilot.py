@@ -73,3 +73,43 @@ def test_tokenmm_telemetry_runtime_contract_uses_wrapper_and_guardrails() -> Non
     assert "--wait-for-catchup" in cutover
     assert "--delete-local-after-cutover" in cutover
     assert "tokenmm-telemetry-shipper" in cutover
+
+
+def test_tokenmm_lean_autopilot_contract_is_documented() -> None:
+    repo_root = _repo_root()
+    design_doc = _read(repo_root / "docs/plans/2026-03-26-aws-managed-prod-boxes-design.md")
+    implementation_plan = _read(repo_root / "docs/plans/2026-03-26-aws-managed-prod-boxes.md")
+
+    assert "The supported operator workflow is:" in design_doc
+    assert "manual AWS console clicking" in design_doc
+    assert "CloudWatch Logs: `7 days` default" in design_doc
+    assert "S3 raw archive: `7 days` by default" in design_doc
+    assert "RDS should be added later, not now" in design_doc
+
+    assert "durable history exported to `S3` and queryable through `Athena`" in implementation_plan
+    assert "short default retention for logs and raw quote-cycle history" in implementation_plan
+    assert "`RDS` to be optional and deferred" in implementation_plan
+
+
+def test_tokenmm_cutover_contract_supports_archive_staging_and_athena() -> None:
+    repo_root = _repo_root()
+    cutover = _read(repo_root / "ops/scripts/deploy/tokenmm_telemetry_cutover.py")
+    readme = _read(repo_root / "deploy/tokenmm/README.md")
+    telemetry_runbook = _read(repo_root / "deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md")
+
+    assert "--archive-staging-dir" in cutover
+    assert "--archive-s3-bucket" in cutover
+    assert "--archive-s3-prefix" in cutover
+    assert "--athena-database" in cutover
+    assert "--athena-workgroup" in cutover
+    assert "--archive-quote-cycles" in cutover
+    assert "archive_rotated_quote_cycle_db" in cutover
+    assert "archive_rotated_sqlite_database" in cutover
+    assert '"athena"' in cutover
+    assert '"start-query-execution"' in cutover
+    assert "athena_partition_sql" in cutover
+
+    assert "lean default archive target is `S3 + Athena`" in readme
+    assert "--archive-quote-cycles" in readme
+    assert "Verify in Athena" in telemetry_runbook
+    assert "S3 + Athena" in telemetry_runbook

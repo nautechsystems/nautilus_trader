@@ -4,13 +4,22 @@ Plan deterministic quote-side rebalancing actions.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
+from flux.strategies.makerv3.constants import REASON_CANCEL_BACK_EXCESS
 from flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
 from flux.strategies.makerv3.constants import REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+from flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
+from flux.strategies.shared.quote_stack import ActiveStackLevel
+from flux.strategies.shared.quote_stack import DesiredStackLevel
+from flux.strategies.shared.quote_stack import StackAction
+from flux.strategies.shared.quote_stack import StackActionMode
+from flux.strategies.shared.quote_stack import StackPlan
+from flux.strategies.shared.quote_stack import plan_side_deque_actions
 
 
 _BACKLOG_MODES = frozenset({"normal", "soft_throttle", "hard_freeze", "blocked"})
@@ -58,10 +67,13 @@ class CancelAction:
 
 @dataclass(frozen=True, slots=True)
 class ConvergenceDiagnostics:
+    stack_action_mode: str
     backlog_mode: str
     matched_level_count: int
     keep_level_count: int
+    missing_level_count: int
     frontier_missing_level_count: int
+    interior_hole_count: int
     planned_stale_replacement_count: int
     total_missing_level_count: int
     excess_cancel_candidate_count: int
@@ -70,6 +82,11 @@ class ConvergenceDiagnostics:
     room_cancel_candidate_count: int
     budget_limited: bool
     backlog_limited: bool
+    depth_before: int
+    depth_after: int
+    temporary_oversize_depth: int
+    front_changed: bool
+    back_changed: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +94,135 @@ class BoundedConvergencePlan:
     cancel_actions: tuple[CancelAction, ...]
     place_level_indices: tuple[int, ...]
     diagnostics: ConvergenceDiagnostics
+
+
+_CANCEL_ACTION_KINDS = frozenset({"cancel_back", "cancel_front", "cancel_repair"})
+_PLACE_ACTION_KINDS = frozenset({"place_back", "place_front", "place_missing"})
+
+
+def _reason_code_for_action(action: StackAction) -> str:
+    if action.kind == "cancel_back":
+        return REASON_CANCEL_BACK_EXCESS
+    if action.kind == "cancel_front":
+        return REASON_CANCEL_FRONT_VIOLATION
+    if action.kind == "cancel_repair":
+        return REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
+    raise ValueError(f"unsupported cancel action kind: {action.kind!r}")
+
+
+def _mode_for_actions(actions: tuple[StackAction, ...]) -> StackActionMode:
+    if not actions:
+        return "no_op"
+    kinds = tuple(action.kind for action in actions)
+    if kinds == ("place_front", "cancel_back"):
+        return "place_front_cancel_back"
+    if kinds == ("cancel_front", "place_back"):
+        return "cancel_front_place_back"
+    if kinds == ("cancel_back",):
+        return "cancel_back"
+    if kinds == ("cancel_front",):
+        return "cancel_front"
+    if kinds == ("cancel_repair",):
+        return "repair_hole"
+    if kinds == ("place_missing",):
+        return "place_missing"
+    return "repair_hole"
+
+
+def _bounded_depth_diagnostics(
+    *,
+    depth_before: int,
+    actions: tuple[StackAction, ...],
+    front_active_index: int | None = None,
+    back_active_index: int | None = None,
+) -> tuple[int, int, bool, bool]:
+    current_depth = depth_before
+    max_depth = depth_before
+    front_changed = False
+    back_changed = False
+
+    for action in actions:
+        if action.kind in _PLACE_ACTION_KINDS:
+            current_depth += 1
+        elif action.kind in _CANCEL_ACTION_KINDS:
+            current_depth -= 1
+        max_depth = max(max_depth, current_depth)
+
+        if action.kind in {"cancel_front", "place_front"} or (
+            action.kind == "cancel_repair" and action.active_index == front_active_index
+        ) or (
+            action.kind == "place_missing" and action.level_index == 0
+        ):
+            front_changed = True
+        if action.kind in {"cancel_back", "place_back"} or (
+            action.kind == "cancel_repair" and action.active_index == back_active_index
+        ) or (
+            action.kind == "place_missing" and action.level_index == depth_before
+        ):
+            back_changed = True
+
+    return current_depth, max_depth, front_changed, back_changed
+
+
+def _front_back_active_indexes(
+    *,
+    side: str,
+    active_prices: Sequence[Decimal],
+) -> tuple[int | None, int | None]:
+    if not active_prices:
+        return None, None
+    ordered = sorted(
+        enumerate(active_prices),
+        key=lambda item: item[1],
+        reverse=side == "buy",
+    )
+    return ordered[0][0], ordered[-1][0]
+
+
+def _filtered_stack_plan(
+    *,
+    stack_plan: StackPlan,
+    max_reprice_cancel_actions: int,
+    max_place_actions: int,
+    max_total_actions: int,
+    backlog_mode: str,
+) -> tuple[tuple[StackAction, ...], bool]:
+    if backlog_mode != "normal":
+        return (), False
+
+    actions = tuple(stack_plan.actions)
+    if not actions:
+        return (), False
+
+    remaining_cancel = max(0, int(max_reprice_cancel_actions))
+    remaining_place = max(0, int(max_place_actions))
+    remaining_total = max(0, int(max_total_actions))
+
+    if stack_plan.diagnostics.stack_action_mode == "place_front_cancel_back":
+        if remaining_total < 2 or remaining_place < 1 or remaining_cancel < 1:
+            return (), True
+        return actions, False
+
+    allowed: list[StackAction] = []
+    budget_limited = False
+    for action in actions:
+        if remaining_total <= 0:
+            budget_limited = True
+            break
+        if action.kind in _CANCEL_ACTION_KINDS:
+            if remaining_cancel <= 0:
+                budget_limited = True
+                break
+            remaining_cancel -= 1
+        else:
+            if remaining_place <= 0:
+                budget_limited = True
+                break
+            remaining_place -= 1
+        remaining_total -= 1
+        allowed.append(action)
+
+    return tuple(allowed), budget_limited
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,7 +417,7 @@ def plan_side_bounded_convergence(
     backlog_mode: str,
 ) -> BoundedConvergencePlan:
     """
-    Return a pure side-local bounded convergence plan with diagnostics.
+    Return a deque-style side-local plan with compatibility diagnostics.
     """
     side_norm = _validate_rebalance_inputs(
         side=side,
@@ -279,7 +425,7 @@ def plan_side_bounded_convergence(
         active_stale=active_stale,
         desired_levels=desired_levels,
     )
-    stale_budget = _normalize_non_negative_int(stale_cancel_budget, "stale_cancel_budget")
+    _normalize_non_negative_int(stale_cancel_budget, "stale_cancel_budget")
     reprice_budget = _normalize_non_negative_int(
         max_reprice_cancel_actions,
         "max_reprice_cancel_actions",
@@ -287,190 +433,111 @@ def plan_side_bounded_convergence(
     place_budget = _normalize_non_negative_int(max_place_actions, "max_place_actions")
     total_budget = _normalize_non_negative_int(max_total_actions, "max_total_actions")
     backlog_mode_norm = _normalize_backlog_mode(backlog_mode)
+    stack_plan = plan_side_deque_actions(
+        side=side_norm,
+        active_prices=[
+            ActiveStackLevel(active_index=index, price=price)
+            for index, price in enumerate(active_prices)
+        ],
+        desired_levels=[
+            DesiredStackLevel(
+                level_index=index,
+                place_price=target_px,
+                cancel_price=cancel_px,
+                match_tolerance=match_tol,
+            )
+            for index, (target_px, cancel_px, match_tol) in enumerate(desired_levels)
+        ],
+    )
+    allowed_actions, budget_cut = _filtered_stack_plan(
+        stack_plan=stack_plan,
+        max_reprice_cancel_actions=reprice_budget,
+        max_place_actions=place_budget,
+        max_total_actions=total_budget,
+        backlog_mode=backlog_mode_norm,
+    )
+    suppressed_keep_bucket = (
+        stack_plan.diagnostics.stack_action_mode == "place_front_cancel_back"
+        and active_prices
+        and desired_levels
+        and not _is_more_aggressive(side_norm, desired_levels[0][0], active_prices[0])
+    )
+    if suppressed_keep_bucket:
+        allowed_actions = ()
 
-    alignment = _align_active_to_desired(
+    cancel_actions = tuple(
+        CancelAction(
+            index=int(action.active_index),
+            reason_code=_reason_code_for_action(action),
+        )
+        for action in allowed_actions
+        if action.kind in _CANCEL_ACTION_KINDS and action.active_index is not None
+    )
+    place_level_indices = tuple(
+        int(action.level_index)
+        for action in allowed_actions
+        if action.kind in _PLACE_ACTION_KINDS and action.level_index is not None
+    )
+    planned_place_count = sum(1 for action in stack_plan.actions if action.kind in _PLACE_ACTION_KINDS)
+    budget_limited = budget_cut or (
+        backlog_mode_norm == "normal"
+        and not suppressed_keep_bucket
+        and planned_place_count > 0
+        and stack_plan.diagnostics.missing_level_count > len(place_level_indices)
+    )
+    front_active_index, back_active_index = _front_back_active_indexes(
         side=side_norm,
         active_prices=active_prices,
-        desired_levels=desired_levels,
     )
-
-    cancel_actions: list[CancelAction] = []
-    selected_cancel_indices: set[int] = set()
-
-    def add_cancel(index: int, reason_code: str) -> bool:
-        nonlocal reprice_budget, stale_budget, total_budget
-        if index in selected_cancel_indices or total_budget <= 0:
-            return False
-        if reason_code == REASON_CANCEL_STALE_ORDER:
-            if stale_budget <= 0:
-                return False
-            stale_budget -= 1
-        else:
-            if reprice_budget <= 0:
-                return False
-            reprice_budget -= 1
-        total_budget -= 1
-        selected_cancel_indices.add(index)
-        cancel_actions.append(CancelAction(index=index, reason_code=reason_code))
-        return True
-
-    passive_tail_cancel_candidates = tuple(reversed(alignment.passive_tail_candidates))
-    aggressive_cancel_candidates = alignment.aggressive_cancel_candidates
-
-    for index in passive_tail_cancel_candidates:
-        if not add_cancel(index, REASON_CANCEL_EXCESS_LEVEL):
-            break
-
-    if backlog_mode_norm == "normal":
-        for index in aggressive_cancel_candidates:
-            if not add_cancel(index, REASON_CANCEL_TOO_AGGRESSIVE):
-                break
-
-    stale_cancel_candidates = tuple(
-        idx
-        for idx in range(len(active_prices) - 1, -1, -1)
-        if active_stale[idx] and idx not in selected_cancel_indices
-    )
-    for index in stale_cancel_candidates:
-        if not add_cancel(index, REASON_CANCEL_STALE_ORDER):
-            break
-
-    room_cancel_candidates = tuple(
-        idx
-        for idx in range(len(active_prices) - 1, -1, -1)
-        if idx not in selected_cancel_indices and alignment.matched_level_for_active[idx] is not None
-    )
-
-    room_needed = 0
-    room_created = 0
-    if backlog_mode_norm == "normal":
-        survivors_after_initial_cancels = len(active_prices) - len(selected_cancel_indices)
-        free_slots = max(0, len(desired_levels) - survivors_after_initial_cancels)
-        _frontier_place_target, room_needed = _max_frontier_places(
-            frontier_missing_count=len(alignment.frontier_missing_levels),
-            free_slots=free_slots,
-            place_budget=place_budget,
-            reprice_budget=reprice_budget,
-            total_budget=total_budget,
-        )
-
-        for index in room_cancel_candidates:
-            if room_created >= room_needed:
-                break
-            if add_cancel(index, REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL):
-                room_created += 1
-            else:
-                break
-
-    planned_stale_replacements = tuple(
-        level_index
-        for index in stale_cancel_candidates
-        if index in selected_cancel_indices
-        for level_index in (alignment.matched_level_for_active[index],)
-        if level_index is not None
-    )
-    planned_room_replacements = tuple(
-        level_index
-        for index in room_cancel_candidates
-        if index in selected_cancel_indices
-        for level_index in (alignment.matched_level_for_active[index],)
-        if level_index is not None
-    )
-
-    place_level_indices: list[int] = []
-    if backlog_mode_norm == "normal":
-        survivors_after_all_cancels = len(active_prices) - len(selected_cancel_indices)
-        available_slots = max(0, len(desired_levels) - survivors_after_all_cancels)
-        frontier_place_count = min(len(alignment.frontier_missing_levels), available_slots)
-        frontier_place_levels = list(alignment.frontier_missing_levels[:frontier_place_count])
-        replacement_place_levels = list(planned_room_replacements) + list(planned_stale_replacements)
-        place_candidates = replacement_place_levels + frontier_place_levels
-
-        remaining_place_budget = place_budget
-        remaining_total_budget = total_budget
-        remaining_slot_budget = available_slots
-        seen_level_indices: set[int] = set()
-        for level_index in place_candidates:
-            if (
-                remaining_place_budget <= 0
-                or remaining_total_budget <= 0
-                or remaining_slot_budget <= 0
-            ):
-                break
-            if level_index in seen_level_indices:
-                continue
-            seen_level_indices.add(level_index)
-            place_level_indices.append(level_index)
-            remaining_place_budget -= 1
-            remaining_total_budget -= 1
-            remaining_slot_budget -= 1
-    else:
-        place_candidates = []
-
-    matched_level_count = sum(
-        1 for level_index in alignment.matched_level_for_active if level_index is not None
-    )
-    keep_level_count = matched_level_count + len(alignment.keep_candidates)
-
-    selected_excess_cancel_count = sum(
-        1
-        for action in cancel_actions
-        if action.reason_code == REASON_CANCEL_EXCESS_LEVEL
-    )
-    selected_aggressive_cancel_count = sum(
-        1
-        for action in cancel_actions
-        if action.reason_code == REASON_CANCEL_TOO_AGGRESSIVE
-    )
-    selected_stale_cancel_count = sum(
-        1
-        for action in cancel_actions
-        if action.reason_code == REASON_CANCEL_STALE_ORDER
-    )
-    selected_room_cancel_count = sum(
-        1
-        for action in cancel_actions
-        if action.reason_code == REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL
-    )
-    total_missing_before_places = (
-        len(alignment.frontier_missing_levels)
-        + len(planned_room_replacements)
-        + len(planned_stale_replacements)
-    )
-    budget_limited = (
-        len(passive_tail_cancel_candidates) > selected_excess_cancel_count
-        or len(stale_cancel_candidates) > selected_stale_cancel_count
-    )
-    if backlog_mode_norm == "normal":
-        budget_limited = budget_limited or (
-            len(aggressive_cancel_candidates) > selected_aggressive_cancel_count
-            or (bool(room_cancel_candidates) and selected_room_cancel_count < room_needed)
-            or len(place_candidates) > len(place_level_indices)
-        )
-    backlog_limited = backlog_mode_norm != "normal" and (
-        bool(aggressive_cancel_candidates)
-        or bool(alignment.frontier_missing_levels)
-        or bool(planned_stale_replacements)
-        or bool(planned_room_replacements)
+    depth_after, temporary_oversize_depth, front_changed, back_changed = _bounded_depth_diagnostics(
+        depth_before=stack_plan.diagnostics.depth_before,
+        actions=allowed_actions,
+        front_active_index=front_active_index,
+        back_active_index=back_active_index,
     )
 
     diagnostics = ConvergenceDiagnostics(
+        stack_action_mode=_mode_for_actions(allowed_actions),
         backlog_mode=backlog_mode_norm,
-        matched_level_count=matched_level_count,
-        keep_level_count=keep_level_count,
-        frontier_missing_level_count=len(alignment.frontier_missing_levels),
-        planned_stale_replacement_count=len(planned_stale_replacements),
-        total_missing_level_count=max(0, total_missing_before_places - len(place_level_indices)),
-        excess_cancel_candidate_count=len(passive_tail_cancel_candidates),
-        aggressive_cancel_candidate_count=len(aggressive_cancel_candidates),
-        stale_cancel_candidate_count=len(stale_cancel_candidates),
-        room_cancel_candidate_count=len(room_cancel_candidates),
+        matched_level_count=max(
+            0,
+            len(active_prices) - stack_plan.diagnostics.missing_level_count - len(cancel_actions),
+        ),
+        keep_level_count=max(0, len(active_prices) - len(cancel_actions)),
+        missing_level_count=stack_plan.diagnostics.missing_level_count,
+        frontier_missing_level_count=max(
+            0,
+            stack_plan.diagnostics.missing_level_count - stack_plan.diagnostics.interior_hole_count,
+        ),
+        interior_hole_count=stack_plan.diagnostics.interior_hole_count,
+        planned_stale_replacement_count=0,
+        total_missing_level_count=max(
+            0,
+            stack_plan.diagnostics.missing_level_count - len(place_level_indices),
+        ),
+        excess_cancel_candidate_count=sum(
+            1
+            for action in allowed_actions
+            if action.kind == "cancel_back"
+        ),
+        aggressive_cancel_candidate_count=sum(
+            1
+            for action in allowed_actions
+            if action.kind == "cancel_front"
+        ),
+        stale_cancel_candidate_count=sum(1 for is_stale in active_stale if is_stale),
+        room_cancel_candidate_count=0,
         budget_limited=budget_limited,
-        backlog_limited=backlog_limited,
+        backlog_limited=backlog_mode_norm != "normal",
+        depth_before=stack_plan.diagnostics.depth_before,
+        depth_after=depth_after,
+        temporary_oversize_depth=temporary_oversize_depth,
+        front_changed=front_changed,
+        back_changed=back_changed,
     )
     return BoundedConvergencePlan(
-        cancel_actions=tuple(cancel_actions),
-        place_level_indices=tuple(place_level_indices),
+        cancel_actions=cancel_actions,
+        place_level_indices=place_level_indices,
         diagnostics=diagnostics,
     )
 
@@ -509,10 +576,7 @@ def plan_side_rebalance_details(
         desired_levels=desired_levels,
     )
 
-    cancel_reasons: dict[int, str] = {
-        index: REASON_CANCEL_TOO_AGGRESSIVE
-        for index in alignment.aggressive_cancel_candidates
-    }
+    cancel_reasons: dict[int, str] = dict.fromkeys(alignment.aggressive_cancel_candidates, REASON_CANCEL_TOO_AGGRESSIVE)
 
     if stale_budget > 0:
         stale_candidates = [

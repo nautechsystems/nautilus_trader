@@ -465,6 +465,7 @@ def test_standard_contract_polling_only_transport_subscribes_and_receives_heartb
     assert ack["surface"] == "signal"
     assert ack["accepted_start_seq"] == 0
     assert ack["capabilities"]["recovery_mode"] == "invalidate_only"
+    assert emitter.has_standard_profile_subscribers("tokenmm") is True
 
     emitter.emit_once(profile="tokenmm")
     realtime_packets = _take_realtime_packets(client)
@@ -1599,6 +1600,7 @@ def test_standard_subscribe_priming_failure_releases_profile_and_subscription_st
     assert emitter._standard_subscriptions_by_sid == {}
     assert emitter._profile_refcounts.get("tokenmm", 0) == 0
     assert emitter._legacy_profile_refcounts.get("tokenmm", 0) == 0
+    assert emitter.has_standard_profile_subscribers("tokenmm") is False
     assert emitter._active_profiles() == []
 
 
@@ -1942,6 +1944,184 @@ def test_standard_trades_gap_emits_recovery_required_instead_of_silent_drift(
     assert payload["surface"] == "trades"
     assert payload["kind"] == "recovery_required"
     assert payload["reason"] == "trade_gap"
+    client.disconnect()
+
+
+def test_standard_only_trade_gap_does_not_suppress_first_legacy_recovery_hint_after_profile_switch(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-legacy-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1_700_000_000_200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    trades_snapshot = _trades_snapshot(app)
+    signal_snapshot = _signals_snapshot(app)
+    client = socketio.test_client(app)
+
+    trades_ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(trades_snapshot, surface="trades"),
+    )
+    assert trades_ack["accepted"] is True
+    signal_ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(signal_snapshot, surface="signal"),
+    )
+    assert signal_ack["accepted"] is True
+    _ = _take_realtime_packets(client)
+
+    emitter.emit_once(profile="tokenmm")
+    standard_packets = _take_realtime_packets(client)
+    trade_gap_packets = [
+        packet
+        for packet in standard_packets
+        if packet["args"][0]["surface"] == "trades"
+    ]
+    assert len(trade_gap_packets) == 1
+    standard_payload = trade_gap_packets[0]["args"][0]
+    assert standard_payload["kind"] == "recovery_required"
+    assert standard_payload["reason"] == "trade_gap"
+    assert "tokenmm" not in emitter._legacy_recovery_signature_by_profile
+
+    legacy_ack = _set_legacy_profile_without_background_emitter(
+        client,
+        emitter,
+        profile="tokenmm",
+    )
+    assert legacy_ack["ok"] is True
+    _ = _take_legacy_packets(client)
+
+    emitter.emit_once(profile="tokenmm")
+    legacy_packets = _take_legacy_packets(client)
+    market_packets = [
+        packet for packet in legacy_packets if packet["name"] == "market_update"
+    ]
+    assert len(market_packets) == 1
+    assert market_packets[0]["args"][0]["recovery"] == {
+        "required": True,
+        "reason": "trade_gap",
+    }
+    client.disconnect()
+
+
+def test_legacy_reconnect_before_next_emit_still_receives_trade_gap_hint_with_standard_profile_alive(
+    flux_config,
+    redis_client,
+    contract_catalog,
+    strategy_metadata,
+    params_schema,
+    params_defaults,
+) -> None:
+    _seed_required_schema_keys(redis_client, flux_config)
+    keys = FluxRedisKeys.from_identity(flux_config.identity)
+    redis_client.add_stream_rows(
+        keys.trades_stream(),
+        [
+            {
+                "strategy_id": flux_config.identity.strategy_id,
+                "row_id": "trade-legacy-001",
+                "seq": 5,
+                "version": 1,
+                "ts_ms": 1_700_000_000_200,
+                "instrument_id": "PLUME-USDT-SWAP.OKX",
+                "exchange": "okx",
+                "side": "BUY",
+                "price": "0.012736",
+                "qty": "100",
+            },
+        ],
+    )
+    app = create_flux_api_app(
+        flux_config,
+        redis_client,
+        contract_catalog=contract_catalog,
+        strategy_metadata=strategy_metadata,
+        params_schema=params_schema,
+        params_defaults=params_defaults,
+    )
+    socketio = app.extensions["flux_socketio"]
+    emitter = app.extensions["flux_socket_emitter"]
+    signal_snapshot = _signals_snapshot(app)
+    client = socketio.test_client(app)
+
+    signal_ack = _subscribe_without_background_emitter(
+        client,
+        emitter,
+        _standard_subscribe_payload(signal_snapshot, surface="signal"),
+    )
+    assert signal_ack["accepted"] is True
+    legacy_ack = _set_legacy_profile_without_background_emitter(
+        client,
+        emitter,
+        profile="tokenmm",
+    )
+    assert legacy_ack["ok"] is True
+    _ = _take_realtime_packets(client)
+    _ = _take_legacy_packets(client)
+
+    emitter.emit_once(profile="tokenmm")
+    first_legacy_packets = _take_legacy_packets(client)
+    first_market_packets = [
+        packet for packet in first_legacy_packets if packet["name"] == "market_update"
+    ]
+    assert len(first_market_packets) == 1
+    assert first_market_packets[0]["args"][0]["recovery"] == {
+        "required": True,
+        "reason": "trade_gap",
+    }
+
+    clear_ack = client.emit("set_profile", {}, callback=True)
+    assert clear_ack["ok"] is True
+    reconnect_ack = _set_legacy_profile_without_background_emitter(
+        client,
+        emitter,
+        profile="tokenmm",
+    )
+    assert reconnect_ack["ok"] is True
+    _ = _take_legacy_packets(client)
+
+    emitter.emit_once(profile="tokenmm")
+    second_legacy_packets = _take_legacy_packets(client)
+    second_market_packets = [
+        packet for packet in second_legacy_packets if packet["name"] == "market_update"
+    ]
+    assert len(second_market_packets) == 1
+    assert second_market_packets[0]["args"][0]["recovery"] == {
+        "required": True,
+        "reason": "trade_gap",
+    }
     client.disconnect()
 
 

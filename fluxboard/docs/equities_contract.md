@@ -86,6 +86,7 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 8. Future shared IBKR cash rows may carry `source_scope = "shared_account"` and a shared `account_scope_id` when multiple equities strategies project the same IBKR account.
 9. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
 10. Clients should ignore unknown fields and tolerate additional metadata fields.
+11. `alerts` follows the shared alerts contract: `GET /api/v1/alerts` includes `capabilities.feed_mode` and `capabilities.clear_mode`, and `DELETE /api/v1/alerts` only clears stream-backed history when `clear_mode = "history_only"`.
 
 ## Shared Quote Health Semantics
 

@@ -407,6 +407,67 @@ def test_build_portfolio_snapshot_canonicalizes_identical_shared_account_stable_
     assert row["display_name_long"] == "Bitget USDT"
 
 
+def test_build_portfolio_snapshot_carries_tokenmm_shared_account_metadata_for_binance_stable_cash() -> None:
+    snapshot = build_portfolio_snapshot(
+        portfolio_id="tokenmm",
+        base_currency="PLUME",
+        inventory_components={},
+        balance_rows_by_strategy={
+            "plumeusdt_binance_spot_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "exchange": "binance_spot",
+                    "account_id": "BINANCE_SPOT-PORTFOLIO_MARGIN-master",
+                    "asset": "USDT",
+                    "free": "1285.28070703",
+                    "locked": "0",
+                    "total": "1285.28070703",
+                    "ts_ms": 1_700_000_000_000,
+                    "row_id": "plumeusdt_binance_spot_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+            "plumeusdt_binance_perp_makerv3": [
+                {
+                    "strategy_id": "plumeusdt_binance_perp_makerv3",
+                    "exchange": "binance_spot",
+                    "account_id": "BINANCE_SPOT-MARGIN-master",
+                    "asset": "USDT",
+                    "free": "873.32524016",
+                    "locked": "0",
+                    "total": "873.32524016",
+                    "ts_ms": 1_700_000_000_100,
+                    "row_id": "plumeusdt_binance_perp_makerv3:cash:0",
+                    "product_type": "spot",
+                },
+            ],
+        },
+        required_strategy_ids=set(),
+        now_ms_value=2_000,
+        execution_account_scope_by_strategy={
+            "plumeusdt_binance_spot_makerv3": "binance.execution.main",
+            "plumeusdt_binance_perp_makerv3": "binance.execution.main",
+        },
+    )
+
+    binance_rows = [
+        row
+        for row in snapshot["balances"]["rows"]
+        if row.get("exchange") == "binance_spot" and row.get("asset") == "USDT"
+    ]
+
+    assert len(binance_rows) == 1
+    row = binance_rows[0]
+    assert row["row_id"] == "tokenmm:cash:binance_spot:binance.execution.main:USDT"
+    assert row["account"] == "binance.execution.main"
+    assert row["account_scope_id"] == "binance.execution.main"
+    assert row["scope"] == "shared_account"
+    assert row["source_strategy_ids"] == [
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    ]
+
+
 def test_build_portfolio_snapshot_deduplicates_identical_non_stable_cash_across_product_scopes() -> None:
     snapshot = build_portfolio_snapshot(
         portfolio_id="tokenmm",

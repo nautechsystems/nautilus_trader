@@ -9,6 +9,7 @@ from nautilus_trader.common.config import PositiveInt
 
 
 SslMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
+DurableSink = Literal["postgres", "s3_athena"]
 
 
 class TelemetryPostgresConfig(NautilusConfig, kw_only=True, frozen=True):
@@ -60,6 +61,17 @@ class TelemetryShipperConfig(NautilusConfig, kw_only=True, frozen=True):
     enabled: bool = False
     enable_local_persistence: bool = False
     source_profile: str
+    durable_sink: DurableSink = "postgres"
+    archive_s3_bucket: str | None = None
+    archive_s3_prefix: str = "nautilus/telemetry"
+    athena_database: str = "nautilus_telemetry"
+    athena_workgroup: str = "primary"
+    raw_quote_cycles_enabled: bool = True
+    raw_quote_cycle_local_hours: PositiveInt = 48
+    raw_quote_cycle_s3_days: PositiveInt = 7
+    core_history_s3_days: PositiveInt = 365
+    structured_local_cap_gb: PositiveInt = 8
+    quote_cycle_local_cap_gb: PositiveInt = 12
     balance_snapshots_db_path: str | None = None
     fills_db_path: str | None = None
     orders_db_path: str | None = None
@@ -69,7 +81,7 @@ class TelemetryShipperConfig(NautilusConfig, kw_only=True, frozen=True):
     poll_interval_ms: PositiveInt = 1_000
     max_batch_size: PositiveInt = 1_000
     prune_retention_hours: PositiveInt = 168
-    postgres: TelemetryPostgresConfig
+    postgres: TelemetryPostgresConfig | None = None
 
     def __post_init__(self) -> None:
         if not self.source_profile.strip():
@@ -84,6 +96,16 @@ class TelemetryShipperConfig(NautilusConfig, kw_only=True, frozen=True):
             and self.portfolio_inventory_db_path is None
         ):
             raise ValueError("At least one source DB path must be configured")
+        if self.durable_sink == "postgres" and self.postgres is None:
+            raise ValueError("`postgres` config is required when `durable_sink` is `postgres`")
+        if self.durable_sink == "s3_athena" and not (self.archive_s3_bucket or "").strip():
+            raise ValueError(
+                "`archive_s3_bucket` is required when `durable_sink` is `s3_athena`",
+            )
+        if not self.raw_quote_cycles_enabled and self.quote_cycles_db_path is not None:
+            raise ValueError(
+                "`quote_cycles_db_path` must be omitted when `raw_quote_cycles_enabled` is false",
+            )
 
 
 def build_telemetry_shipper_config(
@@ -91,10 +113,40 @@ def build_telemetry_shipper_config(
     *,
     env: dict[str, str] | None = None,
 ) -> TelemetryShipperConfig:
+    values = os.environ if env is None else env
+    durable_sink = str(payload.get("durable_sink", "postgres")).strip() or "postgres"
     return TelemetryShipperConfig(
         enabled=bool(payload.get("enabled", False)),
         enable_local_persistence=bool(payload.get("enable_local_persistence", False)),
         source_profile=str(payload.get("source_profile", "")).strip(),
+        durable_sink=durable_sink,
+        archive_s3_bucket=_optional_text(
+            payload.get("archive_s3_bucket") or values.get("TOKENMM_TELEMETRY_ARCHIVE_S3_BUCKET"),
+        ),
+        archive_s3_prefix=str(
+            payload.get(
+                "archive_s3_prefix",
+                values.get("TOKENMM_TELEMETRY_ARCHIVE_S3_PREFIX", "nautilus/telemetry"),
+            ),
+        ).strip(),
+        athena_database=str(
+            payload.get(
+                "athena_database",
+                values.get("TOKENMM_TELEMETRY_ATHENA_DATABASE", "nautilus_telemetry"),
+            ),
+        ).strip(),
+        athena_workgroup=str(
+            payload.get(
+                "athena_workgroup",
+                values.get("TOKENMM_TELEMETRY_ATHENA_WORKGROUP", "primary"),
+            ),
+        ).strip(),
+        raw_quote_cycles_enabled=bool(payload.get("raw_quote_cycles_enabled", True)),
+        raw_quote_cycle_local_hours=int(payload.get("raw_quote_cycle_local_hours", 48)),
+        raw_quote_cycle_s3_days=int(payload.get("raw_quote_cycle_s3_days", 7)),
+        core_history_s3_days=int(payload.get("core_history_s3_days", 365)),
+        structured_local_cap_gb=int(payload.get("structured_local_cap_gb", 8)),
+        quote_cycle_local_cap_gb=int(payload.get("quote_cycle_local_cap_gb", 12)),
         balance_snapshots_db_path=_optional_text(payload.get("balance_snapshots_db_path")),
         fills_db_path=_optional_text(payload.get("fills_db_path")),
         orders_db_path=_optional_text(payload.get("orders_db_path")),
@@ -104,7 +156,11 @@ def build_telemetry_shipper_config(
         poll_interval_ms=int(payload.get("poll_interval_ms", 1_000)),
         max_batch_size=int(payload.get("max_batch_size", 1_000)),
         prune_retention_hours=int(payload.get("prune_retention_hours", 168)),
-        postgres=TelemetryPostgresConfig.from_env(env=env),
+        postgres=(
+            TelemetryPostgresConfig.from_env(env=values)
+            if durable_sink == "postgres"
+            else None
+        ),
     )
 
 

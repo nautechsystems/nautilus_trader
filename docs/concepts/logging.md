@@ -486,8 +486,10 @@ MakerV3 also emits `flux.makerv3.order_intent` for actual per-order actions:
 
 - `intent_type`: `PLACE` or `CANCEL`
 - `run_id` / `quote_cycle_id`: correlation back to the decision pass
-- `reason_code`: canonical MakerV3 taxonomy (`place_missing_level`, `cancel_maker_md_stale`,
-  `cancel_excess_level`, `cancel_free_slot_for_missing_level`, etc.)
+- `reason_code`: canonical MakerV3 taxonomy (`place_front_improve`, `place_back_backfill`,
+  `place_missing_hole_repair`, `cancel_front_violation`, `cancel_back_excess`,
+  `cancel_free_slot_for_missing_level`,
+  `cancel_maker_md_stale`, etc.)
 - `ts_market_data_event_ns`, `ts_market_data_recv_ns`, `ts_decision_ns`,
   `ts_submit_local_ns` / `ts_cancel_request_local_ns`
 

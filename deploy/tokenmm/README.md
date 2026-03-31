@@ -33,14 +33,15 @@ Operator validation runbook: `docs/runbooks/tokenmm-risk-validation.md`
 - Redis stays in `tokenmm.live.toml`; per-strategy node deploy files inherit it through the node runner `--shared-config` overlay.
 - Production Redis is the dedicated `tokenmm` ElastiCache endpoint; keep the auth token out of git and inject it with `TOKENMM_REDIS_PASSWORD`.
 - All seven allowlisted strategies price off Binance spot. The shared reference venue alias is `BINANCE_SPOT`.
-- Supported live core for this pass:
+- Supported live production set:
   - `plumeusdt_bybit_perp_makerv3`
   - `plumeusdt_bybit_spot_makerv3`
   - `plumeusdt_okx_perp_makerv3`
+  - `plumeusdt_binance_perp_makerv3`
+  - `plumeusdt_binance_spot_makerv3`
   - `plumeusdt_bitget_perp_makerv3`
   - `plumeusdt_bitget_spot_makerv3`
-- Binance perp and Binance spot stay allowlisted but parked.
-- Shared portfolio completeness requires only the supported live core.
+- Shared portfolio completeness requires all seven allowlisted strategies.
 
 Deploy-root resolution for `install_tokenmm_systemd.sh`:
 
@@ -55,22 +56,18 @@ If the resolved root is a worktree, the installer exits with an error instead of
 Dedicated runbook:
 `docs/runbooks/tokenmm-binance-spot-market-making.md`
 
-`plumeusdt_binance_spot_makerv3` is parked for this pass. Binance spot and
-Binance perp are not part of the supported live core or required completeness
-set. They remain allowlisted in the standard 7-node target and must stay
-`bot_on = false` on this pass. The dedicated Binance runbook is for future
-reintroduction work, not the current supported live core.
+`plumeusdt_binance_spot_makerv3` and `plumeusdt_binance_perp_makerv3` are part
+of the active production TokenMM set. They are required contributors to shared
+portfolio completeness and must restart back into the live quoting posture.
 
 Operating contract:
 
-- keep Binance strategies parked with `force_bot_off_on_start = true` and
-  `bot_on = false`
-- keep Binance nodes enrolled in the standard 7-node target only as parked
-  services; do not use them as the rollout/canary surface for this pass
-- do not treat parked Binance nodes as required contributors to shared tokenmm
-  portfolio completeness
-- if Binance is reintroduced later, do it through a separate rollout branch and
-  dedicated operator review
+- keep Binance strategies restart-resilient with `force_bot_off_on_start = false`
+  and `bot_on = true`
+- keep Binance nodes enrolled in the standard 7-node target as active services
+- treat Binance as a required contributor to shared TokenMM portfolio completeness
+- if quoting must be held, do it explicitly through the params control surface
+  rather than by baking bot-off restart defaults into the production config
 
 ## Bitget Spot + Perp Market-Making Contract
 
@@ -87,8 +84,8 @@ Operating contract:
 - preferred spot behavior: shared-collateral quoting with borrowing only where
   needed, constrained to sell-side borrowing on the first rollout
 - preferred perp behavior: USDT-margined perp in one-way/netting mode
-- keep `force_bot_off_on_start = true` and `bot_on = false` for the first
-  restart and canary
+- keep `force_bot_off_on_start = false` and `bot_on = true` for the production
+  restart-resume contract
 - verify balances through `GET /api/v1/balances?profile=tokenmm` before enabling
   quoting; do not treat invisible Bitget collateral or inventory as production
   ready
@@ -225,12 +222,16 @@ Runtime registration is explicit:
   already points at a stable checkout, and the installer refuses worktree roots for fresh bootstrap/cutover.
 - Repointing `/etc/flux/tokenmm*.env` to a new immutable release root does not restart the live services by itself;
   restart the TokenMM units only during an explicit cutover window.
+- `install_tokenmm_systemd.sh` also installs the dashboard monitoring assets under `/etc/tokenmm-monitoring`
+  stages pinned native Grafana and Prometheus tarballs under `/opt/tokenmm-monitoring`, and refreshes the
+  launcher scripts at `/usr/local/bin/tokenmm-grafana-run.sh` and `/usr/local/bin/tokenmm-prometheus-run.sh`.
 - Production logs are journal-first. Keep `FLUX_LOG_LEVEL` in `/etc/flux/common.env` as the shared default and use
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`.
-- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`, and the 7 allowlisted
-  node services.
+- The seeded TokenMM target enrolls `tokenmm-api`, `tokenmm-portfolio`, `tokenmm-bridge`,
+  `tokenmm-telemetry-shipper`, `tokenmm-prometheus`, `tokenmm-grafana`,
+  `tokenmm-liquidity-exporter`, `tokenmm-markouts-exporter`, and the 7 allowlisted node services.
 - Normal production start/stop/restart of services and nodes is supported through Pulse UI/API, not
   `tokenmm_stack.sh`.
 
@@ -244,6 +245,8 @@ Primary operator surfaces:
 
 - `http://<host>:5022/tokenmm`
 - `http://<host>:5022/pulse`
+- `http://<host>:3000/login`
+- `http://<host>:9090`
 - `GET /api/pulse/jobs`
 - `POST /api/pulse/jobs/group/tokenmm/restart`
 - Risk validation and rollout gates live in `docs/runbooks/tokenmm-risk-validation.md`.
@@ -263,6 +266,7 @@ Primary operator surfaces:
 
 - Run the rollout preflight before changing systemd envs:
   - `.venv/bin/python ops/scripts/deploy/tokenmm_rollout_preflight.py`
+- The lean default archive target is `S3 + Athena`, not always-on RDS.
 - Bootstrap or refresh the managed sink and write the host env automatically:
   - `sudo TOKENMM_DEPLOY_ROOT="${TOKENMM_DEPLOY_ROOT}" ops/scripts/deploy/bootstrap_tokenmm_telemetry_rds.sh --apply-host-env`
 - The host bootstrap writes `TOKENMM_AWS_REGION`, `NAUTILUS_TELEMETRY_PG_SECRET_ID`, and the current endpoint metadata
@@ -274,15 +278,24 @@ Primary operator surfaces:
   - `sudo install -d -o ubuntu -g ubuntu /var/lib/nautilus/telemetry/tokenmm`
 - The live shipper keeps local SQLite as a short spool only:
   - `deploy/tokenmm/tokenmm.live.toml` sets `prune_retention_hours = 48`
+- Raw quote-cycle history is short-lived by default:
+  - `raw_quote_cycle_local_hours = 48`
+  - `raw_quote_cycle_s3_days = 7`
+- Durable history is archived to Parquet and queried through Athena:
+  - `orders`
+  - `fills`
+  - `balance snapshots`
+  - `portfolio inventory`
+  - quote-cycle summaries and short-window raw quote cycles
 - Guardrail health runs every 15 minutes through `flux-tokenmm-telemetry-health.timer` and checks disk usage,
   telemetry directory size, and shipper lag.
 - Production cutover helper:
-  - `sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py --wait-for-catchup --delete-local-after-cutover`
+  - `sudo .venv/bin/python ops/scripts/deploy/tokenmm_telemetry_cutover.py --wait-for-catchup --archive-quote-cycles --archive-s3-bucket <bucket>`
 - Local SQLite verification:
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/orders.sqlite 'SELECT COUNT(*) FROM order_action;'`
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/fills.sqlite 'SELECT COUNT(*) FROM execution_fill;'`
   - `sqlite3 /var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite 'SELECT COUNT(*) FROM quote_cycle;'`
-- For shipped Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
+- For shipped archives and optional Postgres telemetry, follow `deploy/tokenmm/TELEMETRY_RDS_RUNBOOK.md`.
 
 ## Local smoke only
 

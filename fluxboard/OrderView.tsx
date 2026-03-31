@@ -12,8 +12,10 @@ import { socket } from './sockets';
 import {
   bumpGlobalResync,
   markGlobalResyncApplied,
+  registerGlobalResyncConsumer,
   selectResyncId,
   shallow,
+  unregisterGlobalResyncConsumer,
   useResyncStore,
 } from './stores';
 import { useOrderViewStore } from './stores/orderViewStore';
@@ -334,7 +336,9 @@ export default function OrderView() {
 
   useEffect(() => {
     mountedRef.current = true;
+    registerGlobalResyncConsumer('order-view');
     return () => {
+      unregisterGlobalResyncConsumer('order-view');
       mountedRef.current = false;
       fetchTokenRef.current += 1;
       pendingDeltasRef.current = [];

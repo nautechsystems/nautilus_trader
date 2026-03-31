@@ -114,6 +114,22 @@ class AudioManager {
   }
 
   /**
+   * Prime the shared AudioContext during a user gesture so future trade sounds
+   * can play without requiring the first live trade itself to unlock audio.
+   */
+  public prime(): void {
+    const context = this.getContext();
+    if (!context) {
+      return;
+    }
+    if (context.state === 'suspended') {
+      context.resume().catch(() => {
+        console.debug('[sound] Failed to resume AudioContext during prime');
+      });
+    }
+  }
+
+  /**
    * Clean up AudioContext (call on app unmount)
    */
   public cleanup(): void {
@@ -138,6 +154,10 @@ const audioManager = new AudioManager();
  */
 export function playTradeClick(): void {
   audioManager.playTradeClick();
+}
+
+export function primeTradeAudio(): void {
+  audioManager.prime();
 }
 
 /**

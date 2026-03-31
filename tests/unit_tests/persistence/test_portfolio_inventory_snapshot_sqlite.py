@@ -137,3 +137,74 @@ def test_portfolio_inventory_snapshot_writer_tracks_current_inventory_semantics(
     assert row[6] == "[]"
     assert row[7] == 1
     assert row[8] == 2
+
+
+def test_portfolio_inventory_snapshot_writer_ignores_component_timestamp_only_churn(
+    tmp_path,
+) -> None:
+    from nautilus_trader.flux.persistence.portfolio_inventory_snapshots.sqlite import (
+        PortfolioInventorySnapshotWriter,
+    )
+
+    db_path = tmp_path / "portfolio_inventory.sqlite"
+    writer = PortfolioInventorySnapshotWriter(
+        db_path=str(db_path),
+        unchanged_heartbeat_ms=5_000,
+    )
+    try:
+        payload = {
+            "portfolio_id": "tokenmm",
+            "base_currency": "PLUME",
+            "global_qty_base": "30380.87342792",
+            "global_qty": "30380.87342792",
+            "aggregation_mode": "partial",
+            "global_qty_base_complete": True,
+            "global_qty_complete": True,
+            "stale_after_ms": 3_000,
+            "degraded": False,
+            "missing_required": [],
+            "stale_required": [],
+            "null_qty_required": [],
+            "usable_component_count": 7,
+            "expected_component_count": 7,
+            "components": [
+                {
+                    "strategy_id": "plumeusdt_binance_spot_makerv3",
+                    "required": True,
+                    "fresh": True,
+                    "stale": False,
+                    "missing": False,
+                    "local_qty_base": "-20733.81960162",
+                    "local_qty": "-20733.81960162",
+                    "ts_ms": 1_000,
+                    "state": "running",
+                },
+            ],
+        }
+
+        assert writer.maybe_persist(payload=payload, ts_ms=1_000) is True
+        assert (
+            writer.maybe_persist(
+                payload={
+                    **payload,
+                    "components": [
+                        {
+                            **payload["components"][0],
+                            "ts_ms": 1_250,
+                        },
+                    ],
+                },
+                ts_ms=1_250,
+            )
+            is False
+        )
+    finally:
+        writer.close()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM portfolio_inventory_snapshot").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 1

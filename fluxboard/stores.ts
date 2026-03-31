@@ -429,22 +429,44 @@ type ResyncStore = {
   lastReason?: string;
   lastBumpAt?: number;
   appliedBy: Record<string, number>;
+  mountedConsumers: Record<string, number>;
+  requiredConsumers: string[];
   bumpResync: (reason: string) => number;
+  registerResyncConsumer: (consumer: string) => void;
+  unregisterResyncConsumer: (consumer: string) => void;
   markResyncApplied: (consumer: string, resyncId: number) => void;
   resetResyncState: () => void;
 };
 
-export const RESYNC_ACK_CONSUMERS = ['trades', 'order-view'] as const;
+export const DEFAULT_RESYNC_ACK_CONSUMERS = ['trades'] as const;
+
+const normalizeResyncConsumer = (consumer: unknown): string =>
+  typeof consumer === 'string' ? consumer.trim() : '';
+
+const getResyncRequiredConsumers = (mountedConsumers: Record<string, number>): string[] => {
+  const mounted = Object.entries(mountedConsumers)
+    .filter(([, count]) => count > 0)
+    .map(([consumer]) => consumer);
+  return mounted.length ? mounted : [...DEFAULT_RESYNC_ACK_CONSUMERS];
+};
 
 const hasCurrentResyncAckFromAllConsumers = (
   resyncId: number,
   appliedBy: Record<string, number>,
+  requiredConsumers: string[],
 ): boolean => {
   if (resyncId <= 0) {
     return false;
   }
-  return RESYNC_ACK_CONSUMERS.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
+  return requiredConsumers.every((consumer) => (appliedBy[consumer] ?? 0) >= resyncId);
 };
+
+const hasPendingResyncForConsumers = (
+  state: Pick<ResyncStore, 'isResyncing' | 'resyncId' | 'appliedBy'>,
+  requiredConsumers: string[],
+): boolean =>
+  state.isResyncing
+  && !hasCurrentResyncAckFromAllConsumers(state.resyncId, state.appliedBy, requiredConsumers);
 
 export const useResyncStore = create<ResyncStore>((set, get) => ({
   resyncId: 0,
@@ -452,21 +474,74 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
   lastReason: undefined,
   lastBumpAt: undefined,
   appliedBy: {},
+  mountedConsumers: {},
+  requiredConsumers: [...DEFAULT_RESYNC_ACK_CONSUMERS],
 
   bumpResync: (reason) => {
-    const nextResyncId = get().resyncId + 1;
+    const state = get();
+    const nextResyncId = state.resyncId + 1;
+    const requiredConsumers = getResyncRequiredConsumers(state.mountedConsumers);
     set({
       resyncId: nextResyncId,
       isResyncing: true,
       lastReason: reason,
       lastBumpAt: Date.now(),
+      requiredConsumers,
     });
     return nextResyncId;
   },
 
+  registerResyncConsumer: (consumer) =>
+    set((state) => {
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
+      if (!normalizedConsumer) {
+        return state;
+      }
+
+      const mountedCount = state.mountedConsumers[normalizedConsumer] ?? 0;
+      const mountedConsumers = {
+        ...state.mountedConsumers,
+        [normalizedConsumer]: mountedCount + 1,
+      };
+      const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
+
+      return {
+        mountedConsumers,
+        requiredConsumers,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
+      };
+    }),
+
+  unregisterResyncConsumer: (consumer) =>
+    set((state) => {
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
+      if (!normalizedConsumer) {
+        return state;
+      }
+
+      const mountedCount = state.mountedConsumers[normalizedConsumer] ?? 0;
+      if (mountedCount <= 0) {
+        return state;
+      }
+
+      const mountedConsumers = { ...state.mountedConsumers };
+      if (mountedCount <= 1) {
+        delete mountedConsumers[normalizedConsumer];
+      } else {
+        mountedConsumers[normalizedConsumer] = mountedCount - 1;
+      }
+      const requiredConsumers = getResyncRequiredConsumers(mountedConsumers);
+
+      return {
+        mountedConsumers,
+        requiredConsumers,
+        isResyncing: hasPendingResyncForConsumers(state, requiredConsumers),
+      };
+    }),
+
   markResyncApplied: (consumer, resyncId) =>
     set((state) => {
-      const normalizedConsumer = typeof consumer === 'string' ? consumer.trim() : '';
+      const normalizedConsumer = normalizeResyncConsumer(consumer);
       const normalizedResyncId = coerceResyncId(resyncId);
       if (!normalizedConsumer || normalizedResyncId === undefined) {
         return state;
@@ -478,7 +553,11 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       }
 
       const appliedBy = { ...state.appliedBy, [normalizedConsumer]: normalizedResyncId };
-      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(state.resyncId, appliedBy);
+      const isResyncComplete = hasCurrentResyncAckFromAllConsumers(
+        state.resyncId,
+        appliedBy,
+        state.requiredConsumers,
+      );
 
       return {
         appliedBy,
@@ -493,6 +572,8 @@ export const useResyncStore = create<ResyncStore>((set, get) => ({
       lastReason: undefined,
       lastBumpAt: undefined,
       appliedBy: {},
+      mountedConsumers: {},
+      requiredConsumers: [...DEFAULT_RESYNC_ACK_CONSUMERS],
     }),
 }));
 
@@ -504,6 +585,14 @@ export const selectResyncAppliedBy = (state: ResyncStore) => state.appliedBy;
 
 export const bumpGlobalResync = (reason: string): number =>
   useResyncStore.getState().bumpResync(reason);
+
+export const registerGlobalResyncConsumer = (consumer: string): void => {
+  useResyncStore.getState().registerResyncConsumer(consumer);
+};
+
+export const unregisterGlobalResyncConsumer = (consumer: string): void => {
+  useResyncStore.getState().unregisterResyncConsumer(consumer);
+};
 
 export const markGlobalResyncApplied = (consumer: string, resyncId: number): void => {
   useResyncStore.getState().markResyncApplied(consumer, resyncId);
@@ -1059,16 +1148,90 @@ const normalizeSignalTrade = (trade: SignalStrategy['last_trade']): SignalStrate
   };
 };
 
+function normalizeNonNegativeInt(value: unknown): number {
+  const coerced = coerceNumber(value);
+  if (coerced === undefined) return 0;
+  return Math.max(0, Math.trunc(coerced));
+}
+
+function sanitizeMakerQuoteStatusForManagedOrders(
+  makerQuoteStatus: SignalStrategy['maker_quote_status'],
+  managedOrders: unknown,
+): SignalStrategy['maker_quote_status'] {
+  if (!makerQuoteStatus) return makerQuoteStatus;
+  if (normalizeNonNegativeInt(managedOrders) !== 0) return makerQuoteStatus;
+
+  const bidDepth = normalizeNonNegativeInt(makerQuoteStatus.bid_depth);
+  const askDepth = normalizeNonNegativeInt(makerQuoteStatus.ask_depth);
+
+  return {
+    ...makerQuoteStatus,
+    bid_open: 0,
+    ask_open: 0,
+    bid_blocked: bidDepth,
+    ask_blocked: askDepth,
+  };
+}
+
+function sanitizeMakerQuoteStacksForManagedOrders(
+  quoteStacks: SignalStrategy['quote_stacks'],
+  managedOrders: unknown,
+): SignalStrategy['quote_stacks'] {
+  if (!quoteStacks) return quoteStacks;
+  if (normalizeNonNegativeInt(managedOrders) !== 0) return quoteStacks;
+  if (!quoteStacks.maker?.bands) return quoteStacks;
+
+  return {
+    ...quoteStacks,
+    maker: {
+      ...quoteStacks.maker,
+      bands: quoteStacks.maker.bands.map((band) => {
+        const bidDepth = normalizeNonNegativeInt(band?.bid?.depth);
+        const askDepth = normalizeNonNegativeInt(band?.ask?.depth);
+        return {
+          ...band,
+          bid: {
+            ...band.bid,
+            open: 0,
+            blocked: bidDepth,
+          },
+          ask: {
+            ...band.ask,
+            open: 0,
+            blocked: askDepth,
+          },
+        };
+      }),
+    },
+  };
+}
+
+function sanitizeSignalQuoteTelemetry(strategy: SignalStrategy): SignalStrategy {
+  if (!strategy) return strategy;
+
+  return {
+    ...strategy,
+    maker_quote_status: sanitizeMakerQuoteStatusForManagedOrders(
+      strategy.maker_quote_status,
+      strategy.managed_orders,
+    ),
+    quote_stacks: sanitizeMakerQuoteStacksForManagedOrders(
+      strategy.quote_stacks,
+      strategy.managed_orders,
+    ),
+  };
+}
+
 const normalizeSignalStrategy = (strategy: SignalStrategy): SignalStrategy => {
   if (!strategy) return strategy;
   const normalizedLastTrade =
     strategy.last_trade === undefined
       ? undefined
       : normalizeSignalTrade(strategy.last_trade ?? null);
-  return {
+  return sanitizeSignalQuoteTelemetry({
     ...strategy,
     last_trade: normalizedLastTrade,
-  };
+  });
 };
 
 function mergeNestedRecord<T extends Record<string, any> | null | undefined>(
@@ -1081,10 +1244,12 @@ function mergeNestedRecord<T extends Record<string, any> | null | undefined>(
   return { ...prev, ...next } as T;
 }
 
-function mergeArbSignalPayload<T extends { operator?: Record<string, any> | null; quote_snapshot?: Record<string, any> | null } | null | undefined>(
-  prev: T,
-  next: T,
-): T {
+function mergeArbSignalPayload<
+  T extends {
+    operator?: Record<string, any> | null;
+    quote_snapshot?: Record<string, any> | null;
+  } | null | undefined,
+>(prev: T, next: T): T {
   if (next === undefined) return prev;
   if (next === null) return next;
   if (prev === null || prev === undefined) {
@@ -1160,7 +1325,7 @@ const mergeSignalStrategyRows = (
         : prev.params;
 
     // Sticky edge fields: when WS snapshot momentarily omits decision/edge2, keep last known
-    const merged: SignalStrategy = {
+    const merged = sanitizeSignalQuoteTelemetry({
       ...prev,
       ...normalizedIncoming,
       params: mergedParams as any,
@@ -1180,7 +1345,7 @@ const mergeSignalStrategyRows = (
       ),
       equities_arb: mergeArbSignalPayload(prev.equities_arb, normalizedIncoming.equities_arb),
       maker_v4: mergeArbSignalPayload(prev.maker_v4, normalizedIncoming.maker_v4),
-    };
+    });
 
     // Recompute edge2_bps to maintain invariant: edge2 = decision_edge - required_edge
     // This prevents stale edge2_bps when decision_edge_bps changes but edge2_bps was omitted in update

@@ -113,12 +113,12 @@ strategy_class = "maker_v3"
 strategy_groups = "tokenmm"
 base_asset = "PLUME"
 quote_asset = "USDT"
-# Phase 1 TokenMM registry contract:
+# Production TokenMM registry contract:
 # - `tokenmm_strategy_ids` values are Flux strategy IDs (`[identity].strategy_id` in per-node configs).
 # - `tokenmm_required_strategy_ids` are the contributors currently required for
 #   shared TokenMM portfolio completeness.
-# - Keep `tokenmm_strategy_ids` as the 7-node allowlist; parked venues can stay
-#   allowlisted without degrading the shared portfolio snapshot.
+# - Keep `tokenmm_strategy_ids` and `tokenmm_required_strategy_ids` aligned to
+#   the full 7-node live production set.
 tokenmm_strategy_ids = [
   "plumeusdt_bybit_perp_makerv3",
   "plumeusdt_bybit_spot_makerv3",
@@ -138,14 +138,41 @@ tokenmm_required_strategy_ids = [
   "plumeusdt_bitget_spot_makerv3",
 ]
 
+[controller]
+controller_scope_id = "tokenmm.binance.pm.main"
+account_scope_id = "binance.pm.main"
+mode = "active"
+write_ownership_enabled = true
+lease_ttl_ms = 15000
+managed_strategy_ids = [
+  "plumeusdt_binance_perp_makerv3",
+  "plumeusdt_binance_spot_makerv3",
+]
+
 [telemetry_shipper]
 enabled = true
 enable_local_persistence = true
 source_profile = "tokenmm"
+durable_sink = "postgres"
+archive_s3_prefix = "nautilus/telemetry/tokenmm"
+athena_database = "nautilus_telemetry"
+athena_workgroup = "primary"
+raw_quote_cycles_enabled = true
+raw_quote_cycle_local_hours = 48
+raw_quote_cycle_s3_days = 7
+core_history_s3_days = 365
+structured_local_cap_gb = 8
+quote_cycle_local_cap_gb = 12
 fills_db_path = "/var/lib/nautilus/telemetry/tokenmm/fills.sqlite"
 orders_db_path = "/var/lib/nautilus/telemetry/tokenmm/orders.sqlite"
 quote_cycles_db_path = "/var/lib/nautilus/telemetry/tokenmm/quote_cycles.sqlite"
 markouts_db_path = "/var/lib/nautilus/telemetry/tokenmm/markouts.sqlite"
+balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
+state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
+poll_interval_ms = 1000
+max_batch_size = 500
+prune_retention_hours = 48
 markout_horizons_s = [0, 30, 60, 120]
 [[telemetry_shipper.markout_benchmarks]]
 benchmark_name = "fv_market_mid"
@@ -154,13 +181,6 @@ benchmark_field = "fv"
 [[telemetry_shipper.markout_benchmarks]]
 benchmark_name = "local_mkt_mid"
 benchmark_field = "maker_mid"
-
-balance_snapshots_db_path = "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
-portfolio_inventory_db_path = "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
-state_db_path = "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
-poll_interval_ms = 1000
-max_batch_size = 500
-prune_retention_hours = 48
 
 [portfolio]
 portfolio_id = "tokenmm"
@@ -177,6 +197,116 @@ allow_partial_global_risk = true
 # - `inventory_aggregation_mode = "partial"` keeps a usable `global_qty` from fresh contributors and
 #   exposes incompleteness through metadata rather than nulling the quantity.
 # - `allow_partial_global_risk = true` allows strategies to consume partial shared inventory intentionally.
+
+[[account_scopes]]
+scope_id = "bybit.unified.main"
+provider = "disabled"
+venue = "BYBIT"
+
+[[account_scopes]]
+scope_id = "okx.main"
+provider = "disabled"
+venue = "OKX"
+
+[[account_scopes]]
+scope_id = "bitget.uta.main"
+provider = "disabled"
+venue = "BITGET"
+
+[[account_scopes]]
+scope_id = "binance.pm.main"
+provider = "binance"
+venue = "BINANCE"
+api_key_env = "BINANCE_API_KEY"
+api_secret_env = "BINANCE_API_SECRET"
+account_type = "PORTFOLIO_MARGIN"
+private_api_family = "PORTFOLIO_MARGIN"
+controller_scope_id = "tokenmm.binance.pm.main"
+
+[[controller_scopes]]
+controller_scope_id = "tokenmm.binance.pm.main"
+profile_id = "tokenmm"
+writer_account_scope_id = "binance.pm.main"
+account_scope_ids = ["binance.pm.main"]
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bybit_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BYBIT"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-LINEAR.BYBIT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bybit.unified.main"
+reference_account_scope_id = "bybit.unified.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bybit_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BYBIT"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT-SPOT.BYBIT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bybit.unified.main"
+reference_account_scope_id = "bybit.unified.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_okx_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "OKX"
+maker_symbol = "PLUME-USDT-SWAP"
+market_type = "perp"
+maker_instrument_id = "PLUME-USDT-SWAP.OKX"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "okx.main"
+reference_account_scope_id = "okx.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_binance_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BINANCE_PERP"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-PERP.BINANCE_PERP"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "binance.pm.main"
+reference_account_scope_id = "binance.pm.main"
+controller_scope_id = "tokenmm.binance.pm.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_binance_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BINANCE_SPOT"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "binance.pm.main"
+reference_account_scope_id = "binance.pm.main"
+controller_scope_id = "tokenmm.binance.pm.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bitget_perp_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BITGET"
+maker_symbol = "PLUMEUSDT"
+market_type = "perp"
+maker_instrument_id = "PLUMEUSDT-PERP.BITGET"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bitget.uta.main"
+reference_account_scope_id = "bitget.uta.main"
+
+[[strategy_contracts]]
+strategy_id = "plumeusdt_bitget_spot_makerv3"
+portfolio_asset_id = "PLUME"
+maker_venue = "BITGET"
+maker_symbol = "PLUMEUSDT"
+market_type = "spot"
+maker_instrument_id = "PLUMEUSDT.BITGET"
+reference_instrument_id = "PLUMEUSDT.BINANCE_SPOT"
+execution_account_scope_id = "bitget.uta.main"
+reference_account_scope_id = "bitget.uta.main"
 
 [[contracts]]
 exchange = "bybit"

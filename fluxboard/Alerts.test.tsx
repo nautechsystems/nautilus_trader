@@ -59,6 +59,7 @@ function createMockStore(): MockAlertsStore {
     dismissAlert: vi.fn(),
     clearAlerts: vi.fn(() => {
       mockStoreState.rows = [];
+      mockStoreState.dismissedIds = new Set<string>();
     }),
   };
 }
@@ -117,12 +118,20 @@ function createStandardAlertsSnapshot(
   });
 }
 
+function attachAlertsCapabilities(
+  rows: Alert[],
+  capabilities: Record<string, unknown>,
+): Alert[] & { capabilities: Record<string, unknown> } {
+  return Object.assign(rows, { capabilities });
+}
+
 describe('Alerts', () => {
   let marketUpdateHandler: ((payload: unknown) => void) | null;
   let standardSubscriptionOptions: Record<string, any> | null;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/alerts');
     mockStoreState = createMockStore();
     alertsStoreRuntime.current = mockStoreState;
     marketUpdateHandler = null;
@@ -796,16 +805,82 @@ describe('Alerts', () => {
   });
 
   it('clears all alerts after confirmation', async () => {
-    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    mockStoreState.rows = [
+      createAlert({
+        id: 'alert-visible',
+        title: 'Critical path blocked',
+        message: 'Critical path blocked',
+      }),
+    ];
+    mockStoreState.dismissedIds = new Set(['alert-reused']);
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(
+        attachAlertsCapabilities(
+          [
+            createAlert({
+              id: 'alert-visible',
+              title: 'Critical path blocked',
+              message: 'Critical path blocked',
+            }),
+          ],
+          { feed_mode: 'history', clear_mode: 'all' },
+        ),
+      )
+      .mockResolvedValueOnce(attachAlertsCapabilities([], { feed_mode: 'history', clear_mode: 'all' }));
+    (apiModule.api.clearAlerts as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      deleted: 1,
+      remaining: 0,
+      capabilities: { feed_mode: 'history', clear_mode: 'all' },
+    });
 
     render(<Alerts />);
+
+    await waitFor(() => {
+      expect(apiModule.api.getAlerts).toHaveBeenCalledTimes(1);
+    });
 
     fireEvent.click(screen.getByText('Clear All'));
     fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
 
     await waitFor(() => {
       expect(apiModule.api.clearAlerts).toHaveBeenCalledTimes(1);
+      expect(apiModule.api.getAlerts).toHaveBeenCalledTimes(2);
       expect(mockStoreState.clearAlerts).toHaveBeenCalledTimes(1);
+      expect(mockStoreState.dismissedIds).toEqual(new Set());
+      const lastRows = mockStoreState.setRows.mock.calls.at(-1)?.[0] as Alert[] | undefined;
+      expect(Array.isArray(lastRows)).toBe(true);
+      expect(lastRows).toHaveLength(0);
+    });
+  });
+
+  it('hides Clear All when the alerts feed only supports history clearing', async () => {
+    window.history.replaceState({}, '', '/alerts');
+    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      attachAlertsCapabilities(
+        [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })],
+        { feed_mode: 'active', clear_mode: 'history_only' },
+      ),
+    );
+
+    render(<Alerts />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('keeps Clear All hidden until the API explicitly advertises full clear support', async () => {
+    mockStoreState.rows = [createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' })];
+    (apiModule.api.getAlerts as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      createAlert({ title: 'Critical path blocked', message: 'Critical path blocked' }),
+    ]);
+
+    render(<Alerts />);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Clear All' })).not.toBeInTheDocument();
     });
   });
 

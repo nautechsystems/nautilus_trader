@@ -31,9 +31,9 @@ Use it together with `deploy/tokenmm/README.md`,
   Per-strategy debug surface. Use this to confirm the strategy's own published
   local balance source when a single node looks wrong.
 - `GET /api/v1/readiness?profile=tokenmm`
-  Authoritative for profile-level readiness, required-strategy freshness, and
-  whether TokenMM should be treated as safe to run after a restart or publish
-  interruption.
+  Authoritative for profile-level readiness, required-strategy freshness,
+  operator-visible Signal health, and whether TokenMM should be treated as safe
+  to run after a restart or publish interruption.
 - `GET /api/pulse/jobs`
   Authoritative for TokenMM job health and whether the restarted services are
   active, failed, or still recovering. Treat `status = active` as service
@@ -79,6 +79,30 @@ authoritative operator entrypoint lives under `ops/scripts/`.
 6. Confirm the merged balances rows and totals are the shared portfolio output,
    not independently recomputed strategy rows.
 7. Confirm the API payload exposes backend-authored `risk_groups`, `risk_groups[].rows`, and row `risk_key` / `risk_label` semantics used by Fluxboard drilldown.
+8. Confirm the shared Binance collateral row for `binance.pm.main` appears only once and carries `controller_scope_id = "tokenmm.binance.pm.main"` plus `authority_state = "active"`.
+
+## Controller-owned shared Binance lane
+
+`binance.pm.main` is now a controller-owned shared writer domain. Treat
+`flux@tokenmm-controller.service` as the authoritative owner for:
+
+- shared Binance startup reconciliation
+- shared Binance collateral truth in `balances?profile=tokenmm`
+- shared Binance writer-domain activation and rollback
+
+Do not treat the per-strategy Binance node services as the authoritative
+startup-reconciliation owner for `binance.pm.main` once the controller lane is
+enabled.
+
+Before enabling trading on the shared Binance domain:
+
+1. Confirm `systemctl status flux@tokenmm-controller.service` is active.
+2. Confirm `curl -fsS 'http://127.0.0.1:5022/api/v1/balances?profile=tokenmm'`
+   shows exactly one `binance.pm.main` collateral row for each shared asset.
+3. Confirm the shared Binance row exposes `controller_scope_id` and
+   `authority_state = "active"`.
+4. Confirm `python ops/scripts/failover/controller_scope_failover.py --profile tokenmm --scope binance.pm.main --multi-box --check-thresholds`
+   passes on the exact release root you intend to promote.
 
 ## Degraded metadata
 
@@ -172,14 +196,21 @@ Run these checks after a Pulse restart and before enabling trading:
 2. Confirm `readiness?profile=tokenmm` reports `ok = true`, `failed_checks = []`,
    and `ready_strategy_count == required_strategy_count`.
 3. Confirm `signals?profile=tokenmm` returns all expected strategies.
-4. Confirm `balances?profile=tokenmm` is sourced from `portfolio_snapshot`.
-5. Confirm no strategy remains in `blocked_reconciliation`.
-6. Confirm the local strategy view, per-strategy debug balances view, and shared
+4. Confirm every required Signal row is operator-ready:
+   - `mode = ON`
+   - `blocked = false`
+   - `tradeable = true`
+   - `local_qty_base` and `global_qty_base` are present
+   - `global_qty_base_complete = true`
+   - `maker_quote_status` is populated
+5. Confirm `balances?profile=tokenmm` is sourced from `portfolio_snapshot`.
+6. Confirm no strategy remains in `blocked_reconciliation`.
+7. Confirm the local strategy view, per-strategy debug balances view, and shared
    portfolio component agree for each strategy.
-7. Confirm degraded metadata is either absent or explicitly explained.
-8. Confirm `python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022`
+8. Confirm degraded metadata is either absent or explicitly explained.
+9. Confirm `python ops/scripts/tokenmm_risk_audit.py --base-url http://127.0.0.1:5022`
    prints a success banner containing `readiness=<required>/<required>`.
-9. For any node that previously failed startup reconciliation, confirm the
+10. For any node that previously failed startup reconciliation, confirm the
    journal shows either a clean startup with no mismatch or the startup-only
    stale-`EXTERNAL` cleanup signature above.
 
@@ -190,7 +221,7 @@ Required production sign-off:
 1. all targeted unit tests green
 2. TokenMM group restarted cleanly through Pulse
 3. `readiness?profile=tokenmm` is green for all required strategies and shows no
-   failed freshness checks
+   failed freshness or operator-surface checks
 4. `signals`, `balances(profile=tokenmm)`, and `balances(strategy=<id>)` agree
    for each strategy according to contract
 5. partial vs strict `global_qty` semantics are visible and documented

@@ -25,6 +25,18 @@ def _tokenmm_required_strategy_ids() -> list[str]:
     return [str(item).strip() for item in raw_ids if str(item).strip()]
 
 
+def _tokenmm_account_scopes() -> list[dict]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_rows = config.get("account_scopes") or []
+    return [dict(row) for row in raw_rows if isinstance(row, dict)]
+
+
+def _tokenmm_strategy_contracts() -> list[dict]:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    raw_rows = config.get("strategy_contracts") or []
+    return [dict(row) for row in raw_rows if isinstance(row, dict)]
+
+
 def _strategy_config_path(strategy_id: str) -> Path:
     strategies_dir = _repo_root() / "deploy/tokenmm/strategies"
     active_path = strategies_dir / f"{strategy_id}.toml"
@@ -36,6 +48,8 @@ def _strategy_config_path(strategy_id: str) -> Path:
 
 TOKENMM_STRATEGY_IDS = _tokenmm_strategy_ids()
 TOKENMM_REQUIRED_STRATEGY_IDS = _tokenmm_required_strategy_ids()
+TOKENMM_ACCOUNT_SCOPES = _tokenmm_account_scopes()
+TOKENMM_STRATEGY_CONTRACTS = _tokenmm_strategy_contracts()
 TOKENMM_SUPPORTED_CORE_STRATEGY_IDS = [
     "plumeusdt_bybit_perp_makerv3",
     "plumeusdt_bybit_spot_makerv3",
@@ -83,6 +97,20 @@ def test_tokenmm_stack_script_defaults_to_safe_non_trading_runtime() -> None:
     )
 
 
+def test_tokenmm_managed_prod_box_design_prefers_lean_s3_first_architecture() -> None:
+    design_doc = _read(_repo_root() / "docs/plans/2026-03-26-aws-managed-prod-boxes-design.md")
+    implementation_plan = _read(_repo_root() / "docs/plans/2026-03-26-aws-managed-prod-boxes.md")
+
+    assert "No manual AWS console steps." in design_doc
+    assert "`Amazon S3`" in design_doc
+    assert "`Amazon Athena`" in design_doc
+    assert "explicitly **deferred**" in design_doc
+    assert "CloudWatch Logs: `7 days` default" in design_doc
+    assert "raw quote-cycle history" in design_doc
+    assert "S3 and Athena first" in implementation_plan
+    assert "RDS is not part of the current required rollout" in implementation_plan
+
+
 def test_tokenmm_stack_script_manages_portfolio_aggregator_service() -> None:
     script = _read(_repo_root() / "ops/scripts/deploy/tokenmm_stack.sh")
 
@@ -103,6 +131,12 @@ def test_tokenmm_binance_spot_strategy_uses_supported_margin_family_account_type
     assert shared_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     _assert_tokenmm_binance_spot_strategy_identity_contract(strategy_config)
+
+
+def test_tokenmm_live_controller_lease_ttl_is_explicitly_hardened_for_prod() -> None:
+    shared_config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+
+    assert int(shared_config["controller"]["lease_ttl_ms"]) >= 15_000
 
 
 def test_tokenmm_binance_spot_portfolio_margin_variant_preserves_identity_contract() -> None:
@@ -139,8 +173,8 @@ def test_tokenmm_binance_spot_strategy_pins_supported_margin_contract() -> None:
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["account_type"] == "PORTFOLIO_MARGIN"
     assert strategy_config["node"]["venues"]["BINANCE_SPOT"]["allow_cash_borrowing"] is True
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "both_sides"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_binance_perp_strategy_uses_portfolio_margin_private_api_family() -> None:
@@ -173,8 +207,8 @@ def test_tokenmm_bitget_spot_strategy_declares_uta_borrowing_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
     assert strategy_config["strategy"]["spot_cash_borrowing_policy"] == "sell_only"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
@@ -187,8 +221,15 @@ def test_tokenmm_bitget_perp_strategy_declares_uta_one_way_contract() -> None:
     assert strategy_config["node"]["venues"]["BITGET"]["account_mode"] == "UTA"
     assert strategy_config["node"]["venues"]["BITGET"]["margin_mode"] == "cross"
     assert strategy_config["node"]["venues"]["BITGET"]["position_mode"] == "one_way"
-    assert strategy_config["strategy"]["force_bot_off_on_start"] is True
-    assert strategy_config["strategy"]["bot_on"] is False
+    assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+    assert strategy_config["strategy"]["bot_on"] is True
+
+
+def test_tokenmm_all_live_strategy_configs_resume_quoting_after_clean_restart() -> None:
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        strategy_config = tomllib.load(_strategy_config_path(strategy_id).open("rb"))
+        assert strategy_config["strategy"]["force_bot_off_on_start"] is False
+        assert strategy_config["strategy"]["bot_on"] is True
 
 
 def test_tokenmm_active_strategy_ids_have_active_toml_files() -> None:
@@ -215,6 +256,71 @@ def test_tokenmm_registry_requires_all_supported_live_core_strategies() -> None:
     assert set(TOKENMM_REQUIRED_STRATEGY_IDS).issubset(TOKENMM_STRATEGY_IDS)
     assert "plumeusdt_binance_perp_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
     assert "plumeusdt_binance_spot_makerv3" in TOKENMM_REQUIRED_STRATEGY_IDS
+
+
+def test_tokenmm_live_config_declares_shared_account_scope_for_binance() -> None:
+    scopes_by_id = {
+        str(row["scope_id"]).strip(): row
+        for row in TOKENMM_ACCOUNT_SCOPES
+        if str(row.get("scope_id") or "").strip()
+    }
+
+    assert "binance.pm.main" in scopes_by_id
+    assert scopes_by_id["binance.pm.main"]["provider"] == "binance"
+    assert scopes_by_id["binance.pm.main"]["venue"] == "BINANCE"
+    assert scopes_by_id["binance.pm.main"]["api_key_env"] == "BINANCE_API_KEY"
+    assert scopes_by_id["binance.pm.main"]["api_secret_env"] == "BINANCE_API_SECRET"
+    assert scopes_by_id["binance.pm.main"]["private_api_family"] == "PORTFOLIO_MARGIN"
+
+
+def test_tokenmm_live_config_declares_strategy_contracts_for_tokenmm_allowlist() -> None:
+    contracts_by_strategy = {
+        str(row["strategy_id"]).strip(): row
+        for row in TOKENMM_STRATEGY_CONTRACTS
+        if str(row.get("strategy_id") or "").strip()
+    }
+
+    assert set(TOKENMM_STRATEGY_IDS).issubset(contracts_by_strategy)
+    assert len(contracts_by_strategy) == len(TOKENMM_STRATEGY_IDS)
+
+    for strategy_id in TOKENMM_STRATEGY_IDS:
+        contract = contracts_by_strategy[strategy_id]
+        assert contract["portfolio_asset_id"] == "PLUME"
+        assert str(contract["maker_instrument_id"]).strip()
+        assert str(contract["reference_instrument_id"]).strip()
+        assert str(contract["execution_account_scope_id"]).strip()
+        assert str(contract["reference_account_scope_id"]).strip()
+
+    binance_perp = contracts_by_strategy["plumeusdt_binance_perp_makerv3"]
+    binance_spot = contracts_by_strategy["plumeusdt_binance_spot_makerv3"]
+    assert binance_perp["execution_account_scope_id"] == "binance.pm.main"
+    assert binance_spot["execution_account_scope_id"] == "binance.pm.main"
+    assert binance_perp["execution_account_scope_id"] == binance_spot["execution_account_scope_id"]
+
+
+def test_tokenmm_live_config_binds_shared_binance_writer_domains_to_a_controller_scope() -> None:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    controller = config.get("controller", {})
+    contracts_by_strategy = {
+        str(row["strategy_id"]).strip(): row
+        for row in TOKENMM_STRATEGY_CONTRACTS
+        if str(row.get("strategy_id") or "").strip()
+    }
+
+    assert controller["controller_scope_id"] == "tokenmm.binance.pm.main"
+    assert controller["account_scope_id"] == "binance.pm.main"
+    assert controller["mode"] == "active"
+    assert controller["write_ownership_enabled"] is True
+    assert controller["managed_strategy_ids"] == [
+        "plumeusdt_binance_perp_makerv3",
+        "plumeusdt_binance_spot_makerv3",
+    ]
+    assert contracts_by_strategy["plumeusdt_binance_perp_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
+    assert contracts_by_strategy["plumeusdt_binance_spot_makerv3"]["controller_scope_id"] == (
+        "tokenmm.binance.pm.main"
+    )
 
 
 def test_tokenmm_stack_script_builds_and_serves_pulse_ui() -> None:
@@ -277,6 +383,29 @@ def test_tokenmm_systemd_installer_wires_pulse_metadata_for_live_services() -> N
     assert "`/etc/flux/common.env`" in runbook
     assert "non-worktree deploy root" in runbook
     assert "pins `WORKDIR`, `PYTHONPATH`, and the checkout `.venv/bin/python`" not in runbook
+
+
+def test_tokenmm_systemd_contract_adds_a_controller_service_for_managed_binance_domains() -> None:
+    target_unit = _read(_repo_root() / "deploy/tokenmm/systemd/flux-tokenmm.target")
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
+    assert "tokenmm-controller" in install_script
+    assert (
+        "nautilus_trader.flux.runners.tokenmm.run_controller --config ${SHARED_CONFIG} --mode live --confirm-live"
+        in install_script
+    )
+    assert "binance.pm.main" in install_script
+    assert "controller-owned shared Binance writer domains stay on the controller lane" in install_script
+
+
+def test_tokenmm_systemd_contract_skips_local_execution_for_controller_managed_binance_nodes() -> None:
+    install_script = _read(_repo_root() / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+
+    assert 'controller_managed_strategy=0' in install_script
+    assert 'plumeusdt_binance_perp_makerv3|plumeusdt_binance_spot_makerv3' in install_script
+    assert 'exec_flag+=(--enable-execution)' in install_script
+    assert '${exec_flag[*]}' in install_script
 
 
 def test_tokenmm_jupyter_service_assets_are_localhost_only_and_documented() -> None:
@@ -673,6 +802,7 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
     common_env = _read(repo_root / "deploy/tokenmm/systemd/common.env.example")
     sudoers = _read(repo_root / "deploy/tokenmm/systemd/flux-pulse.sudoers")
+    deploy_readme = _read(repo_root / "deploy/tokenmm/README.md")
 
     assert "EnvironmentFile=-/etc/flux/common.env" in service_template
     assert "EnvironmentFile=/etc/flux/%i.env" in service_template
@@ -680,13 +810,19 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert 'if [ -n "${PORT:-}" ]; then' in service_template
     assert "SyslogIdentifier=flux-%i" in service_template
     assert "RestartPreventExitStatus=78" in service_template
+    assert "LimitNPROC=16384" in service_template
     assert "NoNewPrivileges=true" not in service_template
 
     assert "[Install]" in target_unit
     assert "WantedBy=multi-user.target" in target_unit
     assert "Wants=flux@tokenmm-api.service" in target_unit
+    assert "Wants=flux@tokenmm-controller.service" in target_unit
     assert "Wants=flux@tokenmm-portfolio.service" in target_unit
     assert "Wants=flux@tokenmm-bridge.service" in target_unit
+    assert "Wants=flux@tokenmm-prometheus.service" in target_unit
+    assert "Wants=flux@tokenmm-grafana.service" in target_unit
+    assert "Wants=flux@tokenmm-liquidity-exporter.service" in target_unit
+    assert "Wants=flux@tokenmm-markouts-exporter.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_bybit_spot_makerv3.service" in target_unit
     assert "Wants=flux@tokenmm-node-plumeusdt_okx_perp_makerv3.service" in target_unit
@@ -711,6 +847,13 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert 'api_host="${TOKENMM_API_HOST:-$(read_existing_api_host)}"' in install_script
     assert 'api_host="${api_host:-0.0.0.0}"' in install_script
     assert "--host ${api_host}" in install_script
+    assert "tokenmm-controller" in install_script
+    assert "render_controller_env()" in install_script
+    assert "tokenmm-controller.env" in install_script
+    assert (
+        "${TOKENMM_PYTHON_BIN} -m nautilus_trader.flux.runners.tokenmm.run_controller "
+        "--config ${SHARED_CONFIG} --mode live --confirm-live" in install_script
+    )
     assert "tokenmm-portfolio" in install_script
     assert "tokenmm-pulse" not in install_script
     assert 'service_id="tokenmm-node-${strategy_id}"' in install_script
@@ -718,6 +861,14 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
     assert "--strategy-id ${strategy_id}" in install_script
     assert "--all-strategies" not in install_script
     assert "run_tokenmm_telemetry_shipper.sh" in install_script
+    assert "render_prometheus_env()" in install_script
+    assert "render_grafana_env()" in install_script
+    assert "render_liquidity_exporter_env()" in install_script
+    assert "render_markouts_exporter_env()" in install_script
+    assert "install_monitoring_assets()" in install_script
+    assert "/etc/tokenmm-monitoring" in install_script
+    assert "/usr/local/bin/tokenmm-grafana-run.sh" in install_script
+    assert "/usr/local/bin/tokenmm-prometheus-run.sh" in install_script
     assert "tokenmm-telemetry-rds.env.example" in install_script
     assert "flux-tokenmm-telemetry-health.service" in install_script
     assert "flux-tokenmm-telemetry-health.timer" in install_script
@@ -733,6 +884,10 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
 
     assert "/usr/bin/systemctl start flux@tokenmm-api.service" in sudoers
     assert "/usr/bin/systemctl start flux@tokenmm-bridge.service" in sudoers
+    assert "/usr/bin/systemctl start flux@tokenmm-prometheus.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-grafana.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-liquidity-exporter.service" in sudoers
+    assert "/usr/bin/systemctl restart flux@tokenmm-markouts-exporter.service" in sudoers
     assert "/usr/bin/systemctl restart flux@tokenmm-portfolio.service" in sudoers
     assert (
         "/usr/bin/systemctl restart flux@tokenmm-node-plumeusdt_bybit_perp_makerv3.service"
@@ -751,8 +906,77 @@ def test_tokenmm_systemd_artifacts_define_env_driven_flux_units() -> None:
         in sudoers
     )
     assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-grafana.service" in sudoers
+    assert "/usr/bin/journalctl -u flux@tokenmm-markouts-exporter.service" in sudoers
     assert "tokenmm-pulse.service" not in sudoers
     assert "flux@*" not in sudoers
+
+    assert "tokenmm-prometheus" in deploy_readme
+    assert "tokenmm-grafana" in deploy_readme
+    assert "tokenmm-liquidity-exporter" in deploy_readme
+    assert "tokenmm-markouts-exporter" in deploy_readme
+
+
+def test_flux_service_template_raises_process_limit_for_live_tokenmm_ui_load() -> None:
+    service_template = _read(_repo_root() / "deploy/systemd/flux@.service")
+
+    assert "LimitNPROC=16384" in service_template
+
+
+def test_tokenmm_monitoring_assets_are_repo_managed_and_host_network_compatible() -> None:
+    repo_root = _repo_root()
+    install_script = _read(repo_root / "ops/scripts/deploy/install_tokenmm_systemd.sh")
+    grafana_wrapper = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-grafana-run.sh")
+    prometheus_wrapper = _read(repo_root / "deploy/tokenmm/systemd/tokenmm-prometheus-run.sh")
+    prometheus_config = _read(repo_root / "deploy/tokenmm/systemd/prometheus.yml")
+    grafana_datasources = _read(
+        repo_root / "monitoring/grafana/provisioning/datasources/datasources.yml",
+    )
+    dashboards_doc = _read(repo_root / "monitoring/DASHBOARDS.md")
+
+    assert "install -d /etc/tokenmm-monitoring" not in install_script
+    assert "tokenmm-monitoring" in install_script
+    assert 'MONITORING_RUNTIME_ROOT="/opt/tokenmm-monitoring"' in install_script
+    assert 'GRAFANA_VERSION="10.2.3"' in install_script
+    assert 'PROMETHEUS_VERSION="2.48.0"' in install_script
+    assert "monitoring/grafana/dashboards" in install_script
+    assert "monitoring/grafana/provisioning/dashboards/dashboards.yml" in install_script
+    assert "monitoring/grafana/provisioning/datasources/datasources.yml" in install_script
+    assert "deploy/tokenmm/systemd/prometheus.yml" in install_script
+    assert "install_monitoring_binaries()" in install_script
+    assert "curl -fsSL" in install_script
+    assert "trap 'rm -rf -- \"${tmpdir}\"' EXIT" in install_script
+    assert "dl.grafana.com/oss/release/grafana-" in install_script
+    assert "github.com/prometheus/prometheus/releases/download/v" in install_script
+
+    assert "docker run" not in grafana_wrapper
+    assert "docker rm -f tokenmm-grafana" not in grafana_wrapper
+    assert 'TOKENMM_GRAFANA_INSTALL_DIR:=/opt/tokenmm-monitoring/grafana/current' in grafana_wrapper
+    assert 'GF_PATHS_DATA="${TOKENMM_GRAFANA_DATA_DIR}"' in grafana_wrapper
+    assert 'GF_PATHS_PROVISIONING="${TOKENMM_GRAFANA_CONFIG_DIR}/provisioning"' in grafana_wrapper
+    assert '"${TOKENMM_GRAFANA_INSTALL_DIR}/bin/grafana-server"' in grafana_wrapper
+    assert '--homepath "${TOKENMM_GRAFANA_INSTALL_DIR}"' in grafana_wrapper
+
+    assert "docker run" not in prometheus_wrapper
+    assert "docker rm -f tokenmm-prometheus" not in prometheus_wrapper
+    assert 'TOKENMM_PROMETHEUS_INSTALL_DIR:=/opt/tokenmm-monitoring/prometheus/current' in prometheus_wrapper
+    assert '"${TOKENMM_PROMETHEUS_INSTALL_DIR}/prometheus"' in prometheus_wrapper
+    assert '--config.file="${TOKENMM_PROMETHEUS_CONFIG_DIR}/prometheus.yml"' in prometheus_wrapper
+    assert '--storage.tsdb.path="${TOKENMM_PROMETHEUS_DATA_DIR}"' in prometheus_wrapper
+    assert "--web.enable-lifecycle" in prometheus_wrapper
+
+    assert 'targets: ["127.0.0.1:9108"]' in prometheus_config
+    assert 'targets: ["127.0.0.1:9109"]' in prometheus_config
+    assert 'targets: ["127.0.0.1:9090"]' in prometheus_config
+
+    assert "url: http://127.0.0.1:9090" in grafana_datasources
+    assert "url: http://prometheus:9090" not in grafana_datasources
+
+    assert "/etc/tokenmm-monitoring/grafana/dashboards" in dashboards_doc
+    assert "/etc/tokenmm-monitoring/prometheus/prometheus.yml" in dashboards_doc
+    assert "/opt/tokenmm-monitoring/grafana/current" in dashboards_doc
+    assert "/opt/tokenmm-monitoring/prometheus/current" in dashboards_doc
+    assert "/var/lib/grafana/dashboards" not in dashboards_doc
 
 
 def test_tokenmm_shared_account_live_configs_enable_reconciliation_filters_with_bounded_lookback() -> (
@@ -857,6 +1081,31 @@ def test_tokenmm_api_contract_catalog_lists_distinct_plume_spot_and_perp_instrum
     assert 'instrument_id = "PLUME-USDT-SWAP.OKX"' in config
 
 
+def test_tokenmm_telemetry_shipper_paths_parse_as_top_level_config() -> None:
+    config = tomllib.load((_repo_root() / "deploy/tokenmm/tokenmm.live.toml").open("rb"))
+    shipper = config["telemetry_shipper"]
+    benchmarks = shipper["markout_benchmarks"]
+
+    assert shipper["balance_snapshots_db_path"] == (
+        "/var/lib/nautilus/telemetry/tokenmm/balance_snapshots.sqlite"
+    )
+    assert shipper["portfolio_inventory_db_path"] == (
+        "/var/lib/nautilus/telemetry/tokenmm/portfolio_inventory.sqlite"
+    )
+    assert shipper["state_db_path"] == "/var/lib/nautilus/telemetry/tokenmm/shipper_state.sqlite"
+    assert shipper["poll_interval_ms"] == 1000
+    assert shipper["max_batch_size"] == 500
+    assert shipper["prune_retention_hours"] == 48
+    assert benchmarks[0] == {
+        "benchmark_name": "fv_market_mid",
+        "benchmark_field": "fv",
+    }
+    assert benchmarks[1] == {
+        "benchmark_name": "local_mkt_mid",
+        "benchmark_field": "maker_mid",
+    }
+
+
 def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     readme = _read(_repo_root() / "deploy/tokenmm/README.md")
 
@@ -870,9 +1119,11 @@ def test_tokenmm_deploy_readme_describes_seven_node_topology() -> None:
     assert "allowlist" in readme
     assert "`params` returns the 7 allowlisted strategy IDs" in readme
     assert "`signal` returns seven per-strategy rows." in readme
-    assert "Supported live core for this pass" in readme
-    assert "Binance perp and Binance spot stay allowlisted but parked" in readme
-    assert "Shared portfolio completeness requires only the supported live core" in readme
+    assert "Supported live production set" in readme
+    assert "plumeusdt_binance_perp_makerv3" in readme
+    assert "plumeusdt_binance_spot_makerv3" in readme
+    assert "restart-resilient with `force_bot_off_on_start = false`" in readme
+    assert "Shared portfolio completeness requires all seven allowlisted strategies" in readme
 
 
 def test_tokenmm_strategy_configs_use_requested_execution_and_reference_markets() -> None:

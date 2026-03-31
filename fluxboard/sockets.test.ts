@@ -632,6 +632,72 @@ describe('sockets status state machine', () => {
     expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
   });
 
+  it('emits unsubscribe and removes the local subscription when trades recovery is required', async () => {
+    const sockets = await import('./sockets');
+    const control = createFakeSocket();
+    control.socket.connected = true;
+    const client = sockets.createStandardSocketClient(control.socket);
+    const onFailure = vi.fn();
+
+    client.subscribe({
+      lineage: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'default',
+        surface_query_key: 'trades|profile=default',
+        stream_id: 'trades-main',
+        snapshot_revision: 'snap-1',
+        last_seq: 4,
+      },
+      onEvent: vi.fn(),
+      onFailure,
+    });
+
+    const ack = control.socket.emit.mock.calls[0]?.[2];
+    ack?.({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      surface_query_key: 'trades|profile=default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      accepted_start_seq: 4,
+      last_seq: 4,
+    });
+
+    control.socket.emit.mockClear();
+
+    control.emit('realtime_event', {
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'default',
+      stream_id: 'trades-main',
+      snapshot_revision: 'snap-1',
+      kind: 'recovery_required',
+      seq: 5,
+      server_ts_ms: 1_700_000_000_005,
+      reason: 'trade_gap',
+      payload: {},
+    });
+
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'recovery_required',
+      reason: 'trade_gap',
+    }));
+    expect(control.socket.emit).toHaveBeenCalledWith('unsubscribe', { surface: 'trades' });
+
+    control.socket.emit.mockClear();
+    control.emit('disconnect', 'transport close');
+    control.emit('connect');
+
+    expect(control.socket.emit).not.toHaveBeenCalledWith(
+      'subscribe',
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
   it('ignores stale subscribe acks from a superseded reconnect attempt', async () => {
     const sockets = await import('./sockets');
     const control = createFakeSocket();

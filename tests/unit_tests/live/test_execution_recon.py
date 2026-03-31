@@ -1,9 +1,12 @@
 import asyncio
 from decimal import Decimal
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
+from flux.execution.nautilus_adapter import ControllerManagedExecutionClientAdapter
+from flux.execution.nautilus_adapter import ManagedOrderBinding
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
@@ -58,6 +61,11 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+
+
+@pytest.fixture
+def event_loop(session_event_loop):
+    return session_event_loop
 
 
 class TestLiveExecutionReconciliation:
@@ -2246,6 +2254,159 @@ class TestReconciliationEdgeCases:
         assert generated_order.status == OrderStatus.FILLED
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_mass_status_synthetic_partial_window_order_not_claimed_by_strategy_external_order_claims(
+        self,
+        live_exec_engine,
+    ):
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        live_exec_engine._external_order_claims[instrument.id] = StrategyId("S-CLAIMED")
+
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("ADJUSTED-ORDER-001"),
+            venue_order_id=VenueOrderId("S-RECON-ORDER-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.FILLED,
+            quantity=Quantity.from_int(31_000),
+            filled_qty=Quantity.from_int(31_000),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=1,
+            ts_last=1,
+            ts_init=1,
+        )
+        fill = FillReport(
+            client_order_id=report.client_order_id,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId("S-RECON-TRADE-001"),
+            account_id=report.account_id,
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(31_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=report.account_id,
+            report_id=UUID4(),
+            ts_init=1,
+        )
+        mass_status.add_order_reports([report])
+        mass_status.add_fill_reports([fill])
+
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
+
+        assert result is True
+        generated_order = self.cache.order(report.client_order_id)
+        assert generated_order is not None
+        assert generated_order.strategy_id.value == "EXTERNAL"
+        assert generated_order.tags == ["RECONCILIATION"]
+        assert generated_order.venue_order_id == report.venue_order_id
+
+    @pytest.mark.asyncio
+    async def test_reconcile_execution_mass_status_replace_current_lifecycle_synthetic_report_does_not_rebind_real_cached_order(
+        self,
+        live_exec_engine,
+    ):
+        instrument = AUDUSD_SIM
+        self.cache.add_instrument(instrument)
+
+        existing_order = TestExecStubs.limit_order(
+            instrument=instrument,
+            strategy_id=StrategyId("S-OWNED"),
+        )
+        self.cache.add_order(existing_order)
+        existing_order.apply(
+            TestEventStubs.order_submitted(
+                existing_order,
+                account_id=TestIdStubs.account_id(),
+            ),
+        )
+        existing_order.apply(
+            TestEventStubs.order_accepted(
+                existing_order,
+                account_id=TestIdStubs.account_id(),
+                venue_order_id=VenueOrderId("V-REAL-001"),
+            ),
+        )
+        self.cache.update_order(existing_order)
+
+        report = OrderStatusReport(
+            account_id=TestIdStubs.account_id(),
+            instrument_id=instrument.id,
+            client_order_id=None,
+            venue_order_id=VenueOrderId("V-REAL-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY,
+            order_status=OrderStatus.FILLED,
+            quantity=Quantity.from_int(31_000),
+            filled_qty=Quantity.from_int(31_000),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=1,
+            ts_last=1,
+            ts_init=1,
+        )
+        fill = FillReport(
+            client_order_id=None,
+            venue_order_id=report.venue_order_id,
+            trade_id=TradeId("S-RECON-TRADE-REUSE-001"),
+            account_id=report.account_id,
+            instrument_id=instrument.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(31_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        mass_status = ExecutionMassStatus(
+            client_id=ClientId("TEST"),
+            venue=Venue("TEST"),
+            account_id=report.account_id,
+            report_id=UUID4(),
+            ts_init=1,
+        )
+        mass_status.add_order_reports([report])
+        mass_status.add_fill_reports([fill])
+
+        orders_before = len(self.cache.orders())
+        result = live_exec_engine._reconcile_execution_mass_status(mass_status)
+
+        assert result is True
+        cached_real_order = self.cache.order(existing_order.client_order_id)
+        assert cached_real_order is not None
+        assert cached_real_order.strategy_id.value == "S-OWNED"
+        assert cached_real_order.filled_qty == Quantity.zero(existing_order.quantity.precision)
+        assert len(self.cache.orders()) == orders_before + 1
+
+        reconciliation_orders = [
+            order
+            for order in self.cache.orders()
+            if order.client_order_id != existing_order.client_order_id
+            and order.strategy_id.value == "EXTERNAL"
+            and order.tags == ["RECONCILIATION"]
+        ]
+        assert len(reconciliation_orders) == 1
+        assert reconciliation_orders[0].venue_order_id == report.venue_order_id
+
+    @pytest.mark.asyncio
     async def test_external_order_filtered_when_filter_unclaimed_external_orders_enabled(
         self,
         live_exec_engine,
@@ -3225,9 +3386,7 @@ class TestLiveExecutionReconciliationEdgeCases:
         assert result is True, "FLAT report should be successfully reconciled"
 
 
-# =============================================================================
-# FIXTURES FOR STANDALONE TESTS
-# =============================================================================
+# Fixtures for standalone tests
 
 
 @pytest.fixture
@@ -3293,9 +3452,7 @@ def cache():
     return cache
 
 
-# =============================================================================
-# TESTS FOR _query_position_status_reports
-# =============================================================================
+# Tests for _query_position_status_reports
 
 
 @pytest.mark.asyncio
@@ -3319,12 +3476,13 @@ async def test_query_position_status_reports_success(live_exec_engine, exec_clie
     exec_client.add_position_status_report(report)
 
     # Act
-    venue_positions = await live_exec_engine._query_position_status_reports()
+    venue_positions, failed_venues = await live_exec_engine._query_position_status_reports()
 
     # Assert
     assert len(venue_positions) == 1
     assert AUDUSD_SIM.id in venue_positions
     assert venue_positions[AUDUSD_SIM.id].quantity == Quantity.from_int(1000)
+    assert failed_venues == set()
 
 
 @pytest.mark.asyncio
@@ -3342,10 +3500,11 @@ async def test_query_position_status_reports_handles_exceptions(live_exec_engine
     exec_client.generate_position_status_reports = raise_error
 
     # Act
-    venue_positions = await live_exec_engine._query_position_status_reports()
+    venue_positions, failed_venues = await live_exec_engine._query_position_status_reports()
 
     # Assert
     assert len(venue_positions) == 0
+    assert failed_venues == {exec_client.venue}
 
 
 @pytest.mark.asyncio
@@ -3383,12 +3542,13 @@ async def test_query_position_status_reports_multiple_instruments(
     exec_client.add_position_status_report(report2)
 
     # Act
-    venue_positions = await live_exec_engine._query_position_status_reports()
+    venue_positions, failed_venues = await live_exec_engine._query_position_status_reports()
 
     # Assert
     assert len(venue_positions) == 2
     assert AUDUSD_SIM.id in venue_positions
     assert GBPUSD_SIM.id in venue_positions
+    assert failed_venues == set()
 
 
 @pytest.mark.asyncio
@@ -3424,16 +3584,15 @@ async def test_query_position_status_reports_keeps_nonzero_report_when_flat_dupl
     exec_client.add_position_status_report(long_report)
     exec_client.add_position_status_report(flat_report)
 
-    venue_positions = await live_exec_engine._query_position_status_reports()
+    venue_positions, failed_venues = await live_exec_engine._query_position_status_reports()
 
     assert len(venue_positions) == 1
     assert AUDUSD_SIM.id in venue_positions
     assert venue_positions[AUDUSD_SIM.id].signed_decimal_qty == Decimal("1000")
+    assert failed_venues == set()
 
 
-# =============================================================================
-# TESTS FOR _query_and_find_missing_fills
-# =============================================================================
+# Tests for _query_and_find_missing_fills
 
 
 @pytest.mark.asyncio
@@ -3513,7 +3672,7 @@ async def test_query_and_find_missing_fills_finds_missing(
     exec_client.add_fill_reports(VenueOrderId("V-1"), [fill_report1, fill_report2])
 
     # Act
-    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+    missing_fills, had_fill_query_errors = await live_exec_engine._query_and_find_missing_fills(
         AUDUSD_SIM.id,
         live_exec_engine._clients.values(),
     )
@@ -3521,6 +3680,7 @@ async def test_query_and_find_missing_fills_finds_missing(
     # Assert
     assert len(missing_fills) == 1
     assert missing_fills[0].trade_id == TradeId("T-2")
+    assert not had_fill_query_errors
 
 
 @pytest.mark.asyncio
@@ -3538,13 +3698,14 @@ async def test_query_and_find_missing_fills_handles_exceptions(live_exec_engine,
     exec_client.generate_fill_reports = raise_error
 
     # Act
-    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+    missing_fills, had_fill_query_errors = await live_exec_engine._query_and_find_missing_fills(
         AUDUSD_SIM.id,
         live_exec_engine._clients.values(),
     )
 
     # Assert
     assert len(missing_fills) == 0
+    assert had_fill_query_errors
 
 
 @pytest.mark.asyncio
@@ -3608,18 +3769,17 @@ async def test_query_and_find_missing_fills_no_missing(
     exec_client.add_fill_reports(VenueOrderId("V-1"), [fill_report])
 
     # Act
-    missing_fills = await live_exec_engine._query_and_find_missing_fills(
+    missing_fills, had_fill_query_errors = await live_exec_engine._query_and_find_missing_fills(
         AUDUSD_SIM.id,
         live_exec_engine._clients.values(),
     )
 
     # Assert
     assert len(missing_fills) == 0
+    assert not had_fill_query_errors
 
 
-# =============================================================================
-# TESTS FOR _reconcile_missing_fills
-# =============================================================================
+# Tests for _reconcile_missing_fills
 
 
 @pytest.mark.asyncio
@@ -3724,9 +3884,7 @@ async def test_reconcile_missing_fills_handles_failure(live_exec_engine, cache, 
     # Assert - method should handle gracefully
 
 
-# =============================================================================
-# TESTS FOR _process_cached_position_discrepancies
-# =============================================================================
+# Tests for _process_cached_position_discrepancies
 
 
 @pytest.mark.asyncio
@@ -3842,6 +4000,7 @@ async def test_position_check_retries_stops_after_max(live_exec_engine, exec_cli
     # Arrange
     live_exec_engine.register_client(exec_client)
     live_exec_engine.position_check_retries = 2
+    live_exec_engine.generate_missing_orders = False
 
     if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
         cache.add_instrument(AUDUSD_SIM)
@@ -3882,6 +4041,111 @@ async def test_position_check_retries_stops_after_max(live_exec_engine, exec_cli
 
 
 @pytest.mark.asyncio
+async def test_process_cached_position_discrepancies_reconciles_missing_venue_position_as_flat(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.generate_missing_orders = True
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM, order_side=OrderSide.BUY)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        last_px=Price.from_str("1.00000"),
+        position_id=PositionId("P-FLAT-001"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.NETTING)
+
+    async def no_missing_fills(instrument_id, clients):
+        return [], False
+
+    live_exec_engine._query_and_find_missing_fills = no_missing_fills
+
+    reconcile_calls = []
+    original_reconcile = live_exec_engine._reconcile_position_report
+
+    def spy_reconcile(report):
+        reconcile_calls.append(report)
+        return original_reconcile(report)
+
+    live_exec_engine._reconcile_position_report = spy_reconcile
+
+    # Act
+    await live_exec_engine._process_cached_position_discrepancies(
+        {AUDUSD_SIM.id: [position]},
+        {},
+    )
+
+    # Assert
+    assert len(reconcile_calls) == 1
+    assert reconcile_calls[0].instrument_id == AUDUSD_SIM.id
+    assert reconcile_calls[0].position_side == PositionSide.FLAT
+    assert reconcile_calls[0].quantity == AUDUSD_SIM.make_qty(0)
+
+
+@pytest.mark.asyncio
+async def test_process_cached_position_discrepancies_skips_flat_reconciliation_on_query_failure(
+    live_exec_engine,
+    exec_client,
+    cache,
+):
+    # Arrange
+    live_exec_engine.register_client(exec_client)
+    live_exec_engine.generate_missing_orders = True
+
+    if AUDUSD_SIM.id not in [i.id for i in cache.instruments()]:
+        cache.add_instrument(AUDUSD_SIM)
+
+    order = TestExecStubs.limit_order(instrument=AUDUSD_SIM, order_side=OrderSide.BUY)
+    fill = TestEventStubs.order_filled(
+        order,
+        instrument=AUDUSD_SIM,
+        last_qty=Quantity.from_int(1000),
+        last_px=Price.from_str("1.00000"),
+        position_id=PositionId("P-FLAT-ERR-001"),
+    )
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    cache.add_position(position, OmsType.NETTING)
+
+    query_called = False
+
+    async def capture_query(instrument_id, clients):
+        nonlocal query_called
+        query_called = True
+        return [], False
+
+    live_exec_engine._query_and_find_missing_fills = capture_query
+
+    reconcile_calls = []
+
+    def spy_reconcile(report):
+        reconcile_calls.append(report)
+        return True
+
+    live_exec_engine._reconcile_position_report = spy_reconcile
+
+    # Act
+    await live_exec_engine._process_cached_position_discrepancies(
+        {AUDUSD_SIM.id: [position]},
+        {},
+        {AUDUSD_SIM.id.venue},
+    )
+
+    # Assert
+    assert not query_called
+    assert reconcile_calls == []
+    assert AUDUSD_SIM.id not in live_exec_engine._position_recon_retries
+
+
+@pytest.mark.asyncio
 async def test_position_check_retries_clears_on_resolved(live_exec_engine, exec_client, cache):
     # Arrange
     live_exec_engine.register_client(exec_client)
@@ -3905,7 +4169,7 @@ async def test_position_check_retries_clears_on_resolved(live_exec_engine, exec_
 
     # Stub out query to return no fills (discrepancy persists)
     async def no_fills_query(instrument_id, clients):
-        return []
+        return [], False
 
     live_exec_engine._query_and_find_missing_fills = no_fills_query
 
@@ -3994,7 +4258,7 @@ async def test_venue_reported_position_retries_stop_after_max(
     async def counting_query(instrument_id, clients):
         nonlocal query_count
         query_count += 1
-        return []
+        return [], False
 
     live_exec_engine._query_and_find_missing_fills = counting_query
 
@@ -4044,7 +4308,7 @@ async def test_venue_reported_position_tolerance_does_not_consume_retries(
     )
 
     async def no_fills_query(instrument_id, clients):
-        return []
+        return [], False
 
     live_exec_engine._query_and_find_missing_fills = no_fills_query
 
@@ -4058,9 +4322,7 @@ async def test_venue_reported_position_tolerance_does_not_consume_retries(
     assert ethusdt.id not in live_exec_engine._position_recon_retries
 
 
-# =============================================================================
-# TESTS FOR _process_venue_reported_positions
-# =============================================================================
+# Tests for _process_venue_reported_positions
 
 
 @pytest.mark.asyncio
@@ -4163,9 +4425,7 @@ async def test_process_venue_reported_positions_venue_has_position(
     assert query_called  # Should query when venue has position we don't
 
 
-# =============================================================================
-# TESTS FOR _handle_order_status_transitions
-# =============================================================================
+# Tests for _handle_order_status_transitions
 
 
 @pytest.mark.asyncio
@@ -4532,9 +4792,7 @@ async def test_should_update_returns_true_when_report_quantity_greater_than_fill
     assert result is True
 
 
-# =============================================================================
-# TESTS FOR _handle_fill_quantity_mismatch
-# =============================================================================
+# Tests for _handle_fill_quantity_mismatch
 
 
 @pytest.mark.asyncio
@@ -6925,6 +7183,102 @@ class TestHedgeModeReconciliation:
         assert cleanup_orders
 
     @pytest.mark.asyncio
+    async def test_reconcile_execution_state_cleans_stale_startup_position_when_missing_startup_orders_stay_open_in_cache(
+        self,
+    ):
+        """
+        Startup cleanup should trust explicit missing-at-venue evidence even if a later
+        startup path leaves the cached startup orders open in cache.
+
+        This matches the March 27, 2026 Binance spot production shape more closely:
+        venue truth is flat, the bulk open-order sweep returns nothing, targeted startup
+        queries prove the cached orders are missing, but later startup assembly still has
+        cache-restored open orders in memory. Cleanup should ignore only those proven
+        missing refs and still fail closed for any startup order that the venue reports.
+        """
+        self.exec_engine.deregister_client(self.client)
+        self.client = MockLiveExecutionClient(
+            loop=self.loop,
+            client_id=ClientId(SIM.value),
+            venue=SIM,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            oms_type=OmsType.NETTING,
+        )
+        self.portfolio.update_account(
+            TestEventStubs.cash_account_state(account_id=self.client.account_id),
+        )
+        self.exec_engine.register_client(self.client)
+
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        startup_account_id = self.client.account_id
+
+        stale_position_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            order_side=OrderSide.SELL,
+        )
+        stale_position_fill = TestEventStubs.order_filled(
+            stale_position_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-BINANCE-SPOT-STALE-003"),
+            last_qty=Quantity.from_int(1_500),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("BINANCE-SPOT-STALE-003"),
+        )
+        stale_position = Position(instrument=AUDUSD_SIM, fill=stale_position_fill)
+        self.cache.add_position(stale_position, OmsType.NETTING)
+
+        cached_open_orders = []
+        for index in range(3):
+            cached_order = TestExecStubs.limit_order(
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId("S-001"),
+                order_side=OrderSide.BUY,
+                client_order_id=ClientOrderId(f"BINANCE-SPOT-MISSING-OPEN-{index:03d}"),
+            )
+            cached_order.apply(
+                TestEventStubs.order_submitted(
+                    cached_order,
+                    account_id=startup_account_id,
+                ),
+            )
+            cached_order.apply(
+                TestEventStubs.order_accepted(
+                    cached_order,
+                    account_id=startup_account_id,
+                    venue_order_id=VenueOrderId(f"BINANCE-SPOT-MISSING-VENUE-{index:03d}"),
+                ),
+            )
+            self.cache.add_order(cached_order)
+            cached_open_orders.append(cached_order)
+
+        missing_resolution_calls: list[ClientOrderId] = []
+
+        with patch.object(
+            self.exec_engine,
+            "_resolve_cached_order_missing_at_venue",
+            side_effect=lambda order, **_kwargs: missing_resolution_calls.append(order.client_order_id),
+        ):
+            result = await self.exec_engine.reconcile_execution_state()
+
+        assert result is True
+        assert missing_resolution_calls == [
+            order.client_order_id for order in cached_open_orders
+        ]
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == []
+        assert [
+            self.cache.order(order.client_order_id).status
+            for order in cached_open_orders
+        ] == [OrderStatus.ACCEPTED, OrderStatus.ACCEPTED, OrderStatus.ACCEPTED]
+
+    @pytest.mark.asyncio
     async def test_reconcile_execution_state_does_not_cleanup_startup_position_when_targeted_query_returns_none_but_bulk_open_order_report_exists(
         self,
     ):
@@ -7189,6 +7543,352 @@ class TestHedgeModeReconciliation:
         assert len(remaining_positions) == 1
         assert remaining_positions[0].id == owned_position.id
         assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
+        assert self.cache.order(redundant_order_report.client_order_id) is None
+
+    def test_controller_managed_adapter_filters_untracked_startup_history_but_preserves_tracked_open_order_truth(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine._external_order_claims[AUDUSD_SIM.id] = StrategyId("S-001")
+        startup_account_id = self.client.account_id
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-ADAPTER-OWNED"),
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("ADAPTER-CACHED-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        owned_order.apply(
+            TestEventStubs.order_submitted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
+        owned_order.apply(
+            TestEventStubs.order_accepted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
+        owned_order.apply(owned_fill)
+        self.cache.add_order(owned_order, owned_position.id)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        open_cached_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("ADAPTER-OPEN-CACHED-001"),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_submitted(
+                open_cached_order,
+                account_id=startup_account_id,
+            ),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_accepted(
+                open_cached_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("ADAPTER-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(open_cached_order)
+
+        raw_client = self.client
+        bulk_order_commands = []
+        targeted_order_commands = []
+        original_generate_order_status_reports = raw_client.generate_order_status_reports
+        original_generate_order_status_report = raw_client.generate_order_status_report
+
+        async def capture_generate_order_status_reports(command):
+            bulk_order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        async def capture_generate_order_status_report(command):
+            targeted_order_commands.append(command)
+            return await original_generate_order_status_report(command)
+
+        raw_client.generate_order_status_reports = capture_generate_order_status_reports
+        raw_client.generate_order_status_report = capture_generate_order_status_report
+
+        redundant_order_report = OrderStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("ADAPTER-REDUNDANT-ORDER-001"),
+            venue_order_id=VenueOrderId("ADAPTER-REDUNDANT-VENUE-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(2_356),
+            filled_qty=Quantity.from_int(2_356),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        open_order_report = OrderStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=open_cached_order.client_order_id,
+            venue_order_id=open_cached_order.venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=open_cached_order.quantity,
+            filled_qty=Quantity.zero(),
+            avg_px=None,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        redundant_fill_report = FillReport(
+            client_order_id=redundant_order_report.client_order_id,
+            venue_order_id=redundant_order_report.venue_order_id,
+            trade_id=TradeId("ADAPTER-REDUNDANT-FILL-001"),
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+        position_report = PositionStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_356),
+            report_id=UUID4(),
+            ts_last=2,
+            ts_init=2,
+        )
+
+        raw_client.add_order_status_report(redundant_order_report)
+        raw_client.add_order_status_report(open_order_report)
+        raw_client.add_fill_reports(redundant_order_report.venue_order_id, [redundant_fill_report])
+        raw_client.add_position_status_report(position_report)
+
+        managed_client = ControllerManagedExecutionClientAdapter(
+            client=raw_client,
+            controller_scope_id="ibkr.hedge.main",
+            managed_instrument_ids={AUDUSD_SIM.id},
+            tracked_orders=(
+                ManagedOrderBinding(
+                    instrument_id=AUDUSD_SIM.id,
+                    client_order_id=open_cached_order.client_order_id,
+                    venue_order_id=open_cached_order.venue_order_id,
+                ),
+            ),
+        )
+        self.exec_engine.deregister_client(raw_client)
+        self.exec_engine.register_client(managed_client)
+        self.client = managed_client
+
+        result = self.loop.run_until_complete(self.exec_engine.reconcile_execution_state())
+
+        assert result is True
+        assert [command.open_only for command in bulk_order_commands] == [True]
+        assert targeted_order_commands == []
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+        assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
+        tracked_cached_order = self.cache.order(open_cached_order.client_order_id)
+        assert tracked_cached_order is not None
+        assert tracked_cached_order.status == OrderStatus.ACCEPTED
+        assert self.cache.order(redundant_order_report.client_order_id) is None
+
+    def test_active_controller_managed_adapter_keeps_compatibility_outputs_available(
+        self,
+    ):
+        self.exec_engine.generate_missing_orders = False
+        self.exec_engine.reconciliation_instrument_ids = [AUDUSD_SIM.id]
+        self.exec_engine._external_order_claims[AUDUSD_SIM.id] = StrategyId("S-001")
+        startup_account_id = self.client.account_id
+
+        owned_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+        )
+        owned_fill = TestEventStubs.order_filled(
+            owned_order,
+            instrument=AUDUSD_SIM,
+            account_id=startup_account_id,
+            position_id=PositionId("P-ACTIVE-ADAPTER-OWNED"),
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            trade_id=TradeId("ACTIVE-ADAPTER-CACHED-OWNED-1"),
+        )
+        owned_position = Position(instrument=AUDUSD_SIM, fill=owned_fill)
+        owned_order.apply(
+            TestEventStubs.order_submitted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
+        owned_order.apply(
+            TestEventStubs.order_accepted(
+                owned_order,
+                account_id=startup_account_id,
+            ),
+        )
+        owned_order.apply(owned_fill)
+        self.cache.add_order(owned_order, owned_position.id)
+        self.cache.add_position(owned_position, OmsType.NETTING)
+
+        open_cached_order = TestExecStubs.limit_order(
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            client_order_id=ClientOrderId("ACTIVE-ADAPTER-OPEN-CACHED-001"),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_submitted(
+                open_cached_order,
+                account_id=startup_account_id,
+            ),
+        )
+        open_cached_order.apply(
+            TestEventStubs.order_accepted(
+                open_cached_order,
+                account_id=startup_account_id,
+                venue_order_id=VenueOrderId("ACTIVE-ADAPTER-OPEN-VENUE-001"),
+            ),
+        )
+        self.cache.add_order(open_cached_order)
+
+        raw_client = self.client
+        bulk_order_commands = []
+        targeted_order_commands = []
+        original_generate_order_status_reports = raw_client.generate_order_status_reports
+        original_generate_order_status_report = raw_client.generate_order_status_report
+
+        async def capture_generate_order_status_reports(command):
+            bulk_order_commands.append(command)
+            return await original_generate_order_status_reports(command)
+
+        async def capture_generate_order_status_report(command):
+            targeted_order_commands.append(command)
+            return await original_generate_order_status_report(command)
+
+        raw_client.generate_order_status_reports = capture_generate_order_status_reports
+        raw_client.generate_order_status_report = capture_generate_order_status_report
+
+        redundant_order_report = OrderStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("ACTIVE-ADAPTER-REDUNDANT-ORDER-001"),
+            venue_order_id=VenueOrderId("ACTIVE-ADAPTER-REDUNDANT-VENUE-001"),
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.FILLED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(2_356),
+            filled_qty=Quantity.from_int(2_356),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        open_order_report = OrderStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=open_cached_order.client_order_id,
+            venue_order_id=open_cached_order.venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.ACCEPTED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(2_356),
+            filled_qty=Quantity.zero(),
+            avg_px=None,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_last=0,
+            ts_init=0,
+        )
+        redundant_fill_report = FillReport(
+            client_order_id=redundant_order_report.client_order_id,
+            venue_order_id=redundant_order_report.venue_order_id,
+            trade_id=TradeId("ACTIVE-ADAPTER-REDUNDANT-FILL-001"),
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(2_356),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+        position_report = PositionStatusReport(
+            account_id=startup_account_id,
+            instrument_id=AUDUSD_SIM.id,
+            position_side=PositionSide.LONG,
+            quantity=Quantity.from_int(2_356),
+            report_id=UUID4(),
+            ts_last=2,
+            ts_init=2,
+        )
+
+        raw_client.add_order_status_report(redundant_order_report)
+        raw_client.add_order_status_report(open_order_report)
+        raw_client.add_fill_reports(redundant_order_report.venue_order_id, [redundant_fill_report])
+        raw_client.add_position_status_report(position_report)
+
+        managed_client = ControllerManagedExecutionClientAdapter(
+            client=raw_client,
+            controller_scope_id="ibkr.hedge.main",
+            managed_instrument_ids={AUDUSD_SIM.id},
+            tracked_orders=(
+                ManagedOrderBinding(
+                    instrument_id=AUDUSD_SIM.id,
+                    client_order_id=open_cached_order.client_order_id,
+                    venue_order_id=open_cached_order.venue_order_id,
+                ),
+            ),
+            preserve_compatibility_outputs=True,
+        )
+        self.exec_engine.deregister_client(raw_client)
+        self.exec_engine.register_client(managed_client)
+        self.client = managed_client
+
+        result = self.loop.run_until_complete(self.exec_engine.reconcile_execution_state())
+
+        assert result is True
+        assert managed_client.supports_startup_historical_order_status_reports is True
+        assert [command.open_only for command in bulk_order_commands] == [False]
+        assert [command.client_order_id for command in targeted_order_commands] == [
+            open_cached_order.client_order_id,
+        ]
+        remaining_positions = self.cache.positions_open(instrument_id=AUDUSD_SIM.id)
+        assert len(remaining_positions) == 1
+        assert remaining_positions[0].id == owned_position.id
+        assert remaining_positions[0].signed_decimal_qty() == Decimal("2356")
+        tracked_cached_order = self.cache.order(open_cached_order.client_order_id)
+        assert tracked_cached_order is not None
+        assert tracked_cached_order.status == OrderStatus.ACCEPTED
         assert self.cache.order(redundant_order_report.client_order_id) is None
 
     def test_startup_snapshot_for_instrument_merges_exact_and_unscoped_entries(

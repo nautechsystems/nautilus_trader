@@ -6,11 +6,15 @@ from typing import Any
 import pytest
 
 from nautilus_trader.flux.strategies.makerv3 import rebalancing as rebalancing_mod
-from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_EXCESS_LEVEL
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_BACK_EXCESS
+from nautilus_trader.flux.strategies.makerv3.constants import (
+    REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL,
+)
+from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_FRONT_VIOLATION
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_STALE_ORDER
 from nautilus_trader.flux.strategies.makerv3.constants import REASON_CANCEL_TOO_AGGRESSIVE
-from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_details
 from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_actions
+from nautilus_trader.flux.strategies.makerv3.rebalancing import plan_side_rebalance_details
 
 
 def _desired_levels(*prices: str) -> list[tuple[Decimal, Decimal, Decimal]]:
@@ -132,7 +136,7 @@ def test_bounded_side_planner_peels_passive_tail_incrementally_for_single_missin
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (5, REASON_CANCEL_EXCESS_LEVEL),
+        (5, REASON_CANCEL_BACK_EXCESS),
     ]
     assert list(_result_field(result, "place_level_indices")) == [0]
 
@@ -160,18 +164,12 @@ def test_bounded_side_planner_spends_stale_cleanup_budget_outside_aggressive_rep
     aggressive_reprice_cancels = [
         cancel_action
         for cancel_action in cancel_actions
-        if cancel_action[1] == REASON_CANCEL_TOO_AGGRESSIVE
+        if cancel_action[1] == REASON_CANCEL_FRONT_VIOLATION
     ]
-    stale_cleanup_cancels = [
-        cancel_action
-        for cancel_action in cancel_actions
-        if cancel_action[1] == REASON_CANCEL_STALE_ORDER
-    ]
-
-    assert aggressive_reprice_cancels == [(0, REASON_CANCEL_TOO_AGGRESSIVE)]
-    assert stale_cleanup_cancels == [(4, REASON_CANCEL_STALE_ORDER)]
-    assert len(cancel_actions) == 2
-    assert list(_result_field(result, "place_level_indices")) == [3]
+    assert aggressive_reprice_cancels == [(0, REASON_CANCEL_FRONT_VIOLATION)]
+    assert all(cancel_action[1] != REASON_CANCEL_STALE_ORDER for cancel_action in cancel_actions)
+    assert len(cancel_actions) == 1
+    assert list(_result_field(result, "place_level_indices")) == [4]
 
 
 def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics() -> None:
@@ -196,9 +194,354 @@ def test_bounded_side_planner_reports_frontier_and_stale_replacement_diagnostics
     diagnostics = _result_field(result, "diagnostics")
 
     assert _result_field(diagnostics, "frontier_missing_level_count") == 1
-    assert _result_field(diagnostics, "planned_stale_replacement_count") == 1
-    assert _result_field(diagnostics, "total_missing_level_count") == 1
+    assert _result_field(diagnostics, "planned_stale_replacement_count") == 0
+    assert _result_field(diagnostics, "total_missing_level_count") == 0
     assert _result_field(diagnostics, "backlog_mode") == "normal"
+
+
+def test_bounded_side_planner_stale_matched_stack_does_not_churn_the_back_level() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, True],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=1,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "planned_stale_replacement_count") == 0
+
+
+def test_bounded_side_planner_reports_deque_front_back_mode_without_room_candidates() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("99"), Decimal(0)),
+            (Decimal("98"), Decimal("98"), Decimal(0)),
+            (Decimal("97"), Decimal("97"), Decimal(0)),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    cancel_actions = _cancel_pairs(_result_field(result, "cancel_actions"))
+
+    assert [index for index, _reason_code in cancel_actions] == [0]
+    assert list(_result_field(result, "place_level_indices")) == [2]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "cancel_front_place_back"
+    assert REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL not in {
+        reason_code
+        for _index, reason_code in cancel_actions
+    }
+    assert {reason_code for _index, reason_code in cancel_actions} == {
+        REASON_CANCEL_FRONT_VIOLATION,
+    }
+
+
+def test_bounded_side_planner_cancels_tail_for_full_depth_interior_gap() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("98"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (2, REASON_CANCEL_BACK_EXCESS),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "cancel_back"
+    assert _result_field(diagnostics, "budget_limited") is False
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 0
+    assert _result_field(diagnostics, "interior_hole_count") == 1
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
+def test_bounded_side_planner_cancels_unmatched_middle_level_for_hole_repair() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "98", "97"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (1, REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "repair_hole"
+    assert _result_field(diagnostics, "budget_limited") is False
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 0
+    assert _result_field(diagnostics, "interior_hole_count") == 1
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+    assert _result_field(diagnostics, "back_changed") is False
+
+
+def test_bounded_side_planner_advances_zero_overlap_full_depth_reprice_via_front_insert() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("98"), Decimal("97")],
+        active_stale=[False, False],
+        desired_levels=_desired_levels("100", "99"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (1, REASON_CANCEL_BACK_EXCESS),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [0]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "place_front_cancel_back"
+    assert _result_field(diagnostics, "front_changed") is True
+    assert _result_field(diagnostics, "back_changed") is True
+
+
+def test_bounded_side_planner_marks_front_edge_for_front_targeted_repair_cancel() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("96"), Decimal("95")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal("0")),
+            (Decimal("97"), Decimal("97"), Decimal("0")),
+            (Decimal("95"), Decimal("95"), Decimal("0")),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (0, REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL),
+    ]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "repair_hole"
+    assert _result_field(diagnostics, "front_changed") is True
+    assert _result_field(diagnostics, "back_changed") is False
+
+
+def test_bounded_side_planner_cancels_front_blocker_before_inward_move_when_interior_hole_exists() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("95"), Decimal("94")],
+        active_stale=[False, False, False, False],
+        desired_levels=_desired_levels("101", "99", "97", "95"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (0, REASON_CANCEL_FREE_SLOT_FOR_MISSING_LEVEL),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "repair_hole"
+    assert _result_field(diagnostics, "interior_hole_count") == 1
+    assert _result_field(diagnostics, "front_changed") is True
+    assert _result_field(diagnostics, "back_changed") is False
+
+
+def test_bounded_side_planner_keeps_short_tail_underfill_out_of_interior_hole_diagnostics() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100")],
+        active_stale=[False],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == [1]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "place_missing"
+    assert _result_field(diagnostics, "budget_limited") is True
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 2
+    assert _result_field(diagnostics, "interior_hole_count") == 0
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
+def test_bounded_side_planner_keeps_full_depth_keep_bucket_widen_as_no_op() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("99"), Decimal("98")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal("0")),
+            (Decimal("98"), Decimal("99.5"), Decimal("0")),
+            (Decimal("97"), Decimal("98.5"), Decimal("0")),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "budget_limited") is False
+    assert _result_field(diagnostics, "frontier_missing_level_count") == 1
+    assert _result_field(diagnostics, "interior_hole_count") == 0
+    assert _result_field(diagnostics, "total_missing_level_count") == 1
+
+
+def test_bounded_side_planner_keeps_frontier_only_keep_bucket_drift_as_no_op() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("97"), Decimal("96")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("99"), Decimal("100.5"), Decimal("0")),
+            (Decimal("97"), Decimal("97"), Decimal("0")),
+            (Decimal("96"), Decimal("96"), Decimal("0")),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "front_changed") is False
+    assert _result_field(diagnostics, "back_changed") is False
+
+
+def test_bounded_side_planner_keeps_sell_frontier_only_keep_bucket_drift_as_no_op() -> None:
+    result = _bounded_side_plan(
+        side="sell",
+        active_prices=[Decimal("100"), Decimal("103"), Decimal("104")],
+        active_stale=[False, False, False],
+        desired_levels=[
+            (Decimal("101"), Decimal("99.5"), Decimal("0")),
+            (Decimal("103"), Decimal("103"), Decimal("0")),
+            (Decimal("104"), Decimal("104"), Decimal("0")),
+        ],
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "front_changed") is False
+    assert _result_field(diagnostics, "back_changed") is False
+
+
+def test_bounded_side_planner_advances_mixed_frontier_tail_gap_via_front_insert() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("98"), Decimal("97"), Decimal("96")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("99", "96", "95"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (2, REASON_CANCEL_BACK_EXCESS),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [0]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "place_front_cancel_back"
+    assert _result_field(diagnostics, "front_changed") is True
+    assert _result_field(diagnostics, "back_changed") is True
+
+
+def test_bounded_side_planner_advances_sell_inward_reprice_via_front_insert() -> None:
+    result = _bounded_side_plan(
+        side="sell",
+        active_prices=[Decimal("102"), Decimal("103")],
+        active_stale=[False, False],
+        desired_levels=_desired_levels("101", "102"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=1,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
+        (1, REASON_CANCEL_BACK_EXCESS),
+    ]
+    assert list(_result_field(result, "place_level_indices")) == [0]
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "place_front_cancel_back"
+    assert _result_field(diagnostics, "front_changed") is True
+    assert _result_field(diagnostics, "back_changed") is True
+
+
+def test_bounded_side_planner_suppressed_hole_repair_keeps_filtered_diagnostics_consistent() -> None:
+    result = _bounded_side_plan(
+        side="buy",
+        active_prices=[Decimal("100"), Decimal("98"), Decimal("97")],
+        active_stale=[False, False, False],
+        desired_levels=_desired_levels("100", "99", "98"),
+        stale_cancel_budget=0,
+        max_reprice_cancel_actions=0,
+        max_place_actions=1,
+        max_total_actions=2,
+        backlog_mode="normal",
+    )
+
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == []
+    diagnostics = _result_field(result, "diagnostics")
+    assert _result_field(diagnostics, "stack_action_mode") == "no_op"
+    assert _result_field(diagnostics, "depth_before") == 3
+    assert _result_field(diagnostics, "depth_after") == 3
+    assert _result_field(diagnostics, "temporary_oversize_depth") == 3
+    assert _result_field(diagnostics, "front_changed") is False
+    assert _result_field(diagnostics, "back_changed") is False
 
 
 def test_bounded_side_planner_never_returns_duplicate_cancel_actions() -> None:
@@ -277,7 +620,7 @@ def test_bounded_side_planner_caps_places_to_available_slots_when_frontier_and_r
 
     place_level_indices = list(_result_field(result, "place_level_indices"))
 
-    assert len(place_level_indices) == 1
+    assert len(place_level_indices) == 0
 
 
 def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels_for_capacity_only() -> None:
@@ -301,7 +644,7 @@ def test_bounded_side_planner_prefers_passive_tail_before_more_aggressive_levels
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (5, REASON_CANCEL_EXCESS_LEVEL),
+        (5, REASON_CANCEL_BACK_EXCESS),
     ]
 
 
@@ -325,7 +668,7 @@ def test_bounded_side_planner_reports_zero_remaining_missing_after_planned_one_s
     )
 
     assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (0, REASON_CANCEL_TOO_AGGRESSIVE),
+        (0, REASON_CANCEL_FRONT_VIOLATION),
     ]
     assert list(_result_field(result, "place_level_indices")) == [4]
     diagnostics = _result_field(result, "diagnostics")
@@ -346,10 +689,8 @@ def test_bounded_side_planner_places_more_aggressive_stale_replacement_before_fr
         backlog_mode="normal",
     )
 
-    assert _cancel_pairs(_result_field(result, "cancel_actions")) == [
-        (0, REASON_CANCEL_STALE_ORDER),
-    ]
-    assert list(_result_field(result, "place_level_indices")) == [0]
+    assert _cancel_pairs(_result_field(result, "cancel_actions")) == []
+    assert list(_result_field(result, "place_level_indices")) == [1]
 
 
 def test_bounded_side_planner_does_not_peel_keep_bucket_for_ordinary_widening_room() -> None:

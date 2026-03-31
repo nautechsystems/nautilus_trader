@@ -234,6 +234,51 @@ describe('SignalTable audit coverage', () => {
     expect(localQty?.className).not.toContain('cursor-help');
   });
 
+  it('prefers top-level inventory quantities when incremental updates omit pricing adjustments', async () => {
+    const strategy: SignalStrategy = {
+      id: 'qty_top_level_strategy',
+      params: { bot_on: '1' } as any,
+      running: true,
+      state: { state: 'running', ts_ms: Date.now(), bot_on: true } as any,
+      risk_delta: 999999,
+      global_qty: 321.5,
+      local_qty: -42.25,
+      strategy_family: 'maker_v3',
+      meta: {
+        class: 'maker_v3',
+        strategy_groups: 'tokenmm',
+      } as any,
+      legs: {
+        A: {
+          exchange: 'bybit_linear',
+          coin: 'PLUME',
+          decision_bid: 1,
+          decision_ask: 1.01,
+          update_time: '2025-01-15 12:00:00',
+        } as any,
+        B: {
+          exchange: 'binance_spot',
+          coin: 'PLUME',
+          decision_bid: 1.02,
+          decision_ask: 1.03,
+          update_time: '2025-01-15 12:00:01',
+        } as any,
+      },
+      balances_ok: true,
+    } as any;
+
+    initSignalState({ rows: [strategy] });
+    const { container } = renderSignalTable();
+
+    await waitFor(() => expect(screen.getByText(strategy.id)).toBeInTheDocument());
+
+    const globalQty = container.querySelector('tbody tr td:nth-child(3) span');
+    const localQty = container.querySelector('tbody tr td:nth-child(4) span');
+    expect(globalQty?.textContent).toContain('321.5000');
+    expect(localQty?.textContent).toContain('-42.2500');
+    expect(globalQty?.textContent).not.toContain('999,999');
+  });
+
   it('renders the FvAdj header label in the live table', async () => {
     const strategy: SignalStrategy = {
       id: 'fvadj_strategy',

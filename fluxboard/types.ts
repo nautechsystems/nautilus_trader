@@ -679,8 +679,10 @@ export type PricingAdjustment = {
   inv_skew_global?: number;
   inv_ratio_local?: number;
   inv_skew_local?: number;
+  global_qty_base?: number | null;
   global_qty?: number | null;
   curr_qty?: number | null;
+  local_qty_base?: number | null;
   local_qty?: number | null;
   local_qty_key?: {
     venue_root?: string;
@@ -877,6 +879,12 @@ export type SignalStrategy = {
     | 'taker'
     | 'equities_maker'
     | 'equities_taker';
+  global_qty_base?: number | null;
+  global_qty?: number | null;
+  global_qty_base_complete?: boolean | null;
+  global_qty_complete?: boolean | null;
+  local_qty_base?: number | null;
+  local_qty?: number | null;
   risk_delta?: number;
   risk_delta_ts_ms?: number;
   // Static strategy classification metadata (optional, from configs/strategies.ini)
@@ -1320,6 +1328,12 @@ export type ScannerPricingDelta = {
 
 export type AlertsResponse = {
   alerts: Alert[];
+};
+
+export type AlertsSurfaceCapabilities = {
+  feed_mode?: string;
+  clear_mode?: string;
+  [key: string]: unknown;
 };
 
 // Raw API response types (before transformation)

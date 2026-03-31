@@ -31,10 +31,21 @@ def _load_shipper_config(path: Path):
 
 def _bootstrap_runtime(
     args: argparse.Namespace,
-) -> tuple[TelemetryPostgresSink, SQLiteToPostgresTelemetryShipper | None]:
+) -> tuple[TelemetryPostgresSink | None, SQLiteToPostgresTelemetryShipper | None]:
     config = _load_shipper_config(args.config)
     if not config.enabled:
         raise RuntimeError("Telemetry shipper is disabled in config")
+    if config.durable_sink == "s3_athena":
+        logging.getLogger("nautilus.telemetry.shipper").info(
+            "telemetry shipper runtime is in s3_athena mode; no postgres-backed long-running shipper process is required",
+        )
+        return None, None
+    if config.durable_sink != "postgres":
+        raise RuntimeError(
+            f"Telemetry shipper runtime does not yet support durable sink `{config.durable_sink}`",
+        )
+    if config.postgres is None:
+        raise RuntimeError("Telemetry shipper runtime requires postgres configuration")
 
     sink = TelemetryPostgresSink(config.postgres)
     try:
@@ -63,7 +74,8 @@ def main() -> int:
         )
         raise SystemExit(STARTUP_FAILURE_EXIT_CODE)
     if shipper is None:
-        sink.close()
+        if sink is not None:
+            sink.close()
         return 0
     try:
         if args.once:
@@ -71,8 +83,10 @@ def main() -> int:
         else:
             shipper.run_forever()
     finally:
-        shipper.close()
-        sink.close()
+        if shipper is not None:
+            shipper.close()
+        if sink is not None:
+            sink.close()
     return 0
 
 
