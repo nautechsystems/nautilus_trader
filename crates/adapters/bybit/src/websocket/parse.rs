@@ -17,7 +17,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -33,8 +33,8 @@ use crate::common::{
         BybitTriggerDirection,
     },
     parse::{
-        get_currency, parse_book_level, parse_millis_timestamp, parse_price_with_precision,
-        parse_quantity_with_precision,
+        get_currency, parse_book_level, parse_execution_commission, parse_millis_timestamp,
+        parse_price_with_precision, parse_quantity_with_precision,
     },
 };
 
@@ -724,6 +724,7 @@ pub fn parse_ws_fill_report(
     execution: &BybitWsAccountExecution,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    fee_currency_override: Option<Currency>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
@@ -749,18 +750,12 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Taker
     };
 
-    let fee_decimal: Decimal = execution
-        .exec_fee
-        .parse()
-        .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
-
-    let commission_currency = instrument.quote_currency();
-    let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
-        format!(
-            "Failed to create commission from execFee='{}'",
-            execution.exec_fee
-        )
-    })?;
+    let commission = parse_execution_commission(
+        &execution.exec_fee,
+        fee_currency_override,
+        instrument.quote_currency(),
+        "websocket",
+    )?;
     let ts_event = parse_millis_timestamp(&execution.exec_time, "execution.execTime")?;
 
     let client_order_id = if execution.order_link_id.is_empty() {
@@ -882,10 +877,13 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            parse::{parse_linear_instrument, parse_option_instrument},
+            parse::{parse_linear_instrument, parse_option_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
-        http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
+        http::models::{
+            BybitInstrumentLinearResponse, BybitInstrumentOptionResponse,
+            BybitInstrumentSpotResponse,
+        },
         websocket::messages::{
             BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg, BybitWsTickerOptionMsg,
             BybitWsTradeMsg,
@@ -918,6 +916,14 @@ mod tests {
         let instrument = &response.result.list[0];
         let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
         parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
+    }
+
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.001", "0.001", Some("BTC"));
+        parse_spot_instrument(instrument, &fee_rate, TS, TS).unwrap()
     }
 
     fn option_instrument() -> InstrumentAny {
@@ -1157,7 +1163,7 @@ mod tests {
         let execution = &msg.data[0];
         let account_id = AccountId::new("BYBIT-001");
 
-        let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
+        let report = parse_ws_fill_report(execution, account_id, &instrument, None, TS).unwrap();
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument.id());
@@ -1179,6 +1185,28 @@ mod tests {
             "test-order-link-001"
         );
         assert_eq!(report.ts_event, UnixNanos::new(1_746_270_400_353_000_000));
+    }
+
+    #[rstest]
+    fn parse_ws_spot_execution_uses_explicit_fee_currency_override() {
+        let instrument = spot_instrument();
+        let json = load_test_json("ws_account_execution_spot.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let execution = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_fill_report(
+            execution,
+            account_id,
+            &instrument,
+            Some(get_currency("BTC")),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.commission.currency.code.as_str(), "BTC");
+        assert_eq!(report.commission.as_f64(), 0.000025);
     }
 
     #[rstest]
