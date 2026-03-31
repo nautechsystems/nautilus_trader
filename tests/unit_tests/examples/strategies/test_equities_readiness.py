@@ -1786,6 +1786,66 @@ def test_evaluate_equities_readiness_keeps_feed_healthy_when_strategy_blocked_on
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
+def test_evaluate_equities_readiness_marks_locked_reference_quotes_unhealthy() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["state"]["state"] = "blocked_locked_or_crossed"
+    first_strategy["equities_arb"] = {
+        "quote_snapshot": {
+            "maker_leg": {
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+                "age_ms": 0,
+            },
+            "ref_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+                "age_ms": 0,
+            },
+            "hedge_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+                "age_ms": 0,
+            },
+            "hedge_disabled_reason": "locked_or_crossed",
+            "hedge_ready": False,
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv4",
+    ]
+
+
 def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None:
     from flux.runners.equities.readiness import evaluate_equities_readiness
 

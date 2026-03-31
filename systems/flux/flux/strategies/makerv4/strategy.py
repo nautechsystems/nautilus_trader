@@ -1219,7 +1219,7 @@ class MakerV4Strategy(Strategy):
         if tradeable:
             if (
                 self.tradeable is False
-                and self.hedge_disabled_reason == "stale_quote"
+                and self._is_retryable_hedge_block_reason(self.hedge_disabled_reason)
                 and self._pending_hedge is None
                 and self._hedge_backlog is None
             ):
