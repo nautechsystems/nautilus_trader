@@ -12,6 +12,7 @@ import {
   REALTIME_STANDARD_STORAGE_FLAGS,
   type RealtimeSurface,
 } from '../lib/realtime/constants';
+import { resolvePathnameProfile } from './uiProfiles';
 
 type BooleanLike = string | number | boolean | null | undefined;
 
@@ -194,6 +195,14 @@ export const featureFlags = {
   realtimeStandard: realtimeStandardFlags,
 } as const;
 
+function isProfileDefaultRealtimeStandardEnabled(surface: RealtimeSurface): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const profile = resolvePathnameProfile(window.location?.pathname);
+  return surface === 'trades' && profile === 'tokenmm';
+}
+
 export function isTradingStatusPillEnabled(): boolean {
   return featureFlags.tradingStatusPills;
 }
@@ -236,8 +245,13 @@ export function isPnlDecisionDetailsEnabled(): boolean {
 
 export function isRealtimeStandardEnabled(surface: RealtimeSurface): boolean {
   return (
-    featureFlags.realtimeStandard.global
-    && featureFlags.realtimeStandard[surface]
+    (
+      (
+        featureFlags.realtimeStandard.global
+        && featureFlags.realtimeStandard[surface]
+      )
+      || isProfileDefaultRealtimeStandardEnabled(surface)
+    )
     && !isRealtimeSurfaceKillSwitched(surface)
   );
 }

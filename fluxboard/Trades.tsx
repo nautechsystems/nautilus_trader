@@ -28,7 +28,7 @@ import { useResyncStatus } from './hooks/useResyncStatus';
 import { TableFilter, type FilterValues, type ColumnFilter } from './components/shared/TableFilter';
 import { PanelHeader } from './components/shared/PanelHeader';
 import type { RealtimeSnapshotLineage, TradeRow, TradeEvent } from './types';
-import { playTradeClick } from './utils/sound';
+import { playTradeClick, primeTradeAudio } from './utils/sound';
 import { getSoundMuted, setSoundMuted } from './utils/storage';
 import { TradesTable, type TradesTableScrollState } from './components/trades/TradesTable';
 import { TradesPerfHarness } from './components/trades/PerfHarness';
@@ -2251,6 +2251,9 @@ export default function Trades({
 
   const handleToggleSound = useCallback(() => {
     const newMuted = !soundMuted;
+    if (!newMuted) {
+      primeTradeAudio();
+    }
     setSoundMutedState(newMuted);
     setSoundMuted(newMuted);
   }, [soundMuted]);

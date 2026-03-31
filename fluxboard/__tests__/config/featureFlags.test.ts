@@ -98,6 +98,41 @@ describe('featureFlags', () => {
       expect(isRealtimeSurfaceKillSwitched('signal')).toBe(true);
       expect(isRealtimeStandardEnabled('signal')).toBe(false);
     });
+
+    it('defaults tokenmm trades to realtime standard without localStorage flags', async () => {
+      vi.doMock('@/config/uiProfiles', async (importOriginal) => {
+        const mod = await importOriginal<any>();
+        return {
+          ...mod,
+          resolvePathnameProfile: () => 'tokenmm',
+        };
+      });
+
+      const {
+        featureFlags,
+        isRealtimeStandardEnabled,
+      } = await loadFeatureFlagsModule();
+
+      expect(featureFlags.realtimeStandard.global).toBe(false);
+      expect(featureFlags.realtimeStandard.trades).toBe(false);
+      expect(isRealtimeStandardEnabled('trades')).toBe(true);
+    });
+
+    it('keeps default profile trades on the legacy rollout without flags', async () => {
+      vi.doMock('@/config/uiProfiles', async (importOriginal) => {
+        const mod = await importOriginal<any>();
+        return {
+          ...mod,
+          resolvePathnameProfile: () => 'default',
+        };
+      });
+
+      const {
+        isRealtimeStandardEnabled,
+      } = await loadFeatureFlagsModule();
+
+      expect(isRealtimeStandardEnabled('trades')).toBe(false);
+    });
   });
 
   describe('featureFlags object structure', () => {

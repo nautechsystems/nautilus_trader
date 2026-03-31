@@ -5,8 +5,20 @@ import Trades from './Trades';
 import { useTradesStore } from './stores';
 import { api } from './api';
 import { socket } from './sockets';
-import { playTradeClick } from './utils/sound';
+import { playTradeClick, primeTradeAudio } from './utils/sound';
 import type { TradeRow } from './types';
+
+const { realtimeFlags } = vi.hoisted(() => ({
+  realtimeFlags: {
+    trades: false,
+  },
+}));
+
+const { profileState } = vi.hoisted(() => ({
+  profileState: {
+    current: 'default',
+  },
+}));
 
 vi.mock('./api', async (importOriginal) => {
   const mod = await importOriginal<any>();
@@ -28,6 +40,22 @@ vi.mock('./sockets', () => ({
   },
 }));
 
+vi.mock('./config/featureFlags', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    isRealtimeStandardEnabled: (surface: string) => surface === 'trades' && realtimeFlags.trades,
+  };
+});
+
+vi.mock('./config/uiProfiles', async (importOriginal) => {
+  const mod = await importOriginal<any>();
+  return {
+    ...mod,
+    resolvePathnameProfile: () => profileState.current,
+  };
+});
+
 vi.mock('./stores', async (importOriginal) => {
   const mod = await importOriginal<any>();
   return {
@@ -42,6 +70,7 @@ vi.mock('./stores', async (importOriginal) => {
 
 vi.mock('./utils/sound', () => ({
   playTradeClick: vi.fn(),
+  primeTradeAudio: vi.fn(),
 }));
 
 let lastTradesTableProps: any = null;
@@ -59,6 +88,7 @@ vi.mock('./components/trades/TradesTable', () => ({
 const mockGetTrades = vi.mocked(api.getTrades);
 const mockGetTradesDelta = vi.mocked(api.getTradesDelta);
 const mockPlayTradeClick = vi.mocked(playTradeClick);
+const mockPrimeTradeAudio = vi.mocked(primeTradeAudio);
 
 type StoreMock = ReturnType<typeof useTradesStore>;
 
@@ -146,7 +176,10 @@ async function renderTrades(options: { apiResponse?: Partial<TradesApiResponse>;
 
 describe('Trades pagination and snapshot loading', () => {
   beforeEach(() => {
-    (window.location as any).pathname = '/trades';
+    window.history.replaceState({}, '', '/trades');
+    localStorage.clear();
+    realtimeFlags.trades = false;
+    profileState.current = 'default';
     sessionStorage.clear();
     mockGetTrades.mockReset();
     mockGetTradesDelta.mockReset();
@@ -154,6 +187,7 @@ describe('Trades pagination and snapshot loading', () => {
     vi.mocked(socket.on).mockClear();
     vi.mocked(socket.off).mockClear();
     mockPlayTradeClick.mockClear();
+    mockPrimeTradeAudio.mockClear();
     lastTradesTableProps = null;
   });
 
@@ -522,6 +556,27 @@ describe('Trades pagination and snapshot loading', () => {
     await waitFor(() => expect(mockPlayTradeClick).toHaveBeenCalled());
   });
 
+  it('primes audio when enabling trade sounds from the mute toggle', async () => {
+    sessionStorage.setItem('trades_page_size', '50');
+    localStorage.setItem('fluxboard:sound:muted', 'true');
+
+    await renderTrades();
+
+    const soundButton = screen.getByRole('button', { name: '🔇' });
+    fireEvent.click(soundButton);
+
+    expect(mockPrimeTradeAudio).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prime audio when muting trade sounds', async () => {
+    await renderTrades();
+
+    const soundButton = screen.getByRole('button', { name: '🔊' });
+    fireEvent.click(soundButton);
+
+    expect(mockPrimeTradeAudio).not.toHaveBeenCalled();
+  });
+
   it('does not apply live deltas when time sort is ascending', async () => {
     const { applyDelta } = await renderTrades();
     const tradeUpdateCall = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update');
@@ -577,7 +632,9 @@ describe('Trades pagination and snapshot loading', () => {
   });
 
   it('applies socket trade updates on non-default profile surfaces', async () => {
-    (window.location as any).pathname = '/tokenmm/trades';
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    localStorage.setItem('fluxboard:feature:realtime-standard-kill-switch', '1');
+    profileState.current = 'tokenmm';
     const { applyDelta } = await renderTrades();
 
     const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
@@ -592,7 +649,9 @@ describe('Trades pagination and snapshot loading', () => {
   });
 
   it('projects qty_base as the primary trade quantity while preserving qty_venue on socket updates', async () => {
-    (window.location as any).pathname = '/tokenmm/trades';
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    localStorage.setItem('fluxboard:feature:realtime-standard-kill-switch', '1');
+    profileState.current = 'tokenmm';
     const { applyDelta } = await renderTrades();
     const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
     expect(handler).toBeInstanceOf(Function);
@@ -631,7 +690,8 @@ describe('Trades pagination and snapshot loading', () => {
   });
 
   it('keeps venue qty primary on non-tokenmm socket updates even when qty_base is present', async () => {
-    (window.location as any).pathname = '/trades';
+    window.history.replaceState({}, '', '/trades');
+    profileState.current = 'default';
     const { applyDelta } = await renderTrades();
     const handler = vi.mocked(socket.on).mock.calls.find(([event]) => event === 'trade_update')?.[1] as ((msg: any) => void) | undefined;
     expect(handler).toBeInstanceOf(Function);
