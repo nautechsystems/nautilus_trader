@@ -1299,7 +1299,7 @@ mod tests {
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
             BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitKlinesResponse,
-            BybitTradesResponse,
+            BybitTradeHistoryResponse, BybitTradesResponse,
         },
     };
 
@@ -1327,6 +1327,14 @@ mod tests {
         parse_linear_instrument(instrument, &fee_rate, TS, TS).unwrap()
     }
 
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.001", "0.001", Some("BTC"));
+        parse_spot_instrument(instrument, &fee_rate, TS, TS).unwrap()
+    }
+
     #[rstest]
     fn parse_spot_instrument_builds_currency_pair() {
         let json = load_test_json("http_get_instruments_spot.json");
@@ -1345,6 +1353,20 @@ mod tests {
             }
             _ => panic!("expected CurrencyPair"),
         }
+    }
+
+    #[rstest]
+    fn parse_http_spot_execution_preserves_fee_currency() {
+        let instrument = spot_instrument();
+        let json = load_test_json("http_get_executions_spot_fee_currency.json");
+        let response: BybitTradeHistoryResponse = serde_json::from_str(&json).unwrap();
+        let execution = &response.result.list[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.commission.currency.code.as_str(), "BTC");
+        assert_eq!(report.commission.as_f64(), 0.000025);
     }
 
     #[rstest]

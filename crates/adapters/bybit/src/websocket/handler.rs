@@ -1126,7 +1126,13 @@ impl FeedHandler {
                         let symbol = make_bybit_symbol(raw_symbol, execution.category);
 
                         if let Some(instrument) = instruments.get(&symbol) {
-                            match parse_ws_fill_report(execution, account_id, instrument, ts_init) {
+                            match parse_ws_fill_report(
+                                execution,
+                                account_id,
+                                instrument,
+                                None,
+                                ts_init,
+                            ) {
                                 Ok(report) => reports.push(report),
                                 Err(e) => log::error!("Error parsing fill report: {e}"),
                             }
@@ -1575,10 +1581,23 @@ pub fn classify_bybit_message(value: serde_json::Value) -> BybitWsMessage {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::nanos::UnixNanos;
+    use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
-    use crate::common::consts::BYBIT_WS_TOPIC_DELIMITER;
+    use crate::{
+        common::{
+            consts::BYBIT_WS_TOPIC_DELIMITER,
+            parse::parse_spot_instrument,
+            testing::load_test_json,
+        },
+        http::models::BybitInstrumentSpotResponse,
+        websocket::messages::{BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg},
+    };
+
+    const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
     fn create_test_handler() -> FeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
@@ -1604,6 +1623,19 @@ mod tests {
             funding_cache,
             bar_types_cache,
         )
+    }
+
+    fn spot_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = crate::http::models::BybitFeeRate {
+            symbol: Ustr::from("BTCUSDT"),
+            taker_fee_rate: "0.001".to_string(),
+            maker_fee_rate: "0.001".to_string(),
+            base_coin: Some(Ustr::from("BTC")),
+        };
+        parse_spot_instrument(instrument, &fee_rate, TS, TS).unwrap()
     }
 
     #[rstest]
@@ -1688,5 +1720,56 @@ mod tests {
             );
         }
         assert_eq!(ids.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn handler_caches_order_fee_currency_for_spot_execution() {
+        let mut handler = create_test_handler();
+        let account_id = AccountId::new("BYBIT-001");
+        let instrument = spot_instrument();
+        let symbol = Ustr::from(instrument.id().symbol.as_str());
+        let instruments = AHashMap::from_iter([(symbol, instrument.clone())]);
+        let funding_cache = handler.funding_cache.clone();
+
+        let order_json = load_test_json("ws_account_order_spot_filled.json");
+        let order_msg: BybitWsAccountOrderMsg = serde_json::from_str(&order_json).unwrap();
+        let execution_json = load_test_json("ws_account_execution_spot.json");
+        let execution_msg: BybitWsAccountExecutionMsg =
+            serde_json::from_str(&execution_json).unwrap();
+
+        let order_messages = handler
+            .parse_to_nautilus_messages(
+                BybitWsMessage::AccountOrder(order_msg),
+                &instruments,
+                Some(account_id),
+                None,
+                &funding_cache,
+                TS,
+            )
+            .await;
+        assert!(matches!(
+            order_messages.as_slice(),
+            [NautilusWsMessage::OrderStatusReports(_)]
+        ));
+
+        let execution_messages = handler
+            .parse_to_nautilus_messages(
+                BybitWsMessage::AccountExecution(execution_msg),
+                &instruments,
+                Some(account_id),
+                None,
+                &funding_cache,
+                TS,
+            )
+            .await;
+
+        let fill_reports = match execution_messages.as_slice() {
+            [NautilusWsMessage::FillReports(reports)] => reports,
+            other => panic!("expected fill reports, got {other:?}"),
+        };
+        assert_eq!(fill_reports.len(), 1);
+        assert_eq!(fill_reports[0].instrument_id, instrument.id());
+        assert_eq!(fill_reports[0].commission.currency.code.as_str(), "BTC");
+        assert_eq!(fill_reports[0].commission.as_f64(), 0.000025);
     }
 }
