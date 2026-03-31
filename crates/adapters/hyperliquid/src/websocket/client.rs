@@ -79,6 +79,14 @@ impl QuoteSubscriptionRecoveryResult {
         }
     }
 
+    fn already_subscribed() -> Self {
+        Self {
+            status: "already_subscribed",
+            ok: true,
+            error_summary: None,
+        }
+    }
+
     fn transport_unhealthy() -> Self {
         Self {
             status: "transport_unhealthy",
@@ -688,6 +696,12 @@ impl HyperliquidWebSocketClient {
             coin: instrument.raw_symbol().inner(),
         };
         let topic = crate::websocket::handler::subscription_to_key(&subscription);
+        if self
+            .subscriptions
+            .is_subscribed(&Ustr::from("bbo"), &instrument.raw_symbol().inner())
+        {
+            return QuoteSubscriptionRecoveryResult::already_subscribed();
+        }
 
         if !desired_topics_for_reconnect(&self.subscriptions)
             .iter()

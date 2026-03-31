@@ -761,7 +761,7 @@ async fn test_quote_recovery_cache_miss_is_explicit() {
 
 #[rstest]
 #[tokio::test]
-async fn test_quote_recovery_replays_desired_subscription_on_healthy_transport() {
+async fn test_quote_recovery_keeps_healthy_subscription_without_duplicate_replay() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -799,15 +799,50 @@ async fn test_quote_recovery_replays_desired_subscription_on_healthy_transport()
 
     let result = client.recover_quote_subscription(instrument_id).await;
 
-    assert_eq!(result.status, "replayed");
-    assert!(result.ok, "expected replay-first recovery result, got {result:?}");
+    assert_eq!(result.status, "already_subscribed");
+    assert!(result.ok, "expected idempotent recovery result, got {result:?}");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        state.subscription_events().await.is_empty(),
+        "healthy subscriptions should not replay duplicate BBO subscribes",
+    );
+
+    assert_eq!(
+        state.total_connection_count.load(Ordering::Relaxed),
+        1,
+        "healthy recovery should not force a reconnect",
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_quote_recovery_skips_duplicate_replay_for_active_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
 
     wait_until_async(
         || {
             let state = state.clone();
             async move {
                 state
-                    .subscription_events()
+                    .subscription_events
+                    .lock()
                     .await
                     .iter()
                     .any(|(t, ok)| t == "bbo" && *ok)
@@ -817,10 +852,16 @@ async fn test_quote_recovery_replays_desired_subscription_on_healthy_transport()
     )
     .await;
 
-    assert_eq!(
-        state.total_connection_count.load(Ordering::Relaxed),
-        1,
-        "healthy replay-first recovery should not force a reconnect",
+    state.clear_subscription_events().await;
+
+    let result = client.recover_quote_subscription(instrument_id).await;
+
+    assert_eq!(result.status, "already_subscribed");
+    assert!(result.ok);
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        state.subscription_events().await.is_empty(),
+        "confirmed subscriptions should not replay duplicate BBO subscribes",
     );
 
     client.disconnect().await.expect("close failed");
@@ -905,19 +946,13 @@ async fn test_quote_recovery_duplicate_resets_are_idempotent() {
     let first = client.recover_quote_subscription(instrument_id).await;
     let second = client.recover_quote_subscription(instrument_id).await;
 
-    assert_eq!(first.status, "replayed");
-    assert_eq!(second.status, "already_inflight");
-    assert!(second.ok, "duplicate in-flight reset should be idempotent");
-
-    let events = wait_for_subscription_events(&state, Duration::from_secs(2), |events| {
-        events.iter().filter(|(t, ok)| t == "bbo" && *ok).count() >= 1
-    })
-    .await;
-    let replay_count = events.iter().filter(|(t, ok)| t == "bbo" && *ok).count();
-
-    assert_eq!(
-        replay_count, 1,
-        "duplicate recovery attempts should only queue one replay, events={events:?}",
+    assert_eq!(first.status, "already_subscribed");
+    assert_eq!(second.status, "already_subscribed");
+    assert!(second.ok, "duplicate recovery attempts should remain idempotent");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(
+        state.subscription_events().await.is_empty(),
+        "active subscriptions should not queue duplicate replays",
     );
 
     client.disconnect().await.expect("close failed");
@@ -965,8 +1000,8 @@ async fn test_quote_recovery_duplicate_resets_stay_blocked_until_quote_resolutio
     tokio::time::sleep(Duration::from_secs(3)).await;
     let second = client.recover_quote_subscription(instrument_id).await;
 
-    assert_eq!(first.status, "replayed");
-    assert_eq!(second.status, "already_inflight");
+    assert_eq!(first.status, "already_subscribed");
+    assert_eq!(second.status, "already_subscribed");
 
     client.disconnect().await.expect("close failed");
 }
