@@ -41,24 +41,7 @@ def _to_json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=_json_default)
 
 
-REPLAY_LATEST_ENTRY_TOPIC_SUFFIXES = frozenset({"market_bbo"})
-
-
-def _entry_id_before(entry_id: str) -> str | None:
-    try:
-        ms_text, seq_text = decode_text(entry_id).strip().split("-", maxsplit=1)
-        ms = int(ms_text)
-        seq = int(seq_text)
-    except (TypeError, ValueError):
-        return None
-
-    if ms < 0 or seq < 0:
-        return None
-    if seq > 0:
-        return f"{ms}-{seq - 1}"
-    if ms > 0:
-        return f"{ms - 1}-0"
-    return "0-0"
+FULL_BOOTSTRAP_REPLAY_TOPIC_SUFFIXES = frozenset({"market_bbo"})
 
 
 @dataclass(frozen=True)
@@ -295,9 +278,10 @@ class FluxBridgeStreamConsumer:
             return self._start_id
 
         topic_suffix = coordinates.topic.rsplit(".", maxsplit=1)[-1]
+        if topic_suffix in FULL_BOOTSTRAP_REPLAY_TOPIC_SUFFIXES:
+            return "0-0"
+
         latest_entry_id = self._latest_stream_entry_id(stream_key)
-        if topic_suffix in REPLAY_LATEST_ENTRY_TOPIC_SUFFIXES:
-            return _entry_id_before(latest_entry_id or "") or latest_entry_id or self._start_id
         if topic_suffix != "trade":
             return latest_entry_id or self._start_id
 
