@@ -1092,6 +1092,119 @@ describe('Trades integration flows', () => {
     });
   });
 
+  it('does not poll trades delta while a tokenmm standard recovery snapshot is in flight', async () => {
+    realtimeFlags.trades = true;
+    window.history.replaceState({}, '', '/tokenmm/trades');
+    const deferredRecovery = createDeferred<any>();
+    setNextSubscribeAck({
+      accepted: true,
+      contract_version: 2,
+      surface: 'trades',
+      profile: 'tokenmm',
+      surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+      stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+      snapshot_revision: 1,
+      accepted_start_seq: 0,
+      last_seq: 0,
+      requested_resume_from_seq: 0,
+      capabilities: {
+        recovery_mode: 'invalidate_only',
+        replay_supported: false,
+        transport_mode: 'polling_only',
+      },
+    });
+    getTrades
+      .mockResolvedValueOnce({
+        rows: [{ ...baseRows[0], seq: 7270134935126016 }],
+        total: 1,
+        page: 1,
+        page_size: 50,
+        last_seq: 0,
+        realtime: {
+          contract_version: 2,
+          surface: 'trades',
+          profile: 'tokenmm',
+          surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+          stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+          snapshot_revision: 1,
+          last_seq: 0,
+          capabilities: {
+            recovery_mode: 'invalidate_only',
+            replay_supported: false,
+            transport_mode: 'polling_only',
+          },
+        },
+      })
+      .mockImplementationOnce(() => deferredRecovery.promise);
+
+    render(<Trades />);
+
+    await waitFor(() => {
+      const subscribeCalls = socketMock.emit.mock.calls.filter(([event]) => event === 'subscribe');
+      expect(subscribeCalls.length).toBeGreaterThanOrEqual(1);
+      expect(subscribeCalls[0]?.[1]).toMatchObject({
+        surface: 'trades',
+        profile: 'tokenmm',
+        resume_from_seq: 0,
+      });
+    });
+
+    act(() => {
+      socketHandlers.realtime_event?.({
+        contract_version: 2,
+        surface: 'trades',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        profile: 'tokenmm',
+        kind: 'recovery_required',
+        seq: 1,
+        snapshot_revision: 1,
+        server_ts_ms: 1_700_000_000_001,
+        reason: 'trade_gap',
+        payload: {},
+      });
+    });
+
+    await waitFor(() => {
+      expect(getTrades).toHaveBeenCalledTimes(2);
+    });
+
+    getTradesDelta.mockClear();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+    });
+
+    expect(getTradesDelta).not.toHaveBeenCalled();
+    expect(screen.queryByText('MANUAL REFRESH REQUIRED')).toBeNull();
+
+    deferredRecovery.resolve({
+      rows: [{ ...baseRows[0], row_id: 'recovered-after-tokenmm-refresh', seq: 7270134935126017, ts: 9 }],
+      total: 1,
+      page: 1,
+      page_size: 50,
+      last_seq: 0,
+      realtime: {
+        contract_version: 2,
+        surface: 'trades',
+        profile: 'tokenmm',
+        surface_query_key: 'trades|profile=tokenmm|strategy_ids=plumeusdt_bybit_perp_makerv3',
+        stream_id: 'trades:tokenmm:plumeusdt_bybit_perp_makerv3',
+        snapshot_revision: 1,
+        last_seq: 0,
+        capabilities: {
+          recovery_mode: 'invalidate_only',
+          replay_supported: false,
+          transport_mode: 'polling_only',
+        },
+      },
+    });
+
+    await waitFor(() => {
+      const subscribeCalls = socketMock.emit.mock.calls.filter(([event]) => event === 'subscribe');
+      expect(subscribeCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('does not start a second reconnect snapshot while a standard trade-gap recovery snapshot is already in flight', async () => {
     realtimeFlags.trades = true;
     const deferredRecovery = createDeferred<any>();

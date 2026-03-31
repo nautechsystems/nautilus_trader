@@ -1497,26 +1497,32 @@ export default function Trades({
         return;
       }
       try {
-        const standardReplaySupported = Boolean(
-          tradesStandardActiveView
-          && standardLineageRef.current?.capabilities?.replay_supported,
-        );
-        const requiresTokenmmSnapshotRefresh = Boolean(
+        const currentStreamCursor = streamCursorRef.current;
+        const standardProfile =
+          standardLineageRef.current?.profile;
+        const usesTokenmmTradeStream = typeof currentStreamCursor.streamId === 'string'
+          && currentStreamCursor.streamId.startsWith('trades:tokenmm:');
+        const tokenmmSnapshotOnlyRecovery = Boolean(
           tradesStandardEnabled
           && tradesStandardActiveView
-          && standardLineageRef.current?.profile === 'tokenmm'
-          && standardLineageRef.current?.capabilities?.replay_supported === false,
+          && (standardProfile === 'tokenmm' || usesTokenmmTradeStream)
+          && (
+            standardSnapshotRecoveryInFlightRef.current
+            || standardLineageRef.current == null
+            || standardLineageRef.current?.capabilities?.replay_supported === false
+          ),
         );
-        if (
-          requiresTokenmmSnapshotRefresh
-        ) {
-          if (socketConnectedRef.current) {
+        if (tokenmmSnapshotOnlyRecovery) {
+          // TokenMM trades currently run in invalidate-only mode. When a recovery
+          // snapshot is already in flight, or lineage has been cleared for that
+          // snapshot refresh, never fall through to /trades/delta.
+          if (socketConnectedRef.current && !standardSnapshotRecoveryInFlightRef.current) {
             recoverStandardSnapshot('snapshot_refresh');
           }
           return;
         }
         const pollResyncId = resyncIdRef.current;
-        const requestCursor = { ...streamCursorRef.current };
+        const requestCursor = { ...currentStreamCursor };
         const requestedSinceSeq = requestCursor.lastSeq;
         const deltaCursor = {
           sinceSeq: requestedSinceSeq,
