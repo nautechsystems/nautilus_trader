@@ -222,7 +222,8 @@ def _healthy_ibkr_reference_publisher_status_payload() -> dict[str, object]:
         "last_success_ts_ms": 1_700_000_000_450,
         "last_error_type": None,
         "last_error_message": None,
-        "stale_after_ms": 1_500,
+        "stale_after_ms": 10_000,
+        "status_stale_after_ms": 1_500,
         "ts_ms": 1_700_000_000_500,
     }
 
@@ -1980,6 +1981,39 @@ def test_evaluate_equities_readiness_requires_publisher_to_be_actively_publishin
     assert result.ok is False
     assert result.checks["ibkr_reference_publisher"].ok is False
     assert result.checks["ibkr_reference_publisher"].details["state"] == "connected"
+
+
+def test_evaluate_equities_readiness_uses_status_staleness_budget_for_publisher_heartbeat() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    publisher_status_payload = _healthy_ibkr_reference_publisher_status_payload()
+    publisher_status_payload["stale_after_ms"] = 10_000
+    publisher_status_payload["status_stale_after_ms"] = 1_500
+    publisher_status_payload["ts_ms"] = 1_700_000_000_000
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=publisher_status_payload,
+        now_ms_value=1_700_000_002_000,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is False
+    assert result.checks["ibkr_reference_publisher"].ok is False
+    assert result.checks["ibkr_reference_publisher"].details["stale"] is True
+    assert result.checks["ibkr_reference_publisher"].details["status_stale_after_ms"] == 1_500
 
 
 def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -> None:

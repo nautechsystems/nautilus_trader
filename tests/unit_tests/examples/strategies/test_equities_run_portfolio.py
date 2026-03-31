@@ -332,7 +332,7 @@ def test_equities_live_config_builds_shared_ibkr_reference_publisher_from_shared
     assert publisher_config.service_id == "ibkr_reference_publisher"
     assert publisher_config.enabled is True
     assert publisher_config.snapshot_interval_ms == 200
-    assert publisher_config.stale_after_ms == 5_000
+    assert publisher_config.stale_after_ms == 10_000
 
 
 def test_equities_live_config_dedupes_shared_reference_instrument_universe() -> None:

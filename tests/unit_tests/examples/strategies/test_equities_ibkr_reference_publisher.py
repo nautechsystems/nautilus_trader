@@ -37,7 +37,7 @@ def _config(*, instruments: tuple[str, ...] = ("AAPL.NASDAQ", "AMD.NASDAQ")) -> 
             "account_scope_id": "ibkr.reference.main",
             "service_id": "ibkr_reference_publisher",
             "snapshot_interval_ms": 200,
-            "stale_after_ms": 5_000,
+            "stale_after_ms": 10_000,
             "non_rth_stale_after_ms": 300_000,
             "reconnect_backoff_initial_ms": 1_000,
             "reconnect_backoff_max_ms": 15_000,
@@ -136,7 +136,7 @@ def test_build_ibkr_reference_publisher_config_defaults_to_less_aggressive_rth_s
 
     config = build_ibkr_reference_publisher_config(raw)
 
-    assert config.stale_after_ms == 5_000
+    assert config.stale_after_ms == 10_000
 
 
 def test_classify_ibkr_session_preserves_regular_and_overnight_windows() -> None:
@@ -164,7 +164,7 @@ def test_select_reference_feed_prefers_session_route_and_falls_back_to_fresh_alt
         smart_md=smart_md,
         overnight_md=overnight_md,
         now_ms=now_ms,
-        stale_after_ms=5_000,
+        stale_after_ms=10_000,
     )
     assert route == "SMART"
     assert selected == smart_md
@@ -172,9 +172,9 @@ def test_select_reference_feed_prefers_session_route_and_falls_back_to_fresh_alt
     route, selected = select_reference_feed(
         session="OVERNIGHT",
         smart_md=smart_md,
-        overnight_md={**overnight_md, "ts_event_ms": 4_000},
+        overnight_md={**overnight_md, "ts_event_ms": -1_000},
         now_ms=now_ms,
-        stale_after_ms=5_000,
+        stale_after_ms=10_000,
     )
     assert route == "SMART"
     assert selected == smart_md
@@ -231,6 +231,7 @@ def test_publish_from_snapshot_map_writes_shared_quote_and_status_keys() -> None
     assert stored_status["state"] == "publishing"
     assert stored_status["connected"] is True
     assert stored_status["instrument_status"]["AAPL.NASDAQ"]["state"] == "healthy"
+    assert stored_status["status_stale_after_ms"] == 1_500
     assert status_payload == stored_status
     assert (
         FluxRedisKeys.profile_market_last_channel(
@@ -294,6 +295,32 @@ def test_publish_from_snapshot_map_uses_non_rth_freshness_budget_outside_regular
     assert status_payload["stale_after_ms"] == 300_000
     assert status_payload["instrument_status"]["AAPL.NASDAQ"]["state"] == "healthy"
     assert status_payload["instrument_status"]["AAPL.NASDAQ"]["age_ms"] == 30_000
+
+
+def test_publish_from_snapshot_map_keeps_rth_reference_quotes_healthy_across_normal_ibkr_gaps() -> None:
+    redis_client = _FakeRedis()
+    config = build_ibkr_reference_publisher_config(_config(instruments=("CRCL.NYSE",)))
+    service = IbkrReferencePublisherService(config=config, redis_client=redis_client)
+
+    status_payload = service.publish_from_snapshot_map(
+        {
+            "CRCL.NYSE": {
+                "SMART": {
+                    "bid": 95.0,
+                    "ask": 95.1,
+                    "bid_size": 10.0,
+                    "ask_size": 12.0,
+                    "ts_event_ms": 4_800,
+                },
+            },
+        },
+        session="RTH",
+        now_ms=10_000,
+    )
+
+    assert status_payload["state"] == "publishing"
+    assert status_payload["instrument_status"]["CRCL.NYSE"]["state"] == "healthy"
+    assert status_payload["instrument_status"]["CRCL.NYSE"]["age_ms"] == 5_200
 
 
 def test_compute_next_backoff_ms_is_explicit_and_bounded() -> None:

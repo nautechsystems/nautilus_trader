@@ -871,14 +871,16 @@ def evaluate_equities_readiness(
             != "healthy"
         )
         stale_after_ms = _safe_int(publisher_data.get("stale_after_ms"))
+        status_stale_after_ms = _safe_int(publisher_data.get("status_stale_after_ms"))
         status_ts_ms = _safe_int(publisher_data.get("ts_ms")) or _safe_int(
             publisher_data.get("last_success_ts_ms"),
         )
+        heartbeat_stale_after_ms = status_stale_after_ms or stale_after_ms
         stale = (
             status_ts_ms is None
-            or stale_after_ms is None
-            or stale_after_ms <= 0
-            or (now_ms_value - status_ts_ms) > stale_after_ms
+            or heartbeat_stale_after_ms is None
+            or heartbeat_stale_after_ms <= 0
+            or (now_ms_value - status_ts_ms) > heartbeat_stale_after_ms
         )
         scope_matches = (
             expected_publisher_scope_id is None
@@ -916,6 +918,7 @@ def evaluate_equities_readiness(
                 "connected": connected,
                 "stale": stale,
                 "stale_after_ms": stale_after_ms,
+                "status_stale_after_ms": status_stale_after_ms,
                 "status_ts_ms": status_ts_ms,
                 "unhealthy_instrument_ids": unhealthy_instrument_ids,
             },

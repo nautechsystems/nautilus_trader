@@ -187,7 +187,7 @@ def build_ibkr_reference_publisher_config(config: Mapping[str, Any]) -> IbkrRefe
     stale_after_ms = _positive_int(
         publisher_cfg.get("stale_after_ms"),
         field_name="ibkr_reference_publisher.stale_after_ms",
-        default=5_000,
+        default=10_000,
     )
 
     return IbkrReferencePublisherConfig(
@@ -652,6 +652,9 @@ class IbkrReferencePublisherService:
             return self._config.stale_after_ms
         return self._config.non_rth_stale_after_ms
 
+    def _status_stale_after_ms(self) -> int:
+        return max(1_500, self._config.snapshot_interval_ms * 5)
+
     def publish_from_snapshot_map(
         self,
         snapshot_map: Mapping[str, Mapping[str, Mapping[str, Any]]],
@@ -856,6 +859,7 @@ class IbkrReferencePublisherService:
             "last_error_type": self._last_error_type,
             "last_error_message": self._last_error_message,
             "stale_after_ms": stale_after_ms,
+            "status_stale_after_ms": self._status_stale_after_ms(),
             "ts_ms": now_ms,
         }
         self._write_json(
