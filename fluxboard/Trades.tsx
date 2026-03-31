@@ -1005,13 +1005,23 @@ export default function Trades({
   }, [syncSurfaceState]);
 
   useEffect(() => {
+    if (tradesStandardEnabled && tradesStandardActiveView) {
+      syncSurfaceState();
+      return;
+    }
     latestSeqRef.current = lastSeq;
     const recoveryState = reconcileGapRecoveryTarget(lastSeq);
     streamCursorRef.current.lastSeq = recoveryState.targetSeq == null
       ? Math.max(streamCursorRef.current.lastSeq, lastSeq)
       : recoveryState.acknowledgedSeq;
     syncSurfaceState();
-  }, [lastSeq, syncSurfaceState, reconcileGapRecoveryTarget]);
+  }, [
+    lastSeq,
+    reconcileGapRecoveryTarget,
+    syncSurfaceState,
+    tradesStandardActiveView,
+    tradesStandardEnabled,
+  ]);
 
   useEffect(() => {
     pollDelayRef.current = pollDelay;
