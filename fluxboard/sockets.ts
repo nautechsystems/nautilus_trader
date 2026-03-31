@@ -217,6 +217,16 @@ function matchesStandardSubscribeAck(
   );
 }
 
+function allowsAcceptedStartSeqClamp(
+  ack: StandardSocketSubscribeAck,
+): boolean {
+  const recoveryMode = String(ack.capabilities?.recovery_mode ?? '').trim().toLowerCase();
+  return (
+    recoveryMode === 'invalidate_only'
+    || ack.capabilities?.replay_supported === false
+  );
+}
+
 export function createStandardSocketClient(
   targetSocket?: StandardSocketTarget,
 ): StandardSocketClient {
@@ -342,6 +352,7 @@ export function createStandardSocketClient(
       if (
         typeof ack.accepted_start_seq === 'number'
         && ack.accepted_start_seq !== issuedRequest.resume_from_seq
+        && !allowsAcceptedStartSeqClamp(ack)
       ) {
         const socketTarget = boundSocket;
         removeSubscription(subscription.id);
