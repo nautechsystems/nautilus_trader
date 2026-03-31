@@ -66,6 +66,7 @@ _ACCOUNT_SUMMARY_TAGS = frozenset(
 class IbkrReferenceBalanceSnapshotProviderConfig:
     ibg_host: str = "127.0.0.1"
     ibg_port: int | None = None
+    ibg_fallback_ports: tuple[int, ...] = ()
     ibg_client_id: int = 1
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
     connection_timeout: int = 300
@@ -137,7 +138,7 @@ class IbkrReferenceBalanceSnapshotProvider:
                 runtime.loop,
             )
             snapshot = future.result(
-                timeout=self._config.connection_timeout + self._config.request_timeout_secs,
+                timeout=self._refresh_timeout_secs(),
             )
             self._latest_snapshot = self._annotate_refresh_success(
                 snapshot,
@@ -257,6 +258,31 @@ class IbkrReferenceBalanceSnapshotProvider:
             return
 
     async def _fetch_snapshot(self, strategy: Any) -> dict[str, Any]:
+        last_exc: Exception | None = None
+        candidate_ports = self._candidate_ports()
+        for port in candidate_ports:
+            try:
+                return await self._fetch_snapshot_from_port(strategy, port=port)
+            except Exception as exc:
+                last_exc = exc
+                if self._is_recoverable_refresh_failure(exc):
+                    with suppress(Exception):
+                        drop_cached_ib_client(
+                            host=self._config.ibg_host,
+                            port=port,
+                            client_id=self._config.ibg_client_id,
+                        )
+                if port != candidate_ports[-1]:
+                    continue
+        assert last_exc is not None
+        raise last_exc
+
+    async def _fetch_snapshot_from_port(
+        self,
+        strategy: Any,
+        *,
+        port: int | None,
+    ) -> dict[str, Any]:
         loop = asyncio.get_running_loop()
         client = get_cached_ib_client(
             loop=loop,
@@ -264,13 +290,13 @@ class IbkrReferenceBalanceSnapshotProvider:
             cache=strategy.cache,
             clock=strategy.clock,
             host=self._config.ibg_host,
-            port=self._config.ibg_port,
+            port=port,
             client_id=self._config.ibg_client_id,
             dockerized_gateway=self._config.dockerized_gateway,
             request_timeout_secs=self._config.request_timeout_secs,
         )
         client_host = str(getattr(client, "_host", self._config.ibg_host))
-        client_port = getattr(client, "_port", self._config.ibg_port)
+        client_port = getattr(client, "_port", port)
         client_id = int(getattr(client, "_client_id", self._config.ibg_client_id))
         self._cached_client_key = (client_host, client_port, client_id)
         await client.wait_until_ready(self._config.connection_timeout)
@@ -290,7 +316,24 @@ class IbkrReferenceBalanceSnapshotProvider:
             raw_snapshot=payload,
             strategy_id="shared_account",
         )
+        payload["projection_gateway_port"] = client_port
         return payload
+
+    def _candidate_ports(self) -> tuple[int | None, ...]:
+        ports: list[int | None] = []
+        primary = self._config.ibg_port
+        if primary is not None:
+            ports.append(primary)
+        for port in self._config.ibg_fallback_ports:
+            if port not in ports:
+                ports.append(port)
+        if not ports:
+            return (None,)
+        return tuple(ports)
+
+    def _refresh_timeout_secs(self) -> int:
+        candidate_count = max(1, len(self._candidate_ports()))
+        return candidate_count * (self._config.connection_timeout + self._config.request_timeout_secs)
 
     def _projection_stale_after_ms(self) -> int:
         return max(1_000, int(self._config.refresh_interval_secs * 1_000))

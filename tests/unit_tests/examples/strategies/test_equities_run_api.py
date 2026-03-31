@@ -10,8 +10,10 @@ from flask import Flask
 import flux.runners.equities.run_api as run_api
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.runners.equities.run_api import _attach_fluxboard_equities_routes
+from flux.runners.equities.run_api import _attach_equities_readiness_route
 from flux.runners.equities.run_api import _build_contract_catalog
 from flux.runners.equities.run_api import _build_contract_catalog_by_strategy
+from flux.runners.equities.run_api import _build_strategy_alerts_resolver
 from flux.runners.equities.run_api import _build_profile_strategy_maps
 from flux.runners.equities.run_api import _build_strategy_running_resolver
 from flux.runners.equities.run_api import _equities_profile_summary
@@ -21,25 +23,6 @@ from flux.runners.equities.run_api import _resolve_runtime_params_payloads
 from flux.runners.equities.run_api import _resolve_strategy_name
 from flux.runners.equities.run_api import build_equities_strategy_metadata_map
 from flux.runners.equities.run_api import build_strategy_metadata_for_test
-
-LIVE_ENROLLED_ROUTE_IDS = (
-    "aapl_tradexyz",
-    "amd_tradexyz",
-    "amzn_tradexyz",
-    "googl_tradexyz",
-    "meta_tradexyz",
-    "msft_tradexyz",
-    "nvda_tradexyz",
-    "orcl_tradexyz",
-    "pltr_tradexyz",
-    "tsla_tradexyz",
-)
-LIVE_ENROLLED_STRATEGY_IDS = tuple(
-    f"{route_id}_{variant}"
-    for route_id in LIVE_ENROLLED_ROUTE_IDS
-    for variant in ("maker", "taker")
-)
-
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -68,8 +51,8 @@ def test_build_profile_strategy_maps_reads_core_prod_allowlist_from_shared_live_
 
     strategy_map, required_map = _build_profile_strategy_maps(config["api"])
 
-    assert strategy_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
-    assert required_map == {"equities": list(LIVE_ENROLLED_STRATEGY_IDS)}
+    assert strategy_map == {"equities": list(config["api"]["equities_strategy_ids"])}
+    assert required_map == {"equities": list(config["api"]["equities_required_strategy_ids"])}
 
 
 def test_equities_descriptor_exposes_stable_profile_contract() -> None:
@@ -236,6 +219,167 @@ def test_equities_run_api_defaults_makerv3_qty_to_one() -> None:
     assert defaults["qty"] == pytest.approx(1.0)
 
 
+def test_attach_equities_readiness_route_returns_enveloped_readiness_payload() -> None:
+    captured: dict[str, bool] = {}
+
+    def _fake_readiness_loader() -> dict[str, object]:
+        captured["called"] = True
+        return {
+            "ok": False,
+            "summary": {
+                "profile_id": "equities",
+                "failed_checks": ["signals"],
+            },
+            "checks": {
+                "signals": {
+                    "ok": False,
+                    "summary": "required=38 healthy=0 stale_legs=38 unhealthy=38",
+                },
+            },
+        }
+
+    app = Flask(__name__)
+    _attach_equities_readiness_route(app, readiness_loader=_fake_readiness_loader)
+    client = app.test_client()
+
+    response = client.get("/api/v1/readiness?profile=equities")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["data"]["ok"] is False
+    assert payload["data"]["summary"]["profile_id"] == "equities"
+    assert captured["called"] is True
+
+
+def test_load_equities_readiness_uses_flux_owned_publisher_contract(monkeypatch) -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    app = Flask(__name__)
+    captured: dict[str, object] = {}
+    publisher_status_payload = {
+        "profile_id": "equities",
+        "account_scope_id": "ibkr.reference.main",
+        "service_id": "ibkr_reference_publisher",
+        "state": "publishing",
+        "connected": True,
+        "instrument_status": {"AAPL.NASDAQ": {"state": "healthy"}},
+        "last_success_ts_ms": 1_700_000_000_400,
+        "stale_after_ms": 1_500,
+        "ts_ms": 1_700_000_000_500,
+    }
+
+    @app.get("/api/v1/balances")
+    def _balances() -> dict[str, object]:
+        return {
+            "data": {
+                "source": "portfolio_snapshot_v2",
+                "degraded": False,
+                "missing_required": [],
+            },
+        }
+
+    @app.get("/api/v1/signals")
+    def _signals() -> dict[str, object]:
+        return {
+            "data": {
+                "server_ts_ms": 1_700_000_000_500,
+                "strategies": [],
+            },
+        }
+
+    class _FakeResult:
+        def as_dict(self) -> dict[str, object]:
+            return {"ok": True, "summary": {"profile_id": "equities"}, "checks": {}}
+
+    monkeypatch.setattr(run_api, "_equities_profile_name_for_request", lambda: "equities")
+    monkeypatch.setattr(
+        run_api,
+        "_collect_projection_payloads",
+        lambda **kwargs: {"ibkr.reference.main": {"server_ts_ms": 1_700_000_000_500}},
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_collect_component_payloads",
+        lambda **kwargs: {"aapl_tradexyz_maker": object()},
+    )
+    monkeypatch.setattr(
+        run_api,
+        "_collect_publisher_status_payload",
+        lambda **kwargs: publisher_status_payload,
+    )
+
+    def _fake_evaluate_equities_readiness(**kwargs):
+        captured.update(kwargs)
+        return _FakeResult()
+
+    monkeypatch.setattr(run_api, "evaluate_equities_readiness", _fake_evaluate_equities_readiness)
+
+    with app.test_request_context("/api/v1/readiness?profile=equities"):
+        payload = run_api._load_equities_readiness(
+            app=app,
+            config=config,
+            redis_client=object(),
+        )
+
+    assert payload["ok"] is True
+    assert captured["publisher_status_payload"] == publisher_status_payload
+    assert captured["require_ibkr_reference_publisher"] is True
+    assert captured["ibkr_reference_publisher_service_id"] == "ibkr_reference_publisher"
+    assert captured["ibkr_reference_publisher_account_scope_id"] == "ibkr.reference.main"
+
+
+def test_equities_run_api_main_registers_readiness_route(monkeypatch) -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    args = Namespace(
+        config=Path("deploy/equities/equities.live.toml"),
+        mode="live",
+        confirm_live=True,
+        log_level=None,
+        host="127.0.0.1",
+        port=5024,
+        serve_fluxboard=False,
+        fluxboard_dist=None,
+        serve_pulse=False,
+        pulse_dist=None,
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(run_api, "_parse_args", lambda: args)
+    monkeypatch.setattr(run_api, "_load_config", lambda path: config)
+    monkeypatch.setattr(run_api, "_resolve_mode", lambda cfg, parsed: "live")
+    monkeypatch.setattr(run_api, "configure_python_logging", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "emit_startup_banner", lambda **kwargs: None)
+    monkeypatch.setattr(run_api, "_build_strategy_running_resolver", lambda: (lambda ids: {}))
+    monkeypatch.setattr(run_api, "_build_strategy_alerts_resolver", lambda: (lambda ids: {}))
+    monkeypatch.setattr(run_api.redis, "Redis", lambda **kwargs: object())
+
+    class _FakePulse:
+        def register_routes(self, app) -> None:
+            captured["pulse_app"] = app
+
+    monkeypatch.setattr(run_api, "PulseControlPlane", lambda: _FakePulse())
+    monkeypatch.setattr(
+        run_api,
+        "_run_with_socketio_if_available",
+        lambda app, *, host, port: captured.update({"app": app, "host": host, "port": port}),
+    )
+
+    monkeypatch.setattr(
+        run_api,
+        "_attach_equities_readiness_route",
+        lambda app, *, readiness_loader: captured.update(
+            {"readiness_app": app, "readiness_loader": readiness_loader},
+        ),
+    )
+
+    monkeypatch.setattr(run_api, "create_flux_api_app", lambda *args, **kwargs: Flask(__name__))
+
+    run_api.main()
+
+    assert captured["readiness_app"] is captured["pulse_app"]
+    assert callable(captured["readiness_loader"])
+
+
 def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_ids() -> None:
     class _FakePulse:
         def __init__(self) -> None:
@@ -261,6 +405,104 @@ def test_build_strategy_running_resolver_maps_pulse_status_to_equities_strategy_
         "equities-node-aapl_tradexyz_makerv4",
         "equities-node-meta_tradexyz_makerv4",
     ]
+
+
+def test_build_strategy_running_resolver_maps_grouped_pulse_status_to_external_strategy_ids() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_status(self, job_id: str) -> str:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz": "active",
+                "equities-node-amzn_binance_perp": "failed",
+            }[job_id]
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_running_resolver(pulse_control=pulse, cache_ttl_s=60.0)
+
+    running = resolver(
+        [
+            "aapl_tradexyz_maker",
+            "aapl_tradexyz_taker",
+            "amzn_binance_perp_maker",
+            "amzn_binance_perp_taker",
+        ],
+    )
+
+    assert running == {
+        "aapl_tradexyz_maker": True,
+        "aapl_tradexyz_taker": True,
+        "amzn_binance_perp_maker": False,
+        "amzn_binance_perp_taker": False,
+    }
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+    ]
+
+
+def test_build_strategy_alerts_resolver_maps_grouped_pulse_job_ids_without_leaking_node_groups() -> None:
+    class _FakePulse:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def get_job_snapshot(self, job_id: str) -> dict[str, object] | None:
+            self.calls.append(job_id)
+            return {
+                "equities-node-aapl_tradexyz": {
+                    "id": "equities-node-aapl_tradexyz",
+                    "status": "failed",
+                    "errors": {
+                        "preview": "reference feed stalled",
+                        "count": 2,
+                        "last_seen": "2026-03-27T00:00:01Z",
+                    },
+                },
+                "equities-node-amzn_binance_perp": {
+                    "id": "equities-node-amzn_binance_perp",
+                    "status": "restarting",
+                    "errors": {
+                        "preview": "gateway reconnect",
+                        "count": 1,
+                        "last_seen": "2026-03-27T00:00:02Z",
+                    },
+                },
+            }[job_id]
+
+    pulse = _FakePulse()
+    resolver = _build_strategy_alerts_resolver(
+        pulse_control=pulse,
+        cache_ttl_s=60.0,
+        now_ms_fn=lambda: 1_700_000_123_000,
+    )
+
+    alerts = resolver(
+        [
+            "aapl_tradexyz_maker",
+            "aapl_tradexyz_taker",
+            "amzn_binance_perp_maker",
+            "amzn_binance_perp_taker",
+        ],
+    )
+
+    assert pulse.calls == [
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+    ]
+    assert [row["strategy_id"] for row in alerts["aapl_tradexyz_maker"]] == ["aapl_tradexyz_maker"]
+    assert [row["strategy_id"] for row in alerts["aapl_tradexyz_taker"]] == ["aapl_tradexyz_taker"]
+    assert [row["strategy_id"] for row in alerts["amzn_binance_perp_maker"]] == [
+        "amzn_binance_perp_maker",
+    ]
+    assert [row["strategy_id"] for row in alerts["amzn_binance_perp_taker"]] == [
+        "amzn_binance_perp_taker",
+    ]
+    assert alerts["aapl_tradexyz_maker"][0]["status"] == "failed"
+    assert alerts["amzn_binance_perp_taker"][0]["status"] == "restarting"
+    assert "job_id" not in alerts["aapl_tradexyz_maker"][0]
+    assert "job_id" not in alerts["amzn_binance_perp_taker"][0]
 
 
 def test_parse_args_requires_explicit_config(monkeypatch) -> None:

@@ -4,6 +4,10 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 
+from flux.api.payloads import ContractCatalogEntry
+from flux.api.payloads import StrategyMetadata
+from flux.api.payloads import build_legs_payload
+from flux.api.payloads import build_signals_payload
 from flux.common.account_scopes import AccountScopeConfig
 from flux.common.strategy_contracts import StrategyContractEntry
 
@@ -177,6 +181,36 @@ def _healthy_component_payloads() -> dict[str, dict[str, object]]:
             "local_qty_base": "5",
             "ts_ms": 1_700_000_000_000,
         },
+    }
+
+
+def _healthy_ibkr_reference_publisher_status_payload() -> dict[str, object]:
+    return {
+        "profile_id": "equities",
+        "account_scope_id": "ibkr.reference.main",
+        "service_id": "ibkr_reference_publisher",
+        "state": "publishing",
+        "connected": True,
+        "instrument_count": 2,
+        "instrument_status": {
+            "AAPL.NASDAQ": {
+                "state": "healthy",
+                "route": "SMART",
+                "age_ms": 50,
+                "ts_event_ms": 1_700_000_000_450,
+            },
+            "MSFT.NASDAQ": {
+                "state": "healthy",
+                "route": "SMART",
+                "age_ms": 60,
+                "ts_event_ms": 1_700_000_000_440,
+            },
+        },
+        "last_success_ts_ms": 1_700_000_000_450,
+        "last_error_type": None,
+        "last_error_message": None,
+        "stale_after_ms": 1_500,
+        "ts_ms": 1_700_000_000_500,
     }
 
 
@@ -1165,6 +1199,139 @@ def test_evaluate_equities_readiness_uses_explicit_feed_down_state_from_signal_s
     assert result.checks["ibkr_auth"].ok is False
 
 
+def test_evaluate_equities_readiness_counts_recovering_quote_health_as_unhealthy() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    recovery_row = build_signals_payload(
+        strategy_id="aapl_tradexyz_makerv4",
+        metadata=StrategyMetadata(
+            strategy_class="equities_maker",
+            strategy_groups="equities",
+            base_asset="AAPL",
+            quote_asset="USD",
+            param_set="equities_maker",
+            strategy_family="equities_maker",
+            strategy_version="v1",
+        ),
+        state={
+            "bot_on": True,
+            "managed_orders": 1,
+            "state": "running",
+            "ts_ms": 1_700_000_000_450,
+            "maker_role_map": {
+                "maker_leg": "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID",
+                "ref_leg": "ibkr:AAPL.NASDAQ",
+                "hedge_leg": "ibkr:AAPL.NASDAQ",
+            },
+            "maker_v4": {
+                "quote_snapshot": {
+                    "ts_ms": 1_700_000_000_450,
+                    "maker_leg": {
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "bid": 190.10,
+                        "ask": 190.20,
+                        "ts_ms": 1_700_000_000_440,
+                        "age_ms": 10,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                    },
+                    "ref_leg": {
+                        "instrument_id": "AAPL.NASDAQ",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "ts_ms": 1_700_000_000_445,
+                        "age_ms": 5,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": "recovering",
+                    },
+                    "hedge_leg": {
+                        "instrument_id": "AAPL.NASDAQ",
+                        "route": "SMART",
+                        "bid": 189.90,
+                        "ask": 190.00,
+                        "ts_ms": 1_700_000_000_445,
+                        "age_ms": 5,
+                        "feed_state": "ok",
+                        "quote_state": "fresh",
+                        "pricing_usable": True,
+                        "hedge_usable": True,
+                        "recovery_state": "recovering",
+                    },
+                },
+            },
+        },
+        fv_row={"fv": 190.0},
+        params={"qty": 1.0, "max_age_ms": 10_000, "max_ibkr_quote_age_ms": 1_000},
+        balances=[],
+        legs=build_legs_payload(
+            contracts=(
+                ContractCatalogEntry(
+                    exchange="hyperliquid",
+                    symbol="AAPL/USD",
+                    instrument_id="xyz:AAPL-USD-PERP.HYPERLIQUID",
+                ),
+                ContractCatalogEntry(
+                    exchange="ibkr",
+                    symbol="AAPL/USD",
+                    instrument_id="AAPL.NASDAQ",
+                ),
+            ),
+            market_rows={
+                "hyperliquid:XYZ:AAPL-USD-PERP.HYPERLIQUID": {
+                    "exchange": "hyperliquid",
+                    "symbol": "AAPL/USD",
+                    "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                    "bid": 190.10,
+                    "ask": 190.20,
+                    "ts_ms": 1_700_000_000_440,
+                },
+                "ibkr:AAPL.NASDAQ": {
+                    "exchange": "ibkr",
+                    "symbol": "AAPL/USD",
+                    "instrument_id": "AAPL.NASDAQ",
+                    "bid": 189.90,
+                    "ask": 190.00,
+                    "ts_ms": 1_700_000_000_445,
+                },
+            },
+            now_ms_value=1_700_000_000_450,
+        ),
+    )
+
+    signals_payload = _healthy_signal_payload()
+    signals_payload["strategies"][0] = recovery_row
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is False
+    assert result.checks["signals"].details["feed_down_signal_legs"] == ["ibkr:AAPL.NASDAQ"]
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == [
+        "aapl_tradexyz_makerv4",
+    ]
+    assert result.summary["healthy_strategy_count"] == 1
+    assert result.checks["ibkr_auth"].ok is False
+
+
 def test_evaluate_equities_readiness_reads_shared_equities_arb_quote_snapshot_contract() -> None:
     from flux.runners.equities.readiness import evaluate_equities_readiness
 
@@ -1460,6 +1627,59 @@ def test_evaluate_equities_readiness_ignores_unrelated_stale_legs_in_live_rows()
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
+def test_evaluate_equities_readiness_ignores_stale_leg_markers_when_live_quote_snapshot_recovered() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    signals_payload = _healthy_signal_payload()
+    first_strategy = signals_payload["strategies"][0]
+    first_strategy["debug"]["md_health"]["stale_legs"] = [
+        "hyperliquid:xyz:AAPL-USD-PERP.HYPERLIQUID",
+    ]
+    first_strategy["equities_arb"] = {
+        "quote_snapshot": {
+            "maker_leg": {
+                "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+                "age_ms": 0,
+            },
+            "ref_leg": {
+                "instrument_id": "AAPL.NASDAQ",
+                "feed_state": "ok",
+                "quote_state": "fresh",
+                "pricing_usable": True,
+                "hedge_usable": True,
+                "age_ms": 0,
+            },
+        },
+    }
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=signals_payload,
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        now_ms_value=1_700_000_000_500,
+    )
+
+    assert result.ok is True
+    assert result.checks["signals"].details["stale_signal_legs"] == []
+    assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
+
+
 def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None:
     from flux.runners.equities.readiness import evaluate_equities_readiness
 
@@ -1506,10 +1726,101 @@ def test_evaluate_equities_readiness_prefers_live_role_map_ref_leg_key() -> None
     assert result.checks["signals"].details["unhealthy_strategy_ids"] == []
 
 
+def test_evaluate_equities_readiness_requires_flux_owned_ibkr_reference_publisher_status() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=None,
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is False
+    assert result.checks["ibkr_reference_publisher"].ok is False
+    assert result.checks["ibkr_reference_publisher"].details["service_id"] == (
+        "ibkr_reference_publisher"
+    )
+    assert result.checks["ibkr_reference_publisher"].details["missing"] is True
+
+
+def test_evaluate_equities_readiness_accepts_healthy_flux_owned_ibkr_reference_publisher_status() -> (
+    None
+):
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=_healthy_ibkr_reference_publisher_status_payload(),
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is True
+    assert result.checks["ibkr_reference_publisher"].ok is True
+    assert result.checks["ibkr_reference_publisher"].details["missing"] is False
+
+
+def test_evaluate_equities_readiness_requires_publisher_to_be_actively_publishing() -> None:
+    from flux.runners.equities.readiness import evaluate_equities_readiness
+
+    publisher_status_payload = _healthy_ibkr_reference_publisher_status_payload()
+    publisher_status_payload["state"] = "connected"
+    publisher_status_payload["instrument_status"] = {}
+
+    result = evaluate_equities_readiness(
+        profile_id="equities",
+        portfolio_id="equities",
+        strategy_contracts=_strategy_contracts(),
+        account_scopes=_account_scopes(),
+        required_strategy_ids=("aapl_tradexyz_makerv4", "msft_tradexyz_makerv4"),
+        balances_payload={
+            "source": "portfolio_snapshot_v2",
+            "degraded": False,
+            "missing_required": [],
+        },
+        signals_payload=_healthy_signal_payload(),
+        projection_payloads_by_scope_id=_healthy_projection_payloads(),
+        component_payloads_by_strategy_id=_healthy_component_payloads(),
+        publisher_status_payload=publisher_status_payload,
+        now_ms_value=1_700_000_000_500,
+        require_ibkr_reference_publisher=True,
+    )
+
+    assert result.ok is False
+    assert result.checks["ibkr_reference_publisher"].ok is False
+    assert result.checks["ibkr_reference_publisher"].details["state"] == "connected"
+
+
 def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -> None:
     repo_root = _repo_root()
     script = _read(repo_root / "ops/scripts/deploy/check_equities_live_readiness.sh")
     readme = _read(repo_root / "deploy/equities/README.md")
+    runbook = _read(repo_root / "docs/runbooks/equities-shared-node-cutover.md")
 
     assert "nautilus_trader.flux.runners.equities.readiness" in script
     assert 'EQUITIES_READINESS_CONFIG_PATH="${EQUITIES_READINESS_CONFIG_PATH:-' in script
@@ -1526,6 +1837,10 @@ def test_equities_readiness_wrapper_and_runbook_document_the_host_local_gate() -
     assert "/api/v1/signals?profile=equities" in readme
     assert "/api/v1/balances?profile=equities" in readme
     assert "regular US session" in readme
+    assert "flux@equities-ibkr-reference-publisher.service" in readme
+    assert "flux@equities-ibkr-reference-publisher.service" in runbook
+    assert "chainsaw@md-ibkr-publisher.service" not in readme
+    assert "chainsaw@md-ibkr-publisher.service" not in runbook
 
 
 def test_equities_binance_perp_runbook_documents_multivenue_canary_sequence() -> None:

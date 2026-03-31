@@ -181,6 +181,12 @@ async def test_wait_until_ready(ib_client_running):
 
 
 @pytest.mark.asyncio
+async def test_wait_until_ready_raises_timeout_when_client_never_becomes_ready(ib_client):
+    with pytest.raises(TimeoutError):
+        await ib_client.wait_until_ready(timeout=0.01)
+
+
+@pytest.mark.asyncio
 async def test_run_connection_watchdog_reconnect(ib_client):
     # Arrange
     ib_client._is_ib_connected.clear()

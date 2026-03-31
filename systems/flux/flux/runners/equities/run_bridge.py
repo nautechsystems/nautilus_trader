@@ -16,6 +16,7 @@ from flux.bridge.handlers import default_topic_handlers
 from flux.bridge.stream_consumer import FluxBridgeStreamConsumer
 from flux.common.config import validate_identifier_part
 from flux.events import TOPIC_EXECUTION_ALERT
+from flux.runners.equities.node_groups import derive_equities_node_group_id
 from flux.runners.shared.logging import configure_python_logging
 from flux.strategies.makerv3.constants import TOPIC_ALERT
 from flux.strategies.makerv3.constants import TOPIC_BALANCES
@@ -142,6 +143,24 @@ def _resolve_strategy_ids(config: dict[str, Any], args: argparse.Namespace) -> l
     )
 
 
+def _resolve_stream_strategy_ids(strategy_ids: list[str] | None) -> list[str] | None:
+    if strategy_ids is None:
+        return None
+
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for strategy_id in strategy_ids:
+        try:
+            stream_strategy_id = derive_equities_node_group_id(strategy_id)
+        except ValueError:
+            stream_strategy_id = strategy_id
+        if stream_strategy_id in seen:
+            continue
+        seen.add(stream_strategy_id)
+        resolved.append(stream_strategy_id)
+    return resolved
+
+
 def main() -> None:
     """
     Parse CLI arguments and run the Equities flux bridge consumer.
@@ -150,6 +169,7 @@ def main() -> None:
     config = _load_config(args.config)
     mode = _resolve_mode(config, args)
     strategy_scope = _resolve_strategy_ids(config, args)
+    stream_strategy_scope = _resolve_stream_strategy_ids(strategy_scope)
 
     flux = _table(config, "flux")
     redis_cfg = _table(config, "redis")
@@ -183,6 +203,7 @@ def main() -> None:
         redis_client=redis_client,
         environment=mode,
         strategy_ids=strategy_scope,
+        stream_strategy_ids=stream_strategy_scope,
         namespace=str(flux.get("namespace", "flux")),
         schema_version=str(flux.get("schema_version", "v1")),
         handlers=handlers,

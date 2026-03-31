@@ -5,12 +5,15 @@ Run a live Equities trading node using the canonical equities strategy spec.
 
 from __future__ import annotations
 
+import asyncio
 import argparse
 import inspect
 import logging
+from collections.abc import Sequence
 from contextlib import contextmanager
 from contextlib import suppress
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,7 @@ from flux.execution.transport import UdsTransportPaths
 from flux.execution.transport import REPLY_STATUS_REJECTED
 from flux.execution.transport import send_request as send_transport_request
 from flux.common.strategy_contracts import decode_strategy_contracts
+from flux.runners.equities.node_groups import derive_equities_node_group_id
 from flux.runners.live import resolve_strategy_venues
 from flux.runners.shared.bootstrap import build_redis_client_kwargs
 from flux.runners.shared.bootstrap import build_redis_database_config
@@ -39,6 +43,8 @@ from flux.runners.shared.bootstrap import resolve_mode as resolve_shared_mode
 from flux.runners.shared.bootstrap import strategy_startup_lock
 from flux.runners.shared.bootstrap import table as shared_table
 from flux.runners.shared.logging import build_node_logging_config
+from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
 from flux.runners.shared.qty_units import resolve_runner_qty_unit
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
 from flux.strategies import FluxStrategySpec
@@ -58,11 +64,18 @@ from flux.strategies.shared.equities_arb.reference_balances import (
     get_cached_ibkr_reference_balance_provider,
 )
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.adapters.hyperliquid.factories import HyperliquidLiveDataClientFactory
+from nautilus_trader.adapters.hyperliquid.factories import (
+    wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress,
+)
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import DatabaseConfig
 from nautilus_trader.config import MessageBusConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import SubscribeQuoteTicks
+from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import LiveExecEngineConfig
 from nautilus_trader.live.config import LiveRiskEngineConfig
@@ -83,6 +96,10 @@ MakerV3Strategy = _MAKERV3_SPEC.strategy_cls
 MakerV3StrategyConfig = _MAKERV3_SPEC.config_cls
 MakerV4Strategy = _MAKERV4_SPEC.strategy_cls
 MakerV4StrategyConfig = _MAKERV4_SPEC.config_cls
+_GROUPED_MEMBER_SUFFIXES = ("_maker", "_taker")
+_GROUPED_NODE_IGNORED_VENUE_FIELDS: dict[str, frozenset[str]] = {
+    "IBKR": frozenset({"ibg_client_id"}),
+}
 
 
 def _repo_root() -> Path:
@@ -163,7 +180,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run Equities trading node using flux production modules.",
     )
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--config", type=Path, required=True, action="append")
     parser.add_argument("--shared-config", type=Path, default=None)
     parser.add_argument("--mode", choices=sorted(SAFE_MODES), default=None)
     parser.add_argument("--confirm-live", action="store_true")
@@ -365,9 +382,7 @@ def _attach_reference_balance_snapshot_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=_optional_text(ibkr_cfg.get("ibg_host")) or "127.0.0.1",
             ibg_port=(
-                None
-                if dockerized_gateway is not None or ibkr_cfg.get("ibg_port") is None
-                else int(ibkr_cfg.get("ibg_port"))
+                None if ibkr_cfg.get("ibg_port") is None else int(ibkr_cfg.get("ibg_port"))
             ),
             ibg_client_id=int(ibkr_cfg.get("ibg_client_id", 1)),
             dockerized_gateway=dockerized_gateway,
@@ -377,6 +392,282 @@ def _attach_reference_balance_snapshot_provider(
         ),
     )
     configure_provider(provider)
+
+
+def _attach_quote_feed_runtime(
+    *,
+    strategy: Any,
+    supervisor: NodeQuoteFeedSupervisor,
+    control_emitter: QuoteFeedControlEmitter,
+) -> None:
+    configure_runtime = getattr(strategy, "configure_quote_feed_runtime", None)
+    if callable(configure_runtime):
+        configure_runtime(
+            supervisor=supervisor,
+            control_emitter=control_emitter,
+        )
+
+    claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
+    if not callable(claim_specs):
+        return
+
+    for claim_spec in claim_specs():
+        subscribe = lambda feed_identity=claim_spec.feed_identity: control_emitter.subscribe(
+            feed_identity,
+        )
+        reset = None
+        unsubscribe = lambda feed_identity=claim_spec.feed_identity: control_emitter.unsubscribe(
+            feed_identity,
+        )
+        if claim_spec.node_scoped_lifecycle:
+            control_emitter.register_result_ingress(
+                claim_spec.feed_identity,
+                lambda *,
+                now_ns,
+                ok,
+                error_summary=None,
+                feed_identity=claim_spec.feed_identity,
+                **_result: supervisor.ingest_recovery_result(
+                    feed_identity,
+                    now_ns=now_ns,
+                    ok=ok,
+                    error_summary=error_summary,
+                ),
+            )
+            reset = lambda feed_identity=claim_spec.feed_identity: control_emitter.reset(
+                feed_identity,
+            )
+        supervisor.ensure_feed(
+            claim_spec.feed_identity,
+            reset=reset,
+            subscribe=subscribe,
+            unsubscribe=unsubscribe,
+            blocker_key=claim_spec.blocker_key,
+        )
+
+
+def _node_scoped_quote_feed_result_routes(
+    strategies: Sequence[Any],
+) -> dict[Any, Any]:
+    claimed_feed_identities: dict[Any, Any] = {}
+
+    for strategy in strategies:
+        claim_specs = getattr(strategy, "quote_feed_claim_specs", None)
+        if not callable(claim_specs):
+            continue
+
+        for claim_spec in claim_specs():
+            if not claim_spec.node_scoped_lifecycle:
+                continue
+            claimed_feed_identities[claim_spec.feed_identity] = claim_spec.feed_identity
+
+    return claimed_feed_identities
+
+
+def _build_quote_feed_result_ingress(
+    *,
+    control_emitter: QuoteFeedControlEmitter,
+    claimed_feed_identities: dict[Any, Any],
+) -> Any:
+    def _ingest_quote_feed_result(
+        *,
+        now_ns: int,
+        ok: bool,
+        error_summary: str | None = None,
+        feed_identity: Any = None,
+        **extra: Any,
+    ) -> Any:
+        routed_feed_identity = claimed_feed_identities.get(feed_identity)
+        if routed_feed_identity is None:
+            return None
+
+        extra_payload = dict(extra)
+        extra_payload.pop("feed_identity", None)
+        return control_emitter.ingest_result(
+            routed_feed_identity,
+            now_ns=now_ns,
+            ok=ok,
+            error_summary=error_summary,
+            **extra_payload,
+        )
+
+    return _ingest_quote_feed_result
+
+
+def _wrap_quote_feed_result_factory(
+    *,
+    factory: type[Any],
+    control_emitter: QuoteFeedControlEmitter,
+    claimed_feed_identities: dict[Any, Any],
+) -> type[Any]:
+    if factory is not HyperliquidLiveDataClientFactory:
+        return factory
+    if not claimed_feed_identities:
+        return factory
+
+    return wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress(
+        factory_cls=factory,
+        quote_feed_result_ingress=_build_quote_feed_result_ingress(
+            control_emitter=control_emitter,
+            claimed_feed_identities=claimed_feed_identities,
+        ),
+    )
+
+
+def _execute_quote_feed_subscription(
+    *,
+    node: TradingNode,
+    feed_identity: Any,
+    subscribe: bool,
+) -> None:
+    instrument_id = feed_identity.instrument_id
+    node.kernel.data_engine.execute(
+        SubscribeQuoteTicks(
+            instrument_id=instrument_id,
+            client_id=None,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=node.kernel.clock.timestamp_ns(),
+            params={},
+        )
+        if subscribe
+        else UnsubscribeQuoteTicks(
+            instrument_id=instrument_id,
+            client_id=None,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=node.kernel.clock.timestamp_ns(),
+            params={},
+        ),
+    )
+
+
+def _emit_quote_feed_command(
+    *,
+    node: TradingNode,
+    command: Any,
+    control_emitter: QuoteFeedControlEmitter | None = None,
+) -> None:
+    action = str(getattr(command, "action", "")).strip().lower()
+    if action == "subscribe":
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=True,
+        )
+        return
+    if action == "unsubscribe":
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=False,
+        )
+        return
+    if action != "reset":
+        return
+    instrument_id = command.feed_identity.instrument_id
+    data_engine = getattr(node.kernel, "data_engine", None)
+    routing_map = getattr(data_engine, "routing_map", None)
+    live_client = routing_map.get(instrument_id.venue) if hasattr(routing_map, "get") else None
+    recover_quote_ticks = getattr(live_client, "recover_quote_ticks", None)
+    supports_quote_feed_identity_recovery = getattr(
+        live_client,
+        "supports_quote_feed_identity_recovery",
+        None,
+    )
+    recovers_by_feed_identity = (
+        bool(supports_quote_feed_identity_recovery())
+        if callable(supports_quote_feed_identity_recovery)
+        else bool(supports_quote_feed_identity_recovery)
+    )
+    has_quote_feed_result_ingress = getattr(live_client, "has_quote_feed_result_ingress", None)
+    emits_quote_feed_results = (
+        bool(has_quote_feed_result_ingress())
+        if callable(has_quote_feed_result_ingress)
+        else callable(getattr(live_client, "_quote_feed_result_ingress", None))
+    )
+    if callable(recover_quote_ticks) and control_emitter is not None:
+        async def _recover_live_quote_feed() -> None:
+            try:
+                result = await recover_quote_ticks(
+                    command.feed_identity if recovers_by_feed_identity else instrument_id,
+                )
+            except Exception as exc:
+                result = {
+                    "instrument_id": instrument_id.value,
+                    "ok": False,
+                    "status": "recover_failed",
+                    "error_summary": f"{type(exc).__name__}: {exc}",
+                }
+            else:
+                if emits_quote_feed_results:
+                    return
+
+            payload = dict(result) if isinstance(result, dict) else {}
+            extra_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"ok", "error_summary", "feed_identity"}
+            }
+            extra_payload.setdefault("result", dict(payload))
+            control_emitter.ingest_result(
+                command.feed_identity,
+                now_ns=node.kernel.clock.timestamp_ns(),
+                ok=bool(payload.get("ok", False)),
+                error_summary=payload.get("error_summary"),
+                **extra_payload,
+            )
+
+        loop = node.get_event_loop()
+        create_task = getattr(loop, "create_task", None)
+        if callable(create_task):
+            create_task(_recover_live_quote_feed())
+        else:  # pragma: no cover - defensive fallback
+            asyncio.create_task(_recover_live_quote_feed())
+        return
+    with suppress(Exception):
+        _execute_quote_feed_subscription(
+            node=node,
+            feed_identity=command.feed_identity,
+            subscribe=False,
+        )
+    _execute_quote_feed_subscription(
+        node=node,
+        feed_identity=command.feed_identity,
+        subscribe=True,
+    )
+
+
+def _schedule_quote_feed_result_on_node_loop(
+    *,
+    node: TradingNode,
+    ingress: Any,
+    now_ns: int,
+    ok: bool,
+    error_summary: str | None = None,
+    **extra: Any,
+) -> Any:
+    loop = node.get_event_loop()
+    is_closed = getattr(loop, "is_closed", None)
+    if callable(is_closed):
+        with suppress(Exception):
+            if is_closed():
+                return None
+    call_soon_threadsafe = getattr(loop, "call_soon_threadsafe", None)
+    callback = partial(
+        ingress,
+        now_ns=now_ns,
+        ok=ok,
+        error_summary=error_summary,
+        **extra,
+    )
+    if callable(call_soon_threadsafe):
+        try:
+            call_soon_threadsafe(callback)
+        except RuntimeError:
+            return None
+        return None
+    return callback()
 
 
 def _redis_database_config(redis_cfg: dict[str, Any]) -> DatabaseConfig:
@@ -423,6 +714,127 @@ def _resolve_graceful_shutdown_on_exception(*, mode: str, node_cfg: dict[str, An
 
 def _resolve_flux_strategy_id(config: dict[str, Any]) -> str:
     return resolve_flux_strategy_id_from_bootstrap(config)
+
+
+def _resolve_external_strategy_id(config: dict[str, Any]) -> str:
+    identity_cfg = _table(config, "identity")
+    strategy_id = _resolve_flux_strategy_id(config)
+    return _optional_text(identity_cfg.get("external_strategy_id")) or strategy_id
+
+
+def _resolve_grouped_node_id(configs: Sequence[dict[str, Any]]) -> str:
+    if len(configs) < 2:
+        raise ValueError("Grouped equities nodes require at least two strategy configs")
+
+    node_group_ids = {
+        derive_equities_node_group_id(_resolve_external_strategy_id(config))
+        for config in configs
+    }
+    if len(node_group_ids) != 1:
+        raise ValueError("Grouped equities configs must resolve to exactly one node group id")
+    return next(iter(node_group_ids))
+
+
+def _grouped_node_trader_id(node_group_id: str) -> str:
+    return f"EQUITIES-LIVE-{node_group_id.replace('_', '-').upper()}"
+
+
+def _grouped_member_sort_key(config: dict[str, Any]) -> tuple[int, str]:
+    strategy_id = _resolve_external_strategy_id(config)
+    for rank, suffix in enumerate(_GROUPED_MEMBER_SUFFIXES):
+        if strategy_id.endswith(suffix):
+            return (rank, strategy_id)
+    raise ValueError(f"Unsupported grouped equities strategy id: {strategy_id}")
+
+
+def _canonicalize_grouped_configs(configs: Sequence[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(sorted(configs, key=_grouped_member_sort_key))
+
+
+def _validate_grouped_member_composition(
+    configs: Sequence[dict[str, Any]],
+    *,
+    node_group_id: str,
+) -> None:
+    if len(configs) > len(_GROUPED_MEMBER_SUFFIXES):
+        raise ValueError(
+            f"Grouped node {node_group_id} must contain at most one maker plus one taker",
+        )
+
+    seen_members: set[str] = set()
+    for config in configs:
+        strategy_id = _resolve_external_strategy_id(config)
+        member = None
+        for suffix in _GROUPED_MEMBER_SUFFIXES:
+            if strategy_id.endswith(suffix):
+                member = suffix.removeprefix("_")
+                break
+        if member is None:
+            raise ValueError(f"Unsupported grouped equities strategy id: {strategy_id}")
+        if member in seen_members:
+            raise ValueError(f"Grouped node {node_group_id} has duplicate {member} member")
+        seen_members.add(member)
+
+
+def _validate_grouped_shared_tables(configs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    primary_config = configs[0]
+    shared_table_names = (
+        "flux",
+        "redis",
+        "node",
+        "portfolio",
+        "strategy_contracts",
+        "account_scopes",
+    )
+    for config in configs[1:]:
+        for table_name in shared_table_names:
+            primary_table = primary_config.get(table_name)
+            candidate_table = config.get(table_name)
+            if table_name == "node":
+                primary_table = _normalized_grouped_node_table(primary_table)
+                candidate_table = _normalized_grouped_node_table(candidate_table)
+            if candidate_table != primary_table:
+                raise ValueError(
+                    f"Grouped equities node configs must share identical `{table_name}` tables",
+                )
+    return primary_config
+
+
+def _normalized_grouped_node_table(node_cfg: Any) -> Any:
+    if not isinstance(node_cfg, dict):
+        return node_cfg
+
+    normalized_node_cfg = dict(node_cfg)
+    venues_cfg = node_cfg.get("venues")
+    if not isinstance(venues_cfg, dict):
+        return normalized_node_cfg
+
+    normalized_venues: dict[str, Any] = {}
+    for venue_name, venue_cfg in venues_cfg.items():
+        if not isinstance(venue_cfg, dict):
+            normalized_venues[venue_name] = venue_cfg
+            continue
+        normalized_venue_cfg = dict(venue_cfg)
+        for field_name in _GROUPED_NODE_IGNORED_VENUE_FIELDS.get(str(venue_name).upper(), ()):
+            normalized_venue_cfg.pop(field_name, None)
+        normalized_venues[venue_name] = normalized_venue_cfg
+    normalized_node_cfg["venues"] = normalized_venues
+    return normalized_node_cfg
+
+
+def _node_identity_config(
+    config: dict[str, Any],
+    *,
+    node_scoped_id: str,
+    node_trader_id: str | None = None,
+) -> dict[str, Any]:
+    updated_config = dict(config)
+    updated_identity = dict(_table(config, "identity"))
+    updated_identity["strategy_id"] = node_scoped_id
+    if node_trader_id is not None:
+        updated_identity["trader_id"] = node_trader_id
+    updated_config["identity"] = updated_identity
+    return updated_config
 
 
 def _resolve_strategy_param_set(config: dict[str, Any]) -> str:
@@ -651,32 +1063,26 @@ def _strategy_startup_lock(
         yield
 
 
-def build_node(
-    config: dict[str, Any],
+def _build_node_for_configs(
+    configs: Sequence[dict[str, Any]],
     *,
     mode: str,
     force_enable_execution: bool,
     log_level_override: str | None = None,
+    node_scoped_id: str,
+    node_trader_id: str | None = None,
 ) -> TradingNode:
-    """
-    Build and return a configured trading node for Equities.
-    """
-    flux = _table(config, "flux")
-    identity = _table(config, "identity")
-    redis_cfg = _table(config, "redis")
-    node_cfg = _table(config, "node")
-    strategy_cfg = _table(config, "strategy")
+    if not configs:
+        raise ValueError("At least one equities strategy config is required")
 
-    strategy_id = _resolve_flux_strategy_id(config)
-    external_strategy_id = _optional_text(identity.get("external_strategy_id")) or strategy_id
-    trader_id = _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
+    primary_config = configs[0]
+    flux = _table(primary_config, "flux")
+    identity = _table(primary_config, "identity")
+    redis_cfg = _table(primary_config, "redis")
+    node_cfg = _table(primary_config, "node")
+    trader_id = node_trader_id or _optional_text(identity.get("trader_id")) or "MAKER-PAPER-001"
     namespace = _optional_text(flux.get("namespace")) or FLUX_DEFAULT_NAMESPACE
     schema_version = _optional_text(flux.get("schema_version")) or FLUX_SCHEMA_VERSION
-    strategy_spec = _resolve_strategy_spec(config)
-    venue_resolution_config = _effective_venue_resolution_config(
-        config=config,
-        strategy_spec=strategy_spec,
-    )
 
     enable_execution = bool(node_cfg.get("enable_execution", False) or force_enable_execution)
     reconciliation_lookback_mins, reconciliation_startup_delay_secs = (
@@ -691,31 +1097,110 @@ def build_node(
         node_cfg=node_cfg,
     )
     redis_database = _redis_database_config(redis_cfg)
-    strategy_venues = resolve_strategy_venues(
-        config=venue_resolution_config,
-        mode=mode,
-        enable_execution=enable_execution,
-    )
-    _register_cash_borrowing_venues(exec_clients=strategy_venues.exec_clients)
-    maker_instrument_id = strategy_venues.execution_instrument_id
-    reference_instrument_id = strategy_venues.reference_instrument_id
-    allowed_instrument_ids = _strategy_allowed_instrument_ids(
-        strategy_spec=strategy_spec,
-        maker_instrument_id=maker_instrument_id,
-        reference_instrument_id=reference_instrument_id,
-    )
-    shared_asset_split_contract = _uses_shared_asset_split_contract(
-        config=config,
-        external_strategy_id=external_strategy_id,
-        strategy_spec=strategy_spec,
-    )
-    if shared_asset_split_contract:
-        filter_unclaimed_external_orders = True
     exec_reconciliation = bool(node_cfg.get("exec_reconciliation", True))
-    reconciliation_instrument_ids = allowed_instrument_ids
-    # Same-asset split variants share venue/account scope, so they must reconcile
-    # only their cached orders and leave stray venue orders unclaimed.
-    external_order_claims = [] if shared_asset_split_contract else allowed_instrument_ids
+    strategy_venues = None
+    maker_instrument_id = None
+    reference_instrument_id = None
+    attached_strategies: list[Any] = []
+    reconciliation_instrument_ids: list[InstrumentId] = []
+    quote_feed_supervisor = NodeQuoteFeedSupervisor()
+
+    for config in configs:
+        strategy_cfg = _table(config, "strategy")
+        external_strategy_id = _resolve_external_strategy_id(config)
+        strategy_spec = _resolve_strategy_spec(config)
+        venue_resolution_config = _effective_venue_resolution_config(
+            config=config,
+            strategy_spec=strategy_spec,
+        )
+        if strategy_venues is None:
+            strategy_venues = resolve_strategy_venues(
+                config=venue_resolution_config,
+                mode=mode,
+                enable_execution=enable_execution,
+            )
+            _register_cash_borrowing_venues(exec_clients=strategy_venues.exec_clients)
+            maker_instrument_id = strategy_venues.execution_instrument_id
+            reference_instrument_id = strategy_venues.reference_instrument_id
+
+        allowed_instrument_ids = _strategy_allowed_instrument_ids(
+            strategy_spec=strategy_spec,
+            maker_instrument_id=maker_instrument_id,
+            reference_instrument_id=reference_instrument_id,
+        )
+        shared_asset_split_contract = _uses_shared_asset_split_contract(
+            config=config,
+            external_strategy_id=external_strategy_id,
+            strategy_spec=strategy_spec,
+        )
+        if shared_asset_split_contract:
+            filter_unclaimed_external_orders = True
+        # Same-asset split variants share venue/account scope, so they must reconcile
+        # only their cached orders and leave stray venue orders unclaimed.
+        external_order_claims = [] if shared_asset_split_contract else allowed_instrument_ids
+        for instrument_id in allowed_instrument_ids:
+            if instrument_id not in reconciliation_instrument_ids:
+                reconciliation_instrument_ids.append(instrument_id)
+
+        order_qty = Decimal(str(strategy_cfg.get("order_qty", "1")))
+        qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1"))
+        qty = Decimal(str(qty_raw)) if qty_raw is not None else None
+        qty_unit = resolve_runner_qty_unit(
+            strategy_cfg,
+            strategy_id=external_strategy_id,
+            logger=LOGGER,
+        )
+
+        strategy = strategy_spec.strategy_cls(
+            config=strategy_spec.config_cls(
+                **_strategy_config_kwargs(
+                    config=config,
+                    external_strategy_id=external_strategy_id,
+                    strategy_spec=strategy_spec,
+                    strategy_cfg=strategy_cfg,
+                    maker_instrument_id=maker_instrument_id,
+                    reference_instrument_id=reference_instrument_id,
+                    allowed_instrument_ids=allowed_instrument_ids,
+                    order_qty=order_qty,
+                    qty=qty,
+                    qty_unit=qty_unit,
+                    external_order_claims=external_order_claims,
+                ),
+            ),
+        )
+        _attach_runtime_params_manager(
+            strategy=strategy,
+            redis_cfg=redis_cfg,
+            namespace=namespace,
+            schema_version=schema_version,
+            strategy_spec=strategy_spec,
+        )
+        _attach_portfolio_inventory_feed(
+            strategy=strategy,
+            config=config,
+            redis_cfg=redis_cfg,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        _attach_profile_account_projection_feed(
+            strategy=strategy,
+            redis_cfg=redis_cfg,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        _attach_controller_endpoint_and_canonical_state_feed(
+            strategy=strategy,
+            config=config,
+            redis_cfg=redis_cfg,
+            namespace=namespace,
+            schema_version=schema_version,
+        )
+        _attach_reference_balance_snapshot_provider(
+            strategy=strategy,
+            config=venue_resolution_config,
+            strategy_spec=strategy_spec,
+        )
+        attached_strategies.append(strategy)
 
     config_node = TradingNodeConfig(
         trader_id=TraderId(trader_id),
@@ -774,7 +1259,7 @@ def build_node(
             use_trader_prefix=False,
             use_trader_id=False,
             use_instance_id=False,
-            streams_prefix=f"{namespace}:{schema_version}:in:stream:{mode}:{strategy_id}",
+            streams_prefix=f"{namespace}:{schema_version}:in:stream:{mode}:{node_scoped_id}",
             stream_per_topic=True,
             types_filter=[OrderBookDeltas],
         ),
@@ -787,73 +1272,92 @@ def build_node(
         timeout_post_stop=float(node_cfg.get("timeout_post_stop", 5.0)),
     )
 
-    order_qty = Decimal(str(strategy_cfg.get("order_qty", "1")))
-    qty_raw = strategy_cfg.get("qty", strategy_cfg.get("order_qty", "1"))
-    qty = Decimal(str(qty_raw)) if qty_raw is not None else None
-    qty_unit = resolve_runner_qty_unit(
-        strategy_cfg,
-        strategy_id=external_strategy_id,
-        logger=LOGGER,
-    )
+    node = TradingNode(config=config_node)
+    quote_feed_control_emitter: QuoteFeedControlEmitter | None = None
 
-    strategy = strategy_spec.strategy_cls(
-        config=strategy_spec.config_cls(
-            **_strategy_config_kwargs(
-                config=config,
-                external_strategy_id=external_strategy_id,
-                strategy_spec=strategy_spec,
-                strategy_cfg=strategy_cfg,
-                maker_instrument_id=maker_instrument_id,
-                reference_instrument_id=reference_instrument_id,
-                allowed_instrument_ids=allowed_instrument_ids,
-                order_qty=order_qty,
-                qty=qty,
-                qty_unit=qty_unit,
-                external_order_claims=external_order_claims,
-            ),
+    def _quote_feed_command_sink(command: Any) -> None:
+        _emit_quote_feed_command(
+            node=node,
+            command=command,
+            control_emitter=quote_feed_control_emitter,
+        )
+
+    quote_feed_control_emitter = QuoteFeedControlEmitter(
+        node_scoped_id=node_scoped_id,
+        sink=_quote_feed_command_sink,
+        result_scheduler=partial(
+            _schedule_quote_feed_result_on_node_loop,
+            node=node,
         ),
     )
-    _attach_runtime_params_manager(
-        strategy=strategy,
-        redis_cfg=redis_cfg,
-        namespace=namespace,
-        schema_version=schema_version,
-        strategy_spec=strategy_spec,
+    claimed_feed_identities = _node_scoped_quote_feed_result_routes(
+        attached_strategies,
     )
-    _attach_portfolio_inventory_feed(
-        strategy=strategy,
-        config=config,
-        redis_cfg=redis_cfg,
-        namespace=namespace,
-        schema_version=schema_version,
-    )
-    _attach_profile_account_projection_feed(
-        strategy=strategy,
-        redis_cfg=redis_cfg,
-        namespace=namespace,
-        schema_version=schema_version,
-    )
-    _attach_controller_endpoint_and_canonical_state_feed(
-        strategy=strategy,
-        config=config,
-        redis_cfg=redis_cfg,
-        namespace=namespace,
-        schema_version=schema_version,
-    )
-    _attach_reference_balance_snapshot_provider(
-        strategy=strategy,
-        config=venue_resolution_config,
-        strategy_spec=strategy_spec,
-    )
-
-    node = TradingNode(config=config_node)
-    node.trader.add_strategy(strategy)
+    for strategy in attached_strategies:
+        _attach_quote_feed_runtime(
+            strategy=strategy,
+            supervisor=quote_feed_supervisor,
+            control_emitter=quote_feed_control_emitter,
+        )
+    for strategy in attached_strategies:
+        node.trader.add_strategy(strategy)
     for venue, factory in strategy_venues.data_factories.items():
-        node.add_data_client_factory(venue, factory)
+        node.add_data_client_factory(
+            venue,
+            _wrap_quote_feed_result_factory(
+                factory=factory,
+                control_emitter=quote_feed_control_emitter,
+                claimed_feed_identities=claimed_feed_identities,
+            ),
+        )
     for venue, factory in strategy_venues.exec_factories.items():
         node.add_exec_client_factory(venue, factory)
     node.build()
     return node
+
+
+def build_node(
+    config: dict[str, Any],
+    *,
+    mode: str,
+    force_enable_execution: bool,
+    log_level_override: str | None = None,
+) -> TradingNode:
+    """
+    Build and return a configured trading node for one Equities strategy.
+    """
+    return _build_node_for_configs(
+        (config,),
+        mode=mode,
+        force_enable_execution=force_enable_execution,
+        log_level_override=log_level_override,
+        node_scoped_id=_resolve_flux_strategy_id(config),
+    )
+
+
+def build_grouped_node(
+    configs: Sequence[dict[str, Any]],
+    *,
+    mode: str,
+    force_enable_execution: bool,
+    log_level_override: str | None = None,
+) -> TradingNode:
+    """
+    Build and return one shared TradingNode for a grouped Equities maker/taker pair.
+    """
+    configs = _canonicalize_grouped_configs(configs)
+    _validate_grouped_shared_tables(configs)
+    node_group_id = _resolve_grouped_node_id(configs)
+    _validate_grouped_member_composition(configs, node_group_id=node_group_id)
+    node_trader_id = _grouped_node_trader_id(node_group_id)
+    return _build_node_for_configs(
+        tuple(configs),
+        mode=mode,
+        force_enable_execution=force_enable_execution,
+        log_level_override=log_level_override,
+        node_scoped_id=node_group_id,
+        node_trader_id=node_trader_id,
+    )
 
 
 def main() -> None:
@@ -861,17 +1365,38 @@ def main() -> None:
     Parse CLI arguments and run the Equities trading node.
     """
     args = _parse_args()
-    config = _load_runtime_config(args.config, shared_config_path=args.shared_config)
-    mode = _resolve_mode(config, args)
-
-    node = build_node(
-        config,
-        mode=mode,
-        force_enable_execution=bool(args.enable_execution),
-        log_level_override=args.log_level,
+    configs = tuple(
+        _load_runtime_config(config_path, shared_config_path=args.shared_config)
+        for config_path in args.config
     )
+    config = configs[0]
+    mode = _resolve_mode(config, args)
+    if len(configs) == 1:
+        node = build_node(
+            config,
+            mode=mode,
+            force_enable_execution=bool(args.enable_execution),
+            log_level_override=args.log_level,
+        )
+        lock_config = config
+    else:
+        configs = _canonicalize_grouped_configs(configs)
+        config = configs[0]
+        node_group_id = _resolve_grouped_node_id(configs)
+        node_trader_id = _grouped_node_trader_id(node_group_id)
+        node = build_grouped_node(
+            configs,
+            mode=mode,
+            force_enable_execution=bool(args.enable_execution),
+            log_level_override=args.log_level,
+        )
+        lock_config = _node_identity_config(
+            config,
+            node_scoped_id=node_group_id,
+            node_trader_id=node_trader_id,
+        )
 
-    with _strategy_startup_lock(config):
+    with _strategy_startup_lock(lock_config):
         fatal_error: TradingNodeFatalError | None = None
         try:
             node.run()

@@ -2,7 +2,7 @@
 
 import { io, Socket } from 'socket.io-client';
 import { bumpGlobalResync } from './stores';
-import { resolvePathnameProfile } from './config/uiProfiles';
+import { resolvePathnameProfile, type PathProfile } from './config/uiProfiles';
 import type { RealtimeSnapshotLineage } from './types';
 
 let socketInstance: Socket | null = null;
@@ -11,6 +11,11 @@ let hasConnectedOnce = false;
 let lastResyncBumpAt = 0;
 let currentSocketProfile = 'default';
 const RESYNC_BUMP_DEBOUNCE_MS = 2000;
+const DEFAULT_SOCKET_PATH = '/socket.io';
+
+type FluxboardRuntimeConfig = {
+  socketPaths?: Partial<Record<PathProfile, string>>;
+};
 
 export enum SocketConnectionStatus {
   IDLE = 'idle',
@@ -479,6 +484,25 @@ const getPathProfile = (): string => {
   return resolvePathnameProfile(window.location?.pathname);
 };
 
+const getFluxboardRuntimeConfig = (): FluxboardRuntimeConfig | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const runtimeConfig = (window as any).__FLUXBOARD_RUNTIME_CONFIG__;
+  return runtimeConfig && typeof runtimeConfig === 'object'
+    ? runtimeConfig as FluxboardRuntimeConfig
+    : null;
+};
+
+const getSocketPathOverride = (profile: PathProfile): string | null => {
+  const configuredPath = getFluxboardRuntimeConfig()?.socketPaths?.[profile];
+  if (typeof configuredPath !== 'string') {
+    return null;
+  }
+  const trimmed = configuredPath.trim();
+  return trimmed || null;
+};
+
 const syncSocketProfile = (): void => {
   if (!socketInstance) {
     return;
@@ -500,6 +524,7 @@ export const getSocket = (): Socket => {
     const configuredBackendUrl = String(import.meta.env.VITE_BACKEND_URL || '').trim();
     const backendUrl = configuredBackendUrl === '/' ? '' : configuredBackendUrl;
     currentSocketProfile = getPathProfile();
+    const socketPath = getSocketPathOverride(currentSocketProfile as PathProfile) ?? DEFAULT_SOCKET_PATH;
     const testSocketFactory = getTestSocketFactory();
     const usingTestSocket = Boolean(testSocketFactory);
 
@@ -513,7 +538,7 @@ export const getSocket = (): Socket => {
     socketInstance = usingTestSocket
       ? testSocketFactory!()
       : io(backendUrl, {
-          path: '/socket.io',  // NO trailing slash
+          path: socketPath,
           // Server runs with threading mode; disable WS upgrade to avoid issues
           transports: ['polling'],
           // Allow cookies/headers when hosted on a different port during dev

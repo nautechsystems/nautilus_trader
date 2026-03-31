@@ -6,7 +6,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 - `equities.live.toml`: shared Redis, portfolio, bridge, API, and contract metadata plus the canonical equities allowlist.
 - `equities_stack.env.example`: local paper/testnet smoke environment template for `ops/scripts/deploy/equities_stack.sh`.
-- `strategies/`: one complete node TOML per enrolled strategy variant, named by exact strategy ID.
+- `strategies/`: one strategy TOML per enrolled strategy variant, named by exact strategy ID.
 - Runtime services:
   - `flux.runners.equities.run_node`
   - `flux.runners.equities.run_portfolio`
@@ -20,9 +20,12 @@ This directory is the deploy root for the dedicated `equities` stack.
 ## Intent
 
 - trade[XYZ] is represented as `HYPERLIQUID` plus `dex = "xyz"`.
-- Each enrolled strategy variant uses one strategy file and one node process; a symbol may run both `maker` and `taker` concurrently.
+- The split allowlist still exposes `38` external strategy IDs, but the production target is 19 grouped node services.
+- Each grouped node is keyed by symbol plus maker venue, for example `aapl_tradexyz` or `amzn_binance_perp`.
+- The production shape is one grouped node per symbol plus maker venue.
+- Strategy TOMLs remain strategy-local inputs; grouped nodes are an internal deploy detail.
 - preserve the outer equities surface: keep `/equities`, `profile=equities`, and `portfolio=equities` stable even if the inner strategy implementation changes later.
-- The checked-in active split maker/taker surface is pruned to the first-wave Tier 1 prod target. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
+- The checked-in active split maker/taker surface now includes the Tier 1 tradexyz core plus the enrolled Binance multivenue set. The admission baskets below describe symbol-level rollout categories, while extra disabled artifacts may remain in-tree as historical or rollback material until later cleanup removes them.
 - `aapl_tradexyz_makerv3.toml.disabled` is rollback material only.
 - Shared portfolio aggregation is scoped to `portfolio_id = "equities"`.
 - `deploy/equities/equities.live.toml` now carries a shared `[[strategy_contracts]]` manifest as the canonical source of truth for `strategy_id`, `portfolio_asset_id`, venue instrument mapping, and shared account scope ids.
@@ -46,7 +49,7 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 19, 2026 Split deploy contract
 
-- The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled Tier 1 strategy ids/service names are `*_maker` and `*_taker`.
+- The checked-in equities deploy contract now runs the split families explicitly: `deploy/equities/equities.live.toml` uses `api.strategy_class = "equities_maker"` / `param_set = "equities_maker"` as the shared API bootstrap default while enrolled prod strategy ids/service names are `*_maker` and `*_taker`.
 - `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` remains available as rollback material, but it is not part of normal installer discovery.
 - `makerv4` / `maker_v4` is now a legacy compatibility surface only. Keep it disabled on the checked-in production contract, validate live split-family trading first, and do not re-enroll `makerv4` for new production rollout work.
 - On the shared `tokenmm-api` host, `/equities` is a proxied SPA entry route, not the asset owner. That public HTML shell must load Fluxboard assets from the neutral shared prefix `/static/fluxboard/assets/*`; any `/tokenmm/assets/*` reference means the host is serving the wrong stale/shared dist bundle.
@@ -55,8 +58,8 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## March 13, 2026 Prod Hardening Universe Policy
 
-- The checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket.
-- Second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
+- The checked-in live config, strategy discovery, and checked-in service registry now include the Tier 1 tradexyz core basket plus the enrolled Binance multivenue set below.
+- Disabled second-wave and decommissioned names stay disabled until a later re-admission or removal task explicitly restores them, and broader disabled artifact inventory may remain on disk until that cleanup work lands.
 
 ### Tier 1 Core Basket
 
@@ -80,6 +83,27 @@ This directory is the deploy root for the dedicated `equities` stack.
 - `pltr_tradexyz_taker`
 - `tsla_tradexyz_maker`
 - `tsla_tradexyz_taker`
+
+### Enrolled Binance Multivenue Set
+
+- `amzn_binance_perp_maker`
+- `amzn_binance_perp_taker`
+- `coin_binance_perp_maker`
+- `coin_binance_perp_taker`
+- `crcl_binance_perp_maker`
+- `crcl_binance_perp_taker`
+- `ewy_binance_perp_maker`
+- `ewy_binance_perp_taker`
+- `hood_binance_perp_maker`
+- `hood_binance_perp_taker`
+- `intc_binance_perp_maker`
+- `intc_binance_perp_taker`
+- `mstr_binance_perp_maker`
+- `mstr_binance_perp_taker`
+- `pltr_binance_perp_maker`
+- `pltr_binance_perp_taker`
+- `tsla_binance_perp_maker`
+- `tsla_binance_perp_taker`
 
 ### Second-Wave Disabled Basket
 
@@ -111,13 +135,13 @@ This directory is the deploy root for the dedicated `equities` stack.
 
 ## Split deploy contract
 
-- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "equities_maker"` provides the shared API bootstrap default, the equities allowlist points to the enrolled split strategy set, and the shared contract metadata publishes one Hyperliquid and one IBKR contract row per enrolled stock route.
+- `deploy/equities/equities.live.toml` keeps `/equities` stable while `api.strategy_class = "equities_maker"` provides the shared API bootstrap default, the equities allowlist points to the enrolled split strategy set, and the shared contract metadata publishes one maker-venue contract row plus one IBKR contract row per enrolled stock route.
 - Each `[[strategy_contracts]]` row binds one strategy-local id to one canonical `portfolio_asset_id`, one Hyperliquid maker leg, one IBKR reference leg, and the shared account scopes (`execution_account_scope_id`, `reference_account_scope_id`, optional `hedge_account_scope_id`) that later profile-owned runners will consume.
 - Split variants may repeat `portfolio_asset_id` so `aapl_tradexyz_maker` and `aapl_tradexyz_taker` can share `portfolio_asset_id = "AAPL"` while remaining distinct strategy processes.
 - Each `[[account_scopes]]` row defines the shared provider config for one profile-owned account scope so the portfolio runner can build shared Hyperliquid/IBKR account projections without scraping one arbitrary node TOML.
 - The shared config merge only imports `redis`, `portfolio`, `[[strategy_contracts]]`, and `[[account_scopes]]`, so active node settings live in `deploy/equities/strategies/*.toml` while canonical asset/account contracts stay centralized in `deploy/equities/equities.live.toml`.
-- The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each shared IBKR contract entry must mirror an enrolled route from `deploy/equities/strategies/*.toml`.
-- The same safety invariant still applies to the split rollout: each shared IBKR contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
+- The `/equities` API contract catalog is built from the shared `[[contracts]]` entries, so each enrolled route must have matching maker-venue and IBKR contract catalog rows before it is added to the live set.
+- The same safety invariant still applies to the split rollout: each shared contract entry must mirror an active enrolled route before that route is added to the enrolled live set.
 - Hyperliquid effective account precedence remains `vault_address_env`, then funded `account_address_env`, then agent-wallet master resolution. Production hosts should keep `TRADE_XYZ_AGENT_PK`, `TRADE_XYZ_ACCOUNT_ADDRESS`, and optional `TRADE_XYZ_VAULT_ADDRESS` in `/etc/flux/common.env`.
 - The checked-in equities nodes keep listing-venue IBKR instrument IDs such as `AAPL.NASDAQ` and `USAR.NASDAQ`, plus `node.venues.IBKR.use_regular_trading_hours = false`. `ibkr.reference.main` is the only equities IBKR gateway owner; enrolled nodes keep a non-owning `[node.venues.IBKR.dockerized_gateway]` block with `manage_container = false` so they connect to the shared gateway without starting or restarting it.
 - Keep the reference instrument on the qualifiable listing venue and do not set `BLUEOCEAN` as `instrument_id`.
@@ -161,9 +185,10 @@ Installer behavior:
 - rejects mutable git checkouts and requires a metadata-backed release root
 - writes `/etc/flux/equities-api.env` for the internal loopback backend (`PULSE_ENABLED=0`, `127.0.0.1:5024`)
 - writes `/etc/flux/equities-portfolio.env`, `/etc/flux/equities-bridge.env`
+- writes one `/etc/flux/equities-node-<node_group_id>.env` per grouped node, with one or two `--config` flags for the member strategy TOMLs
 - writes `/etc/flux/equities-controller.env` for the `ibkr.hedge.main` controller lane
-- writes one `/etc/flux/equities-node-<strategy_id>.env` per `deploy/equities/strategies/*.toml`
-- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the controller canary and every discovered equities node service
+- writes `/etc/flux/equities-ibkr-reference-publisher.env` for the shared IBKR reference lane
+- rewrites `/etc/systemd/system/flux-equities.target` so the target enrolls the IBKR reference publisher, the controller canary, and the grouped `equities-node-*` registry
 - when `EQUITIES_DEPLOY_LANE=pilot`, writes `equities-pilot-*` env files and `flux-equities-pilot.target` with the same release-root contract
 - the pilot lane uses the loopback API port `127.0.0.1:5124`
 - when pilot and prod run concurrently on the same Redis host, keep the pilot lane on its own Redis DB (the default is `EQUITIES_REDIS_DB=1`) unless you are intentionally testing a shared-state scenario
@@ -176,7 +201,7 @@ Runtime registration is explicit:
   `FLUX_NODE_LOG_LEVEL`, `FLUX_BRIDGE_LOG_LEVEL`, `FLUX_PORTFOLIO_LOG_LEVEL`, or `FLUX_API_LOG_LEVEL` only for
   role-specific overrides.
 - Pulse lists only services whose env files set `PULSE_ENABLED=1`
-- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, `equities-controller`, and every discovered `equities-node-*` service
+- The equities target enrolls `equities-api`, `equities-portfolio`, `equities-bridge`, `equities-ibkr-reference-publisher`, `equities-controller`, and every discovered grouped `equities-node-*` service
 - The equities bridge consumes only the configured `api.equities_strategy_ids` scope by default.
 - Production equities Redis is the dedicated ElastiCache replication group `equities` in `ap-southeast-1`.
 - The write endpoint is `master.equities.wapqos.apse1.cache.amazonaws.com:6379` and the read endpoint is `replica.equities.wapqos.apse1.cache.amazonaws.com:6379`.
@@ -192,7 +217,8 @@ Required host sanity checks after install or repoint:
 - `sed -n '1,120p' /etc/flux/equities-portfolio.env`
 - `sed -n '1,120p' /etc/flux/equities-bridge.env`
 - `sed -n '1,120p' /etc/flux/equities-controller.env`
-- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz_maker.env`
+- `sed -n '1,120p' /etc/flux/equities-ibkr-reference-publisher.env`
+- `sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz.env`
 - `find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`
 - `for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' "$env_path"; done`
 - `curl -fsS http://127.0.0.1:5022/equities | rg '/static/fluxboard/assets/|/tokenmm/assets/|/equities/assets/'`
@@ -203,7 +229,7 @@ Expected results:
 - the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected release root so the service-level provenance stays explicit even if `/etc/flux/common.env` still reflects an older host default
 - the generated env commands use the release-local `.venv/bin/python` instead of a floating system `python3`
 - equities API and node commands use `--mode live --confirm-live` for the production path
-- every generated `equities-node-*.env` is rewritten from the intended release root and live-mode flags, not just the active canary example
+- every generated `equities-node-*.env` is rewritten from the intended release root and live-mode flags, with grouped node envs carrying all member `--config` flags for that service
 - print and review every rendered `equities-node-*.env` contents before restart so stale release roots or paper-mode commands cannot hide behind a filename-only listing
 - on the shared `tokenmm-api` host, public `/equities` should emit `/static/fluxboard/assets/*`
 - `/tokenmm/assets/*` on the shared public `/equities` route is a failure
@@ -217,8 +243,10 @@ Shared-host recovery order after a repoint:
 1. Run `uv sync --all-groups --all-extras` in the selected immutable release root.
 2. Run `sudo EQUITIES_DEPLOY_ROOT="${EQUITIES_DEPLOY_ROOT}" EQUITIES_DEPLOY_LANE=prod ops/scripts/deploy/install_equities_systemd.sh`.
 3. Verify the rewritten `/etc/flux/equities-*.env` files before restart.
-4. Restart `chainsaw@md-ibkr-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-controller.service`, `flux@equities-node-<strategy_id>.service`, and finally `flux@equities-api.service`.
+4. Restart `flux@equities-ibkr-reference-publisher.service`, then `flux@equities-portfolio.service`, `flux@equities-bridge.service`, `flux@equities-controller.service`, the grouped `flux@equities-node-<node_group_id>.service` units, and finally `flux@equities-api.service`.
 5. If the node fails on `ModuleNotFoundError: No module named 'ibapi'`, the selected release root `.venv` is incomplete; rerun `uv sync --all-groups --all-extras` in that release root and restart the node.
+
+For the full grouped-node prod migration procedure, use [`docs/runbooks/equities-shared-node-cutover.md`](../../docs/runbooks/equities-shared-node-cutover.md). That runbook captures the mandatory live baseline, restart order, readiness gate, and rollback steps.
 
 Primary operator surfaces:
 
@@ -233,7 +261,7 @@ Primary operator surfaces:
 Read-only live readiness gate:
 
 - Run `ops/scripts/deploy/check_equities_live_readiness.sh` from the selected immutable release root before any live canary enablement.
-- The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
+- The gate reuses `deploy/equities/equities.live.toml`, the shared Redis env overrides, the canonical `profile_account_projection` Redis keys, the canonical `profile_market_data_status` key for `flux@equities-ibkr-reference-publisher.service`, the canonical component inventory keys, `GET /api/v1/signals?profile=equities`, and `GET /api/v1/balances?profile=equities`.
 - Safe defaults are fail-closed: `missing_required` must stay empty, balances must not be degraded, every configured strategy contract must have its canonical component key, the required IBKR shared projections must be present and fresh, and stale/unhealthy signal counts must stay at zero.
 - The host wrapper is session-aware by default for IBKR reference freshness: outside the regular US session (`09:30-16:00 America/New_York`), `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION=1` suppresses off-session reference-age failures while keeping balances, component keys, shared-account projections, and maker-leg freshness fail-closed.
 - Override knobs are env-first for host use: `EQUITIES_READINESS_API_BASE_URL`, `EQUITIES_READY_MAX_STALE_SIGNAL_LEGS`, `EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES`, `EQUITIES_READY_PROJECTION_MAX_AGE_MS`, `EQUITIES_READY_REQUIRED_BALANCE_SOURCE`, and `EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION`.
@@ -297,6 +325,6 @@ Fluxboard contract reference:
 
 ## Rollback
 
-- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and stopping the corresponding `flux@equities-node-<strategy_id>.service` units.
+- Disable a split equities route cleanly by removing the intended strategy IDs from `api.equities_strategy_ids` / `api.equities_required_strategy_ids`, rerunning `ops/scripts/deploy/install_equities_systemd.sh`, and restarting or stopping the corresponding grouped `flux@equities-node-<node_group_id>.service` units once membership is recomputed.
 - Roll back the AAPL canary to MakerV3 only by restoring `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` to `.toml`, retiring the active split family files from discovery for that symbol, rerunning the installer, then `systemctl daemon-reload` and restarting `flux-equities.target`.
 - `/equities`, `profile=equities`, and `portfolio=equities` stay stable during the strategy-family switch. The user-facing surface does not change, but the internal strategy family, params schema, and signal telemetry move with the file swap.

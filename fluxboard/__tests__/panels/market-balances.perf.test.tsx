@@ -192,6 +192,112 @@ describe('market/balances realtime polling fallback', () => {
     });
   });
 
+  it('hides the shared-account status banner when balances are healthy', async () => {
+    hookState.enabledSurfaces.add('balances');
+    balancesSnapshotMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'USD_LOGICAL',
+          coin: 'USD_LOGICAL',
+          canonical: 'USD',
+          is_parent: true,
+          stable: true,
+          qty_display: '1000',
+          qty_raw: 1000,
+          mv_display: '$1000.00',
+          mv_raw: 1000,
+          mark_display: '1.00',
+          mark_raw: 1,
+          time_display: '2024-01-01T00:00:00Z',
+          time_iso: '2024-01-01T00:00:00Z',
+          last_ts: 1704067200000,
+          raw: { qty: 1000, mv_usd: 1000, mark: 1 },
+          children: [],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 1000, mv_display: '$1000.00' },
+      generated_at: '2024-01-01T00:00:00Z',
+      view: 'parents_only',
+      risk_groups: [],
+      degraded: false,
+      scope_status: [
+        {
+          account_scope_id: 'ibkr.reference.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: true,
+            last_success_ts_ms: 1704067200000,
+            last_attempt_ts_ms: 1704067200000,
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    });
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(balancesSnapshotMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.queryByText('Shared-account scopes healthy')).not.toBeInTheDocument();
+    expect(screen.queryByText(/publishing healthy shared-account state/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the shared-account status banner when balances are degraded', async () => {
+    hookState.enabledSurfaces.add('balances');
+    balancesSnapshotMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'USD_LOGICAL',
+          coin: 'USD_LOGICAL',
+          canonical: 'USD',
+          is_parent: true,
+          stable: true,
+          qty_display: '1000',
+          qty_raw: 1000,
+          mv_display: '$1000.00',
+          mv_raw: 1000,
+          mark_display: '1.00',
+          mark_raw: 1,
+          time_display: '2024-01-01T00:00:00Z',
+          time_iso: '2024-01-01T00:00:00Z',
+          last_ts: 1704067200000,
+          raw: { qty: 1000, mv_usd: 1000, mark: 1 },
+          children: [],
+        },
+      ],
+      total: 1,
+      totals: { mv_raw: 1000, mv_display: '$1000.00' },
+      generated_at: '2024-01-01T00:00:00Z',
+      view: 'parents_only',
+      risk_groups: [],
+      degraded: true,
+      scope_status: [
+        {
+          account_scope_id: 'ibkr.reference.main',
+          source_scope: 'shared_account',
+          projection_status: {
+            healthy: false,
+            last_success_ts_ms: 1704067200000,
+            last_attempt_ts_ms: 1704067217000,
+            last_error_type: 'TimeoutError',
+            stale_after_ms: 15000,
+          },
+        },
+      ],
+    });
+
+    render(<Balances />);
+
+    await waitFor(() => {
+      expect(balancesSnapshotMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText('Degraded reconciliation')).toBeInTheDocument();
+  });
+
   it('keeps MarketData page anchors stable and freshness fanout bounded for large snapshots', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-23T00:00:00.000Z'));

@@ -632,12 +632,13 @@ def _canonical_balances_signature(
                 latest_ts_ms = parsed
         snapshot_present = bool(balance_snapshot_presence.get(strategy_id, False))
         age_ms = (now_ms_value - latest_ts_ms) if latest_ts_ms is not None else None
+        empty_snapshot_present = normalized_profile == "equities" and snapshot_present and not strategy_rows
         stale = (
             not snapshot_present
-            or latest_ts_ms is None
+            or (latest_ts_ms is None and not empty_snapshot_present)
             or (age_ms is not None and age_ms > SOCKETIO_TOKENMM_BALANCES_STALE_AFTER_MS)
         )
-        missing = (not snapshot_present) or not strategy_rows
+        missing = (not snapshot_present) or (not strategy_rows and not empty_snapshot_present)
         components.append(
             {
                 "strategy_id": strategy_id,

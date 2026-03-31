@@ -2341,11 +2341,6 @@ if _NAUTILUS_IMPORT_ERROR is None:
             local_position_summary, local_position_source, local_position_source_ts_ms = (
                 self._maker_local_position_context(maker_base_currency)
             )
-            if (
-                local_position_source == "shared_account_projection"
-                and local_position_source_ts_ms is not None
-            ):
-                ts_ms = local_position_source_ts_ms
             local_spot_qty = self._maker_local_spot_qty(maker_base_currency)
             local_qty_base = inventory_mod.local_inventory_total(
                 local_position_qty=local_position_summary.base_qty,

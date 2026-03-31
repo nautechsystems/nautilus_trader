@@ -1625,6 +1625,8 @@ def build_balance_risk_groups(
         row["risk_key"] = risk_key
         row["risk_label"] = risk_label
         annotated_rows.append(row)
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            continue
 
         qty = (
             safe_float(row.get("signed_qty"))

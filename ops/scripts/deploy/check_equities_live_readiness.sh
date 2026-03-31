@@ -35,6 +35,7 @@ load_common_env() {
       -e '/^EQUITIES_REDIS_PASSWORD=/p' \
       -e '/^EQUITIES_REDIS_SSL=/p' \
       -e '/^EQUITIES_API_BACKEND_URL=/p' \
+      -e '/^EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS=/p' \
       "${env_path}"
   )
 }
@@ -48,6 +49,7 @@ EQUITIES_READY_MAX_UNHEALTHY_STRATEGIES="${EQUITIES_READY_MAX_UNHEALTHY_STRATEGI
 EQUITIES_READY_PROJECTION_MAX_AGE_MS="${EQUITIES_READY_PROJECTION_MAX_AGE_MS:-120000}"
 EQUITIES_READY_REQUIRED_BALANCE_SOURCE="${EQUITIES_READY_REQUIRED_BALANCE_SOURCE:-portfolio_snapshot_v2}"
 EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION="${EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION:-1}"
+EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS="${EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS:-}"
 
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "[equities-readiness] missing checkout-local python: ${PYTHON_BIN}" >&2
@@ -66,6 +68,16 @@ cmd=(
 
 if [[ -n "${EQUITIES_READINESS_API_BASE_URL}" ]]; then
   cmd+=(--api-base-url "${EQUITIES_READINESS_API_BASE_URL}")
+fi
+
+if [[ -n "${EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS}" ]]; then
+  IFS=',' read -r -a expected_scope_ids <<<"${EQUITIES_READY_EXPECTED_PROJECTION_SCOPE_IDS}"
+  for scope_id in "${expected_scope_ids[@]}"; do
+    scope_id="${scope_id//[[:space:]]/}"
+    if [[ -n "${scope_id}" ]]; then
+      cmd+=(--expected-projection-scope-id "${scope_id}")
+    fi
+  done
 fi
 
 case "${EQUITIES_READY_IGNORE_REFERENCE_FRESHNESS_OUTSIDE_REGULAR_SESSION,,}" in

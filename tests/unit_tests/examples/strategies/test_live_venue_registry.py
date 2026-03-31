@@ -17,6 +17,9 @@ from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.shared_reference import (
+    InteractiveBrokersSharedReferenceDataClientConfig,
+)
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXExecClientConfig
@@ -330,6 +333,59 @@ def test_resolve_strategy_venues_supports_ibkr_reference_data_client() -> None:
     )
 
 
+def test_resolve_strategy_venues_merges_shared_redis_config_into_ibkr_shared_reference() -> None:
+    resolved = resolve_strategy_venues(
+        config={
+            "redis": {
+                "host": "127.0.0.1",
+                "port": 6379,
+                "db": 0,
+                "username": "default",
+                "password": "",
+                "ssl": False,
+                "connect_timeout_secs": 5.0,
+                "read_timeout_secs": 5.0,
+            },
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "HYPERLIQUID": {
+                        "adapter": "hyperliquid",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "execution": False,
+                    },
+                    "IBKR": {
+                        "data_adapter": "interactive_brokers_shared_reference",
+                        "exec_adapter": "interactive_brokers",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4001,
+                        "ibg_client_id": 107,
+                        "account_id": "U10015777",
+                        "execution": False,
+                    },
+                },
+            },
+        },
+        mode="live",
+        enable_execution=False,
+    )
+
+    assert isinstance(
+        resolved.data_clients["IBKR"],
+        InteractiveBrokersSharedReferenceDataClientConfig,
+    )
+    assert resolved.data_clients["IBKR"].redis_host == "127.0.0.1"
+    assert resolved.data_clients["IBKR"].redis_port == 6379
+    assert resolved.data_clients["IBKR"].redis_db == 0
+    assert resolved.data_clients["IBKR"].redis_username == "default"
+    assert resolved.data_clients["IBKR"].redis_password == ""
+    assert resolved.data_clients["IBKR"].redis_ssl is False
+
+
 def test_resolve_strategy_venues_supports_binance_perp_execution_with_ibkr_reference() -> None:
     interactive_brokers_config = pytest.importorskip(
         "nautilus_trader.adapters.interactive_brokers.config",
@@ -465,11 +521,55 @@ def test_resolve_strategy_venues_supports_ibkr_reference_exec_client() -> None:
     assert set(resolved.exec_clients) == {HYPERLIQUID, "IBKR"}
     assert isinstance(resolved.data_clients["IBKR"], InteractiveBrokersDataClientConfig)
     assert isinstance(resolved.exec_clients["IBKR"], InteractiveBrokersExecClientConfig)
+    assert resolved.data_clients["IBKR"].ibg_client_id == 23
     assert resolved.exec_clients[HYPERLIQUID].routing.default is False
     assert resolved.exec_clients["IBKR"].routing.default is False
     assert resolved.exec_clients["IBKR"].ibg_port == 4001
     assert resolved.exec_clients["IBKR"].ibg_client_id == 23
     assert resolved.exec_clients["IBKR"].account_id == "U1234567"
+
+
+def test_resolve_strategy_venues_supports_explicit_ibkr_exec_client_id_override() -> None:
+    interactive_brokers_config = pytest.importorskip(
+        "nautilus_trader.adapters.interactive_brokers.config",
+    )
+    InteractiveBrokersExecClientConfig = (
+        interactive_brokers_config.InteractiveBrokersExecClientConfig
+    )
+
+    resolved = resolve_strategy_venues(
+        config={
+            "venues": {
+                "execution_venue": "HYPERLIQUID",
+                "reference_venue": "IBKR",
+            },
+            "node": {
+                "venues": {
+                    "HYPERLIQUID": {
+                        "adapter": "hyperliquid",
+                        "instrument_id": "xyz:AAPL-USD-PERP.HYPERLIQUID",
+                        "execution": True,
+                    },
+                    "IBKR": {
+                        "adapter": "interactive_brokers",
+                        "instrument_id": "AAPL.NASDAQ",
+                        "ibg_host": "127.0.0.1",
+                        "ibg_port": 4001,
+                        "ibg_client_id": 23,
+                        "exec_ibg_client_id": 2023,
+                        "account_id": "U1234567",
+                        "execution": True,
+                    },
+                },
+            },
+        },
+        mode="live",
+        enable_execution=True,
+    )
+
+    assert isinstance(resolved.exec_clients["IBKR"], InteractiveBrokersExecClientConfig)
+    assert resolved.data_clients["IBKR"].ibg_client_id == 23
+    assert resolved.exec_clients["IBKR"].ibg_client_id == 2023
 
 
 def test_resolve_strategy_venues_coerces_ibkr_dockerized_gateway_config() -> None:

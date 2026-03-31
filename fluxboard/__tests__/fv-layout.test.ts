@@ -12,4 +12,9 @@ describe('FV layout wiring', () => {
     const defaultLayout = PRESETS.default || [];
     expect(defaultLayout.some((item) => item.i === 'fv')).toBe(true);
   });
+
+  it('includes balances panel in default dashboard preset', () => {
+    const defaultLayout = PRESETS.default || [];
+    expect(defaultLayout.some((item) => item.i === 'balances')).toBe(true);
+  });
 });

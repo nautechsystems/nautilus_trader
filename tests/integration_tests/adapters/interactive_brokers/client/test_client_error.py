@@ -52,3 +52,13 @@ async def test_ib_is_not_ready_by_error_10182(ib_client):
 
     # Assert
     assert not ib_client._is_ib_connected.is_set()
+
+
+@pytest.mark.asyncio
+async def test_process_error_tolerates_missing_error_code(ib_client):
+    await ib_client.process_error(
+        req_id=-1,
+        error_time=0,
+        error_code=None,
+        error_string="Connection closed",
+    )

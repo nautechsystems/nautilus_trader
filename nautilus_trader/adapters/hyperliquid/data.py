@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
@@ -40,6 +41,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class HyperliquidDataClient(LiveMarketDataClient):
@@ -106,6 +108,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
             url=config.base_url_ws,
             testnet=config.testnet,
         )
+        self._quote_feed_result_ingress: Any | None = None
 
     @property
     def instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -148,6 +151,126 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         for currency in self.instrument_provider.currencies().values():
             self._cache.add_currency(currency)
+
+    def set_quote_feed_result_ingress(self, ingress: Any | None) -> None:
+        self._quote_feed_result_ingress = ingress
+
+    def has_quote_feed_result_ingress(self) -> bool:
+        return callable(self._quote_feed_result_ingress)
+
+    def supports_quote_feed_identity_recovery(self) -> bool:
+        return True
+
+    def _normalize_quote_recovery_target(self, target: Any) -> tuple[InstrumentId, Any | None]:
+        instrument_id = getattr(target, "instrument_id", target)
+        if not isinstance(instrument_id, InstrumentId):
+            raise TypeError(f"Unsupported quote recovery target {target!r}")
+        feed_identity = target if instrument_id is not target else None
+        return instrument_id, feed_identity
+
+    async def recover_quote_subscription(self, target: Any) -> dict[str, Any]:
+        instrument_id, feed_identity = self._normalize_quote_recovery_target(target)
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
+        cache_refreshed = False
+
+        status, ok, error_summary = await self._ws_client.recover_quote_subscription(
+            pyo3_instrument_id,
+        )
+
+        if status == "cache_miss":
+            try:
+                await self.instrument_provider.initialize(reload=True)
+                self._cache_instruments()
+                self._send_all_instruments_to_data_engine()
+                instruments = self.instrument_provider.instruments_pyo3()
+                if hasattr(self._ws_client, "cache_instruments"):
+                    self._ws_client.cache_instruments(instruments)
+                cache_refreshed = True
+            except Exception as e:  # pragma: no cover - defensive logging
+                status = "cache_refresh_failed"
+                ok = False
+                error_summary = f"{type(e).__name__}: {e}"
+            else:
+                status, ok, error_summary = await self._ws_client.recover_quote_subscription(
+                    pyo3_instrument_id,
+                )
+
+        result = {
+            "instrument_id": instrument_id.value,
+            "ok": bool(ok),
+            "status": str(status),
+            "error_summary": error_summary,
+            "cache_refreshed": cache_refreshed,
+        }
+        if feed_identity is not None:
+            result["feed_identity"] = feed_identity
+        self._emit_quote_feed_result(result)
+        return result
+
+    async def recover_quote_ticks(self, target: Any) -> dict[str, Any]:
+        return await self.recover_quote_subscription(target)
+
+    def _emit_quote_feed_result(self, result: dict[str, Any]) -> None:
+        ingress = self._quote_feed_result_ingress
+        if not callable(ingress):
+            return
+
+        now_ns = self._clock.timestamp_ns()
+        extended_kwargs = {
+            "now_ns": now_ns,
+            "ok": bool(result["ok"]),
+            "error_summary": result.get("error_summary"),
+            "feed_identity": result.get("feed_identity"),
+            "instrument_id": result.get("instrument_id"),
+            "status": result.get("status"),
+            "cache_refreshed": bool(result.get("cache_refreshed", False)),
+            "result": dict(result),
+        }
+        if self._ingress_supports_extended_quote_feed_result(ingress):
+            try:
+                ingress(**extended_kwargs)
+            except Exception as e:  # pragma: no cover - defensive logging
+                self._log.exception("Error reporting quote-feed recovery result", e)
+            return
+
+        # Keep the older `(now_ns, ok, error_summary)` contract working for legacy
+        # result ingresses while avoiding broad TypeError swallowing from the callback body.
+        try:
+            ingress(
+                now_ns=now_ns,
+                ok=bool(result["ok"]),
+                error_summary=result.get("error_summary"),
+            )
+        except Exception as e:  # pragma: no cover - defensive logging
+            self._log.exception("Error reporting quote-feed recovery result", e)
+
+    @staticmethod
+    def _ingress_supports_extended_quote_feed_result(ingress: Any) -> bool:
+        try:
+            parameters = inspect.signature(ingress).parameters.values()
+        except (TypeError, ValueError):
+            return True
+
+        for parameter in parameters:
+            if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+
+        accepted_names = {
+            parameter.name
+            for parameter in parameters
+            if parameter.kind
+            in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+        }
+        return {
+            "feed_identity",
+            "instrument_id",
+            "status",
+            "cache_refreshed",
+            "result",
+        }.issubset(accepted_names)
 
     def _handle_msg(self, msg: Any) -> None:
         try:

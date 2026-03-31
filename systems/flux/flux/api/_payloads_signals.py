@@ -655,23 +655,25 @@ def _normalize_v4_leg_snapshot(
         mid = _first_valid_float(leg.get("mid"))
         ts_ms = coerce_ts_ms(leg.get("ts_ms"))
         age_ms = safe_int(leg.get("age_ms"))
-        if venue:
+        existing_ts_ms = coerce_ts_ms(payload.get("ts_ms"))
+        prefer_live_market = ts_ms is not None and (existing_ts_ms is None or ts_ms >= existing_ts_ms)
+        if venue and (prefer_live_market or not decode_text(payload.get("venue")).strip()):
             payload["venue"] = venue
-        if route:
+        if route and (prefer_live_market or not decode_text(payload.get("route")).strip()):
             payload["route"] = route
-        if symbol:
+        if symbol and (prefer_live_market or not decode_text(payload.get("symbol")).strip()):
             payload["symbol"] = symbol
-        if instrument_id:
+        if instrument_id and (prefer_live_market or not decode_text(payload.get("instrument_id")).strip()):
             payload["instrument_id"] = instrument_id
-        if bid is not None:
+        if bid is not None and (prefer_live_market or _first_valid_float(payload.get("bid")) is None):
             payload["bid"] = bid
-        if ask is not None:
+        if ask is not None and (prefer_live_market or _first_valid_float(payload.get("ask")) is None):
             payload["ask"] = ask
-        if mid is not None:
+        if mid is not None and (prefer_live_market or _first_valid_float(payload.get("mid")) is None):
             payload["mid"] = mid
-        if ts_ms is not None:
+        if ts_ms is not None and (prefer_live_market or coerce_ts_ms(payload.get("ts_ms")) is None):
             payload["ts_ms"] = ts_ms
-        if age_ms is not None:
+        if age_ms is not None and (prefer_live_market or safe_int(payload.get("age_ms")) is None):
             payload["age_ms"] = age_ms
     return payload
 
@@ -683,6 +685,29 @@ def _apply_quote_health_to_v4_leg(
     max_quote_age_ms: int,
 ) -> dict[str, Any]:
     normalized = dict(payload) if isinstance(payload, Mapping) else {}
+    recovery_state = decode_text(normalized.pop("recovery_state", None)).strip().lower()
+    if recovery_state == "bootstrapping":
+        normalized["feed_state"] = "unknown"
+        normalized["quote_state"] = "missing"
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_unknown"
+        return normalized
+    if recovery_state in {"blocked", "recovering"}:
+        normalized["feed_state"] = "down"
+        normalized["quote_state"] = "missing"
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_down"
+        return normalized
+    if recovery_state == "down":
+        normalized["feed_state"] = "down"
+        normalized.pop("quote_state", None)
+        normalized["pricing_usable"] = False
+        normalized["hedge_usable"] = False
+        normalized["reason_code"] = f"{leg_role}_feed_down"
+        return normalized
+
     transport_connected = (
         True
         if normalized.get("ts_ms") is not None
@@ -699,12 +724,59 @@ def _apply_quote_health_to_v4_leg(
         transport_connected=transport_connected,
         subscription_healthy=transport_connected,
     )
+    explicit_feed_state = decode_text(normalized.get("feed_state")).strip().lower()
+    if explicit_feed_state not in {"ok", "degraded", "down", "unknown"}:
+        explicit_feed_state = ""
+    explicit_quote_state = decode_text(normalized.get("quote_state")).strip().lower()
+    if explicit_quote_state not in {"fresh", "old", "missing"}:
+        explicit_quote_state = ""
+    if explicit_feed_state or explicit_quote_state:
+        optimistic_explicit = explicit_feed_state == "ok" and explicit_quote_state == "fresh"
+        conservative_explicit = (
+            explicit_feed_state in {"degraded", "down", "unknown"}
+            or explicit_quote_state in {"old", "missing"}
+        )
+        live_age_ms = safe_int(normalized.get("age_ms"))
+        explicit_stale_override = live_age_ms is not None and live_age_ms > max_quote_age_ms
+        if not conservative_explicit and (not optimistic_explicit or explicit_stale_override):
+            normalized["feed_state"] = quote_health.feed_state
+            normalized["quote_state"] = quote_health.quote_state
+            normalized["pricing_usable"] = quote_health.usable_for_pricing
+            normalized["hedge_usable"] = quote_health.usable_for_hedging
+            if quote_health.reason_code is not None:
+                normalized["reason_code"] = quote_health.reason_code
+            else:
+                normalized.pop("reason_code", None)
+            return normalized
+
+        if explicit_feed_state:
+            normalized["feed_state"] = explicit_feed_state
+        else:
+            normalized.pop("feed_state", None)
+        if explicit_quote_state:
+            normalized["quote_state"] = explicit_quote_state
+        else:
+            normalized.pop("quote_state", None)
+
+        derived_usable: bool | None = None
+        if explicit_feed_state == "ok" and explicit_quote_state == "fresh":
+            derived_usable = True
+        elif explicit_feed_state in {"degraded", "down", "unknown"} or explicit_quote_state in {"old", "missing"}:
+            derived_usable = False
+
+        if normalized.get("pricing_usable") is None and derived_usable is not None:
+            normalized["pricing_usable"] = derived_usable
+        if normalized.get("hedge_usable") is None and derived_usable is not None:
+            normalized["hedge_usable"] = derived_usable
+        return normalized
     normalized["feed_state"] = quote_health.feed_state
     normalized["quote_state"] = quote_health.quote_state
     normalized["pricing_usable"] = quote_health.usable_for_pricing
     normalized["hedge_usable"] = quote_health.usable_for_hedging
     if quote_health.reason_code is not None:
         normalized["reason_code"] = quote_health.reason_code
+    else:
+        normalized.pop("reason_code", None)
     return normalized
 
 
@@ -716,6 +788,53 @@ def _ibkr_route_from_instrument_id_text(instrument_id: str | None) -> str | None
     if route in {"SMART", "BLUEOCEAN"}:
         return route
     return None
+
+
+def _sanitize_external_signal_state(
+    state: Mapping[str, Any],
+    *,
+    quote_snapshot: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    public_state = dict(state)
+    state_maker_v4 = state.get("maker_v4")
+    if not isinstance(state_maker_v4, Mapping):
+        return public_state
+
+    public_maker_v4 = dict(state_maker_v4)
+    raw_quote_snapshot = state_maker_v4.get("quote_snapshot")
+    if not isinstance(raw_quote_snapshot, Mapping):
+        public_state["maker_v4"] = public_maker_v4
+        return public_state
+
+    public_quote_snapshot = dict(raw_quote_snapshot)
+    for leg_key in ("maker_leg", "ref_leg", "hedge_leg"):
+        normalized_leg = quote_snapshot.get(leg_key) if isinstance(quote_snapshot, Mapping) else None
+        if isinstance(normalized_leg, Mapping):
+            public_quote_snapshot[leg_key] = dict(normalized_leg)
+            continue
+        raw_leg = raw_quote_snapshot.get(leg_key)
+        if not isinstance(raw_leg, Mapping):
+            continue
+        public_leg = dict(raw_leg)
+        public_leg.pop("recovery_state", None)
+        leg_role = {
+            "maker_leg": "maker",
+            "ref_leg": "reference",
+            "hedge_leg": "hedge",
+        }.get(leg_key, "")
+        reason_code = decode_text(public_leg.get("reason_code")).strip().lower()
+        if leg_role and reason_code in {
+            f"{leg_role}_quote_bootstrapping",
+            f"{leg_role}_quote_blocked",
+            f"{leg_role}_quote_recovering",
+            f"{leg_role}_quote_down",
+        }:
+            public_leg.pop("reason_code", None)
+        public_quote_snapshot[leg_key] = public_leg
+
+    public_maker_v4["quote_snapshot"] = public_quote_snapshot
+    public_state["maker_v4"] = public_maker_v4
+    return public_state
 
 
 def _derive_quote_snapshot_v4(
@@ -740,7 +859,6 @@ def _derive_quote_snapshot_v4(
         or safe_int(params.get("max_ibkr_quote_age_ms"))
         or 1_000
     )
-    quote_snapshot["ts_ms"] = coerce_ts_ms(quote_snapshot.get("ts_ms") or ts_ms)
     quote_snapshot["max_ibkr_quote_age_ms"] = ibkr_max_quote_age_ms
     quote_snapshot["maker_leg"] = _apply_quote_health_to_v4_leg(
         _normalize_v4_leg_snapshot(
@@ -807,8 +925,27 @@ def _derive_quote_snapshot_v4(
                 ref_symbol = decode_text(ref_snapshot.get("symbol")).strip()
                 if ref_venue and "venue" not in hedge_snapshot:
                     hedge_snapshot["venue"] = ref_venue
-                if ref_symbol and "symbol" not in hedge_snapshot:
-                    hedge_snapshot["symbol"] = ref_symbol
+            if ref_symbol and "symbol" not in hedge_snapshot:
+                hedge_snapshot["symbol"] = ref_symbol
+    live_quote_ts_ms = max(
+        (
+            candidate
+            for candidate in (
+                coerce_ts_ms(quote_snapshot["maker_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("maker_leg"), Mapping)
+                else None,
+                coerce_ts_ms(quote_snapshot["hedge_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("hedge_leg"), Mapping)
+                else None,
+                coerce_ts_ms(quote_snapshot["ref_leg"].get("ts_ms"))
+                if isinstance(quote_snapshot.get("ref_leg"), Mapping)
+                else None,
+            )
+            if candidate is not None
+        ),
+        default=None,
+    )
+    quote_snapshot["ts_ms"] = coerce_ts_ms(live_quote_ts_ms or quote_snapshot.get("ts_ms") or ts_ms)
     return quote_snapshot
 
 
@@ -847,12 +984,46 @@ def _derive_makerv4_operator_payload(
     quote_fee_assumptions_map = (
         quote_fee_assumptions if isinstance(quote_fee_assumptions, Mapping) else {}
     )
+    maker_taker_fee_bps = _first_valid_float(
+        fee_assumptions_map.get("maker_taker_fee_bps"),
+        quote_fee_assumptions_map.get("maker_taker_fee_bps"),
+        fee_assumptions_map.get("hl_taker_fee_bps"),
+        quote_fee_assumptions_map.get("hl_taker_fee_bps"),
+    )
+    maker_maker_fee_bps = _first_valid_float(
+        fee_assumptions_map.get("maker_maker_fee_bps"),
+        quote_fee_assumptions_map.get("maker_maker_fee_bps"),
+        fee_assumptions_map.get("hl_maker_fee_bps"),
+        quote_fee_assumptions_map.get("hl_maker_fee_bps"),
+    )
     if "cancel_after_ms" in pending_hedge_map:
         cancel_after_ms = safe_int(pending_hedge_map.get("cancel_after_ms"))
     elif "cancel_after_ms" in hedge_policy_map:
         cancel_after_ms = safe_int(hedge_policy_map.get("cancel_after_ms"))
     else:
         cancel_after_ms = _first_valid_int(quote_snapshot.get("cancel_after_ms"))
+
+    fee_assumptions_payload = {
+        "ibkr_fee_plan": _first_valid_text(
+            fee_assumptions_map.get("ibkr_fee_plan"),
+            quote_fee_assumptions_map.get("ibkr_fee_plan"),
+        ),
+        "ibkr_fee_min_usd": _first_valid_float(
+            fee_assumptions_map.get("ibkr_fee_min_usd"),
+            quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
+        ),
+        "assumed_hedge_fee_bps": _first_valid_float(
+            fee_assumptions_map.get("assumed_hedge_fee_bps"),
+            quote_fee_assumptions_map.get("assumed_hedge_fee_bps"),
+            quote_snapshot.get("assumed_hedge_fee_bps"),
+        ),
+    }
+    if strategy_family in {"equities_maker", "equities_taker"}:
+        fee_assumptions_payload["hl_taker_fee_bps"] = maker_taker_fee_bps
+        fee_assumptions_payload["hl_maker_fee_bps"] = maker_maker_fee_bps
+    else:
+        fee_assumptions_payload["maker_taker_fee_bps"] = maker_taker_fee_bps
+        fee_assumptions_payload["maker_maker_fee_bps"] = maker_maker_fee_bps
 
     payload = {
         "execution_mode": execution_mode,
@@ -881,33 +1052,8 @@ def _derive_makerv4_operator_payload(
             ),
             "cancel_after_ms": cancel_after_ms,
         },
-        "fee_assumptions": {
-            "ibkr_fee_plan": _first_valid_text(
-                fee_assumptions_map.get("ibkr_fee_plan"),
-                quote_fee_assumptions_map.get("ibkr_fee_plan"),
-            ),
-            "ibkr_fee_min_usd": _first_valid_float(
-                fee_assumptions_map.get("ibkr_fee_min_usd"),
-                quote_fee_assumptions_map.get("ibkr_fee_min_usd"),
-            ),
-            "maker_taker_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("maker_taker_fee_bps"),
-                quote_fee_assumptions_map.get("maker_taker_fee_bps"),
-                fee_assumptions_map.get("hl_taker_fee_bps"),
-                quote_fee_assumptions_map.get("hl_taker_fee_bps"),
-            ),
-            "maker_maker_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("maker_maker_fee_bps"),
-                quote_fee_assumptions_map.get("maker_maker_fee_bps"),
-                fee_assumptions_map.get("hl_maker_fee_bps"),
-                quote_fee_assumptions_map.get("hl_maker_fee_bps"),
-            ),
-            "assumed_hedge_fee_bps": _first_valid_float(
-                fee_assumptions_map.get("assumed_hedge_fee_bps"),
-                quote_fee_assumptions_map.get("assumed_hedge_fee_bps"),
-                quote_snapshot.get("assumed_hedge_fee_bps"),
-            ),
-        },
+        "fee_assumptions": fee_assumptions_payload,
+        "hedge_backlog": None,
     }
     if hedge_backlog_map:
         payload["hedge_backlog"] = {
@@ -1552,6 +1698,7 @@ def build_signals_payload_impl(
         if uses_equities_arb_contract
         else None
     )
+    public_state = _sanitize_external_signal_state(state, quote_snapshot=quote_snapshot)
 
     return {
         "id": strategy_id,
@@ -1586,7 +1733,7 @@ def build_signals_payload_impl(
         **({"equities_arb": equities_arb_payload} if uses_equities_arb_contract else {}),
         **({"maker_v4": equities_arb_payload} if strategy_family == "maker_v4" else {}),
         **({"maker_v3": {"quote_snapshot": quote_snapshot}} if not uses_equities_arb_contract else {}),
-        "state": state,
+        "state": public_state,
         "legs": legs,
         "legs_order": legs_order,
         "fv_row": fv_row,

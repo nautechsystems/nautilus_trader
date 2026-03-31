@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 import tomllib
+import uuid
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -14,13 +16,19 @@ from typing import Any
 from typing import cast
 
 import redis
+from flask import Response
 from flask import abort
+from flask import request
 from flask import send_from_directory
 
 from flux.api import ContractCatalogEntry
 from flux.api import StrategyMetadata
 from flux.api import create_flux_api_app
 from flux.api.app import RedisClientProtocol
+from flux.api.payloads import build_envelope
+from flux.api.payloads import build_error
+from flux.api.payloads import now_ms
+from flux.common.account_scopes import decode_account_scopes
 from flux.common.config import FLUX_DEFAULT_NAMESPACE
 from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.config import FluxConfig
@@ -32,11 +40,21 @@ from flux.common.params import MAKERV3_RUNTIME_PARAM_DEFAULTS
 from flux.common.params import MAKERV3_RUNTIME_PARAM_SCHEMA
 from flux.common.strategy_contracts import decode_strategy_contracts
 from flux.pulse import PulseControlPlane
+from flux.runners.equities.readiness import EquitiesReadinessThresholds
+from flux.runners.equities.readiness import _collect_component_payloads
+from flux.runners.equities.readiness import _collect_publisher_status_payload
+from flux.runners.equities.readiness import _collect_projection_payloads
+from flux.runners.equities.readiness import _expected_reference_account_scope_id
+from flux.runners.equities.readiness import _expected_projection_scope_ids
+from flux.runners.equities.readiness import evaluate_equities_readiness
 from flux.runners.shared.logging import configure_python_logging
 from flux.runners.shared.logging import emit_startup_banner
+from flux.runners.shared.portfolio_runner import parse_required_strategy_ids
+from flux.runners.shared.portfolio_runner import parse_strategy_ids
 from flux.runners.shared.strategy_set import build_profile_strategy_maps
 from flux.runners.shared.strategy_set import build_profile_summary
 from flux.runners.shared.strategy_set import get_strategy_set_descriptor
+from flux.runners.equities.node_groups import derive_equities_node_group_id
 from flux.runners.equities.redis_runtime import apply_redis_env_overrides
 from flux.strategies import get_strategy_spec
 from flux.strategies.equities_maker.runtime_params import (
@@ -66,6 +84,7 @@ EQUITIES_ALIAS_BASE_PATH = (
 )
 DEFAULT_PULSE_BASE_PATH = "/pulse"
 DEFAULT_FLUXBOARD_STATIC_BASE_PATH = "/static/fluxboard"
+EQUITIES_READINESS_PATH = "/api/v1/readiness"
 
 
 def _repo_root() -> Path:
@@ -89,6 +108,35 @@ def _optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _enveloped_json_response(
+    *,
+    ok: bool,
+    data: Any,
+    error: dict[str, Any] | None,
+    status: int,
+) -> Response:
+    body = build_envelope(
+        ok=ok,
+        api_version=FLUX_SCHEMA_VERSION,
+        request_id=uuid.uuid4().hex,
+        timestamp_ms=now_ms(),
+        data=data,
+        error=error,
+    )
+    return Response(
+        json.dumps(body, separators=(",", ":"), sort_keys=False, allow_nan=False),
+        status=status,
+        mimetype="application/json",
+    )
+
+
+def _equities_profile_name_for_request() -> str:
+    profile = (_optional_text(request.args.get("profile")) or EQUITIES_DESCRIPTOR.profile).lower()
+    if profile not in {EQUITIES_DESCRIPTOR.profile, *EQUITIES_DESCRIPTOR.aliases}:
+        raise ValueError(f"Unsupported equities readiness profile: {profile}")
+    return EQUITIES_DESCRIPTOR.profile
+
+
 def _pulse_status_to_running(status: str) -> bool | None:
     normalized = _optional_text(status)
     if normalized is None:
@@ -98,6 +146,32 @@ def _pulse_status_to_running(status: str) -> bool | None:
     if normalized in {"inactive", "failed", "restarting", "stopping"}:
         return False
     return None
+
+
+def _equities_node_job_id_for_strategy(strategy_id: str) -> str:
+    strategy_text = _optional_text(strategy_id)
+    if strategy_text is None:
+        raise ValueError("strategy_id must be non-empty")
+    try:
+        return f"equities-node-{derive_equities_node_group_id(strategy_text)}"
+    except ValueError:
+        return f"equities-node-{strategy_text}"
+
+
+def _equities_node_jobs_for_strategy_ids(
+    strategy_ids: list[str] | tuple[str, ...],
+) -> tuple[dict[str, str], list[str]]:
+    job_id_by_strategy: dict[str, str] = {}
+    ordered_job_ids: list[str] = []
+    seen_job_ids: set[str] = set()
+    for strategy_id in strategy_ids:
+        job_id = _equities_node_job_id_for_strategy(strategy_id)
+        job_id_by_strategy[strategy_id] = job_id
+        if job_id in seen_job_ids:
+            continue
+        seen_job_ids.add(job_id)
+        ordered_job_ids.append(job_id)
+    return job_id_by_strategy, ordered_job_ids
 
 
 def _build_strategy_running_resolver(
@@ -129,9 +203,13 @@ def _build_strategy_running_resolver(
         )
         if refresh_needed:
             next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_running)
+            job_id_by_strategy, ordered_job_ids = _equities_node_jobs_for_strategy_ids(deduped_ids)
+            status_by_job_id = {
+                job_id: _pulse_status_to_running(pulse.get_job_status(job_id))
+                for job_id in ordered_job_ids
+            }
             for strategy_id in deduped_ids:
-                status = pulse.get_job_status(f"equities-node-{strategy_id}")
-                next_cache[strategy_id] = _pulse_status_to_running(status)
+                next_cache[strategy_id] = status_by_job_id[job_id_by_strategy[strategy_id]]
             cached_running = next_cache
             cache_expires_at = time.monotonic() + ttl_s
 
@@ -174,7 +252,6 @@ def _pulse_snapshot_to_alert_rows(
                 "alert_key": "pulse_job_unknown",
                 "ts_ms": ts_ms,
                 "source": "pulse",
-                "job_id": job_id,
                 "status": "unknown",
                 "error_preview": None,
                 "error_count": 0,
@@ -219,7 +296,6 @@ def _pulse_snapshot_to_alert_rows(
             "alert_key": alert_key,
             "ts_ms": ts_ms,
             "source": "pulse",
-            "job_id": _optional_text(snapshot.get("id")) or job_id,
             "status": status,
             "error_preview": error_preview,
             "error_count": error_count,
@@ -260,28 +336,14 @@ def _build_strategy_alerts_resolver(
         if refresh_needed:
             next_cache = {} if time.monotonic() >= cache_expires_at else dict(cached_rows)
             now_ms_value = int(current_now_ms())
-            discover_services = getattr(pulse, "discover_services", None)
-            if callable(discover_services):
-                next_cache = {}
-                for service in discover_services():
-                    job_id = _optional_text(getattr(service, "job_id", None))
-                    if job_id is None or not job_id.startswith("equities-node-"):
-                        continue
-                    strategy_id = job_id.removeprefix("equities-node-").strip()
-                    if not strategy_id:
-                        continue
-                    snapshot = pulse.get_job_snapshot(job_id)
-                    next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
-                        strategy_id,
-                        job_id=job_id,
-                        snapshot=snapshot,
-                        now_ms_value=now_ms_value,
-                    )
+            job_id_by_strategy, ordered_job_ids = _equities_node_jobs_for_strategy_ids(deduped_ids)
+            snapshot_by_job_id = {
+                job_id: pulse.get_job_snapshot(job_id)
+                for job_id in ordered_job_ids
+            }
             for strategy_id in deduped_ids:
-                if strategy_id in next_cache:
-                    continue
-                job_id = f"equities-node-{strategy_id}"
-                snapshot = pulse.get_job_snapshot(job_id)
+                job_id = job_id_by_strategy[strategy_id]
+                snapshot = snapshot_by_job_id[job_id]
                 next_cache[strategy_id] = _pulse_snapshot_to_alert_rows(
                     strategy_id,
                     job_id=job_id,
@@ -759,6 +821,153 @@ def _attach_pulse_routes(app: Any, *, dist_dir: Path) -> None:
         return _serve_index()
 
 
+def _load_equities_readiness(
+    *,
+    app: Any,
+    config: dict[str, Any],
+    redis_client: RedisClientProtocol,
+) -> dict[str, Any]:
+    profile_id = _equities_profile_name_for_request()
+    api_cfg = _table(config, "api")
+    portfolio_cfg = _table(config, "portfolio")
+    flux_cfg = _table(config, "flux")
+    publisher_cfg = _table(config, "ibkr_reference_publisher")
+    strategy_ids = parse_strategy_ids(api_cfg, descriptor=EQUITIES_DESCRIPTOR)
+    required_strategy_ids = tuple(
+        parse_required_strategy_ids(
+            api_cfg,
+            descriptor=EQUITIES_DESCRIPTOR,
+            fallback=strategy_ids,
+        ),
+    )
+    strategy_id_set = set(strategy_ids)
+    strategy_contracts = tuple(
+        contract
+        for contract in decode_strategy_contracts(config.get("strategy_contracts") or [])
+        if contract.strategy_id in strategy_id_set
+    )
+    account_scopes = decode_account_scopes(config.get("account_scopes") or [])
+    portfolio_id = (
+        _optional_text(portfolio_cfg.get("portfolio_id"))
+        or EQUITIES_DESCRIPTOR.default_portfolio_id
+    )
+    thresholds = EquitiesReadinessThresholds(
+        ignore_reference_freshness_outside_regular_session=True,
+    )
+    namespace = _optional_text(flux_cfg.get("namespace")) or FLUX_DEFAULT_NAMESPACE
+    schema_version = _optional_text(flux_cfg.get("schema_version")) or FLUX_SCHEMA_VERSION
+    publisher_service_id = (
+        _optional_text(publisher_cfg.get("service_id"))
+        or "ibkr_reference_publisher"
+    )
+    publisher_account_scope_id = (
+        _optional_text(publisher_cfg.get("account_scope_id"))
+        or _expected_reference_account_scope_id(strategy_contracts)
+    )
+    expected_scope_ids = _expected_projection_scope_ids(
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        overrides=thresholds.expected_projection_scope_ids,
+    )
+    projection_payloads = _collect_projection_payloads(
+        redis_client=redis_client,
+        profile_id=profile_id,
+        scope_ids=expected_scope_ids,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    component_payloads = _collect_component_payloads(
+        redis_client=redis_client,
+        strategy_contracts=strategy_contracts,
+        portfolio_id=portfolio_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    publisher_status_payload = _collect_publisher_status_payload(
+        redis_client=redis_client,
+        profile_id=profile_id,
+        account_scope_id=publisher_account_scope_id,
+        service_id=publisher_service_id,
+        namespace=namespace,
+        schema_version=schema_version,
+    )
+    with app.test_client() as client:
+        balances_response = client.get("/api/v1/balances", query_string={"profile": profile_id})
+        signals_response = client.get(
+            "/api/v1/signals",
+            query_string={"contract_version": 2, "profile": profile_id},
+        )
+    if balances_response.status_code != 200:
+        raise RuntimeError("Equities balances snapshot is unavailable for readiness evaluation")
+    if signals_response.status_code != 200:
+        raise RuntimeError("Equities signals snapshot is unavailable for readiness evaluation")
+    balances_payload = (balances_response.get_json(silent=True) or {}).get("data")
+    signals_payload = (signals_response.get_json(silent=True) or {}).get("data")
+    result = evaluate_equities_readiness(
+        profile_id=profile_id,
+        portfolio_id=portfolio_id,
+        strategy_contracts=strategy_contracts,
+        account_scopes=account_scopes,
+        required_strategy_ids=required_strategy_ids,
+        balances_payload=balances_payload if isinstance(balances_payload, dict) else None,
+        signals_payload=signals_payload if isinstance(signals_payload, dict) else None,
+        projection_payloads_by_scope_id=projection_payloads,
+        component_payloads_by_strategy_id=component_payloads,
+        publisher_status_payload=publisher_status_payload,
+        now_ms_value=now_ms(),
+        require_ibkr_reference_publisher=True,
+        ibkr_reference_publisher_service_id=publisher_service_id,
+        ibkr_reference_publisher_account_scope_id=publisher_account_scope_id,
+        thresholds=thresholds,
+    )
+    return result.as_dict()
+
+
+def _attach_equities_readiness_route(
+    app: Any,
+    *,
+    readiness_loader: Callable[[], dict[str, Any]],
+) -> None:
+    @app.get(EQUITIES_READINESS_PATH)
+    def _equities_readiness() -> Response:
+        try:
+            payload = readiness_loader()
+        except ValueError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="invalid_readiness_request",
+                    message=str(exc),
+                ),
+                status=400,
+            )
+        except redis.RedisError as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="store_unavailable",
+                    message="Data store unavailable.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=503,
+            )
+        except Exception as exc:
+            return _enveloped_json_response(
+                ok=False,
+                data=None,
+                error=build_error(
+                    code="readiness_probe_failed",
+                    message="Equities readiness evaluation failed.",
+                    details={"error_type": type(exc).__name__},
+                ),
+                status=500,
+            )
+
+        return _enveloped_json_response(ok=True, data=payload, error=None, status=200)
+
+
 def _run_with_socketio_if_available(app: Any, *, host: str, port: int) -> None:
     socket_server = app.extensions.get("flux_socket_server")
     socketio = getattr(socket_server, "socketio", None)
@@ -854,6 +1063,14 @@ def main() -> None:
         params_schema=params_schema,
         params_defaults=params_defaults,
         param_set=strategy_spec.param_set,
+    )
+    _attach_equities_readiness_route(
+        app,
+        readiness_loader=lambda: _load_equities_readiness(
+            app=app,
+            config=config,
+            redis_client=cast(RedisClientProtocol, redis_client),
+        ),
     )
     PulseControlPlane().register_routes(app)
 

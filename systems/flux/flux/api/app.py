@@ -54,6 +54,7 @@ from flux.api.socketio import build_standard_snapshot_metadata
 from flux.api.socketio import create_flux_socket_server
 from flux.api.socketio import default_realtime_rollout
 from flux.api.socketio import normalize_profile
+from flux.common.account_projection import projection_totals_identity
 from flux.common.config import FluxConfig
 from flux.common.config import validate_identifier_part
 from flux.common.keys import FluxRedisKeys
@@ -256,6 +257,75 @@ def _rows_for_reconciliation(rows: Sequence[Mapping[str, Any]] | None) -> list[d
             continue
         filtered.append(dict(row))
     return filtered
+
+
+def _shared_cash_row_dedupe_key(row: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    if _balance_row_source_scope(row) != "shared_account":
+        return None
+    if decode_text(row.get("kind")).strip().lower() == "position":
+        return None
+    asset = decode_text(row.get("asset") or row.get("currency") or row.get("coin")).strip().upper()
+    if not asset:
+        return None
+    identity = projection_totals_identity([row])
+    if identity is None:
+        return None
+    exchange, account = identity
+    return (exchange, account, asset)
+
+
+def _shared_cash_row_preference_key(row: Mapping[str, Any]) -> tuple[int, int, int, int, str]:
+    ts_ms = coerce_ts_ms(row.get("ts_ms") or row.get("ts") or row.get("timestamp")) or -1
+    include_in_reconciliation = 0 if row.get("include_in_reconciliation") is False else 1
+    fresh = 0 if bool(row.get("stale")) else 1
+    identity = projection_totals_identity([row])
+    normalized_account = identity[1] if identity is not None else ""
+    raw_account = decode_text(row.get("account") or row.get("account_id")).strip().upper()
+    canonical_account = 1 if normalized_account and raw_account == normalized_account else 0
+    row_id = decode_text(row.get("row_id")).strip()
+    return (include_in_reconciliation, fresh, canonical_account, ts_ms, row_id)
+
+
+def _dedupe_shared_cash_projection_rows(rows: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    if not isinstance(rows, Sequence):
+        return []
+
+    deduped: list[dict[str, Any]] = []
+    index_by_key: dict[tuple[str, str, str], int] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        normalized = dict(row)
+        key = _shared_cash_row_dedupe_key(normalized)
+        if key is None:
+            deduped.append(normalized)
+            continue
+
+        existing_index = index_by_key.get(key)
+        if existing_index is None:
+            index_by_key[key] = len(deduped)
+            deduped.append(normalized)
+            continue
+
+        existing = deduped[existing_index]
+        keep_candidate = _shared_cash_row_preference_key(normalized) >= _shared_cash_row_preference_key(existing)
+        chosen = normalized if keep_candidate else dict(existing)
+        merged_source_strategy_ids: list[str] = []
+        seen_strategy_ids: set[str] = set()
+        for raw_strategy_ids in (existing.get("source_strategy_ids"), normalized.get("source_strategy_ids")):
+            if not isinstance(raw_strategy_ids, Sequence) or isinstance(raw_strategy_ids, str | bytes):
+                continue
+            for strategy_id in raw_strategy_ids:
+                strategy_text = decode_text(strategy_id).strip()
+                if not strategy_text or strategy_text in seen_strategy_ids:
+                    continue
+                seen_strategy_ids.add(strategy_text)
+                merged_source_strategy_ids.append(strategy_text)
+        if merged_source_strategy_ids:
+            chosen["source_strategy_ids"] = merged_source_strategy_ids
+        deduped[existing_index] = chosen
+
+    return deduped
 
 
 def _balance_row_source_scope(row: Mapping[str, Any]) -> str:
@@ -1036,6 +1106,7 @@ class FluxApiStore:
         rows: list[dict[str, Any]] = []
         totals: dict[str, Any] = {}
         scope_status: list[dict[str, Any]] = []
+        seen_total_identities: set[tuple[str, str]] = set()
         for key in projection_keys:
             payload = load_json(self._redis.get(key))
             if not isinstance(payload, Mapping):
@@ -1047,13 +1118,18 @@ class FluxApiStore:
             if payload_scope_status:
                 scope_status = _merge_scope_status_entries(scope_status, payload_scope_status)
             raw_totals = payload.get("totals")
+            totals_identity = projection_totals_identity(raw_rows)
             if (
                 isinstance(raw_totals, Mapping)
                 and not _scope_status_entries_degraded(payload_scope_status)
                 and not _projection_rows_excluded_from_reconciliation(raw_rows)
             ):
-                totals = _merge_account_totals(totals, raw_totals)
+                if totals_identity is None or totals_identity not in seen_total_identities:
+                    totals = _merge_account_totals(totals, raw_totals)
+                if totals_identity is not None:
+                    seen_total_identities.add(totals_identity)
 
+        rows = _dedupe_shared_cash_projection_rows(rows)
         return rows, totals, scope_status
 
     def _tokenmm_inventory_overlay(
@@ -1634,6 +1710,8 @@ def _format_money_display(value: float) -> str:
 def _balances_totals(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     total_mv = 0.0
     for row in rows:
+        if bool(row.get("stale")) or row.get("include_in_reconciliation") is False:
+            continue
         mv = _coerce_finite_float(
             row.get("mv_raw")
             or row.get("mv")
@@ -3377,12 +3455,15 @@ def create_flux_api_app(  # noqa: C901
                     if latest_ts_ms is None or parsed > latest_ts_ms:
                         latest_ts_ms = parsed
                 age_ms = (response_ts_ms - latest_ts_ms) if latest_ts_ms is not None else None
+                empty_snapshot_present = (
+                    profile_normalized == "equities" and snapshot_present and not strategy_rows
+                )
                 stale = (
                     not snapshot_present
-                    or latest_ts_ms is None
+                    or (latest_ts_ms is None and not empty_snapshot_present)
                     or (age_ms is not None and age_ms > TOKENMM_BALANCES_STALE_AFTER_MS)
                 )
-                missing = (not snapshot_present) or not strategy_rows
+                missing = (not snapshot_present) or (not strategy_rows and not empty_snapshot_present)
                 components.append(
                     {
                         "strategy_id": strategy_id,

@@ -130,6 +130,9 @@ def test_effective_venue_resolution_config_uses_capabilities_not_param_set() -> 
 
     assert effective["node"]["venues"]["IBKR"]["instrument_id"] == "AAPL.NASDAQ"
     assert effective["node"]["venues"]["IBKR"]["execution"] is True
+    assert effective["node"]["venues"]["IBKR"]["adapter"] == "interactive_brokers"
+    assert effective["node"]["venues"]["IBKR"]["data_adapter"] == "interactive_brokers_shared_reference"
+    assert effective["node"]["venues"]["IBKR"]["exec_adapter"] == "interactive_brokers"
     assert effective["node"]["venues"]["IBKR"]["ibg_client_id"] == 107
     assert effective["node"]["venues"]["IBKR"]["account_id"] == "U10015777"
 

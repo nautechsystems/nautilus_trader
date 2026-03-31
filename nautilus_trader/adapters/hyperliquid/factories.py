@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
+from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
@@ -157,6 +158,40 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
             config=config,
             name=name,
         )
+
+
+def wrap_hyperliquid_data_client_factory_with_quote_feed_result_ingress(
+    *,
+    factory_cls: type[LiveDataClientFactory] = HyperliquidLiveDataClientFactory,
+    quote_feed_result_ingress: Any,
+) -> type[LiveDataClientFactory]:
+    class _FactoryWithQuoteFeedResultIngress(LiveDataClientFactory):
+        @staticmethod
+        def create(  # type: ignore
+            loop: asyncio.AbstractEventLoop,
+            name: str,
+            config: HyperliquidDataClientConfig,
+            msgbus: MessageBus,
+            cache: Cache,
+            clock: LiveClock,
+        ) -> HyperliquidDataClient:
+            client = factory_cls.create(
+                loop=loop,
+                name=name,
+                config=config,
+                msgbus=msgbus,
+                cache=cache,
+                clock=clock,
+            )
+            set_quote_feed_result_ingress = getattr(client, "set_quote_feed_result_ingress", None)
+            if callable(set_quote_feed_result_ingress):
+                set_quote_feed_result_ingress(quote_feed_result_ingress)
+            return client
+
+    _FactoryWithQuoteFeedResultIngress.__name__ = (
+        f"{factory_cls.__name__}WithQuoteFeedResultIngress"
+    )
+    return _FactoryWithQuoteFeedResultIngress
 
 
 class HyperliquidLiveExecClientFactory(LiveExecClientFactory):

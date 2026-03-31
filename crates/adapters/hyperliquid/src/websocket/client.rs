@@ -37,6 +37,91 @@ use crate::{
 
 const HYPERLIQUID_HEARTBEAT_SECS: u64 = 30;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuoteSubscriptionRecoveryResult {
+    pub status: &'static str,
+    pub ok: bool,
+    pub error_summary: Option<String>,
+}
+
+impl QuoteSubscriptionRecoveryResult {
+    fn replayed() -> Self {
+        Self {
+            status: "replayed",
+            ok: true,
+            error_summary: None,
+        }
+    }
+
+    fn already_inflight() -> Self {
+        Self {
+            status: "already_inflight",
+            ok: true,
+            error_summary: None,
+        }
+    }
+
+    fn cache_miss(instrument_id: &InstrumentId) -> Self {
+        Self {
+            status: "cache_miss",
+            ok: false,
+            error_summary: Some(format!("Instrument not found in cache: {instrument_id}")),
+        }
+    }
+
+    fn not_desired(instrument_id: &InstrumentId) -> Self {
+        Self {
+            status: "not_desired",
+            ok: false,
+            error_summary: Some(format!(
+                "Quote recovery ignored because the subscription is no longer desired: {instrument_id}"
+            )),
+        }
+    }
+
+    fn transport_unhealthy() -> Self {
+        Self {
+            status: "transport_unhealthy",
+            ok: false,
+            error_summary: Some("Quote transport is not healthy enough for replay".to_string()),
+        }
+    }
+
+    fn send_failed(message: impl Into<String>) -> Self {
+        Self {
+            status: "send_failed",
+            ok: false,
+            error_summary: Some(message.into()),
+        }
+    }
+}
+
+struct QuoteRecoveryInflightGuard {
+    inflight: Arc<DashMap<String, ()>>,
+    key: Option<String>,
+}
+
+impl QuoteRecoveryInflightGuard {
+    fn new(inflight: Arc<DashMap<String, ()>>, key: String) -> Self {
+        Self {
+            inflight,
+            key: Some(key),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.key = None;
+    }
+}
+
+impl Drop for QuoteRecoveryInflightGuard {
+    fn drop(&mut self) {
+        if let Some(key) = self.key.take() {
+            self.inflight.remove(&key);
+        }
+    }
+}
+
 /// Represents the different data types available from asset context subscriptions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum AssetContextDataType {
@@ -69,6 +154,7 @@ pub struct HyperliquidWebSocketClient {
     bar_types: Arc<DashMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
+    quote_recovery_inflight: Arc<DashMap<String, ()>>,
     fresh_connection_validated: Arc<AtomicBool>,
     awaiting_initial_validation: Arc<AtomicBool>,
     awaiting_reconnect_validation: Arc<AtomicBool>,
@@ -91,6 +177,7 @@ impl Clone for HyperliquidWebSocketClient {
             bar_types: Arc::clone(&self.bar_types),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
             cloid_cache: Arc::clone(&self.cloid_cache),
+            quote_recovery_inflight: Arc::clone(&self.quote_recovery_inflight),
             fresh_connection_validated: Arc::clone(&self.fresh_connection_validated),
             awaiting_initial_validation: Arc::clone(&self.awaiting_initial_validation),
             awaiting_reconnect_validation: Arc::clone(&self.awaiting_reconnect_validation),
@@ -130,6 +217,7 @@ impl HyperliquidWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
             cloid_cache: Arc::new(DashMap::new()),
+            quote_recovery_inflight: Arc::new(DashMap::new()),
             fresh_connection_validated: Arc::new(AtomicBool::new(false)),
             awaiting_initial_validation: Arc::new(AtomicBool::new(false)),
             awaiting_reconnect_validation: Arc::new(AtomicBool::new(false)),
@@ -329,6 +417,7 @@ impl HyperliquidWebSocketClient {
             .store(false, Ordering::SeqCst);
         self.awaiting_reconnect_validation
             .store(false, Ordering::SeqCst);
+        self.quote_recovery_inflight.clear();
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::debug!(
@@ -584,6 +673,59 @@ impl HyperliquidWebSocketClient {
             })
             .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
         Ok(())
+    }
+
+    pub async fn recover_quote_subscription(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> QuoteSubscriptionRecoveryResult {
+        let instrument = match self.get_instrument(&instrument_id) {
+            Some(instrument) => instrument,
+            None => return QuoteSubscriptionRecoveryResult::cache_miss(&instrument_id),
+        };
+
+        let subscription = SubscriptionRequest::Bbo {
+            coin: instrument.raw_symbol().inner(),
+        };
+        let topic = crate::websocket::handler::subscription_to_key(&subscription);
+
+        if !desired_topics_for_reconnect(&self.subscriptions)
+            .iter()
+            .any(|desired_topic| desired_topic == &topic)
+        {
+            return QuoteSubscriptionRecoveryResult::not_desired(&instrument_id);
+        }
+
+        let recovery_key = instrument_id.to_string();
+        if !self.try_begin_quote_recovery(&recovery_key) {
+            return QuoteSubscriptionRecoveryResult::already_inflight();
+        }
+        let mut inflight_guard = QuoteRecoveryInflightGuard::new(
+            Arc::clone(&self.quote_recovery_inflight),
+            recovery_key,
+        );
+
+        if !self.is_quote_recovery_transport_healthy() {
+            return QuoteSubscriptionRecoveryResult::transport_unhealthy();
+        }
+
+        let cmd_tx = self.cmd_tx.read().await;
+        if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument.clone())) {
+            return QuoteSubscriptionRecoveryResult::send_failed(format!(
+                "Failed to queue quote recovery instrument update: {e}"
+            ));
+        }
+
+        if let Err(e) = cmd_tx.send(HandlerCommand::RestoreSubscriptions {
+            subscriptions: vec![subscription],
+        }) {
+            return QuoteSubscriptionRecoveryResult::send_failed(format!(
+                "Failed to queue quote recovery replay: {e}"
+            ));
+        }
+
+        inflight_guard.disarm();
+        QuoteSubscriptionRecoveryResult::replayed()
     }
 
     /// Subscribe to trades for an instrument.
@@ -938,10 +1080,40 @@ impl HyperliquidWebSocketClient {
     /// Returns `None` if the handler has disconnected or the receiver was already taken.
     pub async fn next_event(&mut self) -> Option<NautilusWsMessage> {
         if let Some(ref mut rx) = self.out_rx {
-            rx.recv().await
+            let message = rx.recv().await;
+            if let Some(msg) = &message {
+                match msg {
+                    NautilusWsMessage::Quote(quote_tick) => {
+                        self.quote_recovery_inflight
+                            .remove(&quote_tick.instrument_id.to_string());
+                    }
+                    NautilusWsMessage::Reconnecting => {
+                        self.quote_recovery_inflight.clear();
+                    }
+                    _ => {}
+                }
+            }
+            message
         } else {
             None
         }
+    }
+
+    fn try_begin_quote_recovery(&self, recovery_key: &str) -> bool {
+        match self.quote_recovery_inflight.entry(recovery_key.to_string()) {
+            dashmap::mapref::entry::Entry::Occupied(_) => false,
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(());
+                true
+            }
+        }
+    }
+
+    fn is_quote_recovery_transport_healthy(&self) -> bool {
+        self.is_active()
+            && self.fresh_connection_validated.load(Ordering::SeqCst)
+            && !self.awaiting_initial_validation.load(Ordering::SeqCst)
+            && !self.awaiting_reconnect_validation.load(Ordering::SeqCst)
     }
 }
 

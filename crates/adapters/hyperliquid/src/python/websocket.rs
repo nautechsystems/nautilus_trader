@@ -49,6 +49,20 @@ impl HyperliquidWebSocketClient {
         self.cache_spot_fill_coins(ahash_mapping);
     }
 
+    #[pyo3(name = "cache_instruments")]
+    fn py_cache_instruments(
+        &mut self,
+        py: Python<'_>,
+        instruments: Vec<Py<PyAny>>,
+    ) -> PyResult<()> {
+        let mut converted = Vec::with_capacity(instruments.len());
+        for instrument in instruments {
+            converted.push(pyobject_to_instrument_any(py, instrument)?);
+        }
+        self.cache_instruments(converted);
+        Ok(())
+    }
+
     #[pyo3(name = "cache_cloid_mapping")]
     fn py_cache_cloid_mapping(&self, cloid: String, client_order_id: ClientOrderId) {
         self.cache_cloid_mapping(ustr::Ustr::from(&cloid), client_order_id);
@@ -389,6 +403,20 @@ impl HyperliquidWebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
+        })
+    }
+
+    #[pyo3(name = "recover_quote_subscription")]
+    fn py_recover_quote_subscription<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = client.recover_quote_subscription(instrument_id).await;
+            Ok((result.status.to_string(), result.ok, result.error_summary))
         })
     }
 

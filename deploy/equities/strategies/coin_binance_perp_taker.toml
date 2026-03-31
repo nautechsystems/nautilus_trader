@@ -5,16 +5,16 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "amzn_binance_perp_taker"
-strategy_instance_id = "amzn_binance_perp_taker"
-trader_id = "EQUITIES-LIVE-AMZN-BINANCE-PERP-TAKER"
-external_strategy_id = "amzn_binance_perp_taker"
+strategy_id = "coin_binance_perp_taker"
+strategy_instance_id = "coin_binance_perp_taker"
+trader_id = "EQUITIES-LIVE-COIN-BINANCE-PERP-TAKER"
+external_strategy_id = "coin_binance_perp_taker"
 
 [venues]
 execution_venue = "BINANCE_PERP"
 reference_venue = "IBKR"
-execution_symbol = "AMZNUSDT"
-reference_symbol = "AMZN/USD"
+execution_symbol = "COINUSDT"
+reference_symbol = "COIN/USD"
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -40,7 +40,7 @@ purge_account_events_lookback_mins = 60
 purge_from_database = true
 
 [node.venues.BINANCE_PERP]
-instrument_id = "AMZNUSDT-PERP.BINANCE_PERP"
+instrument_id = "COINUSDT-PERP.BINANCE_PERP"
 execution = true
 account_type = "USDT_FUTURES"
 private_api_family = "PORTFOLIO_MARGIN"
@@ -49,8 +49,9 @@ api_secret_env = "EQUITIES_BINANCE_API_SECRET"
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"
-instrument_id = "AMZN.NASDAQ"
-ibg_client_id = 41
+instrument_id = "COIN.NASDAQ"
+ibg_client_id = 45
+ibg_port = 4001
 execution = false
 use_regular_trading_hours = false
 
@@ -60,7 +61,7 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "amzn_binance_perp_taker"
+strategy_id = "coin_binance_perp_taker"
 strategy_groups = "equities"
 param_set = "equities_taker"
 force_bot_off_on_start = true
@@ -71,7 +72,8 @@ bot_on = false
 manage_stop = false
 outside_rth_hedge_enabled = true
 ibkr_primary_exchange = "NASDAQ"
-max_age_ms = 10000
+max_age_ms = 30000
+max_ibkr_quote_age_ms = 300000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0

@@ -19,16 +19,16 @@ Required routes:
 | `/equities/trades` | required | Trades page |
 | `/equities/alerts` | required | Alerts page |
 
-The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"`.
+The equities rollout keeps trade[XYZ] execution on `HYPERLIQUID` plus `dex = "xyz"` and also supports enrolled `BINANCE_PERP` multivenue routes on the shared equities surface.
 The reference venue for FV inputs is `IBKR`.
-The enrolled Tier 1 split rollout currently serves `AAPL`, `AMD`, `AMZN`, `GOOGL`, `META`, `MSFT`, `NVDA`, `ORCL`, `PLTR`, and `TSLA` through the shared equities control plane.
-Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID` and `AAPL.NASDAQ`.
+The enrolled split rollout currently serves `AAPL`, `AMD`, `AMZN`, `COIN`, `CRCL`, `EWY`, `GOOGL`, `HOOD`, `INTC`, `META`, `MSFT`, `MSTR`, `NVDA`, `ORCL`, `PLTR`, and `TSLA` through the shared equities control plane.
+Representative canonical routes include `xyz:AAPL-USD-PERP.HYPERLIQUID`, `PLTRUSDT-PERP.BINANCE_PERP`, and `AAPL.NASDAQ`.
 
 ## Frozen Deploy Identity
 
 1. The intended active equities deploy contract is the split `equities_maker` plus `equities_taker` family pair via the enrolled stock allowlist in `api.equities_strategy_ids`.
-2. The enrolled Tier 1 strategy ids and service names use the `*_maker` and `*_taker` suffixes.
-3. Representative split strategy ids include `aapl_tradexyz_maker` and `aapl_tradexyz_taker`.
+2. The enrolled strategy ids and service names use the `*_maker` and `*_taker` suffixes across both tradexyz and Binance multivenue routes.
+3. Representative split strategy ids include `aapl_tradexyz_maker`, `aapl_tradexyz_taker`, `pltr_binance_perp_maker`, and `pltr_binance_perp_taker`.
 4. `deploy/equities/strategies/aapl_tradexyz_makerv3.toml.disabled` is rollback material, not the active contract.
 5. On the shared `tokenmm-api` host, `/equities` is a proxied route, not the asset prefix. That public HTML shell must load Fluxboard assets from `/static/fluxboard/assets/*`.
 6. `/equities` stays a SPA route, not the asset prefix. Shared Fluxboard files still publish from `/static/fluxboard/*`.
@@ -49,6 +49,7 @@ Primary requests:
 curl -fsS 'http://127.0.0.1:5022/api/v1/signals?profile=equities'
 curl -fsS 'http://127.0.0.1:5022/api/v1/params?profile=equities'
 curl -fsS 'http://127.0.0.1:5022/api/v1/param-schema?profile=equities&strategy=aapl_tradexyz_maker'
+curl -fsS 'http://127.0.0.1:5022/api/v1/param-schema?profile=equities&strategy=amzn_binance_perp_taker'
 curl -fsS -X PATCH 'http://127.0.0.1:5022/api/v1/params?profile=equities&strategy=aapl_tradexyz_maker'
 curl -fsS 'http://127.0.0.1:5022/api/v1/balances?profile=equities'
 curl -fsS 'http://127.0.0.1:5022/api/v1/trades?profile=equities'
@@ -57,7 +58,7 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 
 ## Strategy and Deploy Identity
 
-1. One stock can run both `*_maker` and `*_taker`; each variant uses its own strategy file and node process.
+1. One stock can run both `*_maker` and `*_taker`; grouped nodes are an internal deploy detail and do not change the outer strategy-level operator surface.
 2. The live allowlist is `api.equities_strategy_ids`.
 3. Required portfolio readiness is `api.equities_required_strategy_ids`.
 4. `deploy/equities/equities.live.toml` exposes one `[[strategy_contracts]]` row per enrolled strategy variant as the canonical identity registry for `strategy_id`, `portfolio_asset_id`, venue instrument ids, and shared account scopes.
@@ -66,22 +67,26 @@ curl -fsS 'http://127.0.0.1:5022/api/v1/alerts?profile=equities'
 7. `strategy_id` remains strategy-local. Shared-account ownership is modeled through provenance fields, not by rewriting shared rows to look strategy-owned.
 8. The systemd install flow uses `TRADE_XYZ_AGENT_PK` and `TRADE_XYZ_ACCOUNT_ADDRESS` from `/etc/flux/common.env`.
 9. Future strategy changes must preserve the outer equities surface even if the inner strategy implementation changes.
+10. realtime behavior remains part of the external contract even if node topology changes behind `/equities`.
+11. Signals, params, param-schema, trades, and alerts remain keyed by external strategy ids such as `aapl_tradexyz_maker`, `aapl_tradexyz_taker`, and `amzn_binance_perp_taker`.
+12. Grouped node ids and grouped Pulse job ids are internal deploy details and must not appear in public `/api/v1/signals`, `/api/v1/params`, `/api/v1/param-schema`, `/api/v1/trades`, or `/api/v1/alerts` payloads.
 
 ## Response Expectations
 
 1. `signals.strategies[].meta.strategy_groups` is `equities`.
 2. `balances` represents the shared `equities` portfolio view.
-3. The current live balances contract may still use the legacy shared-row marker `scope = "shared_account"` until the later balance-model tasks land.
-4. Later balance-model tasks will add explicit shared-account provenance fields:
+3. `balances` remains profile-scoped even when maker/taker siblings share a node; readiness and reconciliation stay attached to the shared `equities` payload, while component rows remain keyed by external strategy id.
+4. The current live balances contract may still use the legacy shared-row marker `scope = "shared_account"` until the later balance-model tasks land.
+5. Later balance-model tasks will add explicit shared-account provenance fields:
    - `source_scope`: `strategy`, `shared_account`, or `portfolio`
    - `account_scope_id`: stable account identity such as `ibkr.reference.main`
    - `source_strategy_ids`: enrolled strategies that consume or publish against that shared row
-5. Strategy-local rows may still expose `strategy_id`, but future shared-account and portfolio rows must not rely on `strategy_id` as their ownership identity.
-6. `balances` may include both Hyperliquid execution rows and IBKR reference-account rows when the IBKR reference monitor is connected.
-7. Future shared IBKR cash rows may carry `source_scope = "shared_account"` and a shared `account_scope_id` when multiple equities strategies project the same IBKR account.
-8. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
-9. Clients should ignore unknown fields and tolerate additional metadata fields.
-10. `alerts` follows the shared alerts contract: `GET /api/v1/alerts` includes `capabilities.feed_mode` and `capabilities.clear_mode`, and `DELETE /api/v1/alerts` only clears stream-backed history when `clear_mode = "history_only"`.
+6. Strategy-local rows may still expose `strategy_id`, but future shared-account and portfolio rows must not rely on `strategy_id` as their ownership identity.
+7. `balances` may include both Hyperliquid execution rows and IBKR reference-account rows when the IBKR reference monitor is connected.
+8. Future shared IBKR cash rows may carry `source_scope = "shared_account"` and a shared `account_scope_id` when multiple equities strategies project the same IBKR account.
+9. `signals` should show an IBKR reference market identity even when the IBKR gateway is unavailable; in that state, the reference prices may be empty or stale, but they must not mirror the Hyperliquid maker leg.
+10. Clients should ignore unknown fields and tolerate additional metadata fields.
+11. `alerts` follows the shared alerts contract: `GET /api/v1/alerts` includes `capabilities.feed_mode` and `capabilities.clear_mode`, and `DELETE /api/v1/alerts` only clears stream-backed history when `clear_mode = "history_only"`.
 
 ## Shared Quote Health Semantics
 

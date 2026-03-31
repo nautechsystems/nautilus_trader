@@ -1098,6 +1098,28 @@ def test_canonical_balances_signature_ignores_filtered_raw_row_churn(
     assert signature_a == signature_b
 
 
+def test_canonical_balances_signature_equities_treats_empty_snapshot_as_present(
+    contract_catalog,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(socketio_module, "now_ms", lambda: 1_700_000_001_000)
+
+    signature = socketio_module._canonical_balances_signature(
+        profile="equities",
+        balances_rows_by_strategy={"aapl_tradexyz_maker": []},
+        balance_snapshot_presence={"aapl_tradexyz_maker": True},
+        portfolio_snapshot=None,
+        contracts=contract_catalog,
+        required_strategy_ids=["aapl_tradexyz_maker"],
+        market_rows={},
+    )
+
+    assert '"degraded":false' in signature[2]
+    assert '"missing":false' in signature[2]
+    assert '"snapshot_present":true' in signature[2]
+    assert '"stale":false' in signature[2]
+
+
 def test_standard_balances_snapshot_without_profile_uses_default_descriptor(
     flux_config,
     redis_client,

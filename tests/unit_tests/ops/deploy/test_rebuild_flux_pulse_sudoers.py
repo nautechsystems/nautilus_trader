@@ -71,3 +71,55 @@ def test_rebuild_flux_pulse_sudoers_discovers_all_pulse_enabled_jobs(tmp_path: P
     assert "/usr/bin/systemctl restart flux@lp-api.service" in sudoers_text
     assert "/usr/bin/systemctl restart flux@tg-bot-lan-rogue-trader-alert.service" in sudoers_text
     assert "/usr/bin/journalctl -u flux@tokenmm-api.service" in sudoers_text
+
+
+def test_rebuild_flux_pulse_sudoers_renders_grouped_equities_node_jobs_only(tmp_path: Path) -> None:
+    env_dir = tmp_path / "etc" / "flux"
+    env_dir.mkdir(parents=True)
+    sudoers_path = tmp_path / "sudoers.d" / "flux-pulse"
+
+    _write_env(env_dir / "common.env", ["WORKDIR=/tmp/repo"])
+    for service_id in (
+        "equities-bridge",
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+        "equities-portfolio",
+    ):
+        _write_env(
+            env_dir / f"{service_id}.env",
+            [
+                "PULSE_ENABLED=1",
+                f"PULSE_DESCRIPTION={service_id}",
+            ],
+        )
+    _write_env(
+        env_dir / "equities-api.env",
+        [
+            "PULSE_ENABLED=0",
+            "PULSE_DESCRIPTION=Equities API",
+        ],
+    )
+
+    script_path = _repo_root() / "ops/scripts/deploy/rebuild_flux_pulse_sudoers.sh"
+    subprocess.run(  # noqa: S603 - test executes a repo-controlled helper script path
+        ["/usr/bin/bash", str(script_path)],
+        check=True,
+        env={
+            "ENV_DIR": str(env_dir),
+            "SUDOERS_PATH": str(sudoers_path),
+            "RUN_AS_USER": "ubuntu",
+        },
+    )
+
+    sudoers_text = sudoers_path.read_text(encoding="utf-8")
+    discovered_ids = re.findall(r"systemctl start flux@([^.]+)\.service", sudoers_text)
+
+    assert discovered_ids == [
+        "equities-bridge",
+        "equities-node-aapl_tradexyz",
+        "equities-node-amzn_binance_perp",
+        "equities-portfolio",
+    ]
+    assert "equities-api" not in sudoers_text
+    assert "equities-node-aapl_tradexyz_maker" not in sudoers_text
+    assert "equities-node-aapl_tradexyz_taker" not in sudoers_text

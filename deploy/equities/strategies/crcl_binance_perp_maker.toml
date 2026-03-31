@@ -5,16 +5,16 @@ namespace = "flux"
 schema_version = "v1"
 
 [identity]
-strategy_id = "coin_binance_perp_maker"
-strategy_instance_id = "coin_binance_perp_maker"
-trader_id = "EQUITIES-LIVE-COIN-BINANCE-PERP-MAKER"
-external_strategy_id = "coin_binance_perp_maker"
+strategy_id = "crcl_binance_perp_maker"
+strategy_instance_id = "crcl_binance_perp_maker"
+trader_id = "EQUITIES-LIVE-CRCL-BINANCE-PERP-MAKER"
+external_strategy_id = "crcl_binance_perp_maker"
 
 [venues]
 execution_venue = "BINANCE_PERP"
 reference_venue = "IBKR"
-execution_symbol = "COINUSDT"
-reference_symbol = "COIN/USD"
+execution_symbol = "CRCLUSDT"
+reference_symbol = "CRCL/USD"
 
 [node]
 # Checked-in strategy configs stay safe-off; explicit runtime --enable-execution
@@ -40,7 +40,7 @@ purge_account_events_lookback_mins = 60
 purge_from_database = true
 
 [node.venues.BINANCE_PERP]
-instrument_id = "COINUSDT-PERP.BINANCE_PERP"
+instrument_id = "CRCLUSDT-PERP.BINANCE_PERP"
 execution = true
 account_type = "USDT_FUTURES"
 private_api_family = "PORTFOLIO_MARGIN"
@@ -49,8 +49,9 @@ api_secret_env = "EQUITIES_BINANCE_API_SECRET"
 
 [node.venues.IBKR]
 adapter = "interactive_brokers"
-instrument_id = "COIN.NASDAQ"
-ibg_client_id = 44
+instrument_id = "CRCL.NYSE"
+ibg_client_id = 48
+ibg_port = 4001
 execution = false
 use_regular_trading_hours = false
 
@@ -60,7 +61,7 @@ read_only_api = true
 manage_container = false
 
 [strategy]
-strategy_id = "coin_binance_perp_maker"
+strategy_id = "crcl_binance_perp_maker"
 strategy_groups = "equities"
 param_set = "equities_maker"
 force_bot_off_on_start = true
@@ -70,8 +71,9 @@ qty_unit = "base"
 bot_on = false
 manage_stop = false
 outside_rth_hedge_enabled = true
-ibkr_primary_exchange = "NASDAQ"
-max_age_ms = 10000
+ibkr_primary_exchange = "NYSE"
+max_age_ms = 30000
+max_ibkr_quote_age_ms = 300000
 des_qty_global = 0.0
 max_qty_global = 100.0
 max_skew_bps_global = 10.0

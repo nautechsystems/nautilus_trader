@@ -58,6 +58,7 @@ class BinanceFuturesAccountProjectionProviderConfig:
     api_key: str
     api_secret: str
     account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURES
+    private_api_family: BinancePrivateApiFamily = BinancePrivateApiFamily.AUTO
     environment: BinanceEnvironment = BinanceEnvironment.LIVE
     base_url_http: str | None = None
     recv_window_ms: int = 5000
@@ -660,12 +661,18 @@ class BinanceFuturesAccountProjectionProvider:
     def __init__(self, config: BinanceFuturesAccountProjectionProviderConfig) -> None:
         self._config = config
         self._clock = LiveClock()
+        resolved_base_url = config.base_url_http or get_private_http_base_url(
+            account_type=config.account_type,
+            private_api_family=config.private_api_family,
+            environment=config.environment,
+            is_us=False,
+        )
         self._client = get_cached_binance_http_client(
             clock=self._clock,
             account_type=config.account_type,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            base_url=config.base_url_http,
+            base_url=resolved_base_url,
             environment=config.environment,
             proxy_url=config.http_proxy_url,
         )
@@ -673,6 +680,7 @@ class BinanceFuturesAccountProjectionProvider:
             client=self._client,
             clock=self._clock,
             account_type=config.account_type,
+            private_api_family=config.private_api_family,
         )
         self._latest_snapshot: dict[str, Any] | None = None
         self._last_refresh_monotonic = 0.0
@@ -858,13 +866,22 @@ def _build_ibkr_account_provider(
     return get_cached_ibkr_reference_balance_provider(
         IbkrReferenceBalanceSnapshotProviderConfig(
             ibg_host=scope_config.ibg_host or "127.0.0.1",
-            ibg_port=None if dockerized_gateway is not None else scope_config.ibg_port,
+            ibg_port=scope_config.ibg_port,
+            ibg_fallback_ports=scope_config.ibg_fallback_ports,
             ibg_client_id=(
                 1 if scope_config.ibg_client_id is None else scope_config.ibg_client_id
             ),
             dockerized_gateway=dockerized_gateway,
-            connection_timeout=300,
-            request_timeout_secs=60,
+            connection_timeout=(
+                scope_config.ibg_connection_timeout_secs
+                if scope_config.ibg_connection_timeout_secs is not None
+                else 300
+            ),
+            request_timeout_secs=(
+                scope_config.ibg_request_timeout_secs
+                if scope_config.ibg_request_timeout_secs is not None
+                else 60
+            ),
             account_id=scope_config.account_id,
         ),
     )
@@ -907,6 +924,9 @@ def _build_binance_futures_account_provider(
             api_key=api_key,
             api_secret=api_secret,
             account_type=_parse_binance_account_type(scope_config.account_type),
+            private_api_family=_parse_binance_private_api_family(
+                scope_config.private_api_family,
+            ),
             environment=BinanceEnvironment.TESTNET if scope_config.testnet else BinanceEnvironment.LIVE,
             base_url_http=scope_config.base_url_http,
             recv_window_ms=scope_config.recv_window_ms or 5000,

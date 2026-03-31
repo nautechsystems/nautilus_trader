@@ -6,6 +6,7 @@ from typing import Any
 
 from flux.bridge.handlers.types import CorrelationContext
 from flux.bridge.handlers.types import JSONRow
+from flux.common.config import validate_identifier_part
 
 
 def decode_text(value: Any) -> str:
@@ -161,9 +162,25 @@ def normalize_ts_ms(row: dict[str, Any], fallback: int) -> int:
     return ts_ms
 
 
-def with_correlation(row: dict[str, Any], context: CorrelationContext, *, ts_ms: int) -> JSONRow:
+def strategy_id_for_row(row: dict[str, Any], context: CorrelationContext) -> str:
+    candidate = first_text(row.get("strategy_id"), row.get("external_strategy_id"))
+    if candidate:
+        try:
+            return validate_identifier_part(candidate, "strategy_id")
+        except ValueError:
+            pass
+    return context.strategy_id
+
+
+def with_correlation(
+    row: dict[str, Any],
+    context: CorrelationContext,
+    *,
+    ts_ms: int,
+    strategy_id: str | None = None,
+) -> JSONRow:
     out = dict(row)
-    out["strategy_id"] = context.strategy_id
+    out["strategy_id"] = strategy_id or context.strategy_id
     out["topic"] = context.topic
     out["entry_id"] = context.entry_id
     out["ts_ms"] = int(ts_ms)

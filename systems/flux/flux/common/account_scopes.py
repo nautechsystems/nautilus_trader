@@ -24,7 +24,10 @@ class AccountScopeConfig:
     venue: str
     ibg_host: str | None = None
     ibg_port: int | None = None
+    ibg_fallback_ports: tuple[int, ...] = ()
     ibg_client_id: int | None = None
+    ibg_connection_timeout_secs: int | None = None
+    ibg_request_timeout_secs: int | None = None
     account_id: str | None = None
     dockerized_gateway: dict[str, Any] | None = None
     api_key_env: str | None = None
@@ -74,6 +77,20 @@ def _optional_int(row: Mapping[str, Any], field_name: str) -> int | None:
     return raw
 
 
+def _optional_int_tuple(row: Mapping[str, Any], field_name: str) -> tuple[int, ...]:
+    raw = row.get(field_name)
+    if raw is None:
+        return ()
+    if isinstance(raw, bool) or isinstance(raw, str | bytes) or not isinstance(raw, Iterable):
+        raise TypeError(f"`{field_name}` must be a list of integers when provided")
+    values: list[int] = []
+    for index, item in enumerate(raw):
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise TypeError(f"`{field_name}` item {index} must be an integer")
+        values.append(item)
+    return tuple(values)
+
+
 def _optional_bool(row: Mapping[str, Any], field_name: str, *, default: bool = False) -> bool:
     raw = row.get(field_name)
     if raw is None:
@@ -104,7 +121,10 @@ def decode_account_scopes(rows: Iterable[Mapping[str, Any]]) -> tuple[AccountSco
                 venue=_required_text(row, "venue"),
                 ibg_host=_optional_text(row, "ibg_host"),
                 ibg_port=_optional_int(row, "ibg_port"),
+                ibg_fallback_ports=_optional_int_tuple(row, "ibg_fallback_ports"),
                 ibg_client_id=_optional_int(row, "ibg_client_id"),
+                ibg_connection_timeout_secs=_optional_int(row, "ibg_connection_timeout_secs"),
+                ibg_request_timeout_secs=_optional_int(row, "ibg_request_timeout_secs"),
                 account_id=_optional_text(row, "account_id"),
                 dockerized_gateway=_optional_mapping(row, "dockerized_gateway"),
                 api_key_env=_optional_text(row, "api_key_env"),

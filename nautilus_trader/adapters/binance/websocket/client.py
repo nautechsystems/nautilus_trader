@@ -63,9 +63,16 @@ class BinanceWebSocketClient:
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._streams: list[str] = []
+        self._desired_streams: set[str] = set()
         self._clients: dict[int, WebSocketClient | None] = {}  # Client ID -> WebSocket client
         self._client_streams: dict[int, list[str]] = {}  # Client ID -> streams
         self._is_connecting: dict[int, bool] = {}  # Client ID -> is_connecting flag
+        self._recovery_tasks: dict[str, asyncio.Task] = {}
+        self._client_reconnect_tasks: dict[int, asyncio.Task] = {}
+        self._client_recovery_versions: dict[int, int] = {}
+        self._client_recovery_results: dict[int, dict[str, Any]] = {}
+        self._last_recovery_results: dict[str, dict[str, Any]] = {}
+        self._stream_versions: dict[str, int] = {}
         self._msg_id: int = 0
         self._next_client_id: int = 0
 
@@ -155,6 +162,7 @@ class BinanceWebSocketClient:
         self._clients[client_id] = None
         self._client_streams[client_id] = []
         self._is_connecting[client_id] = False
+        self._client_recovery_versions[client_id] = 0
 
         return client_id
 
@@ -199,6 +207,8 @@ class BinanceWebSocketClient:
 
         # Update client streams tracking
         self._client_streams[client_id] = streams.copy()
+        for stream in streams:
+            self._bump_stream_version(stream)
 
         # Binance expects at least one stream for the initial connection
         initial_stream = streams[0]
@@ -227,7 +237,10 @@ class BinanceWebSocketClient:
         # If there are multiple streams, subscribe to the rest
         if len(streams) > 1:
             msg = self._create_subscribe_msg(streams=streams[1:])
-            await self._send(client_id, msg)
+            if not await self._send(client_id, msg):
+                raise RuntimeError(
+                    f"ws-client {client_id}: failed to subscribe additional streams",
+                )
             self._log.debug(
                 f"ws-client {client_id}: Subscribed to additional {len(streams) - 1} streams",
             )
@@ -253,14 +266,15 @@ class BinanceWebSocketClient:
         """
         Handle reconnection for a specific client.
         """
-        if client_id not in self._client_streams or not self._client_streams[client_id]:
+        streams = self._desired_streams_for_client(client_id)
+        if not streams:
             self._log.error(f"ws-client {client_id}: Cannot reconnect: no streams for this client")
             return
 
         self._log.warning(f"ws-client {client_id}: Reconnected to {self._base_url}")
 
-        # Re-subscribe to all streams for this client
-        streams = self._client_streams[client_id]
+        # Re-subscribe to the desired streams for this client.
+        self._client_streams[client_id] = streams.copy()
         task = self._loop.create_task(self._resubscribe_client(client_id, streams))
         self._tasks.add(task)
 
@@ -314,6 +328,8 @@ class BinanceWebSocketClient:
 
         self._clients[client_id] = None  # Dispose (will go out of scope)
         self._log.debug(f"ws-client {client_id}: Disconnected from {self._base_url}")
+        for stream in self._client_streams.get(client_id, []):
+            self._bump_stream_version(stream)
 
     async def subscribe_agg_trades(self, symbol: str) -> None:
         """
@@ -495,6 +511,10 @@ class BinanceWebSocketClient:
             stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
         await self._unsubscribe(stream)
 
+    async def recover_book_ticker(self, symbol: str) -> dict[str, Any]:
+        stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
+        return await self._recover_stream(stream)
+
     async def subscribe_partial_book_depth(
         self,
         symbol: str,
@@ -589,6 +609,9 @@ class BinanceWebSocketClient:
         await self._unsubscribe(stream)
 
     async def _subscribe(self, stream: str) -> None:
+        if stream not in self._desired_streams:
+            self._desired_streams.add(stream)
+            self._bump_stream_version(stream)
         if stream in self._streams:
             self._log.warning(f"Cannot subscribe to {stream}: already subscribed")
             return  # Already subscribed
@@ -618,6 +641,9 @@ class BinanceWebSocketClient:
         self._log.debug(f"ws-client {client_id}: Subscribed to {stream}")
 
     async def _unsubscribe(self, stream: str) -> None:
+        if stream in self._desired_streams:
+            self._desired_streams.discard(stream)
+            self._bump_stream_version(stream)
         if stream not in self._streams:
             self._log.warning(f"Cannot unsubscribe from {stream}: not subscribed")
             return  # Not subscribed
@@ -648,6 +674,303 @@ class BinanceWebSocketClient:
                 f"ws-client {client_id}: Disconnected due to no remaining subscriptions",
             )
 
+    def _desired_streams_for_client(self, client_id: int) -> list[str]:
+        streams = [
+            stream
+            for stream in self._client_streams.get(client_id, [])
+            if stream in self._desired_streams
+        ]
+        return list(dict.fromkeys(streams))
+
+    def _bump_stream_version(self, stream: str) -> None:
+        self._stream_versions[stream] = self._stream_versions.get(stream, 0) + 1
+
+    def recovery_snapshot(self, stream: str) -> dict[str, Any]:
+        snapshot = {
+            "desired": stream in self._desired_streams,
+            "in_flight": stream in self._recovery_tasks and not self._recovery_tasks[stream].done(),
+            **self._last_recovery_results.get(stream, {}),
+        }
+        snapshot.setdefault("version", self._stream_versions.get(stream, 0))
+        return snapshot
+
+    def _not_desired_recovery_result(self, stream: str, version: int) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "action": "not_desired",
+            "stream": stream,
+            "version": version,
+            "error": "stream_not_desired",
+        }
+
+    def _reuse_recovery_result(
+        self,
+        stream: str,
+        *,
+        version: int,
+    ) -> dict[str, Any] | None:
+        prior = self._last_recovery_results.get(stream)
+        if prior is None or prior.get("version") != version:
+            return None
+        if prior.get("action") not in {"replay", "reconnect", "not_desired"}:
+            return None
+        if prior.get("action") == "reconnect":
+            client_id = prior.get("client_id")
+            if not isinstance(client_id, int):
+                return None
+
+            latest_client_recovery = self._completed_client_recovery(client_id)
+            if latest_client_recovery is None or not latest_client_recovery["ok"]:
+                return None
+            if latest_client_recovery["version"] != prior.get("client_recovery_version"):
+                return None
+        return dict(prior)
+
+    def _completed_client_recovery(
+        self,
+        client_id: int,
+        *,
+        after_version: int | None = None,
+    ) -> dict[str, Any] | None:
+        active_reconnect = self._client_reconnect_tasks.get(client_id)
+        if active_reconnect is not None and not active_reconnect.done():
+            return None
+
+        latest = self._client_recovery_results.get(client_id)
+        if latest is None:
+            return None
+        if after_version is not None and latest["version"] <= after_version:
+            return None
+        return dict(latest)
+
+    def _record_client_recovery_result(
+        self,
+        client_id: int,
+        *,
+        ok: bool,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        result = {
+            "version": self._client_recovery_versions.get(client_id, 0) + 1,
+            "ok": ok,
+            "error": error,
+        }
+        self._client_recovery_versions[client_id] = result["version"]
+        self._client_recovery_results[client_id] = result
+        return result
+
+    async def _reconnect_client_for_recovery(
+        self,
+        client_id: int,
+    ) -> tuple[list[str], str | None]:
+        existing = self._client_reconnect_tasks.get(client_id)
+        if existing is not None and not existing.done():
+            return await existing
+
+        task = self._loop.create_task(self._reconnect_client_for_recovery_once(client_id))
+        self._client_reconnect_tasks[client_id] = task
+        self._tasks.add(task)
+        try:
+            return await task
+        finally:
+            if self._client_reconnect_tasks.get(client_id) is task:
+                self._client_reconnect_tasks.pop(client_id, None)
+
+    async def _reconnect_client_for_recovery_once(
+        self,
+        client_id: int,
+    ) -> tuple[list[str], str | None]:
+        try:
+            await self._disconnect_client(client_id)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            self._record_client_recovery_result(client_id, ok=False, error=error)
+            return [], error
+
+        reconnect_streams = self._desired_streams_for_client(client_id)
+        self._client_streams[client_id] = reconnect_streams
+        if reconnect_streams:
+            try:
+                await self._connect_client(client_id, reconnect_streams)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                self._record_client_recovery_result(client_id, ok=False, error=error)
+                return reconnect_streams, error
+
+        self._record_client_recovery_result(client_id, ok=True)
+        return reconnect_streams, None
+
+    async def _recover_stream(self, stream: str) -> dict[str, Any]:
+        existing = self._recovery_tasks.get(stream)
+        if existing is not None and not existing.done():
+            return await existing
+
+        version = self._stream_versions.get(stream, 0)
+        reused = self._reuse_recovery_result(stream, version=version)
+        if reused is not None:
+            return reused
+
+        task = self._loop.create_task(self._recover_stream_once(stream))
+        self._recovery_tasks[stream] = task
+        self._tasks.add(task)
+        try:
+            return await task
+        finally:
+            if self._recovery_tasks.get(stream) is task:
+                self._recovery_tasks.pop(stream, None)
+
+    async def _recover_stream_once(self, stream: str) -> dict[str, Any]:
+        current_version = self._stream_versions.get(stream, 0)
+        self._last_recovery_results[stream] = {
+            "stream": stream,
+            "version": current_version,
+            "action": "in_flight",
+            "ok": False,
+        }
+        if stream not in self._desired_streams:
+            result = self._not_desired_recovery_result(stream, current_version)
+            self._last_recovery_results[stream] = result
+            return result
+
+        client_id = self._get_client_for_stream(stream)
+        if client_id == -1:
+            client_id = self._get_client_id_for_new_subscription()
+            self._client_streams[client_id] = [stream]
+        client_recovery_version = self._client_recovery_versions.get(client_id, 0)
+
+        replay_result = await self._recover_stream_via_healthy_transport(
+            stream=stream,
+            current_version=current_version,
+            client_id=client_id,
+        )
+        if replay_result is not None:
+            self._last_recovery_results[stream] = replay_result
+            return replay_result
+
+        completed_client_recovery = self._completed_client_recovery(
+            client_id,
+            after_version=client_recovery_version,
+        )
+        reconnect_result = self._recover_stream_from_completed_client_recovery(
+            stream=stream,
+            current_version=current_version,
+            client_id=client_id,
+            completed_client_recovery=completed_client_recovery,
+        )
+        if reconnect_result is not None:
+            self._last_recovery_results[stream] = reconnect_result
+            return reconnect_result
+
+        reconnect_streams, reconnect_error = await self._reconnect_client_for_recovery(client_id)
+        result = self._recover_stream_from_reconnect_outcome(
+            stream=stream,
+            current_version=current_version,
+            client_id=client_id,
+            reconnect_error=reconnect_error,
+        )
+        self._last_recovery_results[stream] = result
+        return result
+
+    async def _recover_stream_via_healthy_transport(
+        self,
+        *,
+        stream: str,
+        current_version: int,
+        client_id: int,
+    ) -> dict[str, Any] | None:
+        client = self._clients.get(client_id)
+        if (
+            client is None
+            or client.is_disconnecting()
+            or client.is_closed()
+            or self._is_connecting.get(client_id, False)
+        ):
+            return None
+
+        msg = self._create_subscribe_msg(streams=[stream])
+        if not await self._send(client_id, msg):
+            return None
+
+        latest_version = self._stream_versions.get(stream, current_version)
+        if stream not in self._desired_streams:
+            return self._not_desired_recovery_result(stream, latest_version)
+        if latest_version != current_version:
+            return None
+
+        return {
+            "ok": True,
+            "action": "replay",
+            "stream": stream,
+            "client_id": client_id,
+            "version": current_version,
+        }
+
+    def _recover_stream_from_completed_client_recovery(
+        self,
+        *,
+        stream: str,
+        current_version: int,
+        client_id: int,
+        completed_client_recovery: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if completed_client_recovery is None:
+            return None
+
+        latest_version = self._stream_versions.get(stream, current_version)
+        if stream not in self._desired_streams:
+            return self._not_desired_recovery_result(stream, latest_version)
+        if completed_client_recovery["ok"]:
+            return {
+                "ok": True,
+                "action": "reconnect",
+                "stream": stream,
+                "client_id": client_id,
+                "version": latest_version,
+                "client_recovery_version": completed_client_recovery["version"],
+            }
+
+        return {
+            "ok": False,
+            "action": "reconnect_failed",
+            "stream": stream,
+            "client_id": client_id,
+            "version": latest_version,
+            "error": completed_client_recovery["error"],
+        }
+
+    def _recover_stream_from_reconnect_outcome(
+        self,
+        *,
+        stream: str,
+        current_version: int,
+        client_id: int,
+        reconnect_error: str | None,
+    ) -> dict[str, Any]:
+        if reconnect_error is not None:
+            return {
+                "ok": False,
+                "action": "reconnect_failed",
+                "stream": stream,
+                "client_id": client_id,
+                "version": self._stream_versions.get(stream, current_version),
+                "error": reconnect_error,
+            }
+
+        if stream not in self._desired_streams:
+            return self._not_desired_recovery_result(
+                stream,
+                self._stream_versions.get(stream, current_version),
+            )
+
+        return {
+            "ok": True,
+            "action": "reconnect",
+            "stream": stream,
+            "client_id": client_id,
+            "version": self._stream_versions.get(stream, current_version),
+            "client_recovery_version": self._client_recovery_versions.get(client_id, 0),
+        }
+
     def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:
         message = {
             "method": "SUBSCRIBE",
@@ -666,11 +989,11 @@ class BinanceWebSocketClient:
         self._msg_id += 1
         return message
 
-    async def _send(self, client_id: int, msg: dict[str, Any]) -> None:
+    async def _send(self, client_id: int, msg: dict[str, Any]) -> bool:
         client = self._clients.get(client_id)
         if client is None:
             self._log.error(f"ws-client {client_id}: Cannot send message {msg}: not connected")
-            return
+            return False
 
         self._log.debug(f"ws-client {client_id}: SENDING: {msg}")
 
@@ -678,3 +1001,5 @@ class BinanceWebSocketClient:
             await client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
             self._log.error(f"ws-client {client_id}: {e!s}")
+            return False
+        return True

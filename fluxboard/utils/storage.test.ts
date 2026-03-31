@@ -8,7 +8,7 @@ import {
 } from './storage';
 
 const LEGACY_KEY = 'fluxboard:dashboard:layout';
-const namespacedKey = (preset: string) => `${LEGACY_KEY}:${preset}`;
+const namespacedKey = (preset: string, scope = 'default') => `${LEGACY_KEY}:${scope}:${preset}`;
 
 describe('storage layout helpers', () => {
   beforeEach(() => {
@@ -103,6 +103,30 @@ describe('storage layout helpers', () => {
     const reloaded = loadCollapsedPanels();
     expect(reloaded.size).toBe(collapsed.size);
     expect([...reloaded]).toEqual(expect.arrayContaining([...collapsed]));
+  });
+
+  it('does not reuse unscoped layouts for non-default surfaces', () => {
+    const legacyLayout = [
+      { i: 'signal', x: 0, y: 0, w: 12, h: 3 },
+      { i: 'trades', x: 0, y: 3, w: 12, h: 3 },
+    ];
+    localStorage.setItem(namespacedKey('default'), JSON.stringify(legacyLayout));
+
+    const result = (loadLayout as any)('default', 'equities');
+
+    expect(result).toEqual(createLayoutsFromPreset('default'));
+  });
+
+  it('round-trips collapsed panel state per surface scope', () => {
+    const collapsed = new Set(['balances']);
+
+    (saveCollapsedPanels as any)(collapsed, 'equities');
+
+    const equitiesCollapsed = (loadCollapsedPanels as any)('equities');
+    const tokenmmCollapsed = (loadCollapsedPanels as any)('tokenmm');
+
+    expect([...equitiesCollapsed]).toEqual(['balances']);
+    expect(tokenmmCollapsed.size).toBe(0);
   });
 });
 

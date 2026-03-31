@@ -10,6 +10,7 @@ from flux.bridge.handlers.utils import first_text
 from flux.bridge.handlers.utils import normalize_exchange
 from flux.bridge.handlers.utils import normalize_symbol_parts
 from flux.bridge.handlers.utils import normalize_ts_ms
+from flux.bridge.handlers.utils import strategy_id_for_row
 from flux.bridge.handlers.utils import with_correlation
 from flux.common.keys import FluxRedisKeys
 
@@ -28,6 +29,7 @@ def _safe_float(value: Any) -> float | None:
 
 def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[WriteOp]:
     row = as_dict(payload)
+    strategy_id = strategy_id_for_row(row, context)
     instrument_id = first_text(row.get("instrument_id"))
     exchange = normalize_exchange(
         first_text(row.get("exchange"), row.get("venue"), row.get("market_exchange")),
@@ -47,7 +49,7 @@ def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[Writ
         return []
 
     ts_ms = normalize_ts_ms(row, context.ts_ms)
-    out = with_correlation(row, context, ts_ms=ts_ms)
+    out = with_correlation(row, context, ts_ms=ts_ms, strategy_id=strategy_id)
     out["exchange"] = exchange
     out["base"] = base
     out["quote"] = quote
@@ -56,7 +58,7 @@ def transform_market_bbo(payload: Any, context: CorrelationContext) -> list[Writ
     if ask is not None:
         out["ask"] = ask
 
-    keys = FluxRedisKeys(strategy_id=context.strategy_id)
+    keys = FluxRedisKeys(strategy_id=strategy_id)
     ops: list[WriteOp] = []
     if instrument_id:
         ops.append(

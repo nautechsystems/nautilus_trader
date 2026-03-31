@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flux.runners.shared.quote_feed_supervisor import NodeQuoteFeedSupervisor
+from flux.runners.shared.quote_feed_supervisor import QuoteFeedControlEmitter
 from nautilus_trader.flux.strategies import EquitiesTakerStrategy as EquitiesTakerStrategyFromRoot
 from nautilus_trader.flux.strategies import (
     EquitiesTakerStrategyConfig as EquitiesTakerStrategyConfigFromRoot,
@@ -521,3 +523,76 @@ def test_equities_taker_stale_reference_quote_creates_recoverable_hedge_backlog(
     assert str(hedge_order.instrument_id) == str(ref_id)
     assert _enum_name(hedge_order.side) == "SELL"
     assert hedge_order.quantity == Decimal("1")
+
+
+def test_equities_taker_supervisor_non_tradeable_pair_blocks_hedge_submission(
+    monkeypatch,
+) -> None:
+    strategy = EquitiesTakerStrategy(config=_config())
+    maker_id, ref_id = _configure_strategy_for_quoting(strategy)
+
+    class _FakeClock:
+        def __init__(self) -> None:
+            self.now = 2_001_000_000
+
+        def timestamp_ns(self) -> int:
+            return self.now
+
+    fake_clock = _FakeClock()
+    supervisor = NodeQuoteFeedSupervisor()
+    control_emitter = QuoteFeedControlEmitter(node_scoped_id="aapl_tradexyz")
+    submitted: list[SimpleNamespace] = []
+
+    for claim_spec in strategy.quote_feed_claim_specs():
+        supervisor.register_claimant(
+            claim_spec.feed_identity,
+            claimant_id=claim_spec.claimant_id,
+            unusable_after_ms=claim_spec.unusable_after_ms,
+            reset=(lambda: None) if claim_spec.node_scoped_lifecycle else None,
+            blocker_key=claim_spec.blocker_key,
+        )
+    supervisor.record_quote(strategy.quote_feed_claim_specs()[0].feed_identity, ts_ns=2_000_000_000)
+    supervisor.record_quote(strategy.quote_feed_claim_specs()[1].feed_identity, ts_ns=2_000_000_000)
+    supervisor.set_blocker("ibkr.shared_publisher", blocked=True, reason="publisher_down")
+    strategy.configure_quote_feed_runtime(
+        supervisor=supervisor,
+        control_emitter=control_emitter,
+    )
+    strategy._publish_market_bbo = lambda **_kwargs: None
+    strategy._publish_balances_if_due = lambda: None
+    strategy._publish_state_snapshot = lambda **_kwargs: None
+    strategy.submit_order = lambda order, **_kwargs: submitted.append(order)
+    monkeypatch.setattr(type(strategy), "clock", property(lambda _self: fake_clock))
+    _install_limit_order_factory(strategy, monkeypatch)
+
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=maker_id,
+            bid="189.18",
+            ask="189.20",
+            ts_event=2_000_000_000,
+        )
+    )
+    strategy.on_quote_tick(
+        _quote_tick(
+            instrument_id=ref_id,
+            bid="190.00",
+            ask="190.04",
+            ts_event=2_001_000_000,
+        )
+    )
+    strategy.on_order_filled(
+        _fill_event(
+            instrument_id=maker_id,
+            fill_id="take-fill-blocked-1",
+            client_order_id="order-1",
+            side="BUY",
+            qty="1",
+            px="189.20",
+            ts_event=2_002_000_000,
+        )
+    )
+
+    assert submitted == []
+    assert strategy.tradeable is False
+    assert strategy.hedge_disabled_reason == "stale_quote"

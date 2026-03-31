@@ -52,6 +52,32 @@ function readStorageFlag(key: string): boolean | null {
   }
 }
 
+function defaultRealtimeStandardForCurrentPath(surface: RealtimeSurface | 'global'): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const pathname = (() => {
+    const direct = window.location?.pathname;
+    if (typeof direct === 'string' && direct.length > 0) {
+      return direct;
+    }
+    const href = window.location?.href;
+    if (typeof href === 'string' && href.length > 0) {
+      try {
+        return new URL(href, 'http://localhost').pathname;
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  })();
+  const profile = resolvePathnameProfile(pathname);
+  if (profile !== 'equities') {
+    return false;
+  }
+  return surface === 'global' || surface === 'balances' || surface === 'trades';
+}
+
 function resolveBooleanFlag({
   envKey,
   storageKey,
@@ -108,7 +134,7 @@ function resolveRealtimeStandardFlag(flag: keyof typeof REALTIME_STANDARD_STORAG
   return resolveBooleanFlag({
     envKey: REALTIME_STANDARD_ENV_FLAGS[flag],
     storageKey: REALTIME_STANDARD_STORAGE_FLAGS[flag],
-    defaultValue: false,
+    defaultValue: defaultRealtimeStandardForCurrentPath(flag),
   });
 }
 

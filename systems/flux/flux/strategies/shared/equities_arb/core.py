@@ -465,7 +465,7 @@ def effective_venue_resolution_config(
         if scope is not None:
             if scope.ibg_host is not None:
                 ibkr_scope_overrides["ibg_host"] = scope.ibg_host
-            if scope.ibg_port is not None and scope.dockerized_gateway is None:
+            if scope.ibg_port is not None:
                 ibkr_scope_overrides["ibg_port"] = scope.ibg_port
             if scope.ibg_client_id is not None and ibkr_cfg.get("ibg_client_id") in (None, ""):
                 ibkr_scope_overrides["ibg_client_id"] = scope.ibg_client_id
@@ -492,6 +492,11 @@ def effective_venue_resolution_config(
     needs_maker_execution_promotion = not maker_cfg_is_executing
     needs_reference_rewrite = _optional_text(ibkr_cfg.get("instrument_id")) != reference_instrument_id
     needs_ibkr_execution_promotion = not bool(ibkr_cfg.get("execution", False))
+    needs_ibkr_adapter_rewrite = _optional_text(ibkr_cfg.get("adapter")) != "interactive_brokers"
+    needs_ibkr_data_adapter_rewrite = (
+        _optional_text(ibkr_cfg.get("data_adapter")) != "interactive_brokers_shared_reference"
+    )
+    needs_ibkr_exec_adapter_rewrite = _optional_text(ibkr_cfg.get("exec_adapter")) != "interactive_brokers"
     needs_scope_overlay = bool(ibkr_scope_overrides)
     if not (
         needs_maker_rewrite
@@ -500,6 +505,9 @@ def effective_venue_resolution_config(
         or stale_execution_flags
         or needs_reference_rewrite
         or needs_ibkr_execution_promotion
+        or needs_ibkr_adapter_rewrite
+        or needs_ibkr_data_adapter_rewrite
+        or needs_ibkr_exec_adapter_rewrite
         or needs_scope_overlay
     ):
         return config
@@ -530,6 +538,9 @@ def effective_venue_resolution_config(
                 **ibkr_scope_overrides,
                 "instrument_id": reference_instrument_id,
                 "execution": True,
+                "adapter": "interactive_brokers",
+                "data_adapter": "interactive_brokers_shared_reference",
+                "exec_adapter": "interactive_brokers",
             }
             continue
         if bool(venue_cfg.get("execution", False)):

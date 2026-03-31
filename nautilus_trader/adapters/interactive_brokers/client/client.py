@@ -368,6 +368,7 @@ class InteractiveBrokersClient(
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except TimeoutError as e:
             self._log.error(f"Client is not ready: {e}")
+            raise
 
     async def _run_connection_watchdog(self) -> None:
         """

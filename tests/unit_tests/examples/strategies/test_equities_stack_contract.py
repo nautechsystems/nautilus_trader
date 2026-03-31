@@ -4,6 +4,7 @@ import re
 import tomllib
 from pathlib import Path
 
+from nautilus_trader.flux.runners.equities.node_groups import load_equities_node_groups
 from nautilus_trader.flux.common.account_scopes import decode_account_scopes
 from nautilus_trader.flux.common.controller_scopes import decode_controller_scopes
 from nautilus_trader.flux.common.controller_scopes import validate_controller_scope_contracts
@@ -174,7 +175,7 @@ def _split_binance_strategy_entry(route: dict[str, str], variant: str) -> dict[s
         "strategy_id": f"{route['symbol'].lower()}_binance_perp_{variant}",
         "maker_exchange": "binance_perp",
         "maker_venue": "BINANCE_PERP",
-        "maker_symbol": route["binance_symbol"],
+        "maker_symbol": route["symbol"],
         "market_type": "perp",
         "maker_instrument_id": route["binance_perp_instrument_id"],
         "reference_instrument_id": route["ibkr_instrument_id"],
@@ -281,14 +282,32 @@ DISABLED_SPLIT_TRADEXYZ_STRATEGIES = tuple(
 )
 DISABLED_SPLIT_STRATEGY_IDS = tuple(
     entry["strategy_id"]
-    for entry in DISABLED_SPLIT_TRADEXYZ_STRATEGIES + BINANCE_PERP_STRATEGIES
+    for entry in DISABLED_SPLIT_TRADEXYZ_STRATEGIES
 )
-LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES
-LIVE_ENROLLED_STRATEGY_IDS = CORE_PROD_STRATEGY_IDS
-LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = tuple(
-    f"{route['symbol'].lower()}_tradexyz"
-    for route in CORE_PROD_SYMBOL_ROUTES
+LIVE_ENROLLED_STRATEGIES = CORE_PROD_STRATEGIES + BINANCE_PERP_STRATEGIES
+LIVE_ENROLLED_STRATEGY_IDS = tuple(entry["strategy_id"] for entry in LIVE_ENROLLED_STRATEGIES)
+LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER = (
+    "aapl_tradexyz",
+    "amd_tradexyz",
+    "amzn_tradexyz",
+    "amzn_binance_perp",
+    "coin_binance_perp",
+    "crcl_binance_perp",
+    "ewy_binance_perp",
+    "googl_tradexyz",
+    "hood_binance_perp",
+    "intc_binance_perp",
+    "meta_tradexyz",
+    "msft_tradexyz",
+    "mstr_binance_perp",
+    "nvda_tradexyz",
+    "orcl_tradexyz",
+    "pltr_tradexyz",
+    "pltr_binance_perp",
+    "tsla_tradexyz",
+    "tsla_binance_perp",
 )
+LIVE_ENROLLED_NODE_GROUP_IDS = LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER
 LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER = tuple(
     f"{route_id}_{variant}"
     for route_id in LIVE_ENROLLED_ROUTE_IDS_IN_MANIFEST_ORDER
@@ -376,15 +395,16 @@ def _extract_markdown_numbered_list(text: str, heading: str, *, level: int) -> t
 
 def test_equities_live_config_uses_dedicated_portfolio_and_allowlists() -> None:
     config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    strategy_ids = config["api"]["equities_strategy_ids"]
+    required_strategy_ids = config["api"]["equities_required_strategy_ids"]
 
     assert config["portfolio"]["portfolio_id"] == "equities"
     assert config["api"]["strategy_class"] == ACTIVE_STRATEGY_CLASS
     assert config["api"]["strategy_groups"] == "equities"
     assert config["api"]["param_set"] == ACTIVE_PARAM_SET
-    assert config["api"]["equities_strategy_ids"] == list(LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER)
-    assert config["api"]["equities_required_strategy_ids"] == list(
-        LIVE_ENROLLED_STRATEGY_IDS_IN_MANIFEST_ORDER,
-    )
+    assert strategy_ids == required_strategy_ids
+    assert len(strategy_ids) == len(LIVE_ENROLLED_STRATEGY_IDS)
+    assert set(strategy_ids) == set(LIVE_ENROLLED_STRATEGY_IDS)
 
 
 def test_equities_live_config_decommissions_hyundai() -> None:
@@ -467,10 +487,12 @@ def test_equities_live_config_only_keeps_shared_contract_values() -> None:
         "redis",
         "venues",
         "bridge",
+        "ibkr_reference_publisher",
         "api",
         "portfolio",
         "account_scopes",
         "controller_scopes",
+        "controller",
         "strategy_contracts",
         "contracts",
     }
@@ -515,6 +537,10 @@ def test_equities_active_strategy_contracts_use_makerv4_semantics_with_active_id
         assert config["node"]["venues"]["IBKR"]["instrument_id"] == entry["ibkr_instrument_id"]
         assert config["node"]["venues"]["IBKR"]["use_regular_trading_hours"] is False
         assert config["node"]["venues"]["IBKR"]["dockerized_gateway"]["manage_container"] is False
+        if "_binance_perp_" in entry["strategy_id"]:
+            assert config["node"]["venues"]["IBKR"]["ibg_port"] == 4001
+        else:
+            assert "ibg_port" not in config["node"]["venues"]["IBKR"]
         assert (
             config["node"]["venues"]["HYPERLIQUID"]["vault_address_env"]
             == "TRADE_XYZ_VAULT_ADDRESS"
@@ -579,10 +605,9 @@ def test_equities_node_execution_contract_is_safe_in_toml_and_opt_in_in_stack() 
         in stack_script
     )
     assert 'exec_flag+=(--enable-execution)' in stack_script
-    assert (
-        '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node --config'
-        in install_script
-    )
+    assert 'cmd="${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node"' in install_script
+    assert 'cmd+=" --config ${config_path}"' in install_script
+    assert 'cmd+=" --shared-config ${SHARED_CONFIG} --mode live --confirm-live"' in install_script
     assert "--enable-execution" in install_script
 
 
@@ -649,14 +674,17 @@ def test_equities_live_config_declares_shared_account_scopes() -> None:
     assert binance["recv_window_ms"] == 5000
     assert scopes["ibkr.reference.main"]["provider"] == "ibkr"
     assert scopes["ibkr.reference.main"]["venue"] == "IBKR"
+    assert scopes["ibkr.reference.main"]["ibg_port"] == 4001
     assert scopes["ibkr.reference.main"]["ibg_client_id"] == 107
     assert scopes["ibkr.reference.main"]["account_id"] == "U10015777"
-    assert reference_gateway["manage_container"] is True
+    assert "ibg_fallback_ports" not in scopes["ibkr.reference.main"]
+    assert reference_gateway["manage_container"] is False
     assert reference_gateway["relogin_after_twofa_timeout"] is False
     assert reference_gateway["twofa_timeout_action"] == "exit"
     assert scopes["ibkr.hedge.main"]["provider"] == "ibkr"
     assert scopes["ibkr.hedge.main"]["venue"] == "IBKR"
-    assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 208
+    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4001
+    assert scopes["ibkr.hedge.main"]["ibg_client_id"] == 908
     assert scopes["ibkr.hedge.main"]["account_id"] == "U10015777"
     assert hedge_gateway["manage_container"] is False
     assert "twofa_timeout_action" not in hedge_gateway
@@ -725,15 +753,22 @@ def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset(
         row for row in contracts if row["portfolio_asset_id"] == "AMZN"
     ]
     assert sorted(row["strategy_id"] for row in amzn_contracts) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
-    assert {row["maker_venue"] for row in amzn_contracts} == {"HYPERLIQUID"}
+    assert {row["maker_venue"] for row in amzn_contracts} == {
+        "BINANCE_PERP",
+        "HYPERLIQUID",
+    }
     assert sorted(
         strategy_id
         for strategy_id in strategy_ids
         if strategy_id.startswith("amzn_")
     ) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
@@ -742,10 +777,12 @@ def test_equities_live_config_allows_dual_strategy_ids_for_same_portfolio_asset(
         for strategy_id in required_strategy_ids
         if strategy_id.startswith("amzn_")
     ) == [
+        "amzn_binance_perp_maker",
+        "amzn_binance_perp_taker",
         "amzn_tradexyz_maker",
         "amzn_tradexyz_taker",
     ]
-    assert [row["portfolio_asset_id"] for row in contracts].count("AMZN") == 2
+    assert [row["portfolio_asset_id"] for row in contracts].count("AMZN") == 4
 
 
 def test_equities_live_config_strategy_contracts_cover_live_enrolled_split_routes() -> None:
@@ -867,6 +904,27 @@ def test_equities_strategy_ibkr_gateway_client_ids_are_unique() -> None:
     assert len(client_ids) == len(set(client_ids))
 
 
+def test_equities_active_split_strategies_publish_explicit_ibkr_quote_age_budget() -> None:
+    repo_root = _repo_root()
+
+    for path in sorted((repo_root / "deploy/equities/strategies").glob("*.toml")):
+        if path.name == "equities.strategy.template.toml":
+            continue
+        config = _load_toml(path)
+        strategy_id = config["strategy"]["strategy_id"]
+        if not (strategy_id.endswith("_maker") or strategy_id.endswith("_taker")):
+            continue
+        assert config["strategy"].get("max_ibkr_quote_age_ms") is not None, strategy_id
+
+
+def test_equities_active_binance_split_strategies_use_relaxed_maker_quote_budget() -> None:
+    repo_root = _repo_root()
+
+    for strategy_id in BINANCE_PERP_STRATEGY_IDS:
+        config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
+        assert config["strategy"].get("max_age_ms", 0) >= 30_000, strategy_id
+
+
 def test_equities_shared_ibkr_scope_client_ids_do_not_overlap_strategy_client_ids() -> None:
     repo_root = _repo_root()
     shared_config = _load_toml(repo_root / "deploy/equities/equities.live.toml")
@@ -895,7 +953,28 @@ def test_equities_shared_gateway_owner_is_configured_once() -> None:
         and row.get("dockerized_gateway", {}).get("manage_container") is True
     ]
 
-    assert owners == ["ibkr.reference.main"]
+    assert owners == []
+
+
+def test_equities_live_ibkr_scopes_route_reference_and_hedge_via_active_gateway_port() -> None:
+    config = _load_toml(_repo_root() / "deploy/equities/equities.live.toml")
+    scopes = {
+        row["scope_id"]: row
+        for row in config["account_scopes"]
+        if row.get("provider") == "ibkr"
+    }
+
+    assert scopes["ibkr.reference.main"]["ibg_port"] == 4001
+    assert scopes["ibkr.hedge.main"]["ibg_port"] == 4001
+
+
+def test_equities_binance_split_strategies_use_primary_gateway_port() -> None:
+    repo_root = _repo_root()
+    primary_port = 4001
+
+    for strategy_id in BINANCE_PERP_STRATEGY_IDS:
+        config = _load_toml(repo_root / f"deploy/equities/strategies/{strategy_id}.toml")
+        assert config["node"]["venues"]["IBKR"]["ibg_port"] == primary_port
 
 
 def test_equities_stack_env_example_defaults_to_safe_paper_without_execution() -> None:
@@ -952,7 +1031,9 @@ def test_equities_stack_script_is_scoped_to_equities_services_and_paths() -> Non
     assert 'TOKENMM_' not in script
 
 
-def test_equities_systemd_assets_use_live_enrolled_service_names_only() -> None:
+def test_equities_grouped_systemd_assets_use_live_enrolled_service_names_only() -> None:
+    node_groups = load_equities_node_groups(repo_root=_repo_root())
+    node_group_ids = tuple(group.node_group_id for group in node_groups)
     target = _read(_repo_root() / "deploy/equities/systemd/flux-equities.target")
     install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
     common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")
@@ -963,25 +1044,29 @@ def test_equities_systemd_assets_use_live_enrolled_service_names_only() -> None:
     assert 'Wants=flux@equities-api.service' in target
     assert 'Wants=flux@equities-portfolio.service' in target
     assert 'Wants=flux@equities-bridge.service' in target
+    assert target.count("Wants=flux@equities-node-") == len(node_group_ids)
+    for node_group_id in node_group_ids:
+        assert f'Wants=flux@equities-node-{node_group_id}.service' in target
     for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
-        assert f'Wants=flux@equities-node-{strategy_id}.service' in target
+        assert f'Wants=flux@equities-node-{strategy_id}.service' not in target
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert f'Wants=flux@equities-node-{strategy_id}.service' not in target
     assert 'deploy/equities/equities.live.toml' in install_script
-    assert 'flux-equities.target' in install_script
+    assert 'TARGET_PATH="${SYSTEMD_DIR}/flux-${STACK_SERVICE_PREFIX}.target"' in install_script
     assert 'deploy/equities/systemd/common.env.example' in install_script
     assert '/etc/sudoers.d/flux-pulse' in install_script
     assert 'rebuild_flux_pulse_sudoers.sh' in install_script
+    assert 'list_equities_node_groups.py' in install_script
     assert 'strategy_stack_write_env' in install_script
-    assert 'equities-api.env' in install_script
-    assert 'equities-portfolio.env' in install_script
-    assert 'equities-bridge.env' in install_script
-    assert '"equities"' in install_script
-    assert '"Equities"' in install_script
-    assert '"20"' in install_script
-    assert '--host 127.0.0.1 --port 5024 --serve-fluxboard' in install_script
+    assert '${ENV_DIR}/${api_service_id}.env' in install_script
+    assert '${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env' in install_script
+    assert '${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env' in install_script
+    assert "build_stack_service_prefix()" in install_script
+    assert "build_group_label()" in install_script
+    assert "default_group_order()" in install_script
+    assert '--host 127.0.0.1 --port ${EQUITIES_API_PORT} --serve-fluxboard' in install_script
     assert '"0"' in install_script
-    assert 'strategy_stack_discover_strategy_ids' in install_script
+    assert 'discover_node_groups' in install_script
     assert "--all-strategies" not in install_script
     assert 'EQUITIES_REDIS_HOST=' in common_env
     assert 'EQUITIES_REDIS_PORT=6379' in common_env
@@ -996,45 +1081,47 @@ def test_equities_systemd_assets_use_live_enrolled_service_names_only() -> None:
     assert 'EQUITIES_BINANCE_API_SECRET=' in common_env
     assert "/usr/bin/systemctl start flux@equities-api.service" not in sudoers
     assert "/usr/bin/systemctl restart flux@equities-portfolio.service" in sudoers
+    for node_group_id in node_group_ids:
+        assert f"/usr/bin/systemctl restart flux@equities-node-{node_group_id}.service" in sudoers
     for strategy_id in LIVE_ENROLLED_STRATEGY_IDS:
-        assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" in sudoers
+        assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" not in sudoers
     for strategy_id in NON_CORE_STRATEGY_IDS:
         assert f"/usr/bin/systemctl restart flux@equities-node-{strategy_id}.service" not in sudoers
     assert "flux@*" not in sudoers
 
 
-def test_equities_installer_embeds_checkout_specific_runtime_paths() -> None:
+def test_equities_installer_embeds_release_root_runtime_paths() -> None:
     install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
 
-    assert 'EQUITIES_PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"' in install_script
+    assert 'EQUITIES_PYTHON_BIN="${DEPLOY_ROOT}/.venv/bin/python"' in install_script
     assert "require_project_python()" in install_script
     assert 'if [[ ! -x "${EQUITIES_PYTHON_BIN}" ]]; then' in install_script
     assert "uv sync --all-groups --all-extras" in install_script
     assert "--active --all-groups --all-extras" not in install_script
     assert re.search(
-        r"main\(\)\s*\{\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_sudo\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_project_python\n",
+        r"main\(\)\s*\{\n(?:[ \t]*(?:#.*)?\n)*[ \t]*initialize_stack_context\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_sudo\n(?:[ \t]*(?:#.*)?\n)*[ \t]*require_project_python\n(?:[ \t]*(?:#.*)?\n)*[ \t]*discover_node_groups\n",
         install_script,
     )
-    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
-    assert "append_checkout_env_overrides()" in install_script
-    assert "printf 'WORKDIR=%s\\nPYTHONPATH=%s\\n' \"${ROOT_DIR}\" \"${ROOT_DIR}\" >> \"${env_path}\"" in install_script
+    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name \"${STACK_SERVICE_PREFIX}-node-*.env\" -delete" in install_script
+    assert "append_deploy_root_env_overrides()" in install_script
+    assert "printf 'WORKDIR=%s\\nPYTHONPATH=%s\\n' \"${DEPLOY_ROOT}\" \"${DEPLOY_ROOT}\" >> \"${env_path}\"" in install_script
     assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_api' in install_script
     assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_portfolio' in install_script
     assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_bridge' in install_script
     assert '${EQUITIES_PYTHON_BIN} -m nautilus_trader.flux.runners.equities.run_node' in install_script
-    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-api.env"' in install_script
-    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-portfolio.env"' in install_script
-    assert 'append_checkout_env_overrides "${ENV_DIR}/equities-bridge.env"' in install_script
-    assert 'append_checkout_env_overrides "${ENV_DIR}/${service_id}.env"' in install_script
+    assert 'append_deploy_root_env_overrides "${ENV_DIR}/${api_service_id}.env"' in install_script
+    assert 'append_deploy_root_env_overrides "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env"' in install_script
+    assert 'append_deploy_root_env_overrides "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env"' in install_script
+    assert 'append_deploy_root_env_overrides "${ENV_DIR}/${service_id}.env"' in install_script
 
 
 def test_equities_installer_cleans_all_generated_envs_before_reinstall() -> None:
     install_script = _read(_repo_root() / "ops/scripts/deploy/install_equities_systemd.sh")
 
-    assert 'rm -f "${ENV_DIR}/equities-api.env"' in install_script
-    assert 'rm -f "${ENV_DIR}/equities-portfolio.env"' in install_script
-    assert 'rm -f "${ENV_DIR}/equities-bridge.env"' in install_script
-    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name 'equities-node-*.env' -delete" in install_script
+    assert 'rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-api.env"' in install_script
+    assert 'rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-portfolio.env"' in install_script
+    assert 'rm -f "${ENV_DIR}/${STACK_SERVICE_PREFIX}-bridge.env"' in install_script
+    assert "find \"${ENV_DIR}\" -maxdepth 1 -type f -name \"${STACK_SERVICE_PREFIX}-node-*.env\" -delete" in install_script
 
 
 def test_equities_shared_fluxboard_contract_uses_neutral_static_prefix() -> None:
@@ -1086,7 +1173,10 @@ def test_equities_prod_admission_policy_baskets_are_exhaustive_and_disjoint() ->
 def test_equities_deploy_readme_freezes_prod_baskets_and_readd_policy() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
 
-    assert "checked-in live config, strategy discovery, and checked-in service registry are pruned to the Tier 1 core basket" in readme
+    assert (
+        "checked-in live config, strategy discovery, and checked-in service registry now include the Tier 1 tradexyz core basket plus the enrolled Binance multivenue set below."
+        in readme
+    )
     assert _extract_markdown_code_bullets(readme, "Tier 1 Core Basket", level=3) == CORE_PROD_STRATEGY_IDS
     assert (
         _extract_markdown_code_bullets(readme, "Second-Wave Disabled Basket", level=3)
@@ -1128,6 +1218,46 @@ def test_equities_strategy_readme_freezes_prod_baskets() -> None:
     )
 
 
+def test_equities_docs_describe_grouped_nodes_not_one_process_per_strategy() -> None:
+    repo_root = _repo_root()
+    readme = _read(repo_root / "deploy/equities/README.md")
+    strategies_readme = _read(repo_root / "deploy/equities/strategies/README.md")
+    contract = _read(repo_root / "fluxboard/docs/equities_contract.md")
+
+    assert "one strategy file and one node process" not in readme
+    assert "19 grouped node services" in readme
+    assert "one grouped node per symbol plus maker venue" in readme
+
+    assert "This directory holds one TOML file per equities node process" not in strategies_readme
+    assert "Each enrolled variant uses one strategy file and one node process" not in strategies_readme
+    assert "one TOML file per enrolled strategy" in strategies_readme
+    assert "grouped node service" in strategies_readme
+
+    assert "each variant uses its own strategy file and node process" not in contract
+    assert "grouped nodes are an internal deploy detail" in contract
+    assert "realtime behavior remains part of the external contract" in contract
+
+
+def test_equities_grouped_operator_surfaces_use_node_group_ids_consistently() -> None:
+    repo_root = _repo_root()
+    node_groups = load_equities_node_groups(repo_root=repo_root)
+    target = _read(repo_root / "deploy/equities/systemd/flux-equities.target")
+    sudoers = _read(repo_root / "deploy/equities/systemd/flux-pulse.sudoers")
+    install_script = _read(repo_root / "ops/scripts/deploy/install_equities_systemd.sh")
+
+    assert len(node_groups) == 19
+    assert "equities-node-aapl_tradexyz.service" in target
+    assert "equities-node-amzn_binance_perp.service" in target
+    assert "equities-node-aapl_tradexyz_maker.service" not in target
+    assert "equities-node-amzn_binance_perp_taker.service" not in target
+    for group in node_groups:
+        assert f"flux@equities-node-{group.node_group_id}.service" in target
+        assert f"/usr/bin/systemctl restart flux@equities-node-{group.node_group_id}.service" in sudoers
+    assert "equities-node-aapl_tradexyz_maker.env" not in install_script
+    assert "equities-node-amzn_binance_perp_taker.env" not in install_script
+    assert "list_equities_node_groups.py" in install_script
+
+
 def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     readme = _read(_repo_root() / "deploy/equities/README.md")
     common_env = _read(_repo_root() / "deploy/equities/systemd/common.env.example")
@@ -1135,19 +1265,17 @@ def test_equities_deploy_docs_require_post_install_env_verification() -> None:
     assert "`sed -n '1,120p' /etc/flux/equities-api.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-portfolio.env`" in readme
     assert "`sed -n '1,120p' /etc/flux/equities-bridge.env`" in readme
-    assert (
-        f"`sed -n '1,120p' /etc/flux/equities-node-{ACTIVE_STRATEGY_IDS[0]}.env`" in readme
-    )
+    assert "`sed -n '1,120p' /etc/flux/equities-node-aapl_tradexyz.env`" in readme
     assert "`find /etc/flux -maxdepth 1 -type f -name 'equities-node-*.env' -print | sort`" in readme
     assert "`for env_path in /etc/flux/equities-node-*.env; do sed -n '1,120p' \"$env_path\"; done`" in readme
     assert "`uv sync --all-groups --all-extras`" in readme
-    assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected checkout" in readme
-    assert "the generated env commands use the checkout-local `.venv/bin/python`" in readme
-    assert "every generated `equities-node-*.env` is rewritten from the intended checkout" in readme
+    assert "the generated envs append `WORKDIR=` / `PYTHONPATH=` for the selected release root" in readme
+    assert "the generated env commands use the release-local `.venv/bin/python`" in readme
+    assert "every generated `equities-node-*.env` is rewritten from the intended release root" in readme
     assert "print and review every rendered `equities-node-*.env` contents" in readme
-    assert "Do not restart services until those env files match the intended checkout and live flags." in readme
-    assert "verify every matching `/etc/flux/equities-node-*.env`" in common_env
-    assert "`uv sync --all-groups --all-extras` in the selected checkout" in common_env
+    assert "Do not restart services until those env files match the intended release root and live flags." in readme
+    assert "verify every matching `/etc/flux/equities*.env` file" in common_env
+    assert "`uv sync --all-groups --all-extras` in the selected release root" in common_env
 
 
 def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions() -> None:
@@ -1180,7 +1308,7 @@ def test_equities_and_tokenmm_installers_use_shared_strategy_stack_conventions()
     assert "strategy_stack_write_env" in tokenmm_install
     assert "strategy_stack_write_env" in equities_install
     assert '"tokenmm"' in tokenmm_install
-    assert '"equities"' in equities_install
+    assert "build_stack_service_prefix()" in equities_install
     assert 'ENV_PATH="${TOKENMM_ENV_PATH:-${DEFAULT_ENV_PATH}}"' in tokenmm_stack
     assert 'ENV_PATH="${EQUITIES_ENV_PATH:-${DEFAULT_ENV_PATH}}"' in equities_stack
 
@@ -1242,7 +1370,7 @@ def test_equities_deploy_readme_uses_split_family_overnight_hedge_language() -> 
     assert "MakerV4 take-take hedges remain immediate outside regular US equity hours" not in readme
     assert "Taker hedges remain immediate outside regular US equity hours" in readme
     assert "`/equities` API contract catalog is built from the shared `[[contracts]]` entries" in readme
-    assert "shared IBKR contract entry must mirror an active enrolled route" in readme
+    assert "each shared contract entry must mirror an active enrolled route" in readme
     assert "vault_address_env" in readme
     assert 'use_regular_trading_hours = false' in readme
     assert '`ibkr.reference.main` is the only equities IBKR gateway owner' in readme
@@ -1290,8 +1418,12 @@ def test_equities_deploy_readme_uses_split_family_overnight_hedge_language() -> 
     assert "/api/v1/signals?profile=equities" in contract
     assert "/api/v1/params?profile=equities" in contract
     assert "/api/v1/param-schema?profile=equities&strategy=aapl_tradexyz_maker" in contract
+    assert "/api/v1/param-schema?profile=equities&strategy=amzn_binance_perp_taker" in contract
     assert "/api/v1/params?profile=equities&strategy=aapl_tradexyz_maker" in contract
     assert "trade[XYZ]" in contract
     assert "AAPL.NASDAQ" in contract
     assert "aapl_tradexyz_maker" in contract
     assert "aapl_tradexyz_taker" in contract
+    assert "Signals, params, param-schema, trades, and alerts remain keyed by external strategy ids" in contract
+    assert "Grouped node ids and grouped Pulse job ids are internal deploy details" in contract
+    assert "`balances` remains profile-scoped even when maker/taker siblings share a node" in contract

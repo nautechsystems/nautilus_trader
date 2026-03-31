@@ -28,6 +28,7 @@ from flux.common.config import FLUX_SCHEMA_VERSION
 from flux.common.keys import FluxRedisKeys
 from flux.common.config import validate_identifier_part
 from flux.common.config import validate_schema_version
+from flux.events import TOPIC_EXECUTION_ALERT
 
 
 def _json_default(value: Any) -> Any:
@@ -38,6 +39,9 @@ def _json_default(value: Any) -> Any:
 
 def _to_json(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), default=_json_default)
+
+
+FULL_BOOTSTRAP_REPLAY_TOPIC_SUFFIXES = frozenset({"market_bbo"})
 
 
 @dataclass(frozen=True)
@@ -57,6 +61,7 @@ class FluxBridgeStreamConsumer:
         environment: str,
         strategy_id: str | None = None,
         strategy_ids: list[str] | tuple[str, ...] | None = None,
+        stream_strategy_ids: list[str] | tuple[str, ...] | None = None,
         namespace: str = FLUX_DEFAULT_NAMESPACE,
         schema_version: str = FLUX_SCHEMA_VERSION,
         handlers: dict[str, HandlerFn] | None = None,
@@ -84,6 +89,15 @@ class FluxBridgeStreamConsumer:
             )
             if scoped_strategy_ids
             else None
+        )
+        scoped_stream_strategy_ids = list(stream_strategy_ids or ())
+        self._stream_strategy_ids = (
+            frozenset(
+                validate_identifier_part(current_strategy_id, "stream_strategy_id")
+                for current_strategy_id in scoped_stream_strategy_ids
+            )
+            if scoped_stream_strategy_ids
+            else self._strategy_ids
         )
         self._handlers = handlers or default_topic_handlers()
         self._topics = sorted(topics or self._handlers.keys())
@@ -180,10 +194,10 @@ class FluxBridgeStreamConsumer:
     def _scan_patterns(self) -> list[str]:
         patterns: list[str] = []
         for topic in self._topics:
-            if self._strategy_ids is None:
+            if self._stream_strategy_ids is None:
                 patterns.append(f"{self._prefix}:in:stream:{self._environment}:*:{topic}")
                 continue
-            for strategy_id in sorted(self._strategy_ids):
+            for strategy_id in sorted(self._stream_strategy_ids):
                 patterns.append(
                     f"{self._prefix}:in:stream:{self._environment}:{strategy_id}:{topic}",
                 )
@@ -203,7 +217,7 @@ class FluxBridgeStreamConsumer:
             return None
         if environment != self._environment:
             return None
-        if self._strategy_ids is not None and strategy_id not in self._strategy_ids:
+        if self._stream_strategy_ids is not None and strategy_id not in self._stream_strategy_ids:
             return None
         if topic not in self._handlers:
             return None
@@ -264,12 +278,16 @@ class FluxBridgeStreamConsumer:
             return self._start_id
 
         topic_suffix = coordinates.topic.rsplit(".", maxsplit=1)[-1]
+        if topic_suffix in FULL_BOOTSTRAP_REPLAY_TOPIC_SUFFIXES:
+            return "0-0"
+
+        latest_entry_id = self._latest_stream_entry_id(stream_key)
         if topic_suffix != "trade":
-            return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
 
         xlen_fn = getattr(self._redis, "xlen", None)
         if not callable(xlen_fn):
-            return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
 
         target_stream_key = FluxRedisKeys(
             strategy_id=coordinates.strategy_id,
@@ -280,8 +298,8 @@ class FluxBridgeStreamConsumer:
             if int(xlen_fn(target_stream_key) or 0) == 0:
                 return "0-0"
         except Exception:
-            return self._latest_stream_entry_id(stream_key) or self._start_id
-        return self._latest_stream_entry_id(stream_key) or self._start_id
+            return latest_entry_id or self._start_id
+        return latest_entry_id or self._start_id
 
     def _refresh_streams(self, *, force: bool = False) -> None:
         now = time.time()
@@ -387,24 +405,46 @@ class FluxBridgeStreamConsumer:
         if isinstance(payload, dict):
             payload_strategy = first_text(payload.get("strategy_id"))
         field_strategy = first_text(fields.get("strategy_id"), fields.get(b"strategy_id"))
-        if payload_strategy and payload_strategy != coordinates.strategy_id:
-            self._logger.debug(
-                "Ignoring payload strategy_id=%s in stream %s, using key strategy_id=%s",
-                payload_strategy,
-                stream_key,
-                coordinates.strategy_id,
-            )
-        if field_strategy and field_strategy != coordinates.strategy_id:
-            self._logger.debug(
-                "Ignoring field strategy_id=%s in stream %s, using key strategy_id=%s",
-                field_strategy,
-                stream_key,
-                coordinates.strategy_id,
-            )
+        context_strategy_id = coordinates.strategy_id
+        stream_key_is_internal = (
+            self._strategy_ids is not None and coordinates.strategy_id not in self._strategy_ids
+        )
+        if stream_key_is_internal:
+            resolved_strategy_id = ""
+            for raw_candidate in (payload_strategy, field_strategy):
+                if not raw_candidate:
+                    continue
+                try:
+                    candidate = validate_identifier_part(raw_candidate, "strategy_id")
+                except ValueError:
+                    continue
+                if candidate in self._strategy_ids:
+                    resolved_strategy_id = candidate
+                    break
+            if not resolved_strategy_id:
+                raise ValueError(
+                    "Grouped stream entry must include a recognized external strategy_id",
+                )
+            context_strategy_id = resolved_strategy_id
+        else:
+            if payload_strategy and payload_strategy != coordinates.strategy_id:
+                self._logger.debug(
+                    "Ignoring payload strategy_id=%s in stream %s, using key strategy_id=%s",
+                    payload_strategy,
+                    stream_key,
+                    coordinates.strategy_id,
+                )
+            if field_strategy and field_strategy != coordinates.strategy_id:
+                self._logger.debug(
+                    "Ignoring field strategy_id=%s in stream %s, using key strategy_id=%s",
+                    field_strategy,
+                    stream_key,
+                    coordinates.strategy_id,
+                )
 
         ts_ms = self._normalized_ts_ms(payload, fields)
         context = CorrelationContext(
-            strategy_id=coordinates.strategy_id,
+            strategy_id=context_strategy_id,
             topic=topic,
             entry_id=entry_id,
             ts_ms=ts_ms,
@@ -468,6 +508,16 @@ class FluxBridgeStreamConsumer:
                 entry_id,
                 exc,
             )
+
+    def _can_skip_decode_failure(self, *, stream_key: str, error: Exception) -> bool:
+        coordinates = self._parse_stream_key(stream_key)
+        if coordinates is None:
+            return False
+        if self._strategy_ids is None or coordinates.strategy_id in self._strategy_ids:
+            return False
+        if coordinates.topic != TOPIC_EXECUTION_ALERT:
+            return False
+        return "recognized external strategy_id" in str(error)
 
     def _apply_write_ops(self, ops: list[WriteOp]) -> None:  # noqa: C901
         if not ops:
@@ -577,6 +627,9 @@ class FluxBridgeStreamConsumer:
                                 entry_id,
                                 e,
                             )
+                            if self._can_skip_decode_failure(stream_key=stream_key, error=e):
+                                self._stream_ids[stream_key] = entry_id
+                                continue
                             batch_failed = True
                             break
                         if decoded is None:
