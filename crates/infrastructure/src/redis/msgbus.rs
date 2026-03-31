@@ -433,6 +433,16 @@ async fn drain_buffer(
     result.map_err(anyhow::Error::from)?;
 
     for stream_key in staged_stream_keys {
+        if let Some(stream_maxlen) = stream_maxlen {
+            let trim_result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
+                .arg(&stream_key)
+                .arg("MAXLEN")
+                .arg("=")
+                .arg(stream_maxlen)
+                .query_async(conn)
+                .await;
+            trim_result.map_err(anyhow::Error::from)?;
+        }
         maybe_trim_stream(conn, &stream_key, autotrim_duration, last_trim_index).await;
     }
 
@@ -1022,19 +1032,19 @@ mod serial_tests {
         )
         .await;
 
+        tx.send(BusMessage::new_close()).unwrap();
+        handle.await.unwrap();
         let length: usize = redis::cmd("XLEN")
             .arg(&stream_key)
             .query_async(&mut con)
             .await
             .unwrap();
 
-        tx.send(BusMessage::new_close()).unwrap();
-        handle.await.unwrap();
         flush_redis(&mut con).await.unwrap();
 
         assert!(
-            length >= 1_000 && length <= 1_100,
-            "stream length should stay bounded near the configured maxlen for Redis XADD ~ trimming, got {length}",
+            length == 1_000,
+            "stream length should honor the configured exact stream_maxlen bound, got {length}",
         );
     }
 

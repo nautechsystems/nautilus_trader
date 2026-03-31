@@ -84,7 +84,7 @@ pub struct MessageBusConfig {
     /// This feature requires Redis version 6.2 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
     /// The maximum retained length for externally published streams.
-    /// Uses Redis `XADD MAXLEN ~` semantics when set.
+    /// When set, writes are followed by an exact Redis `XTRIM MAXLEN` bound.
     pub stream_maxlen: Option<usize>,
     /// If a 'trader-' prefix is used for stream names.
     pub use_trader_prefix: bool,
@@ -162,6 +162,7 @@ mod tests {
         assert_eq!(config.database_type, "redis");
         assert_eq!(config.host, None);
         assert_eq!(config.port, None);
+        assert_eq!(config.db, None);
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
         assert!(!config.ssl);
@@ -179,6 +180,7 @@ mod tests {
             "type": "redis",
             "host": "localhost",
             "port": 6379,
+            "db": 1,
             "username": "user",
             "password": "pass",
             "ssl": true,
@@ -193,6 +195,7 @@ mod tests {
         assert_eq!(config.database_type, "redis");
         assert_eq!(config.host, Some("localhost".to_string()));
         assert_eq!(config.port, Some(6379));
+        assert_eq!(config.db, Some(1));
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert!(config.ssl);

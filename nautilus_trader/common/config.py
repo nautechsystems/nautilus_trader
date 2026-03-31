@@ -391,7 +391,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         in a command syntax error.
     stream_maxlen : PositiveInt, optional
         The maximum retained length for externally published streams.
-        When set, each published message is written with Redis `XADD MAXLEN ~`.
+        When set, published streams are trimmed to this exact bound after each write batch.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for stream names.
     use_trader_id : bool, default True
