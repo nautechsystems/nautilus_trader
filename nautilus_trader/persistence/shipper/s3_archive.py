@@ -94,20 +94,20 @@ def archive_rotated_sqlite_database(
     prefix: str,
     athena_database: str = "nautilus_telemetry",
 ) -> tuple[TelemetryArchiveResult, ...]:
-    specs = TELEMETRY_DB_ARCHIVE_SPECS.get(db_path.name, ())
+    specs = TELEMETRY_DB_ARCHIVE_SPECS.get(_source_db_name(db_path), ())
     results: list[TelemetryArchiveResult] = []
     for spec in specs:
-        result = archive_sqlite_table(
-            db_path=db_path,
-            spec=spec,
-            staging_root=staging_root,
-            source_profile=source_profile,
-            bucket=bucket,
-            prefix=prefix,
-            athena_database=athena_database,
+        results.extend(
+            archive_sqlite_table(
+                db_path=db_path,
+                spec=spec,
+                staging_root=staging_root,
+                source_profile=source_profile,
+                bucket=bucket,
+                prefix=prefix,
+                athena_database=athena_database,
+            ),
         )
-        if result is not None:
-            results.append(result)
     return tuple(results)
 
 
@@ -121,62 +121,116 @@ def archive_sqlite_table(
     prefix: str,
     athena_database: str = "nautilus_telemetry",
     delete_local_after_archive: bool = False,
-) -> TelemetryArchiveResult | None:
+) -> tuple[TelemetryArchiveResult, ...]:
     rows = _load_rows(db_path=db_path, spec=spec)
     if not rows:
-        return None
+        return ()
 
-    event_date = _event_date_from_rows(rows, spec.created_at_column)
-    strategy_partition = _strategy_partition_from_rows(rows, spec.strategy_id_column)
-    s3_key = build_s3_key(
-        prefix=prefix,
-        source_profile=source_profile,
-        dataset_name=spec.dataset_name,
-        event_date=event_date,
-        strategy_partition=strategy_partition,
-        file_stem=f"{db_path.stem}-{spec.dataset_name}",
+    partitions = _partition_rows(
+        rows=rows,
+        strategy_id_column=spec.strategy_id_column,
+        created_at_column=spec.created_at_column,
     )
-    parquet_path = staging_root / s3_key
-    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    results: list[TelemetryArchiveResult] = []
 
-    table = pa.Table.from_pylist(rows)
-    pq.write_table(table, parquet_path)
-    athena_table = build_athena_table_name(source_profile=source_profile, dataset_name=spec.dataset_name)
-    athena_ddl = build_athena_external_table_sql(
-        database=athena_database,
-        table_name=athena_table,
-        bucket=bucket,
-        prefix=prefix,
-        source_profile=source_profile,
-        dataset_name=spec.dataset_name,
-        schema=table.schema,
-    )
-    athena_partition_sql = build_athena_add_partition_sql(
-        database=athena_database,
-        table_name=athena_table,
-        bucket=bucket,
-        prefix=prefix,
-        source_profile=source_profile,
-        dataset_name=spec.dataset_name,
-        event_date=event_date,
-        strategy_partition=strategy_partition,
-    )
+    for partition in partitions:
+        rows_for_partition = partitions[partition]
+        table = pa.Table.from_pylist(rows_for_partition)
+        athena_table = build_athena_table_name(
+            source_profile=source_profile,
+            dataset_name=spec.dataset_name,
+        )
+
+        s3_key = build_s3_key(
+            prefix=prefix,
+            source_profile=source_profile,
+            dataset_name=spec.dataset_name,
+            event_date=partition.event_date,
+            strategy_partition=partition.strategy_partition,
+            file_stem=(
+                f"{db_path.stem}_{spec.dataset_name}_{partition.event_date}_{partition.strategy_partition}"
+            ),
+        )
+        parquet_path = staging_root / s3_key
+        parquet_path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, parquet_path)
+
+        athena_ddl = build_athena_external_table_sql(
+            database=athena_database,
+            table_name=athena_table,
+            bucket=bucket,
+            prefix=prefix,
+            source_profile=source_profile,
+            dataset_name=spec.dataset_name,
+            schema=table.schema,
+        )
+        athena_partition_sql = build_athena_add_partition_sql(
+            database=athena_database,
+            table_name=athena_table,
+            bucket=bucket,
+            prefix=prefix,
+            source_profile=source_profile,
+            dataset_name=spec.dataset_name,
+            event_date=partition.event_date,
+            strategy_partition=partition.strategy_partition,
+        )
+
+        results.append(
+            TelemetryArchiveResult(
+                dataset_name=spec.dataset_name,
+                row_count=len(rows_for_partition),
+                parquet_path=parquet_path,
+                s3_key=s3_key,
+                athena_table=athena_table,
+                athena_ddl=athena_ddl,
+                athena_partition_sql=athena_partition_sql,
+                event_date=partition.event_date,
+                strategy_partition=partition.strategy_partition,
+                local_db_deleted=delete_local_after_archive,
+            ),
+        )
 
     if delete_local_after_archive:
         db_path.unlink(missing_ok=True)
 
-    return TelemetryArchiveResult(
-        dataset_name=spec.dataset_name,
-        row_count=len(rows),
-        parquet_path=parquet_path,
-        s3_key=s3_key,
-        athena_table=athena_table,
-        athena_ddl=athena_ddl,
-        athena_partition_sql=athena_partition_sql,
-        event_date=event_date,
-        strategy_partition=strategy_partition,
-        local_db_deleted=delete_local_after_archive,
-    )
+    return tuple(results)
+
+
+@dataclass(frozen=True, slots=True)
+class _TelemetryArchivePartition:
+    event_date: str
+    strategy_partition: str
+
+
+def _source_db_name(db_path: Path) -> str:
+    db_name = db_path.name
+    if ".cutover-" in db_name:
+        return db_name.split(".cutover-", maxsplit=1)[0]
+    return db_name
+
+
+def _partition_rows(
+    *,
+    rows: list[dict[str, Any]],
+    strategy_id_column: str | None,
+    created_at_column: str,
+) -> dict[_TelemetryArchivePartition, list[dict[str, Any]]]:
+    partitioned: dict[_TelemetryArchivePartition, list[dict[str, Any]]] = {}
+    for row in rows:
+        event_date = _event_date_from_row(
+            row=row,
+            column_name=created_at_column,
+        )
+        strategy_partition = _strategy_partition_from_row(
+            row=row,
+            strategy_id_column=strategy_id_column,
+        )
+        partition = _TelemetryArchivePartition(
+            event_date=event_date,
+            strategy_partition=strategy_partition,
+        )
+        partitioned.setdefault(partition, []).append(row)
+    return partitioned
 
 
 def build_s3_key(
@@ -275,37 +329,33 @@ def _load_rows(*, db_path: Path, spec: TelemetryArchiveSpec) -> list[dict[str, A
     return [dict(row) for row in rows]
 
 
-def _event_date_from_rows(rows: list[dict[str, Any]], column_name: str) -> str:
-    for row in rows:
-        value = row.get(column_name)
-        if value is None:
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
-        if "T" in text:
-            return text.split("T", 1)[0]
-        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
-            return text[:10]
+def _event_date_from_row(*, row: dict[str, Any], column_name: str) -> str:
+    value = row.get(column_name)
+    if value is None:
+        return datetime.now(UTC).date().isoformat()
+    text = str(value).strip()
+    if not text:
+        return datetime.now(UTC).date().isoformat()
+    if "T" in text:
+        return text.split("T", 1)[0]
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
     return datetime.now(UTC).date().isoformat()
 
 
-def _strategy_partition_from_rows(
-    rows: list[dict[str, Any]],
+def _strategy_partition_from_row(
+    row: dict[str, Any],
     strategy_id_column: str | None,
 ) -> str:
     if strategy_id_column is None:
         return "all"
-    values = {
-        str(row[strategy_id_column]).strip()
-        for row in rows
-        if row.get(strategy_id_column) is not None and str(row[strategy_id_column]).strip()
-    }
-    if not values:
+    value = row.get(strategy_id_column)
+    if value is None:
         return "all"
-    if len(values) == 1:
-        return next(iter(values))
-    return "mixed"
+    text = str(value).strip()
+    if not text:
+        return "all"
+    return text
 
 
 def _athena_type_for_arrow(data_type: pa.DataType) -> str:

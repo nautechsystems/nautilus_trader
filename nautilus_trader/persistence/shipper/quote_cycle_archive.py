@@ -24,7 +24,7 @@ def archive_rotated_quote_cycle_db(
     prefix: str,
     athena_database: str = "nautilus_telemetry",
     delete_local_after_archive: bool = False,
-) -> TelemetryArchiveResult | None:
+) -> tuple[TelemetryArchiveResult, ...]:
     return archive_sqlite_table(
         db_path=db_path,
         spec=QUOTE_CYCLE_ARCHIVE_SPEC,

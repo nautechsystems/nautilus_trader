@@ -81,7 +81,7 @@ def test_archive_rotated_quote_cycle_db_writes_parquet_and_deletes_local_segment
     db_path = tmp_path / "quote_cycles.sqlite.cutover-20260326T175400Z"
     _create_quote_cycle_db(db_path)
 
-    result = archive_rotated_quote_cycle_db(
+    (result,) = archive_rotated_quote_cycle_db(
         db_path=db_path,
         staging_root=tmp_path / "staging",
         source_profile="tokenmm",
@@ -106,7 +106,7 @@ def test_quote_cycle_archive_emits_deterministic_athena_ddl(tmp_path: Path) -> N
     db_path = tmp_path / "quote_cycles.sqlite.cutover-20260326T175400Z"
     _create_quote_cycle_db(db_path)
 
-    result = archive_rotated_quote_cycle_db(
+    (result,) = archive_rotated_quote_cycle_db(
         db_path=db_path,
         staging_root=tmp_path / "staging",
         source_profile="tokenmm",

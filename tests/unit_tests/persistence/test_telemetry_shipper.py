@@ -1437,3 +1437,65 @@ state_db_path = "/tmp/shipper_state.sqlite"
         shipper_run.main()
 
     assert exc_info.value.code == 78
+
+
+def test_shipper_run_is_noop_for_s3_athena(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "tokenmm.live.toml"
+    config_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+durable_sink = "s3_athena"
+archive_s3_bucket = "unit-test-telemetry"
+orders_db_path = "/tmp/orders.sqlite"
+state_db_path = "/tmp/shipper_state.sqlite"
+""".strip(),
+        encoding="utf-8",
+    )
+    for key in (
+        "NAUTILUS_TELEMETRY_PG_HOST",
+        "NAUTILUS_TELEMETRY_PG_PORT",
+        "NAUTILUS_TELEMETRY_PG_DATABASE",
+        "NAUTILUS_TELEMETRY_PG_SCHEMA",
+        "NAUTILUS_TELEMETRY_PG_USERNAME",
+        "NAUTILUS_TELEMETRY_PG_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["shipper.run", "--config", str(config_path)])
+
+    result = shipper_run.main()
+
+    assert result == 0
+
+
+def test_shipper_run_exits_78_on_unsupported_sink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "tokenmm.live.toml"
+    config_path.write_text(
+        """
+[telemetry_shipper]
+enabled = true
+enable_local_persistence = true
+source_profile = "tokenmm"
+durable_sink = "bad_sink"
+orders_db_path = "/tmp/orders.sqlite"
+state_db_path = "/tmp/shipper_state.sqlite"
+""".strip(),
+        encoding="utf-8",
+    )
+    for key in (
+        "NAUTILUS_TELEMETRY_PG_HOST",
+        "NAUTILUS_TELEMETRY_PG_PORT",
+        "NAUTILUS_TELEMETRY_PG_DATABASE",
+        "NAUTILUS_TELEMETRY_PG_SCHEMA",
+        "NAUTILUS_TELEMETRY_PG_USERNAME",
+        "NAUTILUS_TELEMETRY_PG_PASSWORD",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["shipper.run", "--config", str(config_path)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        shipper_run.main()
+
+    assert exc_info.value.code == 78

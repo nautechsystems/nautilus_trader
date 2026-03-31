@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sqlite3
 import subprocess
@@ -48,6 +49,19 @@ def _run(cmd: list[str], *, dry_run: bool) -> None:
     print("$", " ".join(cmd))
     if not dry_run:
         subprocess.run(cmd, check=True)
+
+
+def _run_capture_output(cmd: list[str], *, dry_run: bool) -> str:
+    print("$", " ".join(cmd))
+    if dry_run:
+        return "{}"
+    completed = subprocess.run(
+        cmd,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout
 
 
 def _source_db_paths(telemetry_dir: Path) -> list[Path]:
@@ -133,7 +147,7 @@ def _archive_rotated_db(rotated_path: Path, args: argparse.Namespace) -> None:
             prefix=args.archive_s3_prefix,
             athena_database=args.athena_database,
         )
-        results = tuple([result] if result is not None else [])
+        results = result
     else:
         results = archive_rotated_sqlite_database(
             db_path=rotated_path,
@@ -159,40 +173,81 @@ def _archive_rotated_db(rotated_path: Path, args: argparse.Namespace) -> None:
             ],
             dry_run=args.dry_run,
         )
-        _run(
+        _run_athena_query(
+            query_string=result.athena_ddl,
+            args=args,
+        )
+        _run_athena_query(
+            query_string=result.athena_partition_sql,
+            args=args,
+        )
+
+
+def _run_athena_query(*, query_string: str, args: argparse.Namespace) -> None:
+    query_id = _start_athena_query(
+        query_string=query_string,
+        args=args,
+    )
+    if not query_id:
+        return
+    _poll_athena_query(query_id=query_id, args=args)
+
+
+def _start_athena_query(*, query_string: str, args: argparse.Namespace) -> str:
+    payload = _run_capture_output(
+        [
+            "aws",
+            "athena",
+            "start-query-execution",
+            "--work-group",
+            args.athena_workgroup,
+            "--query-string",
+            query_string,
+            "--result-configuration",
+            (
+                "OutputLocation="
+                f"s3://{args.archive_s3_bucket}/{args.archive_s3_prefix.rstrip('/')}/athena-query-results/"
+            ),
+        ],
+        dry_run=args.dry_run,
+    )
+    if args.dry_run:
+        return ""
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Failed to parse Athena start-query-execution response: {payload}") from exc
+    query_execution_id = data.get("QueryExecutionId")
+    if not query_execution_id:
+        raise RuntimeError(f"Missing QueryExecutionId from Athena response: {payload}")
+    return str(query_execution_id)
+
+
+def _poll_athena_query(*, query_id: str, args: argparse.Namespace) -> None:
+    deadline = time.time() + args.max_wait_seconds
+    while True:
+        payload = _run_capture_output(
             [
                 "aws",
                 "athena",
-                "start-query-execution",
-                "--work-group",
-                args.athena_workgroup,
-                "--query-string",
-                result.athena_ddl,
-                "--result-configuration",
-                (
-                    "OutputLocation="
-                    f"s3://{args.archive_s3_bucket}/{args.archive_s3_prefix.rstrip('/')}/athena-query-results/"
-                ),
+                "get-query-execution",
+                "--query-execution-id",
+                query_id,
             ],
             dry_run=args.dry_run,
         )
-        _run(
-            [
-                "aws",
-                "athena",
-                "start-query-execution",
-                "--work-group",
-                args.athena_workgroup,
-                "--query-string",
-                result.athena_partition_sql,
-                "--result-configuration",
-                (
-                    "OutputLocation="
-                    f"s3://{args.archive_s3_bucket}/{args.archive_s3_prefix.rstrip('/')}/athena-query-results/"
-                ),
-            ],
-            dry_run=args.dry_run,
-        )
+        if args.dry_run:
+            return
+        status = json.loads(payload).get("QueryExecution", {}).get("Status", {})
+        state = str(status.get("State", "")).upper()
+        reason = status.get("StateChangeReason")
+        if state == "SUCCEEDED":
+            return
+        if state in {"FAILED", "CANCELLED"}:
+            raise RuntimeError(f"Athena query {query_id} failed with state={state} reason={reason}")
+        if time.time() >= deadline:
+            raise RuntimeError(f"Athena query {query_id} did not finish before timeout (state={state})")
+        time.sleep(args.poll_seconds)
 
 
 def main() -> int:
