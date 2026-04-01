@@ -15,7 +15,10 @@
 
 //! Parsing functions for Polymarket execution reports.
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
@@ -137,7 +140,7 @@ pub fn parse_order_status_report(
         price_precision,
     );
 
-    let ts_accepted = UnixNanos::from(order.created_at * 1_000_000); // ms -> ns
+    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
 
     let mut report = OrderStatusReport::new(
         account_id,
@@ -393,9 +396,9 @@ pub fn calculate_market_price(
 pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
     if let Ok(n) = ts_str.parse::<u64>() {
         return if n > 1_000_000_000_000 {
-            Some(UnixNanos::from(n * 1_000_000)) // milliseconds
+            Some(UnixNanos::from(n * NANOSECONDS_IN_MILLISECOND))
         } else {
-            Some(UnixNanos::from(n * 1_000_000_000)) // seconds
+            Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
         };
     }
     let dt = chrono::DateTime::parse_from_rfc3339(ts_str).ok()?;

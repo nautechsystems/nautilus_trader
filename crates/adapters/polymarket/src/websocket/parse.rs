@@ -17,7 +17,7 @@
 
 use std::hash::{Hash, Hasher};
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
@@ -35,7 +35,7 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid timestamp '{ts}': {e}"))?;
     let ns = ms
-        .checked_mul(1_000_000)
+        .checked_mul(NANOSECONDS_IN_MILLISECOND)
         .ok_or_else(|| anyhow::anyhow!("Timestamp overflow for '{ts}'"))?;
     Ok(UnixNanos::from(ns))
 }

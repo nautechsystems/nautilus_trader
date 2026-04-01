@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(order.original_size, dec!(100.0000));
         assert_eq!(order.price, dec!(0.5000));
         assert_eq!(order.size_matched, dec!(25.0000));
-        assert_eq!(order.created_at, 1703875200000);
+        assert_eq!(order.created_at, 1703875200);
         assert!(order.expiration.is_none());
         assert_eq!(order.associate_trades, Some(vec!["0xabc001".to_string()]));
     }
