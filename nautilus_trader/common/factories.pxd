@@ -51,6 +51,8 @@ cdef class OrderFactory:
     cdef Clock _clock
     cdef CacheFacade _cache
     cdef ClientOrderIdGenerator _order_id_generator
+    cdef object _custom_order_id_generator
+    cdef bint _has_custom_order_id_generator
     cdef OrderListIdGenerator _order_list_id_generator
 
     cdef readonly TraderId trader_id
@@ -61,6 +63,8 @@ cdef class OrderFactory:
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
     cdef readonly bint use_hyphens_in_client_order_ids
     """If hyphens should be used in generated client order ID values.\n\n:returns: `bool`"""
+
+    cdef void _validate_client_order_id_generator(self, object generator)
 
     cpdef get_client_order_id_count(self)
     cpdef get_order_list_id_count(self)

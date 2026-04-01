@@ -67,6 +67,8 @@ cdef class OrderFactory:
         If UUID4's should be used for client order ID values.
     use_hyphens_in_client_order_ids : bool, default True
         If hyphens should be used in generated client order ID values.
+    client_order_id_generator : object, optional
+        The custom generator for client order ID values.
 
     """
 
@@ -78,6 +80,7 @@ cdef class OrderFactory:
         CacheFacade cache: CacheFacade | None = None,
         bint use_uuid_client_order_ids = False,
         bint use_hyphens_in_client_order_ids = True,
+        object client_order_id_generator = None,
     ) -> None:
         self._clock = clock
         self._cache = cache
@@ -85,19 +88,36 @@ cdef class OrderFactory:
         self.strategy_id = strategy_id
         self.use_uuid_client_order_ids = use_uuid_client_order_ids
         self.use_hyphens_in_client_order_ids = use_hyphens_in_client_order_ids
+        self._custom_order_id_generator = None
+        self._has_custom_order_id_generator = False
 
-        self._order_id_generator = ClientOrderIdGenerator(
-            trader_id=trader_id,
-            strategy_id=strategy_id,
-            clock=clock,
-            use_uuids=use_uuid_client_order_ids,
-            use_hyphens=use_hyphens_in_client_order_ids,
-        )
+        if client_order_id_generator is not None:
+            self._validate_client_order_id_generator(client_order_id_generator)
+            self._custom_order_id_generator = client_order_id_generator
+            self._has_custom_order_id_generator = True
+        else:
+            self._order_id_generator = ClientOrderIdGenerator(
+                trader_id=trader_id,
+                strategy_id=strategy_id,
+                clock=clock,
+                use_uuids=use_uuid_client_order_ids,
+                use_hyphens=use_hyphens_in_client_order_ids,
+            )
         self._order_list_id_generator = OrderListIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
             clock=clock,
         )
+
+    cdef void _validate_client_order_id_generator(self, object generator):
+        if not hasattr(generator, "generate"):
+            raise TypeError("client_order_id_generator must define generate()")
+        if not hasattr(generator, "set_count"):
+            raise TypeError("client_order_id_generator must define set_count()")
+        if not hasattr(generator, "reset"):
+            raise TypeError("client_order_id_generator must define reset()")
+        if not hasattr(generator, "count"):
+            raise TypeError("client_order_id_generator must define count")
 
     cpdef get_client_order_id_count(self):
         """
@@ -108,6 +128,8 @@ cdef class OrderFactory:
         int
 
         """
+        if self._has_custom_order_id_generator:
+            return self._custom_order_id_generator.count
         return self._order_id_generator.count
 
     cpdef get_order_list_id_count(self):
@@ -135,6 +157,10 @@ cdef class OrderFactory:
         System method (not intended to be called by user code).
 
         """
+        if self._has_custom_order_id_generator:
+            self._custom_order_id_generator.set_count(count)
+            return
+
         self._order_id_generator.set_count(count)
 
     cpdef void set_order_list_id_count(self, int count):
@@ -164,7 +190,30 @@ cdef class OrderFactory:
         ClientOrderId
 
         """
-        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
+        cdef ClientOrderId client_order_id
+        cdef object client_order_id_obj
+
+        if self._has_custom_order_id_generator:
+            client_order_id_obj = self._custom_order_id_generator.generate()
+            if not isinstance(client_order_id_obj, ClientOrderId):
+                raise TypeError(
+                    "client_order_id_generator.generate() must return ClientOrderId",
+                )
+
+            client_order_id = client_order_id_obj
+
+            if self._cache is not None:
+                while self._cache.order(client_order_id) is not None:
+                    client_order_id_obj = self._custom_order_id_generator.generate()
+                    if not isinstance(client_order_id_obj, ClientOrderId):
+                        raise TypeError(
+                            "client_order_id_generator.generate() must return ClientOrderId",
+                        )
+                    client_order_id = client_order_id_obj
+
+            return client_order_id
+
+        client_order_id = self._order_id_generator.generate()
 
         if self._order_id_generator.use_uuids:
             return client_order_id
@@ -200,7 +249,10 @@ cdef class OrderFactory:
 
         All stateful fields are reset to their initial value.
         """
-        self._order_id_generator.reset()
+        if self._has_custom_order_id_generator:
+            self._custom_order_id_generator.reset()
+        else:
+            self._order_id_generator.reset()
         self._order_list_id_generator.reset()
 
     cpdef OrderList create_list(self, list orders):

@@ -51,6 +51,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -75,6 +76,29 @@ from nautilus_trader.trading.strategy import Strategy
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 _USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+
+class StrategyClientOrderIdGenerator:
+    def __init__(self) -> None:
+        self.count = 0
+
+    def generate(self) -> ClientOrderId:
+        self.count += 1
+        return ClientOrderId(f"t-{self.count}")
+
+    def set_count(self, count: int) -> None:
+        self.count = count
+
+    def reset(self) -> None:
+        self.count = 0
+
+
+class CustomGeneratorStrategy(Strategy):
+    def __init__(self) -> None:
+        super().__init__(config=StrategyConfig(order_id_tag="000"))
+
+    def _create_client_order_id_generator(self, clock):
+        return StrategyClientOrderIdGenerator()
 
 
 class TestStrategy:
@@ -287,6 +311,56 @@ class TestStrategy:
         # Act, Assert
         assert strategy.state == ComponentState.READY
         assert not strategy.indicators_initialized()
+
+    def test_register_uses_custom_client_order_id_generator(self) -> None:
+        # Arrange
+        strategy = CustomGeneratorStrategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+        )
+
+        # Assert
+        assert order.client_order_id == ClientOrderId("t-1")
+
+    def test_start_syncs_custom_generator_count_from_cache(self) -> None:
+        # Arrange
+        strategy = CustomGeneratorStrategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        existing_order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            client_order_id=ClientOrderId("t-1"),
+        )
+        self.cache.add_order(existing_order)
+
+        # Act
+        strategy.start()
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+        )
+
+        # Assert
+        assert order.client_order_id == ClientOrderId("t-2")
 
     def test_on_save_when_not_overridden_does_nothing(self) -> None:
         # Arrange

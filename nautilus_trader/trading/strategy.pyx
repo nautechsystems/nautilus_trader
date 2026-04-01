@@ -253,6 +253,9 @@ cdef class Strategy(Actor):
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
+    cpdef object _create_client_order_id_generator(self, Clock clock):
+        return None
+
     cpdef void register(
         self,
         TraderId trader_id,
@@ -294,6 +297,7 @@ cdef class Strategy(Actor):
             cache=cache,
             clock=clock,
         )
+        client_order_id_generator = self._create_client_order_id_generator(clock)
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -301,7 +305,8 @@ cdef class Strategy(Actor):
             clock=clock,
             cache=cache,
             use_uuid_client_order_ids=self.use_uuid_client_order_ids,
-            use_hyphens_in_client_order_ids=self.use_hyphens_in_client_order_ids
+            use_hyphens_in_client_order_ids=self.use_hyphens_in_client_order_ids,
+            client_order_id_generator=client_order_id_generator,
         )
 
         self._manager = OrderManager(

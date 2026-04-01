@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -20,10 +22,44 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+
+
+class CustomClientOrderIdGenerator:
+    def __init__(self, prefix: str = "t-") -> None:
+        self._prefix = prefix
+        self.count = 0
+
+    def generate(self) -> ClientOrderId:
+        self.count += 1
+        return ClientOrderId(f"{self._prefix}{self.count}")
+
+    def set_count(self, count: int) -> None:
+        self.count = count
+
+    def reset(self) -> None:
+        self.count = 0
+
+
+class RepeatingClientOrderIdGenerator:
+    def __init__(self, values: list[ClientOrderId]) -> None:
+        self._values = values
+        self.count = 0
+
+    def generate(self) -> ClientOrderId:
+        value = self._values[self.count]
+        self.count += 1
+        return value
+
+    def set_count(self, count: int) -> None:
+        self.count = count
+
+    def reset(self) -> None:
+        self.count = 0
 
 
 class TestOrderFactory:
@@ -127,6 +163,106 @@ class TestOrderFactory:
 
         # Assert
         assert result == OrderListId("OL-19700101-000000-000-001-2")
+
+    def test_generate_client_order_id_with_custom_generator(self):
+        # Arrange
+        generator = CustomClientOrderIdGenerator()
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            client_order_id_generator=generator,
+        )
+
+        # Act
+        result = order_factory.generate_client_order_id()
+
+        # Assert
+        assert result == ClientOrderId("t-1")
+        assert order_factory.get_client_order_id_count() == 1
+
+    def test_set_client_order_id_count_with_custom_generator(self):
+        # Arrange
+        generator = CustomClientOrderIdGenerator()
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            client_order_id_generator=generator,
+        )
+
+        # Act
+        order_factory.set_client_order_id_count(4)
+        result = order_factory.generate_client_order_id()
+
+        # Assert
+        assert result == ClientOrderId("t-5")
+
+    def test_reset_with_custom_generator(self):
+        # Arrange
+        generator = CustomClientOrderIdGenerator()
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            client_order_id_generator=generator,
+        )
+
+        # Act
+        order_factory.generate_client_order_id()
+        order_factory.reset()
+
+        # Assert
+        assert order_factory.get_client_order_id_count() == 0
+
+    def test_custom_generator_requires_generate(self):
+        # Arrange
+        class MissingGenerate:
+            def __init__(self) -> None:
+                self.count = 0
+
+            def set_count(self, count: int) -> None:
+                self.count = count
+
+            def reset(self) -> None:
+                self.count = 0
+
+        # Act, Assert
+        with pytest.raises(TypeError):
+            OrderFactory(
+                trader_id=self.trader_id,
+                strategy_id=self.strategy_id,
+                clock=TestClock(),
+                client_order_id_generator=MissingGenerate(),
+            )
+
+    def test_custom_generator_retries_when_cache_contains_id(self):
+        # Arrange
+        cache = TestComponentStubs.cache()
+        existing_order = self.order_factory.market(
+            ETHUSDT_PERP_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.5"),
+            client_order_id=ClientOrderId("t-1"),
+        )
+        cache.add_order(existing_order)
+        generator = RepeatingClientOrderIdGenerator(
+            [ClientOrderId("t-1"), ClientOrderId("t-2")],
+        )
+        order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+            cache=cache,
+            client_order_id_generator=generator,
+        )
+
+        # Act
+        result = order_factory.generate_client_order_id()
+
+        # Assert
+        assert result == ClientOrderId("t-2")
+        assert order_factory.get_client_order_id_count() == 2
 
     def test_create_list(self):
         # Arrange

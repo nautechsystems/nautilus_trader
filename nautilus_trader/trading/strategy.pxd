@@ -94,6 +94,7 @@ cdef class Strategy(Actor):
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
+    cpdef object _create_client_order_id_generator(self, Clock clock)
     cpdef void register(
         self,
         TraderId trader_id,
