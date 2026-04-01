@@ -102,7 +102,9 @@ fn dispatch_order_update(order: &PolymarketUserOrder, ctx: &WsDispatchContext<'_
     let ts_event = parse_timestamp_ms(&order.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
     let venue_order_id = VenueOrderId::from(order.id.as_str());
 
-    let mut report = build_ws_order_status_report(order, &instrument, ctx.account_id, ts_event);
+    let ts_init = ctx.clock.get_time_ns();
+    let mut report =
+        build_ws_order_status_report(order, &instrument, ctx.account_id, ts_event, ts_init);
     let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
 
     // Order updates can race ahead of trade messages, so cap filled_qty
@@ -190,11 +192,12 @@ fn dispatch_trade_update(
     let is_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
     let liquidity_side = parse_liquidity_side(trade.trader_side);
     let ts_event = parse_timestamp_ms(&trade.timestamp).unwrap_or_else(|_| ctx.clock.get_time_ns());
+    let ts_init = ctx.clock.get_time_ns();
 
     if is_maker {
-        dispatch_maker_fills(trade, ctx, liquidity_side, ts_event);
+        dispatch_maker_fills(trade, ctx, liquidity_side, ts_event, ts_init);
     } else {
-        dispatch_taker_fill(trade, ctx, liquidity_side, ts_event);
+        dispatch_taker_fill(trade, ctx, liquidity_side, ts_event, ts_init);
     }
 
     if needs_refresh {
@@ -209,6 +212,7 @@ fn dispatch_maker_fills(
     ctx: &WsDispatchContext<'_>,
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) {
     let user_orders: Vec<_> = trade
         .maker_orders
@@ -243,7 +247,7 @@ fn dispatch_maker_fills(
             crate::execution::get_usdc_currency(),
             liquidity_side,
             ts_event,
-            ts_event,
+            ts_init,
         );
         let maker_venue_order_id = report.venue_order_id;
         report.last_qty = ctx
@@ -275,6 +279,7 @@ fn dispatch_taker_fill(
     ctx: &WsDispatchContext<'_>,
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) {
     let instrument = match ctx.token_instruments.get_cloned(&trade.asset_id) {
         Some(i) => i,
@@ -286,8 +291,14 @@ fn dispatch_taker_fill(
 
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
 
-    let mut report =
-        build_ws_taker_fill_report(trade, &instrument, ctx.account_id, liquidity_side, ts_event);
+    let mut report = build_ws_taker_fill_report(
+        trade,
+        &instrument,
+        ctx.account_id,
+        liquidity_side,
+        ts_event,
+        ts_init,
+    );
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
@@ -317,6 +328,7 @@ fn build_ws_order_status_report(
     instrument: &InstrumentAny,
     account_id: AccountId,
     ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> OrderStatusReport {
     let venue_order_id = VenueOrderId::from(order.id.as_str());
     let order_status =
@@ -349,7 +361,7 @@ fn build_ws_order_status_report(
         filled_qty,
         ts_event,
         ts_event,
-        ts_event,
+        ts_init,
         None,
     );
     report.price = Some(price);
@@ -362,6 +374,7 @@ fn build_ws_taker_fill_report(
     account_id: AccountId,
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
+    ts_init: UnixNanos,
 ) -> FillReport {
     let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
     let trade_id = make_composite_trade_id(&trade.id, &trade.taker_order_id);
@@ -399,7 +412,7 @@ fn build_ws_taker_fill_report(
         liquidity_side,
         report_id: UUID4::new(),
         ts_event,
-        ts_init: ts_event,
+        ts_init,
         client_order_id: None,
         venue_position_id: None,
     }
@@ -486,17 +499,21 @@ mod tests {
         let order: PolymarketUserOrder = load("ws_user_order_placement.json");
         let instrument = test_instrument();
         let ts_event = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(2_000_000_000u64);
 
         let report = build_ws_order_status_report(
             &order,
             &instrument,
             AccountId::from("POLY-001"),
             ts_event,
+            ts_init,
         );
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_type, OrderType::Limit);
         assert!(report.price.is_some());
+        assert_eq!(report.ts_accepted, ts_event);
+        assert_eq!(report.ts_init, ts_init);
     }
 
     #[rstest]
@@ -504,12 +521,14 @@ mod tests {
         let order: PolymarketUserOrder = load("ws_user_order_venue_cancel.json");
         let instrument = test_instrument();
         let ts_event = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(2_000_000_000u64);
 
         let report = build_ws_order_status_report(
             &order,
             &instrument,
             AccountId::from("POLY-001"),
             ts_event,
+            ts_init,
         );
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
@@ -520,6 +539,7 @@ mod tests {
         let trade: PolymarketUserTrade = load("ws_user_trade.json");
         let instrument = test_instrument();
         let ts_event = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(2_000_000_000u64);
 
         let report = build_ws_taker_fill_report(
             &trade,
@@ -527,11 +547,13 @@ mod tests {
             AccountId::from("POLY-001"),
             LiquiditySide::Taker,
             ts_event,
+            ts_init,
         );
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.ts_event, ts_event);
+        assert_eq!(report.ts_init, ts_init);
     }
 
     #[rstest]

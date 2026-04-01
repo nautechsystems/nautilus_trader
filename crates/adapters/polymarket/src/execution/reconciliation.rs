@@ -253,7 +253,7 @@ pub(crate) async fn generate_mass_status(
     venue: Venue,
     lookback_mins: Option<u64>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-    let ts_init = UnixNanos::default();
+    let ts_init = ctx.clock.get_time_ns();
 
     // Fetch orders
     let orders = http_client
