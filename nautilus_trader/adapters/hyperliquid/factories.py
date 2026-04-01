@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.execution import HyperliquidExecutionClient
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -30,6 +32,10 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @lru_cache(1)
@@ -96,6 +102,7 @@ def get_cached_hyperliquid_http_client(
 def get_cached_hyperliquid_instrument_provider(
     client: nautilus_pyo3.HyperliquidHttpClient,
     config: InstrumentProviderConfig | None = None,
+    product_types: tuple[HyperliquidProductType, ...] | None = None,
 ) -> HyperliquidInstrumentProvider:
     """
     Cache and return a Hyperliquid instrument provider.
@@ -108,6 +115,8 @@ def get_cached_hyperliquid_instrument_provider(
         The Hyperliquid HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
+    product_types : tuple[HyperliquidProductType, ...], optional
+        The Hyperliquid product types to enable for the provider.
 
     Returns
     -------
@@ -117,7 +126,17 @@ def get_cached_hyperliquid_instrument_provider(
     return HyperliquidInstrumentProvider(
         client=client,
         config=config,
+        product_types=product_types,
     )
+
+
+def _resolve_product_types(
+    product_types: Iterable[HyperliquidProductType] | None,
+) -> tuple[HyperliquidProductType, ...] | None:
+    if product_types is None:
+        return None
+
+    return tuple(HyperliquidProductType(pt) for pt in product_types)
 
 
 class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
@@ -165,6 +184,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
             config=config.instrument_provider,
+            product_types=_resolve_product_types(config.product_types),
         )
         return HyperliquidDataClient(
             loop=loop,
@@ -227,6 +247,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
             config=config.instrument_provider,
+            product_types=_resolve_product_types(config.product_types),
         )
         return HyperliquidExecutionClient(
             loop=loop,

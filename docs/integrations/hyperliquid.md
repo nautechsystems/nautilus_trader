@@ -183,8 +183,10 @@ allows qualified deployers to launch permissionless perp dexes on Hyperliquid. T
 include equities (TSLA, NVDA, AAPL), commodities (gold, crude oil), indices (S&P 500), and
 pre-IPO tokens (SpaceX, OpenAI).
 
-HIP-3 instruments are excluded by default. To load them, construct the instrument
-provider directly with `PERP_HIP3` in the product types:
+HIP-3 instruments are excluded by default. To load them, include
+`HyperliquidProductType.PERP_HIP3` in the requested product types.
+
+For direct instrument provider usage:
 
 ```python
 from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
@@ -200,11 +202,28 @@ provider = HyperliquidInstrumentProvider(
 )
 ```
 
-:::note
-The default `TradingNodeConfig` factory path does not pass `product_types` to the
-provider. To include HIP-3 instruments through a trading node, construct the provider
-directly and pass it to the client factory.
-:::
+For live `TradingNode` usage, pass the same `product_types` through the Hyperliquid
+client config:
+
+```python
+from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
+
+HyperliquidDataClientConfig(
+    product_types=(
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.PERP_HIP3,
+    ),
+)
+
+HyperliquidExecClientConfig(
+    product_types=(
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.PERP_HIP3,
+    ),
+)
+```
 
 Once HIP-3 instruments are loaded, you can filter them with `InstrumentProviderConfig`:
 
@@ -490,6 +509,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 |---------------------|---------|-------------------------------------------------|
 | `base_url_ws`       | `None`  | Override for the WebSocket base URL.            |
 | `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`. |
+| `product_types`     | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
 | `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
 | `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                        |
 | `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented.  |
@@ -503,6 +523,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `account_address`        | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
 | `base_url_ws`            | `None`  | Override for the WebSocket base URL.                                                      |
 | `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.                                           |
+| `product_types`          | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
 | `max_retries`            | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
 | `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                             |
 | `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                             |
@@ -517,6 +538,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
 
@@ -524,6 +546,10 @@ config = TradingNodeConfig(
     data_clients={
         HYPERLIQUID: HyperliquidDataClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
             testnet=True,  # Use testnet
         ),
     },
@@ -532,6 +558,10 @@ config = TradingNodeConfig(
             private_key=None,  # Loads from HYPERLIQUID_TESTNET_PK env var
             vault_address=None,  # Optional: loads from HYPERLIQUID_TESTNET_VAULT
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
             testnet=True,  # Use testnet
             normalize_prices=True,  # Rounds prices to 5 significant figures
         ),
