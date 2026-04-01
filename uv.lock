@@ -1567,11 +1567,11 @@ wheels = [
 
 [[package]]
 name = "nautilus-ibapi"
-version = "10.43.2"
+version = "10.45.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/76/a7/cd2c00d99a2500a9fde23db64bbe5588e396cd13f933dd9973a6edb27fd0/nautilus_ibapi-10.43.2.tar.gz", hash = "sha256:e7d9b0c14c81f44f88815a27ac543ac93d22ead08d14cd4d3d336b31ec3f1753", size = 154445, upload-time = "2026-02-11T21:38:40.435Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/34/6bdd312813b2fae4a1acde596a769e45e2b69c8ef4ad8eac082e0ec6772e/nautilus_ibapi-10.45.1.tar.gz", hash = "sha256:92540e784793ecb87fc35f2cfb79a067145909deb8356eaf7c1a9e1042ecb374", size = 155663, upload-time = "2026-03-31T23:00:14.865Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/03/b810d53eea98bbc29c0cd6ba06ffe942bdbe22e0c09582df4a6741b119c3/nautilus_ibapi-10.43.2-py3-none-any.whl", hash = "sha256:2afa9f42bc9f662dea0938829a1261c04edc42ecabbee9b06a27d5494b1113dc", size = 325562, upload-time = "2026-02-11T21:38:38.763Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/81/46e4ba0b35bf3d5d5d32349ab4f54b1024e6a7e693a10cce3491c701a239/nautilus_ibapi-10.45.1-py3-none-any.whl", hash = "sha256:34ea8df8f520dd587667aab7a9916618d7b372103c2c2c1b68ec3b6e19c69c52", size = 329278, upload-time = "2026-03-31T23:00:13.632Z" },
 ]
 
 [[package]]
@@ -1651,7 +1651,7 @@ requires-dist = [
     { name = "docker", marker = "extra == 'docker'", specifier = ">=7.1.0,<8.0.0" },
     { name = "fsspec", specifier = ">=2025.2.0,<=2026.2.0" },
     { name = "msgspec", specifier = ">=0.20.0,<1.0.0" },
-    { name = "nautilus-ibapi", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==10.43.2" },
+    { name = "nautilus-ibapi", marker = "python_full_version < '3.14' and extra == 'ib'", specifier = "==10.45.1" },
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "pandas", specifier = ">=2.3.3,<3.0.0" },
     { name = "plotly", marker = "extra == 'visualization'", specifier = ">=6.6.0,<7.0.0" },

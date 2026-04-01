@@ -147,7 +147,7 @@ class IBTestContractStubs:
         contract_details.contract = IBTestContractStubs.convert_contract_to_ib_contract(
             contract_details.contract,
         )
-        return IBContractDetails(**contract_details.__dict__)
+        return IBContractDetails.from_contract_details(contract_details)
 
     @staticmethod
     def create_instrument(contract_details: ContractDetails) -> Instrument:

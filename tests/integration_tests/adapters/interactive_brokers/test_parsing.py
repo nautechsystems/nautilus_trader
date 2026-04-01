@@ -553,7 +553,7 @@ def test_parse_instrument_future_option():
     # Arrange
     contract_details = IBTestContractStubs.es_future_option_contract_details()
     contract_details.contract = IBContract(**contract_details.contract.__dict__)
-    contract_details = IBContractDetails(**contract_details.__dict__)
+    contract_details = IBContractDetails.from_contract_details(contract_details)
 
     # Act
     instrument = parse_instrument(contract_details, "CME")
@@ -590,7 +590,7 @@ def test_parse_instrument_option_on_index_has_caret_prefix():
         liquidHours="20240101:0830-20240101:1515",
         realExpirationDate="20240315",
     )
-    contract_details = IBContractDetails(**contract_details.__dict__)
+    contract_details = IBContractDetails.from_contract_details(contract_details)
 
     # Act
     instrument = parse_instrument(contract_details, "CBOE")
