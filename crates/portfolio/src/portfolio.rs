@@ -770,20 +770,22 @@ impl Portfolio {
         };
 
         for (instrument, orders_open) in &orders_and_instruments {
-            let mut cache = self.cache.borrow_mut();
-            let account = if let Some(account) = cache.account_for_venue(&instrument.id().venue) {
-                account
-            } else {
-                log::error!(
-                    "Cannot update initial (order) margin: no account registered for {}",
-                    instrument.id().venue
-                );
-                initialized = false;
-                break;
+            let account = {
+                let cache = self.cache.borrow();
+                if let Some(account) = cache.account_for_venue(&instrument.id().venue) {
+                    account.clone()
+                } else {
+                    log::error!(
+                        "Cannot update initial (order) margin: no account registered for {}",
+                        instrument.id().venue
+                    );
+                    initialized = false;
+                    break;
+                }
             };
 
             let result = self.inner.borrow_mut().accounts.update_orders(
-                account,
+                &account,
                 instrument,
                 orders_open.iter().collect(),
                 self.clock.borrow().timestamp_ns(),
@@ -791,7 +793,10 @@ impl Portfolio {
 
             match result {
                 Some((updated_account, _)) => {
-                    cache.update_account(&updated_account).unwrap();
+                    self.cache
+                        .borrow_mut()
+                        .update_account(&updated_account)
+                        .unwrap();
                 }
                 None => {
                     initialized = false;
