@@ -1209,12 +1209,17 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef list payload = [self._serializer.serialize(position.last_event_c())]
         self._backing.update(key, payload)
 
+        # Use position_id bytes for SET index operations (not the serialized blob).
+        # This matches the pattern in add_position() and update_order().
+        cdef bytes position_id_bytes = position_id_str.encode()
+        cdef list index_payload = [position_id_bytes]
+
         if position.is_open_c():
-            self._backing.insert(_INDEX_POSITIONS_OPEN, payload)
-            self._backing.delete(_INDEX_POSITIONS_CLOSED, payload)
+            self._backing.insert(_INDEX_POSITIONS_OPEN, index_payload)
+            self._backing.delete(_INDEX_POSITIONS_CLOSED, index_payload)
         elif position.is_closed_c():
-            self._backing.insert(_INDEX_POSITIONS_CLOSED, payload)
-            self._backing.delete(_INDEX_POSITIONS_OPEN, payload)
+            self._backing.insert(_INDEX_POSITIONS_CLOSED, index_payload)
+            self._backing.delete(_INDEX_POSITIONS_OPEN, index_payload)
 
         self._log.debug(f"Updated {position}")
 
