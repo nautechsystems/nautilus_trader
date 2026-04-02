@@ -339,15 +339,19 @@ def catalog(tmp_path) -> ParquetDataCatalog:
     return setup_catalog(protocol="memory", path=tmp_path / "catalog")
 
 
-def test_binance_bar_data_catalog_serialization(catalog: ParquetDataCatalog):
+def test_binance_bar_data_catalog_serialization(tmp_path):
     """
     Test that BinanceBar can be serialized to and deserialized from a data catalog.
 
     Regression test for the BinanceBar serialization issue where Arrow registration was
     incomplete (missing encoder/decoder).
 
+    Uses file protocol because the Rust DataFusion backend cannot read from
+    Python's in-memory filesystem.
+
     """
     # Arrange
+    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
     bar = BinanceBar(
         bar_type=BarType(
             instrument_id=TestIdStubs.btcusdt_binance_id(),
