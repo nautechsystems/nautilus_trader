@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
 )]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BinanceBar {

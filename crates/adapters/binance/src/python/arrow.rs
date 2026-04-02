@@ -37,7 +37,7 @@ use crate::{
 ///
 /// Returns a `PyErr` if the class name is not recognized.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.binance")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.binance")]
 pub fn get_binance_arrow_schema_map(
     py: Python<'_>,
     cls: &Bound<'_, PyType>,
