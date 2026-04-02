@@ -84,7 +84,9 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
 # and can be queried through the DataFusion/Rust backend using add_custom_file.
 # Types listed here must have compatible Arrow schemas between their Python and Rust
 # encoders, and must be written with the Rust encoder for the Rust read path to work.
-_RUST_CUSTOM_DATA_TYPES: set[str] = {"BinanceBar"}
+# NOTE: Data::Custom cannot be returned via the DataFFI capsule path, so custom data
+# types should use the PyArrow read path (not listed here) until FFI support is added.
+_RUST_CUSTOM_DATA_TYPES: set[str] = set()
 
 
 class FeatherFile(NamedTuple):
