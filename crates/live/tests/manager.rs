@@ -26,17 +26,20 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::TestClock,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports,
-        GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+    messages::{
+        ExecutionReport,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            SubmitOrderList,
+        },
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine, reconciliation::process_mass_status_for_reconciliation,
 };
-use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig, ExecutionReport};
+use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
@@ -260,46 +263,97 @@ fn test_fill_deduplication_prune_removes_expired() {
 }
 
 #[rstest]
-fn test_reconcile_report_returns_empty_when_order_not_in_cache() {
-    let mut ctx = TestContext::new();
-    let client_order_id = ClientOrderId::from("O-MISSING");
-
-    let report = ExecutionReport {
-        client_order_id,
-        venue_order_id: Some(VenueOrderId::from("V-001")),
-        status: OrderStatus::Accepted,
-        filled_qty: Quantity::from(0),
-        avg_px: None,
-        ts_event: UnixNanos::from(1_000_000),
+fn test_observe_order_report_clears_inflight_tracking() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 5,
+        ..Default::default()
     };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
 
-    let events = ctx.manager.reconcile_report(report).unwrap();
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
 
+    // Register as inflight
+    ctx.manager.register_inflight(client_order_id);
+
+    // Simulate venue responding with an OrderStatusReport
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-001"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("1.0"),
+        Quantity::from(0),
+    );
+    let report = ExecutionReport::Order(Box::new(order_report));
+
+    ctx.manager.observe_execution_report(&report);
+
+    // Advance time past threshold so inflight check would trigger if still tracked
+    ctx.advance_time(200_000_000);
+
+    // Inflight check should return empty — tracking was cleared by observation
+    let events = ctx.manager.check_inflight_orders();
     assert!(events.is_empty());
 }
 
 #[rstest]
-fn test_reconcile_report_handles_missing_venue_order_id() {
+fn test_observe_fill_report_marks_fill_processed() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-001");
+
+    ctx.add_instrument(test_instrument());
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-001"),
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        Some(ClientOrderId::from("O-001")),
+        None, // venue_position_id
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None, // report_id
+    );
+    let report = ExecutionReport::Fill(Box::new(fill_report));
+
+    assert!(!ctx.manager.is_fill_recently_processed(&trade_id));
+
+    ctx.manager.observe_execution_report(&report);
+
+    assert!(ctx.manager.is_fill_recently_processed(&trade_id));
+}
+
+#[rstest]
+fn test_observe_position_report_records_activity() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
 
-    ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
-    ctx.add_order(order);
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("1.0"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None, // report_id
+        None, // venue_position_id
+        Some(dec!(3000.0)),
+    );
+    let report = ExecutionReport::Position(Box::new(position_report));
 
-    let report = ExecutionReport {
-        client_order_id: ClientOrderId::from("O-001"),
-        venue_order_id: None, // Missing venue order ID
-        status: OrderStatus::Accepted,
-        filled_qty: Quantity::from(0),
-        avg_px: None,
-        ts_event: UnixNanos::from(1_000_000),
-    };
-
-    let events = ctx.manager.reconcile_report(report).unwrap();
-
-    // Should return empty since venue_order_id is required
-    assert!(events.is_empty());
+    // Should complete without panic — position activity is recorded internally
+    ctx.manager.observe_execution_report(&report);
 }
 
 #[tokio::test]

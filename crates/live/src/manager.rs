@@ -28,7 +28,10 @@ use nautilus_common::{
     clock::Clock,
     enums::{LogColor, LogLevel},
     log_info,
-    messages::execution::report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
+    messages::{
+        ExecutionReport,
+        execution::report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
+    },
 };
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -245,18 +248,6 @@ impl ExecutionManagerConfig {
         self.trader_id = trader_id;
         self
     }
-}
-
-/// Execution report for continuous reconciliation.
-/// This is a simplified report type used during runtime reconciliation.
-#[derive(Debug, Clone, Copy)]
-pub struct ExecutionReport {
-    pub client_order_id: ClientOrderId,
-    pub venue_order_id: Option<VenueOrderId>,
-    pub status: OrderStatus,
-    pub filled_qty: Quantity,
-    pub avg_px: Option<f64>,
-    pub ts_event: UnixNanos,
 }
 
 /// Information about an inflight order check.
@@ -792,61 +783,6 @@ impl ExecutionManager {
         }
     }
 
-    /// Reconciles a single execution report during runtime.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the average price cannot be converted to a valid `Decimal`.
-    pub fn reconcile_report(
-        &mut self,
-        report: ExecutionReport,
-    ) -> anyhow::Result<Vec<OrderEventAny>> {
-        let mut events = Vec::new();
-
-        self.clear_recon_tracking(&report.client_order_id, true);
-
-        if let Some(order) = self.get_order(&report.client_order_id) {
-            let Some(account_id) = order.account_id() else {
-                log::error!("Cannot process fill report: order has no account_id");
-                return Ok(vec![]);
-            };
-            let Some(venue_order_id) = report.venue_order_id else {
-                log::error!("Cannot process fill report: report has no venue_order_id");
-                return Ok(vec![]);
-            };
-            let mut order_report = OrderStatusReport::new(
-                account_id,
-                order.instrument_id(),
-                Some(report.client_order_id),
-                venue_order_id,
-                order.order_side(),
-                order.order_type(),
-                order.time_in_force(),
-                report.status,
-                order.quantity(),
-                report.filled_qty,
-                report.ts_event, // Use ts_event as ts_accepted
-                report.ts_event, // Use ts_event as ts_last
-                self.clock.borrow().timestamp_ns(),
-                Some(UUID4::new()),
-            );
-
-            if let Some(avg_px) = report.avg_px {
-                order_report = order_report.with_avg_px(avg_px)?;
-            }
-
-            let instrument = self.get_instrument(&order.instrument_id());
-
-            if let Some(event) =
-                self.reconcile_order_report(&order, &order_report, instrument.as_ref())
-            {
-                events.push(event);
-            }
-        }
-
-        Ok(events)
-    }
-
     /// Checks inflight orders and returns events for any that need reconciliation.
     pub fn check_inflight_orders(&mut self) -> Vec<OrderEventAny> {
         let mut events = Vec::new();
@@ -1206,6 +1142,50 @@ impl ExecutionManager {
     pub fn record_position_activity(&mut self, instrument_id: InstrumentId, ts_event: UnixNanos) {
         self.position_local_activity_ns
             .insert(instrument_id, ts_event);
+    }
+
+    /// Observes an incoming execution report and updates tracking state.
+    ///
+    /// This should be called **before** the report is dispatched to the execution
+    /// engine, so that the manager's state is current when periodic checks run.
+    ///
+    /// Updates performed per report variant:
+    /// - `Order`: clears inflight tracking and records local activity
+    /// - `Fill`: marks fill as processed, records order and position activity
+    /// - `Position`: records position activity
+    /// - `MassStatus`: no-op (handled separately via startup reconciliation)
+    pub fn observe_execution_report(&mut self, report: &ExecutionReport) {
+        match report {
+            ExecutionReport::Order(order_report) => {
+                if let Some(client_order_id) = &order_report.client_order_id {
+                    self.clear_recon_tracking(client_order_id, true);
+                    self.record_local_activity(*client_order_id);
+                }
+            }
+            ExecutionReport::Fill(fill_report) => {
+                self.mark_fill_processed(fill_report.trade_id);
+                let client_order_id = fill_report.client_order_id.or_else(|| {
+                    self.cache
+                        .borrow()
+                        .client_order_id(&fill_report.venue_order_id)
+                        .copied()
+                });
+
+                if let Some(coid) = client_order_id {
+                    self.record_local_activity(coid);
+                }
+                self.record_position_activity(fill_report.instrument_id, fill_report.ts_event);
+            }
+            ExecutionReport::Position(position_report) => {
+                self.record_position_activity(
+                    position_report.instrument_id,
+                    position_report.ts_last,
+                );
+            }
+            ExecutionReport::MassStatus(_) => {
+                // Handled separately via reconcile_execution_mass_status
+            }
+        }
     }
 
     /// Checks if a fill has been recently processed (for deduplication).
