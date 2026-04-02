@@ -956,6 +956,11 @@ pub trait Strategy: DataActor {
     fn handle_order_event(&mut self, event: OrderEventAny) {
         {
             let core = self.core_mut();
+
+            if core.actor.state() != ComponentState::Running {
+                return;
+            }
+
             let id = &core.actor.actor_id;
             let is_warning = matches!(
                 &event,
@@ -1019,6 +1024,11 @@ pub trait Strategy: DataActor {
     fn handle_position_event(&mut self, event: PositionEvent) {
         {
             let core = self.core_mut();
+
+            if core.actor.state() != ComponentState::Running {
+                return;
+            }
+
             if core.config.log_events {
                 let id = &core.actor.actor_id;
                 log::info!("{id} {RECV}{EVT} {event:?}");
@@ -1823,6 +1833,7 @@ mod tests {
     fn test_handle_order_event_dispatches_to_handler() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let event = OrderEventAny::Rejected(OrderRejected {
             trader_id: TraderId::from("TRADER-001"),
@@ -1847,6 +1858,7 @@ mod tests {
     fn test_handle_position_event_dispatches_to_handler() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let event = PositionEvent::PositionOpened(PositionOpened {
             trader_id: TraderId::from("TRADER-001"),
@@ -1948,6 +1960,7 @@ mod tests {
     fn test_handle_order_event_cancels_gtd_timer_on_filled() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let client_order_id = ClientOrderId::from("O-001");
         strategy
@@ -1985,6 +1998,7 @@ mod tests {
     fn test_handle_order_event_cancels_gtd_timer_on_canceled() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let client_order_id = ClientOrderId::from("O-001");
         strategy
@@ -2013,6 +2027,7 @@ mod tests {
     fn test_handle_order_event_cancels_gtd_timer_on_rejected() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let client_order_id = ClientOrderId::from("O-001");
         strategy
@@ -2042,6 +2057,7 @@ mod tests {
     fn test_handle_order_event_cancels_gtd_timer_on_expired() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
 
         let client_order_id = ClientOrderId::from("O-001");
         strategy
