@@ -133,7 +133,7 @@ def get_cached_binance_http_client(
             (global_key, global_quota),
             ("binance:api/v3/order", Quota.rate_per_minute(3000)),
             ("binance:api/v3/allOrders", Quota.rate_per_minute(int(3000 / 20))),
-            ("binance:api/v3/klines", Quota.rate_per_minute(600)),
+            ("binance:api/v3/klines", Quota.rate_per_minute(1200)),
         ]
     else:
         # Futures
