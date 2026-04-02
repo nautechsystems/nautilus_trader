@@ -5136,7 +5136,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "arc-swap",
- "arrow",
+ "arrow 58.1.0",
  "async-stream",
  "async-trait",
  "aws-lc-rs",
