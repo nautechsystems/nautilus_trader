@@ -57,7 +57,7 @@ NautilusTrader integration guide.
 | Stock Perpetuals  | -         | -       | *Not yet supported*. Currently on testnet only.     |
 | Futures           | ✓         | ✓       | Traditional fixed expiration contracts.             |
 | Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.      |
-| Prediction Markets| ✓         | ✓       | Event-based contracts, 0-100 pricing, USDT settled. |
+| Prediction Markets| ✓         | ✓       | Event‑based contracts, 0-100 pricing, USDT settled. |
 | Options           | -         | -       | *Not provided by BitMEX*.                           |
 
 :::note
@@ -85,14 +85,14 @@ The adapter recognizes the following instrument type codes:
 
 | Code     | Type                 | Status      | Description                                     |
 |----------|----------------------|-------------|-------------------------------------------------|
-| `FFWCSX` | Perpetual Contract   | Supported   | Crypto-based perpetual swaps (e.g., XBTUSD).    |
-| `FFWCSF` | Perpetual FX         | Supported   | FX-based perpetual contracts.                   |
+| `FFWCSX` | Perpetual Contract   | Supported   | Crypto‑based perpetual swaps (e.g., XBTUSD).    |
+| `FFWCSF` | Perpetual FX         | Supported   | FX‑based perpetual contracts.                   |
 | `FFCCSX` | Futures              | Supported   | Calendar futures with fixed expiration.         |
-| `FFICSX` | Prediction Market    | Supported   | Event-based prediction contracts.               |
+| `FFICSX` | Prediction Market    | Supported   | Event‑based prediction contracts.               |
 | `IFXXXP` | Spot                 | Supported   | Spot trading pairs.                             |
-| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity-based perpetuals. Testnet only.    |
-| `SRMCSX` | Swap Rate            | Unsupported | Yield-based swap products (historical).         |
-| `MR****` | Index                | Reference   | BitMEX indices (non-tradeable, for price ref).  |
+| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity‑based perpetuals. Testnet only.    |
+| `SRMCSX` | Swap Rate            | Unsupported | Yield‑based swap products (historical).         |
+| `MR****` | Index                | Reference   | BitMEX indices (non‑tradeable, for price ref).  |
 
 See [BitMEX Typ Values](https://support.bitmex.com/hc/en-gb/articles/6299296145565-What-are-the-Typ-Values-for-Instrument-endpoint) for more details.
 
@@ -223,7 +223,7 @@ Choose the trigger type that matches your strategy and/or risk preferences.
 | Reference price | Nautilus `TriggerType` | BitMEX value  | Notes                                                                           |
 |-----------------|------------------------|---------------|---------------------------------------------------------------------------------|
 | Last trade      | `LAST_PRICE`           | `LastPrice`   | BitMEX default; triggers on the last traded price.                              |
-| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop-loss use cases to reduce stop-outs from price spikes. |
+| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop‑loss use cases to reduce stop‑outs from price spikes. |
 | Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                           |
 
 - If no `trigger_type` is provided, BitMEX uses its venue default (`LastPrice`).
@@ -289,7 +289,7 @@ to `Pegged` on the exchange side.
 |----------------|------------------------------------------------------------------|
 | `PrimaryPeg`   | Pegs to the best bid (buy) or best ask (sell).                   |
 | `MarketPeg`    | Pegs to the opposite side (best ask for buy, best bid for sell). |
-| `MidPricePeg`  | Pegs to the mid-price between bid and ask.                       |
+| `MidPricePeg`  | Pegs to the mid‑price between bid and ask.                       |
 | `LastPeg`      | Pegs to the last traded price.                                   |
 
 **Requirements**:
@@ -356,7 +356,7 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 | Feature             | Supported | Notes                                              |
 |---------------------|-----------|----------------------------------------------------|
-| Query positions     | ✓         | REST and real-time position updates via WebSocket. |
+| Query positions     | ✓         | REST and real‑time position updates via WebSocket. |
 | Cross margin        | ✓         | Default margin mode.                               |
 | Isolated margin     | ✓         |                                                    |
 
@@ -366,7 +366,7 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 |----------------------|-----------|----------------------------------------------|
 | Query open orders    | ✓         | List all active orders.                      |
 | Query order history  | ✓         | Historical order data.                       |
-| Order status updates | ✓         | Real-time order state changes via WebSocket. |
+| Order status updates | ✓         | Real‑time order state changes via WebSocket. |
 | Trade history        | ✓         | Execution and fill reports.                  |
 
 ## Market data
@@ -588,10 +588,10 @@ The broadcaster exposes metrics including total cancels, successful cancels, fai
 
 | Metric                   | Type   | Description                                                                                                           |
 |--------------------------|--------|-----------------------------------------------------------------------------------------------------------------------|
-| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel-all requests).                        |
+| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel‑all requests).                        |
 | `successful_cancels`     | `u64`  | Number of cancel operations that successfully received acknowledgement from BitMEX.                                   |
 | `failed_cancels`         | `u64`  | Number of cancel operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
-| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post-only order rejections).                                    |
+| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post‑only order rejections).                                    |
 | `idempotent_successes`   | `u64`  | Number of idempotent success responses (order already cancelled, order not found, unable to cancel due to state).     |
 | `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
 | `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                          |

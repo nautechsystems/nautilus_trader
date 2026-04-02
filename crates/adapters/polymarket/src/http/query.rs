@@ -212,7 +212,7 @@ pub struct GetGammaMarketsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub market_maker_address: Option<String>,
     /// Client-side cap on total markets to fetch across all pages.
-    /// Not sent to the API — only used by the paginator to stop early.
+    /// Not sent to the API, only used by the paginator to stop early.
     /// Each market produces 2 instruments (Yes/No outcomes).
     #[serde(skip)]
     pub max_markets: Option<u32>,

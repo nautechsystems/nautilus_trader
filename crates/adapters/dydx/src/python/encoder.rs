@@ -30,7 +30,7 @@ use crate::execution::encoder::ClientOrderIdEncoder;
 /// Provides bidirectional encoding of Nautilus ClientOrderId strings to
 /// dYdX's (client_id, client_metadata) u32 pair.
 #[pyclass(name = "DydxClientOrderIdEncoder")]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")]
 #[derive(Debug)]
 pub struct PyDydxClientOrderIdEncoder {
     inner: Arc<ClientOrderIdEncoder>,

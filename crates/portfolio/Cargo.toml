@@ -38,6 +38,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 pyo3 = { workspace = true, optional = true }
 
 ahash = { workspace = true }
+bon = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

@@ -19,25 +19,28 @@ use std::any::Any;
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_system::factories::ClientConfig;
+use rust_decimal::Decimal;
 
 use crate::common::enums::{BinanceEnvironment, BinanceProductType};
 
 /// Configuration for Binance data client.
 ///
 /// Ed25519 API keys are required for SBE WebSocket streams.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
 )]
 pub struct BinanceDataClientConfig {
     /// Product types to subscribe to.
+    #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
     /// Environment (mainnet or testnet).
+    #[builder(default = BinanceEnvironment::Mainnet)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
@@ -49,20 +52,13 @@ pub struct BinanceDataClientConfig {
     pub api_secret: Option<String>,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
+    #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
 }
 
 impl Default for BinanceDataClientConfig {
     fn default() -> Self {
-        Self {
-            product_types: vec![BinanceProductType::Spot],
-            environment: BinanceEnvironment::Mainnet,
-            base_url_http: None,
-            base_url_ws: None,
-            api_key: None,
-            api_secret: None,
-            instrument_status_poll_secs: 3600,
-        }
+        Self::builder().build()
     }
 }
 
@@ -77,23 +73,27 @@ impl ClientConfig for BinanceDataClientConfig {
 /// Ed25519 API keys are required for execution clients. Binance deprecated
 /// listenKey-based user data streams in favor of WebSocket API authentication,
 /// which only supports Ed25519.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.binance")
 )]
 pub struct BinanceExecClientConfig {
     /// Trader ID for the client.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// Account ID for the client.
+    #[builder(default = AccountId::from("BINANCE-001"))]
     pub account_id: AccountId,
     /// Product types to trade.
+    #[builder(default = vec![BinanceProductType::Spot])]
     pub product_types: Vec<BinanceProductType>,
     /// Environment (mainnet or testnet).
+    #[builder(default = BinanceEnvironment::Mainnet)]
     pub environment: BinanceEnvironment,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
@@ -102,7 +102,23 @@ pub struct BinanceExecClientConfig {
     /// Optional base URL override for WebSocket trading API (Spot and USD-M Futures).
     pub base_url_ws_trading: Option<String>,
     /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
+    #[builder(default = true)]
     pub use_ws_trading: bool,
+    /// Whether to use Binance Futures hedging position IDs.
+    ///
+    /// When true, fill reports include a `venue_position_id` derived from
+    /// the instrument and position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`).
+    /// When false, `venue_position_id` is None, allowing virtual positions
+    /// with `OmsType::Hedging`.
+    #[builder(default = true)]
+    pub use_position_ids: bool,
+    /// Default taker fee rate for commission estimation.
+    ///
+    /// Used as a fallback when the venue omits commission fields in
+    /// exchange-generated fills (liquidation, ADL, settlement).
+    /// Standard Binance Futures taker fee is 0.0004 (0.04%).
+    #[builder(default = Decimal::new(4, 4))]
+    pub default_taker_fee: Decimal,
     /// API key (Ed25519 required, uses env var if not provided).
     pub api_key: Option<String>,
     /// API secret (Ed25519 base64-encoded, required, uses env var if not provided).
@@ -111,18 +127,7 @@ pub struct BinanceExecClientConfig {
 
 impl Default for BinanceExecClientConfig {
     fn default() -> Self {
-        Self {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("BINANCE-001"),
-            product_types: vec![BinanceProductType::Spot],
-            environment: BinanceEnvironment::Mainnet,
-            base_url_http: None,
-            base_url_ws: None,
-            base_url_ws_trading: None,
-            use_ws_trading: true,
-            api_key: None,
-            api_secret: None,
-        }
+        Self::builder().build()
     }
 }
 

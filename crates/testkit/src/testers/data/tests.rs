@@ -37,17 +37,18 @@ fn config() -> DataTesterConfig {
         InstrumentId::from("BTC-USDT.TEST"),
         InstrumentId::from("ETH-USDT.TEST"),
     ];
-    DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
+    let mut config = DataTesterConfig::new(client_id, instrument_ids);
+    config.subscribe_quotes = true;
+    config.subscribe_trades = true;
+    config
 }
 
 #[rstest]
 fn test_config_creation() {
     let client_id = ClientId::new("TEST");
     let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
-    let config =
-        DataTesterConfig::new(client_id, instrument_ids.clone()).with_subscribe_quotes(true);
+    let mut config = DataTesterConfig::new(client_id, instrument_ids.clone());
+    config.subscribe_quotes = true;
 
     assert_eq!(config.client_id, Some(client_id));
     assert_eq!(config.instrument_ids, instrument_ids);
@@ -89,9 +90,9 @@ fn test_config_with_params() {
     let mut req_params = Params::new();
     req_params.insert("limit".to_string(), serde_json::json!(100));
 
-    let config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_params(Some(sub_params.clone()))
-        .with_request_params(Some(req_params.clone()));
+    let mut config = DataTesterConfig::new(client_id, instrument_ids);
+    config.subscribe_params = Some(sub_params.clone());
+    config.request_params = Some(req_params.clone());
 
     assert_eq!(config.subscribe_params, Some(sub_params));
     assert_eq!(config.request_params, Some(req_params));
@@ -277,7 +278,8 @@ fn test_on_historical_funding_rates(config: DataTesterConfig) {
 fn test_config_request_funding_rates() {
     let client_id = ClientId::new("TEST");
     let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
-    let config = DataTesterConfig::new(client_id, instrument_ids).with_request_funding_rates(true);
+    let mut config = DataTesterConfig::new(client_id, instrument_ids);
+    config.request_funding_rates = true;
 
     assert!(config.request_funding_rates);
 }
@@ -286,7 +288,8 @@ fn test_config_request_funding_rates() {
 fn test_config_request_book_deltas() {
     let client_id = ClientId::new("TEST");
     let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
-    let config = DataTesterConfig::new(client_id, instrument_ids).with_request_book_deltas(true);
+    let mut config = DataTesterConfig::new(client_id, instrument_ids);
+    config.request_book_deltas = true;
 
     assert!(config.request_book_deltas);
 }

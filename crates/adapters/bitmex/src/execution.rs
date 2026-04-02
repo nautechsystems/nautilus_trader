@@ -363,8 +363,8 @@ impl BitmexExecutionClient {
 
         instruments.sort_by_key(|instrument| instrument.id());
 
+        self.http_client.cache_instruments(&instruments);
         for instrument in &instruments {
-            self.http_client.cache_instrument(instrument.clone());
             self._submitter.cache_instrument(instrument);
             self._canceller.cache_instrument(instrument);
         }
@@ -433,8 +433,8 @@ impl BitmexExecutionClient {
             .collect();
 
         if instruments_by_symbol.is_empty() {
-            for entry in self.http_client.instruments_cache.iter() {
-                instruments_by_symbol.insert(*entry.key(), entry.value().clone());
+            for (key, inst) in self.http_client.instruments_cache.load().iter() {
+                instruments_by_symbol.insert(*key, inst.clone());
             }
         }
 

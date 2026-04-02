@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
+import re
 import sys
+from pathlib import Path
+
+import pytest
 
 
 def _load_generate_stubs_module():
@@ -368,3 +371,380 @@ def parse_error() -> builtins.Exception: ...
     # Assert
     assert "import builtins" in updated
     assert "builtins.Exception" in updated
+
+
+@pytest.mark.parametrize(
+    ("input_name", "expected"),
+    [
+        ("Cash", "CASH"),
+        ("Margin", "MARGIN"),
+        ("StableSwap", "STABLE_SWAP"),
+        ("WeightedPool", "WEIGHTED_POOL"),
+        ("CLAMEnhanced", "CLAM_ENHANCED"),
+        ("FluidDEX", "FLUID_DEX"),
+        ("UniswapV2", "UNISWAP_V2"),
+        ("PancakeSwapV3", "PANCAKE_SWAP_V3"),
+        ("AerodromeSlipstream", "AERODROME_SLIPSTREAM"),
+        ("NoOrderSide", "NO_ORDER_SIDE"),
+        ("CPAMM", "CPAMM"),
+        ("CLAMM", "CLAMM"),
+        ("L1_MBP", "L1_MBP"),
+        ("L2_MBP", "L2_MBP"),
+        ("Level1", "LEVEL1"),
+        ("BaseX", "BASE_X"),
+        ("A", "A"),
+        ("", ""),
+        ("CASH", "CASH"),
+        ("NO_ORDER_SIDE", "NO_ORDER_SIDE"),
+    ],
+)
+def test_to_screaming_snake_case(input_name, expected):
+    assert generate_stubs.to_screaming_snake_case(input_name) == expected
+
+
+def test_rename_enum_variants_transforms_renamed_enums():
+    # Arrange
+    content = """
+class AccountType(Enum):
+    Cash = ...
+    Margin = ...
+    Betting = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+    @property
+    def name(self) -> str: ...
+
+class OtherClass:
+    def method(self) -> None: ...
+""".strip()
+    renamed_enums = {"AccountType"}
+
+    # Act
+    updated = generate_stubs.rename_enum_variants(content, renamed_enums)
+
+    # Assert
+    assert "    CASH = ..." in updated
+    assert "    MARGIN = ..." in updated
+    assert "    BETTING = ..." in updated
+    assert "    Cash" not in updated
+    assert "def __init__" in updated
+    assert "class OtherClass:" in updated
+
+
+def test_rename_enum_variants_skips_non_renamed_enums():
+    # Arrange
+    content = """
+class BookType(Enum):
+    L1_MBP = ...
+    L2_MBP = ...
+""".strip()
+    renamed_enums = set()
+
+    # Act
+    updated = generate_stubs.rename_enum_variants(content, renamed_enums)
+
+    # Assert
+    assert updated == content
+
+
+def test_rename_enum_variants_handles_enum_dot_enum_base():
+    # Arrange
+    content = """
+class HyperliquidProductType(enum.Enum):
+    Perp = ...
+    Spot = ...
+
+    def __init__(self, value: typing.Any) -> None: ...
+""".strip()
+    renamed_enums = {"HyperliquidProductType"}
+
+    # Act
+    updated = generate_stubs.rename_enum_variants(content, renamed_enums)
+
+    # Assert
+    assert "    PERP = ..." in updated
+    assert "    SPOT = ..." in updated
+
+
+def test_rename_enum_variants_handles_multi_word_variants():
+    # Arrange
+    content = """
+class DexType(Enum):
+    AerodromeSlipstream = ...
+    UniswapV2 = ...
+    PancakeSwapV3 = ...
+    FluidDEX = ...
+    CLAMEnhanced = ...
+""".strip()
+    renamed_enums = {"DexType"}
+
+    # Act
+    updated = generate_stubs.rename_enum_variants(content, renamed_enums)
+
+    # Assert
+    assert "    AERODROME_SLIPSTREAM = ..." in updated
+    assert "    UNISWAP_V2 = ..." in updated
+    assert "    PANCAKE_SWAP_V3 = ..." in updated
+    assert "    FLUID_DEX = ..." in updated
+    assert "    CLAM_ENHANCED = ..." in updated
+
+
+def test_collect_renamed_enums_detects_rename_all(tmp_path):
+    # Arrange
+    rust_file = tmp_path / "crates" / "model" / "src" / "enums.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+pub enum AccountType {
+    Cash = 1,
+    Margin = 2,
+}
+
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(frozen, eq, eq_int)
+)]
+pub enum PlainEnum {
+    Foo = 1,
+}
+
+pub struct NotAnEnum {
+    field: u8,
+}
+""".strip(),
+    )
+
+    # Act
+    result = generate_stubs.collect_renamed_enums(tmp_path)
+
+    # Assert
+    assert "AccountType" in result
+    assert "PlainEnum" not in result
+    assert "NotAnEnum" not in result
+
+
+def test_collect_module_constants_detects_m_add(tmp_path):
+    # Arrange
+    mod_rs = tmp_path / "crates" / "core" / "src" / "python" / "mod.rs"
+    mod_rs.parent.mkdir(parents=True)
+    mod_rs.write_text(
+        """
+#[pymodule]
+pub fn core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(MY_VERSION), MY_VERSION)?;
+    m.add("MY_CONSTANT", crate::MY_CONSTANT)?;
+    m.add("MyException", m.py().get_type::<MyException>())?;
+    Ok(())
+}
+""".strip(),
+    )
+
+    const_rs = tmp_path / "crates" / "core" / "src" / "consts.rs"
+    const_rs.parent.mkdir(parents=True, exist_ok=True)
+    const_rs.write_text(
+        """
+pub static MY_VERSION: &str = "1.0.0";
+pub const MY_CONSTANT: u64 = 42;
+""".strip(),
+    )
+
+    # Act
+    result = generate_stubs.collect_module_constants(tmp_path)
+
+    # Assert
+    assert "core" in result
+    consts = result["core"]
+    names = [c.name for c in consts]
+    assert "MY_VERSION" in names
+    assert "MY_CONSTANT" in names
+    assert "MyException" not in names
+    assert consts[names.index("MY_VERSION")].python_type == "str"
+    assert consts[names.index("MY_CONSTANT")].python_type == "int"
+
+
+def test_add_names_to_all_inserts_sorted():
+    # Arrange
+    content = """
+__all__ = [
+    "Bravo",
+    "Delta",
+]
+""".strip()
+
+    # Act
+    updated = generate_stubs._add_names_to_all(content, ["Alpha", "Charlie"])
+
+    # Assert
+    assert '"Alpha"' in updated
+    assert '"Charlie"' in updated
+    names = re.findall(r'"(\w+)"', updated)
+    assert names == sorted(names)
+
+
+def test_insert_constants_after_all():
+    # Arrange
+    content = """
+__all__ = [
+    "Foo",
+]
+
+class Foo:
+    pass
+""".strip()
+
+    # Act
+    updated = generate_stubs._insert_constants_after_all(content, "MY_CONST: int")
+
+    # Assert
+    assert "MY_CONST: int" in updated
+    all_pos = updated.index("__all__")
+    const_pos = updated.index("MY_CONST: int")
+    class_pos = updated.index("class Foo:")
+    assert all_pos < const_pos < class_pos
+
+
+def test_fix_enum_defaults_in_signatures():
+    # Arrange
+    content = """
+class AggregationSource(Enum):
+    EXTERNAL = ...
+    INTERNAL = ...
+
+class BarType(Enum):
+    Standard = ...
+    Composite = ...
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource = AggregationSource.External,
+    ) -> None: ...
+
+class Strategy:
+    def __init__(
+        self,
+        time_in_force: model.TimeInForce = model.TimeInForce.Gtc,
+    ) -> None: ...
+""".strip()
+    renamed_enums = {"AggregationSource", "TimeInForce"}
+
+    # Act
+    updated = generate_stubs.fix_enum_defaults_in_signatures(content, renamed_enums)
+
+    # Assert
+    assert "AggregationSource.EXTERNAL" in updated
+    assert "AggregationSource.External" not in updated
+    assert "model.TimeInForce.GTC" in updated
+    assert "model.TimeInForce.Gtc" not in updated
+    # Non-renamed enum variants unchanged
+    assert "Standard = ..." in updated
+
+
+WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
+
+STUB_ENUM_CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*(?:enum\.)?Enum\s*\)\s*:")
+STUB_VARIANT_RE = re.compile(r"^\s+([A-Za-z_]\w*)\s*=\s*\.\.\.")
+
+
+def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
+    """
+    Parse all .pyi files and return enum_name -> list of variant names.
+    """
+    result: dict[str, list[str]] = {}
+
+    for pyi in sorted(stub_root.rglob("*.pyi")):
+        current_enum: str | None = None
+        for line in pyi.read_text().splitlines():
+            class_match = STUB_ENUM_CLASS_RE.match(line)
+            if class_match:
+                current_enum = class_match.group(1)
+                result.setdefault(current_enum, [])
+                continue
+
+            if current_enum is not None:
+                variant_match = STUB_VARIANT_RE.match(line)
+                if variant_match:
+                    result[current_enum].append(variant_match.group(1))
+                elif line.strip() and not line[0].isspace():
+                    current_enum = None
+
+    return result
+
+
+SCREAMING_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*_?$")
+
+
+def test_stub_enum_variants_match_screaming_snake_case():
+    """
+    Verify every renamed enum in .pyi stubs uses SCREAMING_SNAKE_CASE variants.
+
+    Some variants have per-variant name overrides for letter-digit boundaries (e.g.
+    LEVEL1), so we check the naming pattern rather than the exact heck conversion.
+
+    """
+    renamed_enums = generate_stubs.collect_renamed_enums(WORKSPACE_ROOT)
+    stub_enums = _parse_stub_enum_variants(STUB_ROOT)
+
+    violations = [
+        f"{enum_name}.{variant}"
+        for enum_name in sorted(renamed_enums)
+        for variant in stub_enums.get(enum_name, [])
+        if not SCREAMING_SNAKE_RE.match(variant)
+    ]
+
+    assert not violations, "Stub enum variants not in SCREAMING_SNAKE_CASE:\n" + "\n".join(
+        f"  {v}" for v in violations
+    )
+
+
+def test_stub_enum_variants_match_runtime():
+    """
+    Verify .pyi stub enum members match the actual PyO3 runtime members.
+    """
+    pyo3 = pytest.importorskip("nautilus_trader.core.nautilus_pyo3")
+
+    stub_enums = _parse_stub_enum_variants(STUB_ROOT)
+
+    mismatches: list[str] = []
+    missing_stubs: list[str] = []
+
+    for name in sorted(dir(pyo3)):
+        obj = getattr(pyo3, name)
+        if not (isinstance(obj, type) and hasattr(obj, "variants")):
+            continue
+
+        try:
+            runtime_members = [v.name for v in obj.variants()]
+        except Exception:  # noqa: S112
+            continue
+
+        stub_members = stub_enums.get(name)
+        if stub_members is None:
+            missing_stubs.append(name)
+            continue
+
+        if set(runtime_members) != set(stub_members):
+            runtime_only = set(runtime_members) - set(stub_members)
+            stub_only = set(stub_members) - set(runtime_members)
+            parts = [name]
+
+            if runtime_only:
+                parts.append(f"runtime only: {sorted(runtime_only)}")
+            if stub_only:
+                parts.append(f"stub only: {sorted(stub_only)}")
+            mismatches.append(" | ".join(parts))
+
+    assert not mismatches, "Stub/runtime enum member mismatches:\n" + "\n".join(
+        f"  {m}" for m in mismatches
+    )

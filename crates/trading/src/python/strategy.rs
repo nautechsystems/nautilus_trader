@@ -92,7 +92,8 @@ impl StrategyConfig {
         use_hyphens_in_client_order_ids=true,
         log_events=true,
         log_commands=true,
-        log_rejected_due_post_only_as_warning=true
+        log_rejected_due_post_only_as_warning=true,
+        **_kwargs
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
@@ -112,6 +113,7 @@ impl StrategyConfig {
         log_events: bool,
         log_commands: bool,
         log_rejected_due_post_only_as_warning: bool,
+        _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> Self {
         Self {
             strategy_id,

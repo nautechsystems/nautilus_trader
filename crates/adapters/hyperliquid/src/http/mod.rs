@@ -21,4 +21,4 @@ pub mod query;
 pub mod rate_limits;
 
 // Re-exports
-pub use crate::http::client::HyperliquidHttpClient;
+pub use client::HyperliquidHttpClient;

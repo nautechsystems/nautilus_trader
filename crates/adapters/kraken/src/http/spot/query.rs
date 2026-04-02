@@ -72,6 +72,16 @@ pub struct KrakenSpotAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expiretm: Option<String>,
 
+    /// Trigger reference for conditional orders: "last" or "index".
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+
+    /// Display volume for iceberg orders.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayvol: Option<String>,
+
     /// Partner/broker attribution ID.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -299,5 +309,91 @@ mod tests {
 
         assert!(encoded.contains("cl_ord_id=my-order"));
         assert!(!encoded.contains("txid="));
+    }
+
+    #[rstest]
+    fn test_add_order_params_trailing_stop() {
+        let params = KrakenSpotAddOrderParamsBuilder::default()
+            .pair("XXBTZUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenOrderType::TrailingStop)
+            .volume("0.01")
+            .price("500")
+            .build()
+            .unwrap();
+
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(encoded.contains("ordertype=trailing-stop"));
+        assert!(encoded.contains("price=500"));
+    }
+
+    #[rstest]
+    fn test_add_order_params_trailing_stop_limit() {
+        let params = KrakenSpotAddOrderParamsBuilder::default()
+            .pair("XXBTZUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenOrderType::TrailingStopLimit)
+            .volume("0.01")
+            .price("500")
+            .price2("100")
+            .build()
+            .unwrap();
+
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(encoded.contains("ordertype=trailing-stop-limit"));
+        assert!(encoded.contains("price=500"));
+        assert!(encoded.contains("price2=100"));
+    }
+
+    #[rstest]
+    fn test_add_order_params_with_trigger() {
+        let params = KrakenSpotAddOrderParamsBuilder::default()
+            .pair("XXBTZUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenOrderType::StopLoss)
+            .volume("0.01")
+            .price("50000")
+            .trigger("index")
+            .build()
+            .unwrap();
+
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(encoded.contains("trigger=index"));
+    }
+
+    #[rstest]
+    fn test_add_order_params_with_displayvol() {
+        let params = KrakenSpotAddOrderParamsBuilder::default()
+            .pair("XXBTZUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenOrderType::Limit)
+            .volume("1.0")
+            .price("50000")
+            .displayvol("0.1")
+            .build()
+            .unwrap();
+
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(encoded.contains("displayvol=0.1"));
+    }
+
+    #[rstest]
+    fn test_add_order_params_with_viqc_flag() {
+        let params = KrakenSpotAddOrderParamsBuilder::default()
+            .pair("XXBTZUSD")
+            .side(KrakenOrderSide::Buy)
+            .order_type(KrakenOrderType::Market)
+            .volume("100")
+            .oflags("viqc")
+            .build()
+            .unwrap();
+
+        let encoded = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(encoded.contains("oflags=viqc"));
     }
 }

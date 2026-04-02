@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -45,7 +45,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -95,8 +95,8 @@ pub struct BitmexDataClient {
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-    book_channels: Arc<RwLock<AHashMap<InstrumentId, BitmexBookChannel>>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    book_channels: Arc<AtomicMap<InstrumentId, BitmexBookChannel>>,
     instrument_refresh_active: bool,
 }
 
@@ -136,8 +136,8 @@ impl BitmexDataClient {
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
             data_sender,
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            book_channels: Arc::new(RwLock::new(AHashMap::new())),
+            instruments: Arc::new(AtomicMap::new()),
+            book_channels: Arc::new(AtomicMap::new()),
             instrument_refresh_active: false,
         })
     }
@@ -185,7 +185,7 @@ impl BitmexDataClient {
         let clock = self.clock;
 
         let instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = {
-            let guard = instruments.read().expect("instrument cache lock poisoned");
+            let guard = instruments.load();
             guard
                 .values()
                 .map(|inst| (inst.symbol().inner(), inst.clone()))
@@ -230,7 +230,7 @@ impl BitmexDataClient {
         ts_init: UnixNanos,
         message: BitmexWsMessage,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
         quote_cache: &mut QuoteCache,
     ) {
@@ -376,7 +376,7 @@ impl BitmexDataClient {
         data: Vec<crate::websocket::messages::BitmexInstrumentMsg>,
         ts_init: UnixNanos,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
     ) {
         match action {
@@ -413,12 +413,11 @@ impl BitmexDataClient {
                     }
                 }
 
-                {
-                    let mut guard = instruments.write().expect("instrument cache lock poisoned");
+                instruments.rcu(|m| {
                     for inst in &new_instruments {
-                        guard.insert(inst.id(), inst.clone());
+                        m.insert(inst.id(), inst.clone());
                     }
-                }
+                });
                 for (symbol, inst) in &temp_cache {
                     instruments_by_symbol.insert(*symbol, inst.clone());
                 }
@@ -492,20 +491,16 @@ impl BitmexDataClient {
 
         instruments.sort_by_key(|instrument| instrument.id());
 
-        {
-            let mut guard = self
-                .instruments
-                .write()
-                .expect("instrument cache lock poisoned");
-            guard.clear();
+        self.instruments.rcu(|m| {
+            m.clear();
             for instrument in &instruments {
-                guard.insert(instrument.id(), instrument.clone());
+                m.insert(instrument.id(), instrument.clone());
             }
-        }
+        });
+
+        self.http_client.cache_instruments(&instruments);
 
         for instrument in &instruments {
-            self.http_client.cache_instrument(instrument.clone());
-
             if let Err(e) = self
                 .data_sender
                 .send(DataEvent::Instrument(instrument.clone()))
@@ -564,19 +559,14 @@ impl BitmexDataClient {
                             Ok(mut instruments) => {
                                 instruments.sort_by_key(|instrument| instrument.id());
 
-                                {
-                                    let mut guard = instruments_cache
-                                        .write()
-                                        .expect("instrument cache lock poisoned");
-                                    guard.clear();
+                                instruments_cache.rcu(|m| {
+                                    m.clear();
                                     for instrument in &instruments {
-                                        guard.insert(instrument.id(), instrument.clone());
+                                        m.insert(instrument.id(), instrument.clone());
                                     }
-                                }
+                                });
 
-                                for instrument in instruments {
-                                    http_client.cache_instrument(instrument);
-                                }
+                                http_client.cache_instruments(&instruments);
 
                                 log::debug!("BitMEX instruments refreshed: client_id={client_id}");
                             }
@@ -628,10 +618,7 @@ impl DataClient for BitmexDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
-        self.book_channels
-            .write()
-            .expect("book channel cache lock poisoned")
-            .clear();
+        self.book_channels.store(AHashMap::new());
         self.instrument_refresh_active = false;
         Ok(())
     }
@@ -651,7 +638,7 @@ impl DataClient for BitmexDataClient {
                 self.config.api_key.clone(),
                 self.config.api_secret.clone(),
                 None,
-                self.config.heartbeat_interval_secs,
+                self.config.heartbeat_interval_secs.unwrap_or(5),
                 self.config.use_testnet,
             )
             .context("failed to construct BitMEX websocket client")?;
@@ -698,10 +685,7 @@ impl DataClient for BitmexDataClient {
 
         self.cancellation_token = CancellationToken::new();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.book_channels
-            .write()
-            .expect("book channel cache lock poisoned")
-            .clear();
+        self.book_channels.store(AHashMap::new());
         self.instrument_refresh_active = false;
 
         log::info!("Disconnected");
@@ -733,13 +717,7 @@ impl DataClient for BitmexDataClient {
     fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if let Some(instrument) = self
-            .instruments
-            .read()
-            .expect("instrument cache lock poisoned")
-            .get(&instrument_id)
-            .cloned()
-        {
+        if let Some(instrument) = self.instruments.load().get(&instrument_id).cloned() {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::error!("Failed to send instrument event for {instrument_id}: {e}");
             }
@@ -795,10 +773,7 @@ impl DataClient for BitmexDataClient {
                         .map_err(|e| anyhow::anyhow!(e))?,
                     BitmexBookChannel::OrderBook10 => unreachable!(),
                 }
-                book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .insert(instrument_id, channel);
+                book_channels.insert(instrument_id, channel);
                 Ok(())
             },
             "BitMEX book delta subscription",
@@ -817,10 +792,7 @@ impl DataClient for BitmexDataClient {
                 ws.subscribe_book_depth10(instrument_id)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))?;
-                book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .insert(instrument_id, BitmexBookChannel::OrderBook10);
+                book_channels.insert(instrument_id, BitmexBookChannel::OrderBook10);
                 Ok(())
             },
             "BitMEX book depth10 subscription",
@@ -961,10 +933,8 @@ impl DataClient for BitmexDataClient {
 
         self.spawn_ws(
             async move {
-                let channel = book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .remove(&instrument_id);
+                let channel = book_channels.load().get(&instrument_id).copied();
+                book_channels.remove(&instrument_id);
 
                 match channel {
                     Some(BitmexBookChannel::OrderBookL2) => ws
@@ -998,10 +968,7 @@ impl DataClient for BitmexDataClient {
 
         self.spawn_ws(
             async move {
-                book_channels
-                    .write()
-                    .expect("book channel cache lock poisoned")
-                    .remove(&instrument_id);
+                book_channels.remove(&instrument_id);
                 ws.unsubscribe_book_depth10(instrument_id)
                     .await
                     .map_err(|e| anyhow::anyhow!(e))
@@ -1128,16 +1095,13 @@ impl DataClient for BitmexDataClient {
                 .context("failed to request instruments from BitMEX")
             {
                 Ok(instruments) => {
-                    {
-                        let mut guard = instruments_cache
-                            .write()
-                            .expect("instrument cache lock poisoned");
-                        guard.clear();
+                    instruments_cache.rcu(|m| {
+                        m.clear();
                         for instrument in &instruments {
-                            guard.insert(instrument.id(), instrument.clone());
-                            http_client.cache_instrument(instrument.clone());
+                            m.insert(instrument.id(), instrument.clone());
                         }
-                    }
+                    });
+                    http_client.cache_instruments(&instruments);
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -1162,13 +1126,7 @@ impl DataClient for BitmexDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        if let Some(instrument) = self
-            .instruments
-            .read()
-            .expect("instrument cache lock poisoned")
-            .get(&request.instrument_id)
-            .cloned()
-        {
+        if let Some(instrument) = self.instruments.load().get(&request.instrument_id).cloned() {
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                 request.request_id,
                 request.client_id.unwrap_or(self.client_id),
@@ -1205,12 +1163,7 @@ impl DataClient for BitmexDataClient {
             {
                 Ok(Some(instrument)) => {
                     http_client.cache_instrument(instrument.clone());
-                    {
-                        let mut guard = instruments_cache
-                            .write()
-                            .expect("instrument cache lock poisoned");
-                        guard.insert(instrument.id(), instrument.clone());
-                    }
+                    instruments_cache.insert(instrument.id(), instrument.clone());
 
                     let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                         request_id,

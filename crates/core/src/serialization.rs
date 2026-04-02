@@ -974,10 +974,20 @@ mod tests {
     #[rstest]
     #[case(r#"{"value":"42"}"#, 42)]
     #[case(r#"{"value":"0"}"#, 0)]
+    #[case(r#"{"value":"255"}"#, 255)]
     #[case(r#"{"value":""}"#, 0)]
     fn test_deserialize_string_to_u8(#[case] json: &str, #[case] expected: u8) {
         let result: TestStringToU8 = serde_json::from_str(json).unwrap();
         assert_eq!(result.value, expected);
+    }
+
+    #[rstest]
+    #[case(r#"{"value":"256"}"#)]
+    #[case(r#"{"value":"999"}"#)]
+    #[case(r#"{"value":"abc"}"#)]
+    fn test_deserialize_string_to_u8_invalid(#[case] json: &str) {
+        let result: Result<TestStringToU8, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 
     #[derive(Deserialize)]
@@ -989,10 +999,20 @@ mod tests {
     #[rstest]
     #[case(r#"{"value":"12345678901234"}"#, 12345678901234)]
     #[case(r#"{"value":"0"}"#, 0)]
+    #[case(r#"{"value":"18446744073709551615"}"#, u64::MAX)]
     #[case(r#"{"value":""}"#, 0)]
     fn test_deserialize_string_to_u64(#[case] json: &str, #[case] expected: u64) {
         let result: TestStringToU64 = serde_json::from_str(json).unwrap();
         assert_eq!(result.value, expected);
+    }
+
+    #[rstest]
+    #[case(r#"{"value":"18446744073709551616"}"#)]
+    #[case(r#"{"value":"abc"}"#)]
+    #[case(r#"{"value":"-1"}"#)]
+    fn test_deserialize_string_to_u64_invalid(#[case] json: &str) {
+        let result: Result<TestStringToU64, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 
     #[derive(Deserialize)]

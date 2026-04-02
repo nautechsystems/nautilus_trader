@@ -54,7 +54,7 @@ use crate::{
 /// - `"BTCUSDT-SPOT"` → `"BTCUSDT"`
 /// - `"ETHUSDT"` → `"ETHUSDT"` (no suffix)
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "bybit_extract_raw_symbol")]
 fn py_bybit_extract_raw_symbol(symbol: &str) -> &str {
     extract_raw_symbol(symbol)
@@ -66,7 +66,7 @@ fn py_bybit_extract_raw_symbol(symbol: &str) -> &str {
 ///
 /// Returns an error if the aggregation type or step is not supported by Bybit.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "bybit_bar_spec_to_interval")]
 fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String> {
     let aggregation = BarAggregation::from_repr(aggregation as usize)
@@ -87,7 +87,7 @@ fn py_bybit_bar_spec_to_interval(aggregation: u8, step: u64) -> PyResult<String>
 ///
 /// Returns an error if the symbol does not contain a valid Bybit product type suffix.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "bybit_product_type_from_symbol")]
 fn py_bybit_product_type_from_symbol(
     symbol: &str,

@@ -34,7 +34,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UUID4, UnixNanos,
+    AtomicMap, AtomicTime, UUID4, UnixNanos,
     consts::{NAUTILUS_TRADER, NAUTILUS_USER_AGENT},
     env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
@@ -154,8 +154,18 @@ pub struct BitmexRawHttpClient {
 
 impl Default for BitmexRawHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, None, None, None, None)
-            .expect("Failed to create default BitmexHttpInnerClient")
+        Self::new(
+            None,
+            60,
+            3,
+            1000,
+            10_000,
+            10_000,
+            BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND,
+            BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED,
+            None,
+        )
+        .expect("Failed to create default BitmexHttpInnerClient")
     }
 }
 
@@ -172,19 +182,19 @@ impl BitmexRawHttpClient {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
-        max_requests_per_second: Option<u32>,
-        max_requests_per_minute: Option<u32>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
+        max_requests_per_second: u32,
+        max_requests_per_minute: u32,
         proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -194,26 +204,21 @@ impl BitmexRawHttpClient {
 
         let retry_manager = RetryManager::new(retry_config);
 
-        let max_req_per_sec =
-            max_requests_per_second.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND);
-        let max_req_per_min =
-            max_requests_per_minute.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED);
-
         Ok(Self {
             base_url: base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min)?,
-                Some(Self::default_quota(max_req_per_sec)?),
-                timeout_secs,
+                Self::rate_limiter_quotas(max_requests_per_second, max_requests_per_minute)?,
+                Some(Self::default_quota(max_requests_per_second)?),
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| {
                 BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
             })?,
             credential: None,
-            recv_window_ms: recv_window_ms.unwrap_or(10_000),
+            recv_window_ms,
             retry_manager,
             cancellation_token: Arc::new(RwLock::new(CancellationToken::new())),
         })
@@ -230,19 +235,19 @@ impl BitmexRawHttpClient {
         api_key: String,
         api_secret: String,
         base_url: String,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
-        max_requests_per_second: Option<u32>,
-        max_requests_per_minute: Option<u32>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
+        max_requests_per_second: u32,
+        max_requests_per_minute: u32,
         proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -252,26 +257,21 @@ impl BitmexRawHttpClient {
 
         let retry_manager = RetryManager::new(retry_config);
 
-        let max_req_per_sec =
-            max_requests_per_second.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND);
-        let max_req_per_min =
-            max_requests_per_minute.unwrap_or(BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_AUTHENTICATED);
-
         Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(max_req_per_sec, max_req_per_min)?,
-                Some(Self::default_quota(max_req_per_sec)?),
-                timeout_secs,
+                Self::rate_limiter_quotas(max_requests_per_second, max_requests_per_minute)?,
+                Some(Self::default_quota(max_requests_per_second)?),
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| {
                 BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
             })?,
             credential: Some(Credential::new(api_key, api_secret)),
-            recv_window_ms: recv_window_ms.unwrap_or(10_000),
+            recv_window_ms,
             retry_manager,
             cancellation_token: Arc::new(RwLock::new(CancellationToken::new())),
         })
@@ -797,10 +797,10 @@ impl BitmexRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexHttpClient {
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     pub(crate) order_type_cache: Arc<DashMap<ClientOrderId, OrderType>>,
     clock: &'static AtomicTime,
     inner: Arc<BitmexRawHttpClient>,
@@ -833,14 +833,14 @@ impl Default for BitmexHttpClient {
             None,
             None,
             false,
-            Some(60),
+            60,
+            3,
+            1_000,
+            10_000,
+            10_000,
+            BITMEX_DEFAULT_RATE_LIMIT_PER_SECOND,
+            BITMEX_DEFAULT_RATE_LIMIT_PER_MINUTE_UNAUTHENTICATED,
             None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // proxy_url
         )
         .expect("Failed to create default BitmexHttpClient")
     }
@@ -858,13 +858,13 @@ impl BitmexHttpClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
-        max_requests_per_second: Option<u32>,
-        max_requests_per_minute: Option<u32>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
+        max_requests_per_second: u32,
+        max_requests_per_minute: u32,
         proxy_url: Option<String>,
     ) -> Result<Self, BitmexHttpError> {
         // Determine the base URL
@@ -914,7 +914,7 @@ impl BitmexHttpClient {
 
         Ok(Self {
             inner: Arc::new(inner),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             order_type_cache: Arc::new(DashMap::new()),
             cache_initialized: AtomicBool::new(false),
             clock: get_atomic_clock_realtime(),
@@ -929,7 +929,7 @@ impl BitmexHttpClient {
     /// Returns an error if required environment variables are not set or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::with_credentials(
-            None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None, 60, 3, 1_000, 10_000, 10_000, 10, 120, None,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))
     }
@@ -948,13 +948,13 @@ impl BitmexHttpClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
-        max_requests_per_second: Option<u32>,
-        max_requests_per_minute: Option<u32>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
+        max_requests_per_second: u32,
+        max_requests_per_minute: u32,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         // Determine testnet from URL first to select correct environment variables
@@ -1238,11 +1238,21 @@ impl BitmexHttpClient {
         self.cache_initialized.store(true, Ordering::Release);
     }
 
+    /// Caches multiple instruments.
+    ///
+    /// Any existing instruments with the same symbols will be replaced.
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
+        self.cache_initialized.store(true, Ordering::Release);
+    }
+
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Request a single instrument and parse it into a Nautilus type.
@@ -2549,14 +2559,14 @@ mod tests {
             "test_api_key".to_string(),
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
-            Some(60),
-            None, // max_retries
-            None, // retry_delay_ms
-            None, // retry_delay_max_ms
-            None, // recv_window_ms
-            None, // max_requests_per_second
-            None, // max_requests_per_minute
-            None, // proxy_url
+            60,
+            3,
+            1_000,
+            10_000,
+            10_000,
+            10,
+            120,
+            None,
         )
         .expect("Failed to create test client");
 
@@ -2576,14 +2586,14 @@ mod tests {
             "test_api_key".to_string(),
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
-            Some(60),
-            None, // max_retries
-            None, // retry_delay_ms
-            None, // retry_delay_max_ms
-            None, // recv_window_ms
-            None, // max_requests_per_second
-            None, // max_requests_per_minute
-            None, // proxy_url
+            60,
+            3,
+            1_000,
+            10_000,
+            10_000,
+            10,
+            120,
+            None,
         )
         .expect("Failed to create test client");
 
@@ -2610,14 +2620,14 @@ mod tests {
             "test_api_key".to_string(),
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
-            Some(60),
+            60,
+            3,
+            1_000,
+            10_000,
+            10_000, // default recv_window_ms (10000ms = 10s)
+            10,
+            120,
             None,
-            None,
-            None,
-            None, // Use default recv_window_ms (10000ms = 10s)
-            None, // max_requests_per_second
-            None, // max_requests_per_minute
-            None, // proxy_url
         )
         .expect("Failed to create test client");
 
@@ -2625,14 +2635,14 @@ mod tests {
             "test_api_key".to_string(),
             "test_api_secret".to_string(),
             "http://localhost:8080".to_string(),
-            Some(60),
+            60,
+            3,
+            1_000,
+            10_000,
+            30_000, // 30 seconds
+            10,
+            120,
             None,
-            None,
-            None,
-            Some(30_000), // 30 seconds
-            None,         // max_requests_per_second
-            None,         // max_requests_per_minute
-            None,         // proxy_url
         )
         .expect("Failed to create test client");
 

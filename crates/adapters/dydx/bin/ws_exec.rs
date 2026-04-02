@@ -91,8 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Wallet address: {wallet_address}");
     log::info!("");
 
-    let http_client =
-        DydxHttpClient::new(Some(http_url.clone()), Some(30), None, !is_mainnet, None)?;
+    let http_client = DydxHttpClient::new(Some(http_url.clone()), 30, None, !is_mainnet, None)?;
 
     log::info!("Fetching instruments from HTTP API...");
     let instruments = http_client.request_instruments(None, None, None).await?;

@@ -326,4 +326,12 @@ mod test {
             "OrderPendingUpdate(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, ts_event=0)"
         );
     }
+
+    #[rstest]
+    fn test_order_pending_update_serialization() {
+        let original = OrderPendingUpdate::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderPendingUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
 }

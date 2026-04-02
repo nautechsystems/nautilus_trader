@@ -663,6 +663,80 @@ class TestBinanceFuturesExecutionClient:
         assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio
+    async def test_submit_stop_market_order_with_close_position(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"close_position": True},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_send_request.call_args)
+
+        # Assert
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/algoOrder"
+        assert request[1]["payload"]["closePosition"] == "true"
+        assert "quantity" not in request[1]["payload"]
+        assert "reduceOnly" not in request[1]["payload"]
+        assert request[1]["payload"]["triggerPrice"] == "10099.00"
+        assert request[1]["payload"]["workingType"] == "CONTRACT_PRICE"
+
+    @pytest.mark.asyncio
+    async def test_submit_stop_market_order_close_position_with_reduce_only_denied(self, mocker):
+        # Arrange
+        mocker.patch(
+            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
+        )
+        mock_generate_denied = mocker.patch.object(self.exec_client, "generate_order_denied")
+
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(10),
+            trigger_price=Price.from_str("10099.00"),
+            reduce_only=True,
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+            params={"close_position": True},
+        )
+
+        # Act
+        self.exec_client.submit_order(submit_order)
+        await eventually(lambda: mock_generate_denied.called)
+
+        # Assert
+        mock_generate_denied.assert_called_once()
+        reason = mock_generate_denied.call_args.kwargs["reason"]
+        assert "close_position" in reason
+        assert "reduce_only" in reason
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("_is_dual_side_position", "position_id", "expected"),
         [

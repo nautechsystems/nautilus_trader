@@ -80,7 +80,7 @@ Polymarket supports multiple signature types for order signing and verification:
 | Signature Type | Wallet Type                    | Description | Use Case |
 |----------------|--------------------------------|-------------|----------|
 | `0`            | EOA (Externally Owned Account) | Standard EIP712 signatures from wallets with direct private key control. | **Default.** Direct wallet connections (MetaMask, hardware wallets, etc.). |
-| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email-based accounts (Magic Link). Only the email-associated address can execute functions. | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address. |
+| `1`            | Email/Magic Wallet Proxy       | Smart contract wallet for email‑based accounts (Magic Link). Only the email‑associated address can execute functions. | Polymarket Proxy associated with Email/Magic accounts. Requires `funder` address. |
 | `2`            | Browser Wallet Proxy           | Modified Gnosis Safe (1-of-1 multisig) for browser wallets. | Polymarket Proxy associated with browser wallets. Enables UI verification. Requires `funder` address. |
 
 :::note
@@ -278,7 +278,7 @@ FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) se
 
 | Feature          | Binary Options | Notes                             |
 |------------------|----------------|-----------------------------------|
-| Query positions  | ✓              | Contract balance-based positions. |
+| Query positions  | ✓              | Contract balance‑based positions. |
 | Position mode    | -              | Binary outcome positions only.    |
 | Leverage control | -              | No leverage available.            |
 | Margin mode      | -              | No margin trading.                |
@@ -289,7 +289,7 @@ FAK (Fill and Kill) is Polymarket's terminology for Immediate or Cancel (IOC) se
 |----------------------|----------------|--------------------------------|
 | Query open orders    | ✓              | Active orders only.            |
 | Query order history  | ✓              | Limited historical data.       |
-| Order status updates | ✓              | Real-time order state changes. |
+| Order status updates | ✓              | Real‑time order state changes. |
 | Trade history        | ✓              | Execution and fill reports.    |
 
 ### Contingent orders
@@ -500,6 +500,7 @@ The following limitations are currently known:
 | `passphrase`                         | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
 | `base_url_http`                      | `None`       | Override for the REST base URL. |
 | `base_url_ws`                        | `None`       | Override for the WebSocket base URL. |
+| `base_url_data_api`                  | `None`       | Override for the Data API base URL (default `https://data-api.polymarket.com`). |
 | `max_retries`                        | `None`       | Maximum retry attempts for submit/cancel requests. |
 | `retry_delay_initial_ms`             | `None`       | Initial delay (milliseconds) between retries. |
 | `retry_delay_max_ms`                 | `None`       | Maximum delay (milliseconds) between retries. |
@@ -508,7 +509,6 @@ The following limitations are currently known:
 | `log_raw_ws_messages`                | `False`      | Log raw WebSocket payloads at INFO level when `True`. |
 | `instrument_config`                  | `None`       | Optional `PolymarketInstrumentProviderConfig` for instrument loading. |
 | `ws_max_subscriptions_per_connection` | `200`       | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
-| `use_data_api`                       | `False`      | Use the Data API instead of CLOB API for fetching user positions (experimental). |
 
 ### Instrument provider configuration options
 
@@ -516,7 +516,7 @@ The instrument provider config is passed via the `instrument_config` parameter o
 
 | Option               | Default | Description                                                                                       |
 |----------------------|---------|---------------------------------------------------------------------------------------------------|
-| `load_all`           | `False` | Load all venue instruments on start. Auto-set to `True` when `event_slug_builder` is provided.    |
+| `load_all`           | `False` | Load all venue instruments on start. Auto‑set to `True` when `event_slug_builder` is provided.    |
 | `event_slug_builder` | `None`  | Fully qualified path to a callable returning event slugs (e.g., `"mymodule:build_slugs"`).        |
 
 #### Event slug builder

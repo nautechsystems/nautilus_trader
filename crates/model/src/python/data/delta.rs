@@ -30,7 +30,7 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -276,6 +276,12 @@ impl OrderBookDelta {
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let from_dict = py.get_type::<Self>().getattr("from_dict")?;
+        let dict = self.py_to_dict(py)?;
+        (from_dict, (dict,)).into_py_any(py)
     }
 }
 

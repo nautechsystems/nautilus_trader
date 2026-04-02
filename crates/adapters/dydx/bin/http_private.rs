@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     log::info!("");
 
-    let client = DydxHttpClient::new(Some(http_url), Some(30), None, !is_mainnet, None)?;
+    let client = DydxHttpClient::new(Some(http_url), 30, None, !is_mainnet, None)?;
 
     log::info!("Fetching subaccount info...");
     let start = std::time::Instant::now();

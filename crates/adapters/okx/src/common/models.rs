@@ -63,7 +63,7 @@ pub struct OKXInstrument {
     /// Instrument ID, e.g. "BTC-USD-SWAP".
     pub inst_id: Ustr,
     /// Instrument ID code (numeric). Required for WebSocket order operations.
-    /// E.g., 10458 for BTC-USD-SWAP. May not be present for SPOT instruments.
+    /// E.g., 10458 for BTC-USD-SWAP.
     #[serde(default)]
     pub inst_id_code: Option<u64>,
     /// Underlying of the instrument, e.g. "BTC-USD". Only applicable to FUTURES/SWAP/OPTION.

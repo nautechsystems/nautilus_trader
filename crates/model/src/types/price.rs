@@ -1346,6 +1346,22 @@ mod property_tests {
         precision_strategy()
     }
 
+    const DECIMAL_MAX_MANTISSA: i128 = 79_228_162_514_264_337_593_543_950_335;
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "PriceRaw is i64 or i128 depending on feature"
+    )]
+    fn decimal_compatible(raw: PriceRaw, precision: u8) -> bool {
+        if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            return false;
+        }
+        let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));
+        let divisor = (10 as PriceRaw).pow(precision_diff);
+        let rescaled_raw = raw / divisor;
+        i128::from(rescaled_raw.abs()) <= DECIMAL_MAX_MANTISSA
+    }
+
     proptest! {
         /// Property: Price string serialization round-trip should preserve value and precision
         #[rstest]
@@ -1511,6 +1527,43 @@ mod property_tests {
     }
 
     proptest! {
+        /// Property: as_decimal scale always matches precision
+        #[rstest]
+        fn prop_price_as_decimal_preserves_precision(
+            (precision, raw) in valid_precision_raw_strategy()
+        ) {
+            prop_assume!(decimal_compatible(raw, precision));
+            let price = Price::from_raw(raw, precision);
+            let decimal = price.as_decimal();
+            prop_assert_eq!(decimal.scale(), u32::from(precision));
+        }
+
+        /// Property: as_decimal and Display produce the same string
+        #[rstest]
+        fn prop_price_as_decimal_matches_display(
+            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            precision in float_precision_strategy()
+        ) {
+            let price = Price::new(value, precision);
+            prop_assume!(decimal_compatible(price.raw, precision));
+            let display_str = format!("{price}");
+            let decimal_str = price.as_decimal().to_string();
+            prop_assert_eq!(display_str, decimal_str);
+        }
+
+        /// Property: from_decimal roundtrip preserves exact value
+        #[rstest]
+        fn prop_price_from_decimal_roundtrip(
+            (precision, raw) in valid_precision_raw_strategy()
+        ) {
+            prop_assume!(decimal_compatible(raw, precision));
+            let original = Price::from_raw(raw, precision);
+            let decimal = original.as_decimal();
+            let reconstructed = Price::from_decimal(decimal).unwrap();
+            prop_assert_eq!(original.raw, reconstructed.raw);
+            prop_assert_eq!(original.precision, reconstructed.precision);
+        }
+
         /// Property: constructing from valid raw values preserves raw/precision fields
         #[rstest]
         fn prop_price_from_raw_round_trip(

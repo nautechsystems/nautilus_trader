@@ -20,7 +20,7 @@
 //! that emits venue-specific types; this wrapper parses them into Nautilus domain objects
 //! before passing them to Python callbacks.
 //!
-//! The instrument cache is shared via `Arc<RwLock>` so that:
+//! The instrument cache is shared via `Arc<AtomicMap>` so that:
 //! - Python can inject instruments at any time via `cache_instrument`.
 //! - The spawned stream task reads from the same cache for parsing.
 //! - Instrument table messages from the venue update the cache automatically.
@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use futures_util::StreamExt;
 use nautilus_common::{cache::quote::QuoteCache, live::get_runtime};
 use nautilus_core::{
-    UUID4, UnixNanos,
+    AtomicMap, UUID4, UnixNanos,
     python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
     time::get_atomic_clock_realtime,
 };
@@ -81,10 +81,10 @@ use crate::{
     name = "BitmexWebSocketClient",
     module = "nautilus_trader.core.nautilus_pyo3.bitmex"
 )]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")]
 pub struct PyBitmexWebSocketClient {
     inner: BitmexWebSocketClient,
-    instruments_cache: Arc<tokio::sync::RwLock<AHashMap<Ustr, InstrumentAny>>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     ws_dispatch_state: Arc<WsDispatchState>,
 }
 
@@ -100,13 +100,13 @@ impl Debug for PyBitmexWebSocketClient {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyBitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=None, testnet=false))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=5, testnet=false))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
         testnet: bool,
     ) -> PyResult<Self> {
         let inner = BitmexWebSocketClient::new_with_env(
@@ -115,7 +115,7 @@ impl PyBitmexWebSocketClient {
         .map_err(to_pyvalue_err)?;
         Ok(Self {
             inner,
-            instruments_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
+            instruments_cache: Arc::new(AtomicMap::new()),
             ws_dispatch_state: Arc::new(WsDispatchState::default()),
         })
     }
@@ -126,7 +126,7 @@ impl PyBitmexWebSocketClient {
         let inner = BitmexWebSocketClient::from_env().map_err(to_pyvalue_err)?;
         Ok(Self {
             inner,
-            instruments_cache: Arc::new(tokio::sync::RwLock::new(AHashMap::new())),
+            instruments_cache: Arc::new(AtomicMap::new()),
             ws_dispatch_state: Arc::new(WsDispatchState::default()),
         })
     }
@@ -203,14 +203,7 @@ impl PyBitmexWebSocketClient {
     fn py_cache_instrument(&self, py: Python, instrument: Py<PyAny>) -> PyResult<()> {
         let inst = pyobject_to_instrument_any(py, instrument)?;
         let symbol = inst.symbol().inner();
-        let cache = Arc::clone(&self.instruments_cache);
-        // Spawn as background task to avoid deadlock: this method is called from the
-        // Python main thread (holding the GIL) via call_soon_threadsafe callbacks.
-        // The stream task may hold a read lock on the same cache while waiting for the
-        // GIL via Python::attach, so blocking here would create an ABBA deadlock.
-        get_runtime().spawn(async move {
-            cache.write().await.insert(symbol, inst);
-        });
+        self.instruments_cache.insert(symbol, inst);
         Ok(())
     }
 
@@ -229,11 +222,16 @@ impl PyBitmexWebSocketClient {
 
         let cache = Arc::clone(&self.instruments_cache);
         {
-            let mut guard = cache.blocking_write();
+            let mut initial: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
             for inst_py in instruments {
                 let inst = pyobject_to_instrument_any(py, inst_py)?;
-                guard.insert(inst.symbol().inner(), inst);
+                initial.insert(inst.symbol().inner(), inst);
             }
+            cache.rcu(|m| {
+                for (k, v) in &initial {
+                    m.insert(*k, v.clone());
+                }
+            });
         }
 
         let clock = get_atomic_clock_realtime();
@@ -272,8 +270,7 @@ impl PyBitmexWebSocketClient {
                                 ts_init,
                                 &call_soon,
                                 &callback,
-                            )
-                            .await;
+                            );
                         }
                         BitmexWsMessage::Reconnected => {
                             quote_cache.clear();
@@ -783,9 +780,9 @@ impl PyBitmexWebSocketClient {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn handle_table_message(
+fn handle_table_message(
     table_msg: BitmexTableMessage,
-    instruments_cache: &Arc<tokio::sync::RwLock<AHashMap<Ustr, InstrumentAny>>>,
+    instruments_cache: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     quote_cache: &mut QuoteCache,
     order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
@@ -804,12 +801,11 @@ async fn handle_table_message(
             ts_init,
             call_soon,
             callback,
-        )
-        .await;
+        );
         return;
     }
 
-    let instruments = instruments_cache.read().await;
+    let instruments = instruments_cache.load();
 
     match table_msg {
         BitmexTableMessage::OrderBookL2 { action, data }
@@ -984,18 +980,18 @@ fn handle_quote_messages(
     }
 }
 
-async fn handle_instrument_messages(
+fn handle_instrument_messages(
     action: BitmexAction,
     data: Vec<BitmexInstrumentMsg>,
-    instruments_cache: &Arc<tokio::sync::RwLock<AHashMap<Ustr, InstrumentAny>>>,
+    instruments_cache: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
-    let mut cache = instruments_cache.write().await;
-
     if action == BitmexAction::Partial || action == BitmexAction::Insert {
         let data_for_prices = data.clone();
+
+        let mut new_instruments: Vec<(Ustr, InstrumentAny)> = Vec::new();
 
         for msg in data {
             match msg.try_into() {
@@ -1003,13 +999,7 @@ async fn handle_instrument_messages(
                     InstrumentParseResult::Ok(boxed) => {
                         let inst = *boxed;
                         let symbol = inst.symbol().inner();
-                        cache.insert(symbol, inst.clone());
-
-                        Python::attach(|py| {
-                            if let Ok(py_obj) = instrument_any_to_pyobject(py, inst) {
-                                call_python_threadsafe(py, call_soon, callback, py_obj);
-                            }
-                        });
+                        new_instruments.push((symbol, inst));
                     }
                     InstrumentParseResult::Unsupported { .. }
                     | InstrumentParseResult::Inactive { .. } => {}
@@ -1023,6 +1013,21 @@ async fn handle_instrument_messages(
             }
         }
 
+        instruments_cache.rcu(|m| {
+            for (symbol, inst) in &new_instruments {
+                m.insert(*symbol, inst.clone());
+            }
+        });
+
+        for (_, inst) in &new_instruments {
+            Python::attach(|py| {
+                if let Ok(py_obj) = instrument_any_to_pyobject(py, inst.clone()) {
+                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                }
+            });
+        }
+
+        let cache = instruments_cache.load();
         for msg in data_for_prices {
             for d in parse_instrument_msg(&msg, &cache, ts_init) {
                 send_data_to_python(d, call_soon, callback);
@@ -1054,6 +1059,7 @@ async fn handle_instrument_messages(
             }
         }
 
+        let cache = instruments_cache.load();
         for msg in data {
             for d in parse_instrument_msg(&msg, &cache, ts_init) {
                 send_data_to_python(d, call_soon, callback);

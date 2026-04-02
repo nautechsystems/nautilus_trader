@@ -59,6 +59,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+bon = { workspace = true }
 bytes = { workspace = true }
 dotenvy = { workspace = true }
 enum_dispatch = { workspace = true }

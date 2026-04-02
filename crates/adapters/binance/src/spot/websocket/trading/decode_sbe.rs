@@ -16,7 +16,7 @@
 //! SBE decoders for Binance Spot user data stream events.
 //!
 //! Decodes templates 601 (BalanceUpdateEvent), 603 (ExecutionReportEvent), and
-//! 607 (OutboundAccountPositionEvent) from schema 3:2 binary payloads into the
+//! 607 (OutboundAccountPositionEvent) from schema 3:3 binary payloads into the
 //! venue-level structs defined in [`super::user_data`].
 //! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
 
@@ -497,7 +497,7 @@ mod tests {
         order_creation_time_us: Option<i64>,
     ) -> Vec<u8> {
         let var_data_len = 6 + symbol.len() + client_order_id.len() + commission_asset.len();
-        let total = 8 + 281 + var_data_len;
+        let total = 8 + execution_report_event_codec::SBE_BLOCK_LENGTH as usize + var_data_len;
         let mut buf_vec = vec![0u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());

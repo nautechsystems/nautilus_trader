@@ -200,3 +200,85 @@ impl PartialEq for AccountAny {
         self.id() == other.id()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UUID4;
+    use rstest::rstest;
+
+    use crate::{
+        accounts::AccountAny,
+        enums::AccountType,
+        events::{AccountState, account::stubs::*},
+        identifiers::AccountId,
+    };
+
+    #[rstest]
+    fn test_from_events_empty_returns_error() {
+        let events: Vec<AccountState> = vec![];
+        let result = AccountAny::from_events(&events);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_events_single_cash_event(cash_account_state: AccountState) {
+        let result = AccountAny::from_events(&[cash_account_state]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), AccountAny::Cash(_)));
+    }
+
+    #[rstest]
+    fn test_from_events_single_margin_event(margin_account_state: AccountState) {
+        let result = AccountAny::from_events(&[margin_account_state]);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), AccountAny::Margin(_)));
+    }
+
+    #[rstest]
+    fn test_try_from_state_cash(cash_account_state: AccountState) {
+        let result = AccountAny::try_from_state(cash_account_state);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), AccountAny::Cash(_)));
+    }
+
+    #[rstest]
+    fn test_try_from_state_margin(margin_account_state: AccountState) {
+        let result = AccountAny::try_from_state(margin_account_state);
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), AccountAny::Margin(_)));
+    }
+
+    #[rstest]
+    fn test_try_from_state_betting_returns_error() {
+        let state = AccountState::new(
+            AccountId::from("BETTING-001"),
+            AccountType::Betting,
+            vec![],
+            vec![],
+            true,
+            UUID4::default(),
+            0.into(),
+            0.into(),
+            None,
+        );
+        let result = AccountAny::try_from_state(state);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_try_from_state_wallet_returns_error() {
+        let state = AccountState::new(
+            AccountId::from("WALLET-001"),
+            AccountType::Wallet,
+            vec![],
+            vec![],
+            true,
+            UUID4::default(),
+            0.into(),
+            0.into(),
+            None,
+        );
+        let result = AccountAny::try_from_state(state);
+        assert!(result.is_err());
+    }
+}

@@ -66,6 +66,7 @@ nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }

@@ -96,19 +96,27 @@ def get_cached_bybit_http_client(
             environment = nautilus_pyo3.BybitEnvironment.MAINNET
         base_url = nautilus_pyo3.get_bybit_http_base_url(environment)
 
-    return nautilus_pyo3.BybitHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        demo=demo,
-        testnet=testnet,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        recv_window_ms=recv_window_ms,
-        proxy_url=proxy_url,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "demo": demo,
+        "testnet": testnet,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if recv_window_ms is not None:
+        kwargs["recv_window_ms"] = recv_window_ms
+
+    return nautilus_pyo3.BybitHttpClient(**kwargs)
 
 
 @lru_cache(1)

@@ -50,6 +50,11 @@ pub const HYPERLIQUID_POST_ONLY_WOULD_MATCH: &str =
 /// - Stop orders (StopMarket/StopLimit) are protective stops (sl).
 /// - If Touched orders (MarketIfTouched/LimitIfTouched) are profit-taking or entry orders (tp).
 /// - Post-only orders are implemented via ALO (Add Liquidity Only) time-in-force.
+///
+/// Trailing stops (TrailingStopMarket/TrailingStopLimit) are supported by the exchange
+/// and can be parsed from incoming WS messages, but the outgoing request model does not
+/// yet serialize the trailing offset parameters. Add them once HyperliquidExecTriggerParams
+/// is extended with trailing offset fields.
 pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,          // IOC limit order
     OrderType::Limit,           // Standard limit with GTC/IOC/ALO

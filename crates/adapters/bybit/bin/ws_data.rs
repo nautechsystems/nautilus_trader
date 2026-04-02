@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         BybitProductType::Linear,
         BybitEnvironment::Mainnet,
         None,
-        None,
+        20,
     );
     client.connect().await?;
 

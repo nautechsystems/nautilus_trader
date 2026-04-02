@@ -15,12 +15,9 @@
 
 //! Dual-EMA crossover strategy implementation.
 
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Debug;
 
-use nautilus_common::actor::{DataActor, DataActorCore};
+use nautilus_common::actor::DataActor;
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -32,7 +29,10 @@ use nautilus_model::{
     types::Quantity,
 };
 
-use crate::strategy::{Strategy, StrategyConfig, StrategyCore};
+use crate::{
+    nautilus_strategy,
+    strategy::{Strategy, StrategyConfig, StrategyCore},
+};
 
 /// Dual-EMA crossover strategy.
 ///
@@ -88,18 +88,7 @@ impl EmaCross {
     }
 }
 
-impl Deref for EmaCross {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for EmaCross {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(EmaCross);
 
 impl Debug for EmaCross {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -145,15 +134,5 @@ impl DataActor for EmaCross {
 
         self.prev_fast_above = Some(fast_above);
         Ok(())
-    }
-}
-
-impl Strategy for EmaCross {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
     }
 }

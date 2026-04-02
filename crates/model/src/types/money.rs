@@ -1265,11 +1265,13 @@ mod property_tests {
         fn prop_money_decimal_conversion(money in money_strategy()) {
             let decimal = money.as_decimal();
 
+            // Scale must always match currency precision
+            prop_assert_eq!(decimal.scale(), u32::from(money.currency.precision));
+
             #[cfg(feature = "defi")]
             {
                 let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
                 prop_assert!(decimal_f64.is_finite(), "Decimal should convert to finite f64");
-                prop_assert_eq!(decimal.scale(), u32::from(money.currency.precision));
             }
             #[cfg(not(feature = "defi"))]
             {

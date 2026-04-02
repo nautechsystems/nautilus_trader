@@ -300,4 +300,12 @@ mod tests {
             "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1)"
         );
     }
+
+    #[rstest]
+    fn test_order_emulated_serialization() {
+        let original = OrderEmulated::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderEmulated = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
 }

@@ -71,16 +71,23 @@ def get_cached_deribit_http_client(
     DeribitHttpClient
 
     """
-    return nautilus_pyo3.DeribitHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        is_testnet=is_testnet,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "is_testnet": is_testnet,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+
+    return nautilus_pyo3.DeribitHttpClient(**kwargs)
 
 
 @lru_cache(1)

@@ -24,7 +24,7 @@ use crate::common::{
 
 /// Gets the Bybit HTTP base URL for the given environment.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "get_bybit_http_base_url")]
 pub fn py_get_bybit_http_base_url(environment: BybitEnvironment) -> &'static str {
     urls::bybit_http_base_url(environment)
@@ -32,7 +32,7 @@ pub fn py_get_bybit_http_base_url(environment: BybitEnvironment) -> &'static str
 
 /// Gets the Bybit WebSocket URL for public data (market data).
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "get_bybit_ws_url_public")]
 pub fn py_get_bybit_ws_url_public(
     product_type: BybitProductType,
@@ -43,7 +43,7 @@ pub fn py_get_bybit_ws_url_public(
 
 /// Gets the Bybit WebSocket URL for private data (account/order management).
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "get_bybit_ws_url_private")]
 pub fn py_get_bybit_ws_url_private(environment: BybitEnvironment) -> &'static str {
     urls::bybit_ws_private_url(environment)
@@ -51,7 +51,7 @@ pub fn py_get_bybit_ws_url_private(environment: BybitEnvironment) -> &'static st
 
 /// Gets the Bybit WebSocket URL for trade operations (order placement/modification).
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bybit")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bybit")]
 #[pyo3(name = "get_bybit_ws_url_trade")]
 pub fn py_get_bybit_ws_url_trade(environment: BybitEnvironment) -> &'static str {
     urls::bybit_ws_trade_url(environment)

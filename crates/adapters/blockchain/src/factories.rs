@@ -59,7 +59,7 @@ impl ClientConfig for BlockchainDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct BlockchainDataClientFactory;
 
@@ -119,7 +119,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct BlockchainExecutionClientFactory;
 

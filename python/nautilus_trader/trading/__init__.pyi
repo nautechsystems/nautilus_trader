@@ -9,6 +9,7 @@ from nautilus_trader import model
 
 __all__ = [
     "ForexSession",
+    "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
     "Strategy",
     "StrategyConfig",
@@ -18,6 +19,16 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
+
+@typing.final
+class ImportableExecAlgorithmConfig:
+    def __init__(self, exec_algorithm_path: str, config_path: str, config: dict) -> None: ...
+    @property
+    def exec_algorithm_path(self) -> str: ...
+    @property
+    def config_path(self) -> str: ...
+    @property
+    def config(self) -> dict: ...
 
 @typing.final
 class ImportableStrategyConfig:
@@ -31,7 +42,7 @@ class ImportableStrategyConfig:
 
 @typing.final
 class Strategy:
-    def __init__(self, config: typing.Any | None = ...) -> None: ...
+    def __init__(self, config: typing.Any | None = None) -> None: ...
     @property
     def trader_id(self) -> model.TraderId | None: ...
     @property
@@ -59,58 +70,58 @@ class Strategy:
     def submit_order(
         self,
         order: typing.Any,
-        position_id: model.PositionId | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        position_id: model.PositionId | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def modify_order(
         self,
         order: typing.Any,
-        quantity: model.Quantity | None = ...,
-        price: model.Price | None = ...,
-        trigger_price: model.Price | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        quantity: model.Quantity | None = None,
+        price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def cancel_order(
-        self, order: typing.Any, client_id: model.ClientId | None = ..., params: dict | None = ...
+        self, order: typing.Any, client_id: model.ClientId | None = None, params: dict | None = None
     ) -> None: ...
     def cancel_orders(
         self,
         orders: typing.Sequence[typing.Any],
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def cancel_all_orders(
         self,
         instrument_id: model.InstrumentId,
-        order_side: model.OrderSide | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        order_side: model.OrderSide | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def close_position(
         self,
         position: model.Position,
-        client_id: model.ClientId | None = ...,
-        tags: typing.Sequence[str] | None = ...,
-        time_in_force: model.TimeInForce | None = ...,
-        reduce_only: bool | None = ...,
-        quote_quantity: bool | None = ...,
+        client_id: model.ClientId | None = None,
+        tags: typing.Sequence[str] | None = None,
+        time_in_force: model.TimeInForce | None = None,
+        reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
     ) -> None: ...
     def close_all_positions(
         self,
         instrument_id: model.InstrumentId,
-        position_side: model.PositionSide | None = ...,
-        client_id: model.ClientId | None = ...,
-        tags: typing.Sequence[str] | None = ...,
-        time_in_force: model.TimeInForce | None = ...,
-        reduce_only: bool | None = ...,
-        quote_quantity: bool | None = ...,
+        position_side: model.PositionSide | None = None,
+        client_id: model.ClientId | None = None,
+        tags: typing.Sequence[str] | None = None,
+        time_in_force: model.TimeInForce | None = None,
+        reduce_only: bool | None = None,
+        quote_quantity: bool | None = None,
     ) -> None: ...
     def query_account(
-        self, account_id: model.AccountId, client_id: model.ClientId | None = ...
+        self, account_id: model.AccountId, client_id: model.ClientId | None = None
     ) -> None: ...
-    def query_order(self, order: typing.Any, client_id: model.ClientId | None = ...) -> None: ...
+    def query_order(self, order: typing.Any, client_id: model.ClientId | None = None) -> None: ...
     def on_start(self) -> None: ...
     def on_stop(self) -> None: ...
     def on_resume(self) -> None: ...
@@ -134,228 +145,234 @@ class Strategy:
     def subscribe_data(
         self,
         data_type: model.DataType,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_instruments(
-        self, venue: model.Venue, client_id: model.ClientId | None = ..., params: dict | None = ...
+        self,
+        venue: model.Venue,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_instrument(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_book_deltas(
         self,
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
-        depth: int | None,
-        client_id: model.ClientId | None,
-        managed: bool,
-        params: dict | None = ...,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        managed: bool = False,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_book_at_interval(
         self,
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
         interval_ms: int,
-        depth: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_quotes(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_trades(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_bars(
         self,
         bar_type: model.BarType,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_mark_prices(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_index_prices(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_instrument_status(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def subscribe_instrument_close(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def request_data(
         self,
         data_type: model.DataType,
         client_id: model.ClientId,
-        start: int | None = ...,
-        end: int | None = ...,
-        limit: int | None = ...,
-        params: dict | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_instrument(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = ...,
-        end: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_instruments(
         self,
-        venue: model.Venue | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        venue: model.Venue | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_book_snapshot(
         self,
         instrument_id: model.InstrumentId,
-        depth: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_quotes(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = ...,
-        end: int | None = ...,
-        limit: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_trades(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = ...,
-        end: int | None = ...,
-        limit: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: int | None = ...,
-        end: int | None = ...,
-        limit: int | None = ...,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> str: ...
     def unsubscribe_data(
         self,
         data_type: model.DataType,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instruments(
-        self, venue: model.Venue, client_id: model.ClientId | None = ..., params: dict | None = ...
+        self,
+        venue: model.Venue,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instrument(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_deltas(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_at_interval(
         self,
         instrument_id: model.InstrumentId,
         interval_ms: int,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_quotes(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_trades(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_bars(
         self,
         bar_type: model.BarType,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_mark_prices(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_index_prices(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instrument_status(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instrument_close(
         self,
         instrument_id: model.InstrumentId,
-        client_id: model.ClientId | None = ...,
-        params: dict | None = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
     ) -> None: ...
 
 @typing.final
 class StrategyConfig:
     def __init__(
         self,
-        strategy_id: model.StrategyId | None,
-        order_id_tag: str | None,
-        oms_type: model.OmsType | None,
-        external_order_claims: typing.Sequence[model.InstrumentId] | None,
-        manage_contingent_orders: bool,
-        manage_gtd_expiry: bool,
-        manage_stop: bool,
-        market_exit_interval_ms: int,
-        market_exit_max_attempts: int,
-        market_exit_time_in_force: model.TimeInForce,
-        market_exit_reduce_only: bool,
-        use_uuid_client_order_ids: bool,
-        use_hyphens_in_client_order_ids: bool,
-        log_events: bool,
-        log_commands: bool,
-        log_rejected_due_post_only_as_warning: bool,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        oms_type: model.OmsType | None = None,
+        external_order_claims: typing.Sequence[model.InstrumentId] | None = None,
+        manage_contingent_orders: bool = False,
+        manage_gtd_expiry: bool = False,
+        manage_stop: bool = False,
+        market_exit_interval_ms: int = 100,
+        market_exit_max_attempts: int = 100,
+        market_exit_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
+        market_exit_reduce_only: bool = True,
+        use_uuid_client_order_ids: bool = False,
+        use_hyphens_in_client_order_ids: bool = True,
+        log_events: bool = True,
+        log_commands: bool = True,
+        log_rejected_due_post_only_as_warning: bool = True,
     ) -> None: ...
     @property
     def strategy_id(self) -> model.StrategyId | None: ...
@@ -380,10 +397,10 @@ class StrategyConfig:
 
 @typing.final
 class ForexSession(enum.Enum):
-    Sydney = ...
-    Tokyo = ...
-    London = ...
-    NewYork = ...
+    SYDNEY = ...
+    TOKYO = ...
+    LONDON = ...
+    NEW_YORK = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...

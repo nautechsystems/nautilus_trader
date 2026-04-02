@@ -4,7 +4,7 @@ pub use encoder::ExecutionReportEventEncoder;
 use super::*;
 pub use super::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION, SBE_SEMANTIC_VERSION};
 
-pub const SBE_BLOCK_LENGTH: u16 = 281;
+pub const SBE_BLOCK_LENGTH: u16 = 282;
 pub const SBE_TEMPLATE_ID: u16 = 603;
 
 pub mod encoder {
@@ -741,6 +741,13 @@ pub mod encoder {
             self.get_buf_mut().put_i64_at(offset, value);
         }
 
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&mut self, value: expiry_reason::ExpiryReason) {
+            let offset = self.offset + 281;
+            self.get_buf_mut().put_u8_at(offset, value as u8)
+        }
+
         /// VAR_DATA ENCODER - character encoding: 'UTF-8'
         #[inline]
         pub fn symbol(&mut self, value: &str) {
@@ -1309,6 +1316,16 @@ pub mod decoder {
             } else {
                 Some(value)
             }
+        }
+
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&self) -> expiry_reason::ExpiryReason {
+            if self.acting_version() < 3 {
+                return expiry_reason::ExpiryReason::default();
+            }
+
+            self.get_buf().get_u8_at(self.offset + 281).into()
         }
 
         /// VAR_DATA DECODER - character encoding: 'UTF-8'

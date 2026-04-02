@@ -234,6 +234,57 @@ pub fn instruments_from_defs(
         .collect()
 }
 
+/// Rebuilds an instrument with a new tick size (price precision + price increment).
+///
+/// All other fields are preserved from `existing`. Returns a new `InstrumentAny`.
+pub fn rebuild_instrument_with_tick_size(
+    existing: &InstrumentAny,
+    new_tick_size: &str,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentAny> {
+    let bo = match existing {
+        InstrumentAny::BinaryOption(b) => b,
+        other => anyhow::bail!("Expected BinaryOption, was {other:?}"),
+    };
+
+    let tick_size: Decimal = new_tick_size
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{new_tick_size}': {e}"))?;
+    let price_precision = tick_size.scale() as u8;
+    let price_increment = Price::from(tick_size.to_string());
+
+    let rebuilt = BinaryOption::new_checked(
+        bo.id,
+        bo.raw_symbol,
+        bo.asset_class,
+        bo.currency,
+        bo.activation_ns,
+        bo.expiration_ns,
+        price_precision,
+        bo.size_precision,
+        price_increment,
+        bo.size_increment,
+        bo.outcome,
+        bo.description,
+        bo.max_quantity,
+        bo.min_quantity,
+        bo.max_notional,
+        bo.min_notional,
+        bo.max_price,
+        bo.min_price,
+        Some(bo.margin_init),
+        Some(bo.margin_maint),
+        Some(bo.maker_fee),
+        Some(bo.taker_fee),
+        bo.info.clone(),
+        ts_event,
+        ts_init,
+    )?;
+
+    Ok(InstrumentAny::BinaryOption(rebuilt))
+}
+
 fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     map.insert(
@@ -504,5 +555,50 @@ mod tests {
 
         assert_eq!(binary.max_price, Some(Price::from("0.999")));
         assert_eq!(binary.min_price, Some(Price::from("0.001")));
+    }
+
+    #[rstest]
+    fn test_rebuild_instrument_with_tick_size() {
+        let market = load_gamma_market("gamma_market.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        // Original has tick_size 0.01 → price_precision 2
+        let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
+        assert_eq!(instrument.price_precision(), 2);
+
+        let ts_event = UnixNanos::from(2_000_000_000u64);
+        let rebuilt =
+            rebuild_instrument_with_tick_size(&instrument, "0.001", ts_event, ts_event).unwrap();
+
+        assert_eq!(rebuilt.price_precision(), 3);
+        assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
+    }
+
+    #[rstest]
+    fn test_rebuild_instrument_preserves_fields() {
+        let market = load_gamma_market("gamma_market.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
+        let ts_event = UnixNanos::from(2_000_000_000u64);
+        let rebuilt =
+            rebuild_instrument_with_tick_size(&instrument, "0.01", ts_event, ts_event).unwrap();
+
+        assert_eq!(rebuilt.id(), instrument.id());
+        assert_eq!(rebuilt.raw_symbol(), instrument.raw_symbol());
+        assert_eq!(rebuilt.size_precision(), instrument.size_precision());
+
+        let orig_bo = match &instrument {
+            InstrumentAny::BinaryOption(b) => b,
+            _ => panic!(),
+        };
+        let new_bo = match &rebuilt {
+            InstrumentAny::BinaryOption(b) => b,
+            _ => panic!(),
+        };
+        assert_eq!(new_bo.outcome, orig_bo.outcome);
+        assert_eq!(new_bo.currency, orig_bo.currency);
     }
 }

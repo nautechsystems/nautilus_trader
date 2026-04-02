@@ -29,10 +29,12 @@ use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
-    events::{OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderTriggered},
+    events::{
+        OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderTriggered, OrderUpdated,
+    },
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    types::Money,
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -81,10 +83,21 @@ pub type PendingRequestData = (
     PendingOperation,
 );
 
+/// Snapshot of an order's price, quantity, and trigger price at last dispatch.
+/// Used to detect modifications when Bybit sends back an order with the same
+/// status but changed fields.
+#[derive(Debug, Clone)]
+pub struct OrderStateSnapshot {
+    pub quantity: Quantity,
+    pub price: Option<Price>,
+    pub trigger_price: Option<Price>,
+}
+
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequestData>,
+    pub order_snapshots: DashMap<ClientOrderId, OrderStateSnapshot>,
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
@@ -96,6 +109,7 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
+            order_snapshots: DashMap::new(),
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
@@ -173,8 +187,11 @@ pub fn dispatch_ws_message(
         }
         BybitWsMessage::AccountWallet(msg) => {
             let ts_init = clock.get_time_ns();
-            let ts_event =
-                parse_millis_i64(msg.creation_time, "wallet.creation_time").unwrap_or(ts_init);
+            let ts_event = parse_millis_i64(msg.creation_time, "wallet.creation_time")
+                .unwrap_or_else(|e| {
+                    log::warn!("Failed to parse wallet creation_time, using ts_init: {e}");
+                    ts_init
+                });
             for wallet in &msg.data {
                 match parse_ws_account_state(wallet, account_id, ts_event, ts_init) {
                     Ok(state) => emitter.send_account_state(state),
@@ -206,12 +223,12 @@ pub fn dispatch_ws_message(
         BybitWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");
         }
-        BybitWsMessage::Auth(_) => {
-            log::debug!("WebSocket authenticated");
-        }
-        _ => {
-            log::trace!("Ignoring non-execution WebSocket message");
-        }
+        BybitWsMessage::Auth(_)
+        | BybitWsMessage::Orderbook(_)
+        | BybitWsMessage::Trade(_)
+        | BybitWsMessage::Kline(_)
+        | BybitWsMessage::TickerLinear(_)
+        | BybitWsMessage::TickerOption(_) => {}
     }
 }
 
@@ -243,14 +260,46 @@ fn dispatch_order_update(
 
         match order.order_status {
             BybitOrderStatus::Created | BybitOrderStatus::New | BybitOrderStatus::Untriggered => {
+                let snapshot = parse_order_snapshot(order, instrument);
+
                 if state.emitted_accepted.contains(&client_order_id)
                     || state.filled_orders.contains(&client_order_id)
                     || state.triggered_orders.contains(&client_order_id)
                 {
+                    if let Some(snapshot) = snapshot
+                        && is_snapshot_updated(&snapshot, &client_order_id, state)
+                    {
+                        let updated = OrderUpdated::new(
+                            emitter.trader_id(),
+                            identity.strategy_id,
+                            identity.instrument_id,
+                            client_order_id,
+                            snapshot.quantity,
+                            UUID4::new(),
+                            ts_init,
+                            ts_init,
+                            false,
+                            Some(venue_order_id),
+                            Some(account_id),
+                            snapshot.price,
+                            snapshot.trigger_price,
+                            None,
+                            false,
+                        );
+                        state.order_snapshots.insert(client_order_id, snapshot);
+                        emitter.send_order_event(OrderEventAny::Updated(updated));
+                        return;
+                    }
                     log::debug!("Skipping duplicate Accepted for {client_order_id}");
                     return;
                 }
+
                 state.insert_accepted(client_order_id);
+
+                if let Some(snapshot) = snapshot {
+                    state.order_snapshots.insert(client_order_id, snapshot);
+                }
+
                 let accepted = OrderAccepted::new(
                     emitter.trader_id(),
                     identity.strategy_id,
@@ -334,6 +383,7 @@ fn dispatch_order_update(
                         order.reject_reason
                     };
                     state.order_identities.remove(&client_order_id);
+                    state.order_snapshots.remove(&client_order_id);
                     emitter.emit_order_rejected_event(
                         identity.strategy_id,
                         identity.instrument_id,
@@ -356,6 +406,33 @@ fn dispatch_order_update(
                     state,
                     ts_init,
                 );
+
+                // A successful amend on a partially filled order keeps the
+                // PartiallyFilled status. Detect price/qty/trigger changes and
+                // emit OrderUpdated so PendingUpdate resolves.
+                if let Some(snapshot) = parse_order_snapshot(order, instrument)
+                    && is_snapshot_updated(&snapshot, &client_order_id, state)
+                {
+                    let updated = OrderUpdated::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        snapshot.quantity,
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(venue_order_id),
+                        Some(account_id),
+                        snapshot.price,
+                        snapshot.trigger_price,
+                        None,
+                        false,
+                    );
+                    state.order_snapshots.insert(client_order_id, snapshot);
+                    emitter.send_order_event(OrderEventAny::Updated(updated));
+                }
             }
             BybitOrderStatus::Filled => {
                 // Fills arrive on the execution channel; no event needed here.
@@ -609,7 +686,10 @@ fn dispatch_order_response(
         .as_ref()
         .map(|(_, _, op)| *op)
         .or_else(|| pending_op_from_str(resp.op.as_str()))
-        .unwrap_or(PendingOperation::Place);
+        .unwrap_or_else(|| {
+            log::warn!("Unknown order operation '{}', defaulting to Place", resp.op);
+            PendingOperation::Place
+        });
 
     // For batch rejections (ret_code != 0), emit rejections for ALL orders
     if let Some((cids, voids, _)) = &pending
@@ -744,6 +824,64 @@ fn pending_op_from_str(op: &str) -> Option<PendingOperation> {
     }
 }
 
+/// Parses an order snapshot from a WS order message for modification detection.
+fn parse_order_snapshot(
+    order: &BybitWsAccountOrder,
+    instrument: &InstrumentAny,
+) -> Option<OrderStateSnapshot> {
+    let quantity =
+        parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty").ok()?;
+
+    let price = if !order.price.is_empty() && order.price != "0" {
+        parse_price_with_precision(&order.price, instrument.price_precision(), "order.price").ok()
+    } else {
+        None
+    };
+
+    let trigger_price = if !order.trigger_price.is_empty() && order.trigger_price != "0" {
+        parse_price_with_precision(
+            &order.trigger_price,
+            instrument.price_precision(),
+            "order.triggerPrice",
+        )
+        .ok()
+    } else {
+        None
+    };
+
+    Some(OrderStateSnapshot {
+        quantity,
+        price,
+        trigger_price,
+    })
+}
+
+/// Returns whether the incoming snapshot differs from the stored snapshot.
+fn is_snapshot_updated(
+    snapshot: &OrderStateSnapshot,
+    client_order_id: &ClientOrderId,
+    state: &WsDispatchState,
+) -> bool {
+    let Some(previous) = state.order_snapshots.get(client_order_id) else {
+        return false;
+    };
+
+    if let (Some(prev_price), Some(new_price)) = (previous.price, snapshot.price)
+        && prev_price != new_price
+    {
+        return true;
+    }
+
+    if let (Some(prev_trigger), Some(new_trigger)) =
+        (previous.trigger_price, snapshot.trigger_price)
+        && prev_trigger != new_trigger
+    {
+        return true;
+    }
+
+    previous.quantity != snapshot.quantity
+}
+
 /// Synthesizes and emits `OrderAccepted` if one has not yet been emitted for
 /// this order. Handles fast-filling orders that skip the `New` state on Bybit.
 fn ensure_accepted_emitted(
@@ -777,6 +915,7 @@ fn ensure_accepted_emitted(
 /// Removes a terminal order from all tracking sets.
 fn cleanup_terminal(client_order_id: ClientOrderId, state: &WsDispatchState) {
     state.order_identities.remove(&client_order_id);
+    state.order_snapshots.remove(&client_order_id);
     state.emitted_accepted.remove(&client_order_id);
     state.triggered_orders.remove(&client_order_id);
     state.filled_orders.remove(&client_order_id);
@@ -802,7 +941,10 @@ fn extract_venue_order_id_from_data(data: &serde_json::Value) -> Option<VenueOrd
 mod tests {
     use ahash::AHashMap;
     use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
-    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{
+        UnixNanos,
+        time::{AtomicTime, get_atomic_clock_realtime},
+    };
     use nautilus_live::emitter::ExecutionEventEmitter;
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType},
@@ -1130,5 +1272,302 @@ mod tests {
         );
 
         assert!(rx.try_recv().is_err());
+    }
+
+    fn new_order_value() -> serde_json::Value {
+        let json = load_test_json("ws_account_order.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["orderStatus"] = serde_json::Value::String("New".to_string());
+        value
+    }
+
+    struct DispatchTestContext {
+        instruments: AHashMap<Ustr, InstrumentAny>,
+        emitter: ExecutionEventEmitter,
+        rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        clock: &'static AtomicTime,
+        state: WsDispatchState,
+    }
+
+    impl DispatchTestContext {
+        fn new() -> Self {
+            let instrument = linear_instrument();
+            let instruments = build_instruments(std::slice::from_ref(&instrument));
+            let (emitter, rx) = create_emitter();
+            let clock = get_atomic_clock_realtime();
+            let state = WsDispatchState::default();
+            Self {
+                instruments,
+                emitter,
+                rx,
+                clock,
+                state,
+            }
+        }
+
+        fn accept_order(&mut self, value: &serde_json::Value) {
+            let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+                serde_json::from_value(value.clone()).unwrap();
+
+            if let Some(order) = msg.data.first()
+                && !order.order_link_id.is_empty()
+                && !self
+                    .state
+                    .order_identities
+                    .contains_key(&ClientOrderId::new(order.order_link_id.as_str()))
+            {
+                let cid = ClientOrderId::new(order.order_link_id.as_str());
+                self.state.order_identities.insert(cid, default_identity());
+            }
+
+            self.dispatch_value(value);
+
+            let event = self.rx.try_recv().unwrap();
+            assert!(
+                matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_))),
+                "Expected Accepted, found {event:?}"
+            );
+        }
+
+        fn dispatch_value(&self, value: &serde_json::Value) {
+            let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+                serde_json::from_value(value.clone()).unwrap();
+            let ws_msg = BybitWsMessage::AccountOrder(msg);
+            dispatch_ws_message(
+                &ws_msg,
+                &self.emitter,
+                &self.state,
+                test_account_id(),
+                &self.instruments,
+                self.clock,
+            );
+        }
+
+        fn recv_updated(&mut self) -> OrderUpdated {
+            let event = self.rx.try_recv().unwrap();
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Updated(updated)) => updated,
+                other => panic!("Expected Updated event, found {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_updated_on_price_change() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        ctx.accept_order(&value);
+
+        let mut amended = value;
+        amended["data"][0]["price"] = serde_json::Value::String("31000".to_string());
+        ctx.dispatch_value(&amended);
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.client_order_id, ClientOrderId::from("client-1"));
+        assert_eq!(updated.price, Some(Price::from("31000.00")));
+        assert_eq!(updated.quantity, Quantity::from("0.010"));
+        assert_eq!(updated.trigger_price, None);
+        assert!(updated.venue_order_id.is_some());
+    }
+
+    #[rstest]
+    fn test_dispatch_order_updated_on_quantity_change() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        ctx.accept_order(&value);
+
+        let mut amended = value;
+        amended["data"][0]["qty"] = serde_json::Value::String("0.020".to_string());
+        ctx.dispatch_value(&amended);
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.quantity, Quantity::from("0.020"));
+        assert_eq!(updated.price, Some(Price::from("30000.00")));
+    }
+
+    #[rstest]
+    fn test_dispatch_order_updated_on_trigger_price_change() {
+        let mut ctx = DispatchTestContext::new();
+        let mut value = new_order_value();
+        value["data"][0]["triggerPrice"] = serde_json::Value::String("29000".to_string());
+        ctx.accept_order(&value);
+
+        let mut amended = value;
+        amended["data"][0]["triggerPrice"] = serde_json::Value::String("28000".to_string());
+        ctx.dispatch_value(&amended);
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.trigger_price, Some(Price::from("28000.00")));
+        assert_eq!(updated.price, Some(Price::from("30000.00")));
+    }
+
+    #[rstest]
+    fn test_dispatch_dedup_suppresses_identical_after_snapshot() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        ctx.accept_order(&value);
+
+        ctx.dispatch_value(&value);
+
+        assert!(
+            ctx.rx.try_recv().is_err(),
+            "Expected no event for identical redelivery"
+        );
+    }
+
+    #[rstest]
+    fn test_dispatch_order_updated_stores_snapshot_for_subsequent_change() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        ctx.accept_order(&value);
+
+        let mut amended1 = value.clone();
+        amended1["data"][0]["price"] = serde_json::Value::String("31000".to_string());
+        ctx.dispatch_value(&amended1);
+        let _ = ctx.recv_updated();
+
+        let mut amended2 = value;
+        amended2["data"][0]["price"] = serde_json::Value::String("32000".to_string());
+        ctx.dispatch_value(&amended2);
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.price, Some(Price::from("32000.00")));
+    }
+
+    #[rstest]
+    #[case::price_changed(
+        Some(Price::from("100.00")),
+        None,
+        Quantity::from("1.000"),
+        Some(Price::from("200.00")),
+        None,
+        Quantity::from("1.000"),
+        true
+    )]
+    #[case::trigger_changed(
+        None,
+        Some(Price::from("100.00")),
+        Quantity::from("1.000"),
+        None,
+        Some(Price::from("90.00")),
+        Quantity::from("1.000"),
+        true
+    )]
+    #[case::qty_changed(
+        Some(Price::from("100.00")),
+        None,
+        Quantity::from("1.000"),
+        Some(Price::from("100.00")),
+        None,
+        Quantity::from("2.000"),
+        true
+    )]
+    #[case::no_change(
+        Some(Price::from("100.00")),
+        None,
+        Quantity::from("1.000"),
+        Some(Price::from("100.00")),
+        None,
+        Quantity::from("1.000"),
+        false
+    )]
+    fn test_is_snapshot_updated(
+        #[case] prev_price: Option<Price>,
+        #[case] prev_trigger: Option<Price>,
+        #[case] prev_qty: Quantity,
+        #[case] new_price: Option<Price>,
+        #[case] new_trigger: Option<Price>,
+        #[case] new_qty: Quantity,
+        #[case] expected: bool,
+    ) {
+        let state = WsDispatchState::default();
+        let cid = ClientOrderId::from("test-1");
+        state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: prev_qty,
+                price: prev_price,
+                trigger_price: prev_trigger,
+            },
+        );
+
+        let new_snapshot = OrderStateSnapshot {
+            quantity: new_qty,
+            price: new_price,
+            trigger_price: new_trigger,
+        };
+        assert_eq!(is_snapshot_updated(&new_snapshot, &cid, &state), expected);
+    }
+
+    #[rstest]
+    fn test_is_snapshot_updated_no_previous() {
+        let state = WsDispatchState::default();
+        let cid = ClientOrderId::from("test-1");
+
+        let new_snapshot = OrderStateSnapshot {
+            quantity: Quantity::from("1.000"),
+            price: Some(Price::from("100.00")),
+            trigger_price: None,
+        };
+        assert!(!is_snapshot_updated(&new_snapshot, &cid, &state));
+    }
+
+    #[rstest]
+    #[case::limit_order("30000", "0", Some(Price::from("30000.00")), None)]
+    #[case::conditional("0", "29000", None, Some(Price::from("29000.00")))]
+    #[case::both(
+        "30000",
+        "29000",
+        Some(Price::from("30000.00")),
+        Some(Price::from("29000.00"))
+    )]
+    fn test_parse_order_snapshot(
+        #[case] price: &str,
+        #[case] trigger: &str,
+        #[case] expected_price: Option<Price>,
+        #[case] expected_trigger: Option<Price>,
+    ) {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["price"] = serde_json::Value::String(price.to_string());
+        value["data"][0]["triggerPrice"] = serde_json::Value::String(trigger.to_string());
+        let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_value(value).unwrap();
+
+        let snapshot = parse_order_snapshot(&msg.data[0], &instrument).unwrap();
+        assert_eq!(snapshot.price, expected_price);
+        assert_eq!(snapshot.trigger_price, expected_trigger);
+        assert_eq!(snapshot.quantity, Quantity::from("0.010"));
+    }
+
+    #[rstest]
+    fn test_parse_order_snapshot_invalid_qty_returns_none() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order.json");
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["data"][0]["qty"] = serde_json::Value::String(String::new());
+        let msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_value(value).unwrap();
+
+        assert!(parse_order_snapshot(&msg.data[0], &instrument).is_none());
+    }
+
+    #[rstest]
+    fn test_dispatch_order_updated_on_partially_filled_price_change() {
+        let mut ctx = DispatchTestContext::new();
+        let value = new_order_value();
+        ctx.accept_order(&value);
+
+        let mut amended = value;
+        amended["data"][0]["orderStatus"] =
+            serde_json::Value::String("PartiallyFilled".to_string());
+        amended["data"][0]["cumExecQty"] = serde_json::Value::String("0.005".to_string());
+        amended["data"][0]["price"] = serde_json::Value::String("31000".to_string());
+        ctx.dispatch_value(&amended);
+
+        let updated = ctx.recv_updated();
+        assert_eq!(updated.client_order_id, ClientOrderId::from("client-1"));
+        assert_eq!(updated.price, Some(Price::from("31000.00")));
     }
 }

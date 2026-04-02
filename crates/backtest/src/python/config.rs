@@ -15,7 +15,7 @@
 
 //! Python bindings for backtest configuration types.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::{UUID4, UnixNanos};
@@ -68,29 +68,30 @@ impl BacktestEngineConfig {
         logging: Option<LoggerConfig>,
         instance_id: Option<UUID4>,
     ) -> Self {
-        Self::new(
-            Environment::Backtest,
-            trader_id.unwrap_or_default(),
-            load_state,
-            save_state,
-            bypass_logging,
-            run_analysis,
-            timeout_connection,
-            timeout_reconciliation,
-            timeout_portfolio,
-            timeout_disconnection,
-            delay_post_stop,
-            timeout_shutdown,
-            logging,
+        let defaults = Self::default();
+        Self {
+            environment: Environment::Backtest,
+            trader_id: trader_id.unwrap_or_default(),
+            load_state: load_state.unwrap_or(defaults.load_state),
+            save_state: save_state.unwrap_or(defaults.save_state),
+            bypass_logging: bypass_logging.unwrap_or(defaults.bypass_logging),
+            run_analysis: run_analysis.unwrap_or(defaults.run_analysis),
+            timeout_connection: Duration::from_secs(timeout_connection.unwrap_or(60)),
+            timeout_reconciliation: Duration::from_secs(timeout_reconciliation.unwrap_or(30)),
+            timeout_portfolio: Duration::from_secs(timeout_portfolio.unwrap_or(10)),
+            timeout_disconnection: Duration::from_secs(timeout_disconnection.unwrap_or(10)),
+            delay_post_stop: Duration::from_secs(delay_post_stop.unwrap_or(10)),
+            timeout_shutdown: Duration::from_secs(timeout_shutdown.unwrap_or(5)),
+            logging: logging.unwrap_or_default(),
             instance_id,
-            None, // cache
-            None, // msgbus
-            None, // data_engine
-            None, // risk_engine
-            None, // exec_engine
-            None, // portfolio
-            None, // streaming
-        )
+            cache: None,
+            msgbus: None,
+            data_engine: None,
+            risk_engine: None,
+            exec_engine: None,
+            portfolio: None,
+            streaming: None,
+        }
     }
 
     #[getter]
@@ -188,34 +189,33 @@ impl BacktestVenueConfig {
         leverages: Option<HashMap<InstrumentId, f64>>,
         price_protection_points: Option<u32>,
     ) -> Self {
-        let leverages = leverages.map(|m| m.into_iter().collect());
-        Self::new(
-            Ustr::from(name),
-            oms_type,
-            account_type,
-            book_type,
-            routing,
-            frozen_account,
-            reject_stop_orders,
-            support_gtd_orders,
-            support_contingent_orders,
-            use_position_ids,
-            use_random_ids,
-            use_reduce_only,
-            bar_execution,
-            bar_adaptive_high_low_ordering,
-            trade_execution,
-            use_market_order_acks,
-            liquidity_consumption,
-            allow_cash_borrowing,
-            queue_position,
-            oto_trigger_mode,
-            starting_balances,
-            base_currency,
-            default_leverage,
-            leverages,
-            price_protection_points,
-        )
+        Self::builder()
+            .name(Ustr::from(name))
+            .oms_type(oms_type)
+            .account_type(account_type)
+            .book_type(book_type)
+            .starting_balances(starting_balances)
+            .maybe_routing(routing)
+            .maybe_frozen_account(frozen_account)
+            .maybe_reject_stop_orders(reject_stop_orders)
+            .maybe_support_gtd_orders(support_gtd_orders)
+            .maybe_support_contingent_orders(support_contingent_orders)
+            .maybe_use_position_ids(use_position_ids)
+            .maybe_use_random_ids(use_random_ids)
+            .maybe_use_reduce_only(use_reduce_only)
+            .maybe_bar_execution(bar_execution)
+            .maybe_bar_adaptive_high_low_ordering(bar_adaptive_high_low_ordering)
+            .maybe_trade_execution(trade_execution)
+            .maybe_use_market_order_acks(use_market_order_acks)
+            .maybe_liquidity_consumption(liquidity_consumption)
+            .maybe_allow_cash_borrowing(allow_cash_borrowing)
+            .maybe_queue_position(queue_position)
+            .maybe_oto_trigger_mode(oto_trigger_mode)
+            .maybe_base_currency(base_currency)
+            .maybe_default_leverage(default_leverage)
+            .maybe_leverages(leverages.map(|m| m.into_iter().collect()))
+            .maybe_price_protection_points(price_protection_points)
+            .build()
     }
 
     #[getter]
@@ -306,25 +306,24 @@ impl BacktestDataConfig {
         let data_type = data_type
             .parse::<NautilusDataType>()
             .map_err(nautilus_core::python::to_pyvalue_err)?;
-        let catalog_fs_storage_options =
-            catalog_fs_storage_options.map(|m| m.into_iter().collect());
-        let metadata = metadata.map(|m| m.into_iter().collect());
-        Ok(Self::new(
-            data_type,
-            catalog_path,
-            catalog_fs_protocol,
-            catalog_fs_storage_options,
-            instrument_id,
-            instrument_ids,
-            start_time.map(UnixNanos::from),
-            end_time.map(UnixNanos::from),
-            filter_expr,
-            client_id,
-            metadata,
-            bar_spec,
-            bar_types,
-            optimize_file_loading,
-        ))
+        Ok(Self::builder()
+            .data_type(data_type)
+            .catalog_path(catalog_path)
+            .maybe_catalog_fs_protocol(catalog_fs_protocol)
+            .maybe_catalog_fs_storage_options(
+                catalog_fs_storage_options.map(|m| m.into_iter().collect()),
+            )
+            .maybe_instrument_id(instrument_id)
+            .maybe_instrument_ids(instrument_ids)
+            .maybe_start_time(start_time.map(UnixNanos::from))
+            .maybe_end_time(end_time.map(UnixNanos::from))
+            .maybe_filter_expr(filter_expr)
+            .maybe_client_id(client_id)
+            .maybe_metadata(metadata.map(|m| m.into_iter().collect()))
+            .maybe_bar_spec(bar_spec)
+            .maybe_bar_types(bar_types)
+            .maybe_optimize_file_loading(optimize_file_loading)
+            .build())
     }
 
     #[getter]
@@ -377,16 +376,16 @@ impl BacktestRunConfig {
         start: Option<u64>,
         end: Option<u64>,
     ) -> Self {
-        Self::new(
-            id,
-            venues,
-            data,
-            engine.unwrap_or_default(),
-            chunk_size,
-            dispose_on_completion,
-            start.map(UnixNanos::from),
-            end.map(UnixNanos::from),
-        )
+        Self::builder()
+            .venues(venues)
+            .data(data)
+            .maybe_engine(engine)
+            .maybe_id(id)
+            .maybe_chunk_size(chunk_size)
+            .maybe_dispose_on_completion(dispose_on_completion)
+            .maybe_start(start.map(UnixNanos::from))
+            .maybe_end(end.map(UnixNanos::from))
+            .build()
     }
 
     #[getter]

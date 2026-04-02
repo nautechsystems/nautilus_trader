@@ -87,7 +87,7 @@ impl TardisInstrumentMiniInfo {
 ///
 /// Returns an error if the bar aggregation kind is unsupported.
 #[pyfunction(name = "bar_spec_to_tardis_trade_bar_string")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 pub fn py_bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> PyResult<String> {
     bar_spec_to_tardis_trade_bar_string(bar_spec).map_err(to_pyvalue_err)
 }

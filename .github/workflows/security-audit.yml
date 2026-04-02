@@ -136,8 +136,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Get uv version from pyproject.toml
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+
       - name: Install uv
         uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
 
       - name: Install Python
         run: uv python install 3.13
@@ -179,3 +186,4 @@ jobs:
             --config=osv-scanner.toml
             --lockfile=Cargo.lock
             --lockfile=uv.lock
+            --lockfile=python/uv.lock

@@ -5,5 +5,5 @@ __all__ = [
 ]
 
 def ensure_file_exists_or_download_http(
-    filepath: str, url: str, checksums: str | None = ..., timeout_secs: int | None = ...
+    filepath: str, url: str, checksums: str | None = None, timeout_secs: int | None = 30
 ) -> None: ...

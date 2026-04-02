@@ -49,13 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,     // api_key
         None,     // api_secret
         testnet,  // testnet
-        Some(60), // timeout_secs
-        None,     // max_retries
-        None,     // retry_delay_ms
-        None,     // retry_delay_max_ms
-        None,     // recv_window_ms
-        None,     // max_requests_per_second
-        None,     // max_requests_per_minute
+        60,       // timeout_secs
+        3,        // max_retries
+        1_000,    // retry_delay_ms
+        10_000,   // retry_delay_max_ms
+        10_000,   // recv_window_ms
+        10,       // max_requests_per_second
+        120,      // max_requests_per_minute
         None,     // proxy_url
     )
     .expect("Failed to create HTTP client");
@@ -68,11 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create WebSocket client
     let mut ws_client = BitmexWebSocketClient::new(
-        ws_url,  // url: defaults to wss://ws.bitmex.com/realtime
-        None,    // No API key for public feeds
-        None,    // No API secret
-        None,    // Account ID
-        Some(5), // 5 second heartbeat
+        ws_url, // url: defaults to wss://ws.bitmex.com/realtime
+        None,   // No API key for public feeds
+        None,   // No API secret
+        None,   // Account ID
+        5,      // 5 second heartbeat
     )
     .unwrap();
     ws_client.connect().await?;

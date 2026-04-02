@@ -26,9 +26,8 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -61,9 +60,10 @@ use super::{
         AxFundingRatesResponse, AxInitialMarginRequirementResponse, AxInstrument,
         AxInstrumentsResponse, AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse,
         AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
-        AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest, CancelAllOrdersRequest,
-        CancelOrderRequest, PlaceOrderRequest, PreviewAggressiveLimitOrderRequest,
+        AxReplaceOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickersResponse,
+        AxTradesResponse, AxTransactionsResponse, AxWhoAmI, BatchCancelOrdersRequest,
+        CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate,
@@ -108,7 +108,7 @@ pub struct AxRawHttpClient {
 
 impl Default for AxRawHttpClient {
     fn default() -> Self {
-        Self::new(None, None, Some(60), None, None, None, None)
+        Self::new(None, None, 60, 3, 1000, 10_000, None)
             .expect("Failed to create default AxRawHttpClient")
     }
 }
@@ -182,16 +182,16 @@ impl AxRawHttpClient {
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -209,7 +209,7 @@ impl AxRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*AX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
@@ -231,16 +231,16 @@ impl AxRawHttpClient {
         api_secret: String,
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -258,7 +258,7 @@ impl AxRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*AX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
@@ -641,6 +641,34 @@ impl AxRawHttpClient {
             &self.orders_base_url,
             Method::POST,
             "/cancel_order",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
+    /// Replaces (amends) an existing order.
+    ///
+    /// The exchange cancels the original order and creates a new one with the
+    /// updated fields. Unspecified optional fields inherit from the original.
+    ///
+    /// # Endpoint
+    /// `POST /replace_order` (orders base URL)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn replace_order(
+        &self,
+        request: &ReplaceOrderRequest,
+    ) -> Result<AxReplaceOrderResponse, AxHttpError> {
+        let body = serde_json::to_vec(request)
+            .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
+        self.send_request_to_url::<AxReplaceOrderResponse, ()>(
+            &self.orders_base_url,
+            Method::POST,
+            "/replace_order",
             None,
             Some(body),
             true,
@@ -1052,11 +1080,11 @@ impl AxRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")
 )]
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
@@ -1074,7 +1102,7 @@ impl Clone for AxHttpClient {
 
 impl Default for AxHttpClient {
     fn default() -> Self {
-        Self::new(None, None, None, None, None, None, None)
+        Self::new(None, None, 60, 3, 1000, 10_000, None)
             .expect("Failed to create default AxHttpClient")
     }
 }
@@ -1089,10 +1117,10 @@ impl AxHttpClient {
     pub fn new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         Ok(Self {
@@ -1105,7 +1133,7 @@ impl AxHttpClient {
                 retry_delay_max_ms,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1122,10 +1150,10 @@ impl AxHttpClient {
         api_secret: String,
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
         Ok(Self {
@@ -1140,7 +1168,7 @@ impl AxHttpClient {
                 retry_delay_max_ms,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1192,19 +1220,21 @@ impl AxHttpClient {
     #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
-            .iter()
-            .map(|entry| entry.key().to_string())
+            .load()
+            .keys()
+            .map(|k| k.to_string())
             .collect()
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same symbols will be replaced.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
-        }
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
         self.cache_initialized.store(true, Ordering::Release);
     }
 
@@ -1262,9 +1292,7 @@ impl AxHttpClient {
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Requests all instruments from Ax.

@@ -45,7 +45,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
 )]
 pub struct BetfairDataClientFactory;
 
@@ -130,7 +130,7 @@ impl DataClientFactory for BetfairDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
 )]
 pub struct BetfairExecutionClientFactory;
 

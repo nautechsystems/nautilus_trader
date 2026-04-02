@@ -26,17 +26,17 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
-    enums::{AccountType, CurrencyType, OrderSide, OrderType, TimeInForce},
+    data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
+    enums::{AccountType, BookType, CurrencyType, OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -45,6 +45,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -100,12 +101,12 @@ impl Default for KrakenFuturesRawHttpClient {
         Self::new(
             KrakenEnvironment::Mainnet,
             None,
-            Some(60),
+            60,
             None,
             None,
             None,
             None,
-            None,
+            KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
         )
         .expect("Failed to create default KrakenFuturesRawHttpClient")
     }
@@ -126,12 +127,12 @@ impl KrakenFuturesRawHttpClient {
     pub fn new(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> anyhow::Result<Self> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -149,17 +150,14 @@ impl KrakenFuturesRawHttpClient {
             get_kraken_http_base_url(KrakenProductType::Futures, environment).to_string()
         });
 
-        let rate_limit =
-            max_requests_per_second.unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND);
-
         Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit)?,
-                Some(Self::default_quota(rate_limit)?),
-                timeout_secs,
+                Self::rate_limiter_quotas(max_requests_per_second)?,
+                Some(Self::default_quota(max_requests_per_second)?),
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
@@ -178,12 +176,12 @@ impl KrakenFuturesRawHttpClient {
         api_secret: String,
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> anyhow::Result<Self> {
         let retry_config = RetryConfig {
             max_retries: max_retries.unwrap_or(3),
@@ -201,17 +199,14 @@ impl KrakenFuturesRawHttpClient {
             get_kraken_http_base_url(KrakenProductType::Futures, environment).to_string()
         });
 
-        let rate_limit =
-            max_requests_per_second.unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND);
-
         Ok(Self {
             base_url,
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
-                Self::rate_limiter_quotas(rate_limit)?,
-                Some(Self::default_quota(rate_limit)?),
-                timeout_secs,
+                Self::rate_limiter_quotas(max_requests_per_second)?,
+                Some(Self::default_quota(max_requests_per_second)?),
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
@@ -585,6 +580,28 @@ impl KrakenFuturesRawHttpClient {
         self.send_request(Method::GET, endpoint, url, false).await
     }
 
+    /// Requests order book depth for a futures symbol.
+    pub async fn get_orderbook(
+        &self,
+        symbol: &str,
+    ) -> anyhow::Result<FuturesOrderBookResponse, KrakenHttpError> {
+        let endpoint = format!("/derivatives/api/v3/orderbook?symbol={symbol}");
+        let url = format!("{}{endpoint}", self.base_url);
+
+        self.send_request(Method::GET, &endpoint, url, false).await
+    }
+
+    /// Requests historical funding rates for a futures symbol.
+    pub async fn get_historical_funding_rates(
+        &self,
+        symbol: &str,
+    ) -> anyhow::Result<FuturesHistoricalFundingRatesResponse, KrakenHttpError> {
+        let endpoint = format!("/derivatives/api/v4/historicalfundingrates?symbol={symbol}");
+        let url = format!("{}{endpoint}", self.base_url);
+
+        self.send_request(Method::GET, &endpoint, url, false).await
+    }
+
     /// Requests OHLC candlestick data for a futures symbol.
     pub async fn get_ohlc(
         &self,
@@ -952,11 +969,11 @@ impl KrakenFuturesRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
 )]
 pub struct KrakenFuturesHttpClient {
     pub(crate) inner: Arc<KrakenFuturesRawHttpClient>,
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
 }
@@ -977,12 +994,12 @@ impl Default for KrakenFuturesHttpClient {
         Self::new(
             KrakenEnvironment::Mainnet,
             None,
-            Some(60),
+            60,
             None,
             None,
             None,
             None,
-            None,
+            KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
         )
         .expect("Failed to create default KrakenFuturesHttpClient")
     }
@@ -1002,12 +1019,12 @@ impl KrakenFuturesHttpClient {
     pub fn new(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Arc::new(KrakenFuturesRawHttpClient::new(
@@ -1020,7 +1037,7 @@ impl KrakenFuturesHttpClient {
                 proxy_url,
                 max_requests_per_second,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1033,12 +1050,12 @@ impl KrakenFuturesHttpClient {
         api_secret: String,
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             inner: Arc::new(KrakenFuturesRawHttpClient::with_credentials(
@@ -1053,7 +1070,7 @@ impl KrakenFuturesHttpClient {
                 proxy_url,
                 max_requests_per_second,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             clock: get_atomic_clock_realtime(),
         })
@@ -1069,12 +1086,12 @@ impl KrakenFuturesHttpClient {
     pub fn from_env(
         environment: KrakenEnvironment,
         base_url_override: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> anyhow::Result<Self> {
         let demo = environment == KrakenEnvironment::Demo;
 
@@ -1124,26 +1141,26 @@ impl KrakenFuturesHttpClient {
     }
 
     /// Caches multiple instruments for symbol lookup.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for instrument in instruments {
-            self.instruments_cache
-                .insert(instrument.symbol().inner(), instrument);
-        }
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for instrument in instruments {
+                m.insert(instrument.symbol().inner(), instrument.clone());
+            }
+        });
         self.cache_initialized.store(true, Ordering::Release);
     }
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_cached_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     fn get_instrument_by_raw_symbol(&self, raw_symbol: &str) -> Option<InstrumentAny> {
         self.instruments_cache
-            .iter()
-            .find(|entry| entry.value().raw_symbol().as_str() == raw_symbol)
-            .map(|entry| entry.value().clone())
+            .load()
+            .values()
+            .find(|inst| inst.raw_symbol().as_str() == raw_symbol)
+            .cloned()
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
@@ -1352,6 +1369,127 @@ impl KrakenFuturesHttpClient {
         }
 
         Ok(bars)
+    }
+
+    /// Requests an order book snapshot for a futures instrument.
+    pub async fn request_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBook, KrakenHttpError> {
+        let instrument = self
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!(
+                    "Instrument not found in cache: {instrument_id}"
+                ))
+            })?;
+
+        let raw_symbol = instrument.raw_symbol().to_string();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let ts_event = self.generate_ts_init();
+
+        let response = self.inner.get_orderbook(&raw_symbol).await?;
+        let book_data = &response.order_book;
+
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let bid_limit = depth.map_or(book_data.bids.len(), |d| {
+            (d as usize).min(book_data.bids.len())
+        });
+        let ask_limit = depth.map_or(book_data.asks.len(), |d| {
+            (d as usize).min(book_data.asks.len())
+        });
+
+        for (i, level) in book_data.bids.iter().take(bid_limit).enumerate() {
+            let price = Price::new(level.price, price_precision);
+            let size = Quantity::new(level.qty, size_precision);
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            book.add(order, 0, i as u64, ts_event);
+        }
+
+        for (i, level) in book_data.asks.iter().take(ask_limit).enumerate() {
+            let price = Price::new(level.price, price_precision);
+            let size = Quantity::new(level.qty, size_precision);
+            let order = BookOrder::new(OrderSide::Sell, price, size, (bid_limit + i) as u64);
+            book.add(order, 0, (bid_limit + i) as u64, ts_event);
+        }
+
+        Ok(book)
+    }
+
+    /// Requests historical funding rates for a futures instrument.
+    ///
+    /// Kraken returns all available rates; client-side filtering applies
+    /// the `start`, `end`, and `limit` constraints from the caller.
+    pub async fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>, KrakenHttpError> {
+        let instrument = self
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                KrakenHttpError::ParseError(format!(
+                    "Instrument not found in cache: {instrument_id}"
+                ))
+            })?;
+
+        let raw_symbol = instrument.raw_symbol().to_string();
+        let ts_init = self.generate_ts_init();
+        let start_ns = start.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+        let end_ns = end.map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64);
+
+        let response = self.inner.get_historical_funding_rates(&raw_symbol).await?;
+
+        let mut rates = Vec::new();
+
+        for entry in &response.rates {
+            let ts_event = entry
+                .timestamp
+                .parse::<DateTime<Utc>>()
+                .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64))
+                .unwrap_or(ts_init);
+
+            if let Some(s) = start_ns
+                && ts_event.as_u64() < s
+            {
+                continue;
+            }
+
+            if let Some(e) = end_ns
+                && ts_event.as_u64() > e
+            {
+                continue;
+            }
+
+            let Some(rate) = Decimal::from_f64(entry.relative_funding_rate) else {
+                continue;
+            };
+
+            rates.push(FundingRateUpdate::new(
+                instrument_id,
+                rate,
+                None,
+                None,
+                ts_event,
+                ts_init,
+            ));
+
+            if let Some(lim) = limit
+                && rates.len() >= lim
+            {
+                break;
+            }
+        }
+
+        // Kraken returns newest-first; reverse to ascending chronological order
+        rates.reverse();
+
+        Ok(rates)
     }
 
     /// Requests account state from the Kraken Futures exchange.
@@ -2328,12 +2466,12 @@ mod tests {
             "test_secret".to_string(),
             KrakenEnvironment::Mainnet,
             None,
+            60,
             None,
             None,
             None,
             None,
-            None,
-            None,
+            KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
         )
         .unwrap();
         assert!(client.credential.is_some());
@@ -2352,12 +2490,12 @@ mod tests {
             "test_secret".to_string(),
             KrakenEnvironment::Mainnet,
             None,
+            60,
             None,
             None,
             None,
             None,
-            None,
-            None,
+            KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
         )
         .unwrap();
         assert!(client.instruments_cache.is_empty());

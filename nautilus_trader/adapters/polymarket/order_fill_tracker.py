@@ -22,6 +22,7 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from nautilus_trader.adapters.polymarket.common.constants import DUST_SNAP_THRESHOLD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -30,8 +31,6 @@ from nautilus_trader.model.objects import Quantity
 
 
 log = logging.getLogger(__name__)
-
-DUST_SNAP_THRESHOLD = 0.01
 CAPACITY = 10_000
 
 

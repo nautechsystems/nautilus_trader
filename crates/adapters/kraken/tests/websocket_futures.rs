@@ -207,7 +207,7 @@ async fn test_futures_websocket_connection() {
     let addr = start_test_server(state.clone()).await.unwrap();
     let url = format!("ws://{addr}/ws/v1");
 
-    let mut client = KrakenFuturesWebSocketClient::new(url, None);
+    let mut client = KrakenFuturesWebSocketClient::new(url, 30);
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
 
@@ -224,7 +224,7 @@ async fn test_futures_websocket_subscribe_trades() {
     let addr = start_test_server(state.clone()).await.unwrap();
     let url = format!("ws://{addr}/ws/v1");
 
-    let mut client = KrakenFuturesWebSocketClient::new(url, None);
+    let mut client = KrakenFuturesWebSocketClient::new(url, 30);
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
 
@@ -257,7 +257,7 @@ async fn test_futures_websocket_subscribe_book() {
     let addr = start_test_server(state.clone()).await.unwrap();
     let url = format!("ws://{addr}/ws/v1");
 
-    let mut client = KrakenFuturesWebSocketClient::new(url, None);
+    let mut client = KrakenFuturesWebSocketClient::new(url, 30);
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
 
@@ -291,7 +291,7 @@ async fn test_futures_websocket_reconnection() {
     let addr = start_test_server(state.clone()).await.unwrap();
     let url = format!("ws://{addr}/ws/v1");
 
-    let mut client = KrakenFuturesWebSocketClient::new(url, None);
+    let mut client = KrakenFuturesWebSocketClient::new(url, 30);
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
 
@@ -319,7 +319,7 @@ async fn test_futures_websocket_unsubscribe() {
     let addr = start_test_server(state.clone()).await.unwrap();
     let url = format!("ws://{addr}/ws/v1");
 
-    let mut client = KrakenFuturesWebSocketClient::new(url, None);
+    let mut client = KrakenFuturesWebSocketClient::new(url, 30);
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
 

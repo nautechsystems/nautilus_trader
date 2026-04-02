@@ -23,7 +23,10 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::{HttpClient, HttpClientError, Method, USER_AGENT};
+use nautilus_network::{
+    http::{HttpClient, HttpClientError, Method, USER_AGENT},
+    retry::{RetryConfig, RetryManager},
+};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -54,17 +57,14 @@ impl PolymarketGammaRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    pub fn new(
-        base_url: Option<String>,
-        timeout_secs: Option<u64>,
-    ) -> StdResult<Self, HttpClientError> {
+    pub fn new(base_url: Option<String>, timeout_secs: u64) -> StdResult<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
                 vec![],
                 Some(*POLYMARKET_GAMMA_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 None,
             )?,
             base_url: base_url
@@ -163,13 +163,15 @@ impl PolymarketGammaRawHttpClient {
     }
 }
 
-/// Parses a slice of [`GammaMarket`]s into Nautilus instruments.
-///
-/// Failures are logged and skipped so that one bad market does not
-/// prevent the remaining markets from being returned.
 fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> Vec<InstrumentAny> {
     let mut instruments = Vec::new();
+    let mut skipped_empty = 0u32;
     for market in markets {
+        // Markets without CLOB token IDs are not tradeable (resolved, pending, etc.)
+        if market.clob_token_ids.is_empty() {
+            skipped_empty += 1;
+            continue;
+        }
         match parse_gamma_market(market) {
             Ok(defs) => {
                 for def in defs {
@@ -181,6 +183,12 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
             }
             Err(e) => log::warn!("Failed to parse gamma market: {e}"),
         }
+    }
+
+    if skipped_empty > 0 {
+        log::debug!(
+            "Skipped {skipped_empty} markets with empty clob_token_ids (currently not tradeable)"
+        );
     }
     instruments
 }
@@ -194,6 +202,7 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 pub struct PolymarketGammaHttpClient {
     inner: Arc<PolymarketGammaRawHttpClient>,
     clock: &'static AtomicTime,
+    retry_manager: Arc<RetryManager<Error>>,
 }
 
 impl PolymarketGammaHttpClient {
@@ -204,7 +213,8 @@ impl PolymarketGammaHttpClient {
     /// Returns an error if the underlying HTTP client cannot be created.
     pub fn new(
         gamma_base_url: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
+        retry_config: RetryConfig,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
             inner: Arc::new(PolymarketGammaRawHttpClient::new(
@@ -212,6 +222,7 @@ impl PolymarketGammaHttpClient {
                 timeout_secs,
             )?),
             clock: get_atomic_clock_realtime(),
+            retry_manager: Arc::new(RetryManager::new(retry_config)),
         })
     }
 
@@ -225,6 +236,7 @@ impl PolymarketGammaHttpClient {
         let max_markets = base_params.max_markets;
         let mut all_markets = Vec::new();
         let mut offset: u32 = base_params.offset.unwrap_or(0);
+        let mut page_num = 0u32;
 
         loop {
             let params = GetGammaMarketsParams {
@@ -235,7 +247,13 @@ impl PolymarketGammaHttpClient {
 
             let page = self.inner.get_gamma_markets(params).await?;
             let page_len = page.len() as u32;
+            page_num += 1;
             all_markets.extend(page);
+
+            log::info!(
+                "Fetched markets page {page_num}: {page_len} markets (total: {})",
+                all_markets.len(),
+            );
 
             if let Some(cap) = max_markets
                 && all_markets.len() as u32 >= cap
@@ -318,7 +336,7 @@ impl PolymarketGammaHttpClient {
         for result in results.into_iter().flatten() {
             let (slug, markets) = result;
             if markets.is_empty() {
-                log::warn!("No markets found for slug '{slug}'");
+                log::debug!("No markets found for slug '{slug}'");
                 continue;
             }
             instruments.extend(parse_markets_to_instruments(&markets, ts_init));
@@ -330,6 +348,68 @@ impl PolymarketGammaHttpClient {
 
         log::info!("Parsed {} instruments from slug queries", instruments.len());
         Ok(instruments)
+    }
+
+    /// Fetches instruments for the given slugs with retry on empty results.
+    ///
+    /// Uses the client's [`RetryManager`] with exponential backoff. Gamma API
+    /// may not have indexed a newly created market yet, so empty results are
+    /// treated as retryable (indexing lag). HTTP errors are also retried per
+    /// the standard `is_retryable()` classification.
+    pub async fn request_instruments_by_slugs_with_retry(
+        &self,
+        slugs: Vec<String>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let inner = Arc::clone(&self.inner);
+        let ts_init = self.clock.get_time_ns();
+
+        self.retry_manager
+            .execute_with_retry(
+                "gamma_fetch_by_slugs",
+                || {
+                    let inner = Arc::clone(&inner);
+                    let slugs = slugs.clone();
+                    async move {
+                        let futures = slugs.into_iter().map(|slug| {
+                            let inner = Arc::clone(&inner);
+                            async move {
+                                let params = GetGammaMarketsParams {
+                                    slug: Some(slug.clone()),
+                                    ..Default::default()
+                                };
+                                inner
+                                    .get_gamma_markets(params)
+                                    .await
+                                    .map(|markets| (slug, markets))
+                            }
+                        });
+
+                        let results: Vec<_> = futures_util::future::join_all(futures)
+                            .await
+                            .into_iter()
+                            .collect::<StdResult<Vec<_>, _>>()?;
+
+                        let instruments: Vec<InstrumentAny> = results
+                            .into_iter()
+                            .flat_map(|(_, markets)| {
+                                parse_markets_to_instruments(&markets, ts_init)
+                            })
+                            .collect();
+
+                        if instruments.is_empty() {
+                            return Err(Error::transport(
+                                "Gamma returned no instruments (indexing lag)",
+                            ));
+                        }
+
+                        Ok(instruments)
+                    }
+                },
+                |e| e.is_retryable(),
+                Error::transport,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     /// Fetches instruments from event slugs concurrently.
@@ -399,9 +479,9 @@ impl PolymarketGammaHttpClient {
     /// The `/events?slug=` response already includes the full markets array,
     /// so no second API call is needed. Sorting and truncation are applied
     /// client-side using fields from `GetGammaMarketsParams`:
-    /// - `order` — sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
-    /// - `ascending` — sort direction (default: descending)
-    /// - `max_markets` — truncate after sorting
+    /// - `order`: sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
+    /// - `ascending`: sort direction (default: descending)
+    /// - `max_markets`: truncate after sorting
     pub async fn request_instruments_by_event_query(
         &self,
         event_slug: &str,
@@ -485,6 +565,7 @@ impl PolymarketGammaHttpClient {
         let max_events = base_params.max_events;
         let mut all_events = Vec::new();
         let mut offset: u32 = base_params.offset.unwrap_or(0);
+        let mut page_num = 0u32;
 
         loop {
             let params = GetGammaEventsParams {
@@ -495,7 +576,14 @@ impl PolymarketGammaHttpClient {
 
             let page = self.inner.get_gamma_events(params).await?;
             let page_len = page.len() as u32;
+            page_num += 1;
+            let market_count: usize = page.iter().map(|e| e.markets.len()).sum();
             all_events.extend(page);
+
+            log::info!(
+                "Fetched events page {page_num}: {page_len} events, {market_count} markets (total events: {})",
+                all_events.len(),
+            );
 
             if let Some(cap) = max_events
                 && all_events.len() as u32 >= cap
@@ -521,11 +609,13 @@ impl PolymarketGammaHttpClient {
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let events = self.fetch_gamma_events_paginated(params).await?;
         let ts_init = self.clock.get_time_ns();
+        let total_events = events.len();
         let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let total_markets = markets.len();
         let instruments = parse_markets_to_instruments(&markets, ts_init);
-        log::debug!(
-            "Parsed {} instruments from event params query",
-            instruments.len()
+        log::info!(
+            "Parsed {} instruments from {total_events} events ({total_markets} markets)",
+            instruments.len(),
         );
         Ok(instruments)
     }

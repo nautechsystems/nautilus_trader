@@ -35,14 +35,19 @@ use axum::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
+    HyperliquidHttpClient,
     common::enums::HyperliquidInfoRequestType,
     http::{
         models::{
-            HyperliquidFills, HyperliquidL2Book, PerpMeta, PerpMetaAndCtxs, SpotMeta,
+            Cloid, HyperliquidFills, HyperliquidL2Book, PerpMeta, PerpMetaAndCtxs, SpotMeta,
             SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
+};
+use nautilus_model::{
+    enums::OrderStatus,
+    identifiers::{AccountId, ClientOrderId},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
@@ -53,6 +58,8 @@ struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
+    frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -61,6 +68,8 @@ impl Default for TestServerState {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
             last_request_body: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
+            frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 }
@@ -127,6 +136,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let meta = load_json("http_meta_perp_sample.json");
             Json(meta).into_response()
         }
+        "allPerpMetas" => {
+            let meta = load_json("http_meta_perp_sample.json");
+            Json(json!([meta])).into_response()
+        }
         "spotMeta" => Json(json!({
             "universe": [],
             "tokens": []
@@ -146,13 +159,15 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             Json(book).into_response()
         }
         "userFills" => Json(json!([])).into_response(),
-        "orderStatus" => Json(json!({
-            "status": "order:filled",
-            "order": null
-        }))
-        .into_response(),
+        "orderStatus" => {
+            let custom = state.order_status_response.lock().await;
+            Json(custom.clone().unwrap_or(json!({"statuses": []}))).into_response()
+        }
         "openOrders" => Json(json!([])).into_response(),
-        "frontendOpenOrders" => Json(json!([])).into_response(),
+        "frontendOpenOrders" => {
+            let custom = state.frontend_open_orders_response.lock().await;
+            Json(custom.clone().unwrap_or(json!([]))).into_response()
+        }
         "clearinghouseState" => Json(json!({
             "marginSummary": {
                 "accountValue": "10000.0",
@@ -562,4 +577,244 @@ impl TestHttpClient {
     async fn send_info_request_raw(&self, request: &InfoRequest) -> Result<Value, String> {
         self.send_info_request(request).await
     }
+}
+
+fn create_domain_client(addr: &SocketAddr) -> HyperliquidHttpClient {
+    let mut client = HyperliquidHttpClient::new(true, 60, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-master"));
+    client
+}
+
+fn cache_btc_instrument(client: &HyperliquidHttpClient) {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CryptoPerpetual, InstrumentAny},
+        types::{Currency, Money, Price, Quantity},
+    };
+
+    let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+    let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let instrument = CryptoPerpetual::new_checked(
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        Symbol::new("BTC"),
+        btc,
+        usd,
+        usdc,
+        false,
+        1,
+        5,
+        Price::from("0.1"),
+        Quantity::from("0.00001"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(Money::from("0.1 USDC")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    )
+    .unwrap();
+
+    client.cache_instrument(&InstrumentAny::CryptoPerpetual(instrument));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_open_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.05",
+        "oid": 12345,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": "0xaabbccdd00112233aabbccdd00112233"
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .unwrap()
+        .expect("should find open order");
+
+    // Status stays Accepted (matching bulk path) because we lack avg_px
+    // for safe PartiallyFilled reconciliation. Real fills arrive via WebSocket.
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert!(report.price.is_some(), "open order retains limit price");
+    assert_eq!(report.filled_qty.as_f64(), 0.05);
+    assert_eq!(report.quantity.as_f64(), 0.1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_triggered_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "90000.0",
+        "sz": "0.1",
+        "oid": 99999,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "triggerPx": "91000.0",
+        "isMarket": true,
+        "tpsl": "sl",
+        "triggerActivated": true
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 99999)
+        .await
+        .unwrap()
+        .expect("should find triggered order");
+
+    assert_eq!(report.order_status, OrderStatus::Triggered);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_closed_order_fallback() {
+    let state = TestServerState::default();
+    // frontendOpenOrders returns empty (order no longer open)
+    *state.order_status_response.lock().await = Some(json!({
+        "statuses": [{
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }]
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(
+        report.ts_last.as_u64(),
+        1700001000000u64 * 1_000_000,
+        "ts_last should use statusTimestamp"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_not_found() {
+    let state = TestServerState::default();
+    // Both endpoints return empty
+    *state.order_status_response.lock().await = Some(json!({"statuses": []}));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 99999)
+        .await
+        .unwrap();
+
+    assert!(report.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
+    let coid = ClientOrderId::new("O-20240101-000001");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 77777,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap()
+        .expect("should match by cloid hash");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(coid),
+        "should return original client_order_id, not cloid hash"
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_no_match() {
+    let state = TestServerState::default();
+    // frontendOpenOrders returns an order with a different cloid
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 88888,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": "0x0000000000000000000000000000dead"
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let coid = ClientOrderId::new("O-20240101-999999");
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap();
+
+    assert!(report.is_none(), "should not match different cloid");
 }

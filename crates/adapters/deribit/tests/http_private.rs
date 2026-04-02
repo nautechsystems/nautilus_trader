@@ -176,10 +176,10 @@ async fn test_get_account_summaries_success() {
         "test_api_secret".to_string(),
         Some(base_url),
         false,
-        Some(5),
-        None,
-        None,
-        None,
+        5,
+        3,
+        1000,
+        10_000,
         None,
     )
     .unwrap();
@@ -224,7 +224,7 @@ async fn test_get_account_summaries_success() {
 async fn test_get_account_summaries_missing_credentials() {
     let base_url = "http://127.0.0.1:0/api/v2".to_string();
     let client =
-        DeribitRawHttpClient::new(Some(base_url), false, Some(5), None, None, None, None).unwrap();
+        DeribitRawHttpClient::new(Some(base_url), false, 5, 3, 1000, 10_000, None).unwrap();
 
     let params = GetAccountSummariesParams::default();
     let result = client.get_account_summaries(params).await;

@@ -69,31 +69,42 @@ pub trait NautilusKernelConfig: Debug {
 }
 
 /// Basic implementation of `NautilusKernelConfig` for builder and testing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct KernelConfig {
     /// The kernel environment context.
+    #[builder(default = Environment::Backtest)]
     pub environment: Environment,
     /// The trader ID for the node (must be a name and ID tag separated by a hyphen).
+    #[builder(default)]
     pub trader_id: TraderId,
     /// If trading strategy state should be loaded from the database on start.
+    #[builder(default)]
     pub load_state: bool,
     /// If trading strategy state should be saved to the database on stop.
+    #[builder(default)]
     pub save_state: bool,
     /// The logging configuration for the kernel.
+    #[builder(default)]
     pub logging: LoggerConfig,
     /// The unique instance identifier for the kernel
     pub instance_id: Option<UUID4>,
     /// The timeout for all clients to connect and initialize.
+    #[builder(default = Duration::from_secs(60))]
     pub timeout_connection: Duration,
     /// The timeout for execution state to reconcile.
+    #[builder(default = Duration::from_secs(30))]
     pub timeout_reconciliation: Duration,
     /// The timeout for portfolio to initialize margins and unrealized pnls.
+    #[builder(default = Duration::from_secs(10))]
     pub timeout_portfolio: Duration,
     /// The timeout for all engine clients to disconnect.
+    #[builder(default = Duration::from_secs(10))]
     pub timeout_disconnection: Duration,
     /// The delay after stopping the node to await residual events before final shutdown.
+    #[builder(default = Duration::from_secs(10))]
     pub delay_post_stop: Duration,
     /// The delay to await pending tasks cancellation during shutdown.
+    #[builder(default = Duration::from_secs(5))]
     pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
@@ -191,27 +202,7 @@ impl NautilusKernelConfig for KernelConfig {
 
 impl Default for KernelConfig {
     fn default() -> Self {
-        Self {
-            environment: Environment::Backtest,
-            trader_id: TraderId::default(),
-            load_state: false,
-            save_state: false,
-            logging: LoggerConfig::default(),
-            instance_id: None,
-            timeout_connection: Duration::from_secs(60),
-            timeout_reconciliation: Duration::from_secs(30),
-            timeout_portfolio: Duration::from_secs(10),
-            timeout_disconnection: Duration::from_secs(10),
-            delay_post_stop: Duration::from_secs(10),
-            timeout_shutdown: Duration::from_secs(5),
-            cache: None,
-            msgbus: None,
-            data_engine: None,
-            risk_engine: None,
-            exec_engine: None,
-            portfolio: None,
-            streaming: None,
-        }
+        Self::builder().build()
     }
 }
 
@@ -240,7 +231,7 @@ pub enum RotationConfig {
 }
 
 /// Configuration for streaming live or backtest runs to the catalog in feather format.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct StreamingConfig {
     /// The path to the data catalog.
     pub catalog_path: String,

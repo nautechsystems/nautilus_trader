@@ -17,6 +17,7 @@
 
 use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{BinanceEnvironment, BinanceProductType},
@@ -82,6 +83,8 @@ impl BinanceExecClientConfig {
         base_url_ws = None,
         base_url_ws_trading = None,
         use_ws_trading = true,
+        use_position_ids = true,
+        default_taker_fee = None,
         api_key = None,
         api_secret = None,
     ))]
@@ -95,6 +98,8 @@ impl BinanceExecClientConfig {
         base_url_ws: Option<String>,
         base_url_ws_trading: Option<String>,
         use_ws_trading: bool,
+        use_position_ids: bool,
+        default_taker_fee: Option<f64>,
         api_key: Option<String>,
         api_secret: Option<String>,
     ) -> Self {
@@ -107,6 +112,10 @@ impl BinanceExecClientConfig {
             base_url_ws,
             base_url_ws_trading,
             use_ws_trading,
+            use_position_ids,
+            default_taker_fee: default_taker_fee
+                .map_or_else(|| Ok(Decimal::new(4, 4)), Decimal::try_from)
+                .unwrap_or_else(|_| Decimal::new(4, 4)),
             api_key,
             api_secret,
         }

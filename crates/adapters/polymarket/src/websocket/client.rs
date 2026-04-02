@@ -94,6 +94,7 @@ pub struct PolymarketWebSocketClient {
     // Arc<AtomicBool> allows mutation from &self in subscribe_user().
     user_subscribed: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    subscribe_new_markets: bool,
 }
 
 impl PolymarketWebSocketClient {
@@ -101,9 +102,9 @@ impl PolymarketWebSocketClient {
     ///
     /// If `base_url` is `None`, the default production URL is used.
     #[must_use]
-    pub fn new_market(base_url: Option<String>) -> Self {
+    pub fn new_market(base_url: Option<String>, subscribe_new_markets: bool) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_market_url().to_string());
-        Self::new_inner(WsChannel::Market, url, None)
+        Self::new_inner(WsChannel::Market, url, None, subscribe_new_markets)
     }
 
     /// Creates a new user-channel client (authenticated).
@@ -112,10 +113,15 @@ impl PolymarketWebSocketClient {
     #[must_use]
     pub fn new_user(base_url: Option<String>, credential: Credential) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_user_url().to_string());
-        Self::new_inner(WsChannel::User, url, Some(credential))
+        Self::new_inner(WsChannel::User, url, Some(credential), false)
     }
 
-    fn new_inner(channel: WsChannel, url: String, credential: Option<Credential>) -> Self {
+    fn new_inner(
+        channel: WsChannel,
+        url: String,
+        credential: Option<Credential>,
+        subscribe_new_markets: bool,
+    ) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
             channel,
@@ -129,6 +135,7 @@ impl PolymarketWebSocketClient {
             auth_tracker: AuthTracker::new(),
             user_subscribed: Arc::new(AtomicBool::new(false)),
             task_handle: None,
+            subscribe_new_markets,
         }
     }
 
@@ -209,6 +216,7 @@ impl PolymarketWebSocketClient {
         let subscriptions = self.subscriptions.clone();
         let auth_tracker = self.auth_tracker.clone();
         let user_subscribed = self.user_subscribed.load(Ordering::Relaxed);
+        let subscribe_new_markets = self.subscribe_new_markets;
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler = FeedHandler::new(
@@ -221,6 +229,7 @@ impl PolymarketWebSocketClient {
                 subscriptions,
                 auth_tracker,
                 user_subscribed,
+                subscribe_new_markets,
             );
 
             loop {

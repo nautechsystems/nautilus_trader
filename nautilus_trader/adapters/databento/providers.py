@@ -72,7 +72,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         self._clock = clock
         self._config = config or InstrumentProviderConfig()
-        self._live_api_key = live_api_key or http_client.key
+        self._live_api_key = live_api_key or http_client.api_key
         self._live_gateway = live_gateway
 
         self._http_client = http_client

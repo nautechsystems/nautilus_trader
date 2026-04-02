@@ -7409,3 +7409,176 @@ fn test_asks_range_up_to_single_exact_bottom() {
     assert_eq!(levels.len(), 1);
     assert_eq!(levels[0].0.value, Price::from("101.00"));
 }
+
+#[rstest]
+fn test_book_get_levels_for_price_buy_crosses_two_levels() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.001"),
+        Quantity::from("10.0"),
+        0,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.002"),
+        Quantity::from("20.0"),
+        0,
+    );
+    let ask3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.003"),
+        Quantity::from("30.0"),
+        0,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+    book.add(ask3, 0, 3, 3.into());
+
+    let result = book.get_all_crossed_levels(OrderSide::Buy, Price::from("1.002"), 1);
+
+    assert_eq!(
+        result,
+        vec![
+            (Price::from("1.001"), Quantity::from("10.0")),
+            (Price::from("1.002"), Quantity::from("20.0")),
+        ]
+    );
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_sell_crosses_two_levels() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid1 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.003"),
+        Quantity::from("10.0"),
+        0,
+    );
+    let bid2 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.002"),
+        Quantity::from("20.0"),
+        0,
+    );
+    let bid3 = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.001"),
+        Quantity::from("30.0"),
+        0,
+    );
+    book.add(bid1, 0, 1, 1.into());
+    book.add(bid2, 0, 2, 2.into());
+    book.add(bid3, 0, 3, 3.into());
+
+    let result = book.get_all_crossed_levels(OrderSide::Sell, Price::from("1.002"), 1);
+
+    assert_eq!(
+        result,
+        vec![
+            (Price::from("1.003"), Quantity::from("10.0")),
+            (Price::from("1.002"), Quantity::from("20.0")),
+        ]
+    );
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_no_levels_crossed() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.001"),
+        Quantity::from("10.0"),
+        0,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.002"),
+        Quantity::from("20.0"),
+        0,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+
+    let result = book.get_all_crossed_levels(OrderSide::Buy, Price::from("0.999"), 1);
+
+    assert!(result.is_empty());
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_all_levels_crossed() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.001"),
+        Quantity::from("10.0"),
+        0,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.002"),
+        Quantity::from("20.0"),
+        0,
+    );
+    let ask3 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("1.003"),
+        Quantity::from("30.0"),
+        0,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+    book.add(ask3, 0, 3, 3.into());
+
+    let result = book.get_all_crossed_levels(OrderSide::Buy, Price::from("2.000"), 1);
+
+    assert_eq!(
+        result,
+        vec![
+            (Price::from("1.001"), Quantity::from("10.0")),
+            (Price::from("1.002"), Quantity::from("20.0")),
+            (Price::from("1.003"), Quantity::from("30.0")),
+        ]
+    );
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_empty_book() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let result = book.get_all_crossed_levels(OrderSide::Buy, Price::from("1.000"), 1);
+
+    assert!(result.is_empty());
+}
+
+#[rstest]
+fn test_book_integrity_locked_market_is_valid() {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+    let bid = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("100.00"),
+        Quantity::from(100),
+        1,
+    );
+    let ask = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("100.00"),
+        Quantity::from(100),
+        2,
+    );
+    book.add(bid, 0, 1, 1.into());
+    book.add(ask, 0, 2, 2.into());
+
+    assert_eq!(book_check_integrity(&book), Ok(()));
+}

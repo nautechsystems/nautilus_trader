@@ -42,7 +42,7 @@ use crate::{
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.databento")
 )]
 pub struct DatabentoLiveClientConfig {
     /// Databento API credential.
@@ -113,7 +113,7 @@ impl ClientConfig for DatabentoLiveClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.databento")
 )]
 pub struct DatabentoDataClientFactory;
 
@@ -221,7 +221,12 @@ impl DatabentoHistoricalClientFactory {
         use_exchange_as_venue: bool,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<DatabentoHistoricalClient> {
-        DatabentoHistoricalClient::new(api_key, publishers_filepath, clock, use_exchange_as_venue)
+        DatabentoHistoricalClient::new(
+            Credential::new(api_key),
+            publishers_filepath,
+            clock,
+            use_exchange_as_venue,
+        )
     }
 }
 

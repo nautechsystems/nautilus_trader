@@ -48,6 +48,7 @@ use nautilus_okx::{
     websocket::{client::OKXWebSocketClient, messages::OKXWsMessage},
 };
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const TEXT_PING: &str = "ping";
 const TEXT_PONG: &str = "pong";
@@ -1919,6 +1920,7 @@ async fn test_batch_cancel_orders_sends_message() {
 
     let mut client = connect_client(&ws_url).await;
     client.cache_instruments(&instruments);
+    client.cache_inst_id_code(Ustr::from("BTC-USDT-SWAP"), 10459);
     client.connect().await.expect("connect failed");
     client
         .wait_until_active(5.0)
@@ -1933,8 +1935,6 @@ async fn test_batch_cancel_orders_sends_message() {
 
     let result = client.batch_cancel_orders(orders).await;
     assert!(result.is_ok(), "batch_cancel_orders should succeed");
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     client.close().await.expect("close failed");
 }
@@ -1967,7 +1967,13 @@ async fn test_is_active_lifecycle() {
     );
 
     client.close().await.expect("close failed");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let client_ref = &client;
+    wait_until_async(
+        || async move { !client_ref.is_active() },
+        Duration::from_secs(2),
+    )
+    .await;
 
     assert!(
         !client.is_active(),
@@ -1998,7 +2004,13 @@ async fn test_is_active_false_after_close() {
     );
 
     client.close().await.expect("close failed");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let client_ref = &client;
+    wait_until_async(
+        || async move { !client_ref.is_active() },
+        Duration::from_secs(2),
+    )
+    .await;
 
     assert!(
         !client.is_active(),

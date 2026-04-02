@@ -23,4 +23,4 @@ pub mod handler;
 pub mod messages;
 pub mod parse;
 
-pub use handler::classify_bybit_message;
+pub use parse::parse_bybit_ws_frame;

@@ -310,4 +310,12 @@ mod tests {
             "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, reason='Exceeded MAX_ORDER_SUBMIT_RATE')"
         );
     }
+
+    #[rstest]
+    fn test_order_denied_serialization() {
+        let original = OrderDenied::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderDenied = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
 }

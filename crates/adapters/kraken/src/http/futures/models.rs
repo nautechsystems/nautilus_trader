@@ -135,6 +135,61 @@ pub struct FuturesTickersResponse {
     pub tickers: Vec<FuturesTicker>,
 }
 
+// Futures Order Book Models
+
+/// A `[price, qty]` pair from the Kraken Futures orderbook endpoint.
+#[derive(Debug, Clone, Serialize)]
+pub struct FuturesOrderBookLevel {
+    pub price: f64,
+    pub qty: f64,
+}
+
+impl<'de> serde::Deserialize<'de> for FuturesOrderBookLevel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let arr: (f64, f64) = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Self {
+            price: arr.0,
+            qty: arr.1,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrderBookData {
+    pub bids: Vec<FuturesOrderBookLevel>,
+    pub asks: Vec<FuturesOrderBookLevel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesOrderBookResponse {
+    pub result: KrakenApiResult,
+    pub order_book: FuturesOrderBookData,
+    #[serde(default)]
+    pub server_time: Option<String>,
+}
+
+// Futures Historical Funding Rates Models
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesHistoricalFundingRate {
+    pub timestamp: String,
+    pub relative_funding_rate: f64,
+    pub funding_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FuturesHistoricalFundingRatesResponse {
+    pub result: KrakenApiResult,
+    pub rates: Vec<FuturesHistoricalFundingRate>,
+}
+
 // Futures OHLC (Candles) Models
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -762,5 +817,42 @@ mod tests {
         assert_eq!(position.symbol, "PI_XBTUSD");
         assert_eq!(position.size, 8000.0);
         assert!(position.unrealized_funding.is_some());
+    }
+
+    #[rstest]
+    fn test_parse_futures_orderbook() {
+        let data = load_test_data("http_futures_orderbook.json");
+        let response: FuturesOrderBookResponse =
+            serde_json::from_str(&data).expect("Failed to parse futures orderbook");
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(response.order_book.bids.len(), 3);
+        assert_eq!(response.order_book.asks.len(), 3);
+
+        let best_bid = &response.order_book.bids[0];
+        assert_eq!(best_bid.price, 105900.0);
+        assert_eq!(best_bid.qty, 0.5);
+
+        let best_ask = &response.order_book.asks[0];
+        assert_eq!(best_ask.price, 105950.0);
+        assert_eq!(best_ask.qty, 0.3);
+    }
+
+    #[rstest]
+    fn test_parse_futures_historical_funding_rates() {
+        let data = load_test_data("http_futures_historical_funding_rates.json");
+        let response: FuturesHistoricalFundingRatesResponse =
+            serde_json::from_str(&data).expect("Failed to parse historical funding rates");
+
+        assert_eq!(response.result, KrakenApiResult::Success);
+        assert_eq!(response.rates.len(), 3);
+
+        let rate = &response.rates[0];
+        assert_eq!(rate.timestamp, "2025-07-11T08:00:00.000Z");
+        assert_eq!(rate.relative_funding_rate, 0.0001);
+        assert_eq!(rate.funding_rate, 0.00005);
+
+        let negative_rate = &response.rates[1];
+        assert_eq!(negative_rate.relative_funding_rate, -0.00005);
     }
 }

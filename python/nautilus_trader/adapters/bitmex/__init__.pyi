@@ -7,6 +7,8 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
+    "BITMEX_HTTP_URL",
+    "BITMEX_WS_URL",
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
     "BitmexExecClientConfig",
@@ -22,26 +24,29 @@ __all__ = [
     "get_bitmex_ws_url",
 ]
 
+BITMEX_HTTP_URL: str
+BITMEX_WS_URL: str
+
 @typing.final
 class BitmexDataClientConfig:
     def __init__(
         self,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
-        base_url_http: str | None = ...,
-        base_url_ws: str | None = ...,
-        http_proxy_url: str | None = ...,
-        http_timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_initial_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        heartbeat_interval_secs: int | None = ...,
-        recv_window_ms: int | None = ...,
-        active_only: bool | None = ...,
-        update_instruments_interval_mins: int | None = ...,
-        use_testnet: bool | None = ...,
-        max_requests_per_second: int | None = ...,
-        max_requests_per_minute: int | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url_http: str | None = None,
+        base_url_ws: str | None = None,
+        http_proxy_url: str | None = None,
+        http_timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        heartbeat_interval_secs: int | None = None,
+        recv_window_ms: int | None = None,
+        active_only: bool | None = None,
+        update_instruments_interval_mins: int | None = None,
+        use_testnet: bool | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -53,27 +58,27 @@ class BitmexDataClientFactory:
 class BitmexExecClientConfig:
     def __init__(
         self,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
-        base_url_http: str | None = ...,
-        base_url_ws: str | None = ...,
-        http_proxy_url: str | None = ...,
-        http_timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_initial_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        heartbeat_interval_secs: int | None = ...,
-        recv_window_ms: int | None = ...,
-        active_only: bool | None = ...,
-        use_testnet: bool | None = ...,
-        account_id: model.AccountId | None = ...,
-        max_requests_per_second: int | None = ...,
-        max_requests_per_minute: int | None = ...,
-        submitter_pool_size: int | None = ...,
-        canceller_pool_size: int | None = ...,
-        submitter_proxy_urls: typing.Sequence[str] | None = ...,
-        canceller_proxy_urls: typing.Sequence[str] | None = ...,
-        deadmans_switch_timeout_secs: int | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url_http: str | None = None,
+        base_url_ws: str | None = None,
+        http_proxy_url: str | None = None,
+        http_timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        heartbeat_interval_secs: int | None = None,
+        recv_window_ms: int | None = None,
+        active_only: bool | None = None,
+        use_testnet: bool | None = None,
+        account_id: model.AccountId | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        submitter_pool_size: int | None = None,
+        canceller_pool_size: int | None = None,
+        submitter_proxy_urls: typing.Sequence[str] | None = None,
+        canceller_proxy_urls: typing.Sequence[str] | None = None,
+        deadmans_switch_timeout_secs: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -91,18 +96,18 @@ class BitmexExecutionClientFactory:
 class BitmexHttpClient:
     def __init__(
         self,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        testnet: bool,
-        timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        recv_window_ms: int | None = ...,
-        max_requests_per_second: int | None = ...,
-        max_requests_per_minute: int | None = ...,
-        proxy_url: str | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def from_env() -> BitmexHttpClient: ...
@@ -203,22 +208,22 @@ class CancelBroadcaster:
     def __init__(
         self,
         pool_size: int,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        testnet: bool,
-        timeout_secs: int | None,
-        max_retries: int | None,
-        retry_delay_ms: int | None,
-        retry_delay_max_ms: int | None,
-        recv_window_ms: int | None,
-        max_requests_per_second: int | None,
-        max_requests_per_minute: int | None,
-        health_check_interval_secs: int,
-        health_check_timeout_secs: int,
-        expected_reject_patterns: typing.Sequence[str] | None = ...,
-        idempotent_success_patterns: typing.Sequence[str] | None = ...,
-        proxy_urls: typing.Sequence[str | None] | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        health_check_interval_secs: int = 30,
+        health_check_timeout_secs: int = 5,
+        expected_reject_patterns: typing.Sequence[str] | None = None,
+        idempotent_success_patterns: typing.Sequence[str] | None = None,
+        proxy_urls: typing.Sequence[str | None] | None = None,
     ) -> None: ...
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def start(self) -> typing.Any: ...
@@ -245,12 +250,12 @@ class CancelBroadcaster:
 class BitmexWebSocketClient:
     def __init__(
         self,
-        url: str | None,
-        api_key: str | None,
-        api_secret: str | None,
-        account_id: model.AccountId | None,
-        heartbeat: int | None,
-        testnet: bool,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        account_id: model.AccountId | None = None,
+        heartbeat: int | None = None,
+        testnet: bool = False,
     ) -> None: ...
     @staticmethod
     def from_env() -> BitmexWebSocketClient: ...
@@ -321,20 +326,20 @@ class SubmitBroadcaster:
     def __init__(
         self,
         pool_size: int,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        testnet: bool,
-        timeout_secs: int | None,
-        max_retries: int | None,
-        retry_delay_ms: int | None,
-        retry_delay_max_ms: int | None,
-        recv_window_ms: int | None,
-        max_requests_per_second: int | None,
-        max_requests_per_minute: int | None,
-        health_check_interval_secs: int,
-        health_check_timeout_secs: int,
-        expected_reject_patterns: typing.Sequence[str] | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        recv_window_ms: int | None = None,
+        max_requests_per_second: int | None = None,
+        max_requests_per_minute: int | None = None,
+        health_check_interval_secs: int = 30,
+        health_check_timeout_secs: int = 5,
+        expected_reject_patterns: typing.Sequence[str] | None = None,
     ) -> None: ...
     def start(self) -> typing.Any: ...
     def stop(self) -> typing.Any: ...
@@ -372,9 +377,9 @@ class BitmexPositionSide(enum.Enum):
 
 @typing.final
 class BitmexSymbolStatus(enum.Enum):
-    Open = ...
-    Closed = ...
-    Unlisted = ...
+    OPEN = ...
+    CLOSED = ...
+    UNLISTED = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...

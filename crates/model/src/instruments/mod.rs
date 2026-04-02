@@ -33,6 +33,7 @@ pub mod option_spread;
 pub mod perpetual_contract;
 pub mod synthetic;
 pub mod tick_scheme;
+pub mod tokenized_asset;
 
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
@@ -68,6 +69,7 @@ pub use crate::instruments::{
     perpetual_contract::PerpetualContract,
     synthetic::SyntheticInstrument,
     tick_scheme::{FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme},
+    tokenized_asset::TokenizedAsset,
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},

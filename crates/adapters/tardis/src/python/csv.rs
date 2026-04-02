@@ -36,7 +36,7 @@ use crate::csv::{
 macro_rules! impl_tardis_stream_iterator {
     ($struct_name:ident, $data_type:ty, $type_name:expr) => {
         #[pyclass(unsendable)]
-        #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")]
+        #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")]
         pub struct $struct_name {
             stream: Box<dyn Iterator<Item = anyhow::Result<Vec<$data_type>>>>,
         }
@@ -69,7 +69,7 @@ macro_rules! impl_tardis_stream_iterator {
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_deltas")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_deltas(
     filepath: PathBuf,
@@ -92,7 +92,7 @@ pub fn py_load_tardis_deltas(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5(
     filepath: PathBuf,
@@ -115,7 +115,7 @@ pub fn py_load_tardis_depth10_from_snapshot5(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot25(
     filepath: PathBuf,
@@ -138,7 +138,7 @@ pub fn py_load_tardis_depth10_from_snapshot25(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_quotes")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes(
     filepath: PathBuf,
@@ -161,7 +161,7 @@ pub fn py_load_tardis_quotes(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_trades")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades(
     filepath: PathBuf,
@@ -184,7 +184,7 @@ pub fn py_load_tardis_trades(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_funding_rates")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, instrument_id=None, limit=None))]
 pub fn py_load_tardis_funding_rates(
     filepath: PathBuf,
@@ -206,7 +206,7 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_deltas")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_deltas(
     filepath: PathBuf,
@@ -232,7 +232,7 @@ pub fn py_stream_tardis_deltas(
 }
 
 #[pyclass(unsendable)]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")]
 pub struct TardisBatchedDeltasStreamIterator {
     stream: Box<dyn Iterator<Item = anyhow::Result<Vec<Py<PyAny>>>>>,
 }
@@ -265,7 +265,7 @@ impl TardisBatchedDeltasStreamIterator {
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_batched_deltas")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_batched_deltas(
     filepath: PathBuf,
@@ -302,7 +302,7 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_quotes")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_quotes(
     filepath: PathBuf,
@@ -339,7 +339,7 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_trades")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_trades(
     filepath: PathBuf,
@@ -376,7 +376,7 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_depth10_from_snapshot5")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_depth10_from_snapshot5(
     filepath: PathBuf,
@@ -407,7 +407,7 @@ pub fn py_stream_tardis_depth10_from_snapshot5(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_depth10_from_snapshot25")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_depth10_from_snapshot25(
     filepath: PathBuf,
@@ -444,7 +444,7 @@ impl_tardis_stream_iterator!(
 ///
 /// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "stream_tardis_funding_rates")]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.tardis")]
 #[pyo3(signature = (filepath, chunk_size=100_000, instrument_id=None, limit=None))]
 pub fn py_stream_tardis_funding_rates(
     filepath: PathBuf,

@@ -1888,6 +1888,29 @@ cdef class SpreadQuoteAggregator:
             self._build_and_send_quote(tick.ts_init)
             return
 
+    cpdef void flush_pending_historical_quotes(self):
+        cdef list event_handlers
+        cdef object event_handler
+
+        if self._update_interval_seconds is None or not self.historical_mode:
+            return
+
+        if not self._historical_events:
+            return
+
+        event_handlers = self._historical_events
+        self._historical_events = []
+
+        if len(self._last_quotes) != self._n_legs:
+            self._log.debug(
+                f"Cannot flush pending historical spread quotes for {self._spread_instrument_id}: "
+                f"missing quotes for one or more legs",
+            )
+            return
+
+        for event_handler in event_handlers:
+            self._build_and_send_quote(event_handler.event.ts_event)
+
     cdef void _process_historical_events(self, uint64_t ts_init):
         if self._clock.timestamp_ns() == 0:
             self._clock.set_time(ts_init)
@@ -1918,9 +1941,9 @@ cdef class SpreadQuoteAggregator:
         if len(self._last_quotes) != self._n_legs:
             return
 
-        self._build_and_send_quote(event.ts_init)
+        self._build_and_send_quote(event.ts_event)
 
-    cdef void _build_and_send_quote(self, uint64_t ts_init):
+    cdef void _build_and_send_quote(self, uint64_t ts_event):
         if not self._has_update:
             return
 
@@ -1958,7 +1981,7 @@ cdef class SpreadQuoteAggregator:
         else:
             raw_bid_ask_prices = self._create_option_spread_prices()
 
-        spread_quote = self._create_quote_tick_from_raw_prices(raw_bid_ask_prices[0], raw_bid_ask_prices[1], ts_init)
+        spread_quote = self._create_quote_tick_from_raw_prices(raw_bid_ask_prices[0], raw_bid_ask_prices[1], ts_event)
 
         self._has_update = False
         self._handler(spread_quote)
@@ -2012,7 +2035,7 @@ cdef class SpreadQuoteAggregator:
 
         return (raw_bid_price, raw_ask_price)
 
-    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_init):
+    cdef QuoteTick _create_quote_tick_from_raw_prices(self, double raw_bid_price, double raw_ask_price, uint64_t ts_event):
         # Apply tick scheme if available
         if self._spread_instrument._tick_scheme is not None:
             if raw_bid_price >= 0.:
@@ -2062,8 +2085,8 @@ cdef class SpreadQuoteAggregator:
             ask_price=ask_price,
             bid_size=bid_size,
             ask_size=ask_size,
-            ts_event=ts_init,
-            ts_init=ts_init,
+            ts_event=ts_event,
+            ts_init=ts_event,
         )
 
         return spread_quote

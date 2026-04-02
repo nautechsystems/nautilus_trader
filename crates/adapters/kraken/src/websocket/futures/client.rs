@@ -23,9 +23,9 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
+use nautilus_core::AtomicMap;
 use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
@@ -65,11 +65,11 @@ pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.kraken")
 )]
 pub struct KrakenFuturesWebSocketClient {
     url: String,
-    heartbeat_secs: Option<u64>,
+    heartbeat_secs: u64,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>>>,
@@ -83,9 +83,9 @@ pub struct KrakenFuturesWebSocketClient {
     original_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
     signed_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
     account_id: Arc<RwLock<Option<AccountId>>>,
-    truncated_id_map: Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    order_instrument_map: Arc<RwLock<AHashMap<String, InstrumentId>>>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
+    order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
 }
 
 impl Clone for KrakenFuturesWebSocketClient {
@@ -116,7 +116,7 @@ impl Clone for KrakenFuturesWebSocketClient {
 impl KrakenFuturesWebSocketClient {
     /// Creates a new client with the given URL.
     #[must_use]
-    pub fn new(url: String, heartbeat_secs: Option<u64>) -> Self {
+    pub fn new(url: String, heartbeat_secs: u64) -> Self {
         Self::with_credentials(url, heartbeat_secs, None)
     }
 
@@ -124,7 +124,7 @@ impl KrakenFuturesWebSocketClient {
     #[must_use]
     pub fn with_credentials(
         url: String,
-        heartbeat_secs: Option<u64>,
+        heartbeat_secs: u64,
         credential: Option<KrakenCredential>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
@@ -147,9 +147,9 @@ impl KrakenFuturesWebSocketClient {
             original_challenge: Arc::new(tokio::sync::RwLock::new(None)),
             signed_challenge: Arc::new(tokio::sync::RwLock::new(None)),
             account_id: Arc::new(RwLock::new(None)),
-            truncated_id_map: Arc::new(RwLock::new(AHashMap::new())),
-            order_instrument_map: Arc::new(RwLock::new(AHashMap::new())),
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            truncated_id_map: Arc::new(AtomicMap::new()),
+            order_instrument_map: Arc::new(AtomicMap::new()),
+            instruments: Arc::new(AtomicMap::new()),
         }
     }
 
@@ -257,7 +257,7 @@ impl KrakenFuturesWebSocketClient {
         let ws_config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: self.heartbeat_secs,
+            heartbeat: Some(self.heartbeat_secs),
             heartbeat_msg: None, // Use WebSocket ping frames, not text messages
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
@@ -858,19 +858,19 @@ impl KrakenFuturesWebSocketClient {
 
     /// Returns a reference to the truncated ID map.
     #[must_use]
-    pub fn truncated_id_map(&self) -> &Arc<RwLock<AHashMap<String, ClientOrderId>>> {
+    pub fn truncated_id_map(&self) -> &Arc<AtomicMap<String, ClientOrderId>> {
         &self.truncated_id_map
     }
 
     /// Returns a reference to the order-to-instrument map.
     #[must_use]
-    pub fn order_instrument_map(&self) -> &Arc<RwLock<AHashMap<String, InstrumentId>>> {
+    pub fn order_instrument_map(&self) -> &Arc<AtomicMap<String, InstrumentId>> {
         &self.order_instrument_map
     }
 
     /// Returns a reference to the shared instruments map.
     #[must_use]
-    pub fn instruments_shared(&self) -> &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>> {
+    pub fn instruments_shared(&self) -> &Arc<AtomicMap<InstrumentId, InstrumentAny>> {
         &self.instruments
     }
 
@@ -882,18 +882,16 @@ impl KrakenFuturesWebSocketClient {
 
     /// Caches an instrument for execution report parsing.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        if let Ok(mut guard) = self.instruments.write() {
-            guard.insert(instrument.id(), instrument);
-        }
+        self.instruments.insert(instrument.id(), instrument);
     }
 
     /// Caches multiple instruments for execution report parsing.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        if let Ok(mut guard) = self.instruments.write() {
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments.rcu(|m| {
             for instrument in instruments {
-                guard.insert(instrument.id(), instrument);
+                m.insert(instrument.id(), instrument.clone());
             }
-        }
+        });
     }
 
     /// Caches a client order for truncated ID resolution and instrument lookup.
@@ -911,16 +909,13 @@ impl KrakenFuturesWebSocketClient {
     ) {
         let truncated = truncate_cl_ord_id(&client_order_id);
 
-        if truncated != client_order_id.as_str()
-            && let Ok(mut map) = self.truncated_id_map.write()
-        {
-            map.insert(truncated, client_order_id);
+        if truncated != client_order_id.as_str() {
+            self.truncated_id_map.insert(truncated, client_order_id);
         }
 
-        if let Some(venue_id) = venue_order_id
-            && let Ok(mut map) = self.order_instrument_map.write()
-        {
-            map.insert(venue_id.to_string(), instrument_id);
+        if let Some(venue_id) = venue_order_id {
+            self.order_instrument_map
+                .insert(venue_id.to_string(), instrument_id);
         }
     }
 

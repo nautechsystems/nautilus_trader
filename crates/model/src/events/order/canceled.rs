@@ -314,4 +314,36 @@ impl OrderEvent for OrderCanceled {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use rstest::rstest;
+
+    use super::*;
+    use crate::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId};
+
+    // TODO: Remove once reconciliation field is converted back to bool (post-Cython)
+    #[rstest]
+    fn test_reconciliation_bool_to_u8() {
+        let order_canceled = OrderCanceled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("EMA-CROSS"),
+            InstrumentId::from("EURUSD.SIM"),
+            ClientOrderId::from("O-19700101-000000-001-001-1"),
+            UUID4::default(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            true,
+            None,
+            None,
+        );
+        assert_eq!(order_canceled.reconciliation, 1);
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip() {
+        let original = OrderCanceled::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderCanceled = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+}

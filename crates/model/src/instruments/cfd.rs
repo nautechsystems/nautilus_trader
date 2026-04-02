@@ -390,11 +390,58 @@ impl Instrument for Cfd {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{Cfd, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{Cfd, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(cfd_gold: Cfd) {
-        let cloned = cfd_gold.clone();
-        assert_eq!(cfd_gold, cloned);
+    fn test_trait_accessors(cfd_gold: Cfd) {
+        assert_eq!(cfd_gold.id(), InstrumentId::from("GOLD-CFD.SIM"));
+        assert_eq!(cfd_gold.asset_class(), AssetClass::Commodity);
+        assert_eq!(cfd_gold.instrument_class(), InstrumentClass::Cfd);
+        assert_eq!(cfd_gold.quote_currency(), Currency::USD());
+        assert!(!cfd_gold.is_inverse());
+        assert_eq!(cfd_gold.price_precision(), 2);
+        assert_eq!(cfd_gold.size_precision(), 0);
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = Cfd::new_checked(
+            InstrumentId::from("TEST.SIM"),
+            Symbol::from("TEST"),
+            AssetClass::Commodity,
+            None,
+            Currency::USD(),
+            4, // mismatch
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(cfd_gold: Cfd) {
+        let json = serde_json::to_string(&cfd_gold).unwrap();
+        let deserialized: Cfd = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfd_gold, deserialized);
     }
 }

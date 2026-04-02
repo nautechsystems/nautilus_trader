@@ -43,7 +43,6 @@ use serde_json::Value;
 
 use crate::{
     common::{
-        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
         encoder::decode_broker_id,
         enums::{BinanceContractStatus, BinanceKlineInterval, BinanceTradingStatus},
     },
@@ -581,6 +580,7 @@ pub fn parse_order_status_report_sbe(
     order: &BinanceOrderResponse,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    broker_id: &str,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -675,7 +675,7 @@ pub fn parse_order_status_report_sbe(
         instrument_id,
         Some(ClientOrderId::new(decode_broker_id(
             &order.client_order_id,
-            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            broker_id,
         ))),
         VenueOrderId::new(order.order_id.to_string()),
         order_side,
@@ -727,6 +727,7 @@ pub fn parse_new_order_response_sbe(
     response: &BinanceNewOrderResponse,
     account_id: AccountId,
     instrument: &InstrumentAny,
+    broker_id: &str,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
@@ -816,7 +817,7 @@ pub fn parse_new_order_response_sbe(
         instrument_id,
         Some(ClientOrderId::new(decode_broker_id(
             &response.client_order_id,
-            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            broker_id,
         ))),
         VenueOrderId::new(response.order_id.to_string()),
         order_side,
@@ -1023,7 +1024,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::{BinanceContractStatus, BinanceTradingStatus};
+    use crate::common::{
+        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        enums::{BinanceContractStatus, BinanceTradingStatus},
+    };
 
     fn sample_usdm_symbol() -> BinanceFuturesUsdSymbol {
         BinanceFuturesUsdSymbol {
@@ -1331,9 +1335,14 @@ mod tests {
         };
         let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
 
-        let report =
-            parse_order_status_report_sbe(&order, sample_account_id(), &instrument, ts_init)
-                .unwrap();
+        let report = parse_order_status_report_sbe(
+            &order,
+            sample_account_id(),
+            &instrument,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(report.account_id, sample_account_id());
         assert_eq!(report.instrument_id, instrument.id());
@@ -1389,9 +1398,14 @@ mod tests {
         };
         let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
 
-        let report =
-            parse_new_order_response_sbe(&response, sample_account_id(), &instrument, ts_init)
-                .unwrap();
+        let report = parse_new_order_response_sbe(
+            &response,
+            sample_account_id(),
+            &instrument,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(report.account_id, sample_account_id());
         assert_eq!(report.instrument_id, instrument.id());

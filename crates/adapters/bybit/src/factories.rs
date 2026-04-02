@@ -56,7 +56,7 @@ impl ClientConfig for BybitExecClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")
 )]
 pub struct BybitDataClientFactory;
 
@@ -114,7 +114,7 @@ impl DataClientFactory for BybitDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")
 )]
 pub struct BybitExecutionClientFactory {
     trader_id: TraderId,

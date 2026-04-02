@@ -23,11 +23,10 @@
 use std::{fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
-use dashmap::DashMap;
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    UUID4, UnixNanos,
+    AtomicMap, UUID4, UnixNanos,
     python::{call_python_threadsafe, to_pyruntime_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -70,10 +69,10 @@ use crate::{
     name = "AxMdWebSocketClient",
     module = "nautilus_trader.core.nautilus_pyo3.architect"
 )]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")]
 pub struct PyAxMdWebSocketClient {
     inner: AxMdWebSocketClient,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
 }
 
 impl Debug for PyAxMdWebSocketClient {
@@ -88,21 +87,21 @@ impl Debug for PyAxMdWebSocketClient {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyAxMdWebSocketClient {
     #[new]
-    #[pyo3(signature = (url, auth_token, heartbeat=None))]
-    fn py_new(url: String, auth_token: String, heartbeat: Option<u64>) -> Self {
+    #[pyo3(signature = (url, auth_token, heartbeat=30))]
+    fn py_new(url: String, auth_token: String, heartbeat: u64) -> Self {
         Self {
             inner: AxMdWebSocketClient::new(url, auth_token, heartbeat),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
         }
     }
 
     #[staticmethod]
     #[pyo3(name = "without_auth")]
-    #[pyo3(signature = (url, heartbeat=None))]
-    fn py_without_auth(url: String, heartbeat: Option<u64>) -> Self {
+    #[pyo3(signature = (url, heartbeat=30))]
+    fn py_without_auth(url: String, heartbeat: u64) -> Self {
         Self {
             inner: AxMdWebSocketClient::without_auth(url, heartbeat),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
         }
     }
 
@@ -368,7 +367,7 @@ impl PyAxMdWebSocketClient {
     name = "AxOrdersWebSocketClient",
     module = "nautilus_trader.core.nautilus_pyo3.architect"
 )]
-#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.architect_ax")]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.architect_ax")]
 pub struct PyAxOrdersWebSocketClient {
     inner: AxOrdersWebSocketClient,
 }
@@ -385,13 +384,8 @@ impl Debug for PyAxOrdersWebSocketClient {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyAxOrdersWebSocketClient {
     #[new]
-    #[pyo3(signature = (url, account_id, trader_id, heartbeat=None))]
-    fn py_new(
-        url: String,
-        account_id: AccountId,
-        trader_id: TraderId,
-        heartbeat: Option<u64>,
-    ) -> Self {
+    #[pyo3(signature = (url, account_id, trader_id, heartbeat=30))]
+    fn py_new(url: String, account_id: AccountId, trader_id: TraderId, heartbeat: u64) -> Self {
         Self {
             inner: AxOrdersWebSocketClient::new(url, account_id, trader_id, heartbeat),
         }
@@ -630,17 +624,20 @@ impl PyAxOrdersWebSocketClient {
 #[allow(clippy::too_many_arguments)]
 fn handle_md_message(
     message: AxMdMessage,
-    instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
-    symbol_data_types: &Arc<DashMap<String, SymbolDataTypes>>,
+    instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
+    symbol_data_types: &Arc<AtomicMap<String, SymbolDataTypes>>,
     book_sequences: &mut AHashMap<Ustr, u64>,
     candle_cache: &mut AHashMap<(Ustr, AxCandleWidth), AxMdCandle>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
 ) {
+    let instruments_snap = instruments.load();
+    let sdt_snap = symbol_data_types.load();
+
     match message {
         AxMdMessage::BookL1(book) => {
-            let l1_subscribed = symbol_data_types
+            let l1_subscribed = sdt_snap
                 .get(book.s.as_str())
                 .is_some_and(|e| e.quotes || e.book_level == Some(AxMarketDataLevel::Level1));
 
@@ -648,12 +645,12 @@ fn handle_md_message(
                 return;
             }
 
-            let Some(instrument) = instruments.get(&book.s) else {
+            let Some(instrument) = instruments_snap.get(&book.s) else {
                 log::warn!("Instrument cache miss for L1 book symbol={}", book.s);
                 return;
             };
 
-            match parse_book_l1_quote(&book, &instrument, ts_init) {
+            match parse_book_l1_quote(&book, instrument, ts_init) {
                 Ok(quote) => {
                     send_data_to_python(Data::Quote(quote), call_soon, callback);
                 }
@@ -661,7 +658,7 @@ fn handle_md_message(
             }
         }
         AxMdMessage::BookL2(book) => {
-            let Some(instrument) = instruments.get(&book.s) else {
+            let Some(instrument) = instruments_snap.get(&book.s) else {
                 log::warn!("Instrument cache miss for L2 book symbol={}", book.s);
                 return;
             };
@@ -671,7 +668,7 @@ fn handle_md_message(
                 .and_modify(|s| *s += 1)
                 .or_insert(1);
 
-            match parse_book_l2_deltas(&book, &instrument, *sequence, ts_init) {
+            match parse_book_l2_deltas(&book, instrument, *sequence, ts_init) {
                 Ok(deltas) => {
                     send_data_to_python(
                         Data::Deltas(OrderBookDeltas_API::new(deltas)),
@@ -683,7 +680,7 @@ fn handle_md_message(
             }
         }
         AxMdMessage::BookL3(book) => {
-            let Some(instrument) = instruments.get(&book.s) else {
+            let Some(instrument) = instruments_snap.get(&book.s) else {
                 log::warn!("Instrument cache miss for L3 book symbol={}", book.s);
                 return;
             };
@@ -693,7 +690,7 @@ fn handle_md_message(
                 .and_modify(|s| *s += 1)
                 .or_insert(1);
 
-            match parse_book_l3_deltas(&book, &instrument, *sequence, ts_init) {
+            match parse_book_l3_deltas(&book, instrument, *sequence, ts_init) {
                 Ok(deltas) => {
                     send_data_to_python(
                         Data::Deltas(OrderBookDeltas_API::new(deltas)),
@@ -705,20 +702,18 @@ fn handle_md_message(
             }
         }
         AxMdMessage::Trade(trade) => {
-            let trades_subscribed = symbol_data_types
-                .get(trade.s.as_str())
-                .is_some_and(|e| e.trades);
+            let trades_subscribed = sdt_snap.get(trade.s.as_str()).is_some_and(|e| e.trades);
 
             if !trades_subscribed {
                 return;
             }
 
-            let Some(instrument) = instruments.get(&trade.s) else {
+            let Some(instrument) = instruments_snap.get(&trade.s) else {
                 log::warn!("Instrument cache miss for trade symbol={}", trade.s);
                 return;
             };
 
-            match parse_trade_tick(&trade, &instrument, ts_init) {
+            match parse_trade_tick(&trade, instrument, ts_init) {
                 Ok(tick) => {
                     send_data_to_python(Data::Trade(tick), call_soon, callback);
                 }
@@ -741,12 +736,12 @@ fn handle_md_message(
             candle_cache.insert(cache_key, candle);
 
             if let Some(closed) = closed_candle {
-                let Some(instrument) = instruments.get(&closed.symbol) else {
+                let Some(instrument) = instruments_snap.get(&closed.symbol) else {
                     log::warn!("Instrument cache miss for candle symbol={}", closed.symbol);
                     return;
                 };
 
-                match parse_candle_bar(&closed, &instrument, ts_init) {
+                match parse_candle_bar(&closed, instrument, ts_init) {
                     Ok(bar) => {
                         send_data_to_python(Data::Bar(bar), call_soon, callback);
                     }

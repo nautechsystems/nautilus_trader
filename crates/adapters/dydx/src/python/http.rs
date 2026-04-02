@@ -58,7 +58,7 @@ impl DydxHttpClient {
     fn py_new(base_url: Option<String>, is_testnet: bool) -> PyResult<Self> {
         // Mirror the Rust client's constructor signature with sensible defaults
         Self::new(
-            base_url, None, // timeout_secs
+            base_url, 60,   // timeout_secs
             None, // proxy_url
             is_testnet, None, // retry_config
         )

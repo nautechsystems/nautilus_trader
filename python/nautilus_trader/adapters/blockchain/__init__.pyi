@@ -19,13 +19,13 @@ class BlockchainDataClientConfig:
         chain: model.Chain,
         dex_ids: typing.Sequence[model.DexType],
         http_rpc_url: str,
-        rpc_requests_per_second: int | None,
-        multicall_calls_per_rpc_request: int | None,
-        wss_rpc_url: str | None,
-        use_hypersync_for_live_data: bool,
-        from_block: int | None = ...,
-        pool_filters: DexPoolFilters | None = ...,
-        postgres_cache_database_config: infrastructure.PostgresConnectOptions | None = ...,
+        rpc_requests_per_second: int | None = None,
+        multicall_calls_per_rpc_request: int | None = None,
+        wss_rpc_url: str | None = None,
+        use_hypersync_for_live_data: bool = True,
+        from_block: int | None = None,
+        pool_filters: DexPoolFilters | None = None,
+        postgres_cache_database_config: infrastructure.PostgresConnectOptions | None = None,
     ) -> None: ...
     @property
     def chain(self) -> model.Chain: ...

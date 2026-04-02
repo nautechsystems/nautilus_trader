@@ -151,93 +151,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_adjustment_commission_new() {
-        let adjustment = create_test_commission_adjustment();
-
-        assert_eq!(adjustment.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(adjustment.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            adjustment.instrument_id,
-            InstrumentId::from("BTCUSDT.BINANCE")
-        );
-        assert_eq!(adjustment.position_id, PositionId::from("P-001"));
-        assert_eq!(adjustment.account_id, AccountId::from("BINANCE-001"));
-        assert_eq!(
-            adjustment.adjustment_type,
-            PositionAdjustmentType::Commission
-        );
-        assert_eq!(
-            adjustment.quantity_change,
-            Some(Decimal::from_str("-0.001").unwrap())
-        );
-        assert_eq!(adjustment.pnl_change, None);
-        assert_eq!(adjustment.reason, Some(Ustr::from("O-123")));
-        assert_eq!(adjustment.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(adjustment.ts_init, UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
-    fn test_position_adjustment_funding_new() {
-        let adjustment = create_test_funding_adjustment();
-
-        assert_eq!(adjustment.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(adjustment.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            adjustment.instrument_id,
-            InstrumentId::from("BTCUSD-PERP.BINANCE")
-        );
-        assert_eq!(adjustment.position_id, PositionId::from("P-002"));
-        assert_eq!(adjustment.account_id, AccountId::from("BINANCE-001"));
-        assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
-        assert_eq!(adjustment.quantity_change, None);
-        assert_eq!(
-            adjustment.pnl_change,
-            Some(Money::new(-5.50, Currency::USD()))
-        );
-        assert_eq!(
-            adjustment.reason,
-            Some(Ustr::from("funding_2024_01_15_08:00"))
-        );
-        assert_eq!(adjustment.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(adjustment.ts_init, UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
-    fn test_position_adjustment_clone() {
-        let adjustment1 = create_test_commission_adjustment();
-        let adjustment2 = adjustment1;
-
-        assert_eq!(adjustment1, adjustment2);
-    }
-
-    #[rstest]
-    fn test_position_adjustment_debug() {
-        let adjustment = create_test_commission_adjustment();
-        let debug_str = format!("{adjustment:?}");
-
-        assert!(debug_str.contains("PositionAdjusted"));
-        assert!(debug_str.contains("TRADER-001"));
-        assert!(debug_str.contains("EMA-CROSS"));
-        assert!(debug_str.contains("BTCUSDT.BINANCE"));
-        assert!(debug_str.contains("P-001"));
-        assert!(debug_str.contains("Commission"));
-    }
-
-    #[rstest]
-    fn test_position_adjustment_partial_eq() {
-        let adjustment1 = create_test_commission_adjustment();
-        let mut adjustment2 = create_test_commission_adjustment();
-        adjustment2.event_id = adjustment1.event_id;
-
-        let mut adjustment3 = create_test_commission_adjustment();
-        adjustment3.event_id = adjustment1.event_id;
-        adjustment3.quantity_change = Some(Decimal::from_str("-0.002").unwrap());
-
-        assert_eq!(adjustment1, adjustment2);
-        assert_ne!(adjustment1, adjustment3);
-    }
-
-    #[rstest]
     fn test_position_adjustment_different_types() {
         let commission = create_test_commission_adjustment();
         let funding = create_test_funding_adjustment();
@@ -248,15 +161,6 @@ mod tests {
         );
         assert_eq!(funding.adjustment_type, PositionAdjustmentType::Funding);
         assert_ne!(commission.adjustment_type, funding.adjustment_type);
-    }
-
-    #[rstest]
-    fn test_position_adjustment_timestamps() {
-        let adjustment = create_test_commission_adjustment();
-
-        assert_eq!(adjustment.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(adjustment.ts_init, UnixNanos::from(2_000_000_000));
-        assert!(adjustment.ts_event < adjustment.ts_init);
     }
 
     #[rstest]

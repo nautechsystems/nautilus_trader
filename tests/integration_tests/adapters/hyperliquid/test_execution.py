@@ -22,6 +22,7 @@ import pytest
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.constants import HYPERLIQUID_VENUE
 from nautilus_trader.adapters.hyperliquid.execution import HyperliquidExecutionClient
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import GenerateFillReports
@@ -42,6 +43,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketIfTouchedOrder
+from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import OrderList
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -1163,5 +1165,84 @@ async def test_modify_order_rejection_on_http_error(
 
         # Assert - rejection handled internally
         http_client.modify_order.assert_awaited_once()
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_submit_order_list_converts_to_pyo3(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+):
+    """
+    Verify _submit_order_list converts Cython orders to PyO3 before passing them to the
+    Rust client (regression test for GH-3763).
+    """
+    # Arrange
+    client, ws_client, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    entry = MarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-20260328-001-000-1"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    take_profit = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-20260328-001-000-2"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("55000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    stop_loss = StopMarketOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-20260328-001-000-3"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00100"),
+        trigger_price=Price.from_str("45000.0"),
+        trigger_type=TriggerType.LAST_PRICE,
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+
+    order_list = OrderList(
+        order_list_id=OrderListId("OL-001"),
+        orders=[entry, take_profit, stop_loss],
+    )
+
+    command = SubmitOrderList(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        order_list=order_list,
+        command_id=TestIdStubs.uuid(),
+        ts_init=0,
+        position_id=None,
+        client_id=None,
+    )
+
+    try:
+        # Act
+        await client._submit_order_list(command)
+
+        # Assert
+        http_client.submit_orders.assert_awaited_once()
+        submitted = http_client.submit_orders.call_args[0][0]
+
+        assert len(submitted) == 3
+        assert isinstance(submitted[0], nautilus_pyo3.MarketOrder)
+        assert isinstance(submitted[1], nautilus_pyo3.LimitOrder)
+        assert isinstance(submitted[2], nautilus_pyo3.StopMarketOrder)
     finally:
         await client._disconnect()

@@ -30,7 +30,7 @@ use nautilus_execution::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
     models::{
         fee::{FeeModelAny, FixedFeeModel},
-        fill::{DefaultFillModel, FillModelAny},
+        fill::{BestPriceFillModel, DefaultFillModel, FillModelAny},
     },
 };
 use nautilus_model::{
@@ -7180,5 +7180,347 @@ fn test_fully_filled_market_to_limit_not_in_core(
     assert!(
         !engine.order_exists(client_order_id),
         "Fully filled MarketToLimit should not rest in matching core",
+    );
+}
+
+#[rstest]
+fn test_l1_ask_tracks_decreasing_seller_trade_prices(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Previously the ask only monotonically increased and the restore block
+    // overwrote the correct book-synced value with the stale high-water mark.
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("990.00"),
+        Price::from("1010.00"),
+        Quantity::from("100.000"),
+        Quantity::from("100.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    // Three seller trades: 1000 -> 1050 -> 900
+    for (i, price_str) in ["1000.00", "1050.00", "900.00"].iter().enumerate() {
+        let trade = TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(*price_str),
+            Quantity::from("10.000"),
+            AggressorSide::Seller,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        );
+        engine.process_trade_tick(&trade);
+    }
+
+    // Submit market BUY: should fill at 900 (latest trade), not stale 1050
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Market BUY should have filled");
+
+    assert_eq!(
+        fill.last_px,
+        Price::from("900.00"),
+        "Fill price should match latest trade, not stale ask high-water mark"
+    );
+}
+
+#[rstest]
+fn test_l1_bid_tracks_increasing_buyer_trade_prices(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Symmetric: L1_MBP bid must not become stale after trades at higher prices
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("990.00"),
+        Price::from("1010.00"),
+        Quantity::from("100.000"),
+        Quantity::from("100.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    // Three buyer trades: 1000 -> 950 -> 1100
+    for (i, price_str) in ["1000.00", "950.00", "1100.00"].iter().enumerate() {
+        let trade = TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(*price_str),
+            Quantity::from("10.000"),
+            AggressorSide::Buyer,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        );
+        engine.process_trade_tick(&trade);
+    }
+
+    // Submit market SELL: should fill at 1100 (latest trade), not stale 950
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Market SELL should have filled");
+
+    assert_eq!(
+        fill.last_px,
+        Price::from("1100.00"),
+        "Fill price should match latest trade, not stale bid low-water mark"
+    );
+}
+
+#[rstest]
+fn test_l1_sequential_trades_alternating_aggressors(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // Mixed aggressor sides: verify fill prices match the latest trade
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("990.00"),
+        Price::from("1010.00"),
+        Quantity::from("100.000"),
+        Quantity::from("100.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    let trades: Vec<(&str, AggressorSide)> = vec![
+        ("1000.00", AggressorSide::Seller),
+        ("1020.00", AggressorSide::Buyer),
+        ("980.00", AggressorSide::Seller),
+        ("950.00", AggressorSide::Buyer),
+    ];
+
+    for (i, (price_str, side)) in trades.iter().enumerate() {
+        let trade = TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(*price_str),
+            Quantity::from("10.000"),
+            *side,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        );
+        engine.process_trade_tick(&trade);
+    }
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut buy_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut buy_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Market BUY should have filled");
+
+    assert_eq!(
+        fill.last_px,
+        Price::from("950.00"),
+        "BUY fill price should match latest trade price"
+    );
+}
+
+#[rstest]
+fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // The exact scenario from the bug report: trade-only data with no quotes.
+    // With the BestPriceFillModel the fill price comes from core.bid/core.ask
+    // via a synthetic L2 book, so stale core values produce wrong fill prices.
+
+    let fill_model = FillModelAny::BestPrice(BestPriceFillModel::new(1.0, 0.0, None).unwrap());
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        fill_model,
+        FeeModelAny::default(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        clock,
+        cache,
+        config,
+    );
+
+    // No quote: only trade ticks, seller trades at 100 -> 105 -> 90
+    for (i, price_str) in ["100.00", "105.00", "90.00"].iter().enumerate() {
+        let trade = TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(*price_str),
+            Quantity::from("10.000"),
+            AggressorSide::Seller,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        );
+        engine.process_trade_tick(&trade);
+    }
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Market BUY should have filled");
+
+    assert_eq!(
+        fill.last_px,
+        Price::from("90.00"),
+        "BestPriceFillModel should use latest trade price, not stale ask"
+    );
+}
+
+#[rstest]
+fn test_l1_no_aggressor_trades_track_price(
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+) {
+    // NoAggressor trades (common in some data feeds) must also track price
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, Some(config), None);
+
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("990.00"),
+        Price::from("1010.00"),
+        Quantity::from("100.000"),
+        Quantity::from("100.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine.process_quote_tick(&quote);
+
+    for (i, price_str) in ["1000.00", "1050.00", "900.00"].iter().enumerate() {
+        let trade = TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(*price_str),
+            Quantity::from("10.000"),
+            AggressorSide::NoAggressor,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        );
+        engine.process_trade_tick(&trade);
+    }
+
+    clear_order_event_handler_messages(&order_event_handler);
+    let mut market_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut market_order, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fill = saved_messages
+        .iter()
+        .find_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .expect("Market BUY should have filled");
+
+    assert_eq!(
+        fill.last_px,
+        Price::from("900.00"),
+        "NoAggressor trades should track price like other aggressor sides"
     );
 }

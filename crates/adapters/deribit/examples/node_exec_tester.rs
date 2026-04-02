@@ -36,6 +36,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -81,20 +82,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let order_qty = Quantity::from(10); // 10 USD contracts (Deribit minimum)
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC_TESTER-001"),
-        instrument_id,
-        client_id,
-        order_qty,
-    )
-    .with_subscribe_trades(true)
-    .with_subscribe_quotes(true)
-    .with_open_position_on_start(order_qty.as_decimal())
-    .with_use_post_only(true)
-    .with_log_data(false);
-
-    // Use UUIDs for unique client order IDs across restarts
-    tester_config.base.use_uuid_client_order_ids = true;
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(order_qty)
+        .open_position_on_start_qty(order_qty.as_decimal())
+        .use_post_only(true)
+        .log_data(false)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

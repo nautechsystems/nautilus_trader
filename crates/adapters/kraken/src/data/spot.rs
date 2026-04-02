@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -33,17 +33,18 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, DataResponse, InstrumentResponse, InstrumentsResponse, RequestBars,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            BarsResponse, BookResponse, DataResponse, InstrumentResponse, InstrumentsResponse,
+            RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeIndexPrices, UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -63,7 +64,7 @@ type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
 use crate::{
     common::consts::KRAKEN_VENUE,
     config::KrakenDataClientConfig,
-    http::KrakenSpotHttpClient,
+    http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
     websocket::spot_v2::{
         client::KrakenSpotWebSocketClient,
         messages::KrakenSpotWsMessage,
@@ -85,7 +86,7 @@ pub struct KrakenSpotDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
@@ -102,7 +103,9 @@ impl KrakenSpotDataClient {
             None,
             None,
             config.http_proxy.clone(),
-            config.max_requests_per_second,
+            config
+                .max_requests_per_second
+                .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
         let ws = KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone());
@@ -116,7 +119,7 @@ impl KrakenSpotDataClient {
             is_connected: AtomicBool::new(false),
             cancellation_token,
             tasks: Vec::new(),
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
+            instruments: Arc::new(AtomicMap::new()),
             data_sender: get_data_event_sender(),
         })
     }
@@ -124,19 +127,13 @@ impl KrakenSpotDataClient {
     /// Returns the cached instruments.
     #[must_use]
     pub fn instruments(&self) -> Vec<InstrumentAny> {
-        self.instruments
-            .read()
-            .map(|guard| guard.values().cloned().collect())
-            .unwrap_or_default()
+        self.instruments.load().values().cloned().collect()
     }
 
     /// Returns a cached instrument by ID.
     #[must_use]
     pub fn get_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
-        self.instruments
-            .read()
-            .ok()
-            .and_then(|guard| guard.get(instrument_id).cloned())
+        self.instruments.load().get(instrument_id).cloned()
     }
 
     async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -146,13 +143,13 @@ impl KrakenSpotDataClient {
             .await
             .context("Failed to load spot instruments")?;
 
-        if let Ok(mut guard) = self.instruments.write() {
+        self.instruments.rcu(|m| {
             for instrument in &instruments {
-                guard.insert(instrument.id(), instrument.clone());
+                m.insert(instrument.id(), instrument.clone());
             }
-        }
+        });
 
-        self.http.cache_instruments(instruments.clone());
+        self.http.cache_instruments(&instruments);
 
         log::info!(
             "Loaded instruments: client_id={}, count={}",
@@ -221,14 +218,11 @@ impl KrakenSpotDataClient {
     }
 
     fn lookup_instrument(
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         symbol: &str,
     ) -> Option<InstrumentAny> {
         let instrument_id = InstrumentId::new(Symbol::new(symbol), *KRAKEN_VENUE);
-        instruments
-            .read()
-            .ok()
-            .and_then(|guard| guard.get(&instrument_id).cloned())
+        instruments.load().get(&instrument_id).cloned()
     }
 
     fn flush_ohlc_buffer(
@@ -249,7 +243,7 @@ impl KrakenSpotDataClient {
     fn handle_ws_message(
         msg: KrakenSpotWsMessage,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         book_sequence: &Arc<AtomicU64>,
         ohlc_buffer: &OhlcBuffer,
         clock: &'static AtomicTime,
@@ -401,9 +395,7 @@ impl DataClient for KrakenSpotDataClient {
             let _ = ws.close().await;
         });
 
-        if let Ok(mut instruments) = self.instruments.write() {
-            instruments.clear();
-        }
+        self.instruments.store(ahash::AHashMap::new());
 
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -594,6 +586,17 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::info!(
+            "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
+            cmd.instrument_id,
+        );
+        Ok(())
+    }
+
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let ws = self.ws.clone();
@@ -670,6 +673,13 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
 
+    fn unsubscribe_instrument_status(
+        &mut self,
+        _cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
@@ -685,12 +695,12 @@ impl DataClient for KrakenSpotDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments(None).await {
                 Ok(instruments) => {
-                    if let Ok(mut guard) = instruments_cache.write() {
+                    instruments_cache.rcu(|m| {
                         for instrument in &instruments {
-                            guard.insert(instrument.id(), instrument.clone());
+                            m.insert(instrument.id(), instrument.clone());
                         }
-                    }
-                    http.cache_instruments(instruments.clone());
+                    });
+                    http.cache_instruments(&instruments);
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -727,36 +737,32 @@ impl DataClient for KrakenSpotDataClient {
         let clock = self.clock;
 
         get_runtime().spawn(async move {
-            {
-                if let Ok(guard) = instruments.read()
-                    && let Some(instrument) = guard.get(&instrument_id)
-                {
-                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                        request_id,
-                        client_id,
-                        instrument.id(),
-                        instrument.clone(),
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    )));
+            if let Some(instrument) = instruments.load().get(&instrument_id) {
+                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                    request_id,
+                    client_id,
+                    instrument.id(),
+                    instrument.clone(),
+                    start_nanos,
+                    end_nanos,
+                    clock.get_time_ns(),
+                    params,
+                )));
 
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instrument response: {e}");
-                    }
-                    return;
+                if let Err(e) = sender.send(DataEvent::Response(response)) {
+                    log::error!("Failed to send instrument response: {e}");
                 }
+                return;
             }
 
             match http.request_instruments(None).await {
                 Ok(all_instruments) => {
-                    if let Ok(mut guard) = instruments.write() {
+                    instruments.rcu(|m| {
                         for instrument in &all_instruments {
-                            guard.insert(instrument.id(), instrument.clone());
+                            m.insert(instrument.id(), instrument.clone());
                         }
-                    }
-                    http.cache_instruments(all_instruments.clone());
+                    });
+                    http.cache_instruments(&all_instruments);
 
                     let instrument = all_instruments
                         .into_iter()
@@ -859,6 +865,41 @@ impl DataClient for KrakenSpotDataClient {
                     }
                 }
                 Err(e) => log::error!("Bars request failed: {e:?}"),
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let depth = request.depth.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+
+        get_runtime().spawn(async move {
+            match http.request_book_snapshot(instrument_id, depth).await {
+                Ok(book) => {
+                    let response = DataResponse::Book(BookResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        book,
+                        None,
+                        None,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send book snapshot response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Book snapshot request failed: {e:?}"),
             }
         });
 

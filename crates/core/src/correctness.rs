@@ -983,4 +983,22 @@ mod tests {
         let result = super::check_positive_decimal(value, "param").is_ok();
         assert_eq!(result, expected);
     }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(u128::MAX, true)]
+    #[case(0, false)]
+    fn test_check_positive_u128(#[case] value: u128, #[case] expected: bool) {
+        assert_eq!(check_positive_u128(value, "value").is_ok(), expected);
+    }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(i128::MAX, true)]
+    #[case(0, false)]
+    #[case(-1, false)]
+    #[case(i128::MIN, false)]
+    fn test_check_positive_i128(#[case] value: i128, #[case] expected: bool) {
+        assert_eq!(check_positive_i128(value, "value").is_ok(), expected);
+    }
 }

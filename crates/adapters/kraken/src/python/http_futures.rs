@@ -40,22 +40,20 @@ impl KrakenFuturesHttpClient {
     /// It maintains an instrument cache and uses it to parse venue responses
     /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         demo: bool,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> PyResult<Self> {
-        let timeout = timeout_secs.or(Some(60));
-
         let environment = if demo {
             KrakenEnvironment::Demo
         } else {
@@ -69,7 +67,7 @@ impl KrakenFuturesHttpClient {
                 s,
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
@@ -81,7 +79,7 @@ impl KrakenFuturesHttpClient {
             Self::new(
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,

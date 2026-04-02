@@ -351,11 +351,123 @@ impl Instrument for Equity {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{Equity, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{Equity, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(equity_aapl: Equity) {
-        let cloned = equity_aapl.clone();
-        assert_eq!(equity_aapl, cloned);
+    fn test_trait_accessors(equity_aapl: Equity) {
+        assert_eq!(equity_aapl.id(), InstrumentId::from("AAPL.XNAS"));
+        assert_eq!(equity_aapl.raw_symbol(), Symbol::from("AAPL"));
+        assert_eq!(equity_aapl.asset_class(), AssetClass::Equity);
+        assert_eq!(equity_aapl.instrument_class(), InstrumentClass::Spot);
+        assert_eq!(equity_aapl.quote_currency(), Currency::USD());
+        assert_eq!(equity_aapl.settlement_currency(), Currency::USD());
+        assert!(!equity_aapl.is_inverse());
+        assert_eq!(equity_aapl.price_precision(), 2);
+        assert_eq!(equity_aapl.size_precision(), 0);
+        assert_eq!(equity_aapl.price_increment(), Price::from("0.01"));
+        assert_eq!(equity_aapl.size_increment(), Quantity::from("1"));
+        assert_eq!(equity_aapl.multiplier(), Quantity::from("1"));
+        assert_eq!(equity_aapl.base_currency(), None);
+        assert_eq!(equity_aapl.underlying(), None);
+        assert_eq!(equity_aapl.option_kind(), None);
+        assert_eq!(equity_aapl.strike_price(), None);
+        assert_eq!(equity_aapl.activation_ns(), None);
+        assert_eq!(equity_aapl.expiration_ns(), None);
+    }
+
+    #[rstest]
+    fn test_isin(equity_aapl: Equity) {
+        assert_eq!(
+            equity_aapl.isin().map(|u| u.to_string()),
+            Some("US0378331005".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = Equity::new_checked(
+            InstrumentId::from("AAPL.XNAS"),
+            Symbol::from("AAPL"),
+            None,
+            Currency::USD(),
+            3, // mismatch
+            Price::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_zero_price_increment() {
+        let result = Equity::new_checked(
+            InstrumentId::from("AAPL.XNAS"),
+            Symbol::from("AAPL"),
+            None,
+            Currency::USD(),
+            0,
+            Price::from("0"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_non_ascii_isin() {
+        let result = Equity::new_checked(
+            InstrumentId::from("AAPL.XNAS"),
+            Symbol::from("AAPL"),
+            Some(ustr::Ustr::from("US\u{00E9}378331005")),
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("non-ASCII"));
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(equity_aapl: Equity) {
+        let json = serde_json::to_string(&equity_aapl).unwrap();
+        let deserialized: Equity = serde_json::from_str(&json).unwrap();
+        assert_eq!(equity_aapl, deserialized);
     }
 }

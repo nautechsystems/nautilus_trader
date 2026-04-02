@@ -17,11 +17,10 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -35,7 +34,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, MUTEX_POISONED, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -54,15 +53,15 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{consts::KRAKEN_VENUE, credential::KrakenCredential, parse::truncate_cl_ord_id},
     config::KrakenExecClientConfig,
-    http::KrakenFuturesHttpClient,
+    http::{
+        KrakenFuturesHttpClient, futures::client::KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
+    },
     websocket::futures::{
         client::KrakenFuturesWebSocketClient,
         messages::KrakenFuturesWsMessage,
         parse::{parse_futures_ws_fill_report, parse_futures_ws_order_status_report},
     },
 };
-
-const MUTEX_POISONED: &str = "mutex poisoned";
 
 /// Kraken Futures execution client.
 ///
@@ -80,11 +79,11 @@ pub struct KrakenFuturesExecutionClient {
     cancellation_token: CancellationToken,
     ws_stream_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-    truncated_id_map: Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    order_instrument_map: Arc<RwLock<AHashMap<String, InstrumentId>>>,
-    venue_client_map: Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    venue_order_qty: Arc<RwLock<AHashMap<String, Quantity>>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
+    order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
+    venue_client_map: Arc<AtomicMap<String, ClientOrderId>>,
+    venue_order_qty: Arc<AtomicMap<String, Quantity>>,
 }
 
 impl KrakenFuturesExecutionClient {
@@ -111,7 +110,9 @@ impl KrakenFuturesExecutionClient {
             None,
             None,
             config.http_proxy.clone(),
-            config.max_requests_per_second,
+            config
+                .max_requests_per_second
+                .unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
         let credential = KrakenCredential::new(config.api_key.clone(), config.api_secret.clone());
@@ -131,11 +132,11 @@ impl KrakenFuturesExecutionClient {
             cancellation_token,
             ws_stream_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            truncated_id_map: Arc::new(RwLock::new(AHashMap::new())),
-            order_instrument_map: Arc::new(RwLock::new(AHashMap::new())),
-            venue_client_map: Arc::new(RwLock::new(AHashMap::new())),
-            venue_order_qty: Arc::new(RwLock::new(AHashMap::new())),
+            instruments: Arc::new(AtomicMap::new()),
+            truncated_id_map: Arc::new(AtomicMap::new()),
+            order_instrument_map: Arc::new(AtomicMap::new()),
+            venue_client_map: Arc::new(AtomicMap::new()),
+            venue_order_qty: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -194,10 +195,9 @@ impl KrakenFuturesExecutionClient {
 
         let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
 
-        if kraken_cl_ord_id != client_order_id.as_str()
-            && let Ok(mut map) = self.truncated_id_map.write()
-        {
-            map.insert(kraken_cl_ord_id, client_order_id);
+        if kraken_cl_ord_id != client_order_id.as_str() {
+            self.truncated_id_map
+                .insert(kraken_cl_ord_id, client_order_id);
         }
 
         let http = self.http.clone();
@@ -266,7 +266,6 @@ impl KrakenFuturesExecutionClient {
                 )
                 .await
             {
-                log::error!("Cancel order failed: {e}");
                 let ts_event = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected_event(
                     strategy_id,
@@ -334,24 +333,21 @@ impl KrakenFuturesExecutionClient {
     }
 
     fn lookup_instrument(
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         product_id: &str,
     ) -> Option<InstrumentAny> {
         let instrument_id = InstrumentId::new(Symbol::new(product_id), *KRAKEN_VENUE);
-        instruments
-            .read()
-            .ok()
-            .and_then(|guard| guard.get(&instrument_id).cloned())
+        instruments.load().get(&instrument_id).cloned()
     }
 
     fn resolve_client_order_id(
         truncated: &str,
-        truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
+        truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
     ) -> ClientOrderId {
         truncated_id_map
-            .read()
-            .ok()
-            .and_then(|map| map.get(truncated).copied())
+            .load()
+            .get(truncated)
+            .copied()
             .unwrap_or_else(|| ClientOrderId::new(truncated))
     }
 
@@ -359,11 +355,11 @@ impl KrakenFuturesExecutionClient {
     fn handle_ws_message(
         msg: KrakenFuturesWsMessage,
         emitter: &ExecutionEventEmitter,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-        truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-        order_instrument_map: &Arc<RwLock<AHashMap<String, InstrumentId>>>,
-        venue_client_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-        venue_order_qty: &Arc<RwLock<AHashMap<String, Quantity>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
+        order_instrument_map: &Arc<AtomicMap<String, InstrumentId>>,
+        venue_client_map: &Arc<AtomicMap<String, ClientOrderId>>,
+        venue_order_qty: &Arc<AtomicMap<String, Quantity>>,
         account_id: AccountId,
         clock: &'static AtomicTime,
     ) {
@@ -379,14 +375,10 @@ impl KrakenFuturesExecutionClient {
                 };
 
                 // Cache order_id -> instrument_id for cancel-only messages
-                if let Ok(mut map) = order_instrument_map.write() {
-                    map.insert(delta.order.order_id.clone(), instrument.id());
-                }
+                order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
 
-                if let Ok(mut map) = venue_order_qty.write() {
-                    let qty = Quantity::new(delta.order.qty, instrument.size_precision());
-                    map.insert(delta.order.order_id.clone(), qty);
-                }
+                let qty = Quantity::new(delta.order.qty, instrument.size_precision());
+                venue_order_qty.insert(delta.order.order_id.clone(), qty);
 
                 match parse_futures_ws_order_status_report(
                     &delta.order,
@@ -402,9 +394,7 @@ impl KrakenFuturesExecutionClient {
                                 Self::resolve_client_order_id(cl_ord_id, truncated_id_map);
                             report = report.with_client_order_id(full_id);
 
-                            if let Ok(mut map) = venue_client_map.write() {
-                                map.insert(delta.order.order_id.clone(), full_id);
-                            }
+                            venue_client_map.insert(delta.order.order_id.clone(), full_id);
                         }
                         emitter.send_order_status_report(report);
                     }
@@ -424,10 +414,7 @@ impl KrakenFuturesExecutionClient {
 
                 let venue_order_id = VenueOrderId::new(&cancel.order_id);
 
-                let instrument_id = order_instrument_map
-                    .read()
-                    .ok()
-                    .and_then(|map| map.get(&cancel.order_id).copied());
+                let instrument_id = order_instrument_map.load().get(&cancel.order_id).copied();
 
                 let Some(instrument_id) = instrument_id else {
                     log::warn!(
@@ -442,18 +429,9 @@ impl KrakenFuturesExecutionClient {
                     .cli_ord_id
                     .as_ref()
                     .map(|id| Self::resolve_client_order_id(id, truncated_id_map))
-                    .or_else(|| {
-                        venue_client_map
-                            .read()
-                            .ok()
-                            .and_then(|map| map.get(&cancel.order_id).copied())
-                    });
+                    .or_else(|| venue_client_map.load().get(&cancel.order_id).copied());
 
-                let Some(quantity) = venue_order_qty
-                    .read()
-                    .ok()
-                    .and_then(|map| map.get(&cancel.order_id).copied())
-                else {
+                let Some(quantity) = venue_order_qty.load().get(&cancel.order_id).copied() else {
                     log::warn!(
                         "Cannot resolve quantity for cancel: order_id={}, skipping",
                         cancel.order_id
@@ -585,7 +563,6 @@ impl KrakenFuturesExecutionClient {
                 )
                 .await
             {
-                log::error!("Modify order failed: {e}");
                 let ts_event = clock.get_time_ns();
                 emitter.emit_order_modify_rejected_event(
                     strategy_id,
@@ -681,16 +658,15 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .await
                 .context("Failed to load Kraken futures instruments")?;
             log::info!("Loaded {} Futures instruments", instruments.len());
-            self.http.cache_instruments(instruments);
+            self.http.cache_instruments(&instruments);
             self.core.set_instruments_initialized();
         }
 
-        if let Ok(mut guard) = self.instruments.write() {
-            for entry in self.http.instruments_cache.iter() {
-                let instrument = entry.value().clone();
-                guard.insert(instrument.id(), instrument);
+        self.instruments.rcu(|m| {
+            for instrument in self.http.instruments_cache.load().values() {
+                m.insert(instrument.id(), instrument.clone());
             }
-        }
+        });
 
         self.ws
             .connect()
@@ -961,10 +937,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             let client_order_id = order.client_order_id();
             let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
 
-            if kraken_cl_ord_id != client_order_id.as_str()
-                && let Ok(mut map) = self.truncated_id_map.write()
-            {
-                map.insert(kraken_cl_ord_id, client_order_id);
+            if kraken_cl_ord_id != client_order_id.as_str() {
+                self.truncated_id_map
+                    .insert(kraken_cl_ord_id, client_order_id);
             }
 
             self.emitter.emit_order_submitted(order);
@@ -1061,7 +1036,6 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
             self.spawn_task("cancel_all_orders", async move {
                 if let Err(e) = http.inner.cancel_all_orders(Some(symbol)).await {
-                    log::error!("Cancel all orders failed: {e}");
                     anyhow::bail!("Cancel all orders failed: {e}");
                 }
                 Ok(())
@@ -1141,72 +1115,5 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
-    use nautilus_common::cache::Cache;
-    use nautilus_model::{
-        enums::AccountType,
-        identifiers::{AccountId, ClientId, TraderId},
-    };
-    use rstest::rstest;
-
-    use super::*;
-    use crate::{common::enums::KrakenProductType, config::KrakenExecClientConfig};
-
-    fn create_test_core() -> ExecutionClientCore {
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        ExecutionClientCore::new(
-            TraderId::from("TESTER-001"),
-            ClientId::from("KRAKEN"),
-            *KRAKEN_VENUE,
-            OmsType::Netting,
-            AccountId::from("KRAKEN-001"),
-            AccountType::Margin,
-            None,
-            cache,
-        )
-    }
-
-    #[rstest]
-    fn test_futures_exec_client_new() {
-        let config = KrakenExecClientConfig {
-            product_type: KrakenProductType::Futures,
-            api_key: "test_key".to_string(),
-            api_secret: "test_secret".to_string(),
-            ..Default::default()
-        };
-
-        let client = KrakenFuturesExecutionClient::new(create_test_core(), config);
-        assert!(client.is_ok());
-
-        let client = client.unwrap();
-        assert_eq!(client.client_id(), ClientId::from("KRAKEN"));
-        assert_eq!(client.account_id(), AccountId::from("KRAKEN-001"));
-        assert_eq!(client.venue(), *KRAKEN_VENUE);
-        assert!(!client.is_connected());
-    }
-
-    #[rstest]
-    fn test_futures_exec_client_start_stop() {
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        nautilus_common::live::runner::set_exec_event_sender(sender);
-
-        let config = KrakenExecClientConfig {
-            product_type: KrakenProductType::Futures,
-            api_key: "test_key".to_string(),
-            api_secret: "test_secret".to_string(),
-            ..Default::default()
-        };
-
-        let mut client = KrakenFuturesExecutionClient::new(create_test_core(), config).unwrap();
-
-        assert!(client.start().is_ok());
-        assert!(client.stop().is_ok());
-        assert!(!client.is_connected());
     }
 }

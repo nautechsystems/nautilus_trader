@@ -286,7 +286,6 @@ impl MarketOrder {
             .map(|vec| vec.iter().map(|s| s.as_str()).collect())
     }
 
-    #[getter]
     #[pyo3(name = "events")]
     fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()

@@ -28,10 +28,15 @@ pub mod spot;
 // Re-exports
 pub use error::KrakenHttpError;
 pub use futures::{
-    client::{KrakenFuturesHttpClient, KrakenFuturesRawHttpClient},
+    client::{
+        KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, KrakenFuturesHttpClient,
+        KrakenFuturesRawHttpClient,
+    },
     query::*,
 };
 pub use spot::{
-    client::{KrakenSpotHttpClient, KrakenSpotRawHttpClient},
+    client::{
+        KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND, KrakenSpotHttpClient, KrakenSpotRawHttpClient,
+    },
     query::*,
 };

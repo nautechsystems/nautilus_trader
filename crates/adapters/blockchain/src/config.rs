@@ -23,7 +23,7 @@ use nautilus_model::{
 use nautilus_system::ClientConfig;
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -33,10 +33,11 @@ use nautilus_system::ClientConfig;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct DexPoolFilters {
     /// Whether to exclude pools containing tokens with empty name or symbol fields.
+    #[builder(default = true)]
     pub remove_pools_with_empty_erc20fields: bool,
 }
 
@@ -53,14 +54,12 @@ impl DexPoolFilters {
 
 impl Default for DexPoolFilters {
     fn default() -> Self {
-        Self {
-            remove_pools_with_empty_erc20fields: true,
-        }
+        Self::builder().build()
     }
 }
 
 /// Configuration for blockchain data clients.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -70,20 +69,23 @@ impl Default for DexPoolFilters {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.blockchain")
 )]
 pub struct BlockchainDataClientConfig {
     /// The blockchain chain configuration.
     pub chain: SharedChain,
     /// List of decentralized exchange IDs to register and sync during connection.
+    #[builder(default)]
     pub dex_ids: Vec<DexType>,
     /// Determines if the client should use Hypersync for live data streaming.
+    #[builder(default)]
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
     /// The maximum number of Multicall calls per one RPC request.
+    #[builder(default = 200)]
     pub multicall_calls_per_rpc_request: u32,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
     pub wss_rpc_url: Option<String>,
@@ -97,6 +99,7 @@ pub struct BlockchainDataClientConfig {
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
     /// Filtering criteria that define which DEX pools to include in the data universe.
+    #[builder(default)]
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
@@ -135,7 +138,7 @@ impl BlockchainDataClientConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 pub struct BlockchainExecutionClientConfig {
     /// The trader ID for the client.
     pub trader_id: TraderId,

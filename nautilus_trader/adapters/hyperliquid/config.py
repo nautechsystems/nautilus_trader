@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -36,6 +37,9 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
         for future functionality. Use `http_proxy_url` for REST API proxy support.
     testnet : bool, default False
         If the client is connecting to the Hyperliquid testnet API.
+    product_types : tuple[HyperliquidProductType, ...], optional
+        The Hyperliquid product types to load for the client instrument provider.
+        If ``None`` then the instrument provider defaults are used.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
 
@@ -45,6 +49,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
     testnet: bool = False
+    product_types: tuple[HyperliquidProductType, ...] | None = None
     http_timeout_secs: PositiveInt = 10
 
 
@@ -78,6 +83,9 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         for future functionality. Use `http_proxy_url` for REST API proxy support.
     testnet : bool, default False
         If the client is connecting to the Hyperliquid testnet API.
+    product_types : tuple[HyperliquidProductType, ...], optional
+        The Hyperliquid product types to load for the client instrument provider.
+        If ``None`` then the instrument provider defaults are used.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -106,6 +114,7 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     http_proxy_url: str | None = None
     ws_proxy_url: str | None = None
     testnet: bool = False
+    product_types: tuple[HyperliquidProductType, ...] | None = None
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None

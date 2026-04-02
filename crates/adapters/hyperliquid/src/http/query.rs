@@ -172,6 +172,14 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get metadata for all perp dexes (standard + HIP-3).
+    pub fn all_perp_metas() -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::AllPerpMetas,
+            params: InfoRequestParams::None,
+        }
+    }
+
     /// Creates a request to get spot metadata (tokens and pairs).
     pub fn spot_meta() -> Self {
         Self {
@@ -401,6 +409,15 @@ mod tests {
 
         assert_eq!(req.request_type, HyperliquidInfoRequestType::Meta);
         assert!(matches!(req.params, InfoRequestParams::None));
+    }
+
+    #[rstest]
+    fn test_info_request_all_perp_metas() {
+        let req = InfoRequest::all_perp_metas();
+
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::AllPerpMetas);
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""type":"allPerpMetas""#));
     }
 
     #[rstest]

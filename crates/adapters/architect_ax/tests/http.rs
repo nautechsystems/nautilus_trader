@@ -136,8 +136,7 @@ async fn test_raw_http_get_instruments_returns_data() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     let response = client.get_instruments().await.unwrap();
 
@@ -153,8 +152,7 @@ async fn test_raw_http_get_instrument_returns_data() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     // Mock server returns first instrument from list (EURUSD-PERP)
     let instrument = client
@@ -177,10 +175,10 @@ async fn test_raw_http_get_balances_returns_data() {
         "test_api_secret".to_string(),
         Some(base_url),
         None,
-        Some(60),
-        None,
-        None,
-        None,
+        60,
+        3,
+        1000,
+        10_000,
         None,
     )
     .unwrap();
@@ -202,10 +200,10 @@ async fn test_raw_http_get_positions_returns_data() {
         "test_api_secret".to_string(),
         Some(base_url),
         None,
-        Some(60),
-        None,
-        None,
-        None,
+        60,
+        3,
+        1000,
+        10_000,
         None,
     )
     .unwrap();
@@ -227,10 +225,10 @@ async fn test_raw_http_get_tickers_returns_data() {
         "test_api_secret".to_string(),
         Some(base_url),
         None,
-        Some(60),
-        None,
-        None,
-        None,
+        60,
+        3,
+        1000,
+        10_000,
         None,
     )
     .unwrap();
@@ -253,10 +251,10 @@ async fn test_raw_http_get_ticker_returns_data() {
         "test_api_secret".to_string(),
         Some(base_url),
         None,
-        Some(60),
-        None,
-        None,
-        None,
+        60,
+        3,
+        1000,
+        10_000,
         None,
     )
     .unwrap();
@@ -275,7 +273,7 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client = AxHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     let instruments = client
         .request_instruments(Some(Decimal::new(2, 4)), Some(Decimal::new(5, 4)))
@@ -291,7 +289,7 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client = AxHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     // Mock server returns first instrument (EURUSD-PERP) regardless of request
     let instrument = client
@@ -314,12 +312,12 @@ async fn test_domain_http_cache_instruments() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client = AxHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     assert!(!client.is_initialized());
 
     let instruments = client.request_instruments(None, None).await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     assert!(client.is_initialized());
 
@@ -336,10 +334,10 @@ async fn test_domain_http_get_cached_instrument() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
 
-    let client = AxHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     let instruments = client.request_instruments(None, None).await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     let eurusd_symbol = Ustr::from("EURUSD-PERP");
     let cached = client.get_instrument(&eurusd_symbol);
@@ -361,8 +359,7 @@ async fn test_domain_http_get_cached_instrument() {
 async fn test_http_network_error_invalid_port() {
     let base_url = "http://127.0.0.1:1".to_string();
 
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(1), Some(0), None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 1, 0, 1000, 10_000, None).unwrap();
 
     let result = client.get_instruments().await;
 
@@ -400,8 +397,7 @@ async fn test_http_500_internal_server_error() {
     wait_for_server(addr, "/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(60), Some(0), None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 60, 0, 1000, 10_000, None).unwrap();
 
     let result = client.get_instruments().await;
 
@@ -431,8 +427,7 @@ async fn test_http_malformed_json_response() {
     wait_for_server(addr, "/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     let result = client.get_instruments().await;
 
@@ -467,8 +462,7 @@ async fn test_http_empty_instruments_response() {
     wait_for_server(addr, "/instruments").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        AxRawHttpClient::new(Some(base_url), None, Some(60), None, None, None, None).unwrap();
+    let client = AxRawHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
 
     let result = client.get_instruments().await.unwrap();
 

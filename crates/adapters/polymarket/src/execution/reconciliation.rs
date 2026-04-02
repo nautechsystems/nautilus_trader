@@ -16,27 +16,31 @@
 //! Reconciliation report generation for the Polymarket execution client.
 
 use anyhow::Context;
-use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
-    enums::LiquiditySide,
+    enums::{LiquiditySide, PositionSideSpecified},
     identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::Currency,
+    types::{Currency, Quantity},
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::parse::{
     build_maker_fill_report, parse_fill_report, parse_order_status_report, parse_timestamp,
 };
 use crate::{
-    common::enums::PolymarketLiquiditySide,
+    common::{
+        consts::{DUST_SNAP_THRESHOLD, USDC_DECIMALS},
+        enums::PolymarketLiquiditySide,
+    },
     http::{
         clob::PolymarketClobHttpClient,
-        models::{PolymarketOpenOrder, PolymarketTradeReport},
+        data_api::PolymarketDataApiHttpClient,
+        models::{DataApiPosition, PolymarketOpenOrder, PolymarketTradeReport},
         query::{GetOrdersParams, GetTradesParams},
     },
-    providers::PolymarketInstrumentProvider,
 };
 
 /// Shared context for trade-to-fill-report conversion.
@@ -48,12 +52,12 @@ pub(crate) struct FillContext<'a> {
     pub clock: &'static AtomicTime,
 }
 
-/// Converts trade reports into fill reports — single implementation of maker/taker
+/// Converts trade reports into fill reports: single implementation of maker/taker
 /// parsing used by both `generate_fill_reports()` and `generate_mass_status()`.
 pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],
     ctx: &FillContext<'_>,
-    provider: &PolymarketInstrumentProvider,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
 ) -> (Vec<FillReport>, usize) {
@@ -69,7 +73,7 @@ pub(crate) fn build_fill_reports_from_trades(
                     continue;
                 }
                 let token_id = Ustr::from(mo.asset_id.as_str());
-                let instrument = provider.get_by_token_id(&token_id);
+                let instrument = instruments.get_cloned(&token_id);
                 let (instrument_id, price_prec, size_prec) = match instrument {
                     Some(i) => (i.id(), i.price_precision(), i.size_precision()),
                     None => {
@@ -105,7 +109,7 @@ pub(crate) fn build_fill_reports_from_trades(
             }
         } else {
             let token_id = Ustr::from(trade.asset_id.as_str());
-            let instrument = provider.get_by_token_id(&token_id);
+            let instrument = instruments.get_cloned(&token_id);
             let (instrument_id, price_prec, size_prec) = match instrument {
                 Some(i) => (i.id(), i.price_precision(), i.size_precision()),
                 None => {
@@ -140,7 +144,7 @@ pub(crate) fn build_fill_reports_from_trades(
 /// Converts open orders into order status reports.
 pub(crate) fn build_order_reports_from_orders(
     orders: &[PolymarketOpenOrder],
-    provider: &PolymarketInstrumentProvider,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     account_id: AccountId,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
@@ -150,7 +154,7 @@ pub(crate) fn build_order_reports_from_orders(
 
     for order in orders {
         let token_id = Ustr::from(order.asset_id.as_str());
-        let instrument = provider.get_by_token_id(&token_id);
+        let instrument = instruments.get_cloned(&token_id);
         let (instrument_id, price_prec, size_prec) = match instrument {
             Some(i) => (i.id(), i.price_precision(), i.size_precision()),
             None => {
@@ -201,16 +205,55 @@ pub(crate) fn apply_fill_filters(
     reports
 }
 
+/// Builds position status reports from Data API positions, filtering dust.
+pub(crate) fn build_position_reports(
+    positions: &[DataApiPosition],
+    account_id: AccountId,
+    ts: UnixNanos,
+) -> Vec<PositionStatusReport> {
+    positions
+        .iter()
+        .filter(|p| {
+            if p.size > 0.0 && p.size < DUST_SNAP_THRESHOLD {
+                log::debug!(
+                    "Filtering dust position: {}-{}, size={}",
+                    p.condition_id,
+                    p.asset,
+                    p.size
+                );
+            }
+            p.size >= DUST_SNAP_THRESHOLD
+        })
+        .map(|p| {
+            let instrument_id =
+                InstrumentId::from(format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str());
+            let avg_px_open = p.avg_price.and_then(|px| Decimal::try_from(px).ok());
+            PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                PositionSideSpecified::Long,
+                Quantity::new(p.size, USDC_DECIMALS as u8),
+                ts,
+                ts,
+                None,
+                None,
+                avg_px_open,
+            )
+        })
+        .collect()
+}
+
 /// Full reconciliation mass status generation.
 pub(crate) async fn generate_mass_status(
     http_client: &PolymarketClobHttpClient,
-    provider: &PolymarketInstrumentProvider,
+    data_api_client: &PolymarketDataApiHttpClient,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     ctx: &FillContext<'_>,
     client_id: ClientId,
     venue: Venue,
     lookback_mins: Option<u64>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-    let ts_init = UnixNanos::default();
+    let ts_init = ctx.clock.get_time_ns();
 
     // Fetch orders
     let orders = http_client
@@ -219,7 +262,7 @@ pub(crate) async fn generate_mass_status(
         .context("failed to fetch orders for mass status")?;
 
     let (mut order_reports, orders_filtered) =
-        build_order_reports_from_orders(&orders, provider, ctx.account_id, None, ts_init);
+        build_order_reports_from_orders(&orders, instruments, ctx.account_id, None, ts_init);
 
     // Fetch and parse fill reports
     let trades = http_client
@@ -228,10 +271,15 @@ pub(crate) async fn generate_mass_status(
         .context("failed to fetch trades for mass status")?;
 
     let (mut fill_reports, fills_filtered) =
-        build_fill_reports_from_trades(&trades, ctx, provider, None, ts_init);
+        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
 
-    // Position reports: empty for cash/prediction markets
-    let position_reports: Vec<PositionStatusReport> = vec![];
+    // Position reports from Data API
+    let positions = data_api_client
+        .get_positions(ctx.user_address)
+        .await
+        .context("failed to fetch positions for mass status")?;
+
+    let position_reports = build_position_reports(&positions, ctx.account_id, ts_init);
 
     // Apply lookback filter
     if let Some(mins) = lookback_mins {
@@ -259,11 +307,12 @@ pub(crate) async fn generate_mass_status(
         );
     } else {
         log::debug!(
-            "Generated mass status: {} orders ({} filtered), {} fills ({} filtered)",
+            "Generated mass status: {} orders ({} filtered), {} fills ({} filtered), {} positions",
             order_reports.len(),
             orders_filtered,
             fill_reports.len(),
             fills_filtered,
+            position_reports.len(),
         );
     }
 

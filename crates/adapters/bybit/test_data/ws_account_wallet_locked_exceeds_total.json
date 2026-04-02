@@ -1,0 +1,34 @@
+{
+  "id": "test-locked-exceeds-total",
+  "topic": "wallet",
+  "creationTime": 1762960669000,
+  "data": [
+    {
+      "accountIMRate": "0.5",
+      "accountMMRate": "0.05",
+      "accountLTV": "0",
+      "totalEquity": "100.0",
+      "totalWalletBalance": "100.0",
+      "totalMarginBalance": "100.0",
+      "totalAvailableBalance": "0",
+      "totalPerpUpl": "-50.0",
+      "totalInitialMargin": "120.0",
+      "totalMaintenanceMargin": "12.0",
+      "coin": [
+        {
+          "coin": "USDT",
+          "equity": "100.0",
+          "walletBalance": "100.0",
+          "availableToWithdraw": "0",
+          "availableToBorrow": "",
+          "borrowAmount": "0",
+          "accruedInterest": "0",
+          "totalOrderIM": "80.0",
+          "totalPositionIM": "40.0",
+          "totalPositionMM": "12.0",
+          "spotBorrow": "0"
+        }
+      ]
+    }
+  ]
+}

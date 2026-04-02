@@ -74,11 +74,11 @@ The loader returns a `Vec<BetfairDataItem>` with these variants:
 | `Trade`             | Incremental trade tick from cumulative volumes. | ✓ `Data::Trade`            |
 | `Ticker`            | Last traded price, volume, BSP near/far.        | -                          |
 | `StartingPrice`     | Betfair Starting Price for a runner.            | -                          |
-| `BspBookDelta`      | BSP-specific book delta.                        | -                          |
+| `BspBookDelta`      | BSP‑specific book delta.                        | -                          |
 | `InstrumentClose`   | Settlement event.                               | ✓ `Data::InstrumentClose`  |
 | `SequenceCompleted` | Batch completion marker.                        | -                          |
 | `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                          |
-| `RaceProgress`      | Race-level progress data.                       | -                          |
+| `RaceProgress`      | Race‑level progress data.                       | -                          |
 
 The backtest engine accepts the `Data` enum, so we convert the items we need
 and skip the Betfair-specific types:
@@ -109,7 +109,7 @@ for item in items {
 ```
 
 `OrderBookDeltas_API` is a thin wrapper around `OrderBookDeltas` required by
-the `Data` enum (a legacy FFI shim that will be removed in a future release).
+the `Data` enum (an FFI shim).
 
 Instruments are re-emitted on every market definition update in the stream,
 so the map naturally deduplicates them by keeping the latest version.
@@ -143,12 +143,11 @@ The full source is at
 
 ### How it works
 
-A `DataActor` in Rust needs four pieces:
+A `DataActor` in Rust needs three pieces:
 
 1. A struct holding a `DataActorCore` field plus your own state.
-2. `Deref` and `DerefMut` implementations targeting `DataActorCore`.
-3. A `Debug` implementation.
-4. The `DataActor` trait implementation with your callbacks.
+2. `nautilus_actor!(YourType)` to wire up the core, plus a `Debug` implementation.
+3. The `DataActor` trait implementation with your callbacks.
 
 The framework provides blanket `Actor` and `Component` implementations for
 any type that implements `DataActor + Debug`, so you do not need to implement

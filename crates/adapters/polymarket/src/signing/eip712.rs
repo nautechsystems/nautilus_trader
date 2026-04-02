@@ -25,10 +25,11 @@
 
 use std::str::FromStr;
 
+use alloy::{
+    signers::{SignerSync, local::PrivateKeySigner},
+    sol_types::{SolStruct, eip712_domain},
+};
 use alloy_primitives::{Address, B256, U256, address};
-use alloy_signer::SignerSync;
-use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{SolStruct, eip712_domain};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -57,7 +58,7 @@ const POLYGON_CHAIN_ID: u64 = 137;
 // EIP-712 ClobAuth struct for L1 API authentication.
 //
 // Reference: <https://docs.polymarket.com/api-reference/authentication#l1-authentication>
-alloy_sol_types::sol! {
+alloy::sol! {
     struct ClobAuth {
         address address;
         string timestamp;
@@ -69,7 +70,7 @@ alloy_sol_types::sol! {
 // EIP-712 Order struct matching the CTFExchange contract.
 //
 // Reference: <https://github.com/Polymarket/ctf-exchange/blob/main/src/exchange/libraries/OrderStructs.sol>
-alloy_sol_types::sol! {
+alloy::sol! {
     struct Order {
         uint256 salt;
         address maker;
@@ -255,7 +256,7 @@ fn order_side_to_u8(side: PolymarketOrderSide) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::keccak256;
+    use alloy_primitives::{Signature, keccak256};
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -418,8 +419,6 @@ mod tests {
 
     #[rstest]
     fn test_sign_order_recoverable() {
-        use alloy_primitives::Signature;
-
         let signer = test_signer();
         let order = test_order();
         let sig_hex = signer.sign_order(&order, false).unwrap();

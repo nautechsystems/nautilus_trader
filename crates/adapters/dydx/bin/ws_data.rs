@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     log::info!("");
 
-    let http_client = DydxHttpClient::new(Some(http_url), Some(30), None, is_testnet, None)?;
+    let http_client = DydxHttpClient::new(Some(http_url), 30, None, is_testnet, None)?;
     let instruments = http_client.request_instruments(None, None, None).await?;
 
     log::info!("Fetched {} instruments from HTTP", instruments.len());

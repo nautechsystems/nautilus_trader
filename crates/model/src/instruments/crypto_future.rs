@@ -412,11 +412,77 @@ impl Instrument for CryptoFuture {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{CryptoFuture, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CryptoFuture, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(crypto_future_btcusdt: CryptoFuture) {
-        let cloned = crypto_future_btcusdt.clone();
-        assert_eq!(crypto_future_btcusdt, cloned);
+    fn test_trait_accessors(crypto_future_btcusdt: CryptoFuture) {
+        assert_eq!(
+            crypto_future_btcusdt.id(),
+            InstrumentId::from("ETHUSDT-123.BINANCE")
+        );
+        assert_eq!(
+            crypto_future_btcusdt.asset_class(),
+            AssetClass::Cryptocurrency
+        );
+        assert_eq!(
+            crypto_future_btcusdt.instrument_class(),
+            InstrumentClass::Future
+        );
+        assert_eq!(crypto_future_btcusdt.quote_currency(), Currency::USDT());
+        assert_eq!(
+            crypto_future_btcusdt.settlement_currency(),
+            Currency::USDT()
+        );
+        assert!(!crypto_future_btcusdt.is_inverse());
+        assert_eq!(crypto_future_btcusdt.price_precision(), 2);
+        assert_eq!(crypto_future_btcusdt.size_precision(), 6);
+        assert!(crypto_future_btcusdt.activation_ns().is_some());
+        assert!(crypto_future_btcusdt.expiration_ns().is_some());
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = CryptoFuture::new_checked(
+            InstrumentId::from("TEST.BINANCE"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            0.into(),
+            0.into(),
+            4, // mismatch
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(crypto_future_btcusdt: CryptoFuture) {
+        let json = serde_json::to_string(&crypto_future_btcusdt).unwrap();
+        let deserialized: CryptoFuture = serde_json::from_str(&json).unwrap();
+        assert_eq!(crypto_future_btcusdt, deserialized);
     }
 }

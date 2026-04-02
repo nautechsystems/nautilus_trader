@@ -15,8 +15,7 @@
 
 //! Instrument status mapping and polling for the Bybit adapter.
 
-use ahash::AHashMap;
-use dashmap::DashSet;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::messages::DataEvent;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -54,7 +53,7 @@ impl From<BybitInstrumentStatus> for MarketStatusAction {
 pub fn diff_and_emit_statuses(
     new_statuses: &AHashMap<InstrumentId, MarketStatusAction>,
     cached_statuses: &mut AHashMap<InstrumentId, MarketStatusAction>,
-    subscriptions: Option<&DashSet<InstrumentId>>,
+    subscriptions: Option<&AHashSet<InstrumentId>>,
     sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -273,7 +272,7 @@ mod tests {
         let subscribed_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
         let unsubscribed_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
 
-        let subs = dashmap::DashSet::new();
+        let mut subs = AHashSet::new();
         subs.insert(subscribed_id);
 
         let mut cached = AHashMap::new();
@@ -319,7 +318,7 @@ mod tests {
         let subscribed_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
         let unsubscribed_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
 
-        let subs = dashmap::DashSet::new();
+        let mut subs = AHashSet::new();
         subs.insert(subscribed_id);
 
         let mut cached = AHashMap::new();

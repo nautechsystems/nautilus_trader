@@ -73,12 +73,15 @@ async fn main() -> anyhow::Result<()> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_book_deltas(true)
-        .with_subscribe_trades(true)
-        .with_subscribe_instrument_status(true)
-        .with_can_unsubscribe(false)
-        .with_log_data(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_book_deltas(true)
+        .subscribe_trades(true)
+        .subscribe_instrument_status(true)
+        .can_unsubscribe(false)
+        .manage_book(true)
+        .build();
 
     let tester = DataTester::new(tester_config);
 

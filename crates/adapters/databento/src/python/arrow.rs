@@ -40,7 +40,7 @@ use crate::{
 ///
 /// Returns a `PyErr` if the class name is not recognized.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.databento")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.databento")]
 pub fn get_databento_arrow_schema_map(
     py: Python<'_>,
     cls: &Bound<'_, PyType>,

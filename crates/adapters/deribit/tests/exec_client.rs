@@ -378,10 +378,10 @@ fn create_test_exec_config(addr: SocketAddr) -> DeribitExecClientConfig {
         base_url_http: Some(format!("http://{addr}/api/v2")),
         base_url_ws: Some(format!("ws://{addr}/ws/api/v2")),
         use_testnet: true,
-        http_timeout_secs: Some(10),
-        max_retries: Some(1),
-        retry_delay_initial_ms: Some(100),
-        retry_delay_max_ms: Some(1000),
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
     }
 }
 

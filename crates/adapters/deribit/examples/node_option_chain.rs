@@ -25,14 +25,12 @@
 //!
 //! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit`
 
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Debug;
 
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::Environment,
+    nautilus_actor,
     timer::TimeEvent,
 };
 use nautilus_deribit::{
@@ -59,18 +57,7 @@ struct OptionChainTester {
     series_id: Option<OptionSeriesId>,
 }
 
-impl Deref for OptionChainTester {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for OptionChainTester {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(OptionChainTester);
 
 impl OptionChainTester {
     fn new(client_id: ClientId) -> Self {

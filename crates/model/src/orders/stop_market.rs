@@ -214,6 +214,12 @@ impl StopMarketOrder {
     }
 }
 
+impl PartialEq for StopMarketOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Deref for StopMarketOrder {
     type Target = OrderCore;
 

@@ -16,16 +16,12 @@
 use std::{
     cell::Cell,
     fmt::Debug,
-    ops::{Deref, DerefMut},
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use ahash::AHashMap;
 use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_common::{
-    actor::{DataActor, DataActorCore},
-    timer::TimeEvent,
-};
+use nautilus_common::{actor::DataActor, timer::TimeEvent};
 use nautilus_core::UnixNanos;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_indicators::{
@@ -43,7 +39,7 @@ use nautilus_model::{
     position::Position,
     types::{Money, Price, Quantity},
 };
-use nautilus_trading::{Strategy, StrategyConfig, StrategyCore};
+use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 struct EmptyStrategy {
     core: StrategyCore,
@@ -62,18 +58,7 @@ impl EmptyStrategy {
     }
 }
 
-impl Deref for EmptyStrategy {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for EmptyStrategy {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(EmptyStrategy);
 
 impl Debug for EmptyStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -82,16 +67,6 @@ impl Debug for EmptyStrategy {
 }
 
 impl DataActor for EmptyStrategy {}
-
-impl Strategy for EmptyStrategy {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
-    }
-}
 
 struct EmaCross {
     core: StrategyCore,
@@ -141,18 +116,7 @@ impl EmaCross {
     }
 }
 
-impl Deref for EmaCross {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for EmaCross {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(EmaCross);
 
 impl Debug for EmaCross {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -188,16 +152,6 @@ impl DataActor for EmaCross {
 
         self.prev_fast_above = Some(fast_above);
         Ok(())
-    }
-}
-
-impl Strategy for EmaCross {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
     }
 }
 
@@ -240,18 +194,7 @@ impl SnapshotNettingFlip {
     }
 }
 
-impl Deref for SnapshotNettingFlip {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for SnapshotNettingFlip {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(SnapshotNettingFlip);
 
 impl Debug for SnapshotNettingFlip {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -277,16 +220,6 @@ impl DataActor for SnapshotNettingFlip {
         }
 
         Ok(())
-    }
-}
-
-impl Strategy for SnapshotNettingFlip {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
     }
 }
 
@@ -1024,18 +957,7 @@ impl CascadingStopStrategy {
     }
 }
 
-impl Deref for CascadingStopStrategy {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for CascadingStopStrategy {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(CascadingStopStrategy);
 
 impl Debug for CascadingStopStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1097,16 +1019,6 @@ impl DataActor for CascadingStopStrategy {
     }
 }
 
-impl Strategy for CascadingStopStrategy {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
-    }
-}
-
 #[rstest]
 fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
@@ -1162,18 +1074,7 @@ impl DualTimerStrategy {
     }
 }
 
-impl Deref for DualTimerStrategy {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for DualTimerStrategy {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(DualTimerStrategy);
 
 impl Debug for DualTimerStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1213,16 +1114,6 @@ impl DataActor for DualTimerStrategy {
         );
         self.submit_order(order, None, None)?;
         Ok(())
-    }
-}
-
-impl Strategy for DualTimerStrategy {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
     }
 }
 
@@ -1275,18 +1166,7 @@ impl BarSubscriberStrategy {
     }
 }
 
-impl Deref for BarSubscriberStrategy {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for BarSubscriberStrategy {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_strategy!(BarSubscriberStrategy);
 
 impl Debug for BarSubscriberStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1299,16 +1179,6 @@ impl DataActor for BarSubscriberStrategy {
         self.subscribe_quotes(self.instrument_id, None, None);
         self.subscribe_bars(self.bar_type, None, None);
         Ok(())
-    }
-}
-
-impl Strategy for BarSubscriberStrategy {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
     }
 }
 

@@ -1,0 +1,24 @@
+{
+  "arg": {
+    "channel": "account"
+  },
+  "data": [{
+    "adjEq": "",
+    "availEq": "",
+    "borrowFroz": "",
+    "details": [],
+    "imr": "",
+    "isoEq": "0",
+    "mgnRatio": "",
+    "mmr": "",
+    "notionalUsd": "",
+    "notionalUsdForBorrow": "",
+    "notionalUsdForFutures": "",
+    "notionalUsdForOption": "",
+    "notionalUsdForSwap": "",
+    "ordFroz": "",
+    "totalEq": "0",
+    "uTime": "1774795570586",
+    "upl": ""
+  }]
+}

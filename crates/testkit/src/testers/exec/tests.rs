@@ -142,7 +142,9 @@ fn test_config_with_stop_orders(mut config: ExecTesterConfig) {
 
 #[rstest]
 fn test_config_with_batch_cancel() {
-    let config = ExecTesterConfig::default().with_use_batch_cancel_on_stop(true);
+    let config = ExecTesterConfig::builder()
+        .use_batch_cancel_on_stop(true)
+        .build();
     assert!(config.use_batch_cancel_on_stop);
 }
 
@@ -182,8 +184,9 @@ fn test_config_with_position_opening(mut config: ExecTesterConfig) {
 
 #[rstest]
 fn test_config_with_close_positions_time_in_force_builder() {
-    let config =
-        ExecTesterConfig::default().with_close_positions_time_in_force(Some(TimeInForce::Ioc));
+    let config = ExecTesterConfig::builder()
+        .close_positions_time_in_force(TimeInForce::Ioc)
+        .build();
 
     assert_eq!(config.close_positions_time_in_force, Some(TimeInForce::Ioc));
 }
@@ -646,37 +649,45 @@ fn test_open_position_zero_quantity_returns_ok(
 
 #[rstest]
 fn test_config_with_enable_brackets() {
-    let config = ExecTesterConfig::default().with_enable_brackets(true);
+    let config = ExecTesterConfig::builder().enable_brackets(true).build();
     assert!(config.enable_brackets);
 }
 
 #[rstest]
 fn test_config_with_bracket_offset_ticks() {
-    let config = ExecTesterConfig::default().with_bracket_offset_ticks(1000);
+    let config = ExecTesterConfig::builder()
+        .bracket_offset_ticks(1000)
+        .build();
     assert_eq!(config.bracket_offset_ticks, 1000);
 }
 
 #[rstest]
 fn test_config_with_test_reject_post_only() {
-    let config = ExecTesterConfig::default().with_test_reject_post_only(true);
+    let config = ExecTesterConfig::builder()
+        .test_reject_post_only(true)
+        .build();
     assert!(config.test_reject_post_only);
 }
 
 #[rstest]
 fn test_config_with_test_reject_reduce_only() {
-    let config = ExecTesterConfig::default().with_test_reject_reduce_only(true);
+    let config = ExecTesterConfig::builder()
+        .test_reject_reduce_only(true)
+        .build();
     assert!(config.test_reject_reduce_only);
 }
 
 #[rstest]
 fn test_config_with_emulation_trigger() {
-    let config = ExecTesterConfig::default().with_emulation_trigger(Some(TriggerType::LastPrice));
+    let config = ExecTesterConfig::builder()
+        .emulation_trigger(TriggerType::LastPrice)
+        .build();
     assert_eq!(config.emulation_trigger, Some(TriggerType::LastPrice));
 }
 
 #[rstest]
 fn test_config_with_use_quote_quantity() {
-    let config = ExecTesterConfig::default().with_use_quote_quantity(true);
+    let config = ExecTesterConfig::builder().use_quote_quantity(true).build();
     assert!(config.use_quote_quantity);
 }
 
@@ -685,7 +696,9 @@ fn test_config_with_order_params() {
     use serde_json::Value;
     let mut params = Params::new();
     params.insert("key".to_string(), Value::String("value".to_string()));
-    let config = ExecTesterConfig::default().with_order_params(Some(params.clone()));
+    let config = ExecTesterConfig::builder()
+        .order_params(params.clone())
+        .build();
     assert_eq!(config.order_params, Some(params));
 }
 
@@ -1109,13 +1122,17 @@ fn test_config_new_fields_default_values(config: ExecTesterConfig) {
 
 #[rstest]
 fn test_config_with_limit_time_in_force_builder() {
-    let config = ExecTesterConfig::default().with_limit_time_in_force(Some(TimeInForce::Ioc));
+    let config = ExecTesterConfig::builder()
+        .limit_time_in_force(TimeInForce::Ioc)
+        .build();
     assert_eq!(config.limit_time_in_force, Some(TimeInForce::Ioc));
 }
 
 #[rstest]
 fn test_config_with_stop_time_in_force_builder() {
-    let config = ExecTesterConfig::default().with_stop_time_in_force(Some(TimeInForce::Day));
+    let config = ExecTesterConfig::builder()
+        .stop_time_in_force(TimeInForce::Day)
+        .build();
     assert_eq!(config.stop_time_in_force, Some(TimeInForce::Day));
 }
 

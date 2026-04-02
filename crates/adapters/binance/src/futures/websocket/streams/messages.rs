@@ -57,9 +57,9 @@ pub enum BinanceFuturesWsStreamsMessage {
     /// Kline/candlestick stream.
     Kline(BinanceFuturesKlineMsg),
     /// Force liquidation order stream.
-    ForceOrder(serde_json::Value),
+    ForceOrder(BinanceFuturesLiquidationMsg),
     /// 24hr ticker stream.
-    Ticker(serde_json::Value),
+    Ticker(BinanceFuturesTickerMsg),
     /// Account update (balance/position changes).
     AccountUpdate(BinanceFuturesAccountUpdateMsg),
     /// Order/trade update.
@@ -423,6 +423,65 @@ pub struct BinanceFuturesLiquidationOrder {
     /// Trade time in milliseconds.
     #[serde(rename = "T")]
     pub trade_time: i64,
+}
+
+/// 24hr ticker stream message.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceFuturesTickerMsg {
+    /// Event type.
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// Symbol.
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    /// Price change.
+    #[serde(rename = "p")]
+    pub price_change: String,
+    /// Price change percent.
+    #[serde(rename = "P")]
+    pub price_change_percent: String,
+    /// Weighted average price.
+    #[serde(rename = "w")]
+    pub weighted_avg_price: String,
+    /// Last price.
+    #[serde(rename = "c")]
+    pub last_price: String,
+    /// Last quantity.
+    #[serde(rename = "Q")]
+    pub last_qty: String,
+    /// Open price.
+    #[serde(rename = "o")]
+    pub open_price: String,
+    /// High price.
+    #[serde(rename = "h")]
+    pub high_price: String,
+    /// Low price.
+    #[serde(rename = "l")]
+    pub low_price: String,
+    /// Total traded base asset volume.
+    #[serde(rename = "v")]
+    pub volume: String,
+    /// Total traded quote asset volume.
+    #[serde(rename = "q")]
+    pub quote_volume: String,
+    /// Statistics open time in milliseconds.
+    #[serde(rename = "O")]
+    pub open_time: i64,
+    /// Statistics close time in milliseconds.
+    #[serde(rename = "C")]
+    pub close_time: i64,
+    /// First trade ID.
+    #[serde(rename = "F")]
+    pub first_trade_id: i64,
+    /// Last trade ID.
+    #[serde(rename = "L")]
+    pub last_trade_id: i64,
+    /// Total number of trades.
+    #[serde(rename = "n")]
+    pub num_trades: i64,
 }
 
 /// WebSocket subscription request.

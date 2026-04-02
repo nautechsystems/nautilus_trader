@@ -22,15 +22,15 @@ mind (use `std::path::Path`, avoid Bash-isms in shell scripts, etc.).
 
 The following steps are for UNIX-like systems, and only need to be completed once.
 
-1. Follow the [installation guide](../getting_started/installation.md) to set up the project with a modification to the final command to install development and test dependencies:
+### 1. Install dependencies
 
-```bash
+Follow the [installation guide](../getting_started/installation.md) to set up the project with a modification to the final command to install development and test dependencies:
+
+```bash tab="uv"
 uv sync --active --all-groups --all-extras
 ```
 
-or
-
-```bash
+```bash tab="make"
 make install
 ```
 
@@ -41,7 +41,9 @@ To install in debug mode, use:
 make install-debug
 ```
 
-2. Set up the pre-commit hook which will then run automatically at commit:
+### 2. Set up pre-commit
+
+Set up the pre-commit hook which will then run automatically at commit:
 
 ```bash
 pre-commit install
@@ -55,9 +57,11 @@ make format
 make pre-commit
 ```
 
-Make sure the Rust compiler reports **zero errors** – broken builds slow everyone down.
+Make sure the Rust compiler reports **zero errors** -- broken builds slow everyone down.
 
-3. **Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or macOS, set the following environment variables:
+### 3. Configure environment variables
+
+**Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or macOS, set the following environment variables:
 
 ```bash
 # Add to your shell configuration (e.g., ~/.zshrc or ~/.bashrc)
@@ -89,17 +93,47 @@ echo "PYO3_PYTHON: $PYO3_PYTHON"
 echo "PYTHONHOME: $PYTHONHOME"
 ```
 
+## Dependency management
+
+Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
+`pyproject.toml` enforces two supply chain safety settings:
+
+- **`required-version = "==0.11.2"`**: all developers and CI use the same uv version. The version
+  is extracted by `scripts/uv-version.sh` for Makefile, CI, and Docker builds.
+- **`exclude-newer = "3 days"`**: `uv lock` ignores package versions published within the last
+  3 days. This gives the community time to detect and quarantine compromised releases before they
+  enter the lockfile.
+
+### Bypassing the cooldown
+
+When a security patch or critical bug fix must be pulled in immediately, override `exclude-newer`
+on the command line:
+
+```bash
+# Disable the cooldown for a single package
+uv lock --exclude-newer-package "somepackage=2026-03-30T00:00:00Z"
+
+# Disable the cooldown entirely for this resolution
+uv lock --exclude-newer "0 seconds"
+```
+
+The CLI flag overrides the `pyproject.toml` value for that invocation only. The config remains
+unchanged for subsequent runs.
+
+### Updating uv
+
+To update the pinned uv version, change `required-version` in both `pyproject.toml` and
+`python/pyproject.toml`, then update the `rev` in `.pre-commit-config.yaml` to match.
+
 ## Builds
 
 Following any changes to `.rs`, `.pyx` or `.pxd` files, you can re-compile by running:
 
-```bash
+```bash tab="uv"
 uv run --no-sync python build.py
 ```
 
-or
-
-```bash
+```bash tab="make"
 make build
 ```
 
@@ -115,26 +149,17 @@ make build-debug
 [Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation.
 The required version is defined in the `capnp-version` file in the repository root.
 
-The recommended way to install the correct version on **Linux** or **macOS** is:
+Install the correct version for your platform:
 
-```bash
+```bash tab="Script (Linux/macOS)"
 ./scripts/install-capnp.sh
 ```
 
-This script ensures the pinned version is installed. Alternatively, you can install manually:
-
-On **macOS**, install via Homebrew:
-
-```bash
+```bash tab="macOS (Homebrew)"
 brew install capnp
 ```
 
-Verify the installed version matches `capnp-version`. If Homebrew provides an older version,
-install from source using the Linux instructions below.
-
-On **Ubuntu/Linux**, the default package is typically too old. Install from source:
-
-```bash
+```bash tab="Linux (source)"
 CAPNP_VERSION=$(cat capnp-version)
 cd ~
 wget https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz
@@ -146,21 +171,19 @@ sudo make install
 sudo ldconfig
 ```
 
-Verify installation:
+```bash tab="Windows (Chocolatey)"
+choco install capnproto
+```
+
+Verify the installed version matches `capnp-version`:
 
 ```bash
 capnp --version
 ```
 
-On **Windows**, install via Chocolatey:
-
-```bash
-choco install capnproto
-```
-
-Verify the installed version matches `capnp-version`. If Chocolatey provides an older version,
-see the [Cap'n Proto installation guide](https://capnproto.org/install.html) for alternative
-installation methods.
+The install script ensures the pinned version is installed. If Homebrew or Chocolatey provides
+an older version, install from source or see the
+[Cap'n Proto installation guide](https://capnproto.org/install.html).
 
 ## Faster builds
 
@@ -326,11 +349,8 @@ List of commands are:
 
 Rust analyzer is a popular language server for Rust and has integrations for many IDEs. It is recommended to configure rust analyzer to have same environment variables as `make build-debug` for faster compile times. Below tested configurations for VSCode and Astro Nvim are provided. For more information see [PR](https://github.com/nautechsystems/nautilus_trader/pull/2524) or rust analyzer [config docs](https://rust-analyzer.github.io/book/configuration.html).
 
-### VSCode
-
-You can add the following settings to your VSCode `settings.json` file:
-
-```
+```json tab="VSCode"
+{
     "rust-analyzer.restartServerOnConfigChange": true,
     "rust-analyzer.linkedProjects": [
         "Cargo.toml"
@@ -354,46 +374,44 @@ You can add the following settings to your VSCode `settings.json` file:
     },
     "rust-analyzer.check.features": "all",
     "rust-analyzer.testExplorer": true
+}
 ```
 
-### Astro Nvim (Neovim + AstroLSP)
-
-You can add the following to your astro lsp config file:
-
-```
-    config = {
-      rust_analyzer = {
-        settings = {
-          ["rust-analyzer"] = {
-            restartServerOnConfigChange = true,
-            linkedProjects = { "Cargo.toml" },
-            cargo = {
-              features = "all",
-              extraEnv = {
-                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
-                CC = "clang",
-                CXX = "clang++",
-              },
-            },
-            check = {
-              workspace = false,
-              command = "check",
-              features = "all",
-              extraEnv = {
-                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
-                CC = "clang",
-                CXX = "clang++",
-              },
-            },
-            runnables = {
-              extraEnv = {
-                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
-                CC = "clang",
-                CXX = "clang++",
-              },
-            },
-            testExplorer = true,
+```lua tab="Neovim (AstroLSP)"
+config = {
+  rust_analyzer = {
+    settings = {
+      ["rust-analyzer"] = {
+        restartServerOnConfigChange = true,
+        linkedProjects = { "Cargo.toml" },
+        cargo = {
+          features = "all",
+          extraEnv = {
+            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            CC = "clang",
+            CXX = "clang++",
           },
         },
+        check = {
+          workspace = false,
+          command = "check",
+          features = "all",
+          extraEnv = {
+            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            CC = "clang",
+            CXX = "clang++",
+          },
+        },
+        runnables = {
+          extraEnv = {
+            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            CC = "clang",
+            CXX = "clang++",
+          },
+        },
+        testExplorer = true,
       },
+    },
+  },
+}
 ```

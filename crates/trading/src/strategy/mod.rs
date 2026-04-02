@@ -66,21 +66,29 @@ use ustr::Ustr;
 ///
 /// # Implementation
 ///
-/// User strategies should implement the [`Strategy::core_mut`] method to provide
-/// access to their internal [`StrategyCore`], which handles the integration with
-/// the trading engine. All order and position management methods are provided
-/// as default implementations.
+/// Use the `nautilus_strategy!` macro to generate `Deref`, `DerefMut`, and
+/// `Strategy` implementations. For strategies that override additional trait
+/// methods, pass them in a block:
+///
+/// ```ignore
+/// nautilus_strategy!(MyStrategy, {
+///     fn on_order_rejected(&mut self, event: OrderRejected) {
+///         // custom handling
+///     }
+/// });
+/// ```
+///
+/// All order and position management methods are provided as default
+/// implementations.
 pub trait Strategy: DataActor {
     /// Provides access to the internal `StrategyCore`.
     ///
-    /// This method must be implemented by the user's strategy struct, typically
-    /// by returning a reference to its `StrategyCore` member.
+    /// Generated automatically by the `nautilus_strategy!` macro.
     fn core(&self) -> &StrategyCore;
 
     /// Provides mutable access to the internal `StrategyCore`.
     ///
-    /// This method must be implemented by the user's strategy struct, typically
-    /// by returning a mutable reference to its `StrategyCore` member.
+    /// Generated automatically by the `nautilus_strategy!` macro.
     fn core_mut(&mut self) -> &mut StrategyCore;
 
     /// Returns the external order claims for this strategy.
@@ -1704,14 +1712,10 @@ pub trait Strategy: DataActor {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        ops::{Deref, DerefMut},
-        rc::Rc,
-    };
+    use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        actor::{DataActor, DataActorCore},
+        actor::DataActor,
         cache::Cache,
         clock::{Clock, TestClock},
         component::Component,
@@ -1733,6 +1737,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::nautilus_strategy;
 
     #[derive(Debug)]
     struct TestStrategy {
@@ -1751,30 +1756,9 @@ mod tests {
         }
     }
 
-    impl Deref for TestStrategy {
-        type Target = DataActorCore;
-        fn deref(&self) -> &Self::Target {
-            &self.core
-        }
-    }
-
-    impl DerefMut for TestStrategy {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core
-        }
-    }
-
     impl DataActor for TestStrategy {}
 
-    impl Strategy for TestStrategy {
-        fn core(&self) -> &StrategyCore {
-            &self.core
-        }
-
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
-        }
-
+    nautilus_strategy!(TestStrategy, {
         fn on_order_rejected(&mut self, _event: OrderRejected) {
             self.on_order_rejected_called = true;
         }
@@ -1782,7 +1766,7 @@ mod tests {
         fn on_position_opened(&mut self, _event: PositionOpened) {
             self.on_position_opened_called = true;
         }
-    }
+    });
 
     fn create_test_strategy() -> TestStrategy {
         let config = StrategyConfig {
@@ -2302,30 +2286,9 @@ mod tests {
         }
     }
 
-    impl Deref for MarketExitHookTrackingStrategy {
-        type Target = DataActorCore;
-        fn deref(&self) -> &Self::Target {
-            &self.core
-        }
-    }
-
-    impl DerefMut for MarketExitHookTrackingStrategy {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core
-        }
-    }
-
     impl DataActor for MarketExitHookTrackingStrategy {}
 
-    impl Strategy for MarketExitHookTrackingStrategy {
-        fn core(&self) -> &StrategyCore {
-            &self.core
-        }
-
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
-        }
-
+    nautilus_strategy!(MarketExitHookTrackingStrategy, {
         fn on_market_exit(&mut self) {
             self.on_market_exit_called = true;
         }
@@ -2333,7 +2296,7 @@ mod tests {
         fn post_market_exit(&mut self) {
             self.post_market_exit_called = true;
         }
-    }
+    });
 
     #[rstest]
     fn test_market_exit_calls_on_market_exit_hook() {
@@ -2405,34 +2368,13 @@ mod tests {
         }
     }
 
-    impl Deref for FailingPostExitStrategy {
-        type Target = DataActorCore;
-        fn deref(&self) -> &Self::Target {
-            &self.core
-        }
-    }
-
-    impl DerefMut for FailingPostExitStrategy {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core
-        }
-    }
-
     impl DataActor for FailingPostExitStrategy {}
 
-    impl Strategy for FailingPostExitStrategy {
-        fn core(&self) -> &StrategyCore {
-            &self.core
-        }
-
-        fn core_mut(&mut self) -> &mut StrategyCore {
-            &mut self.core
-        }
-
+    nautilus_strategy!(FailingPostExitStrategy, {
         fn post_market_exit(&mut self) {
             panic!("Simulated error in post_market_exit");
         }
-    }
+    });
 
     #[rstest]
     fn test_finalize_market_exit_handles_hook_panic() {
@@ -2875,5 +2817,63 @@ mod tests {
         let cache = strategy.core.cache();
         let cached_order = cache.order(&client_order_id).unwrap();
         assert_ne!(cached_order.status(), OrderStatus::Denied);
+    }
+
+    #[derive(Debug)]
+    struct MacroTestSimple {
+        core: StrategyCore,
+    }
+
+    nautilus_strategy!(MacroTestSimple);
+
+    impl DataActor for MacroTestSimple {}
+
+    #[derive(Debug)]
+    struct MacroTestWithHooks {
+        core: StrategyCore,
+    }
+
+    nautilus_strategy!(MacroTestWithHooks, {
+        fn on_order_rejected(&mut self, _event: OrderRejected) {}
+    });
+
+    impl DataActor for MacroTestWithHooks {}
+
+    #[derive(Debug)]
+    struct MacroTestCustomField {
+        inner: StrategyCore,
+    }
+
+    nautilus_strategy!(MacroTestCustomField, inner, {
+        fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+            None
+        }
+    });
+
+    impl DataActor for MacroTestCustomField {}
+
+    #[rstest]
+    fn test_nautilus_strategy_macro_forms() {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("MACRO-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+
+        let simple = MacroTestSimple {
+            core: StrategyCore::new(config.clone()),
+        };
+        assert_eq!(simple.core().config.strategy_id, config.strategy_id);
+
+        let hooks = MacroTestWithHooks {
+            core: StrategyCore::new(config.clone()),
+        };
+        assert_eq!(hooks.core().config.strategy_id, config.strategy_id);
+
+        let custom = MacroTestCustomField {
+            inner: StrategyCore::new(config.clone()),
+        };
+        assert_eq!(custom.core().config.strategy_id, config.strategy_id);
+        assert!(custom.external_order_claims().is_none());
     }
 }

@@ -58,6 +58,10 @@ strip = false
 
 include = ["**/*.pyi"]
 
+[tool.uv]
+required-version = "==0.11.2"
+exclude-newer = "3 days"
+
 [dependency-groups]
 dev = [
   "maturin>=1.12.6",
@@ -87,32 +91,40 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-  "C4",
-  "E",
-  "F",
-  "W",
-  "C90",
-  "D",
-  # "DTZ",
-  "UP",
-  "S",
-  "T10",
-  "ICN",
-  "PIE",
-  # "PT",
-  "PYI",
-  "Q",
-  "I",
-  "RSE",
-  "TID",
-  # "SIM",
-  # "ARG",
-  # "ERA",
-  "PD",
-  # "PGH",
-  # "PLW",
-  "NPY",
-  "RUF",
+  "C4", # flake8-comprehensions
+  "E", # pycodestyle errors
+  "F", # pyflakes
+  "W", # pycodestyle warnings
+  "C90", # mccabe complexity
+  "D", # pydocstyle
+  "DTZ", # flake8-datetimez
+  "UP", # pyupgrade
+  "S", # flake8-bandit (security)
+  "T10", # flake8-debugger
+  "ICN", # flake8-import-conventions
+  "PIE", # flake8-pie
+  "PT", # flake8-pytest-style
+  "PYI", # flake8-pyi (stubs)
+  "Q", # flake8-quotes
+  "I", # isort
+  "RSE", # flake8-raise
+  "TID", # flake8-tidy-imports
+  "SIM", # flake8-simplify
+  "B", # flake8-bugbear
+  "PERF", # Perflint
+  "FURB", # refurb
+  "ISC", # flake8-implicit-str-concat
+  "FLY", # flynt
+  "LOG", # flake8-logging
+  "ASYNC", # flake8-async
+  # "ARG", # flake8-unused-arguments
+  # "ERA", # eradicate (commented code)
+  "PD", # pandas-vet
+  "PGH", # pygrep-hooks
+  "PLE", # pylint errors
+  "PLW", # pylint warnings
+  "NPY", # NumPy-specific rules
+  "RUF", # Ruff-specific rules
 ]
 
 ignore = [
@@ -133,6 +145,7 @@ ignore = [
   "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
   "E501", # Line too long (linted separately)
   "E741", # Ambiguous variable name (single char)
+  "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
   "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
   "S101", # Use of assert detected (OK in test suite)
@@ -140,6 +153,7 @@ ignore = [
   "S106", # Use of hardcoded password (spurious)
   "S113", # Probable use of requests call without timeout **fix**
   "S603", # `subprocess` call: check for execution of untrusted input **fix**
+  "SIM108", # Use ternary operator instead of if-else-block (opinionated style)
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
@@ -154,12 +168,33 @@ unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
+[tool.ruff.lint.per-file-ignores]
+"nautilus_trader/**/*.pyi" = [
+  "PYI011",
+] # Generated stubs use explicit default values from #[pyo3(signature)]
+"nautilus_trader/adapters/hyperliquid/__init__.py" = [
+  "PLE0604",
+] # Dynamic __all__ extension from star import
+"examples/**/*.py" = [
+  "DTZ",
+  "S101",
+  "S105",
+  "S106",
+] # Examples can use naive datetimes, asserts, and mock credentials
+"tests/**/*.py" = [
+  "S101",
+  "S105",
+  "S106",
+] # Tests can use asserts and mock credentials
+
 [tool.ruff.lint.isort]
 force-single-line = true
 lines-after-imports = 2
 split-on-trailing-comma = true
-force-sort-within-sections = true
 known-first-party = ["nautilus_trader"]
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
@@ -170,7 +205,16 @@ disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true
 namespace_packages = true
+strict_optional = true
 warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
-exclude = "^python/nautilus_trader/.*__init__\\.py$"
+mypy_path = ["."]
+exclude = "^nautilus_trader/.*__init__\\.py$"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --new-first --failed-first"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "session"
+filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]

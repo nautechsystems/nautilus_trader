@@ -3964,6 +3964,9 @@ cdef class OrderMatchingEngine:
         self._prev_bid_size_raw = 0
         self._prev_ask_price_raw = 0
         self._prev_ask_size_raw = 0
+        self._last_quote_bid_raw = 0
+        self._last_quote_ask_raw = 0
+        self._has_quote_context = False
         self._tob_initialized = False
 
         self._position_count = 0
@@ -4004,6 +4007,9 @@ cdef class OrderMatchingEngine:
         self._prev_bid_size_raw = 0
         self._prev_ask_price_raw = 0
         self._prev_ask_size_raw = 0
+        self._last_quote_bid_raw = 0
+        self._last_quote_ask_raw = 0
+        self._has_quote_context = False
         self._tob_initialized = False
 
         self._position_count = 0
@@ -4352,8 +4358,11 @@ cdef class OrderMatchingEngine:
             self._prev_ask_size_raw = depth._mem.asks[0].size.raw
             self._tob_initialized = True
 
-        self._book.apply_depth(depth)
+        self._last_quote_bid_raw = depth._mem.bids[0].price.raw
+        self._last_quote_ask_raw = depth._mem.asks[0].price.raw
+        self._has_quote_context = True
 
+        self._book.apply_depth(depth)
         self.iterate(depth.ts_init)
 
     cpdef void process_quote_tick(self, QuoteTick tick):
@@ -4412,6 +4421,9 @@ cdef class OrderMatchingEngine:
                 self._prev_ask_size_raw = tick._mem.ask_size.raw
                 self._tob_initialized = True
             self._book.update_quote_tick(tick)
+            self._last_quote_bid_raw = tick._mem.bid_price.raw
+            self._last_quote_ask_raw = tick._mem.ask_price.raw
+            self._has_quote_context = True
 
         self.iterate(tick.ts_init)
 
@@ -4480,18 +4492,18 @@ cdef class OrderMatchingEngine:
 
         aggressor_side = tick.aggressor_side
 
-        # Update the natural side based on trade
+        # Update the aggressor's side based on trade (no cross-contamination)
         if aggressor_side == AggressorSide.BUYER:
             if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
                 self._core.set_ask_raw(price_raw)
 
-            if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
+            if not self._core.is_bid_initialized:
                 self._core.set_bid_raw(price_raw)
         elif aggressor_side == AggressorSide.SELLER:
             if not self._core.is_bid_initialized or price_raw < self._core.bid_raw:
                 self._core.set_bid_raw(price_raw)
 
-            if not self._core.is_ask_initialized or price_raw > self._core.ask_raw:
+            if not self._core.is_ask_initialized:
                 self._core.set_ask_raw(price_raw)
         elif aggressor_side == AggressorSide.NO_AGGRESSOR:
             if not self._core.is_bid_initialized or price_raw <= self._core.bid_raw:
@@ -4533,13 +4545,25 @@ cdef class OrderMatchingEngine:
         self._last_trade_size = None
         self._trade_consumption = 0
 
-        if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
-            self._core.set_ask_raw(original_ask)
-        elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
-            self._core.set_bid_raw(original_bid)
-        elif aggressor_side == AggressorSide.NO_AGGRESSOR:
-            self._core.set_bid_raw(original_bid)
-            self._core.set_ask_raw(original_ask)
+        # Restore the non-aggressor side after temporary trade price override.
+        # For L2/L3 books the book has independent depth so restore from originals.
+        # For L1_MBP restore from the last quote values (not originals, which are
+        # polluted by iterate's L1 book sync). Without quotes, skip the restore
+        # so the core tracks the latest trade price.
+        if self.book_type == BookType.L1_MBP:
+            if self._has_quote_context:
+                if aggressor_side == AggressorSide.SELLER:
+                    self._core.set_ask_raw(self._last_quote_ask_raw)
+                elif aggressor_side == AggressorSide.BUYER:
+                    self._core.set_bid_raw(self._last_quote_bid_raw)
+        else:
+            if aggressor_side == AggressorSide.SELLER and price_raw < original_ask:
+                self._core.set_ask_raw(original_ask)
+            elif aggressor_side == AggressorSide.BUYER and price_raw > original_bid:
+                self._core.set_bid_raw(original_bid)
+            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+                self._core.set_bid_raw(original_bid)
+                self._core.set_ask_raw(original_ask)
 
     cpdef void process_bar(self, Bar bar):
         """
@@ -4855,6 +4879,9 @@ cdef class OrderMatchingEngine:
             tick._mem.ask_size = ask_close_size._mem
 
         self._book.update_quote_tick(tick)
+        self._last_quote_bid_raw = tick._mem.bid_price.raw
+        self._last_quote_ask_raw = tick._mem.ask_price.raw
+        self._has_quote_context = True
         self.iterate(tick.ts_init)
 
     # -- TRADING COMMANDS -----------------------------------------------------------------------------

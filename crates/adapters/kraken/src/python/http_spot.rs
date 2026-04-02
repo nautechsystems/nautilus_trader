@@ -22,12 +22,13 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderType, TimeInForce},
+    enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
+use rust_decimal::Decimal;
 
 use crate::{
     common::{credential::KrakenCredential, enums::KrakenEnvironment},
@@ -43,22 +44,20 @@ impl KrakenSpotHttpClient {
     /// It maintains an instrument cache and uses it to parse venue responses
     /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, timeout_secs=60, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, proxy_url=None, max_requests_per_second=5))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url: Option<String>,
         demo: bool,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         max_retries: Option<u32>,
         retry_delay_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         proxy_url: Option<String>,
-        max_requests_per_second: Option<u32>,
+        max_requests_per_second: u32,
     ) -> PyResult<Self> {
-        let timeout = timeout_secs.or(Some(60));
-
         let environment = if demo {
             KrakenEnvironment::Demo
         } else {
@@ -72,7 +71,7 @@ impl KrakenSpotHttpClient {
                 s,
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
@@ -84,7 +83,7 @@ impl KrakenSpotHttpClient {
             Self::new(
                 environment,
                 base_url,
-                timeout,
+                timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
@@ -362,7 +361,7 @@ impl KrakenSpotHttpClient {
     ///
     /// Returns the venue order ID on success. WebSocket handles all execution events.
     #[pyo3(name = "submit_order")]
-    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, reduce_only=false, post_only=false))]
+    #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, trigger_type=None, trailing_offset=None, limit_offset=None, reduce_only=false, post_only=false, quote_quantity=false, display_qty=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
@@ -377,11 +376,28 @@ impl KrakenSpotHttpClient {
         expire_time: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
+        trigger_type: Option<TriggerType>,
+        trailing_offset: Option<String>,
+        limit_offset: Option<String>,
         reduce_only: bool,
         post_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let expire_time = expire_time.map(UnixNanos::from);
+        let trailing_offset = trailing_offset
+            .map(|s| {
+                Decimal::from_str_exact(&s)
+                    .map_err(|e| to_pyvalue_err(format!("invalid trailing_offset: {e}")))
+            })
+            .transpose()?;
+        let limit_offset = limit_offset
+            .map(|s| {
+                Decimal::from_str_exact(&s)
+                    .map_err(|e| to_pyvalue_err(format!("invalid limit_offset: {e}")))
+            })
+            .transpose()?;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let venue_order_id = client
@@ -396,8 +412,13 @@ impl KrakenSpotHttpClient {
                     expire_time,
                     price,
                     trigger_price,
+                    trigger_type,
+                    trailing_offset,
+                    limit_offset,
                     reduce_only,
                     post_only,
+                    quote_quantity,
+                    display_qty,
                 )
                 .await
                 .map_err(to_pyruntime_err)?;

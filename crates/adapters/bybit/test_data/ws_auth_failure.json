@@ -1,0 +1,7 @@
+{
+  "op": "auth",
+  "success": false,
+  "retCode": 10003,
+  "retMsg": "Invalid apikey",
+  "connId": "cejreaspqfm9se7usbrg-3ab"
+}

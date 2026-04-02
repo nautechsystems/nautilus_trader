@@ -18,7 +18,7 @@
 use crate::common::consts::{info_url, ws_url};
 
 /// Configuration for the Hyperliquid data client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -28,7 +28,7 @@ use crate::common::consts::{info_url, ws_url};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
 )]
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
@@ -45,28 +45,22 @@ pub struct HyperliquidDataClientConfig {
     /// for future functionality. Use `http_proxy_url` for REST API proxy support.
     pub ws_proxy_url: Option<String>,
     /// When true the client will use Hyperliquid testnet endpoints.
+    #[builder(default)]
     pub is_testnet: bool,
     /// HTTP timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
     /// WebSocket timeout in seconds.
-    pub ws_timeout_secs: Option<u64>,
-    /// Optional interval for refreshing instruments.
-    pub update_instruments_interval_mins: Option<u64>,
+    #[builder(default = 30)]
+    pub ws_timeout_secs: u64,
+    /// Interval for refreshing instruments in minutes.
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
 }
 
 impl Default for HyperliquidDataClientConfig {
     fn default() -> Self {
-        Self {
-            private_key: None,
-            base_url_ws: None,
-            base_url_http: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            is_testnet: false,
-            http_timeout_secs: Some(60),
-            ws_timeout_secs: Some(30),
-            update_instruments_interval_mins: Some(60),
-        }
+        Self::builder().build()
     }
 }
 
@@ -103,7 +97,7 @@ impl HyperliquidDataClientConfig {
 }
 
 /// Configuration for the Hyperliquid execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -113,7 +107,7 @@ impl HyperliquidDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.hyperliquid")
 )]
 pub struct HyperliquidExecClientConfig {
     /// Private key for signing transactions.
@@ -142,38 +136,29 @@ pub struct HyperliquidExecClientConfig {
     /// for future functionality. Use `http_proxy_url` for REST API proxy support.
     pub ws_proxy_url: Option<String>,
     /// When true the client will use Hyperliquid testnet endpoints.
+    #[builder(default)]
     pub is_testnet: bool,
     /// HTTP timeout in seconds.
+    #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for HTTP requests.
+    #[builder(default = 3)]
     pub max_retries: u32,
     /// Initial retry delay in milliseconds.
+    #[builder(default = 100)]
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
+    #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
     /// When true, normalize order prices to 5 significant figures
     /// before submission (Hyperliquid requirement).
+    #[builder(default = true)]
     pub normalize_prices: bool,
 }
 
 impl Default for HyperliquidExecClientConfig {
     fn default() -> Self {
-        Self {
-            private_key: None,
-            vault_address: None,
-            account_address: None,
-            base_url_ws: None,
-            base_url_http: None,
-            base_url_exchange: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            is_testnet: false,
-            http_timeout_secs: 60,
-            max_retries: 3,
-            retry_delay_initial_ms: 100,
-            retry_delay_max_ms: 5000,
-            normalize_prices: true,
-        }
+        Self::builder().build()
     }
 }
 

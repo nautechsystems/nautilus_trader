@@ -72,6 +72,8 @@ pub(super) struct FeedHandler {
     market_subscription_initialized: bool,
     // Overflow buffer for batched frames, drained before reading the next raw message
     message_buffer: Vec<PolymarketWsMessage>,
+    // Whether to include `custom_feature_enabled: true` in the initial subscribe
+    subscribe_new_markets: bool,
 }
 
 impl FeedHandler {
@@ -86,6 +88,7 @@ impl FeedHandler {
         subscriptions: SubscriptionState,
         auth_tracker: AuthTracker,
         user_subscribed: bool,
+        subscribe_new_markets: bool,
     ) -> Self {
         Self {
             signal,
@@ -100,6 +103,7 @@ impl FeedHandler {
             user_subscribed,
             market_subscription_initialized: false,
             message_buffer: Vec::new(),
+            subscribe_new_markets,
         }
     }
 
@@ -127,11 +131,13 @@ impl FeedHandler {
             serde_json::to_string(&MarketSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 operation: "subscribe",
+                custom_feature_enabled: self.subscribe_new_markets,
             })
         } else {
             serde_json::to_string(&MarketInitialSubscribeRequest {
                 assets_ids: asset_ids.to_vec(),
                 msg_type: "market",
+                custom_feature_enabled: self.subscribe_new_markets,
             })
         };
 
@@ -244,6 +250,12 @@ impl FeedHandler {
     }
 
     fn parse_messages(&self, text: &str) -> Vec<PolymarketWsMessage> {
+        // When `subscribe_new_markets` is enabled, Polymarket's WSS periodically
+        // sends the plain-text string "NO NEW ASSETS" as a heartbeat/ack.
+        if text == "NO NEW ASSETS" {
+            return vec![];
+        }
+
         match self.channel {
             WsChannel::Market => {
                 if let Ok(msgs) = serde_json::from_str::<Vec<MarketWsMessage>>(text) {

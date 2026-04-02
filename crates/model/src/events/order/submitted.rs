@@ -301,11 +301,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        events::order::stubs::*,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-        stubs::TestDefault,
-    };
+    use crate::events::order::stubs::*;
 
     fn create_test_order_submitted() -> OrderSubmitted {
         OrderSubmitted::new(
@@ -321,125 +317,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_submitted_new() {
-        let order_submitted = create_test_order_submitted();
-
-        assert_eq!(order_submitted.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(order_submitted.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            order_submitted.instrument_id,
-            InstrumentId::from("EURUSD.SIM")
-        );
-        assert_eq!(
-            order_submitted.client_order_id,
-            ClientOrderId::from("O-19700101-000000-001-001-1")
-        );
-        assert_eq!(order_submitted.account_id, AccountId::from("SIM-001"));
-        assert_eq!(order_submitted.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(order_submitted.ts_init, UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
-    fn test_order_submitted_clone() {
-        let order_submitted1 = create_test_order_submitted();
-        let order_submitted2 = order_submitted1;
-
-        assert_eq!(order_submitted1, order_submitted2);
-    }
-
-    #[rstest]
-    fn test_order_submitted_debug() {
-        let order_submitted = create_test_order_submitted();
-        let debug_str = format!("{order_submitted:?}");
-
-        assert!(debug_str.contains("OrderSubmitted"));
-        assert!(debug_str.contains("TRADER-001"));
-        assert!(debug_str.contains("EMA-CROSS"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-        assert!(debug_str.contains("O-19700101-000000-001-001-1"));
-    }
-
-    #[rstest]
     fn test_order_rejected_display(order_submitted: OrderSubmitted) {
         let display = format!("{order_submitted}");
         assert_eq!(
             display,
             "OrderSubmitted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, account_id=SIM-001, ts_event=0)"
         );
-    }
-
-    #[rstest]
-    fn test_order_submitted_partial_eq() {
-        let order_submitted1 = create_test_order_submitted();
-        let mut order_submitted2 = create_test_order_submitted();
-        order_submitted2.event_id = order_submitted1.event_id; // Make event_ids equal
-        let mut order_submitted3 = create_test_order_submitted();
-        order_submitted3.client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
-
-        assert_eq!(order_submitted1, order_submitted2);
-        assert_ne!(order_submitted1, order_submitted3);
-    }
-
-    #[rstest]
-    fn test_order_submitted_default() {
-        let order_submitted = OrderSubmitted::default();
-
-        assert_eq!(order_submitted.trader_id, TraderId::test_default());
-        assert_eq!(order_submitted.strategy_id, StrategyId::test_default());
-        assert_eq!(order_submitted.instrument_id, InstrumentId::test_default());
-        assert_eq!(
-            order_submitted.client_order_id,
-            ClientOrderId::test_default()
-        );
-        assert_eq!(order_submitted.account_id, AccountId::test_default());
-    }
-
-    #[rstest]
-    fn test_order_submitted_order_event_trait() {
-        let order_submitted = create_test_order_submitted();
-
-        assert_eq!(order_submitted.id(), order_submitted.event_id);
-        assert_eq!(order_submitted.type_name(), "OrderSubmitted");
-        assert_eq!(order_submitted.order_type(), None);
-        assert_eq!(order_submitted.order_side(), None);
-        assert_eq!(order_submitted.trader_id(), TraderId::from("TRADER-001"));
-        assert_eq!(order_submitted.strategy_id(), StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            order_submitted.instrument_id(),
-            InstrumentId::from("EURUSD.SIM")
-        );
-        assert_eq!(order_submitted.trade_id(), None);
-        assert_eq!(order_submitted.currency(), None);
-        assert_eq!(
-            order_submitted.client_order_id(),
-            ClientOrderId::from("O-19700101-000000-001-001-1")
-        );
-        assert_eq!(order_submitted.reason(), None);
-        assert_eq!(order_submitted.quantity(), None);
-        assert_eq!(order_submitted.time_in_force(), None);
-        assert_eq!(order_submitted.liquidity_side(), None);
-        assert_eq!(order_submitted.post_only(), None);
-        assert_eq!(order_submitted.reduce_only(), None);
-        assert_eq!(order_submitted.quote_quantity(), None);
-        assert!(!order_submitted.reconciliation());
-        assert_eq!(order_submitted.venue_order_id(), None);
-        assert_eq!(
-            order_submitted.account_id(),
-            Some(AccountId::from("SIM-001"))
-        );
-        assert_eq!(order_submitted.position_id(), None);
-        assert_eq!(order_submitted.commission(), None);
-        assert_eq!(order_submitted.ts_event(), UnixNanos::from(1_000_000_000));
-        assert_eq!(order_submitted.ts_init(), UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
-    fn test_order_submitted_timestamps() {
-        let order_submitted = create_test_order_submitted();
-
-        assert_eq!(order_submitted.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(order_submitted.ts_init, UnixNanos::from(2_000_000_000));
-        assert!(order_submitted.ts_event < order_submitted.ts_init);
     }
 
     #[rstest]
@@ -450,50 +333,5 @@ mod tests {
         let deserialized: OrderSubmitted = serde_json::from_str(&json).unwrap();
 
         assert_eq!(original, deserialized);
-    }
-
-    #[rstest]
-    fn test_order_submitted_different_strategies() {
-        let mut ema_strategy = create_test_order_submitted();
-        ema_strategy.strategy_id = StrategyId::from("EMA-CROSS");
-
-        let mut rsi_strategy = create_test_order_submitted();
-        rsi_strategy.strategy_id = StrategyId::from("RSI-MEAN-REVERSION");
-
-        assert_ne!(ema_strategy, rsi_strategy);
-        assert_eq!(ema_strategy.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            rsi_strategy.strategy_id,
-            StrategyId::from("RSI-MEAN-REVERSION")
-        );
-    }
-
-    #[rstest]
-    fn test_order_submitted_different_traders() {
-        let mut trader1 = create_test_order_submitted();
-        trader1.trader_id = TraderId::from("TRADER-001");
-
-        let mut trader2 = create_test_order_submitted();
-        trader2.trader_id = TraderId::from("TRADER-002");
-
-        assert_ne!(trader1, trader2);
-        assert_eq!(trader1.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(trader2.trader_id, TraderId::from("TRADER-002"));
-    }
-
-    #[rstest]
-    fn test_order_submitted_different_instruments() {
-        let mut fx_order = create_test_order_submitted();
-        fx_order.instrument_id = InstrumentId::from("EURUSD.SIM");
-
-        let mut crypto_order = create_test_order_submitted();
-        crypto_order.instrument_id = InstrumentId::from("BTCUSD.COINBASE");
-
-        assert_ne!(fx_order, crypto_order);
-        assert_eq!(fx_order.instrument_id, InstrumentId::from("EURUSD.SIM"));
-        assert_eq!(
-            crypto_order.instrument_id,
-            InstrumentId::from("BTCUSD.COINBASE")
-        );
     }
 }

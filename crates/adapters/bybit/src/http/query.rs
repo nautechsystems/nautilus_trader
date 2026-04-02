@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::enums::{
     BybitAccountType, BybitExecType, BybitInstrumentStatus, BybitKlineInterval, BybitMarginMode,
-    BybitOpenOnly, BybitOptionType, BybitOrderFilter, BybitOrderSide, BybitOrderStatus,
-    BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType, BybitTimeInForce,
-    BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+    BybitMarketUnit, BybitOpenOnly, BybitOptionType, BybitOrderFilter, BybitOrderSide,
+    BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType,
+    BybitSmpType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+    BybitTriggerType,
 };
 
 /// Query parameters for `GET /v5/market/instruments-info`.
@@ -385,13 +386,13 @@ pub struct BybitBatchPlaceOrderEntry {
     pub price: Option<String>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_unit: Option<String>,
+    pub market_unit: Option<BybitMarketUnit>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_direction: Option<BybitTriggerDirection>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_filter: Option<String>,
+    pub order_filter: Option<BybitOrderFilter>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_price: Option<String>,
@@ -431,7 +432,7 @@ pub struct BybitBatchPlaceOrderEntry {
     pub close_on_trigger: Option<bool>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub smp_type: Option<String>,
+    pub smp_type: Option<BybitSmpType>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
@@ -559,7 +560,7 @@ pub struct BybitBatchCancelOrderEntry {
     #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub order_filter: Option<String>,
+    pub order_filter: Option<BybitOrderFilter>,
 }
 
 /// Body parameters for `POST /v5/order/cancel-batch`.
@@ -606,10 +607,10 @@ pub struct BybitCancelAllOrdersParams {
     pub settle_coin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub order_filter: Option<String>,
+    pub order_filter: Option<BybitOrderFilter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub stop_order_type: Option<String>,
+    pub stop_order_type: Option<BybitStopOrderType>,
 }
 
 /// Query parameters for `GET /v5/order/realtime`.

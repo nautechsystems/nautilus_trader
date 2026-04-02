@@ -47,9 +47,9 @@ use nautilus_model::{
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Price},
 };
 use tokio::task::JoinHandle;
 use ustr::Ustr;
@@ -60,9 +60,12 @@ use crate::{
         credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
-            BybitTimeInForce,
+            BybitTimeInForce, BybitTpSlMode, BybitTriggerType,
         },
-        parse::{extract_raw_symbol, nanos_to_millis},
+        parse::{
+            BybitTpSlParams, extract_raw_symbol, get_price_str, nanos_to_millis,
+            parse_bybit_tp_sl_params, spot_leverage, spot_market_unit, trigger_direction,
+        },
     },
     config::BybitExecClientConfig,
     http::client::BybitHttpClient,
@@ -237,10 +240,14 @@ impl BybitExecutionClient {
         })
     }
 
-    fn map_order_type(order_type: OrderType) -> anyhow::Result<BybitOrderType> {
+    fn map_order_type(order_type: OrderType) -> anyhow::Result<(BybitOrderType, bool)> {
         match order_type {
-            OrderType::Market => Ok(BybitOrderType::Market),
-            OrderType::Limit => Ok(BybitOrderType::Limit),
+            OrderType::Market => Ok((BybitOrderType::Market, false)),
+            OrderType::Limit => Ok((BybitOrderType::Limit, false)),
+            OrderType::StopMarket | OrderType::MarketIfTouched => {
+                Ok((BybitOrderType::Market, true))
+            }
+            OrderType::StopLimit | OrderType::LimitIfTouched => Ok((BybitOrderType::Limit, true)),
             _ => anyhow::bail!("unsupported order type for Bybit: {order_type}"),
         }
     }
@@ -255,6 +262,80 @@ impl BybitExecutionClient {
             TimeInForce::Fok => BybitTimeInForce::Fok,
             _ => BybitTimeInForce::Gtc,
         }
+    }
+
+    fn build_ws_place_params(
+        order: &OrderAny,
+        product_type: BybitProductType,
+        raw_symbol: &str,
+        tp_sl: &BybitTpSlParams,
+    ) -> anyhow::Result<BybitWsPlaceOrderParams> {
+        let bybit_side = BybitOrderSide::try_from(order.order_side())?;
+        let (bybit_order_type, is_conditional) = Self::map_order_type(order.order_type())?;
+        let has_tp_sl = tp_sl.has_tp_sl();
+        let trigger_dir = trigger_direction(order.order_type(), order.order_side(), is_conditional);
+
+        Ok(BybitWsPlaceOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            side: bybit_side,
+            order_type: bybit_order_type,
+            qty: order.quantity().to_string(),
+            is_leverage: spot_leverage(product_type, tp_sl.is_leverage),
+            market_unit: spot_market_unit(
+                product_type,
+                bybit_order_type,
+                order.is_quote_quantity(),
+            ),
+            price: order.price().map(|p: Price| p.to_string()),
+            time_in_force: if bybit_order_type == BybitOrderType::Market {
+                None
+            } else {
+                Some(Self::map_time_in_force(
+                    order.time_in_force(),
+                    order.is_post_only(),
+                ))
+            },
+            order_link_id: Some(order.client_order_id().to_string()),
+            reduce_only: if order.is_reduce_only() {
+                Some(true)
+            } else {
+                None
+            },
+            close_on_trigger: tp_sl.close_on_trigger,
+            trigger_price: order.trigger_price().map(|p: Price| p.to_string()),
+            trigger_by: if is_conditional {
+                Some(BybitTriggerType::LastPrice)
+            } else {
+                None
+            },
+            trigger_direction: trigger_dir.map(|d| d as i32),
+            tpsl_mode: if has_tp_sl {
+                Some(BybitTpSlMode::Full)
+            } else {
+                None
+            },
+            take_profit: tp_sl.take_profit.map(|p| p.to_string()),
+            stop_loss: tp_sl.stop_loss.map(|p| p.to_string()),
+            tp_trigger_by: tp_sl.tp_trigger_by.or(if tp_sl.take_profit.is_some() {
+                Some(BybitTriggerType::LastPrice)
+            } else {
+                None
+            }),
+            sl_trigger_by: tp_sl.sl_trigger_by.or(if tp_sl.stop_loss.is_some() {
+                Some(BybitTriggerType::LastPrice)
+            } else {
+                None
+            }),
+            sl_trigger_price: tp_sl.sl_trigger_price.clone(),
+            tp_trigger_price: tp_sl.tp_trigger_price.clone(),
+            sl_order_type: tp_sl.sl_order_type,
+            tp_order_type: tp_sl.tp_order_type,
+            sl_limit_price: tp_sl.sl_limit_price.clone(),
+            tp_limit_price: tp_sl.tp_limit_price.clone(),
+            order_iv: tp_sl.order_iv.clone(),
+            mmp: tp_sl.mmp,
+        })
     }
 }
 
@@ -289,6 +370,9 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
+        // Reset after a prior disconnect so REST calls are not short-circuited
+        self.http_client.reset_cancellation_token();
+
         let product_types = self.product_types();
 
         if !self.core.instruments_initialized() {
@@ -309,7 +393,7 @@ impl ExecutionClient for BybitExecutionClient {
 
                 log::info!("Loaded {} {product_type:?} instruments", instruments.len());
 
-                self.http_client.cache_instruments(instruments.clone());
+                self.http_client.cache_instruments(&instruments);
                 all_instruments.extend(instruments);
             }
 
@@ -445,10 +529,38 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
-        log::debug!(
-            "query_order not implemented for Bybit execution client (client_order_id={})",
-            cmd.client_order_id
-        );
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let client_order_id = cmd.client_order_id;
+        let venue_order_id = cmd.venue_order_id;
+        let account_id = self.core.account_id;
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+
+        self.spawn_task("query_order", async move {
+            match http_client
+                .query_order(
+                    account_id,
+                    product_type,
+                    instrument_id,
+                    Some(client_order_id),
+                    venue_order_id,
+                )
+                .await
+            {
+                Ok(Some(report)) => {
+                    emitter.send_order_status_report(report);
+                }
+                Ok(None) => {
+                    log::warn!("Order not found: client_order_id={client_order_id}, venue_order_id={venue_order_id:?}");
+                }
+                Err(e) => {
+                    log::error!("Failed to query order: {e}");
+                }
+            }
+            Ok(())
+        });
+
         Ok(())
     }
 
@@ -485,7 +597,7 @@ impl ExecutionClient for BybitExecutionClient {
                             log::warn!("No instruments returned for {product_type:?}");
                             continue;
                         }
-                        http_client.cache_instruments(instruments.clone());
+                        http_client.cache_instruments(&instruments);
                         all_instruments.extend(instruments);
                     }
                     Err(e) => {
@@ -788,6 +900,24 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
+        let tp_sl = match parse_bybit_tp_sl_params(cmd.params.as_ref()) {
+            Ok(p) => p,
+            Err(e) => {
+                self.emitter.emit_order_denied(&order, &e.to_string());
+                return Ok(());
+            }
+        };
+
+        if self.config.environment == BybitEnvironment::Demo
+            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+        {
+            self.emitter.emit_order_denied(
+                &order,
+                "Native TP/SL and option params are not supported in demo mode",
+            );
+            return Ok(());
+        }
+
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
@@ -820,6 +950,8 @@ impl ExecutionClient for BybitExecutionClient {
             let trigger_price = order.trigger_price();
             let post_only = order.is_post_only();
             let reduce_only = order.is_reduce_only();
+            let is_quote_quantity = order.is_quote_quantity();
+            let is_leverage = tp_sl.is_leverage;
 
             self.spawn_task("submit_order_http", async move {
                 let result = http_client
@@ -836,8 +968,8 @@ impl ExecutionClient for BybitExecutionClient {
                         trigger_price,
                         Some(post_only),
                         reduce_only,
-                        false, // is_quote_quantity
-                        false, // is_leverage
+                        is_quote_quantity,
+                        is_leverage,
                     )
                     .await;
 
@@ -861,44 +993,7 @@ impl ExecutionClient for BybitExecutionClient {
         }
 
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let bybit_side = BybitOrderSide::try_from(order.order_side())?;
-        let bybit_order_type = Self::map_order_type(order.order_type())?;
-
-        let params = BybitWsPlaceOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            side: bybit_side,
-            order_type: bybit_order_type,
-            qty: order.quantity().to_string(),
-            is_leverage: None,
-            market_unit: None,
-            price: order.price().map(|p| p.to_string()),
-            time_in_force: Some(Self::map_time_in_force(
-                order.time_in_force(),
-                order.is_post_only(),
-            )),
-            order_link_id: Some(order.client_order_id().to_string()),
-            reduce_only: if order.is_reduce_only() {
-                Some(true)
-            } else {
-                None
-            },
-            close_on_trigger: None,
-            trigger_price: order.trigger_price().map(|p| p.to_string()),
-            trigger_by: None,
-            trigger_direction: None,
-            tpsl_mode: None,
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            sl_trigger_price: None,
-            tp_trigger_price: None,
-            sl_order_type: None,
-            tp_order_type: None,
-            sl_limit_price: None,
-            tp_limit_price: None,
-        };
+        let params = Self::build_ws_place_params(&order, product_type, raw_symbol, &tp_sl)?;
 
         let ws_trade = self.ws_trade.clone();
         let dispatch_state = Arc::clone(&self.dispatch_state);
@@ -933,10 +1028,220 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log::warn!(
-            "submit_order_list not yet implemented for Bybit execution client (got {} orders)",
-            cmd.order_list.client_order_ids.len()
-        );
+        if cmd.order_list.client_order_ids.is_empty() {
+            return Ok(());
+        }
+
+        let tp_sl = match parse_bybit_tp_sl_params(cmd.params.as_ref()) {
+            Ok(p) => p,
+            Err(e) => {
+                let cache = self.core.cache();
+
+                for cid in &cmd.order_list.client_order_ids {
+                    if let Some(order) = cache.order(cid) {
+                        self.emitter.emit_order_denied(order, &e.to_string());
+                    }
+                }
+                return Ok(());
+            }
+        };
+
+        if self.config.environment == BybitEnvironment::Demo
+            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+        {
+            let cache = self.core.cache();
+
+            for cid in &cmd.order_list.client_order_ids {
+                if let Some(order) = cache.order(cid) {
+                    self.emitter.emit_order_denied(
+                        order,
+                        "Native TP/SL and option params are not supported in demo mode",
+                    );
+                }
+            }
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let strategy_id = cmd.strategy_id;
+
+        let mut valid_orders = Vec::with_capacity(cmd.order_list.client_order_ids.len());
+        {
+            let cache = self.core.cache();
+            let mut deny_reason: Option<String> = None;
+
+            for cid in &cmd.order_list.client_order_ids {
+                let Some(order) = cache.order(cid) else {
+                    deny_reason = Some(format!("Order not found in cache: {cid}"));
+                    break;
+                };
+
+                if order.is_closed() {
+                    deny_reason = Some(format!("Cannot submit closed order {cid}"));
+                    break;
+                }
+
+                if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
+                    deny_reason = Some(e.to_string());
+                    break;
+                }
+
+                if let Err(e) = Self::map_order_type(order.order_type()) {
+                    deny_reason = Some(e.to_string());
+                    break;
+                }
+
+                valid_orders.push(order.clone());
+            }
+
+            // Deny entire list if any order fails validation
+            if let Some(reason) = deny_reason {
+                for cid in &cmd.order_list.client_order_ids {
+                    if let Some(order) = cache.order(cid) {
+                        self.emitter.emit_order_denied(order, &reason);
+                    }
+                }
+                return Ok(());
+            }
+        }
+
+        if valid_orders.is_empty() {
+            return Ok(());
+        }
+
+        for order in &valid_orders {
+            self.emitter.emit_order_submitted(order);
+            self.dispatch_state.order_identities.insert(
+                order.client_order_id(),
+                OrderIdentity {
+                    instrument_id,
+                    strategy_id,
+                    order_side: order.order_side(),
+                    order_type: order.order_type(),
+                },
+            );
+        }
+
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        // Demo mode: submit individually via HTTP
+        if self.config.environment == BybitEnvironment::Demo {
+            let http_client = self.http_client.clone();
+            let account_id = self.core.account_id;
+            let is_leverage = tp_sl.is_leverage;
+
+            let order_data: Vec<_> = valid_orders
+                .iter()
+                .map(|o| {
+                    (
+                        o.client_order_id(),
+                        o.order_side(),
+                        o.order_type(),
+                        o.quantity(),
+                        o.time_in_force(),
+                        o.price(),
+                        o.trigger_price(),
+                        o.is_post_only(),
+                        o.is_reduce_only(),
+                        o.is_quote_quantity(),
+                    )
+                })
+                .collect();
+
+            self.spawn_task("submit_order_list_http", async move {
+                for (cid, side, otype, qty, tif, price, trigger, post_only, reduce, quote_qty) in
+                    order_data
+                {
+                    if let Err(e) = http_client
+                        .submit_order(
+                            account_id,
+                            product_type,
+                            instrument_id,
+                            cid,
+                            side,
+                            otype,
+                            qty,
+                            Some(tif),
+                            price,
+                            trigger,
+                            Some(post_only),
+                            reduce,
+                            quote_qty,
+                            is_leverage,
+                        )
+                        .await
+                    {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            cid,
+                            &format!("submit-order-error: {e}"),
+                            ts_event,
+                            false,
+                        );
+                    }
+                }
+                Ok(())
+            });
+
+            return Ok(());
+        }
+
+        // Live mode: batch submit via WebSocket
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+
+        let mut order_params = Vec::with_capacity(valid_orders.len());
+        let mut client_order_ids = Vec::with_capacity(valid_orders.len());
+
+        for order in &valid_orders {
+            let params = Self::build_ws_place_params(order, product_type, raw_symbol, &tp_sl)
+                .expect("validated above");
+            order_params.push(params);
+            client_order_ids.push(order.client_order_id());
+        }
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("submit_order_list", async move {
+            match ws_trade.batch_place_orders(order_params).await {
+                Ok(req_ids) => {
+                    for (req_id, chunk_cids) in req_ids
+                        .into_iter()
+                        .zip(client_order_ids.chunks(20).map(|c| c.to_vec()))
+                    {
+                        let chunk_voids = vec![None; chunk_cids.len()];
+                        dispatch_state
+                            .pending_requests
+                            .insert(req_id, (chunk_cids, chunk_voids, PendingOperation::Place));
+                    }
+                }
+                Err(e) => {
+                    for cid in &client_order_ids {
+                        dispatch_state.order_identities.remove(cid);
+                    }
+
+                    let ts_event = clock.get_time_ns();
+
+                    for cid in &client_order_ids {
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            *cid,
+                            &format!("submit-order-list-error: {e}"),
+                            ts_event,
+                            false,
+                        );
+                    }
+                    anyhow::bail!("submit order list failed: {e}");
+                }
+            }
+            Ok(())
+        });
+
         Ok(())
     }
 
@@ -948,6 +1253,25 @@ impl ExecutionClient for BybitExecutionClient {
         let venue_order_id = cmd.venue_order_id;
         let emitter = self.emitter.clone();
         let clock = self.clock;
+
+        let has_order_iv = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get("order_iv"))
+            .is_some();
+
+        if self.config.environment == BybitEnvironment::Demo && has_order_iv {
+            let ts_event = self.clock.get_time_ns();
+            self.emitter.emit_order_modify_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                "Option params (order_iv) are not supported in demo mode",
+                ts_event,
+            );
+            return Ok(());
+        }
 
         if self.config.environment == BybitEnvironment::Demo {
             let http_client = self.http_client.clone();
@@ -989,6 +1313,26 @@ impl ExecutionClient for BybitExecutionClient {
 
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
 
+        let order_iv = if let Some(value) = cmd.params.as_ref().and_then(|p| p.get("order_iv")) {
+            match get_price_str(cmd.params.as_ref().unwrap(), "order_iv") {
+                Some(s) => Some(s),
+                None => {
+                    let ts_event = self.clock.get_time_ns();
+                    self.emitter.emit_order_modify_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("invalid type for 'order_iv': {value}, expected string or number"),
+                        ts_event,
+                    );
+                    return Ok(());
+                }
+            }
+        } else {
+            None
+        };
+
         let params = BybitWsAmendOrderParams {
             category: product_type,
             symbol: Ustr::from(raw_symbol),
@@ -1001,6 +1345,7 @@ impl ExecutionClient for BybitExecutionClient {
             stop_loss: None,
             tp_trigger_by: None,
             sl_trigger_by: None,
+            order_iv,
         };
 
         let ws_trade = self.ws_trade.clone();
@@ -1248,5 +1593,90 @@ impl ExecutionClient for BybitExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::enums::BybitMarketUnit;
+
+    #[rstest]
+    #[case::spot_market_base(
+        BybitProductType::Spot,
+        BybitOrderType::Market,
+        false,
+        Some(BybitMarketUnit::BaseCoin)
+    )]
+    #[case::spot_market_quote(
+        BybitProductType::Spot,
+        BybitOrderType::Market,
+        true,
+        Some(BybitMarketUnit::QuoteCoin)
+    )]
+    #[case::spot_limit(BybitProductType::Spot, BybitOrderType::Limit, true, None)]
+    #[case::linear_market(BybitProductType::Linear, BybitOrderType::Market, true, None)]
+    fn test_ws_params_market_unit(
+        #[case] product_type: BybitProductType,
+        #[case] order_type: BybitOrderType,
+        #[case] is_quote_quantity: bool,
+        #[case] expected: Option<BybitMarketUnit>,
+    ) {
+        let params = BybitWsPlaceOrderParams {
+            category: product_type,
+            symbol: ustr::Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type,
+            qty: "1.0".to_string(),
+            is_leverage: None,
+            market_unit: spot_market_unit(product_type, order_type, is_quote_quantity),
+            price: None,
+            time_in_force: None,
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            mmp: None,
+        };
+
+        assert_eq!(params.market_unit, expected);
+    }
+
+    #[rstest]
+    #[case::market(OrderType::Market, BybitOrderType::Market, false)]
+    #[case::limit(OrderType::Limit, BybitOrderType::Limit, false)]
+    #[case::stop_market(OrderType::StopMarket, BybitOrderType::Market, true)]
+    #[case::stop_limit(OrderType::StopLimit, BybitOrderType::Limit, true)]
+    #[case::market_if_touched(OrderType::MarketIfTouched, BybitOrderType::Market, true)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched, BybitOrderType::Limit, true)]
+    fn test_map_order_type(
+        #[case] input: OrderType,
+        #[case] expected_type: BybitOrderType,
+        #[case] expected_conditional: bool,
+    ) {
+        let (bybit_type, is_conditional) = BybitExecutionClient::map_order_type(input).unwrap();
+        assert_eq!(bybit_type, expected_type);
+        assert_eq!(is_conditional, expected_conditional);
+    }
+
+    #[rstest]
+    fn test_map_order_type_rejects_trailing_stop() {
+        assert!(BybitExecutionClient::map_order_type(OrderType::TrailingStopMarket).is_err());
     }
 }

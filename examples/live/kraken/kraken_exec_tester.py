@@ -127,7 +127,7 @@ node = TradingNode(config=config_node)
 strat_config = ExecTesterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
-    use_uuid_client_order_ids=True,
+    use_uuid_client_order_ids=True,  # Kraken truncates non-UUID IDs to 18 chars
     # subscribe_book=True,
     subscribe_quotes=True,
     subscribe_trades=True,

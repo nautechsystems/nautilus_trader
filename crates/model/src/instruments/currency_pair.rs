@@ -389,11 +389,70 @@ impl Instrument for CurrencyPair {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{CurrencyPair, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(currency_pair_btcusdt: CurrencyPair) {
-        let cloned = currency_pair_btcusdt.clone();
-        assert_eq!(currency_pair_btcusdt, cloned);
+    fn test_trait_accessors(currency_pair_btcusdt: CurrencyPair) {
+        assert_eq!(
+            currency_pair_btcusdt.id(),
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(currency_pair_btcusdt.asset_class(), AssetClass::FX);
+        assert_eq!(
+            currency_pair_btcusdt.instrument_class(),
+            InstrumentClass::Spot
+        );
+        assert_eq!(currency_pair_btcusdt.base_currency(), Some(Currency::BTC()));
+        assert_eq!(currency_pair_btcusdt.quote_currency(), Currency::USDT());
+        assert!(!currency_pair_btcusdt.is_inverse());
+        assert_eq!(currency_pair_btcusdt.price_precision(), 2);
+        assert_eq!(currency_pair_btcusdt.size_precision(), 6);
+        assert_eq!(currency_pair_btcusdt.price_increment(), Price::from("0.01"));
+        assert_eq!(
+            currency_pair_btcusdt.size_increment(),
+            Quantity::from("0.000001")
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = CurrencyPair::new_checked(
+            InstrumentId::from("TEST.BINANCE"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USDT(),
+            4, // mismatch
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(currency_pair_btcusdt: CurrencyPair) {
+        let json = serde_json::to_string(&currency_pair_btcusdt).unwrap();
+        let deserialized: CurrencyPair = serde_json::from_str(&json).unwrap();
+        assert_eq!(currency_pair_btcusdt, deserialized);
     }
 }

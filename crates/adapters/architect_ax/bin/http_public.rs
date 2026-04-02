@@ -53,10 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = AxRawHttpClient::new(
         Some(base_url.to_string()),
         Some(orders_base_url.to_string()),
-        Some(30),
-        None,
-        None,
-        None,
+        30,
+        3,
+        1000,
+        10_000,
         None,
     )?;
 

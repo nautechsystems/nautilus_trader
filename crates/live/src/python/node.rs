@@ -25,10 +25,10 @@ use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
-use nautilus_model::identifiers::{ActorId, ComponentId, StrategyId, TraderId};
+use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
 use nautilus_trading::{
-    ImportableStrategyConfig,
+    ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     python::strategy::{PyStrategy, PyStrategyInner},
 };
 use pyo3::{
@@ -442,6 +442,165 @@ impl LiveNode {
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python strategy {strategy_id}");
+        Ok(())
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "Required for Python exec algorithm component registration"
+    )]
+    #[pyo3(name = "add_exec_algorithm_from_config")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn py_add_exec_algorithm_from_config(
+        &mut self,
+        _py: Python,
+        config: ImportableExecAlgorithmConfig,
+    ) -> PyResult<()> {
+        if self.is_running() {
+            return Err(to_pyruntime_err(
+                "Cannot add exec algorithm while node is running",
+            ));
+        }
+
+        log::debug!("`add_exec_algorithm_from_config` with: {config:?}");
+
+        let parts: Vec<&str> = config.exec_algorithm_path.split(':').collect();
+        if parts.len() != 2 {
+            return Err(to_pyvalue_err(
+                "exec_algorithm_path must be in format 'module.path:ClassName'",
+            ));
+        }
+        let (module_name, class_name) = (parts[0], parts[1]);
+
+        log::info!("Importing exec algorithm from module: {module_name} class: {class_name}");
+
+        // Phase 1: Create and configure the Python exec algorithm, extract its actor_id
+        let (python_exec_algorithm, actor_id) =
+            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, ActorId)> {
+                let algo_module = py
+                    .import(module_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+                let algo_class = algo_module
+                    .getattr(class_name)
+                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+
+                let config_instance =
+                    create_config_instance(py, &config.config_path, &config.config)?;
+
+                let python_exec_algorithm = if let Some(config_obj) = config_instance.clone() {
+                    algo_class.call1((config_obj,))?
+                } else {
+                    algo_class.call0()?
+                };
+
+                log::debug!("Created Python exec algorithm instance: {python_exec_algorithm:?}");
+
+                let mut py_data_actor_ref = python_exec_algorithm
+                    .extract::<PyRefMut<PyDataActor>>()
+                    .map_err(Into::<PyErr>::into)
+                    .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
+
+                // Extract ID from config: prefer exec_algorithm_id, fall back to actor_id
+                if let Some(config_obj) = config_instance.as_ref() {
+                    let id_attr = config_obj
+                        .getattr("exec_algorithm_id")
+                        .ok()
+                        .filter(|v| !v.is_none())
+                        .or_else(|| config_obj.getattr("actor_id").ok().filter(|v| !v.is_none()));
+
+                    if let Some(id_value) = id_attr {
+                        let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
+                            ActorId::new(eaid.inner().as_str())
+                        } else if let Ok(aid) = id_value.extract::<ActorId>() {
+                            aid
+                        } else if let Ok(aid_str) = id_value.extract::<String>() {
+                            ActorId::new_checked(&aid_str)?
+                        } else {
+                            anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
+                        };
+                        py_data_actor_ref.set_actor_id(actor_id_val);
+                    }
+
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
+                        py_data_actor_ref.set_log_events(val);
+                    }
+
+                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
+                        py_data_actor_ref.set_log_commands(val);
+                    }
+                }
+
+                py_data_actor_ref.set_python_instance(python_exec_algorithm.clone().unbind());
+
+                let actor_id = py_data_actor_ref.actor_id();
+
+                Ok((python_exec_algorithm.unbind(), actor_id))
+            })
+            .map_err(to_pyruntime_err)?;
+
+        let exec_algorithm_id = ExecAlgorithmId::from(actor_id.inner().as_str());
+
+        if self
+            .kernel()
+            .trader
+            .exec_algorithm_ids()
+            .contains(&exec_algorithm_id)
+        {
+            return Err(to_pyruntime_err(format!(
+                "Execution algorithm '{exec_algorithm_id}' is already registered"
+            )));
+        }
+
+        // Phase 2: Create per-component clock via the trader.
+        // This requires `&mut self` access to the kernel, which cannot be held
+        // inside a `Python::attach` block, hence the separate phases.
+        let trader_id = self.kernel().trader_id();
+        let cache = self.kernel().cache();
+        let component_id = ComponentId::new(actor_id.inner().as_str());
+        let clock = self
+            .kernel_mut()
+            .trader
+            .create_component_clock(component_id);
+
+        // Phase 3: Register the exec algorithm with its dedicated clock
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_algo = python_exec_algorithm.bind(py);
+            let mut py_data_actor_ref = py_algo
+                .extract::<PyRefMut<PyDataActor>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
+
+            py_data_actor_ref
+                .register(trader_id, clock, cache)
+                .map_err(|e| anyhow::anyhow!("Failed to register PyDataActor: {e}"))?;
+
+            log::debug!(
+                "Internal PyDataActor registered: {}, state: {:?}",
+                py_data_actor_ref.is_registered(),
+                py_data_actor_ref.state()
+            );
+
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        // Phase 4: Register in global registries and track for lifecycle
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_algo = python_exec_algorithm.bind(py);
+            let py_data_actor_ref = py_algo
+                .cast::<PyDataActor>()
+                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyDataActor: {e}"))?;
+            py_data_actor_ref.borrow().register_in_global_registries();
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        self.kernel_mut()
+            .trader
+            .add_exec_algorithm_id_for_lifecycle(exec_algorithm_id)
+            .map_err(to_pyruntime_err)?;
+
+        log::info!("Registered Python exec algorithm {exec_algorithm_id}");
         Ok(())
     }
 

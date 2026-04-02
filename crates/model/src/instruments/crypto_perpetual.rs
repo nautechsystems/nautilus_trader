@@ -397,11 +397,148 @@ impl Instrument for CryptoPerpetual {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{CryptoPerpetual, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CryptoPerpetual, Instrument, stubs::*},
+        types::{Currency, Money, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(crypto_perpetual_ethusdt: CryptoPerpetual) {
-        let cloned = crypto_perpetual_ethusdt.clone();
-        assert_eq!(crypto_perpetual_ethusdt, cloned);
+    fn test_trait_accessors(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        assert_eq!(
+            crypto_perpetual_ethusdt.id(),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.asset_class(),
+            AssetClass::Cryptocurrency
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.instrument_class(),
+            InstrumentClass::Swap
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.base_currency(),
+            Some(Currency::ETH())
+        );
+        assert_eq!(crypto_perpetual_ethusdt.quote_currency(), Currency::USDT());
+        assert_eq!(
+            crypto_perpetual_ethusdt.settlement_currency(),
+            Currency::USDT()
+        );
+        assert!(!crypto_perpetual_ethusdt.is_inverse());
+        assert_eq!(crypto_perpetual_ethusdt.price_precision(), 2);
+        assert_eq!(crypto_perpetual_ethusdt.size_precision(), 3);
+        assert_eq!(
+            crypto_perpetual_ethusdt.price_increment(),
+            Price::from("0.01")
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.size_increment(),
+            Quantity::from("0.001")
+        );
+        assert_eq!(crypto_perpetual_ethusdt.multiplier(), Quantity::from("1"));
+        assert_eq!(
+            crypto_perpetual_ethusdt.lot_size(),
+            Some(Quantity::from("1"))
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.max_quantity(),
+            Some(Quantity::from("10000.0")),
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.min_quantity(),
+            Some(Quantity::from("0.001")),
+        );
+        assert_eq!(
+            crypto_perpetual_ethusdt.min_notional(),
+            Some(Money::new(10.00, Currency::USDT())),
+        );
+        assert_eq!(crypto_perpetual_ethusdt.underlying(), None);
+        assert_eq!(crypto_perpetual_ethusdt.option_kind(), None);
+        assert_eq!(crypto_perpetual_ethusdt.strike_price(), None);
+        assert_eq!(crypto_perpetual_ethusdt.activation_ns(), None);
+        assert_eq!(crypto_perpetual_ethusdt.expiration_ns(), None);
+    }
+
+    #[rstest]
+    fn test_inverse_perp_accessors(xbtusd_bitmex: CryptoPerpetual) {
+        assert!(xbtusd_bitmex.is_inverse());
+        assert_eq!(xbtusd_bitmex.base_currency(), Some(Currency::BTC()));
+        assert_eq!(xbtusd_bitmex.quote_currency(), Currency::USD());
+        assert_eq!(xbtusd_bitmex.settlement_currency(), Currency::BTC());
+        assert_eq!(xbtusd_bitmex.cost_currency(), Currency::BTC());
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = CryptoPerpetual::new_checked(
+            InstrumentId::from("TEST.EXCHANGE"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            3, // mismatch
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_size_precision_mismatch() {
+        let result = CryptoPerpetual::new_checked(
+            InstrumentId::from("TEST.EXCHANGE"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            5, // mismatch
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let json = serde_json::to_string(&crypto_perpetual_ethusdt).unwrap();
+        let deserialized: CryptoPerpetual = serde_json::from_str(&json).unwrap();
+        assert_eq!(crypto_perpetual_ethusdt, deserialized);
     }
 }

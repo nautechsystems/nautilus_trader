@@ -35,6 +35,7 @@ from nautilus_trader.model.instruments.option_contract import OptionContract
 from nautilus_trader.model.instruments.option_spread import OptionSpread
 from nautilus_trader.model.instruments.perpetual_contract import PerpetualContract
 from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
+from nautilus_trader.model.instruments.tokenized_asset import TokenizedAsset
 
 
 __all__ = [
@@ -55,5 +56,6 @@ __all__ = [
     "OptionSpread",
     "PerpetualContract",
     "SyntheticInstrument",
+    "TokenizedAsset",
     "instruments_from_pyo3",
 ]

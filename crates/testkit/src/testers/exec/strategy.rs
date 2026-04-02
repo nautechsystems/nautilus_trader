@@ -13,14 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
-
-use nautilus_common::{
-    actor::{DataActor, DataActorCore},
-    enums::LogColor,
-    log_info, log_warn,
-    timer::TimeEvent,
-};
+use nautilus_common::{actor::DataActor, enums::LogColor, log_info, log_warn, timer::TimeEvent};
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos_unchecked};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
@@ -31,7 +24,10 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Price,
 };
-use nautilus_trading::strategy::{Strategy, StrategyCore};
+use nautilus_trading::{
+    nautilus_strategy,
+    strategy::{Strategy, StrategyCore},
+};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::config::ExecTesterConfig;
@@ -59,19 +55,11 @@ pub struct ExecTester {
     pub(super) sell_stop_order: Option<OrderAny>,
 }
 
-impl Deref for ExecTester {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.core
+nautilus_strategy!(ExecTester, {
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.config.base.external_order_claims.clone()
     }
-}
-
-impl DerefMut for ExecTester {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+});
 
 impl DataActor for ExecTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -277,20 +265,6 @@ impl DataActor for ExecTester {
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         Strategy::on_time_event(self, event)
-    }
-}
-
-impl Strategy for ExecTester {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
-    }
-
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.config.base.external_order_claims.clone()
     }
 }
 

@@ -144,7 +144,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
         # Configuration
-        self._live_api_key: str = config.api_key or http_client.key
+        self._live_api_key: str = config.api_key or http_client.api_key
         self._live_gateway: str | None = config.live_gateway
         self._use_exchange_as_venue: bool = config.use_exchange_as_venue
         self._timeout_initial_load: float | None = config.timeout_initial_load

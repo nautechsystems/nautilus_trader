@@ -260,7 +260,7 @@ impl BettingInstrument {
     }
 
     #[getter]
-    #[pyo3(name = "selection_name")]
+    #[pyo3(name = "selection_handicap")]
     fn py_selection_handicap(&self) -> f64 {
         self.selection_handicap
     }

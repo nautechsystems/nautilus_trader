@@ -59,7 +59,7 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            determine_order_type, is_market_price, okx_channel_to_bar_spec,
+            determine_order_type_with_alt, is_market_price, okx_channel_to_bar_spec,
             okx_status_to_market_action, parse_client_order_id, parse_fee, parse_fee_currency,
             parse_funding_rate_msg, parse_instrument_any, parse_message_vec,
             parse_millisecond_timestamp, parse_price, parse_quantity,
@@ -126,6 +126,9 @@ pub enum ParsedOrderEvent {
     Fill(FillReport),
     /// Status update that doesn't map to a specific event (for reconciliation/external orders).
     StatusOnly(Box<OrderStatusReport>),
+    /// Duplicate message detected (e.g. reconnect replay with unchanged fill).
+    /// The dispatcher should update caches but not emit any event.
+    Skipped,
 }
 
 /// Snapshot of order state for detecting updates.
@@ -213,15 +216,17 @@ pub fn parse_order_event(
 
     match msg.state {
         OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
-            parse_fill_report(
+            match parse_fill_report(
                 msg,
                 instrument,
                 account_id,
                 previous_fee,
                 previous_filled_qty,
                 ts_init,
-            )
-            .map(ParsedOrderEvent::Fill)
+            )? {
+                Some(report) => Ok(ParsedOrderEvent::Fill(report)),
+                None => Ok(ParsedOrderEvent::Skipped),
+            }
         }
         OKXOrderStatus::Live => {
             let ts_event = parse_millisecond_timestamp(msg.c_time);
@@ -553,6 +558,7 @@ pub fn parse_funding_rate_msg_vec(
     let msgs: Vec<OKXFundingRateMsg> = serde_json::from_value(data)?;
 
     let mut result = Vec::with_capacity(msgs.len());
+
     for msg in &msgs {
         let cache_key = (msg.funding_rate, msg.funding_time);
 
@@ -760,6 +766,7 @@ pub fn parse_book10_msg(
 
     // Parse available bid levels (up to 10)
     let bid_len = msg.bids.len().min(DEPTH10_LEN);
+
     for (i, level) in msg.bids.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
@@ -783,6 +790,7 @@ pub fn parse_book10_msg(
 
     // Parse available ask levels (up to 10)
     let ask_len = msg.asks.len().min(DEPTH10_LEN);
+
     for (i, level) in msg.asks.iter().take(DEPTH10_LEN).enumerate() {
         let price = parse_price(&level.price, price_precision)?;
         let size = parse_quantity(&level.size, size_precision)?;
@@ -1063,15 +1071,18 @@ pub fn parse_order_msg(
 
     match msg.state {
         OKXOrderStatus::Filled | OKXOrderStatus::PartiallyFilled if has_new_fill => {
-            parse_fill_report(
+            match parse_fill_report(
                 msg,
                 instrument,
                 account_id,
                 previous_fee,
                 previous_filled_qty,
                 ts_init,
-            )
-            .map(ExecutionReport::Fill)
+            )? {
+                Some(report) => Ok(ExecutionReport::Fill(report)),
+                None => parse_order_status_report(msg, instrument, account_id, ts_init)
+                    .map(ExecutionReport::Order),
+            }
         }
         _ => parse_order_status_report(msg, instrument, account_id, ts_init)
             .map(ExecutionReport::Order),
@@ -1339,14 +1350,19 @@ pub fn parse_order_status_report(
             }
         }
         OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
-            determine_order_type(okx_order_type, &msg.px)
+            determine_order_type_with_alt(
+                okx_order_type,
+                &msg.px,
+                msg.px_vol.as_deref().unwrap_or(""),
+                msg.px_usd.as_deref().unwrap_or(""),
+            )
         }
         _ => msg.ord_type.into(),
     };
     let order_status: OrderStatus = msg.state.into();
 
     let time_in_force = match okx_order_type {
-        OKXOrderType::Fok => TimeInForce::Fok,
+        OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
         _ => TimeInForce::Gtc,
     };
@@ -1595,7 +1611,7 @@ pub fn parse_fill_report(
     previous_fee: Option<Money>,
     previous_filled_qty: Option<Quantity>,
     ts_init: UnixNanos,
-) -> anyhow::Result<FillReport> {
+) -> anyhow::Result<Option<FillReport>> {
     // For triggered algo child orders, prefer the parent algo_cl_ord_id
     let client_order_id = msg
         .algo_cl_ord_id
@@ -1656,9 +1672,10 @@ pub fn parse_fill_report(
                 }
                 let incremental = current_filled - prev_qty;
                 if incremental.is_zero() {
-                    anyhow::bail!(
-                        "Incremental fill quantity is zero (acc_fill_sz='{acc_fill_sz}', previous_filled_qty={prev_qty})"
+                    log::debug!(
+                        "Skipping duplicate fill: acc_fill_sz='{acc_fill_sz}' unchanged from previous={prev_qty}"
                     );
+                    return Ok(None);
                 }
                 incremental
             } else {
@@ -1784,7 +1801,7 @@ pub fn parse_fill_report(
         None, // Generate UUID4 automatically
     );
 
-    Ok(report)
+    Ok(Some(report))
 }
 
 /// Parses an option summary payload into [`OptionGreeks`].
@@ -2072,6 +2089,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -2499,6 +2519,36 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_ws_account_message_empty_balance() {
+        // GH-3772: OKX returns empty strings and empty details for zero-balance accounts
+        let json_data = load_test_json("ws_account_empty.json");
+        let msg: OKXWsFrame = serde_json::from_str(&json_data).unwrap();
+
+        let OKXWsFrame::Data { data, .. } = msg else {
+            panic!("Expected OKXWsFrame::Data");
+        };
+
+        let accounts: Vec<OKXAccount> = serde_json::from_value(data).unwrap();
+        assert_eq!(accounts.len(), 1);
+
+        let account = &accounts[0];
+        assert!(account.details.is_empty());
+        assert_eq!(account.total_eq, "0");
+
+        let account_id = AccountId::new("OKX-001");
+        let account_state = parse_account_state(account, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.margins.len(), 0);
+        assert_eq!(account_state.balances.len(), 1);
+
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.total, Money::new(0.0, Currency::USD()));
+        assert_eq!(balance.free, Money::new(0.0, Currency::USD()));
+        assert_eq!(balance.locked, Money::new(0.0, Currency::USD()));
+    }
+
+    #[rstest]
     fn test_parse_order_msg() {
         let json_data = load_test_json("ws_orders.json");
         let ws_msg: serde_json::Value = serde_json::from_str(&json_data).unwrap();
@@ -2698,7 +2748,7 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let fill_report = result.unwrap();
+        let fill_report = result.unwrap().unwrap();
 
         assert_eq!(fill_report.account_id, account_id);
         assert_eq!(fill_report.instrument_id, instrument_id);
@@ -2845,6 +2895,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -2900,6 +2953,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // First fill should get the full fee since there's no previous fee
@@ -2925,6 +2979,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -2980,6 +3037,7 @@ mod tests {
             Some(fill_report_1.last_qty),
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // Second fill should get total_fee - previous_fee = 3.0 - 1.0 = 2.0
@@ -3042,6 +3100,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3097,6 +3158,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // First fill gets the full rebate (negative commission)
@@ -3122,6 +3184,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3177,6 +3242,7 @@ mod tests {
             Some(fill_report_1.last_qty),
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // Second fill: incremental = -0.8 - (-0.5) = -0.3
@@ -3237,6 +3303,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3292,6 +3361,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // First fill gets rebate (negative)
@@ -3319,6 +3389,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3374,6 +3447,7 @@ mod tests {
             Some(fill_report_1.last_qty),
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // Second fill: incremental = 2.0 - (-1.0) = 3.0
@@ -3435,6 +3509,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3490,6 +3567,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(fill_report_1.commission, Money::new(2.0, Currency::USDT()));
@@ -3515,6 +3593,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "50000.0".to_string(),
@@ -3570,6 +3651,7 @@ mod tests {
             Some(fill_report_1.last_qty),
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         // Incremental is negative: 1.5 - 2.0 = -0.5
@@ -3600,7 +3682,7 @@ mod tests {
             ts_init,
         );
 
-        let fill_report = result.unwrap();
+        let fill_report = result.unwrap().unwrap();
         assert_eq!(fill_report.commission.currency, Currency::BTC());
     }
 
@@ -3621,6 +3703,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(fill_report.last_qty, Quantity::from("0.01"));
@@ -3643,6 +3726,7 @@ mod tests {
             None,
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(fill_report_1.last_qty, Quantity::from("0.01"));
@@ -3658,6 +3742,7 @@ mod tests {
             Some(fill_report_1.last_qty),
             ts_init,
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(fill_report_2.last_qty, Quantity::from("0.02"));
@@ -4278,6 +4363,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: "39000.0".to_string(),
@@ -4507,7 +4595,7 @@ mod tests {
         #[case] expected_tif: TimeInForce,
     ) {
         let time_in_force = match okx_ord_type {
-            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
             OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
             _ => TimeInForce::Gtc,
         };
@@ -4760,6 +4848,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: String::new(),
@@ -5332,6 +5423,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: String::new(),
@@ -5439,6 +5533,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             fill_px: String::new(),
@@ -5777,6 +5874,181 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quote_cache_complete_bbo_tbt_message() {
+        use nautilus_common::cache::quote::QuoteCache;
+
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTC-USD-260327-75000-C.OKX");
+        let msg = stub_book_msg(
+            vec![stub_book_entry("0.0035", "100")],
+            vec![stub_book_entry("0.0040", "200")],
+        );
+
+        let bid_price = Some(parse_price(&msg.bids[0].price, 4).unwrap());
+        let bid_size = Some(parse_quantity(&msg.bids[0].size, 0).unwrap());
+        let ask_price = Some(parse_price(&msg.asks[0].price, 4).unwrap());
+        let ask_size = Some(parse_quantity(&msg.asks[0].size, 0).unwrap());
+        let ts_event = parse_millisecond_timestamp(msg.ts);
+
+        let quote = cache
+            .process(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
+                ts_event,
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("0.0035"));
+        assert_eq!(quote.ask_price, Price::from("0.0040"));
+        assert_eq!(quote.bid_size, Quantity::from(100));
+        assert_eq!(quote.ask_size, Quantity::from(200));
+    }
+
+    #[rstest]
+    fn test_quote_cache_empty_bids_uses_cached_value() {
+        use nautilus_common::cache::quote::QuoteCache;
+
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTC-USD-260327-80000-C.OKX");
+
+        cache
+            .process(
+                instrument_id,
+                Some(Price::from("0.0010")),
+                Some(Price::from("0.0015")),
+                Some(Quantity::from(50)),
+                Some(Quantity::from(75)),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        let msg = stub_book_msg(vec![], vec![stub_book_entry("0.0020", "100")]);
+        let ask_price = Some(parse_price(&msg.asks[0].price, 4).unwrap());
+        let ask_size = Some(parse_quantity(&msg.asks[0].size, 0).unwrap());
+        let ts_event = parse_millisecond_timestamp(msg.ts);
+
+        let quote = cache
+            .process(
+                instrument_id,
+                None,
+                ask_price,
+                None,
+                ask_size,
+                ts_event,
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("0.0010"));
+        assert_eq!(quote.bid_size, Quantity::from(50));
+        assert_eq!(quote.ask_price, Price::from("0.0020"));
+        assert_eq!(quote.ask_size, Quantity::from(100));
+    }
+
+    #[rstest]
+    fn test_quote_cache_empty_asks_uses_cached_value() {
+        use nautilus_common::cache::quote::QuoteCache;
+
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTC-USD-260327-79000-P.OKX");
+
+        cache
+            .process(
+                instrument_id,
+                Some(Price::from("0.0010")),
+                Some(Price::from("0.0015")),
+                Some(Quantity::from(50)),
+                Some(Quantity::from(75)),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        let msg = stub_book_msg(vec![stub_book_entry("0.0012", "60")], vec![]);
+        let bid_price = Some(parse_price(&msg.bids[0].price, 4).unwrap());
+        let bid_size = Some(parse_quantity(&msg.bids[0].size, 0).unwrap());
+        let ts_event = parse_millisecond_timestamp(msg.ts);
+
+        let quote = cache
+            .process(
+                instrument_id,
+                bid_price,
+                None,
+                bid_size,
+                None,
+                ts_event,
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("0.0012"));
+        assert_eq!(quote.bid_size, Quantity::from(60));
+        assert_eq!(quote.ask_price, Price::from("0.0015"));
+        assert_eq!(quote.ask_size, Quantity::from(75));
+    }
+
+    #[rstest]
+    fn test_quote_cache_both_sides_empty_no_cache_returns_error() {
+        use nautilus_common::cache::quote::QuoteCache;
+
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTC-USD-260327-80000-C.OKX");
+
+        let result = cache.process(
+            instrument_id,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_quote_cache_both_sides_empty_with_cache_returns_cached() {
+        use nautilus_common::cache::quote::QuoteCache;
+
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTC-USD-260327-80000-C.OKX");
+
+        cache
+            .process(
+                instrument_id,
+                Some(Price::from("0.0010")),
+                Some(Price::from("0.0015")),
+                Some(Quantity::from(50)),
+                Some(Quantity::from(75)),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        let quote = cache
+            .process(
+                instrument_id,
+                None,
+                None,
+                None,
+                None,
+                UnixNanos::from(1706000000000000000u64),
+                UnixNanos::from(1706000000000000000u64),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("0.0010"));
+        assert_eq!(quote.ask_price, Price::from("0.0015"));
+        assert_eq!(quote.ts_event, UnixNanos::from(1706000000000000000u64));
+    }
+
+    #[rstest]
     fn test_parse_instruments_channel_produces_status() {
         use nautilus_model::{enums::MarketStatusAction, identifiers::InstrumentId};
 
@@ -6057,5 +6329,144 @@ mod tests {
             parse_option_summary_greeks(&msgs[1], &instrument_id, ts_init).expect("parse failed");
 
         assert!((greeks.greeks.delta - (-0.4688)).abs() < 1e-10);
+    }
+
+    #[rstest]
+    fn test_option_greeks_filtering_only_subscribed_instruments() {
+        use ahash::AHashSet;
+
+        let json_str = load_test_json("ws_opt_summary.json");
+        let msgs: Vec<OKXOptionSummaryMsg> =
+            serde_json::from_str(&json_str).expect("Failed to deserialize");
+
+        let call_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+        let put_id = InstrumentId::from("BTC-USD-250328-92000-P.OKX");
+        let ts_init = UnixNanos::from(1_711_612_900_000_000_000u64);
+
+        // Subscribe to CALL only
+        let mut subs = AHashSet::new();
+        subs.insert(call_id);
+
+        let mut results = Vec::new();
+        for msg in &msgs {
+            let inst_id_str = format!("{}.OKX", msg.inst_id);
+            let instrument_id = InstrumentId::from(inst_id_str.as_str());
+            if !subs.contains(&instrument_id) {
+                continue;
+            }
+
+            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+                results.push(greeks);
+            }
+        }
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].instrument_id, call_id);
+        assert!((results[0].greeks.delta - 0.5312).abs() < 1e-10);
+
+        // Now subscribe to both
+        subs.insert(put_id);
+
+        let mut results = Vec::new();
+        for msg in &msgs {
+            let inst_id_str = format!("{}.OKX", msg.inst_id);
+            let instrument_id = InstrumentId::from(inst_id_str.as_str());
+            if !subs.contains(&instrument_id) {
+                continue;
+            }
+
+            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+                results.push(greeks);
+            }
+        }
+
+        assert_eq!(results.len(), 2);
+    }
+
+    #[rstest]
+    fn test_option_greeks_unsubscribed_instrument_filtered_out() {
+        use ahash::AHashSet;
+
+        let json_str = load_test_json("ws_opt_summary.json");
+        let msgs: Vec<OKXOptionSummaryMsg> =
+            serde_json::from_str(&json_str).expect("Failed to deserialize");
+
+        let ts_init = UnixNanos::default();
+
+        // Empty subscription set
+        let subs: AHashSet<InstrumentId> = AHashSet::new();
+
+        let mut results = Vec::new();
+        for msg in &msgs {
+            let inst_id_str = format!("{}.OKX", msg.inst_id);
+            let instrument_id = InstrumentId::from(inst_id_str.as_str());
+            if !subs.contains(&instrument_id) {
+                continue;
+            }
+
+            if let Ok(greeks) = parse_option_summary_greeks(msg, &instrument_id, ts_init) {
+                results.push(greeks);
+            }
+        }
+
+        assert!(results.is_empty());
+    }
+
+    #[rstest]
+    fn test_option_greeks_family_dedup_subscribe_count() {
+        use crate::common::parse::extract_inst_family;
+
+        let mut family_subs: AHashMap<Ustr, usize> = AHashMap::new();
+
+        let call_id = InstrumentId::from("BTC-USD-250328-92000-C.OKX");
+        let put_id = InstrumentId::from("BTC-USD-250328-92000-P.OKX");
+        let other_id = InstrumentId::from("BTC-USD-250328-80000-C.OKX");
+
+        // Subscribe first instrument: count goes to 1 (triggers WS subscribe)
+        let family = extract_inst_family(call_id.symbol.inner().as_str()).unwrap();
+        let count = family_subs.entry(family).or_default();
+        *count += 1;
+        assert_eq!(*count, 1);
+        let should_subscribe_ws = *count == 1;
+        assert!(should_subscribe_ws);
+
+        // Subscribe second instrument in same family: count goes to 2 (no WS subscribe)
+        let family = extract_inst_family(put_id.symbol.inner().as_str()).unwrap();
+        let count = family_subs.entry(family).or_default();
+        *count += 1;
+        assert_eq!(*count, 2);
+        let should_subscribe_ws = *count == 1;
+        assert!(!should_subscribe_ws);
+
+        // Subscribe third instrument in same family: count goes to 3
+        let family = extract_inst_family(other_id.symbol.inner().as_str()).unwrap();
+        let count = family_subs.entry(family).or_default();
+        *count += 1;
+        assert_eq!(*count, 3);
+
+        // Unsubscribe one: count goes to 2 (no WS unsubscribe)
+        let family = extract_inst_family(call_id.symbol.inner().as_str()).unwrap();
+        if let Some(count) = family_subs.get_mut(&family) {
+            *count = count.saturating_sub(1);
+            assert_eq!(*count, 2);
+            let should_unsubscribe_ws = *count == 0;
+            assert!(!should_unsubscribe_ws);
+        }
+
+        // Unsubscribe second: count goes to 1
+        let family = extract_inst_family(put_id.symbol.inner().as_str()).unwrap();
+        if let Some(count) = family_subs.get_mut(&family) {
+            *count = count.saturating_sub(1);
+            assert_eq!(*count, 1);
+        }
+
+        // Unsubscribe last: count goes to 0 (triggers WS unsubscribe)
+        let family = extract_inst_family(other_id.symbol.inner().as_str()).unwrap();
+        if let Some(count) = family_subs.get_mut(&family) {
+            *count = count.saturating_sub(1);
+            assert_eq!(*count, 0);
+            let should_unsubscribe_ws = *count == 0;
+            assert!(should_unsubscribe_ws);
+        }
     }
 }

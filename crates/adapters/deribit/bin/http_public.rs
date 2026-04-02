@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let is_testnet = args.iter().any(|a| a == "--testnet");
 
     // Create HTTP client
-    let client = DeribitHttpClient::new(None, is_testnet, None, None, None, None, None)?;
+    let client = DeribitHttpClient::new(None, is_testnet, 10, 3, 1000, 10_000, None)?;
 
     // Fetch BTC-PERPETUAL instrument
     log::info!("Fetching BTC-PERPETUAL instrument...");

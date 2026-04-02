@@ -75,6 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             None, // quote_quantity
             None, // position_side
             None, // attach_algo_ords
+            None, // px_usd
+            None, // px_vol
         )
         .await;
 

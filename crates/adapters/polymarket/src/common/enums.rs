@@ -39,7 +39,7 @@ use ustr::Ustr;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.polymarket")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.polymarket")
 )]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize_repr, Deserialize_repr)]
 #[repr(u8)]
@@ -270,7 +270,7 @@ impl From<PolymarketOrderStatus> for OrderStatus {
             PolymarketOrderStatus::Live => Self::Accepted,
             PolymarketOrderStatus::Delayed => Self::Accepted,
             PolymarketOrderStatus::Matched => Self::Filled,
-            // Placement failure (never became live) — treat as rejected
+            // Placement failure (never became live), treat as rejected
             PolymarketOrderStatus::Unmatched => Self::Rejected,
             PolymarketOrderStatus::Canceled => Self::Canceled,
             // Market resolved = order expired due to market settlement

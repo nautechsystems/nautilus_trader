@@ -428,11 +428,86 @@ impl Instrument for CryptoOption {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{CryptoOption, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass, OptionKind},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CryptoOption, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(crypto_option_btc_deribit: CryptoOption) {
-        let crypto_option = crypto_option_btc_deribit.clone();
-        assert_eq!(crypto_option_btc_deribit, crypto_option);
+    fn test_trait_accessors(crypto_option_btc_deribit: CryptoOption) {
+        assert_eq!(
+            crypto_option_btc_deribit.id(),
+            InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
+        );
+        assert_eq!(
+            crypto_option_btc_deribit.asset_class(),
+            AssetClass::Cryptocurrency
+        );
+        assert_eq!(
+            crypto_option_btc_deribit.instrument_class(),
+            InstrumentClass::Option
+        );
+        assert_eq!(
+            crypto_option_btc_deribit.option_kind(),
+            Some(OptionKind::Put)
+        );
+        assert_eq!(
+            crypto_option_btc_deribit.strike_price(),
+            Some(Price::from("16000.000"))
+        );
+        assert!(!crypto_option_btc_deribit.is_inverse());
+        assert_eq!(crypto_option_btc_deribit.price_precision(), 3);
+        assert_eq!(crypto_option_btc_deribit.size_precision(), 1);
+        assert_eq!(
+            crypto_option_btc_deribit.min_quantity(),
+            Some(Quantity::from("0.1"))
+        );
+        assert!(crypto_option_btc_deribit.activation_ns().is_some());
+        assert!(crypto_option_btc_deribit.expiration_ns().is_some());
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = CryptoOption::new_checked(
+            InstrumentId::from("TEST.DERIBIT"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::BTC(),
+            false,
+            OptionKind::Call,
+            Price::from("50000.0"),
+            0.into(),
+            0.into(),
+            4, // mismatch
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(crypto_option_btc_deribit: CryptoOption) {
+        let json = serde_json::to_string(&crypto_option_btc_deribit).unwrap();
+        let deserialized: CryptoOption = serde_json::from_str(&json).unwrap();
+        assert_eq!(crypto_option_btc_deribit, deserialized);
     }
 }

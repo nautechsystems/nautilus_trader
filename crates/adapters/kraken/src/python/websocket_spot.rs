@@ -42,14 +42,14 @@
 //! - Always clone before async blocks for lifetime requirements.
 
 use std::sync::{
-    Arc, RwLock,
+    Arc,
     atomic::{AtomicU64, Ordering},
 };
 
-use ahash::AHashMap;
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
+    AtomicMap,
     python::{call_python_threadsafe, to_pyruntime_err},
     time::get_atomic_clock_realtime,
 };
@@ -117,7 +117,8 @@ impl KrakenSpotWebSocketClient {
             environment: env,
             ws_public_url,
             ws_private_url,
-            heartbeat_interval_secs: heartbeat_secs,
+            heartbeat_interval_secs: heartbeat_secs
+                .unwrap_or(KrakenDataClientConfig::default().heartbeat_interval_secs),
             api_key: resolved_api_key,
             api_secret: resolved_api_secret,
             ..Default::default()
@@ -178,13 +179,10 @@ impl KrakenSpotWebSocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let call_soon: Py<PyAny> = loop_.getattr(py, "call_soon_threadsafe")?;
 
-        let instruments_map = Arc::new(RwLock::new(AHashMap::<InstrumentId, InstrumentAny>::new()));
+        let instruments_map = Arc::new(AtomicMap::<InstrumentId, InstrumentAny>::new());
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-
-            if let Ok(mut guard) = instruments_map.write() {
-                guard.insert(inst_any.id(), inst_any);
-            }
+            instruments_map.insert(inst_any.id(), inst_any);
         }
 
         let account_id = self.account_id_shared().clone();
@@ -200,8 +198,8 @@ impl KrakenSpotWebSocketClient {
 
             get_runtime().spawn(async move {
                 tokio::pin!(stream);
-                let order_qty_cache: Arc<RwLock<AHashMap<String, f64>>> =
-                    Arc::new(RwLock::new(AHashMap::new()));
+                let order_qty_cache: Arc<AtomicMap<String, f64>> =
+                    Arc::new(AtomicMap::new());
 
                 while let Some(msg) = stream.next().await {
                     let ts_init = clock.get_time_ns();
@@ -213,10 +211,8 @@ impl KrakenSpotWebSocketClient {
                                     Symbol::new(ticker.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument = instruments_map
-                                    .read()
-                                    .ok()
-                                    .and_then(|g| g.get(&instrument_id).cloned());
+                                let instrument =
+                                    instruments_map.load().get(&instrument_id).cloned();
 
                                 if let Some(ref inst) = instrument {
                                     match parse_quote_tick(ticker, inst, ts_init) {
@@ -242,10 +238,8 @@ impl KrakenSpotWebSocketClient {
                                     Symbol::new(trade.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument = instruments_map
-                                    .read()
-                                    .ok()
-                                    .and_then(|g| g.get(&instrument_id).cloned());
+                                let instrument =
+                                    instruments_map.load().get(&instrument_id).cloned();
 
                                 if let Some(ref inst) = instrument {
                                     match parse_trade_tick(trade, inst, ts_init) {
@@ -274,10 +268,8 @@ impl KrakenSpotWebSocketClient {
                                     Symbol::new(book.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument = instruments_map
-                                    .read()
-                                    .ok()
-                                    .and_then(|g| g.get(&instrument_id).cloned());
+                                let instrument =
+                                    instruments_map.load().get(&instrument_id).cloned();
 
                                 if let Some(ref inst) = instrument {
                                     let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
@@ -310,10 +302,8 @@ impl KrakenSpotWebSocketClient {
                                     Symbol::new(ohlc.symbol.as_str()),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument = instruments_map
-                                    .read()
-                                    .ok()
-                                    .and_then(|g| g.get(&instrument_id).cloned());
+                                let instrument =
+                                    instruments_map.load().get(&instrument_id).cloned();
 
                                 if let Some(ref inst) = instrument {
                                     match parse_ws_bar(ohlc, inst, ts_init) {
@@ -358,10 +348,8 @@ impl KrakenSpotWebSocketClient {
                                     Symbol::new(symbol),
                                     *KRAKEN_VENUE,
                                 );
-                                let instrument = instruments_map
-                                    .read()
-                                    .ok()
-                                    .and_then(|g| g.get(&instrument_id).cloned());
+                                let instrument =
+                                    instruments_map.load().get(&instrument_id).cloned();
 
                                 let Some(ref inst) = instrument else {
                                     log::warn!("No instrument for symbol: {symbol}");
@@ -369,14 +357,13 @@ impl KrakenSpotWebSocketClient {
                                 };
 
                                 let cached_qty = exec.cl_ord_id.as_ref().and_then(|id| {
-                                    order_qty_cache.read().ok().and_then(|c| c.get(id).copied())
+                                    order_qty_cache.load().get(id).copied()
                                 });
 
                                 if let (Some(qty), Some(cl_ord_id)) =
                                     (exec.order_qty, &exec.cl_ord_id)
-                                    && let Ok(mut cache) = order_qty_cache.write()
                                 {
-                                    cache.insert(cl_ord_id.clone(), qty);
+                                    order_qty_cache.insert(cl_ord_id.clone(), qty);
                                 }
 
                                 match parse_ws_order_status_report(
@@ -385,9 +372,9 @@ impl KrakenSpotWebSocketClient {
                                     Ok(mut report) => {
                                         if let Some(ref cl_ord_id) = exec.cl_ord_id {
                                             let full_id = truncated_id_map
-                                                .read()
-                                                .ok()
-                                                .and_then(|map| map.get(cl_ord_id).copied())
+                                                .load()
+                                                .get(cl_ord_id)
+                                                .copied()
                                                 .unwrap_or_else(|| ClientOrderId::new(cl_ord_id));
                                             report = report.with_client_order_id(full_id);
                                         }
@@ -405,9 +392,9 @@ impl KrakenSpotWebSocketClient {
                                         Ok(mut report) => {
                                             if let Some(ref cl_ord_id) = exec.cl_ord_id {
                                                 let full_id = truncated_id_map
-                                                    .read()
-                                                    .ok()
-                                                    .and_then(|map| map.get(cl_ord_id).copied())
+                                                    .load()
+                                                    .get(cl_ord_id)
+                                                    .copied()
                                                     .unwrap_or_else(|| {
                                                         ClientOrderId::new(cl_ord_id)
                                                     });

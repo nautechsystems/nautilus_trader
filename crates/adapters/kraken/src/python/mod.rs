@@ -55,7 +55,7 @@ pub mod websocket_spot;
 ///
 /// All other symbols are considered spot.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.kraken")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.kraken")]
 #[pyo3(name = "kraken_product_type_from_symbol")]
 fn py_kraken_product_type_from_symbol(symbol: &str) -> KrakenProductType {
     crate::common::enums::product_type_from_symbol(symbol)

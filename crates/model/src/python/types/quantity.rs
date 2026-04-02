@@ -17,6 +17,7 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     ops::Neg,
+    str::FromStr,
 };
 
 use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
@@ -359,8 +360,8 @@ impl Quantity {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> Self {
-        Self::from(value)
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        Self::from_str(value).map_err(to_pyvalue_err)
     }
 
     /// Creates a new `Quantity` from a `Decimal` value with precision inferred from the decimal's scale.

@@ -19,8 +19,13 @@ use std::{
     ops::Deref,
 };
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
+use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::to_dict_pyo3, to_pyvalue_err};
+use pyo3::{
+    IntoPyObjectExt,
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyCapsule, PyList},
+};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -142,5 +147,29 @@ impl OrderBookDeltas {
         data_to_pycapsule(py, Data::Deltas(deltas))
     }
 
-    // TODO: Implement `Serializable` and the other methods can be added
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let reconstruct = py.get_type::<Self>().getattr("_from_dicts")?;
+        let delta_dicts: Vec<_> = self
+            .deltas
+            .iter()
+            .map(|d| to_dict_pyo3(py, d))
+            .collect::<PyResult<_>>()?;
+        let py_list = PyList::new(py, delta_dicts)?;
+        (reconstruct, (self.instrument_id, py_list)).into_py_any(py)
+    }
+
+    #[staticmethod]
+    fn _from_dicts(
+        instrument_id: InstrumentId,
+        delta_dicts: Vec<pyo3::Py<pyo3::types::PyDict>>,
+    ) -> PyResult<Self> {
+        use nautilus_core::python::serialization::from_dict_pyo3;
+        let deltas: Vec<OrderBookDelta> = pyo3::Python::attach(|py| {
+            delta_dicts
+                .into_iter()
+                .map(|d| from_dict_pyo3(py, d))
+                .collect::<PyResult<_>>()
+        })?;
+        Self::new_checked(instrument_id, deltas).map_err(to_pyvalue_err)
+    }
 }

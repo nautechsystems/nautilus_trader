@@ -233,6 +233,12 @@ impl LimitIfTouchedOrder {
     }
 }
 
+impl PartialEq for LimitIfTouchedOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Deref for LimitIfTouchedOrder {
     type Target = OrderCore;
 

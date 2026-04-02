@@ -23,6 +23,7 @@ use super::{
     futures_contract::FuturesContract, futures_spread::FuturesSpread,
     index_instrument::IndexInstrument, option_contract::OptionContract,
     option_spread::OptionSpread, perpetual_contract::PerpetualContract,
+    tokenized_asset::TokenizedAsset,
 };
 use crate::types::{Price, Quantity};
 
@@ -44,6 +45,7 @@ pub enum InstrumentAny {
     OptionContract(OptionContract),
     OptionSpread(OptionSpread),
     PerpetualContract(PerpetualContract),
+    TokenizedAsset(TokenizedAsset),
 }
 
 // TODO: Probably move this to the `Instrument` trait too
@@ -66,6 +68,7 @@ impl InstrumentAny {
             Self::OptionContract(inst) => inst.calculate_base_quantity(quantity, last_px),
             Self::OptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
             Self::PerpetualContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::TokenizedAsset(inst) => inst.calculate_base_quantity(quantity, last_px),
         }
     }
 

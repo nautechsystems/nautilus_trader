@@ -62,6 +62,7 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 derive_builder = { workspace = true }

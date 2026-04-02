@@ -28,7 +28,7 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 | `sha256sum`          | `sha256sum file`  | N/A               | Use `shasum -a 256` or detect            |
 | `readlink -f`        | Works             | N/A               | Avoid, or use `realpath`                 |
 | `grep -P` (PCRE)     | Works             | N/A               | Use `-E` (extended regex) instead        |
-| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache-busting          |
+| `date` (nanoseconds) | `date +%N`        | N/A               | Use `$RANDOM` for cache‑busting          |
 
 **Bash version**: macOS ships with bash 3.2; avoid bash 4+ features in user-facing scripts:
 

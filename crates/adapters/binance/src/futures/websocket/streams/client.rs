@@ -32,10 +32,9 @@ use std::{
     },
 };
 
-use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::string::REDACTED;
+use nautilus_core::{AtomicMap, string::REDACTED};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -97,7 +96,7 @@ pub struct BinanceFuturesWebSocketClient {
     out_rx:
         Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsMessage>>>>,
     request_id_counter: Arc<AtomicU64>,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
 }
 
 impl Debug for BinanceFuturesWebSocketClient {
@@ -154,7 +153,7 @@ impl BinanceFuturesWebSocketClient {
             out_tx: Arc::new(Mutex::new(None)),
             out_rx: Arc::new(Mutex::new(None)),
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -404,10 +403,11 @@ impl BinanceFuturesWebSocketClient {
 
     /// Bulk initialize the instrument cache.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst.clone());
-        }
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
     }
 
     /// Update a single instrument in the cache.
@@ -418,16 +418,14 @@ impl BinanceFuturesWebSocketClient {
 
     /// Returns a shared reference to the instruments cache.
     #[must_use]
-    pub fn instruments_cache(&self) -> Arc<DashMap<Ustr, InstrumentAny>> {
+    pub fn instruments_cache(&self) -> Arc<AtomicMap<Ustr, InstrumentAny>> {
         self.instruments_cache.clone()
     }
 
     /// Returns an instrument from the cache by raw symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &str) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(&Ustr::from(symbol))
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(&Ustr::from(symbol))
     }
 
     async fn create_connection(&self) -> BinanceWsResult<ConnectionSlot> {

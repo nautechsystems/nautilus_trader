@@ -108,7 +108,7 @@ impl BetfairDataConfig {
             stream_reconnect_delay_max_ms,
             stream_use_tls,
             stream_conflate_ms,
-            subscription_delay_secs: subscription_delay_secs.or(Some(3)),
+            subscription_delay_secs: subscription_delay_secs.unwrap_or(3),
             subscribe_race_data,
         }
     }

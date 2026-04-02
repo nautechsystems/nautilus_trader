@@ -209,7 +209,7 @@ impl DydxExecutionClient {
         };
         let http_client = DydxHttpClient::new(
             Some(config.base_url.clone()),
-            Some(config.timeout_secs),
+            config.timeout_secs,
             None, // proxy_url - not in DydxAdapterConfig currently
             config.is_testnet,
             Some(retry_config),

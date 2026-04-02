@@ -13,17 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ops::{Deref, DerefMut},
-    time::Duration,
-};
+use std::time::Duration;
 
 use ahash::{AHashMap, AHashSet};
 use chrono::Duration as ChronoDuration;
 use nautilus_common::{
     actor::{DataActor, DataActorCore},
     enums::LogColor,
-    log_info,
+    log_info, nautilus_actor,
     timer::TimeEvent,
 };
 use nautilus_model::{
@@ -53,19 +50,7 @@ pub struct DataTester {
     pub(super) books: AHashMap<InstrumentId, OrderBook>,
 }
 
-impl Deref for DataTester {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for DataTester {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(DataTester);
 
 impl DataActor for DataTester {
     fn on_start(&mut self) -> anyhow::Result<()> {

@@ -73,6 +73,19 @@ impl DataType {
         Ok(Self::new(type_name, params, identifier))
     }
 
+    fn __richcmp__(&self, other: &Self, op: pyo3::pyclass::CompareOp, py: Python<'_>) -> Py<PyAny> {
+        use nautilus_core::python::IntoPyObjectNautilusExt;
+        match op {
+            pyo3::pyclass::CompareOp::Eq => (self.topic() == other.topic()).into_py_any_unwrap(py),
+            pyo3::pyclass::CompareOp::Ne => (self.topic() != other.topic()).into_py_any_unwrap(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        self.precomputed_hash() as isize
+    }
+
     /// Returns the type name for the data type.
     #[getter]
     #[pyo3(name = "type_name")]

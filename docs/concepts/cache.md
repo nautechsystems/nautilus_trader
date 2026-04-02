@@ -24,17 +24,20 @@ The Cache serves multiple purposes:
 
 - The system automatically adds data to the `Cache` as it flows through.
 - In live contexts, the engine applies updates asynchronously, so you might see a brief delay between an event and its appearance in the `Cache`.
-- All data flows through the `Cache` before reaching your strategy’s callbacks – see the diagram below:
+- For quotes, trades, and bars the `DataEngine` writes to the `Cache` before publishing to subscribers, so the latest value is available in the cache by the time your handler runs. Order book deltas and depth snapshots are published directly without a cache write; book state is maintained separately through `BookUpdater` subscriptions:
 
 ```mermaid
 flowchart LR
     data[Data]
     engine[DataEngine]
     cache[Cache]
-    callback["Strategy callback:<br/>on_data(...)"]
+    callback["Strategy callback:<br/>on_quote_tick(...)"]
 
     data --> engine --> cache --> callback
 ```
+
+For the full step-by-step trace, see
+[Data flow: life of a quote tick](architecture.md#data-flow-life-of-a-quote-tick).
 
 ### Basic example
 

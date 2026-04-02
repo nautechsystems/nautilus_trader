@@ -23,6 +23,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
+    instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
@@ -252,5 +253,13 @@ pub trait ExecutionClient {
         _ts_init: UnixNanos,
     ) {
         // Default no-op implementation
+    }
+
+    /// Handles an instrument update received via the message bus.
+    ///
+    /// Exec clients that need live instrument updates (e.g. for internal maps)
+    /// can override this to process instruments for their venue.
+    fn on_instrument(&mut self, _instrument: InstrumentAny) {
+        // Default no-op
     }
 }

@@ -33,6 +33,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 heck = { workspace = true }
@@ -52,6 +53,7 @@ strum = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+dashmap = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
@@ -94,4 +96,9 @@ harness = false
 [[bench]]
 name = "decimal_deserialization"
 path = "benches/decimal_deserialization.rs"
+harness = false
+
+[[bench]]
+name = "concurrent_map"
+path = "benches/concurrent_map.rs"
 harness = false

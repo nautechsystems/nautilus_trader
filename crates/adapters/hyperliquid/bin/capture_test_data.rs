@@ -23,7 +23,7 @@ use nautilus_hyperliquid::http::client::HyperliquidHttpClient;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Capturing Hyperliquid test data...");
 
-    let client = HyperliquidHttpClient::new(false, Some(60), None)?;
+    let client = HyperliquidHttpClient::new(false, 60, None)?;
 
     // Capture perpetuals metadata (first 3 markets to keep file small)
     println!("Fetching perpetuals metadata...");

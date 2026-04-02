@@ -319,6 +319,9 @@ fn parse_order_type(order_type: Option<KrakenOrderType>) -> OrderType {
         Some(KrakenOrderType::TakeProfit) => OrderType::MarketIfTouched,
         Some(KrakenOrderType::StopLossLimit) => OrderType::StopLimit,
         Some(KrakenOrderType::TakeProfitLimit) => OrderType::LimitIfTouched,
+        // Trailing stops lack offset fields in WS reports, map to non-trailing equivalents
+        Some(KrakenOrderType::TrailingStop) => OrderType::StopMarket,
+        Some(KrakenOrderType::TrailingStopLimit) => OrderType::StopLimit,
         Some(KrakenOrderType::SettlePosition) => OrderType::Market,
         None => OrderType::Limit,
     }

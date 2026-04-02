@@ -60,7 +60,7 @@ async def main():
         address = http_client.get_user_address()
 
         instruments = await http_client.load_instrument_definitions(
-            include_perp=True,
+            include_perps=True,
             include_spot=False,
         )
         instrument = next((i for i in instruments if "BTC-USD-PERP" in str(i.id.symbol)), None)

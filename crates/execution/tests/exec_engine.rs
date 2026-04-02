@@ -21,10 +21,10 @@ use ahash::AHashSet;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{self, TestClock},
+    clock::{self, Clock, TestClock},
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
 use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
 };
@@ -8154,4 +8154,305 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
     let cached_stop = cache.order(&stop_loss.client_order_id()).unwrap();
     assert_eq!(cached_entry.status(), OrderStatus::Denied);
     assert_eq!(cached_stop.status(), OrderStatus::Denied);
+}
+
+#[rstest]
+fn test_start_purge_timers_registers_when_configured() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        purge_closed_positions_interval_mins: Some(10),
+        purge_account_events_interval_mins: Some(15),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    let names = clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"ExecEngine_PURGE_CLOSED_ORDERS".to_string()));
+    assert!(names.contains(&"ExecEngine_PURGE_CLOSED_POSITIONS".to_string()));
+    assert!(names.contains(&"ExecEngine_PURGE_ACCOUNT_EVENTS".to_string()));
+    assert_eq!(clock.borrow().timer_count(), 3);
+}
+
+#[rstest]
+fn test_start_purge_timers_not_registered_when_unconfigured() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, None);
+    engine.start();
+
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_start_purge_timers_zero_interval_skipped() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(0),
+        purge_closed_positions_interval_mins: Some(0),
+        purge_account_events_interval_mins: Some(0),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_stop_purge_timers_cancels_timers() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(5),
+        purge_closed_positions_interval_mins: Some(10),
+        purge_account_events_interval_mins: Some(15),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache, Some(config));
+    engine.start();
+    assert_eq!(clock.borrow().timer_count(), 3);
+
+    engine.stop();
+    assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_purge_closed_orders_timer_fires_callback() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let account_id = AccountId::new("SIM-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    order.apply(submitted).unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-001"));
+    order.apply(accepted).unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-1")),
+        None,
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    order.apply(filled).unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+
+    assert!(order.is_closed());
+
+    let config = ExecutionEngineConfig {
+        purge_closed_orders_interval_mins: Some(1),
+        purge_closed_orders_buffer_mins: Some(0),
+        ..Default::default()
+    };
+
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), Some(config));
+    engine.start();
+
+    assert_eq!(
+        cache
+            .borrow()
+            .orders_closed(None, None, None, None, None)
+            .len(),
+        1
+    );
+
+    let interval_ns = NANOSECONDS_IN_MINUTE;
+    let events = clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(interval_ns + 1), true);
+    let handlers = clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    assert_eq!(
+        cache
+            .borrow()
+            .orders_closed(None, None, None, None, None)
+            .len(),
+        0
+    );
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_creates_external_order_when_filled(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("autoclose-001")),
+        VenueOrderId::from("V-EXT-001"),
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from("autoclose-001"))
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.strategy_id(), StrategyId::from("EXTERNAL"));
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_creates_external_order_accepted(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let report = create_order_status_report(
+        None,
+        VenueOrderId::from("V-EXT-002"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(50_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let client_order_id = ClientOrderId::from("V-EXT-002");
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.quantity(), Quantity::from(50_000));
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_uses_claimed_strategy(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let strategy_id = StrategyId::from("MyStrategy-001");
+    let mut instruments = HashSet::new();
+    instruments.insert(instrument.id());
+    execution_engine
+        .register_external_order_claims(strategy_id, &instruments)
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("adl_autoclose-001")),
+        VenueOrderId::from("V-EXT-003"),
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&ClientOrderId::from("adl_autoclose-001"))
+        .expect("external order should be in cache");
+    assert_eq!(order.strategy_id(), strategy_id);
+    assert_eq!(order.status(), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_adds_venue_order_id_index(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("settlement-001")),
+        VenueOrderId::from("V-EXT-004"),
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let resolved = cache.client_order_id(&VenueOrderId::from("V-EXT-004"));
+    assert_eq!(resolved, Some(&ClientOrderId::from("settlement-001")));
+}
+
+#[rstest]
+fn test_reconcile_order_status_report_external_order_skipped_without_instrument(
+    mut execution_engine: ExecutionEngine,
+) {
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("autoclose-999")),
+        VenueOrderId::from("V-EXT-999"),
+        audusd_sim().id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order(&ClientOrderId::from("autoclose-999")).is_none());
 }

@@ -24,14 +24,12 @@
 //!
 //! Run with: `cargo run --example okx-greeks-tester --package nautilus-okx`
 
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Debug;
 
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::Environment,
+    nautilus_actor,
     timer::TimeEvent,
 };
 use nautilus_live::node::LiveNode;
@@ -54,18 +52,7 @@ struct GreeksTester {
     subscribed_instruments: Vec<InstrumentId>,
 }
 
-impl Deref for GreeksTester {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for GreeksTester {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(GreeksTester);
 
 impl GreeksTester {
     fn new(client_id: ClientId) -> Self {

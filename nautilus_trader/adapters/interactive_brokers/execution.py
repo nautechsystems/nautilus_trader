@@ -289,6 +289,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Initialize known positions tracking to avoid duplicates from execDetails
         await self._initialize_position_tracking()
 
+        # Pre-load spread instruments from cached orders before reconciliation
+        # to prevent "instrument not found" errors when IB sends execution
+        # details for spread orders during generate_mass_status()
+        await self._preload_spread_instruments()
+
         # Subscribe to real-time position updates for external changes (option exercises)
         if self._track_option_exercise_from_position_update:
             self._client.subscribe_positions()
@@ -305,6 +310,65 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self._client.stop()
 
         self._set_connected(False)
+
+    async def _preload_spread_instruments(self) -> None:
+        """
+        Pre-load spread (BAG) instruments from cached orders before reconciliation.
+
+        On restart, orders from previous sessions are deserialized from the cache
+        database with their spread instrument_id intact, but the instrument
+        provider starts empty. This causes "instrument not found" errors when IB
+        sends execution details for spread orders during reconciliation, because
+        the synchronous `find()` lookup in `_on_exec_details` returns None.
+
+        This method scans the cache for orders referencing spread instruments and
+        loads them via `_fetch_spread_instrument()` before any reconciliation
+        tasks fire.
+
+        """
+        try:
+            cached_orders: list[Order] = self._cache.orders()
+            if not cached_orders:
+                return
+
+            # Collect unique spread instrument IDs not yet in the provider
+            spread_ids: set[InstrumentId] = set()
+            for order in cached_orders:
+                instrument_id = order.instrument_id
+
+                if (
+                    is_generic_spread_id(instrument_id)
+                    and self.instrument_provider.find(instrument_id) is None
+                ):
+                    spread_ids.add(instrument_id)
+
+            if not spread_ids:
+                return
+
+            self._log.info(
+                f"Pre-loading {len(spread_ids)} spread instrument(s) from cached orders",
+                LogColor.BLUE,
+            )
+
+            for spread_id in spread_ids:
+                try:
+                    loaded = await self.instrument_provider._fetch_spread_instrument(spread_id)
+                    if loaded:
+                        self._log.info(
+                            f"Pre-loaded spread instrument: {spread_id}",
+                            LogColor.GREEN,
+                        )
+                    else:
+                        self._log.warning(
+                            f"Failed to pre-load spread instrument: {spread_id}",
+                        )
+                except Exception as e:
+                    self._log.warning(
+                        f"Error pre-loading spread instrument {spread_id}: {e}",
+                    )
+
+        except Exception as e:
+            self._log.warning(f"Failed to pre-load spread instruments: {e}")
 
     async def _initialize_position_tracking(self) -> None:
         """
@@ -404,6 +468,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_type = mapped_order_type_info
             time_in_force = ib_to_nautilus_time_in_force[ib_order.tif]
 
+        trigger_price, limit_offset, trailing_offset, trailing_offset_type = (
+            self._parse_ib_order_pricing_fields(
+                instrument=instrument,
+                ib_order=ib_order,
+                order_type=order_type,
+                price_magnifier=price_magnifier,
+            )
+        )
+
         order_status = OrderStatusReport(
             account_id=self.account_id,
             instrument_id=instrument.id,
@@ -424,16 +497,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # contingency_type=,
             expire_time=expire_time,
             price=price,
-            trigger_price=(
-                instrument.make_price(
-                    ib_price_to_nautilus_price(ib_order.auxPrice, price_magnifier),
-                )
-                if ib_order.auxPrice != UNSET_DOUBLE
-                else None
-            ),
+            trigger_price=trigger_price,
             trigger_type=TriggerType.BID_ASK,
-            # limit_offset=,
-            # trailing_offset=,
+            limit_offset=limit_offset,
+            trailing_offset=trailing_offset,
+            trailing_offset_type=trailing_offset_type,
         )
         self._log.debug(f"Received {order_status!r}")
 
@@ -1488,14 +1556,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 converted_price = ib_price_to_nautilus_price(order.lmtPrice, price_magnifier)
                 price = instrument.make_price(converted_price)
 
-            trigger_price = None
-
-            if order.auxPrice != UNSET_DOUBLE:
-                converted_trigger_price = ib_price_to_nautilus_price(
-                    order.auxPrice,
-                    price_magnifier,
-                )
-                trigger_price = instrument.make_price(converted_trigger_price)
+            trigger_price, _, _, _ = self._parse_ib_order_pricing_fields(
+                instrument=instrument,
+                ib_order=order,
+                order_type=nautilus_order.order_type,
+                price_magnifier=price_magnifier,
+            )
 
             venue_order_id_modified = bool(
                 nautilus_order.venue_order_id is None
@@ -1519,6 +1585,56 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=nautilus_order,
                 ib_order=order,
             )
+
+    def _parse_ib_order_pricing_fields(
+        self,
+        instrument: Instrument,
+        ib_order: IBOrder,
+        order_type: OrderType,
+        price_magnifier: int,
+    ) -> tuple[
+        Price | None,
+        Decimal | None,
+        Decimal | None,
+        TrailingOffsetType | None,
+    ]:
+        trigger_price = None
+        limit_offset = None
+        trailing_offset = None
+        trailing_offset_type = None
+
+        if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            if ib_order.trailStopPrice != UNSET_DOUBLE:
+                converted_trigger_price = ib_price_to_nautilus_price(
+                    ib_order.trailStopPrice,
+                    price_magnifier,
+                )
+                trigger_price = instrument.make_price(converted_trigger_price)
+
+            if ib_order.auxPrice != UNSET_DOUBLE:
+                trailing_offset = Decimal(str(ib_order.auxPrice))
+                trailing_offset_type = TrailingOffsetType.PRICE
+            elif getattr(ib_order, "trailingPercent", UNSET_DOUBLE) != UNSET_DOUBLE:
+                trailing_offset = Decimal(str(ib_order.trailingPercent)) * 100
+                trailing_offset_type = TrailingOffsetType.BASIS_POINTS
+
+            if (
+                order_type == OrderType.TRAILING_STOP_LIMIT
+                and ib_order.lmtPriceOffset != UNSET_DOUBLE
+            ):
+                limit_offset = Decimal(str(ib_order.lmtPriceOffset))
+                trailing_offset_type = trailing_offset_type or TrailingOffsetType.PRICE
+
+            return trigger_price, limit_offset, trailing_offset, trailing_offset_type
+
+        if ib_order.auxPrice != UNSET_DOUBLE:
+            converted_trigger_price = ib_price_to_nautilus_price(
+                ib_order.auxPrice,
+                price_magnifier,
+            )
+            trigger_price = instrument.make_price(converted_trigger_price)
+
+        return trigger_price, limit_offset, trailing_offset, trailing_offset_type
 
     def _on_order_status(  # noqa: C901 (complexity unavoidable due to IB status handling)
         self,

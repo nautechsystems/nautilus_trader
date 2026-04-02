@@ -16,14 +16,13 @@
 //! Live market data client implementation for the Deribit adapter.
 
 use std::sync::{
-    Arc, RwLock,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 
 use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
-use dashmap::DashSet;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
@@ -46,7 +45,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params,
+    AtomicMap, AtomicSet, Params,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -89,10 +88,10 @@ pub struct DeribitDataClient {
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-    option_greeks_subs: Arc<DashSet<InstrumentId>>,
-    mark_price_subs: Arc<DashSet<InstrumentId>>,
-    index_price_subs: Arc<DashSet<InstrumentId>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+    mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    index_price_subs: Arc<AtomicSet<InstrumentId>>,
     clock: &'static AtomicTime,
 }
 
@@ -147,10 +146,10 @@ impl DeribitDataClient {
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
             data_sender,
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            option_greeks_subs: Arc::new(DashSet::new()),
-            mark_price_subs: Arc::new(DashSet::new()),
-            index_price_subs: Arc::new(DashSet::new()),
+            instruments: Arc::new(AtomicMap::new()),
+            option_greeks_subs: Arc::new(AtomicSet::new()),
+            mark_price_subs: Arc::new(AtomicSet::new()),
+            index_price_subs: Arc::new(AtomicSet::new()),
             clock,
         })
     }
@@ -222,7 +221,7 @@ impl DeribitDataClient {
     fn handle_ws_message(
         message: NautilusWsMessage,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     ) {
         match message {
             NautilusWsMessage::Data(payloads) => {
@@ -235,17 +234,10 @@ impl DeribitDataClient {
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;
+                instruments.insert(instrument_any.id(), instrument_any.clone());
 
-                if let Ok(mut guard) = instruments.write() {
-                    let instrument_id = instrument_any.id();
-                    guard.insert(instrument_id, instrument_any.clone());
-                    drop(guard);
-
-                    if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
-                        log::warn!("Failed to send instrument update: {e}");
-                    }
-                } else {
-                    log::error!("Instrument cache lock poisoned, skipping instrument update");
+                if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
+                    log::warn!("Failed to send instrument update: {e}");
                 }
             }
             NautilusWsMessage::OptionGreeks(greeks) => {
@@ -385,9 +377,7 @@ impl DataClient for DeribitDataClient {
         }
         self.cancellation_token = CancellationToken::new();
 
-        if let Ok(mut instruments) = self.instruments.write() {
-            instruments.clear();
-        }
+        self.instruments.store(AHashMap::new());
         Ok(())
     }
 
@@ -425,17 +415,14 @@ impl DataClient for DeribitDataClient {
                 .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
 
             // Cache in http client
-            self.http_client.cache_instruments(fetched.clone());
+            self.http_client.cache_instruments(&fetched);
 
             // Cache locally
-            let mut guard = self
-                .instruments
-                .write()
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            for instrument in &fetched {
-                guard.insert(instrument.id(), instrument.clone());
-            }
-            drop(guard);
+            self.instruments.rcu(|m| {
+                for instrument in &fetched {
+                    m.insert(instrument.id(), instrument.clone());
+                }
+            });
 
             all_instruments.extend(fetched);
         }
@@ -559,17 +546,11 @@ impl DataClient for DeribitDataClient {
         let instrument_id = cmd.instrument_id;
 
         // Check if instrument is in cache (should be from connect())
-        let guard = self
-            .instruments
-            .read()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        if !guard.contains_key(&instrument_id) {
+        if !self.instruments.contains_key(&instrument_id) {
             log::warn!(
                 "Instrument {instrument_id} not in cache - it may have been created after connect()"
             );
         }
-        drop(guard);
 
         // Determine kind and currency from instrument_id
         let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
@@ -814,8 +795,7 @@ impl DataClient for DeribitDataClient {
         // Validate instrument is a perpetual - funding rates only apply to perpetual contracts
         let is_perpetual = self
             .instruments
-            .read()
-            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
+            .load()
             .get(&instrument_id)
             .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
 
@@ -1193,8 +1173,7 @@ impl DataClient for DeribitDataClient {
         // Validate instrument is a perpetual - funding rates only apply to perpetual contracts
         let is_perpetual = self
             .instruments
-            .read()
-            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
+            .load()
             .get(&instrument_id)
             .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
 
@@ -1294,7 +1273,9 @@ impl DataClient for DeribitDataClient {
         get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
             for product_type in &product_types {
-                log::debug!("Requesting instruments for currency=ANY, product_type={product_type:?}");
+                log::debug!(
+                    "Requesting instruments for currency=ANY, product_type={product_type:?}"
+                );
 
                 match http_client
                     .request_instruments(DeribitCurrency::ANY, Some(*product_type))
@@ -1307,23 +1288,12 @@ impl DataClient for DeribitDataClient {
                             product_type
                         );
 
-                        for instrument in instruments {
-                            // Cache the instrument
-                            {
-                                match instruments_cache.write() {
-                                    Ok(mut guard) => {
-                                        guard.insert(instrument.id(), instrument.clone());
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Instrument cache lock poisoned: {e}, skipping cache update"
-                                        );
-                                    }
-                                }
+                        instruments_cache.rcu(|m| {
+                            for instrument in &instruments {
+                                m.insert(instrument.id(), instrument.clone());
                             }
-
-                            all_instruments.push(instrument);
-                        }
+                        });
+                        all_instruments.extend(instruments);
                     }
                     Err(e) => {
                         log::error!("Failed to fetch instruments for ANY/{product_type:?}: {e:?}");
@@ -1334,7 +1304,7 @@ impl DataClient for DeribitDataClient {
             // Propagate to HTTP and WebSocket caches so downstream
             // requests use correct precisions.
             if !all_instruments.is_empty() {
-                http_client.cache_instruments(all_instruments.clone());
+                http_client.cache_instruments(&all_instruments);
 
                 if let Some(ws) = &ws_client {
                     ws.cache_instruments(&all_instruments);
@@ -1377,13 +1347,7 @@ impl DataClient for DeribitDataClient {
         }
 
         // First, check if instrument exists in cache
-        if let Some(instrument) = self
-            .instruments
-            .read()
-            .map_err(|e| anyhow::anyhow!("Instrument cache lock poisoned: {e}"))?
-            .get(&request.instrument_id)
-            .cloned()
-        {
+        if let Some(instrument) = self.instruments.get_cloned(&request.instrument_id) {
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                 request.request_id,
                 request.client_id.unwrap_or(self.client_id),
@@ -1427,19 +1391,8 @@ impl DataClient for DeribitDataClient {
                 Ok(instrument) => {
                     log::info!("Successfully fetched instrument: {instrument_id}");
 
-                    {
-                        match instruments_cache.write() {
-                            Ok(mut guard) => {
-                                guard.insert(instrument.id(), instrument.clone());
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Instrument cache lock poisoned: {e}, skipping cache update"
-                                );
-                            }
-                        }
-                    }
-                    http_client.cache_instruments(vec![instrument.clone()]);
+                    instruments_cache.insert(instrument.id(), instrument.clone());
+                    http_client.cache_instruments(std::slice::from_ref(&instrument));
 
                     if let Some(ws) = &ws_client {
                         ws.cache_instruments(std::slice::from_ref(&instrument));

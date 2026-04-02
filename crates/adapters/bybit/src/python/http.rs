@@ -57,7 +57,7 @@ impl BybitRawHttpClient {
     /// This client handles request/response operations with the Bybit API,
     /// returning venue-specific response types. It does not parse to Nautilus domain types.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=60, max_retries=3, retry_delay_ms=1000, retry_delay_max_ms=10_000, recv_window_ms=5_000, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -65,11 +65,11 @@ impl BybitRawHttpClient {
         base_url: Option<String>,
         demo: bool,
         testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new_with_env(
@@ -78,7 +78,7 @@ impl BybitRawHttpClient {
             base_url,
             demo,
             testnet,
-            timeout_secs.or(Some(60)),
+            timeout_secs,
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,
@@ -111,7 +111,7 @@ impl BybitRawHttpClient {
         self.recv_window_ms()
     }
 
-    /// Cancel all pending HTTP requests.
+    /// Cancels all pending HTTP requests.
     #[pyo3(name = "cancel_all_requests")]
     fn py_cancel_all_requests(&self) {
         self.cancel_all_requests();
@@ -199,7 +199,7 @@ impl BybitHttpClient {
     /// This client maintains an instrument cache and uses it to parse venue responses
     /// into Nautilus domain objects.
     #[new]
-    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=None, max_retries=None, retry_delay_ms=None, retry_delay_max_ms=None, recv_window_ms=None, proxy_url=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, base_url=None, demo=false, testnet=false, timeout_secs=60, max_retries=3, retry_delay_ms=1000, retry_delay_max_ms=10_000, recv_window_ms=5_000, proxy_url=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -207,11 +207,11 @@ impl BybitHttpClient {
         base_url: Option<String>,
         demo: bool,
         testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
-        recv_window_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
+        recv_window_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new_with_env(
@@ -220,7 +220,7 @@ impl BybitHttpClient {
             base_url,
             demo,
             testnet,
-            timeout_secs.or(Some(60)),
+            timeout_secs,
             max_retries,
             retry_delay_ms,
             retry_delay_max_ms,

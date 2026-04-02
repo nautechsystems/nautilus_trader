@@ -41,17 +41,29 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 
 ## Running tests
 
-### Python tests
+### v1 legacy Python tests
 
-From the repository root:
+The v1 legacy test suite lives under `tests/` at the repository root and tests
+the Cython-based package. From the repository root:
 
 ```bash
 make pytest
 # or
 uv run --active --no-sync pytest --new-first --failed-first
-# or
-pytest
 ```
+
+### Python tests
+
+The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3
+package. It requires a built extension module (`make build-debug-v2`) and uses its
+own virtualenv under `python/.venv/`.
+
+```bash
+make pytest-v2
+```
+
+The Makefile target isolates certain test modules in separate pytest processes to avoid
+global Rust state conflicts. Use `make pytest-v2` rather than invoking pytest directly.
 
 For performance tests:
 
@@ -96,17 +108,46 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
 
 ## Test style
 
-- Name test functions after what they exercise; you do not need to encode the expected assertions in the name.
-- Add docstrings when they clarify setup, scenarios, or expectations.
-- Prefer pytest-style free functions for Python tests instead of test classes with setup methods.
-- **Group assertions** when possible: perform all setup/act steps first, then assert together to avoid the act-assert-act smell.
-- Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and conciseness matter more than defensive error handling here.
-- Do not capture log output to assert on log messages. Log capture in tests is fragile because
-  loggers are global state, test execution order is non-deterministic, and the assertions
-  break when log wording changes. Instead, verify the observable behavior (return values,
-  state changes, side effects) that the log message reflects.
+### General
 
-For Rust-specific test conventions (module structure, `#[rstest]`, parameterization), see the [Rust guide](rust.md#testing-conventions).
+- Name test functions after what they exercise; you do not need to encode the expected
+  assertions in the name.
+- Add docstrings when they clarify setup, scenarios, or expectations.
+- **Group assertions** when possible: perform all setup/act steps first, then assert
+  together to avoid the act-assert-act smell.
+- Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests; clarity and
+  conciseness matter more than defensive error handling here.
+- Do not capture log output to assert on log messages. Log capture in tests is fragile
+  because loggers are global state, test execution order is non-deterministic, and the
+  assertions break when log wording changes. Instead, verify the observable behavior
+  (return values, state changes, side effects) that the log message reflects.
+
+### Python tests (`python/tests/`)
+
+Use **pytest-style free functions and fixtures**. Do not use test classes.
+
+- Write each test as a standalone `def test_*()` function.
+- Use `@pytest.fixture` for shared setup (instruments, engine instances, data).
+  Prefer `yield` fixtures when teardown is needed (e.g., `engine.dispose()`).
+- Use `@pytest.mark.parametrize` to cover multiple inputs without duplicating
+  test bodies.
+- Import model types from `nautilus_trader.model`, not from
+  `nautilus_trader.core.nautilus_pyo3`.
+- Test providers live in `python/tests/providers.py`. Use `TestInstrumentProvider`
+  and `TestDataProvider` for common instruments and data.
+- Mark tests that depend on unfinished features with
+  `@pytest.mark.skip(reason="WIP: <description>")` rather than deleting them.
+
+### v1 legacy Python tests (`tests/`)
+
+The v1 legacy test suite uses a mix of test classes and free functions. New tests
+added to this suite may follow either pattern, but free functions with fixtures
+are preferred for new files.
+
+### Rust
+
+For Rust-specific test conventions (module structure, `#[rstest]`, parameterization),
+see the [Rust guide](rust.md#testing-conventions).
 
 ## Waiting for asynchronous effects
 

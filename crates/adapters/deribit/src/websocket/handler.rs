@@ -28,9 +28,8 @@ use std::{
 };
 
 use ahash::AHashMap;
-use dashmap::DashSet;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{AtomicSet, AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus},
     enums::MarketStatusAction,
@@ -221,9 +220,9 @@ pub struct DeribitWsFeedHandler {
     subscriptions_state: SubscriptionState,
     retry_manager: RetryManager<DeribitWsError>,
     instruments_cache: AHashMap<Ustr, InstrumentAny>,
-    option_greeks_subs: Arc<DashSet<InstrumentId>>,
-    mark_price_subs: Arc<DashSet<InstrumentId>>,
-    index_price_subs: Arc<DashSet<InstrumentId>>,
+    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+    mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    index_price_subs: Arc<AtomicSet<InstrumentId>>,
     request_id_counter: AtomicU64,
     pending_requests: AHashMap<u64, PendingRequestType>,
     account_id: Option<AccountId>,
@@ -250,9 +249,9 @@ impl DeribitWsFeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
-        option_greeks_subs: Arc<DashSet<InstrumentId>>,
-        mark_price_subs: Arc<DashSet<InstrumentId>>,
-        index_price_subs: Arc<DashSet<InstrumentId>>,
+        option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+        mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+        index_price_subs: Arc<AtomicSet<InstrumentId>>,
         account_id: Option<AccountId>,
         bars_timestamp_on_close: bool,
         subscribe_errors: Arc<Mutex<Vec<String>>>,

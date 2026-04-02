@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     log::info!("");
 
-    let client = DydxHttpClient::new(Some(base_url), Some(30), None, is_testnet, None)?;
+    let client = DydxHttpClient::new(Some(base_url), 30, None, is_testnet, None)?;
 
     let start = std::time::Instant::now();
     let instruments = client.request_instruments(None, None, None).await?;

@@ -41,6 +41,7 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+examples = ["nautilus-trading/examples"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -53,6 +54,7 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -61,6 +63,7 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
@@ -137,4 +140,11 @@ doc = false
 name = "okx-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = []
+doc = false
+
+# Run with `cargo run --example okx-delta-neutral --package nautilus-okx --features examples`.
+[[example]]
+name = "okx-delta-neutral"
+path = "examples/node_delta_neutral.rs"
+required-features = ["examples"]
 doc = false

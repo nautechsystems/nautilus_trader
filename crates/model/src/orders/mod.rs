@@ -240,6 +240,7 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,  // Allow multiple requests
             (Self::PendingUpdate, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
+            (Self::PendingUpdate, OrderEventAny::Updated(_)) => Self::PendingUpdate,  // Handled by updated to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PendingCancel, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingCancel, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
@@ -787,6 +788,12 @@ impl OrderCore {
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
+        if self.status == OrderStatus::PendingUpdate
+            && let Some(previous) = self.previous_status
+        {
+            self.status = previous;
+        }
+
         if let Some(venue_order_id) = &event.venue_order_id
             && (self.venue_order_id.is_none()
                 || venue_order_id != self.venue_order_id.as_ref().unwrap())
@@ -948,8 +955,9 @@ mod tests {
         events::order::{
             accepted::OrderAcceptedBuilder, canceled::OrderCanceledBuilder,
             denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
-            initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
-            triggered::OrderTriggeredBuilder, updated::OrderUpdatedBuilder,
+            initialized::OrderInitializedBuilder, pending_update::OrderPendingUpdateBuilder,
+            submitted::OrderSubmittedBuilder, triggered::OrderTriggeredBuilder,
+            updated::OrderUpdatedBuilder,
         },
         orders::MarketOrder,
     };
@@ -1550,6 +1558,37 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from(100_000));
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.trade_ids.len(), 2);
+    }
+
+    #[rstest]
+    fn test_pending_update_order_restores_status_on_updated() {
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let pending_update = OrderPendingUpdateBuilder::default().build().unwrap();
+        let updated = OrderUpdatedBuilder::default()
+            .quantity(Quantity::from(50_000))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from(50_000));
     }
 
     #[rstest]

@@ -58,11 +58,12 @@ use std::fmt::Debug;
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
 )]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 pub struct WebSocketConfig {
     /// The URL to connect to.
     pub url: String,
     /// The default headers.
+    #[builder(default)]
     pub headers: Vec<(String, String)>,
     /// The optional heartbeat interval (seconds).
     pub heartbeat: Option<u64>,

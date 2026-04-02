@@ -17,12 +17,11 @@
 
 use std::hash::{Hash, Hasher};
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggressorSide, BookAction, OrderSide, RecordFlag},
-    identifiers::TradeId,
-    instruments::{Instrument, InstrumentAny},
+    identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
 use ustr::Ustr;
@@ -36,7 +35,7 @@ pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid timestamp '{ts}': {e}"))?;
     let ns = ms
-        .checked_mul(1_000_000)
+        .checked_mul(NANOSECONDS_IN_MILLISECOND)
         .ok_or_else(|| anyhow::anyhow!("Timestamp overflow for '{ts}'"))?;
     Ok(UnixNanos::from(ns))
 }
@@ -58,12 +57,11 @@ pub(crate) fn parse_quantity(s: &str, precision: u8) -> anyhow::Result<Quantity>
 /// Parses a book snapshot into [`OrderBookDeltas`] (CLEAR + ADD).
 pub fn parse_book_snapshot(
     snap: &PolymarketBookSnapshot,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let instrument_id = instrument.id();
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
     let ts_event = parse_timestamp_ms(&snap.timestamp)?;
 
     let bids_len = snap.bids.len();
@@ -128,12 +126,11 @@ pub fn parse_book_snapshot(
 /// Parses price change quotes into incremental [`OrderBookDeltas`].
 pub fn parse_book_deltas(
     quotes: &PolymarketQuotes,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let instrument_id = instrument.id();
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
     let ts_event = parse_timestamp_ms(&quotes.timestamp)?;
 
     let mut deltas = Vec::with_capacity(quotes.price_changes.len());
@@ -172,11 +169,13 @@ pub fn parse_book_deltas(
 /// Parses a trade message into a [`TradeTick`].
 pub fn parse_trade_tick(
     trade: &PolymarketTrade,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let price = parse_price(&trade.price, instrument.price_precision())?;
-    let size = parse_quantity(&trade.size, instrument.size_precision())?;
+    let price = parse_price(&trade.price, price_precision)?;
+    let size = parse_quantity(&trade.size, size_precision)?;
     let aggressor_side = match trade.side {
         PolymarketOrderSide::Buy => AggressorSide::Buyer,
         PolymarketOrderSide::Sell => AggressorSide::Seller,
@@ -192,7 +191,7 @@ pub fn parse_trade_tick(
     let trade_id = TradeId::new(Ustr::from(&format!("{:016x}", hasher.finish())));
 
     TradeTick::new_checked(
-        instrument.id(),
+        instrument_id,
         price,
         size,
         aggressor_side,
@@ -212,15 +211,15 @@ pub fn parse_trade_tick(
 /// early return above.
 pub fn parse_quote_from_snapshot(
     snap: &PolymarketBookSnapshot,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<QuoteTick>> {
     if snap.bids.is_empty() || snap.asks.is_empty() {
         return Ok(None);
     }
 
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
     let ts_event = parse_timestamp_ms(&snap.timestamp)?;
 
     // Polymarket sends bids ascending and asks descending, so best-of-book is last
@@ -233,7 +232,7 @@ pub fn parse_quote_from_snapshot(
     let ask_size = parse_quantity(&best_ask.size, size_precision)?;
 
     Ok(Some(QuoteTick::new_checked(
-        instrument.id(),
+        instrument_id,
         bid_price,
         ask_price,
         bid_size,
@@ -249,14 +248,13 @@ pub fn parse_quote_from_snapshot(
 /// instead of being set to zero, matching the Python adapter's behavior.
 pub fn parse_quote_from_price_change(
     quote: &PolymarketQuote,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
     last_quote: Option<&QuoteTick>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
-
     let bid_price = parse_price(&quote.best_bid, price_precision)?;
     let ask_price = parse_price(&quote.best_ask, price_precision)?;
     let changed_price = parse_price(&quote.price, price_precision)?;
@@ -288,7 +286,7 @@ pub fn parse_quote_from_price_change(
     };
 
     QuoteTick::new_checked(
-        instrument.id(),
+        instrument_id,
         bid_price,
         ask_price,
         bid_size,
@@ -301,6 +299,7 @@ pub fn parse_quote_from_price_change(
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::instruments::{Instrument, InstrumentAny};
     use rstest::rstest;
 
     use super::*;
@@ -335,7 +334,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_snapshot(&snap, &instrument, ts_init).unwrap();
+        let deltas = parse_book_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         // CLEAR + 3 bids + 3 asks = 7 deltas
         assert_eq!(deltas.deltas.len(), 7);
@@ -357,7 +363,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_deltas(&quotes, &instrument, ts_init).unwrap();
+        let deltas = parse_book_deltas(
+            &quotes,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(deltas.deltas.len(), 2);
 
@@ -373,7 +386,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let deltas = parse_book_deltas(&quotes, &instrument, ts_init).unwrap();
+        let deltas = parse_book_deltas(
+            &quotes,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(deltas.deltas[0].action, BookAction::Delete);
     }
@@ -384,7 +404,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let tick = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
+        let tick = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
@@ -397,8 +424,22 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let tick1 = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
-        let tick2 = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
+        let tick1 = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
+        let tick2 = parse_trade_tick(
+            &trade,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert_eq!(tick1.trade_id, tick2.trade_id);
     }
@@ -409,9 +450,15 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let quote = parse_quote_from_snapshot(&snap, &instrument, ts_init)
-            .unwrap()
-            .unwrap();
+        let quote = parse_quote_from_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap()
+        .unwrap();
 
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, Price::from("0.50"));
@@ -429,7 +476,14 @@ mod tests {
         let instrument = test_instrument();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let result = parse_quote_from_snapshot(&snap, &instrument, ts_init).unwrap();
+        let result = parse_quote_from_snapshot(
+            &snap,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
 
         assert!(result.is_none());
     }
@@ -443,7 +497,9 @@ mod tests {
 
         let quote = parse_quote_from_price_change(
             &quotes.price_changes[0],
-            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
             None,
             ts_event,
             ts_init,

@@ -161,8 +161,12 @@ async fn mock_system_status() -> Response {
         .unwrap()
 }
 
-async fn mock_asset_pairs() -> Response {
-    let data = load_test_data("http_asset_pairs.json");
+async fn mock_asset_pairs(aclass_base: Option<&str>) -> Response {
+    let filename = match aclass_base {
+        Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
+        _ => "http_asset_pairs.json",
+    };
+    let data = load_test_data(filename);
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
@@ -410,11 +414,31 @@ async fn mock_futures_public_executions() -> Response {
         .unwrap()
 }
 
+async fn mock_futures_orderbook() -> Response {
+    let data = load_test_data("http_futures_orderbook.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
+async fn mock_futures_historical_funding_rates() -> Response {
+    let data = load_test_data("http_futures_historical_funding_rates.json");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data.to_string()))
+        .unwrap()
+}
+
 async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
     let path = req.uri().path();
 
-    if path.starts_with("/derivatives/api/v3/") {
-        return match path {
+    if path.starts_with("/derivatives/api/v3/") || path.starts_with("/derivatives/api/v4/") {
+        // Strip query string for matching (some endpoints embed params in the path)
+        let match_path = path.split('?').next().unwrap_or(path);
+        return match match_path {
             "/derivatives/api/v3/instruments" => mock_futures_instruments().await,
             "/derivatives/api/v3/tickers" => mock_futures_tickers().await,
             "/derivatives/api/v3/fills" => mock_futures_fills().await,
@@ -425,6 +449,10 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             "/derivatives/api/v3/editorder" => mock_cancel_order_futures().await,
             "/derivatives/api/v3/batchorder" => mock_send_order_futures().await,
             "/derivatives/api/v3/cancelallorders" => mock_cancel_order_futures().await,
+            "/derivatives/api/v3/orderbook" => mock_futures_orderbook().await,
+            "/derivatives/api/v4/historicalfundingrates" => {
+                mock_futures_historical_funding_rates().await
+            }
             _ => Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from("Futures endpoint not found"))
@@ -452,7 +480,12 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
     match path {
         "/0/public/Time" => mock_server_time().await,
         "/0/public/SystemStatus" => mock_system_status().await,
-        "/0/public/AssetPairs" => mock_asset_pairs().await,
+        "/0/public/AssetPairs" => {
+            let query =
+                Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
+            let aclass_base = query.get("aclass_base").map(|s| s.as_str());
+            mock_asset_pairs(aclass_base).await
+        }
         "/0/public/Ticker" => mock_ticker().await,
         "/0/public/OHLC" => {
             let query =
@@ -506,12 +539,12 @@ async fn test_spot_raw_get_server_time() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -541,12 +574,12 @@ async fn test_spot_raw_get_system_status() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -575,21 +608,59 @@ async fn test_spot_raw_get_asset_pairs() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
-    let result = client.get_asset_pairs(None).await;
+    let result = client.get_asset_pairs(None, None).await;
     assert!(result.is_ok(), "Failed to get asset pairs: {result:?}");
 
     let pairs = result.unwrap();
     assert!(!pairs.is_empty());
     assert!(pairs.contains_key("XBTUSDT"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_raw_get_asset_pairs_tokenized() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotRawHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let result = client.get_asset_pairs(None, Some("tokenized_asset")).await;
+    assert!(
+        result.is_ok(),
+        "Failed to get tokenized asset pairs: {result:?}"
+    );
+
+    let pairs = result.unwrap();
+    assert!(!pairs.is_empty());
+    assert!(pairs.contains_key("AAPLxUSD"));
 }
 
 #[rstest]
@@ -610,12 +681,12 @@ async fn test_spot_domain_request_instruments() {
     let client = KrakenSpotHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -624,6 +695,16 @@ async fn test_spot_domain_request_instruments() {
 
     let instruments: Vec<InstrumentAny> = result.unwrap();
     assert!(!instruments.is_empty());
+
+    let has_currency_pair = instruments
+        .iter()
+        .any(|i| matches!(i, InstrumentAny::CurrencyPair(_)));
+    let has_tokenized = instruments
+        .iter()
+        .any(|i| matches!(i, InstrumentAny::TokenizedAsset(_)));
+
+    assert!(has_currency_pair, "Expected at least one CurrencyPair");
+    assert!(has_tokenized, "Expected at least one TokenizedAsset");
 }
 
 #[rstest]
@@ -644,12 +725,12 @@ async fn test_spot_raw_get_ticker() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -678,12 +759,12 @@ async fn test_spot_raw_get_book_depth() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -712,12 +793,12 @@ async fn test_spot_raw_get_trades() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -746,12 +827,12 @@ async fn test_spot_raw_get_ohlc() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -780,12 +861,12 @@ async fn test_spot_raw_get_trades_with_since() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -820,12 +901,12 @@ async fn test_spot_raw_get_ohlc_with_interval() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -860,12 +941,12 @@ async fn test_spot_raw_get_websockets_token_requires_credentials() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -898,12 +979,12 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
         "dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -933,18 +1014,18 @@ async fn test_spot_domain_request_trades() {
     let client = KrakenSpotHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
     // First load instruments to populate cache
     let instruments = client.request_instruments(None).await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     // Create a valid instrument ID from cached instruments (normalized to BTC)
     let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
@@ -974,18 +1055,18 @@ async fn test_spot_domain_request_bars() {
     let client = KrakenSpotHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
     // First load instruments to populate cache
     let instruments = client.request_instruments(None).await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     // Create a BarType for 1-minute bars (normalized to BTC)
     let bar_type = BarType::from("BTC/USDT.KRAKEN-1-MINUTE-LAST-INTERNAL");
@@ -1015,12 +1096,12 @@ async fn test_futures_raw_get_instruments() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1056,12 +1137,12 @@ async fn test_futures_raw_get_tickers() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1098,12 +1179,12 @@ async fn test_futures_raw_get_ohlc_trade() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1143,12 +1224,12 @@ async fn test_futures_raw_get_ohlc_mark() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1185,12 +1266,12 @@ async fn test_futures_raw_get_ohlc_spot() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1227,12 +1308,12 @@ async fn test_futures_raw_get_public_executions() {
     let client = KrakenFuturesRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1275,12 +1356,12 @@ async fn test_spot_raw_get_open_orders() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1318,12 +1399,12 @@ async fn test_spot_raw_get_closed_orders() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1362,12 +1443,12 @@ async fn test_spot_raw_get_trades_history() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1400,12 +1481,12 @@ async fn test_futures_raw_get_open_orders() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1444,12 +1525,12 @@ async fn test_futures_raw_get_order_events() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1493,12 +1574,12 @@ async fn test_futures_raw_get_fills() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1535,12 +1616,12 @@ async fn test_futures_raw_get_open_positions() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1579,12 +1660,12 @@ async fn test_spot_raw_add_order() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1625,12 +1706,12 @@ async fn test_spot_raw_cancel_order() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1666,12 +1747,12 @@ async fn test_futures_raw_send_order() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1710,12 +1791,12 @@ async fn test_futures_raw_cancel_order() {
         "test".to_string(),
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1756,12 +1837,12 @@ async fn test_spot_raw_rate_limit_error() {
         api_secret,
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1804,12 +1885,12 @@ async fn test_spot_raw_api_error_response() {
     let client = KrakenSpotRawHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
@@ -1841,17 +1922,17 @@ async fn test_futures_domain_request_trades() {
     let client = KrakenFuturesHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
     let instruments = client.request_instruments().await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     // PF_ETHUSD is in mock instruments; trades may be partially parsed
     // due to mock execution data having BTC-level prices
@@ -1882,17 +1963,17 @@ async fn test_futures_domain_request_bars() {
     let client = KrakenFuturesHttpClient::new(
         KrakenEnvironment::Mainnet,
         Some(base_url),
-        Some(10),
+        10,
         None,
         None,
         None,
         None,
-        None,
+        5,
     )
     .unwrap();
 
     let instruments = client.request_instruments().await.unwrap();
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     let bar_type = BarType::from("PI_XBTUSD.KRAKEN-1-HOUR-LAST-INTERNAL");
 
@@ -1901,4 +1982,136 @@ async fn test_futures_domain_request_bars() {
 
     let bars = result.unwrap();
     assert!(!bars.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_domain_request_book_snapshot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments(None).await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+    let result = client.request_book_snapshot(instrument_id, Some(5)).await;
+    assert!(
+        result.is_ok(),
+        "Failed to request book snapshot: {result:?}"
+    );
+
+    let book = result.unwrap();
+    assert!(book.best_bid_price().is_some());
+    assert!(book.best_ask_price().is_some());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_book_snapshot() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+    let result = client.request_book_snapshot(instrument_id, None).await;
+    assert!(
+        result.is_ok(),
+        "Failed to request futures book snapshot: {result:?}"
+    );
+
+    let book = result.unwrap();
+    assert_eq!(book.best_bid_price(), Some(Price::from("105900.0")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("105950.0")));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_funding_rates() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Mainnet,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    client.cache_instruments(&instruments);
+
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+    let result = client
+        .request_funding_rates(instrument_id, None, None, None)
+        .await;
+    assert!(
+        result.is_ok(),
+        "Failed to request funding rates: {result:?}"
+    );
+
+    let rates = result.unwrap();
+    assert_eq!(rates.len(), 3);
+    assert_eq!(rates[0].instrument_id, instrument_id);
+
+    // Rates are returned in ascending chronological order (oldest first)
+    assert!(rates[0].ts_event < rates[1].ts_event);
+    assert!(rates[1].ts_event < rates[2].ts_event);
 }

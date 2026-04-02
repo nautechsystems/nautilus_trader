@@ -295,11 +295,48 @@ impl Instrument for IndexInstrument {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{IndexInstrument, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{IndexInstrument, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(index_instrument_spx: IndexInstrument) {
-        let cloned = index_instrument_spx.clone();
-        assert_eq!(index_instrument_spx, cloned);
+    fn test_trait_accessors(index_instrument_spx: IndexInstrument) {
+        assert_eq!(index_instrument_spx.id(), InstrumentId::from("SPX.INDEX"));
+        assert_eq!(index_instrument_spx.asset_class(), AssetClass::Index);
+        assert_eq!(
+            index_instrument_spx.instrument_class(),
+            InstrumentClass::Spot
+        );
+        assert_eq!(index_instrument_spx.quote_currency(), Currency::USD());
+        assert!(!index_instrument_spx.is_inverse());
+        assert_eq!(index_instrument_spx.price_precision(), 2);
+        assert_eq!(index_instrument_spx.size_precision(), 0);
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = IndexInstrument::new_checked(
+            InstrumentId::from("SPX.INDEX"),
+            Symbol::from("SPX"),
+            Currency::USD(),
+            4, // mismatch
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(index_instrument_spx: IndexInstrument) {
+        let json = serde_json::to_string(&index_instrument_spx).unwrap();
+        let deserialized: IndexInstrument = serde_json::from_str(&json).unwrap();
+        assert_eq!(index_instrument_spx, deserialized);
     }
 }

@@ -38,6 +38,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     MUTEX_POISONED, UnixNanos,
+    params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -57,7 +58,10 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{OKX_CONDITIONAL_ORDER_TYPES, OKX_VENUE},
+        consts::{
+            OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
+            resolve_instrument_families,
+        },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         parse::{nanos_to_datetime, okx_instrument_type_from_symbol},
     },
@@ -72,6 +76,16 @@ use crate::{
         parse::OrderStateSnapshot,
     },
 };
+
+fn get_param_as_string(params: &Option<Params>, key: &str) -> Option<String> {
+    params.as_ref().and_then(|p| {
+        p.get(key).and_then(|v| {
+            v.as_str()
+                .map(ToString::to_string)
+                .or_else(|| v.as_f64().map(|n| n.to_string()))
+        })
+    })
+}
 
 #[derive(Debug)]
 pub struct OKXExecutionClient {
@@ -117,7 +131,7 @@ impl OKXExecutionClient {
             config.api_secret.clone(),
             config.api_passphrase.clone(),
             Some(account_id),
-            Some(20), // Heartbeat
+            Some(OKX_WS_HEARTBEAT_SECS),
             None,
         )
         .context("failed to construct OKX private websocket client")?;
@@ -128,7 +142,7 @@ impl OKXExecutionClient {
             config.api_secret.clone(),
             config.api_passphrase.clone(),
             Some(account_id),
-            Some(20), // Heartbeat
+            Some(OKX_WS_HEARTBEAT_SECS),
             None,
         )
         .context("failed to construct OKX business websocket client")?;
@@ -143,6 +157,12 @@ impl OKXExecutionClient {
             None,
         );
 
+        let ws_dispatch_state = Arc::new(WsDispatchState::with_pending_maps(
+            ws_private.pending_orders.clone(),
+            ws_private.pending_cancels.clone(),
+            ws_private.pending_amends.clone(),
+        ));
+
         Ok(Self {
             core,
             clock,
@@ -154,7 +174,7 @@ impl OKXExecutionClient {
             trade_mode,
             ws_stream_handle: None,
             ws_business_stream_handle: None,
-            ws_dispatch_state: Arc::new(WsDispatchState::default()),
+            ws_dispatch_state,
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
@@ -245,6 +265,9 @@ impl OKXExecutionClient {
         let is_reduce_only = order.is_reduce_only();
         let is_quote_quantity = order.is_quote_quantity();
 
+        let px_usd = get_param_as_string(&cmd.params, "px_usd");
+        let px_vol = get_param_as_string(&cmd.params, "px_vol");
+
         self.spawn_task("submit_order", async move {
             let result = ws_private
                 .submit_order(
@@ -264,6 +287,8 @@ impl OKXExecutionClient {
                     Some(is_quote_quantity),
                     None,
                     None,
+                    px_usd,
+                    px_vol,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"));
@@ -466,7 +491,7 @@ impl OKXExecutionClient {
                     // Check per-order business status code
                     resps.first().and_then(|r| {
                         r.s_code.as_deref().and_then(|code| {
-                            if code == "0" {
+                            if code == OKX_SUCCESS_CODE {
                                 None
                             } else {
                                 let msg = r.s_msg.as_deref().unwrap_or("unknown");
@@ -498,6 +523,7 @@ impl OKXExecutionClient {
 
     fn mass_cancel_instrument(&self, instrument_id: InstrumentId) {
         let ws_private = self.ws_private.clone();
+
         self.spawn_task("mass_cancel_orders", async move {
             ws_private.mass_cancel_orders(instrument_id).await?;
             Ok(())
@@ -625,6 +651,7 @@ impl OKXExecutionClient {
 
     fn abort_pending_tasks(&self) {
         let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
+
         for handle in tasks.drain(..) {
             handle.abort();
         }
@@ -698,27 +725,63 @@ impl ExecutionClient for OKXExecutionClient {
             let mut all_inst_id_codes = Vec::new();
 
             for instrument_type in &instrument_types {
-                let (instruments, inst_id_codes) = self
-                    .http_client
-                    .request_instruments(*instrument_type, None)
-                    .await
-                    .with_context(|| {
-                        format!("failed to request OKX instruments for {instrument_type:?}")
-                    })?;
-
-                if instruments.is_empty() {
-                    log::warn!("No instruments returned for {instrument_type:?}");
+                let Some(families) =
+                    resolve_instrument_families(&self.config.instrument_families, *instrument_type)
+                else {
                     continue;
+                };
+
+                if families.is_empty() {
+                    let (instruments, inst_id_codes) = self
+                        .http_client
+                        .request_instruments(*instrument_type, None)
+                        .await
+                        .with_context(|| {
+                            format!("failed to request OKX instruments for {instrument_type:?}")
+                        })?;
+
+                    if instruments.is_empty() {
+                        log::warn!("No instruments returned for {instrument_type:?}");
+                        continue;
+                    }
+
+                    log::info!(
+                        "Loaded {} {instrument_type:?} instruments",
+                        instruments.len()
+                    );
+
+                    self.http_client.cache_instruments(&instruments);
+                    all_instruments.extend(instruments);
+                    all_inst_id_codes.extend(inst_id_codes);
+                } else {
+                    for family in &families {
+                        let (instruments, inst_id_codes) = self
+                            .http_client
+                            .request_instruments(*instrument_type, Some(family.clone()))
+                            .await
+                            .with_context(|| {
+                                format!(
+                                    "failed to request OKX instruments for {instrument_type:?} family {family}"
+                                )
+                            })?;
+
+                        if instruments.is_empty() {
+                            log::warn!(
+                                "No instruments returned for {instrument_type:?} family {family}"
+                            );
+                            continue;
+                        }
+
+                        log::info!(
+                            "Loaded {} {instrument_type:?} instruments for family {family}",
+                            instruments.len()
+                        );
+
+                        self.http_client.cache_instruments(&instruments);
+                        all_instruments.extend(instruments);
+                        all_inst_id_codes.extend(inst_id_codes);
+                    }
                 }
-
-                log::info!(
-                    "Loaded {} {instrument_type:?} instruments",
-                    instruments.len()
-                );
-
-                self.http_client.cache_instruments(instruments.clone());
-                all_instruments.extend(instruments);
-                all_inst_id_codes.extend(inst_id_codes);
             }
 
             if all_instruments.is_empty() {
@@ -919,31 +982,66 @@ impl ExecutionClient for OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let ws_business = self.ws_business.clone();
         let instrument_types = self.config.instrument_types.clone();
+        let instrument_families = self.config.instrument_families.clone();
 
         get_runtime().spawn(async move {
             let mut all_instruments = Vec::new();
             let mut all_inst_id_codes = Vec::new();
 
             for instrument_type in instrument_types {
-                match http_client.request_instruments(instrument_type, None).await {
-                    Ok((instruments, inst_id_codes)) => {
-                        if instruments.is_empty() {
-                            log::warn!("No instruments returned for {instrument_type:?}");
-                            continue;
+                let Some(families) =
+                    resolve_instrument_families(&instrument_families, instrument_type)
+                else {
+                    continue;
+                };
+
+                if families.is_empty() {
+                    match http_client.request_instruments(instrument_type, None).await {
+                        Ok((instruments, inst_id_codes)) => {
+                            if instruments.is_empty() {
+                                log::warn!("No instruments returned for {instrument_type:?}");
+                                continue;
+                            }
+                            http_client.cache_instruments(&instruments);
+                            all_instruments.extend(instruments);
+                            all_inst_id_codes.extend(inst_id_codes);
                         }
-                        http_client.cache_instruments(instruments.clone());
-                        all_instruments.extend(instruments);
-                        all_inst_id_codes.extend(inst_id_codes);
+                        Err(e) => {
+                            log::error!(
+                                "Failed to request instruments for {instrument_type:?}: {e}"
+                            );
+                        }
                     }
-                    Err(e) => {
-                        log::error!("Failed to request instruments for {instrument_type:?}: {e}");
+                } else {
+                    for family in &families {
+                        match http_client
+                            .request_instruments(instrument_type, Some(family.clone()))
+                            .await
+                        {
+                            Ok((instruments, inst_id_codes)) => {
+                                if instruments.is_empty() {
+                                    log::warn!(
+                                        "No instruments returned for {instrument_type:?} family {family}"
+                                    );
+                                    continue;
+                                }
+                                http_client.cache_instruments(&instruments);
+                                all_instruments.extend(instruments);
+                                all_inst_id_codes.extend(inst_id_codes);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to request instruments for {instrument_type:?} family {family}: {e}"
+                                );
+                            }
+                        }
                     }
                 }
             }
 
             if all_instruments.is_empty() {
-                log::warn!(
-                    "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
+                log::error!(
+                    "Instrument bootstrap yielded no instruments, order submissions will fail"
                 );
             } else {
                 ws_private.cache_instruments(&all_instruments);
@@ -1129,11 +1227,18 @@ impl ExecutionClient for OKXExecutionClient {
         // Query derivative positions (SWAP/FUTURES/OPTION) from /api/v5/account/positions
         // Note: The positions endpoint does not support Spot or Margin - those are handled separately
         if let Some(instrument_id) = cmd.instrument_id {
-            let mut fetched = self
-                .http_client
-                .request_position_status_reports(self.core.account_id, None, Some(instrument_id))
-                .await?;
-            reports.append(&mut fetched);
+            let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+            if inst_type != OKXInstrumentType::Spot && inst_type != OKXInstrumentType::Margin {
+                let mut fetched = self
+                    .http_client
+                    .request_position_status_reports(
+                        self.core.account_id,
+                        None,
+                        Some(instrument_id),
+                    )
+                    .await?;
+                reports.append(&mut fetched);
+            }
         } else {
             for inst_type in self.instrument_types() {
                 // Skip Spot and Margin - positions API only supports derivatives
@@ -1233,10 +1338,24 @@ impl ExecutionClient for OKXExecutionClient {
                 return Ok(());
             }
 
+            let order_type = order.order_type();
+
+            // OKX trigger/algo orders are not supported for options.
+            // Reject before emitting OrderSubmitted to avoid an invalid state transition.
+            if self.is_conditional_order(order_type) {
+                let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
+
+                if inst_type == OKXInstrumentType::Option {
+                    anyhow::bail!(
+                        "Trigger/conditional orders ({order_type:?}) are not supported for OKX options"
+                    );
+                }
+            }
+
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(order);
 
-            order.order_type()
+            order_type
         };
 
         if self.is_conditional_order(order_type) {
@@ -1312,6 +1431,7 @@ impl ExecutionClient for OKXExecutionClient {
         let instrument_id = cmd.instrument_id;
         let strategy_id = cmd.strategy_id;
         let client_order_ids: Vec<_> = cmd.order_list.client_order_ids.clone();
+        let dispatch_state = Arc::clone(&self.ws_dispatch_state);
 
         self.spawn_task("batch_submit_orders", async move {
             let result = ws_private
@@ -1321,7 +1441,9 @@ impl ExecutionClient for OKXExecutionClient {
 
             if let Err(e) = result {
                 let ts_event = clock.get_time_ns();
+
                 for cid in &client_order_ids {
+                    dispatch_state.order_identities.remove(cid);
                     emitter.emit_order_rejected_event(
                         strategy_id,
                         instrument_id,
@@ -1346,6 +1468,9 @@ impl ExecutionClient for OKXExecutionClient {
         let ws_private = self.ws_private.clone();
         let command = cmd.clone();
 
+        let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
+        let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
+
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -1359,6 +1484,8 @@ impl ExecutionClient for OKXExecutionClient {
                     command.price,
                     command.quantity,
                     command.venue_order_id,
+                    new_px_usd,
+                    new_px_vol,
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("Modify order failed: {e}"));
@@ -1413,6 +1540,7 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             let mut regular_payload = Vec::new();
+            let mut regular_cancel_contexts = Vec::new();
             let mut algo_orders: Vec<(
                 InstrumentId,
                 ClientOrderId,
@@ -1435,10 +1563,20 @@ impl ExecutionClient for OKXExecutionClient {
                         order.strategy_id(),
                     ));
                 } else {
+                    self.ensure_order_identity(
+                        order.client_order_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                    );
                     regular_payload.push((
                         order.instrument_id(),
                         Some(order.client_order_id()),
                         order.venue_order_id(),
+                    ));
+                    regular_cancel_contexts.push((
+                        order.client_order_id(),
+                        order.instrument_id(),
+                        order.strategy_id(),
                     ));
                 }
             }
@@ -1453,8 +1591,25 @@ impl ExecutionClient for OKXExecutionClient {
 
             if !regular_payload.is_empty() {
                 let ws_private = self.ws_private.clone();
+                let emitter = self.emitter.clone();
+                let clock = self.clock;
+
                 self.spawn_task("batch_cancel_orders", async move {
-                    ws_private.batch_cancel_orders(regular_payload).await?;
+                    if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
+                        let ts = clock.get_time_ns();
+
+                        for (cid, inst_id, strat_id) in &regular_cancel_contexts {
+                            emitter.emit_order_cancel_rejected_event(
+                                *strat_id,
+                                *inst_id,
+                                *cid,
+                                None,
+                                &format!("batch-cancel-error: {e}"),
+                                ts,
+                            );
+                        }
+                        anyhow::bail!("Batch cancel orders failed: {e}");
+                    }
                     Ok(())
                 });
             }
@@ -1513,6 +1668,11 @@ impl ExecutionClient for OKXExecutionClient {
             if is_pending_algo {
                 algo_orders.push(cancel.clone());
             } else {
+                self.ensure_order_identity(
+                    cancel.client_order_id,
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                );
                 regular_payload.push((
                     cancel.instrument_id,
                     Some(cancel.client_order_id),
@@ -1524,8 +1684,35 @@ impl ExecutionClient for OKXExecutionClient {
 
         if !regular_payload.is_empty() {
             let ws_private = self.ws_private.clone();
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
+            let cancel_contexts: Vec<_> = cmd
+                .cancels
+                .iter()
+                .filter(|c| {
+                    regular_payload
+                        .iter()
+                        .any(|(_, cid, _)| *cid == Some(c.client_order_id))
+                })
+                .map(|c| (c.client_order_id, c.instrument_id, c.strategy_id))
+                .collect();
+
             self.spawn_task("batch_cancel_orders", async move {
-                ws_private.batch_cancel_orders(regular_payload).await?;
+                if let Err(e) = ws_private.batch_cancel_orders(regular_payload).await {
+                    let ts = clock.get_time_ns();
+
+                    for (cid, inst_id, strat_id) in &cancel_contexts {
+                        emitter.emit_order_cancel_rejected_event(
+                            *strat_id,
+                            *inst_id,
+                            *cid,
+                            None,
+                            &format!("batch-cancel-error: {e}"),
+                            ts,
+                        );
+                    }
+                    anyhow::bail!("Batch cancel orders failed: {e}");
+                }
                 Ok(())
             });
         }

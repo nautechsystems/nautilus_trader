@@ -277,8 +277,15 @@ impl Position {
             "`fill.trade_id` already contained in `trade_ids",
         )
         .expect(FAILED);
-        check_predicate_true(fill.ts_event >= self.ts_opened, "fill.ts_event < ts_opened")
-            .expect(FAILED);
+
+        if fill.ts_event < self.ts_opened {
+            log::warn!(
+                "Fill ts_event {} for {} is before position ts_opened {}",
+                fill.ts_event,
+                self.id,
+                self.ts_opened,
+            );
+        }
 
         if self.side == PositionSide::Flat {
             // Reopening position after close
@@ -3957,5 +3964,56 @@ mod tests {
             "Total ETH commission should be 0.001, was {}",
             eth_commission.as_f64()
         );
+    }
+
+    #[rstest]
+    fn test_position_apply_fill_with_earlier_timestamp_adjusts_ts_opened(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        // First fill at ts=2000
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &audusd_sim,
+            Some(TradeId::new("t1")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(2_000u64)),
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, fill1.into());
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
+
+        // Second fill at ts=1000 (earlier than position open)
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &audusd_sim,
+            Some(TradeId::new("t2")),
+            None,
+            Some(Price::from("1.00002")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000u64)),
+            None,
+        );
+
+        // Should not panic; ts_opened and opening_order_id stay unchanged
+        position.apply(&fill2.into());
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
+        assert_eq!(position.opening_order_id, order1.client_order_id());
+        assert_eq!(position.events.len(), 2);
     }
 }

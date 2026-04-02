@@ -26,17 +26,14 @@
 //! cargo run --example polymarket-election-subscriber --package nautilus-polymarket
 //! ```
 
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use log::LevelFilter;
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::Environment,
     logging::logger::LoggerConfig,
+    nautilus_actor,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
@@ -82,18 +79,7 @@ impl ElectionTradeSubscriber {
     }
 }
 
-impl Deref for ElectionTradeSubscriber {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for ElectionTradeSubscriber {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(ElectionTradeSubscriber);
 
 impl DataActor for ElectionTradeSubscriber {
     fn on_start(&mut self) -> anyhow::Result<()> {

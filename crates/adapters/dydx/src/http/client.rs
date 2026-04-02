@@ -157,8 +157,7 @@ pub struct DydxRawHttpClient {
 
 impl Default for DydxRawHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, false, None)
-            .expect("Failed to create default DydxRawHttpClient")
+        Self::new(None, 60, None, false, None).expect("Failed to create default DydxRawHttpClient")
     }
 }
 
@@ -192,7 +191,7 @@ impl DydxRawHttpClient {
     /// Returns an error if the retry manager cannot be created.
     pub fn new(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         proxy_url: Option<String>,
         is_testnet: bool,
         retry_config: Option<RetryConfig>,
@@ -213,7 +212,7 @@ impl DydxRawHttpClient {
             vec![], // No specific headers to extract from responses
             vec![], // No keyed quotas (we use a single global quota)
             Some(*DYDX_REST_QUOTA),
-            timeout_secs,
+            Some(timeout_secs),
             proxy_url,
         )
         .map_err(|e| {
@@ -703,7 +702,7 @@ impl DydxRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
 )]
 pub struct DydxHttpClient {
     /// Raw HTTP client wrapped in Arc for efficient cloning.
@@ -728,8 +727,7 @@ impl Clone for DydxHttpClient {
 
 impl Default for DydxHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, false, None)
-            .expect("Failed to create default DydxHttpClient")
+        Self::new(None, 60, None, false, None).expect("Failed to create default DydxHttpClient")
     }
 }
 
@@ -748,7 +746,7 @@ impl DydxHttpClient {
     /// Returns an error if the underlying HTTP client or retry manager cannot be created.
     pub fn new(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         proxy_url: Option<String>,
         is_testnet: bool,
         retry_config: Option<RetryConfig>,
@@ -777,7 +775,7 @@ impl DydxHttpClient {
     /// Returns an error if the underlying HTTP client or retry manager cannot be created.
     pub fn new_with_cache(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         proxy_url: Option<String>,
         is_testnet: bool,
         retry_config: Option<RetryConfig>,
@@ -1755,7 +1753,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_client_creation() {
-        let client = DydxRawHttpClient::new(None, Some(30), None, false, None);
+        let client = DydxRawHttpClient::new(None, 30, None, false, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1765,7 +1763,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_client_testnet() {
-        let client = DydxRawHttpClient::new(None, Some(30), None, true, None);
+        let client = DydxRawHttpClient::new(None, 30, None, true, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1775,7 +1773,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_creation() {
-        let client = DydxHttpClient::new(None, Some(30), None, false, None);
+        let client = DydxHttpClient::new(None, 30, None, false, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1787,7 +1785,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_testnet() {
-        let client = DydxHttpClient::new(None, Some(30), None, true, None);
+        let client = DydxHttpClient::new(None, 30, None, true, None);
         assert!(client.is_ok());
 
         let client = client.unwrap();
@@ -1805,7 +1803,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_domain_client_clone() {
-        let client = DydxHttpClient::new(None, Some(30), None, false, None).unwrap();
+        let client = DydxHttpClient::new(None, 30, None, false, None).unwrap();
 
         // Clone before initialization
         let cloned = client.clone();
@@ -1866,8 +1864,7 @@ mod tests {
         // Keep HTTP client timeout at a typical value; rely on RetryManager
         // operation timeout to enforce non-blocking behavior.
         let client =
-            DydxRawHttpClient::new(Some(base_url), Some(60), None, false, Some(retry_config))
-                .unwrap();
+            DydxRawHttpClient::new(Some(base_url), 60, None, false, Some(retry_config)).unwrap();
 
         let start = std::time::Instant::now();
         let result: Result<serde_json::Value, error::DydxHttpError> =

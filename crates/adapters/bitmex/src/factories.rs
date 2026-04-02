@@ -53,7 +53,7 @@ impl ClientConfig for BitmexDataClientConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexExecFactoryConfig {
     /// The trader ID for the execution client.
@@ -93,7 +93,7 @@ impl ClientConfig for BitmexExecFactoryConfig {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexDataClientFactory;
 
@@ -151,7 +151,7 @@ impl DataClientFactory for BitmexDataClientFactory {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexExecutionClientFactory;
 

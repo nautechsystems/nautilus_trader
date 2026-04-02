@@ -64,7 +64,7 @@
 
 use std::{
     borrow::Cow,
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     fmt::Debug,
     io::Cursor,
     ops::Bound as RangeBound,
@@ -93,7 +93,7 @@ use nautilus_model::{
 use nautilus_serialization::arrow::{
     DecodeDataFromRecordBatch, EncodeToRecordBatch, custom::CustomDataDecoder,
 };
-use object_store::{ObjectStore, path::Path as ObjectPath};
+use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use serde::Serialize;
 use unbounded_interval_tree::interval_tree::IntervalTree;
 
@@ -515,8 +515,10 @@ impl ParquetDataCatalog {
         let path = PathBuf::from(format!("{directory}/{filename}"));
         let object_path = self.to_object_path(&path.to_string_lossy());
 
-        let file_exists =
-            self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+        let file_exists = self.execute_async(async {
+            let exists: bool = self.object_store.head(&object_path).await.is_ok();
+            Ok(exists)
+        })?;
 
         if file_exists {
             log::info!("File {} already exists, skipping write", path.display());
@@ -602,8 +604,10 @@ impl ParquetDataCatalog {
         let path = PathBuf::from(format!("{directory}/{filename}"));
         let object_path = self.to_object_path(&path.to_string_lossy());
 
-        let file_exists =
-            self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+        let file_exists = self.execute_async(async {
+            let exists: bool = self.object_store.head(&object_path).await.is_ok();
+            Ok(exists)
+        })?;
 
         if file_exists {
             log::info!("File {} already exists, skipping write", path.display());
@@ -641,42 +645,10 @@ impl ParquetDataCatalog {
 
     /// Writes instruments to Parquet files in the catalog.
     ///
-    /// Instruments are stored by instrument ID rather than timestamp ranges, since they
-    /// represent metadata that doesn't change over time. Each instrument is stored in
-    /// its own file: `data/instruments/{instrument_id}/instrument.parquet`
-    ///
-    /// # Parameters
-    ///
-    /// - `instruments`: Vector of instruments to write.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of paths to the created files.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Data serialization fails.
-    /// - Object store write operations fail.
-    /// - File path construction fails.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use nautilus_model::instruments::InstrumentAny;
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
-    /// let instruments: Vec<InstrumentAny> = vec![/* instruments */];
-    ///
-    /// let paths = catalog.write_instruments(instruments)?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
-    /// Writes instruments to Parquet files in the catalog.
-    ///
-    /// Instruments are stored by instrument ID rather than timestamp ranges, since they
-    /// represent metadata that doesn't change over time. Each instrument is stored in
-    /// its own file: `data/instruments/{instrument_id}/instrument.parquet`
+    /// Instruments are stored under their instrument ID directory using timestamp-ranged
+    /// file names, allowing multiple historical versions of the same instrument to be
+    /// appended over time:
+    /// `data/instruments/{instrument_id}/{start_ts}-{end_ts}.parquet`
     ///
     /// # Parameters
     ///
@@ -715,25 +687,32 @@ impl ParquetDataCatalog {
             return Ok(Vec::new());
         }
 
-        // Group instruments by instrument_id
-        let mut by_id: AHashMap<String, Vec<InstrumentAny>> = AHashMap::new();
+        // Group instruments by concrete type and instrument_id so mixed InstrumentAny
+        // inputs are written as separate parquet batches with stable ordering.
+        let mut by_type_and_id: BTreeMap<(String, String), Vec<InstrumentAny>> = BTreeMap::new();
         for instrument in instruments {
+            let instrument_type = Self::instrument_type_name(&instrument).to_string();
             let instrument_id = Instrument::id(&instrument).to_string();
-            by_id.entry(instrument_id).or_default().push(instrument);
+            by_type_and_id
+                .entry((instrument_type, instrument_id))
+                .or_default()
+                .push(instrument);
         }
 
         let mut paths = Vec::new();
 
-        for (instrument_id, instrument_group) in by_id {
-            // Convert to record batches
+        for ((_instrument_type, instrument_id), instrument_group) in by_type_and_id {
+            Self::check_ascending_timestamps(&instrument_group, "instrument")?;
+
+            let start_ts = HasTsInit::ts_init(instrument_group.first().unwrap());
+            let end_ts = HasTsInit::ts_init(instrument_group.last().unwrap());
             let batches = self.data_to_record_batches(instrument_group)?;
             if batches.is_empty() {
                 continue;
             }
 
-            // Create directory path: data/instruments/{instrument_id}/
             let directory = self.make_path("instruments", Some(instrument_id.as_str()))?;
-            let filename = "instrument.parquet";
+            let filename = timestamps_to_filename(start_ts, end_ts);
             let path = PathBuf::from(format!("{directory}/{filename}"));
             let object_path = self.to_object_path(&path.to_string_lossy());
 
@@ -747,6 +726,18 @@ impl ParquetDataCatalog {
                 );
                 paths.push(path);
                 continue;
+            }
+
+            let current_intervals = self.get_directory_intervals(&directory)?;
+            let new_interval = (start_ts.as_u64(), end_ts.as_u64());
+            let mut new_intervals = current_intervals.clone();
+            new_intervals.push(new_interval);
+
+            if !are_intervals_disjoint(&new_intervals) {
+                anyhow::bail!(
+                    "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
+                    non-disjoint intervals. Existing intervals: {current_intervals:?}"
+                );
             }
 
             log::info!(
@@ -777,8 +768,9 @@ impl ParquetDataCatalog {
 
     /// Queries instruments from the catalog.
     ///
-    /// Instruments are stored by instrument ID in `data/instruments/{instrument_id}/instrument.parquet`.
-    /// This method reads the instrument files and deserializes them back to `InstrumentAny`.
+    /// Instruments are stored by instrument ID in timestamp-ranged parquet files under
+    /// `data/instruments/{instrument_id}/`. Legacy `instrument.parquet` files are still
+    /// supported for backwards compatibility.
     ///
     /// # Parameters
     ///
@@ -814,12 +806,27 @@ impl ParquetDataCatalog {
         &self,
         instrument_ids: Option<&[String]>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.query_instruments_filtered(instrument_ids, None, None)
+    }
+
+    /// Queries instruments from the catalog with optional timestamp filtering.
+    ///
+    /// This reads all matching parquet files under `data/instruments/{instrument_id}/`,
+    /// including legacy `instrument.parquet` files, decodes the records back to
+    /// `InstrumentAny`, and filters them by `ts_init` when a range is provided.
+    pub fn query_instruments_filtered(
+        &self,
+        instrument_ids: Option<&[String]>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
         use nautilus_serialization::arrow::instrument::decode_instrument_any_batch;
 
         let base_dir = self.make_path("instruments", None)?;
         let mut all_instruments = Vec::new();
+        let start_u64 = start.map(|ts| ts.as_u64());
+        let end_u64 = end.map(|ts| ts.as_u64());
 
-        // List all instrument directories
         let list_result = self.execute_async(async {
             let prefix = ObjectPath::from(format!("{base_dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
@@ -830,36 +837,43 @@ impl ParquetDataCatalog {
             Ok::<Vec<_>, anyhow::Error>(objects)
         })?;
 
-        // Extract unique instrument directories
-        let mut instrument_dirs: HashSet<String> = HashSet::new();
+        let mut instrument_files = Vec::new();
         for object in list_result {
             let path_str = object.location.to_string();
-            if path_str.ends_with("instrument.parquet") {
-                // Extract directory path (everything before the filename)
-                if let Some(dir_path) = path_str.strip_suffix("/instrument.parquet") {
-                    // Extract instrument_id from directory path (last component)
-                    let path_parts: Vec<&str> = dir_path.split('/').collect();
-                    if let Some(instrument_id_dir) = path_parts.last() {
-                        // Apply filter if provided
-                        if let Some(ids) = instrument_ids
-                            && !ids
-                                .iter()
-                                .map(|id| urisafe_instrument_id(id))
-                                .any(|x| x.as_str() == urisafe_instrument_id(instrument_id_dir))
-                        {
-                            continue;
-                        }
-                        instrument_dirs.insert(dir_path.to_string());
-                    }
-                }
+            if !path_str.ends_with(".parquet") {
+                continue;
+            }
+
+            let path_parts: Vec<&str> = path_str.split('/').collect();
+            if path_parts.len() < 2 {
+                continue;
+            }
+
+            let instrument_id_dir = path_parts[path_parts.len() - 2];
+
+            if let Some(ids) = instrument_ids
+                && !ids
+                    .iter()
+                    .map(|id| urisafe_instrument_id(id))
+                    .any(|x| x.as_str() == urisafe_instrument_id(instrument_id_dir))
+            {
+                continue;
+            }
+
+            let include_file = if path_str.ends_with("/instrument.parquet") {
+                true
+            } else {
+                query_intersects_filename(&path_str, start_u64, end_u64)
+            };
+
+            if include_file {
+                instrument_files.push(path_str);
             }
         }
 
-        // Read each instrument file (written as Parquet). Use the builder's schema for
-        // metadata (Arrow restores it from ARROW:schema); batch.schema() has metadata stripped.
-        // Use to_object_path_parsed so paths from list() are not re-encoded by Path::from.
-        for dir_path in instrument_dirs {
-            let file_path = format!("{dir_path}/instrument.parquet");
+        instrument_files.sort();
+
+        for file_path in instrument_files {
             let object_path = self.to_object_path_parsed(&file_path)?;
             let (batches, builder_schema) = self.execute_async(async {
                 read_parquet_from_object_store(self.object_store.clone(), &object_path).await
@@ -869,10 +883,20 @@ impl ParquetDataCatalog {
                 builder_schema.metadata().clone();
 
             for batch in batches {
-                let instruments = decode_instrument_any_batch(&metadata, &batch)?;
+                let mut instruments = decode_instrument_any_batch(&metadata, &batch)?;
+
+                if start.is_some() || end.is_some() {
+                    instruments.retain(|instrument| {
+                        let ts = HasTsInit::ts_init(instrument).as_u64();
+                        start_u64.is_none_or(|value| ts >= value)
+                            && end_u64.is_none_or(|value| ts <= value)
+                    });
+                }
                 all_instruments.extend(instruments);
             }
         }
+
+        all_instruments.sort_by_key(HasTsInit::ts_init);
 
         Ok(all_instruments)
     }
@@ -963,10 +987,11 @@ impl ParquetDataCatalog {
             let metadata_object_path = ObjectPath::from(metadata_path.to_string_lossy().as_ref());
             let metadata_json = serde_json::to_vec_pretty(&metadata)?;
             self.execute_async(async {
-                self.object_store
+                let _: object_store::PutResult = self
+                    .object_store
                     .put(&metadata_object_path, metadata_json.into())
-                    .await
-                    .map_err(anyhow::Error::from)
+                    .await?;
+                Ok(())
             })?;
         }
 
@@ -974,10 +999,11 @@ impl ParquetDataCatalog {
         let json_object_path = ObjectPath::from(json_path.to_string_lossy().as_ref());
         let json_data = serde_json::to_vec_pretty(&serde_json::to_value(data)?)?;
         self.execute_async(async {
-            self.object_store
+            let _: object_store::PutResult = self
+                .object_store
                 .put(&json_object_path, json_data.into())
-                .await
-                .map_err(anyhow::Error::from)
+                .await?;
+            Ok(())
         })?;
 
         Ok(json_path)
@@ -1002,6 +1028,27 @@ impl ParquetDataCatalog {
         }
 
         Ok(())
+    }
+
+    fn instrument_type_name(instrument: &InstrumentAny) -> &'static str {
+        match instrument {
+            InstrumentAny::Betting(_) => "BettingInstrument",
+            InstrumentAny::BinaryOption(_) => "BinaryOption",
+            InstrumentAny::Cfd(_) => "Cfd",
+            InstrumentAny::Commodity(_) => "Commodity",
+            InstrumentAny::CryptoFuture(_) => "CryptoFuture",
+            InstrumentAny::CryptoOption(_) => "CryptoOption",
+            InstrumentAny::CryptoPerpetual(_) => "CryptoPerpetual",
+            InstrumentAny::CurrencyPair(_) => "CurrencyPair",
+            InstrumentAny::Equity(_) => "Equity",
+            InstrumentAny::FuturesContract(_) => "FuturesContract",
+            InstrumentAny::FuturesSpread(_) => "FuturesSpread",
+            InstrumentAny::IndexInstrument(_) => "IndexInstrument",
+            InstrumentAny::OptionContract(_) => "OptionContract",
+            InstrumentAny::OptionSpread(_) => "OptionSpread",
+            InstrumentAny::PerpetualContract(_) => "PerpetualContract",
+            InstrumentAny::TokenizedAsset(_) => "TokenizedAsset",
+        }
     }
 
     /// Converts data into Arrow record batches for Parquet serialization.

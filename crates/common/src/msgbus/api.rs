@@ -203,6 +203,13 @@ pub fn deregister_any(endpoint: MStr<Endpoint>) {
         .shift_remove(&endpoint);
 }
 
+/// Returns whether an endpoint handler is registered for the given endpoint name.
+#[must_use]
+pub fn has_endpoint(endpoint: &str) -> bool {
+    let key: MStr<Endpoint> = Ustr::from(endpoint).into();
+    get_message_bus().borrow().get_endpoint(key).is_some()
+}
+
 /// Subscribes a handler to a pattern using runtime type dispatch (Any).
 ///
 /// # Warnings

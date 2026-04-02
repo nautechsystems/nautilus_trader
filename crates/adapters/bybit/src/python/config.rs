@@ -76,12 +76,14 @@ impl BybitDataClientConfig {
             base_url_ws_private,
             http_proxy_url,
             ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .or(defaults.update_instruments_interval_mins),
             instrument_status_poll_secs: instrument_status_poll_secs
@@ -149,12 +151,14 @@ impl BybitExecClientConfig {
             base_url_ws_trade,
             http_proxy_url,
             ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             account_id,
             use_spot_position_reports: use_spot_position_reports
                 .unwrap_or(defaults.use_spot_position_reports),

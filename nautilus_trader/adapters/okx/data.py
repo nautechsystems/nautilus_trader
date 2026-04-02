@@ -31,8 +31,10 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
@@ -40,6 +42,7 @@ from nautilus_trader.data.messages import SubscribeFundingRates
 from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeInstrumentStatus
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOptionGreeks
 from nautilus_trader.data.messages import SubscribeOrderBook
@@ -59,8 +62,10 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import OptionGreeks
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
@@ -334,6 +339,9 @@ class OKXDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
 
+    async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
+        pass  # Status changes detected via periodic instrument info polling
+
     async def _subscribe_option_greeks(self, command: SubscribeOptionGreeks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         symbol = pyo3_instrument_id.symbol.value
@@ -590,6 +598,54 @@ class OKXDataClient(LiveMarketDataClient):
         self._handle_bars(
             request.bar_type,
             bars,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        depth = request.limit if request.limit > 0 else None
+
+        pyo3_deltas = await self._http_client.request_orderbook_snapshot(
+            instrument_id=pyo3_instrument_id,
+            depth=depth,
+        )
+        deltas = OrderBookDeltas.from_pyo3(pyo3_deltas)
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={"instrument_id": request.instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=[deltas],
+            correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
+        )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+
+        if request.limit == 0:
+            limit = None
+        else:
+            limit = request.limit
+
+        pyo3_funding_rates = await self._http_client.request_funding_rates(
+            instrument_id=pyo3_instrument_id,
+            start=ensure_pydatetime_utc(request.start),
+            end=ensure_pydatetime_utc(request.end),
+            limit=limit,
+        )
+        funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_funding_rates)
+
+        self._handle_funding_rates(
+            request.instrument_id,
+            funding_rates,
             request.id,
             request.start,
             request.end,

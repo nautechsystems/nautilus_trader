@@ -235,6 +235,12 @@ impl TrailingStopMarketOrder {
     }
 }
 
+impl PartialEq for TrailingStopMarketOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Deref for TrailingStopMarketOrder {
     type Target = OrderCore;
     fn deref(&self) -> &Self::Target {

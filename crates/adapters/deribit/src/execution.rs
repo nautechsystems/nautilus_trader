@@ -108,7 +108,7 @@ impl DeribitExecutionClient {
             config.base_url_ws.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
-            Some(DERIBIT_WS_HEARTBEAT_SECS),
+            DERIBIT_WS_HEARTBEAT_SECS,
             config.use_testnet,
         )
         .context("failed to create WebSocket client for execution")?;
@@ -431,7 +431,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
                 log::info!("Fetched {} {product_type:?} instruments", instruments.len());
                 self.ws_client.cache_instruments(&instruments);
-                self.http_client.cache_instruments(instruments);
+                self.http_client.cache_instruments(&instruments);
             }
             self.core.set_instruments_initialized();
         }

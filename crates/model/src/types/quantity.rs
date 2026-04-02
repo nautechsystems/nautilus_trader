@@ -1744,6 +1744,42 @@ mod property_tests {
     }
 
     proptest! {
+        /// Property: as_decimal scale always matches precision
+        #[rstest]
+        fn prop_quantity_as_decimal_preserves_precision(
+            (raw, precision) in raw_for_precision_strategy()
+        ) {
+            prop_assume!(decimal_compatible(raw, precision));
+            let quantity = Quantity::from_raw(raw, precision);
+            let decimal = quantity.as_decimal();
+            prop_assert_eq!(decimal.scale(), u32::from(precision));
+        }
+
+        /// Property: as_decimal and Display produce the same string
+        #[rstest]
+        fn prop_quantity_as_decimal_matches_display(
+            (raw, precision) in raw_for_precision_strategy()
+        ) {
+            prop_assume!(decimal_compatible(raw, precision));
+            let quantity = Quantity::from_raw(raw, precision);
+            let display_str = format!("{quantity}");
+            let decimal_str = quantity.as_decimal().to_string();
+            prop_assert_eq!(display_str, decimal_str);
+        }
+
+        /// Property: from_decimal roundtrip preserves exact value
+        #[rstest]
+        fn prop_quantity_from_decimal_roundtrip(
+            (raw, precision) in raw_for_precision_strategy()
+        ) {
+            prop_assume!(decimal_compatible(raw, precision));
+            let original = Quantity::from_raw(raw, precision);
+            let decimal = original.as_decimal();
+            let reconstructed = Quantity::from_decimal(decimal).unwrap();
+            prop_assert_eq!(original.raw, reconstructed.raw);
+            prop_assert_eq!(original.precision, reconstructed.precision);
+        }
+
         /// Property: constructing from raw within bounds preserves raw/precision
         #[rstest]
         fn prop_quantity_from_raw_round_trip(

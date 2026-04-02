@@ -53,10 +53,10 @@ impl HyperliquidDataClientConfig {
             http_proxy_url,
             ws_proxy_url: None,
             is_testnet: is_testnet.unwrap_or(defaults.is_testnet),
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            ws_timeout_secs: ws_timeout_secs.or(defaults.ws_timeout_secs),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
-                .or(defaults.update_instruments_interval_mins),
+                .unwrap_or(defaults.update_instruments_interval_mins),
         }
     }
 

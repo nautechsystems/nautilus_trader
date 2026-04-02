@@ -124,6 +124,10 @@ async fn handle_info(body: axum::body::Bytes) -> Response {
             let meta = load_json("http_meta_perp_sample.json");
             Json(meta).into_response()
         }
+        "allPerpMetas" => {
+            let meta = load_json("http_meta_perp_sample.json");
+            Json(json!([meta])).into_response()
+        }
         "metaAndAssetCtxs" => {
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()

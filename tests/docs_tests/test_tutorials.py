@@ -26,6 +26,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GETTING_STARTED = REPO_ROOT / "docs" / "getting_started"
 TUTORIALS = REPO_ROOT / "docs" / "tutorials"
+HOW_TO = REPO_ROOT / "docs" / "how_to"
 
 # Tutorials that use bundled test data and can execute without external dependencies
 EXECUTABLE_TUTORIALS = [
@@ -48,12 +49,12 @@ LOCAL_DATA_TUTORIALS = [
     (GETTING_STARTED / "backtest_high_level.py", "HISTDATA"),
     (TUTORIALS / "backtest_orderbook_binance.py", "Binance"),
     (TUTORIALS / "backtest_orderbook_bybit.py", "Bybit"),
-    (TUTORIALS / "loading_external_data.py", "HISTDATA"),
+    (HOW_TO / "loading_external_data.py", "HISTDATA"),
 ]
 
 # Tutorials that need API keys or network access and cannot run locally
 NON_EXECUTABLE_TUTORIALS = [
-    TUTORIALS / "data_catalog_databento.py",
+    HOW_TO / "data_catalog_databento.py",
 ]
 
 ALL_TUTORIALS = (

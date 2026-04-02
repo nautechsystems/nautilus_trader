@@ -90,6 +90,7 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, and W
 #[cfg(feature = "python")]
 pub use crate::params::from_pydict;
 pub use crate::{
+    collections::{AtomicMap, AtomicSet},
     drop::CleanDrop,
     nanos::UnixNanos,
     params::Params,

@@ -206,9 +206,11 @@ pub fn parse_spot_account_position(
 
 fn parse_order_status(status: BinanceOrderStatus) -> OrderStatus {
     match status {
-        BinanceOrderStatus::New => OrderStatus::Accepted,
+        BinanceOrderStatus::New | BinanceOrderStatus::PendingNew => OrderStatus::Accepted,
         BinanceOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
-        BinanceOrderStatus::Filled => OrderStatus::Filled,
+        BinanceOrderStatus::Filled
+        | BinanceOrderStatus::NewAdl
+        | BinanceOrderStatus::NewInsurance => OrderStatus::Filled,
         BinanceOrderStatus::Canceled | BinanceOrderStatus::PendingCancel => OrderStatus::Canceled,
         BinanceOrderStatus::Rejected => OrderStatus::Rejected,
         BinanceOrderStatus::Expired | BinanceOrderStatus::ExpiredInMatch => OrderStatus::Expired,
@@ -231,7 +233,7 @@ fn parse_spot_order_type(order_type: &str) -> OrderType {
 fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
     match tif {
         BinanceTimeInForce::Gtc | BinanceTimeInForce::Gtx => TimeInForce::Gtc,
-        BinanceTimeInForce::Ioc => TimeInForce::Ioc,
+        BinanceTimeInForce::Ioc | BinanceTimeInForce::Rpi => TimeInForce::Ioc,
         BinanceTimeInForce::Fok => TimeInForce::Fok,
         BinanceTimeInForce::Gtd => TimeInForce::Gtd,
         BinanceTimeInForce::Unknown => TimeInForce::Gtc,

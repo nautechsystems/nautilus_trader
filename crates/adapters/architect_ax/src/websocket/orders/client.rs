@@ -28,6 +28,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
+    AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -56,9 +57,6 @@ use crate::{
     },
     websocket::messages::{AxOrdersWsMessage, AxWsPlaceOrder, OrderMetadata},
 };
-
-/// Default heartbeat interval in seconds.
-const DEFAULT_HEARTBEAT_SECS: u64 = 30;
 
 /// Result type for Ax orders WebSocket operations.
 pub type AxOrdersWsResult<T> = Result<T, AxOrdersWsClientError>;
@@ -130,7 +128,7 @@ pub struct AxOrdersWebSocketClient {
     signal: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     auth_tracker: AuthTracker,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     caches: OrdersCaches,
     request_id_counter: Arc<AtomicI64>,
     account_id: AccountId,
@@ -171,12 +169,7 @@ impl Clone for AxOrdersWebSocketClient {
 impl AxOrdersWebSocketClient {
     /// Creates a new Ax orders WebSocket client.
     #[must_use]
-    pub fn new(
-        url: String,
-        account_id: AccountId,
-        trader_id: TraderId,
-        heartbeat: Option<u64>,
-    ) -> Self {
+    pub fn new(url: String, account_id: AccountId, trader_id: TraderId, heartbeat: u64) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -185,14 +178,14 @@ impl AxOrdersWebSocketClient {
         Self {
             clock: get_atomic_clock_realtime(),
             url,
-            heartbeat: heartbeat.or(Some(DEFAULT_HEARTBEAT_SECS)),
+            heartbeat: Some(heartbeat),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             auth_tracker: AuthTracker::default(),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             caches: OrdersCaches::default(),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             account_id,
@@ -243,10 +236,19 @@ impl AxOrdersWebSocketClient {
         self.instruments_cache.insert(symbol, instrument);
     }
 
+    /// Caches multiple instruments for use during message parsing.
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.symbol().inner(), inst.clone());
+            }
+        });
+    }
+
     /// Returns a cached instrument by symbol.
     #[must_use]
     pub fn get_cached_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache.get(symbol).map(|r| r.clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Returns the shared order caches.
@@ -257,7 +259,7 @@ impl AxOrdersWebSocketClient {
 
     /// Returns the instruments cache.
     #[must_use]
-    pub fn instruments_cache(&self) -> Arc<DashMap<Ustr, InstrumentAny>> {
+    pub fn instruments_cache(&self) -> Arc<AtomicMap<Ustr, InstrumentAny>> {
         Arc::clone(&self.instruments_cache)
     }
 
@@ -316,6 +318,7 @@ impl AxOrdersWebSocketClient {
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
+            pending_trigger_price: None,
         };
 
         self.caches
@@ -610,6 +613,7 @@ impl AxOrdersWebSocketClient {
             size_precision: instrument.size_precision(),
             price_precision: instrument.price_precision(),
             quote_currency: instrument.quote_currency(),
+            pending_trigger_price: None,
         };
         self.caches
             .orders_metadata
@@ -771,7 +775,7 @@ mod tests {
             "wss://example.com/orders/ws".to_string(),
             AccountId::from("AX-001"),
             TraderId::from("TRADER-001"),
-            Some(30),
+            30,
         );
         let client_order_id = ClientOrderId::from("CID-123");
 
@@ -790,7 +794,7 @@ mod tests {
             "wss://example.com/orders/ws".to_string(),
             AccountId::from("AX-001"),
             TraderId::from("TRADER-001"),
-            Some(30),
+            30,
         );
 
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

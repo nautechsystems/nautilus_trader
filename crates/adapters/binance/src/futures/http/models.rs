@@ -738,11 +738,19 @@ impl BinanceFuturesAccountInfo {
                 Some("futures balance"),
             );
 
-            let total: Decimal = asset.wallet_balance.parse().context("invalid balance")?;
-            let available: Decimal = asset
-                .available_balance
-                .parse()
-                .context("invalid available_balance")?;
+            let total: Decimal = if asset.wallet_balance.is_empty() {
+                Decimal::ZERO
+            } else {
+                asset.wallet_balance.parse().context("invalid balance")?
+            };
+            let available: Decimal = if asset.available_balance.is_empty() {
+                Decimal::ZERO
+            } else {
+                asset
+                    .available_balance
+                    .parse()
+                    .context("invalid available_balance")?
+            };
             let locked = total - available;
 
             let total_money = Money::from_decimal(total, currency)
@@ -1012,6 +1020,7 @@ impl BinanceTimeInForce {
             Self::Fok => TimeInForce::Fok,
             Self::Gtx => TimeInForce::Gtc, // GTX is GTC with post-only
             Self::Gtd => TimeInForce::Gtd,
+            Self::Rpi => TimeInForce::Ioc, // RPI behaves as immediate
             Self::Unknown => TimeInForce::Gtc, // default
         }
     }
@@ -1022,9 +1031,9 @@ impl BinanceOrderStatus {
     #[must_use]
     pub fn to_nautilus_order_status(&self) -> OrderStatus {
         match self {
-            Self::New => OrderStatus::Accepted,
+            Self::New | Self::PendingNew => OrderStatus::Accepted,
             Self::PartiallyFilled => OrderStatus::PartiallyFilled,
-            Self::Filled => OrderStatus::Filled,
+            Self::Filled | Self::NewAdl | Self::NewInsurance => OrderStatus::Filled,
             Self::Canceled => OrderStatus::Canceled,
             Self::PendingCancel => OrderStatus::PendingCancel,
             Self::Rejected => OrderStatus::Rejected,
@@ -1387,6 +1396,51 @@ mod tests {
         assert_eq!(margin.instrument_id.venue.as_str(), "BINANCE");
         assert_eq!(margin.initial.as_f64(), 500.25);
         assert_eq!(margin.maintenance.as_f64(), 250.75);
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_empty_balance() {
+        // Empty strings for balance fields (inactive/zero-balance accounts)
+        let json = r#"{
+            "assets": [{
+                "asset": "USDT",
+                "walletBalance": "",
+                "availableBalance": "",
+                "updateTime": 0
+            }],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.total, Money::new(0.0, Currency::USDT()));
+        assert_eq!(balance.free, Money::new(0.0, Currency::USDT()));
+        assert_eq!(balance.locked, Money::new(0.0, Currency::USDT()));
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_empty_assets() {
+        // No assets at all (completely empty account)
+        let json = r#"{
+            "assets": [],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.total, Money::new(0.0, Currency::USDT()));
     }
 
     #[rstest]

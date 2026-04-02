@@ -36,6 +36,7 @@ use nautilus_model::{
 };
 use nautilus_sandbox::{SandboxExecutionClientConfig, SandboxExecutionClientFactory};
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
 #[tokio::main]
@@ -121,17 +122,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instrument_id = InstrumentId::from("ESM6.XCME");
     let client_id = ClientId::new("DATABENTO");
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("SANDBOX_TESTER-001"),
-        instrument_id,
-        client_id,
-        Quantity::from("1"), // 1 contract
-    )
-    .with_subscribe_trades(true)
-    .with_subscribe_quotes(true)
-    .with_log_data(true);
-
-    tester_config.base.use_uuid_client_order_ids = true;
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("SANDBOX_TESTER-001")),
+            use_uuid_client_order_ids: true,
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(Quantity::from("1")) // 1 contract
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

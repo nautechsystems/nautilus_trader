@@ -52,7 +52,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.databento")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.databento")
 )]
 pub enum DatabentoStatisticType {
     OpeningPrice = 1,
@@ -122,7 +122,7 @@ impl FromU8 for DatabentoStatisticType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.databento")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.databento")
 )]
 pub enum DatabentoStatisticUpdateAction {
     Added = 1,

@@ -43,12 +43,11 @@
 
 use std::str::FromStr;
 
-use ahash::AHashMap;
-use dashmap::DashSet;
+use ahash::{AHashMap, AHashSet};
 use futures_util::StreamExt;
-use nautilus_common::live::get_runtime;
+use nautilus_common::{cache::quote::QuoteCache, live::get_runtime};
 use nautilus_core::{
-    UUID4,
+    UUID4, UnixNanos,
     python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -70,11 +69,12 @@ use ustr::Ustr;
 use super::{extract_optional_string, extract_optional_trigger_type};
 use crate::{
     common::{
+        consts::{OKX_FIELD_CLORDID, OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE},
         enums::{OKXBookAction, OKXInstrumentStatus, OKXInstrumentType, OKXTradeMode, OKXVipLevel},
         models::OKXInstrument,
         parse::{
             okx_status_to_market_action, parse_account_state, parse_instrument_any,
-            parse_position_status_report,
+            parse_millisecond_timestamp, parse_position_status_report, parse_price, parse_quantity,
         },
     },
     http::models::{OKXAccount, OKXPosition},
@@ -327,10 +327,11 @@ impl OKXWebSocketClient {
             get_runtime().spawn(async move {
                 let account_id = client.account_id;
                 let mut instruments_by_symbol = client.instruments_snapshot();
+                let mut quote_cache = QuoteCache::new();
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
                 let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
-                let option_greeks_subs = client.option_greeks_subs().clone();
+                let option_greeks_subs_arc = client.option_greeks_subs().clone();
                 let _client = client;
                 tokio::pin!(stream);
 
@@ -352,13 +353,15 @@ impl OKXWebSocketClient {
                             inst_id,
                             data,
                         } => {
+                            let greeks_guard = option_greeks_subs_arc.load();
                             handle_channel_data(
                                 &channel,
                                 inst_id,
                                 data,
                                 &mut instruments_by_symbol,
+                                &mut quote_cache,
                                 &mut funding_cache,
-                                &option_greeks_subs,
+                                &greeks_guard,
                                 clock,
                                 &call_soon,
                                 &callback,
@@ -449,7 +452,10 @@ impl OKXWebSocketClient {
                         OKXWsMessage::Error(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }
-                        OKXWsMessage::Reconnected | OKXWsMessage::Authenticated => {}
+                        OKXWsMessage::Reconnected => {
+                            quote_cache.clear();
+                        }
+                        OKXWsMessage::Authenticated => {}
                     }
                 }
             });
@@ -1104,6 +1110,8 @@ impl OKXWebSocketClient {
         quote_quantity=None,
         position_side=None,
         attach_algo_ords=None,
+        px_usd=None,
+        px_vol=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -1125,6 +1133,8 @@ impl OKXWebSocketClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<Py<PyDict>>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
         let client = self.clone();
@@ -1148,6 +1158,8 @@ impl OKXWebSocketClient {
                     quote_quantity,
                     position_side,
                     attach_algo_ords,
+                    px_usd,
+                    px_vol,
                 )
                 .await
                 .map_err(to_pyvalue_err)
@@ -1196,6 +1208,8 @@ impl OKXWebSocketClient {
         venue_order_id=None,
         price=None,
         quantity=None,
+        new_px_usd=None,
+        new_px_vol=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -1208,6 +1222,8 @@ impl OKXWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
         price: Option<Price>,
         quantity: Option<Quantity>,
+        new_px_usd: Option<String>,
+        new_px_vol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -1221,6 +1237,8 @@ impl OKXWebSocketClient {
                     price,
                     quantity,
                     venue_order_id,
+                    new_px_usd,
+                    new_px_vol,
                 )
                 .await
                 .map_err(to_pyvalue_err)
@@ -1417,6 +1435,7 @@ fn handle_book_data(
 ) {
     let Some(inst_id) = inst_id else { return };
     let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+        log::warn!("No cached instrument for book data: {inst_id}");
         return;
     };
     let ts_init = clock.get_time_ns();
@@ -1444,8 +1463,9 @@ fn handle_channel_data(
     inst_id: Option<Ustr>,
     data: serde_json::Value,
     instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+    quote_cache: &mut QuoteCache,
     funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
-    option_greeks_subs: &DashSet<InstrumentId>,
+    option_greeks_subs: &AHashSet<InstrumentId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -1516,12 +1536,27 @@ fn handle_channel_data(
     }
 
     let Some(instrument) = instruments_by_symbol.get(&inst_id) else {
+        log::warn!("No cached instrument for {channel:?}: {inst_id}");
         return;
     };
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
     let ts_init = clock.get_time_ns();
+
+    if matches!(channel, OKXWsChannel::BboTbt) {
+        handle_bbo_tbt(
+            data,
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_init,
+            quote_cache,
+            call_soon,
+            callback,
+        );
+        return;
+    }
 
     match parse_ws_message_data(
         channel,
@@ -1539,6 +1574,57 @@ fn handle_channel_data(
         Ok(None) => {}
         Err(e) => {
             log::error!("Failed to parse {channel:?} data: {e}");
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_bbo_tbt(
+    data: serde_json::Value,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+    quote_cache: &mut QuoteCache,
+    call_soon: &Py<PyAny>,
+    callback: &Py<PyAny>,
+) {
+    let msgs: Vec<OKXBookMsg> = match serde_json::from_value(data) {
+        Ok(msgs) => msgs,
+        Err(e) => {
+            log::error!("Failed to deserialize BboTbt data: {e}");
+            return;
+        }
+    };
+
+    for msg in &msgs {
+        let bid = msg.bids.first();
+        let ask = msg.asks.first();
+
+        let bid_price = bid.and_then(|e| parse_price(&e.price, price_precision).ok());
+        let bid_size = bid.and_then(|e| parse_quantity(&e.size, size_precision).ok());
+        let ask_price = ask.and_then(|e| parse_price(&e.price, price_precision).ok());
+        let ask_size = ask.and_then(|e| parse_quantity(&e.size, size_precision).ok());
+        let ts_event = parse_millisecond_timestamp(msg.ts);
+
+        match quote_cache.process(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        ) {
+            Ok(quote) => {
+                Python::attach(|py| {
+                    let py_obj = data_to_pycapsule(py, Data::Quote(quote));
+                    call_python_threadsafe(py, call_soon, callback, py_obj);
+                });
+            }
+            Err(e) => {
+                log::debug!("Skipping partial BboTbt for {instrument_id}: {e}");
+            }
         }
     }
 }
@@ -1704,11 +1790,20 @@ fn handle_order_response(
     callback: &Py<PyAny>,
 ) {
     for item in data {
-        let s_code = item.get("sCode").and_then(|v| v.as_str()).unwrap_or("");
-        let s_msg = item.get("sMsg").and_then(|v| v.as_str()).unwrap_or("");
-        let cl_ord_id = item.get("clOrdId").and_then(|v| v.as_str()).unwrap_or("");
+        let s_code = item
+            .get(OKX_FIELD_SCODE)
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let s_msg = item
+            .get(OKX_FIELD_SMSG)
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let cl_ord_id = item
+            .get(OKX_FIELD_CLORDID)
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
-        if s_code == "0" {
+        if s_code == OKX_SUCCESS_CODE {
             log::debug!("Order response ok: op={op:?} cl_ord_id={cl_ord_id}");
             match op {
                 OKXWsOperation::Order | OKXWsOperation::BatchOrders => {

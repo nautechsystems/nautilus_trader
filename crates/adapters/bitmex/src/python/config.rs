@@ -70,17 +70,20 @@ impl BitmexDataClientConfig {
             base_url_ws,
             http_proxy_url,
             ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             heartbeat_interval_secs,
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             active_only: active_only.unwrap_or(defaults.active_only),
             update_instruments_interval_mins,
             use_testnet: use_testnet.unwrap_or(defaults.use_testnet),
-            max_requests_per_second: max_requests_per_second.or(defaults.max_requests_per_second),
-            max_requests_per_minute: max_requests_per_minute.or(defaults.max_requests_per_minute),
+            max_requests_per_second: max_requests_per_second
+                .unwrap_or(defaults.max_requests_per_second),
+            max_requests_per_minute: max_requests_per_minute
+                .unwrap_or(defaults.max_requests_per_minute),
         }
     }
 
@@ -149,17 +152,21 @@ impl BitmexExecClientConfig {
             base_url_ws,
             http_proxy_url,
             ws_proxy_url: None,
-            http_timeout_secs: http_timeout_secs.or(defaults.http_timeout_secs),
-            max_retries: max_retries.or(defaults.max_retries),
-            retry_delay_initial_ms: retry_delay_initial_ms.or(defaults.retry_delay_initial_ms),
-            retry_delay_max_ms: retry_delay_max_ms.or(defaults.retry_delay_max_ms),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
-            recv_window_ms: recv_window_ms.or(defaults.recv_window_ms),
+            http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
+            retry_delay_initial_ms: retry_delay_initial_ms
+                .unwrap_or(defaults.retry_delay_initial_ms),
+            retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
+            recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             active_only: active_only.unwrap_or(defaults.active_only),
             use_testnet: use_testnet.unwrap_or(defaults.use_testnet),
             account_id,
-            max_requests_per_second: max_requests_per_second.or(defaults.max_requests_per_second),
-            max_requests_per_minute: max_requests_per_minute.or(defaults.max_requests_per_minute),
+            max_requests_per_second: max_requests_per_second
+                .unwrap_or(defaults.max_requests_per_second),
+            max_requests_per_minute: max_requests_per_minute
+                .unwrap_or(defaults.max_requests_per_minute),
             submitter_pool_size,
             canceller_pool_size,
             submitter_proxy_urls,

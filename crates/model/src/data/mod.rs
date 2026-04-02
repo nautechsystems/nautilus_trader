@@ -663,6 +663,11 @@ impl DataType {
         })
     }
 
+    /// Returns the precomputed hash for this data type.
+    pub fn precomputed_hash(&self) -> u64 {
+        self.hash
+    }
+
     /// Returns the messaging topic for the data type.
     pub fn topic(&self) -> &str {
         self.topic.as_str()

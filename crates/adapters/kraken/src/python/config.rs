@@ -66,8 +66,9 @@ impl KrakenDataClientConfig {
             ws_private_url,
             http_proxy,
             ws_proxy: None,
-            timeout_secs: timeout_secs.or(defaults.timeout_secs),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
+            timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
         }
     }
@@ -123,8 +124,9 @@ impl KrakenExecClientConfig {
             ws_url,
             http_proxy,
             ws_proxy: None,
-            timeout_secs: timeout_secs.or(defaults.timeout_secs),
-            heartbeat_interval_secs: heartbeat_interval_secs.or(defaults.heartbeat_interval_secs),
+            timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
+            heartbeat_interval_secs: heartbeat_interval_secs
+                .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
         }
     }

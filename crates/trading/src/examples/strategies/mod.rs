@@ -15,8 +15,10 @@
 
 //! Example trading strategies for backtesting and demonstration.
 
+pub mod delta_neutral_vol;
 pub mod ema_cross;
 pub mod grid_mm;
 
+pub use delta_neutral_vol::{DeltaNeutralVol, DeltaNeutralVolConfig};
 pub use ema_cross::EmaCross;
 pub use grid_mm::{GridMarketMaker, GridMarketMakerConfig};

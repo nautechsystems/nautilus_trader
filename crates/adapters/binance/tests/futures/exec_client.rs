@@ -15,7 +15,9 @@
 
 //! Integration tests for the Binance Futures execution client.
 
-use std::{cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell, collections::HashMap, net::SocketAddr, rc::Rc, sync::Arc, time::Duration,
+};
 
 use axum::{
     Router,
@@ -680,4 +682,148 @@ async fn test_connect_disconnect_reconnect() {
     // Reconnect
     client.connect().await.unwrap();
     assert!(client.is_connected());
+}
+
+type WsInjector = Arc<tokio::sync::broadcast::Sender<String>>;
+
+async fn handle_ws_injectable_connection(mut socket: WebSocket, injector: WsInjector) {
+    let mut rx = injector.subscribe();
+    loop {
+        tokio::select! {
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text)
+                            && parsed.get("method").and_then(|m| m.as_str()) == Some("SUBSCRIBE")
+                        {
+                            let id = parsed.get("id").and_then(|v| v.as_u64()).unwrap_or(1);
+                            let resp = json!({"result": null, "id": id});
+                            let _ = socket.send(Message::Text(resp.to_string().into())).await;
+                        }
+                    }
+                    None | Some(Err(_)) => break,
+                    _ => {}
+                }
+            }
+            Ok(injected) = rx.recv() => {
+                let _ = socket.send(Message::Text(injected.into())).await;
+            }
+        }
+    }
+}
+
+async fn start_injectable_test_server() -> (SocketAddr, WsInjector) {
+    let (tx, _) = tokio::sync::broadcast::channel::<String>(16);
+    let ws_injector: WsInjector = Arc::new(tx);
+
+    let inj = ws_injector.clone();
+    let injectable_ws = axum::routing::get(move |ws: axum::extract::WebSocketUpgrade| {
+        let inj = inj.clone();
+        async move { ws.on_upgrade(move |socket| handle_ws_injectable_connection(socket, inj)) }
+    });
+    let router = create_exec_test_router().route("/ws-inject", injectable_ws);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/fapi/v1/ping");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    (addr, ws_injector)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_trade_update_processed_with_default_precision_on_cache_miss() {
+    let (addr, ws_injector) = start_injectable_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws-inject");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    // Clear the instrument cache to simulate a cache miss
+    let instruments = client.instruments_cache();
+    instruments.clear();
+
+    // Give the WS subscription time to establish
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Inject an ORDER_TRADE_UPDATE with execution_type=TRADE for an untracked order.
+    // Without the fix this would be silently dropped; with the fix it falls through
+    // to the default-precision path and produces an OrderStatusReport.
+    let order_update = json!({
+        "e": "ORDER_TRADE_UPDATE",
+        "T": 1568879465651_i64,
+        "E": 1568879465651_i64,
+        "o": {
+            "s": "BTCUSDT",
+            "c": "test-cache-miss",
+            "S": "BUY",
+            "o": "LIMIT",
+            "f": "GTC",
+            "q": "0.001",
+            "p": "50000.00",
+            "ap": "50000.00",
+            "sp": "0",
+            "x": "TRADE",
+            "X": "PARTIALLY_FILLED",
+            "i": 9999999,
+            "l": "0.001",
+            "z": "0.001",
+            "L": "50000.00",
+            "N": "USDT",
+            "n": "0.01000000",
+            "T": 1568879465651_i64,
+            "t": 12345678,
+            "b": "0",
+            "a": "0",
+            "m": true,
+            "R": false,
+            "wt": "CONTRACT_PRICE",
+            "ot": "LIMIT",
+            "ps": "LONG",
+            "cp": false,
+            "AP": "0",
+            "cr": "0",
+            "pP": false,
+            "si": 0,
+            "ss": 0,
+            "rp": "0",
+            "V": "EXPIRE_TAKER"
+        }
+    });
+    ws_injector.send(order_update.to_string()).unwrap();
+
+    // The untracked order path produces a FillReport then an OrderStatusReport.
+    // wait_until_async panics on timeout, so reaching the end means success.
+    wait_until_async(
+        || {
+            let found = rx
+                .try_recv()
+                .is_ok_and(|e| matches!(e, ExecutionEvent::Report(_)));
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }

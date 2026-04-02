@@ -54,23 +54,17 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true, features = [
-  "provider-http",
-  "signer-local",
-  "network",
-  "reqwest",
-] }
+alloy = { workspace = true, features = ["provider-http", "network", "reqwest"] }
 alloy-primitives = { workspace = true }
-alloy-signer = { workspace = true }
-alloy-signer-local = { workspace = true }
-alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
@@ -146,4 +140,9 @@ doc = false
 [[example]]
 name = "polymarket-exec-tester"
 path = "examples/node_exec_tester.rs"
+doc = false
+
+[[example]]
+name = "polymarket-new-market-monitor"
+path = "examples/new_market_monitor.rs"
 doc = false

@@ -46,20 +46,20 @@ impl AxHttpClient {
     #[pyo3(signature = (
         base_url=None,
         orders_base_url=None,
-        timeout_secs=None,
-        max_retries=None,
-        retry_delay_ms=None,
-        retry_delay_max_ms=None,
+        timeout_secs=60,
+        max_retries=3,
+        retry_delay_ms=1000,
+        retry_delay_max_ms=10_000,
         proxy_url=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new(
@@ -82,10 +82,10 @@ impl AxHttpClient {
         api_secret,
         base_url=None,
         orders_base_url=None,
-        timeout_secs=None,
-        max_retries=None,
-        retry_delay_ms=None,
-        retry_delay_max_ms=None,
+        timeout_secs=60,
+        max_retries=3,
+        retry_delay_ms=1000,
+        retry_delay_max_ms=10_000,
         proxy_url=None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -94,10 +94,10 @@ impl AxHttpClient {
         api_secret: String,
         base_url: Option<String>,
         orders_base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::with_credentials(

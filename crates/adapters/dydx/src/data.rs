@@ -24,7 +24,7 @@ use std::{
 };
 
 use anyhow::Context;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -32,18 +32,19 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, InstrumentResponse, InstrumentsResponse, RequestBars, RequestInstrument,
-            RequestInstruments, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+            RequestBars, RequestFundingRates, RequestInstrument, RequestInstruments, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
+    AtomicMap, AtomicSet,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -84,20 +85,20 @@ struct WsMessageContext {
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ws_client: DydxWebSocketClient,
     http_client: DydxHttpClient,
-    active_quote_subs: Arc<DashSet<InstrumentId>>,
-    active_delta_subs: Arc<DashSet<InstrumentId>>,
-    active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
-    active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
+    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    active_bar_subs: Arc<AtomicMap<(InstrumentId, String), BarType>>,
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
-    bar_type_mappings: Arc<DashMap<String, BarType>>,
-    active_mark_price_subs: Arc<DashSet<InstrumentId>>,
-    active_index_price_subs: Arc<DashSet<InstrumentId>>,
-    active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
-    active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
+    bar_type_mappings: Arc<AtomicMap<String, BarType>>,
+    active_mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_index_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_funding_rate_subs: Arc<AtomicSet<InstrumentId>>,
+    active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
     bars_timestamp_on_close: bool,
     pending_bars: Arc<DashMap<String, Bar>>,
-    seen_tickers: Arc<DashSet<Ustr>>,
+    seen_tickers: Arc<AtomicSet<Ustr>>,
 }
 
 /// dYdX data client for live market data streaming and historical data requests.
@@ -122,15 +123,15 @@ pub struct DydxDataClient {
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
-    bar_type_mappings: Arc<DashMap<String, BarType>>,
-    active_quote_subs: Arc<DashSet<InstrumentId>>,
-    active_delta_subs: Arc<DashSet<InstrumentId>>,
-    active_trade_subs: Arc<DashMap<InstrumentId, ()>>,
-    active_bar_subs: Arc<DashMap<(InstrumentId, String), BarType>>,
-    active_mark_price_subs: Arc<DashSet<InstrumentId>>,
-    active_index_price_subs: Arc<DashSet<InstrumentId>>,
-    active_funding_rate_subs: Arc<DashSet<InstrumentId>>,
-    active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
+    bar_type_mappings: Arc<AtomicMap<String, BarType>>,
+    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    active_bar_subs: Arc<AtomicMap<(InstrumentId, String), BarType>>,
+    active_mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_index_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_funding_rate_subs: Arc<AtomicSet<InstrumentId>>,
+    active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
 }
 
@@ -170,15 +171,15 @@ impl DydxDataClient {
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
             incomplete_bars: Arc::new(DashMap::new()),
-            bar_type_mappings: Arc::new(DashMap::new()),
-            active_quote_subs: Arc::new(DashSet::new()),
-            active_delta_subs: Arc::new(DashSet::new()),
-            active_trade_subs: Arc::new(DashMap::new()),
-            active_bar_subs: Arc::new(DashMap::new()),
-            active_mark_price_subs: Arc::new(DashSet::new()),
-            active_index_price_subs: Arc::new(DashSet::new()),
-            active_funding_rate_subs: Arc::new(DashSet::new()),
-            active_instrument_status_subs: Arc::new(DashSet::new()),
+            bar_type_mappings: Arc::new(AtomicMap::new()),
+            active_quote_subs: Arc::new(AtomicSet::new()),
+            active_delta_subs: Arc::new(AtomicSet::new()),
+            active_trade_subs: Arc::new(AtomicSet::new()),
+            active_bar_subs: Arc::new(AtomicMap::new()),
+            active_mark_price_subs: Arc::new(AtomicSet::new()),
+            active_index_price_subs: Arc::new(AtomicSet::new()),
+            active_funding_rate_subs: Arc::new(AtomicSet::new()),
+            active_instrument_status_subs: Arc::new(AtomicSet::new()),
             last_instrument_statuses: Arc::new(DashMap::new()),
         })
     }
@@ -344,7 +345,7 @@ impl DataClient for DydxDataClient {
             .await
             .context("failed to subscribe to markets channel")?;
 
-        let seen_tickers: Arc<DashSet<Ustr>> = Arc::new(DashSet::new());
+        let seen_tickers: Arc<AtomicSet<Ustr>> = Arc::new(AtomicSet::new());
         for instrument in self.instrument_cache.all_instruments() {
             let id = instrument.id();
             let ticker = extract_raw_symbol(id.symbol.as_str());
@@ -489,7 +490,7 @@ impl DataClient for DydxDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
 
-        self.active_trade_subs.insert(instrument_id, ());
+        self.active_trade_subs.insert(instrument_id);
 
         self.spawn_ws(
             async move {
@@ -906,6 +907,66 @@ impl DataClient for DydxDataClient {
 
         Ok(())
     }
+
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instrument_id = request.instrument_id;
+        let start = request.start;
+        let end = request.end;
+        let limit = request.limit.map(|n| n.get() as u32);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let params = request.params;
+        let clock = self.clock;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+
+        get_runtime().spawn(async move {
+            match http_client
+                .request_funding_rates(instrument_id, start, end, limit)
+                .await
+                .context("failed to request funding rates from dYdX")
+            {
+                Ok(funding_rates) => {
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        funding_rates,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send funding rates response: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Funding rates request failed for {instrument_id}: {e:?}");
+
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send empty funding rates response: {e}");
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
 }
 
 impl DydxDataClient {
@@ -943,18 +1004,13 @@ impl DydxDataClient {
     /// Returns the BarType for a given WebSocket candle topic.
     #[must_use]
     pub fn get_bar_type_for_topic(&self, topic: &str) -> Option<BarType> {
-        self.bar_type_mappings
-            .get(topic)
-            .map(|entry| *entry.value())
+        self.bar_type_mappings.load().get(topic).copied()
     }
 
     /// Returns all registered bar topics.
     #[must_use]
     pub fn get_bar_topics(&self) -> Vec<String> {
-        self.bar_type_mappings
-            .iter()
-            .map(|entry| entry.key().clone())
-            .collect()
+        self.bar_type_mappings.load().keys().cloned().collect()
     }
 
     fn handle_ws_message(message: DydxWsOutputMessage, ctx: &WsMessageContext) {
@@ -1101,7 +1157,7 @@ impl DydxDataClient {
                 }
                 let ticker = parts[0];
 
-                let Some(bar_type) = ctx.bar_type_mappings.get(&id).map(|e| *e) else {
+                let Some(bar_type) = ctx.bar_type_mappings.load().get(&id).copied() else {
                     log::debug!("No bar type mapping for candle topic {id}");
                     return;
                 };
@@ -1168,8 +1224,7 @@ impl DydxDataClient {
                     ctx.active_bar_subs.len()
                 );
 
-                for instrument_id in ctx.active_quote_subs.iter() {
-                    let instrument_id = *instrument_id;
+                for instrument_id in ctx.active_quote_subs.load().iter().copied() {
                     let ws_clone = ctx.ws_client.clone();
                     get_runtime().spawn(async move {
                         if let Err(e) = ws_clone.subscribe_orderbook(instrument_id).await {
@@ -1182,8 +1237,7 @@ impl DydxDataClient {
                     });
                 }
 
-                for instrument_id in ctx.active_delta_subs.iter() {
-                    let instrument_id = *instrument_id;
+                for instrument_id in ctx.active_delta_subs.load().iter().copied() {
                     let ws_clone = ctx.ws_client.clone();
                     get_runtime().spawn(async move {
                         if let Err(e) = ws_clone.subscribe_orderbook(instrument_id).await {
@@ -1196,8 +1250,7 @@ impl DydxDataClient {
                     });
                 }
 
-                for entry in ctx.active_trade_subs.iter() {
-                    let instrument_id = *entry.key();
+                for instrument_id in ctx.active_trade_subs.load().iter().copied() {
                     let ws_clone = ctx.ws_client.clone();
                     get_runtime().spawn(async move {
                         if let Err(e) = ws_clone.subscribe_trades(instrument_id).await {
@@ -1210,8 +1263,7 @@ impl DydxDataClient {
                     });
                 }
 
-                for entry in ctx.active_bar_subs.iter() {
-                    let (instrument_id, resolution) = entry.key();
+                for ((instrument_id, resolution), _) in ctx.active_bar_subs.load().iter() {
                     let instrument_id = *instrument_id;
                     let resolution = resolution.clone();
                     let ws_clone = ctx.ws_client.clone();
@@ -1634,8 +1686,8 @@ impl DydxDataClient {
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
         instrument_cache: &Arc<InstrumentCache>,
-        active_quote_subs: &Arc<DashSet<InstrumentId>>,
-        active_delta_subs: &Arc<DashSet<InstrumentId>>,
+        active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
+        active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     ) {
         let instrument_id = deltas.instrument_id;
 

@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let inst_type = OKXInstrumentType::Swap;
     let (instruments, _inst_id_codes) = client.request_instruments(inst_type, None).await?;
-    client.cache_instruments(instruments);
+    client.cache_instruments(&instruments);
 
     // Set position mode
     let resp = client.set_position_mode(OKXPositionMode::NetMode).await;

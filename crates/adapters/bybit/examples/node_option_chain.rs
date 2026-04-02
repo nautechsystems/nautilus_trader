@@ -26,10 +26,7 @@
 //!
 //! Run with: `cargo run --example bybit-option-chain --package nautilus-bybit`
 
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Debug;
 
 use nautilus_bybit::{
     common::enums::BybitProductType, config::BybitDataClientConfig,
@@ -38,6 +35,7 @@ use nautilus_bybit::{
 use nautilus_common::{
     actor::{DataActor, DataActorConfig, DataActorCore},
     enums::Environment,
+    nautilus_actor,
     timer::TimeEvent,
 };
 use nautilus_live::node::LiveNode;
@@ -60,18 +58,7 @@ struct OptionChainTester {
     series_id: Option<OptionSeriesId>,
 }
 
-impl Deref for OptionChainTester {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for OptionChainTester {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(OptionChainTester);
 
 impl OptionChainTester {
     fn new(client_id: ClientId) -> Self {

@@ -139,6 +139,7 @@ pub enum OKXOrderType {
     OptimalLimitIoc, // Market order with immediate-or-cancel order
     Mmp,             // Market Maker Protection (only applicable to Option in Portfolio Margin mode)
     MmpAndPostOnly, // Market Maker Protection and Post-only order(only applicable to Option in Portfolio Margin mode)
+    OpFok,          // Fill-or-Kill for options (only applicable to Option)
     Trigger,        // Conditional/algo order (stop orders, etc.)
 }
 
@@ -170,7 +171,7 @@ pub enum OKXOrderType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXOrderStatus {
     Canceled,
@@ -259,7 +260,7 @@ impl From<LiquiditySide> for OKXExecType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXInstrumentType {
     #[default]
@@ -328,7 +329,7 @@ pub enum OKXInstrumentStatus {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXContractType {
     #[serde(rename = "")]
@@ -402,7 +403,7 @@ impl From<OKXOptionType> for OptionKind {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXTradeMode {
     #[default]
@@ -478,7 +479,7 @@ pub enum OKXAccountMode {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXMarginMode {
     #[serde(rename = "")]
@@ -520,7 +521,7 @@ pub enum OKXMarginMode {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXPositionMode {
     #[default]
@@ -643,7 +644,7 @@ mod tests {
 
     use rstest::rstest;
 
-    use super::OKXTriggerType;
+    use super::{OKXOrderType, OKXTriggerType};
 
     #[rstest]
     fn test_okx_trigger_type_from_str_accepts_snake_case_values() {
@@ -659,6 +660,25 @@ mod tests {
             OKXTriggerType::from_str("index").unwrap(),
             OKXTriggerType::Index
         );
+    }
+
+    #[rstest]
+    fn test_op_fok_serializes_to_snake_case() {
+        let json = serde_json::to_string(&OKXOrderType::OpFok).unwrap();
+        assert_eq!(json, "\"op_fok\"");
+    }
+
+    #[rstest]
+    fn test_op_fok_deserializes_from_snake_case() {
+        let parsed: OKXOrderType = serde_json::from_str("\"op_fok\"").unwrap();
+        assert_eq!(parsed, OKXOrderType::OpFok);
+    }
+
+    #[rstest]
+    fn test_op_fok_converts_to_limit_order_type() {
+        use nautilus_model::enums::OrderType;
+        let order_type: OrderType = OKXOrderType::OpFok.into();
+        assert_eq!(order_type, OrderType::Limit);
     }
 }
 
@@ -736,7 +756,7 @@ pub enum OKXBookChannel {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.okx")
 )]
 pub enum OKXVipLevel {
     /// VIP level 0 (default tier).
@@ -854,6 +874,7 @@ impl From<OKXOrderType> for OrderType {
             | OKXOrderType::Mmp
             | OKXOrderType::MmpAndPostOnly
             | OKXOrderType::Fok
+            | OKXOrderType::OpFok
             | OKXOrderType::Ioc => Self::Limit,
             OKXOrderType::Trigger => Self::StopMarket,
         }

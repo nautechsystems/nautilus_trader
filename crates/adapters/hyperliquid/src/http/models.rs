@@ -147,10 +147,10 @@ pub struct PerpMeta {
 }
 
 /// A single perpetual asset from the universe.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerpAsset {
-    /// Asset name (e.g., "BTC").
+    /// Asset name (e.g., "BTC", "xyz:TSLA" for HIP-3).
     pub name: String,
     /// Number of decimal places for size.
     pub sz_decimals: u32,
@@ -163,6 +163,12 @@ pub struct PerpAsset {
     /// Whether this asset is delisted/inactive.
     #[serde(default)]
     pub is_delisted: Option<bool>,
+    /// HIP-3 growth mode status (e.g., "enabled").
+    #[serde(default)]
+    pub growth_mode: Option<String>,
+    /// Margin mode (e.g., "strictIsolated").
+    #[serde(default)]
+    pub margin_mode: Option<String>,
 }
 
 /// Margin table with leverage tiers.
@@ -565,6 +571,37 @@ mod tests {
         assert_eq!(meta.universe.len(), 1);
         assert_eq!(meta.universe[0].name, "BTC");
         assert_eq!(meta.universe[0].sz_decimals, 5);
+    }
+
+    #[rstest]
+    fn test_perp_asset_hip3_fields() {
+        let json = r#"{
+            "name": "xyz:TSLA",
+            "szDecimals": 3,
+            "maxLeverage": 10,
+            "onlyIsolated": true,
+            "growthMode": "enabled",
+            "marginMode": "strictIsolated"
+        }"#;
+
+        let asset: PerpAsset = serde_json::from_str(json).unwrap();
+
+        assert_eq!(asset.name, "xyz:TSLA");
+        assert_eq!(asset.sz_decimals, 3);
+        assert_eq!(asset.max_leverage, Some(10));
+        assert_eq!(asset.only_isolated, Some(true));
+        assert_eq!(asset.growth_mode.as_deref(), Some("enabled"));
+        assert_eq!(asset.margin_mode.as_deref(), Some("strictIsolated"));
+    }
+
+    #[rstest]
+    fn test_perp_asset_hip3_fields_absent() {
+        let json = r#"{"name": "BTC", "szDecimals": 5}"#;
+
+        let asset: PerpAsset = serde_json::from_str(json).unwrap();
+
+        assert_eq!(asset.growth_mode, None);
+        assert_eq!(asset.margin_mode, None);
     }
 
     #[rstest]

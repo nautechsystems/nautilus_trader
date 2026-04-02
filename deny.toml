@@ -76,6 +76,7 @@ allow = [
   "LGPL-3.0-or-later",
   "OpenSSL",
   "Unlicense",
+  "bzip2-1.0.6",
 ]
 
 confidence-threshold = 0.8
@@ -129,7 +130,7 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2025-11-29
+# Last reviewed: 2026-03-25
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
@@ -157,13 +158,30 @@ skip = [
   # Case conversion - version fragmentation via derive_more
   { crate = "convert_case" },
 
+  # Arrow/Parquet ecosystem - hypersync pins arrow 57, nautilus uses arrow 58
+  { crate = "lz4_flex" },
+  { crate = "arrow" },
+  { crate = "arrow-arith" },
+  { crate = "arrow-array" },
+  { crate = "arrow-buffer" },
+  { crate = "arrow-cast" },
+  { crate = "arrow-csv" },
+  { crate = "arrow-data" },
+  { crate = "arrow-ipc" },
+  { crate = "arrow-json" },
+  { crate = "arrow-ord" },
+  { crate = "arrow-row" },
+  { crate = "arrow-schema" },
+  { crate = "arrow-select" },
+  { crate = "arrow-string" },
+  { crate = "parquet" },
+
   # Common utility crates with version fragmentation across ecosystem
   { crate = "base64" },
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
   { crate = "rustc-hash" },
-  { crate = "ordered-float" },
   { crate = "petgraph" },
   { crate = "socket2" },
 
@@ -199,7 +217,6 @@ skip = [
   { crate = "windows_aarch64_gnullvm" },
   { crate = "windows_aarch64_msvc" },
   { crate = "windows_i686_gnu" },
-  { crate = "windows_i686_gnullvm" },
   { crate = "windows_i686_msvc" },
   { crate = "windows_x86_64_gnu" },
   { crate = "windows_x86_64_gnullvm" },

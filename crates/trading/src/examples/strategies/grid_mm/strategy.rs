@@ -15,13 +15,10 @@
 
 //! Grid market making strategy implementation.
 
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Debug;
 
 use ahash::AHashSet;
-use nautilus_common::actor::{DataActor, DataActorCore};
+use nautilus_common::actor::DataActor;
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
@@ -34,7 +31,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::config::GridMarketMakerConfig;
-use crate::strategy::{Strategy, StrategyCore};
+use crate::{
+    nautilus_strategy,
+    strategy::{Strategy, StrategyCore},
+};
 
 /// Grid market making strategy with inventory-based skewing.
 ///
@@ -132,18 +132,19 @@ impl GridMarketMaker {
     }
 }
 
-impl Deref for GridMarketMaker {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
+nautilus_strategy!(GridMarketMaker, {
+    fn on_order_rejected(&mut self, event: OrderRejected) {
+        self.pending_self_cancels.remove(&event.client_order_id);
+        // Reset so the next quote tick can retry placing the full grid
+        self.last_quoted_mid = None;
     }
-}
 
-impl DerefMut for GridMarketMaker {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
+    fn on_order_expired(&mut self, event: OrderExpired) {
+        self.pending_self_cancels.remove(&event.client_order_id);
+        // GTD expiry means the grid is gone; reset so re-quoting is not suppressed
+        self.last_quoted_mid = None;
     }
-}
+});
 
 impl Debug for GridMarketMaker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -374,27 +375,5 @@ impl DataActor for GridMarketMaker {
         self.last_quoted_mid = None;
         self.pending_self_cancels.clear();
         Ok(())
-    }
-}
-
-impl Strategy for GridMarketMaker {
-    fn core(&self) -> &StrategyCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut StrategyCore {
-        &mut self.core
-    }
-
-    fn on_order_rejected(&mut self, event: OrderRejected) {
-        self.pending_self_cancels.remove(&event.client_order_id);
-        // Reset so the next quote tick can retry placing the full grid
-        self.last_quoted_mid = None;
-    }
-
-    fn on_order_expired(&mut self, event: OrderExpired) {
-        self.pending_self_cancels.remove(&event.client_order_id);
-        // GTD expiry means the grid is gone; reset so re-quoting is not suppressed
-        self.last_quoted_mid = None;
     }
 }

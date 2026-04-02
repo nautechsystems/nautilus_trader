@@ -30,7 +30,12 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    IntoPyObjectExt,
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyDict, PyTuple},
+};
 
 use super::data_to_pycapsule;
 use crate::{
@@ -113,17 +118,150 @@ impl BarSpecification {
     #[getter]
     #[pyo3(name = "timedelta")]
     fn py_timedelta(&self) -> PyResult<chrono::TimeDelta> {
-        match self.aggregation {
-            BarAggregation::Millisecond
-            | BarAggregation::Second
-            | BarAggregation::Minute
-            | BarAggregation::Hour
-            | BarAggregation::Day => Ok(self.timedelta()),
-            _ => Err(to_pyvalue_err(format!(
+        if !self.is_time_aggregated() {
+            return Err(to_pyvalue_err(format!(
                 "Timedelta not supported for aggregation type: {:?}",
                 self.aggregation
-            ))),
+            )));
         }
+        Ok(self.timedelta())
+    }
+
+    /// Returns whether the aggregation method is time-driven.
+    #[pyo3(name = "is_time_aggregated")]
+    fn py_is_time_aggregated(&self) -> bool {
+        self.is_time_aggregated()
+    }
+
+    /// Returns whether the aggregation method is threshold-driven.
+    #[pyo3(name = "is_threshold_aggregated")]
+    fn py_is_threshold_aggregated(&self) -> bool {
+        self.is_threshold_aggregated()
+    }
+
+    /// Returns whether the aggregation method is information-driven.
+    #[pyo3(name = "is_information_aggregated")]
+    fn py_is_information_aggregated(&self) -> bool {
+        self.is_information_aggregated()
+    }
+
+    /// Returns the interval length in nanoseconds for time-based bar specifications.
+    #[pyo3(name = "get_interval_ns")]
+    fn py_get_interval_ns(&self) -> PyResult<u64> {
+        if !self.is_time_aggregated() {
+            return Err(to_pyvalue_err(format!(
+                "Aggregation not time based, was {:?}",
+                self.aggregation
+            )));
+        }
+        let td = self.timedelta();
+        Ok(td.num_nanoseconds().unwrap() as u64)
+    }
+
+    /// Creates a `BarSpecification` from a Python `timedelta` and price type.
+    #[staticmethod]
+    #[pyo3(name = "from_timedelta")]
+    fn py_from_timedelta(duration: chrono::TimeDelta, price_type: PriceType) -> PyResult<Self> {
+        if duration.num_milliseconds() <= 0 {
+            return Err(to_pyvalue_err(format!(
+                "Duration must be positive, was {duration:?}"
+            )));
+        }
+        let total_secs_f64 = duration.num_milliseconds() as f64 / 1000.0;
+        let days = duration.num_days();
+
+        let (step, aggregation) = if days >= 7 {
+            (days / 7, BarAggregation::Week)
+        } else if days >= 1 {
+            (days, BarAggregation::Day)
+        } else if total_secs_f64 >= 3600.0 {
+            ((total_secs_f64 / 3600.0) as i64, BarAggregation::Hour)
+        } else if total_secs_f64 >= 60.0 {
+            ((total_secs_f64 / 60.0) as i64, BarAggregation::Minute)
+        } else if total_secs_f64 >= 1.0 {
+            (total_secs_f64 as i64, BarAggregation::Second)
+        } else {
+            (
+                (total_secs_f64 * 1000.0) as i64,
+                BarAggregation::Millisecond,
+            )
+        };
+
+        let spec =
+            Self::new_checked(step as usize, aggregation, price_type).map_err(to_pyvalue_err)?;
+
+        // Validate roundtrip
+        let roundtrip = spec.timedelta();
+        if roundtrip != duration {
+            return Err(to_pyvalue_err(format!(
+                "Duration {duration:?} is ambiguous"
+            )));
+        }
+
+        Ok(spec)
+    }
+
+    /// Returns whether the given aggregation is time-based.
+    #[staticmethod]
+    #[pyo3(name = "check_time_aggregated")]
+    fn py_check_time_aggregated(aggregation: BarAggregation) -> bool {
+        matches!(
+            aggregation,
+            BarAggregation::Millisecond
+                | BarAggregation::Second
+                | BarAggregation::Minute
+                | BarAggregation::Hour
+                | BarAggregation::Day
+                | BarAggregation::Week
+                | BarAggregation::Month
+                | BarAggregation::Year
+        )
+    }
+
+    /// Returns whether the given aggregation is threshold-based.
+    #[staticmethod]
+    #[pyo3(name = "check_threshold_aggregated")]
+    fn py_check_threshold_aggregated(aggregation: BarAggregation) -> bool {
+        matches!(
+            aggregation,
+            BarAggregation::Tick
+                | BarAggregation::TickImbalance
+                | BarAggregation::Volume
+                | BarAggregation::VolumeImbalance
+                | BarAggregation::Value
+                | BarAggregation::ValueImbalance
+        )
+    }
+
+    /// Returns whether the given aggregation is information-based.
+    #[staticmethod]
+    #[pyo3(name = "check_information_aggregated")]
+    fn py_check_information_aggregated(aggregation: BarAggregation) -> bool {
+        matches!(
+            aggregation,
+            BarAggregation::TickRuns | BarAggregation::VolumeRuns | BarAggregation::ValueRuns
+        )
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let from_str = py.get_type::<Self>().getattr("from_str")?;
+        (from_str, (self.to_string(),)).into_py_any(py)
+    }
+
+    /// Creates a `BarSpecification` from a string representation.
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        let pieces: Vec<&str> = value.rsplitn(3, '-').collect();
+        if pieces.len() != 3 {
+            return Err(to_pyvalue_err(format!(
+                "The `BarSpecification` string value was malformed, was {value}"
+            )));
+        }
+        let step: usize = pieces[2].parse().map_err(to_pyvalue_err)?;
+        let aggregation = BarAggregation::from_str(pieces[1]).map_err(to_pyvalue_err)?;
+        let price_type = PriceType::from_str(pieces[0]).map_err(to_pyvalue_err)?;
+        Self::new_checked(step, aggregation, price_type).map_err(to_pyvalue_err)
     }
 }
 
@@ -230,6 +368,41 @@ impl BarType {
     #[pyo3(name = "id_spec_key")]
     fn py_id_spec_key(&self) -> (InstrumentId, BarSpecification) {
         self.id_spec_key()
+    }
+
+    /// Returns whether this bar type is externally aggregated.
+    #[pyo3(name = "is_externally_aggregated")]
+    fn py_is_externally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::External
+    }
+
+    /// Returns whether this bar type is internally aggregated.
+    #[pyo3(name = "is_internally_aggregated")]
+    fn py_is_internally_aggregated(&self) -> bool {
+        self.aggregation_source() == AggregationSource::Internal
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id()
+    }
+
+    #[getter]
+    #[pyo3(name = "spec")]
+    fn py_spec(&self) -> BarSpecification {
+        self.spec()
+    }
+
+    #[getter]
+    #[pyo3(name = "aggregation_source")]
+    fn py_aggregation_source(&self) -> AggregationSource {
+        self.aggregation_source()
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let from_str = py.get_type::<Self>().getattr("from_str")?;
+        (from_str, (self.to_string(),)).into_py_any(py)
     }
 }
 
@@ -453,6 +626,66 @@ impl Bar {
     #[pyo3(name = "to_msgpack_bytes")]
     fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    }
+
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
+        let bar_type_str: String = py_tuple.get_item(0)?.extract()?;
+        let open_raw: PriceRaw = py_tuple.get_item(1)?.extract()?;
+        let open_prec: u8 = py_tuple.get_item(2)?.extract()?;
+        let high_raw: PriceRaw = py_tuple.get_item(3)?.extract()?;
+        let low_raw: PriceRaw = py_tuple.get_item(4)?.extract()?;
+        let close_raw: PriceRaw = py_tuple.get_item(5)?.extract()?;
+        let volume_raw: QuantityRaw = py_tuple.get_item(6)?.extract()?;
+        let volume_prec: u8 = py_tuple.get_item(7)?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(8)?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(9)?.extract()?;
+
+        self.bar_type = BarType::from_str(&bar_type_str).map_err(to_pyvalue_err)?;
+        self.open = Price::from_raw(open_raw, open_prec);
+        self.high = Price::from_raw(high_raw, open_prec);
+        self.low = Price::from_raw(low_raw, open_prec);
+        self.close = Price::from_raw(close_raw, open_prec);
+        self.volume = Quantity::from_raw(volume_raw, volume_prec);
+        self.ts_event = ts_event.into();
+        self.ts_init = ts_init.into();
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        (
+            self.bar_type.to_string(),
+            self.open.raw,
+            self.open.precision,
+            self.high.raw,
+            self.low.raw,
+            self.close.raw,
+            self.volume.raw,
+            self.volume.precision,
+            self.ts_event.as_u64(),
+            self.ts_init.as_u64(),
+        )
+            .into_py_any(py)
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> Self {
+        Self::new(
+            BarType::from("NULL.NULL-1-TICK-LAST-EXTERNAL"),
+            Price::zero(0),
+            Price::zero(0),
+            Price::zero(0),
+            Price::zero(0),
+            Quantity::from(1),
+            0.into(),
+            0.into(),
+        )
     }
 }
 

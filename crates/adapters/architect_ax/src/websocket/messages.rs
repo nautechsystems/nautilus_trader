@@ -27,7 +27,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    types::Currency,
+    types::{Currency, Price},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -934,6 +934,8 @@ pub struct OrderMetadata {
     pub price_precision: u8,
     /// Quote currency for the instrument.
     pub quote_currency: Currency,
+    /// Pending trigger price from a modify command (WS does not carry this).
+    pub pending_trigger_price: Option<Price>,
 }
 
 #[cfg(test)]

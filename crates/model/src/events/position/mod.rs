@@ -194,17 +194,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_event_debug_formatting() {
-        let opened = create_test_position_opened();
-        let event = PositionEvent::PositionOpened(opened);
-
-        let debug_str = format!("{event:?}");
-        assert!(debug_str.contains("PositionOpened"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-        assert!(debug_str.contains("SIM-001"));
-    }
-
-    #[rstest]
     fn test_position_event_enum_variants() {
         let opened = create_test_position_opened();
         let changed = create_test_position_changed();

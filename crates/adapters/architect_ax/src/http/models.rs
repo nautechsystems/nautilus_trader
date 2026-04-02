@@ -349,7 +349,7 @@ pub struct AxBook {
     /// Nanosecond component of the timestamp.
     pub tn: i64,
     /// Symbol.
-    pub s: String,
+    pub s: Ustr,
     /// Bid levels (best to worst).
     pub b: Vec<AxBookLevel>,
     /// Ask levels (best to worst).
@@ -1025,6 +1025,88 @@ impl CancelOrderRequest {
     }
 }
 
+/// Request body for `POST /replace_order`.
+///
+/// Replaces (amends) an existing order. Unspecified optional fields inherit
+/// from the original order. The exchange returns a new order ID.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/replace-order>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReplaceOrderRequest {
+    /// Order ID to replace.
+    pub oid: String,
+    /// New limit price (optional, inherits from original if omitted).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub p: Option<Decimal>,
+    /// New quantity in contracts (optional, inherits from original if omitted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub q: Option<u64>,
+    /// New post-only flag (optional, inherits from original if omitted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub po: Option<bool>,
+    /// New time-in-force (optional, inherits from original if omitted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tif: Option<AxTimeInForce>,
+    /// New trigger price for stop orders (optional).
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_optional_decimal_as_str"
+    )]
+    pub trigger_price: Option<Decimal>,
+}
+
+impl ReplaceOrderRequest {
+    /// Creates a new [`ReplaceOrderRequest`] with only the order ID.
+    ///
+    /// Use the builder methods to set the fields to amend.
+    #[must_use]
+    pub fn new(order_id: impl Into<String>) -> Self {
+        Self {
+            oid: order_id.into(),
+            p: None,
+            q: None,
+            po: None,
+            tif: None,
+            trigger_price: None,
+        }
+    }
+
+    /// Sets the new limit price.
+    #[must_use]
+    pub fn with_price(mut self, price: Decimal) -> Self {
+        self.p = Some(price);
+        self
+    }
+
+    /// Sets the new quantity.
+    #[must_use]
+    pub fn with_quantity(mut self, quantity: u64) -> Self {
+        self.q = Some(quantity);
+        self
+    }
+
+    /// Sets the new trigger price.
+    #[must_use]
+    pub fn with_trigger_price(mut self, trigger_price: Decimal) -> Self {
+        self.trigger_price = Some(trigger_price);
+        self
+    }
+}
+
+/// Response payload returned by `POST /replace_order`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/replace-order>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxReplaceOrderResponse {
+    /// New order ID assigned to the replacement order.
+    pub oid: String,
+}
+
 /// Request body for `POST /cancel_all_orders`.
 ///
 /// # References
@@ -1322,5 +1404,46 @@ mod tests {
         let json = include_str!("../../test_data/http_initial_margin_requirement.json");
         let response: AxInitialMarginRequirementResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.im, Decimal::new(125050, 2));
+    }
+
+    #[rstest]
+    fn test_deserialize_replace_order_response() {
+        let json = include_str!("../../test_data/http_replace_order.json");
+        let response: AxReplaceOrderResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.oid, "O-01ARZ3NDEKTSV4RRFFQ69G5NEW");
+    }
+
+    #[rstest]
+    fn test_replace_order_request_serialization() {
+        let request = ReplaceOrderRequest::new("O-01ARZ3NDEKTSV4RRFFQ69G5FAV")
+            .with_price(Decimal::new(10550, 4))
+            .with_quantity(200);
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["oid"], "O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(json["p"], "1.0550");
+        assert_eq!(json["q"], 200);
+        assert!(json.get("po").is_none());
+        assert!(json.get("tif").is_none());
+        assert!(json.get("trigger_price").is_none());
+    }
+
+    #[rstest]
+    fn test_replace_order_request_minimal() {
+        let request = ReplaceOrderRequest::new("O-TEST");
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["oid"], "O-TEST");
+        assert!(json.get("p").is_none());
+        assert!(json.get("q").is_none());
+    }
+
+    #[rstest]
+    fn test_replace_order_request_with_trigger_price() {
+        let request = ReplaceOrderRequest::new("O-STOP").with_trigger_price(Decimal::new(49000, 0));
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["oid"], "O-STOP");
+        assert_eq!(json["trigger_price"], "49000");
+        assert!(json.get("p").is_none());
+        assert!(json.get("q").is_none());
     }
 }

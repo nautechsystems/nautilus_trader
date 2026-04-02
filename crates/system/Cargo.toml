@@ -51,6 +51,7 @@ nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+bon = { workspace = true }
 log = { workspace = true }
 sysinfo = { workspace = true }
 ustr = { workspace = true }

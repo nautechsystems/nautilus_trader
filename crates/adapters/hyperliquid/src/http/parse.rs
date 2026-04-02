@@ -84,6 +84,8 @@ pub struct HyperliquidInstrumentDef {
     pub max_leverage: Option<u32>,
     /// Whether requires isolated margin only.
     pub only_isolated: bool,
+    /// Whether this is a HIP-3 builder-deployed perpetual.
+    pub is_hip3: bool,
     /// Whether the instrument is active/tradeable.
     pub active: bool,
     /// Raw upstream data for debugging.
@@ -97,17 +99,21 @@ pub struct HyperliquidInstrumentDef {
 /// - Price decimals = max(0, 6 - sz_decimals) per venue docs
 /// - Active = !is_delisted
 ///
-/// **Important:** Delisted instruments are included in the returned list but marked as inactive.
-/// This is necessary to support parsing historical data (orders, fills, positions) for instruments
-/// that have been delisted but may still have associated trading history.
-pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
-    const PERP_MAX_DECIMALS: i32 = 6; // Hyperliquid perps price decimal limit
+/// `asset_index_base` controls the starting offset for asset IDs:
+/// - Standard perps (dex 0): base = 0
+/// - HIP-3 dexes: base = 100_000 + dex_index * 10_000
+///
+/// Delisted instruments are included but marked as inactive to support
+/// parsing historical data for instruments that may still have trading history.
+pub fn parse_perp_instruments(
+    meta: &PerpMeta,
+    asset_index_base: u32,
+) -> Result<Vec<HyperliquidInstrumentDef>, String> {
+    const PERP_MAX_DECIMALS: i32 = 6;
 
     let mut defs = Vec::new();
 
     for (index, asset) in meta.universe.iter().enumerate() {
-        // Include delisted assets but mark them as inactive
-        // This allows parsing of historical data for delisted instruments
         let is_delisted = asset.is_delisted.unwrap_or(false);
 
         let price_decimals = (PERP_MAX_DECIMALS - asset.sz_decimals as i32).max(0) as u32;
@@ -116,22 +122,22 @@ pub fn parse_perp_instruments(meta: &PerpMeta) -> Result<Vec<HyperliquidInstrume
 
         let symbol = format!("{}-USD-PERP", asset.name);
 
-        // Perps use base currency as raw_symbol (e.g., "BTC")
         let raw_symbol: Ustr = asset.name.as_str().into();
 
         let def = HyperliquidInstrumentDef {
             symbol: symbol.into(),
             raw_symbol,
             base: asset.name.clone().into(),
-            quote: "USD".into(), // Hyperliquid perps are USD-quoted (USDC settled)
+            quote: "USD".into(),
             market_type: HyperliquidMarketType::Perp,
-            asset_index: index as u32,
+            asset_index: asset_index_base + index as u32,
             price_decimals,
             size_decimals: asset.sz_decimals,
             tick_size,
             lot_size,
             max_leverage: asset.max_leverage,
             only_isolated: asset.only_isolated.unwrap_or(false),
+            is_hip3: asset_index_base > 0,
             active: !is_delisted,
             raw_data: serde_json::to_string(asset).unwrap_or_default(),
         };
@@ -200,6 +206,7 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
             lot_size,
             max_leverage: None,
             only_isolated: false,
+            is_hip3: false,
             active: pair.is_canonical, // Use canonical status to indicate if pair is actively tradeable
             raw_data: serde_json::to_string(pair).unwrap_or_default(),
         };
@@ -636,21 +643,21 @@ mod tests {
                     name: "BTC".to_string(),
                     sz_decimals: 5,
                     max_leverage: Some(50),
-                    only_isolated: None,
-                    is_delisted: None,
+                    ..Default::default()
                 },
                 PerpAsset {
                     name: "DELIST".to_string(),
                     sz_decimals: 3,
                     max_leverage: Some(10),
                     only_isolated: Some(true),
-                    is_delisted: Some(true), // Should be included but marked as inactive
+                    is_delisted: Some(true),
+                    ..Default::default()
                 },
             ],
             margin_tables: vec![],
         };
 
-        let defs = parse_perp_instruments(&meta).unwrap();
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
 
         // Should have both BTC and DELIST (delisted instruments are included for historical data)
         assert_eq!(defs.len(), 2);
@@ -674,20 +681,13 @@ mod tests {
         assert!(!delist.active); // Delisted instruments are marked as inactive
     }
 
-    fn load_test_data<T>(filename: &str) -> T
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let path = format!("test_data/{filename}");
-        let content = std::fs::read_to_string(path).expect("Failed to read test data");
-        serde_json::from_str(&content).expect("Failed to parse test data")
-    }
+    use crate::common::testing::load_test_data;
 
     #[rstest]
     fn test_parse_perp_instruments_from_real_data() {
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
 
-        let defs = parse_perp_instruments(&meta).unwrap();
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
 
         // Should have 3 instruments (BTC, ETH, ATOM)
         assert_eq!(defs.len(), 3);
@@ -819,20 +819,59 @@ mod tests {
 
     #[rstest]
     fn test_price_decimals_clamping() {
-        // Test that price decimals are clamped to >= 0
         let meta = PerpMeta {
             universe: vec![PerpAsset {
                 name: "HIGHPREC".to_string(),
                 sz_decimals: 10, // 6 - 10 = -4, should clamp to 0
                 max_leverage: Some(1),
-                only_isolated: None,
-                is_delisted: None,
+                ..Default::default()
             }],
             margin_tables: vec![],
         };
 
-        let defs = parse_perp_instruments(&meta).unwrap();
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
         assert_eq!(defs[0].price_decimals, 0);
         assert_eq!(defs[0].tick_size, dec!(1));
+    }
+
+    #[rstest]
+    fn test_parse_perp_instruments_hip3_dex() {
+        // HIP-3 dex at index 1: asset_index_base = 100_000 + 1 * 10_000 = 110_000
+        let meta = PerpMeta {
+            universe: vec![
+                PerpAsset {
+                    name: "xyz:TSLA".to_string(),
+                    sz_decimals: 3,
+                    max_leverage: Some(10),
+                    only_isolated: None,
+                    is_delisted: None,
+                    growth_mode: Some("enabled".to_string()),
+                    margin_mode: Some("strictIsolated".to_string()),
+                },
+                PerpAsset {
+                    name: "xyz:NVDA".to_string(),
+                    sz_decimals: 3,
+                    max_leverage: Some(20),
+                    only_isolated: None,
+                    is_delisted: None,
+                    growth_mode: None,
+                    margin_mode: None,
+                },
+            ],
+            margin_tables: vec![],
+        };
+
+        let defs = parse_perp_instruments(&meta, 110_000).unwrap();
+        assert_eq!(defs.len(), 2);
+
+        // HIP-3 asset: colon in symbol, offset asset index
+        assert_eq!(defs[0].symbol, "xyz:TSLA-USD-PERP");
+        assert!(defs[0].symbol.contains(':'));
+        assert_eq!(defs[0].base, "xyz:TSLA");
+        assert_eq!(defs[0].asset_index, 110_000);
+        assert!(defs[0].active);
+
+        assert_eq!(defs[1].symbol, "xyz:NVDA-USD-PERP");
+        assert_eq!(defs[1].asset_index, 110_001);
     }
 }

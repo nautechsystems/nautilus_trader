@@ -34,10 +34,11 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
+    AtomicMap, AtomicSet,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
     string::REDACTED,
@@ -157,7 +158,7 @@ pub(crate) struct PendingOrderInfo {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.okx")
 )]
 pub struct OKXWebSocketClient {
     url: String,
@@ -179,12 +180,12 @@ pub struct OKXWebSocketClient {
     subscriptions_bare: Arc<DashMap<OKXWsChannel, bool>>,
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-    inst_id_code_cache: Arc<DashMap<Ustr, u64>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    inst_id_code_cache: Arc<AtomicMap<Ustr, u64>>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
-    option_greeks_subs: Arc<DashSet<InstrumentId>>,
+    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     cancellation_token: CancellationToken,
 }
 
@@ -264,12 +265,12 @@ impl OKXWebSocketClient {
             subscriptions_bare,
             subscriptions_state,
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            instruments_cache: Arc::new(DashMap::new()),
-            inst_id_code_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
+            inst_id_code_cache: Arc::new(AtomicMap::new()),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
-            option_greeks_subs: Arc::new(DashSet::new()),
+            option_greeks_subs: Arc::new(AtomicSet::new()),
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -372,10 +373,11 @@ impl OKXWebSocketClient {
     ///
     /// Any existing instruments with the same symbols will be replaced.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.symbol().inner(), inst.clone());
-        }
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.symbol().inner(), inst.clone());
+            }
+        });
     }
 
     /// Caches a single instrument.
@@ -388,10 +390,7 @@ impl OKXWebSocketClient {
 
     /// Returns a snapshot of the instruments cache as an `AHashMap`.
     pub fn instruments_snapshot(&self) -> AHashMap<Ustr, InstrumentAny> {
-        self.instruments_cache
-            .iter()
-            .map(|entry| (*entry.key(), entry.value().clone()))
-            .collect()
+        (**self.instruments_cache.load()).clone()
     }
 
     /// Caches the instIdCode mapping for an instrument.
@@ -405,17 +404,20 @@ impl OKXWebSocketClient {
     ///
     /// This is typically called after loading instruments from the HTTP API.
     pub fn cache_inst_id_codes(&self, mappings: impl IntoIterator<Item = (Ustr, u64)>) {
-        for (inst_id, inst_id_code) in mappings {
-            self.inst_id_code_cache.insert(inst_id, inst_id_code);
-        }
+        let entries: Vec<_> = mappings.into_iter().collect();
+        self.inst_id_code_cache.rcu(|m| {
+            for (inst_id, inst_id_code) in &entries {
+                m.insert(*inst_id, *inst_id_code);
+            }
+        });
     }
 
     /// Gets the instIdCode for an instrument.
     ///
-    /// Returns `None` if the instrument is not cached (e.g., SPOT instruments may not have instIdCode).
+    /// Returns `None` if the instrument is not in the cache.
     #[must_use]
     pub fn get_inst_id_code(&self, inst_id: &Ustr) -> Option<u64> {
-        self.inst_id_code_cache.get(inst_id).map(|r| *r.value())
+        self.inst_id_code_cache.load().get(inst_id).copied()
     }
 
     /// Sets the VIP level for this client.
@@ -1393,7 +1395,7 @@ impl OKXWebSocketClient {
     }
 
     /// Returns a reference to the option greeks subscription set.
-    pub fn option_greeks_subs(&self) -> &Arc<DashSet<InstrumentId>> {
+    pub fn option_greeks_subs(&self) -> &Arc<AtomicSet<InstrumentId>> {
         &self.option_greeks_subs
     }
 
@@ -1963,6 +1965,8 @@ impl OKXWebSocketClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> Result<(), OKXWsError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXWsError::ClientError(format!(
@@ -1980,19 +1984,21 @@ impl OKXWebSocketClient {
 
         let mut builder = WsPostOrderParamsBuilder::default();
 
-        builder.inst_id(instrument_id.symbol.as_str());
-
-        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
-        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
-            builder.inst_id_code(inst_id_code);
-        }
+        let inst_id_code = self
+            .get_inst_id_code(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                OKXWsError::ClientError(format!(
+                    "No instIdCode cached for {instrument_id}, cannot submit order"
+                ))
+            })?;
+        builder.inst_id_code(inst_id_code);
 
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
 
         let instrument = self
             .instruments_cache
-            .get(&instrument_id.symbol.inner())
+            .get_cloned(&instrument_id.symbol.inner())
             .ok_or_else(|| {
                 OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
             })?;
@@ -2000,6 +2006,16 @@ impl OKXWebSocketClient {
         let instrument_type =
             okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
         let quote_currency = instrument.quote_currency();
+
+        // OKX options only support limit-style orders
+        if instrument_type == OKXInstrumentType::Option
+            && matches!(order_type, OrderType::Market | OrderType::MarketToLimit)
+        {
+            return Err(OKXWsError::ClientError(
+                "Market orders are not supported for OKX options, use Limit orders instead"
+                    .to_string(),
+            ));
+        }
 
         match instrument_type {
             OKXInstrumentType::Spot => {
@@ -2025,10 +2041,17 @@ impl OKXWebSocketClient {
                     builder.pos_side(OKXPositionSide::Net);
                 }
             }
+            OKXInstrumentType::Option => {
+                builder.ccy(quote_currency.to_string());
+
+                if position_side.is_none() {
+                    builder.pos_side(OKXPositionSide::Net);
+                }
+                // reduceOnly is not applicable to options per OKX docs
+            }
             _ => {
                 builder.ccy(quote_currency.to_string());
 
-                // For derivatives, posSide is required
                 if position_side.is_none() {
                     builder.pos_side(OKXPositionSide::Net);
                 }
@@ -2078,7 +2101,7 @@ impl OKXWebSocketClient {
 
         // OKX implements FOK/IOC as order types rather than separate time-in-force
         // Market + FOK is unsupported (FOK requires a limit price)
-        // optimal_limit_ioc is only supported for derivatives (SWAP/FUTURES), not SPOT
+        // optimal_limit_ioc is only supported for SWAP/FUTURES, not SPOT or OPTION
         let (okx_ord_type, price) = if post_only.unwrap_or(false) {
             (OKXOrderType::PostOnly, price)
         } else if let Some(tif) = time_in_force {
@@ -2089,14 +2112,24 @@ impl OKXWebSocketClient {
                     ));
                 }
                 (OrderType::Market, TimeInForce::Ioc) => {
-                    // optimal_limit_ioc only works for derivatives, use plain market for SPOT
-                    if instrument_type == OKXInstrumentType::Spot {
+                    // optimal_limit_ioc only works for SWAP/FUTURES
+                    if matches!(
+                        instrument_type,
+                        OKXInstrumentType::Spot | OKXInstrumentType::Option
+                    ) {
                         (OKXOrderType::Market, price)
                     } else {
                         (OKXOrderType::OptimalLimitIoc, price)
                     }
                 }
-                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Fok) => {
+                    // OKX uses op_fok for options FOK orders
+                    if instrument_type == OKXInstrumentType::Option {
+                        (OKXOrderType::OpFok, price)
+                    } else {
+                        (OKXOrderType::Fok, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),
             }
@@ -2111,7 +2144,12 @@ impl OKXWebSocketClient {
         builder.ord_type(okx_ord_type);
         builder.sz(quantity.to_string());
 
-        if let Some(tp) = trigger_price {
+        // For options: pxUsd/pxVol are mutually exclusive with px
+        if let Some(usd) = px_usd {
+            builder.px_usd(usd);
+        } else if let Some(vol) = px_vol {
+            builder.px_vol(vol);
+        } else if let Some(tp) = trigger_price {
             builder.px(tp.to_string());
         } else if let Some(p) = price {
             builder.px(p.to_string());
@@ -2134,8 +2172,9 @@ impl OKXWebSocketClient {
         let payload = serde_json::to_string(&request)
             .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize order: {e}")))?;
 
+        let cl_ord_key = client_order_id.to_string();
         self.pending_orders.insert(
-            client_order_id.to_string(),
+            cl_ord_key.clone(),
             PendingOrderInfo {
                 trader_id,
                 strategy_id,
@@ -2151,7 +2190,13 @@ impl OKXWebSocketClient {
             op: Some(super::enums::OKXWsOperation::Order),
         };
 
-        self.send_cmd(cmd).await
+        let result = self.send_cmd(cmd).await;
+
+        if result.is_err() {
+            self.pending_orders.remove(&cl_ord_key);
+        }
+
+        result
     }
 
     /// Place a new order via WebSocket.
@@ -2179,18 +2224,25 @@ impl OKXWebSocketClient {
         price: Option<Price>,
         quantity: Option<Quantity>,
         venue_order_id: Option<VenueOrderId>,
+        new_px_usd: Option<String>,
+        new_px_vol: Option<String>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
-        builder.inst_id(instrument_id.symbol.as_str());
-
-        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
-            builder.inst_id_code(inst_id_code);
-        }
+        let inst_id_code = self
+            .get_inst_id_code(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                OKXWsError::ClientError(format!(
+                    "No instIdCode cached for {instrument_id}, cannot amend order"
+                ))
+            })?;
+        builder.inst_id_code(inst_id_code);
 
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
         }
+
+        let cl_ord_key = client_order_id.map(|id| id.to_string());
 
         if let Some(client_order_id) = client_order_id {
             builder.cl_ord_id(client_order_id.as_str());
@@ -2204,7 +2256,12 @@ impl OKXWebSocketClient {
             );
         }
 
-        if let Some(price) = price {
+        // For options: newPxUsd/newPxVol are mutually exclusive with newPx
+        if let Some(usd) = new_px_usd {
+            builder.new_px_usd(usd);
+        } else if let Some(vol) = new_px_vol {
+            builder.new_px_vol(vol);
+        } else if let Some(price) = price {
             builder.new_px(price.to_string());
         }
 
@@ -2235,7 +2292,13 @@ impl OKXWebSocketClient {
             op: Some(super::enums::OKXWsOperation::AmendOrder),
         };
 
-        self.send_cmd(cmd).await
+        let result = self.send_cmd(cmd).await;
+
+        if let (Err(_), Some(key)) = (&result, &cl_ord_key) {
+            self.pending_amends.remove(key);
+        }
+
+        result
     }
 
     /// Cancels an existing order.
@@ -2258,15 +2321,21 @@ impl OKXWebSocketClient {
         venue_order_id: Option<VenueOrderId>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsCancelOrderParamsBuilder::default();
-        builder.inst_id(instrument_id.symbol.as_str());
 
-        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
-            builder.inst_id_code(inst_id_code);
-        }
+        let inst_id_code = self
+            .get_inst_id_code(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                OKXWsError::ClientError(format!(
+                    "No instIdCode cached for {instrument_id}, cannot cancel order"
+                ))
+            })?;
+        builder.inst_id_code(inst_id_code);
 
         if let Some(venue_order_id) = venue_order_id {
             builder.ord_id(venue_order_id.as_str());
         }
+
+        let cl_ord_key = client_order_id.map(|id| id.to_string());
 
         if let Some(client_order_id) = client_order_id {
             builder.cl_ord_id(client_order_id.as_str());
@@ -2303,7 +2372,13 @@ impl OKXWebSocketClient {
             op: Some(super::enums::OKXWsOperation::CancelOrder),
         };
 
-        self.send_cmd(cmd).await
+        let result = self.send_cmd(cmd).await;
+
+        if let (Err(_), Some(key)) = (&result, &cl_ord_key) {
+            self.pending_cancels.remove(key);
+        }
+
+        result
     }
 
     /// Mass cancels all orders for a given instrument via WebSocket.
@@ -2318,7 +2393,7 @@ impl OKXWebSocketClient {
     pub async fn mass_cancel_orders(&self, instrument_id: InstrumentId) -> Result<(), OKXWsError> {
         let instrument = self
             .instruments_cache
-            .get(&instrument_id.symbol.inner())
+            .get_cloned(&instrument_id.symbol.inner())
             .ok_or_else(|| {
                 OKXWsError::ClientError(format!("Unknown instrument {instrument_id}"))
             })?;
@@ -2327,7 +2402,7 @@ impl OKXWebSocketClient {
             okx_instrument_type(&instrument).map_err(|e| OKXWsError::ClientError(e.to_string()))?;
 
         let symbol = instrument.symbol().inner();
-        let inst_family = match &*instrument {
+        let inst_family = match &instrument {
             InstrumentAny::CurrencyPair(_) => symbol.as_str().to_string(),
             InstrumentAny::CryptoPerpetual(_) => symbol
                 .as_str()
@@ -2421,18 +2496,21 @@ impl OKXWebSocketClient {
         ) in orders
         {
             let mut builder = WsPostOrderParamsBuilder::default();
-            builder.inst_id(inst_id.symbol.inner());
 
-            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
-            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
-                builder.inst_id_code(inst_id_code);
-            }
+            let inst_id_code = self
+                .get_inst_id_code(&inst_id.symbol.inner())
+                .ok_or_else(|| {
+                    OKXWsError::ClientError(format!(
+                        "No instIdCode cached for {inst_id}, cannot submit order"
+                    ))
+                })?;
+            builder.inst_id_code(inst_id_code);
 
             builder.td_mode(td_mode);
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.side(ord_side.as_specified());
 
-            if let Some(instrument) = self.instruments_cache.get(&inst_id.symbol.inner()) {
+            if let Some(instrument) = self.instruments_cache.get_cloned(&inst_id.symbol.inner()) {
                 builder.ccy(instrument.quote_currency().to_string());
             }
 
@@ -2505,13 +2583,15 @@ impl OKXWebSocketClient {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
         for (_inst_type, inst_id, cl_ord_id, new_cl_ord_id, pr, sz) in orders {
             let mut builder = WsAmendOrderParamsBuilder::default();
-            // Note: instType should NOT be included in amend order requests
-            builder.inst_id(inst_id.symbol.inner());
 
-            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
-            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
-                builder.inst_id_code(inst_id_code);
-            }
+            let inst_id_code = self
+                .get_inst_id_code(&inst_id.symbol.inner())
+                .ok_or_else(|| {
+                    OKXWsError::ClientError(format!(
+                        "No instIdCode cached for {inst_id}, cannot amend order"
+                    ))
+                })?;
+            builder.inst_id_code(inst_id_code);
 
             builder.cl_ord_id(cl_ord_id.as_str());
             builder.new_cl_ord_id(new_cl_ord_id.as_str());
@@ -2555,13 +2635,15 @@ impl OKXWebSocketClient {
         let mut args: Vec<Value> = Vec::with_capacity(orders.len());
         for (inst_id, cl_ord_id, ord_id) in orders {
             let mut builder = WsCancelOrderParamsBuilder::default();
-            // Note: instType should NOT be included in cancel order requests
-            builder.inst_id(inst_id.symbol.inner());
 
-            // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
-            if let Some(inst_id_code) = self.get_inst_id_code(&inst_id.symbol.inner()) {
-                builder.inst_id_code(inst_id_code);
-            }
+            let inst_id_code = self
+                .get_inst_id_code(&inst_id.symbol.inner())
+                .ok_or_else(|| {
+                    OKXWsError::ClientError(format!(
+                        "No instIdCode cached for {inst_id}, cannot cancel order"
+                    ))
+                })?;
+            builder.inst_id_code(inst_id_code);
 
             if let Some(c) = cl_ord_id {
                 builder.cl_ord_id(c.as_str());
@@ -2625,12 +2707,14 @@ impl OKXWebSocketClient {
             ));
         }
 
-        builder.inst_id(instrument_id.symbol.inner());
-
-        // Look up instIdCode from cache (required for WebSocket orders per OKX deprecation)
-        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
-            builder.inst_id_code(inst_id_code);
-        }
+        let inst_id_code = self
+            .get_inst_id_code(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                OKXWsError::ClientError(format!(
+                    "No instIdCode cached for {instrument_id}, cannot submit algo order"
+                ))
+            })?;
+        builder.inst_id_code(inst_id_code);
 
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
@@ -2719,11 +2803,15 @@ impl OKXWebSocketClient {
         algo_order_id: Option<String>,
     ) -> Result<(), OKXWsError> {
         let mut builder = super::messages::WsCancelAlgoOrderParamsBuilder::default();
-        builder.inst_id(instrument_id.symbol.inner());
 
-        if let Some(inst_id_code) = self.get_inst_id_code(&instrument_id.symbol.inner()) {
-            builder.inst_id_code(inst_id_code);
-        }
+        let inst_id_code = self
+            .get_inst_id_code(&instrument_id.symbol.inner())
+            .ok_or_else(|| {
+                OKXWsError::ClientError(format!(
+                    "No instIdCode cached for {instrument_id}, cannot cancel algo order"
+                ))
+            })?;
+        builder.inst_id_code(inst_id_code);
 
         if let Some(algo_id) = algo_order_id {
             builder.algo_id(algo_id);
@@ -3095,6 +3183,9 @@ mod tests {
             fill_fee_ccy: None,
             fill_mark_px: None,
             fill_mark_vol: None,
+            fill_px_vol: None,
+            fill_px_usd: None,
+            fill_fwd_px: None,
             fill_notional_usd: None,
             fill_pnl: None,
             is_tp_limit: None,
@@ -3259,6 +3350,105 @@ mod tests {
         let result = client.batch_cancel_orders(orders).await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_order_fails_without_inst_id_code() {
+        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId};
+
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+        let result = client
+            .cancel_order(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                instrument_id,
+                Some(ClientOrderId::new("O-001")),
+                None,
+            )
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("No instIdCode cached for BTC-USDT-SWAP.OKX"),
+            "Expected instIdCode error, found: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_submit_order_fails_without_inst_id_code() {
+        use nautilus_model::{
+            enums::{OrderSide, OrderType},
+            identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
+            types::Quantity,
+        };
+
+        use crate::common::enums::OKXTradeMode;
+
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+
+        let result = client
+            .submit_order(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                instrument_id,
+                OKXTradeMode::Cross,
+                ClientOrderId::new("O-001"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.01"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("No instIdCode cached for ETH-USDT-SWAP.OKX"),
+            "Expected instIdCode error, found: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cancel_order_passes_inst_id_code_lookup_when_cached() {
+        use nautilus_model::identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId};
+        use ustr::Ustr;
+
+        let client = OKXWebSocketClient::default();
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+        // Populate the cache so the lookup succeeds
+        client.cache_inst_id_code(Ustr::from("BTC-USDT-SWAP"), 10459);
+
+        let result = client
+            .cancel_order(
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                instrument_id,
+                Some(ClientOrderId::new("O-001")),
+                None,
+            )
+            .await;
+
+        // Fails later (not connected) rather than at instIdCode lookup
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            !err.contains("No instIdCode cached"),
+            "Should pass instIdCode lookup, found: {err}"
+        );
     }
 
     #[rstest]

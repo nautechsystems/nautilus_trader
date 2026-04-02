@@ -188,11 +188,16 @@ fn test_config_default() {
 }
 
 #[rstest]
-fn test_config_new(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
-    let config = SandboxExecutionClientConfig::new(trader_id, account_id, venue, starting_balances);
+    let config = SandboxExecutionClientConfig::builder()
+        .trader_id(trader_id)
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .build();
 
     assert_eq!(config.trader_id, trader_id);
     assert_eq!(config.account_id, account_id);
@@ -202,19 +207,24 @@ fn test_config_new(trader_id: TraderId, account_id: AccountId, venue: Venue) {
 }
 
 #[rstest]
-fn test_config_builder_methods(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder_with_overrides(trader_id: TraderId, account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
-    let config = SandboxExecutionClientConfig::new(trader_id, account_id, venue, starting_balances)
-        .with_base_currency(usd)
-        .with_oms_type(OmsType::Hedging)
-        .with_account_type(AccountType::Cash)
-        .with_default_leverage(Decimal::new(10, 0))
-        .with_book_type(BookType::L2_MBP)
-        .with_frozen_account(true)
-        .with_bar_execution(false)
-        .with_trade_execution(true);
+    let config = SandboxExecutionClientConfig::builder()
+        .trader_id(trader_id)
+        .account_id(account_id)
+        .venue(venue)
+        .starting_balances(starting_balances)
+        .base_currency(usd)
+        .oms_type(OmsType::Hedging)
+        .account_type(AccountType::Cash)
+        .default_leverage(Decimal::new(10, 0))
+        .book_type(BookType::L2_MBP)
+        .frozen_account(true)
+        .bar_execution(false)
+        .trade_execution(true)
+        .build();
 
     assert_eq!(config.base_currency, Some(usd));
     assert_eq!(config.oms_type, OmsType::Hedging);

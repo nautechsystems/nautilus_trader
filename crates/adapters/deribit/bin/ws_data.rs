@@ -68,11 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fetch instruments via HTTP to get proper instrument metadata
     let http_client = DeribitHttpClient::new(
         None, // base_url
-        is_testnet, None, // timeout_secs
-        None, // max_retries
-        None, // retry_delay_ms
-        None, // retry_delay_max_ms
-        None, // proxy_url
+        is_testnet, 10,     // timeout_secs
+        3,      // max_retries
+        1000,   // retry_delay_ms
+        10_000, // retry_delay_max_ms
+        None,   // proxy_url
     )?;
     log::info!("Fetching BTC instruments from Deribit...");
     let instruments = http_client

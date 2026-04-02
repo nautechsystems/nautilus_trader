@@ -1,8 +1,8 @@
 # Test Datasets
 
 Target standards for curating, storing, and consuming external datasets used as test fixtures.
-New datasets should follow these standards. Existing datasets are documented under
-[legacy datasets](#legacy-datasets) and will be migrated incrementally.
+New datasets should follow these standards. Existing datasets that predate this
+policy are documented under [legacy datasets](#legacy-datasets).
 
 ## Dataset categories
 
@@ -55,7 +55,7 @@ User-fetched datasets use the same metadata fields where they apply. They should
 |-----------------------|-----------------------------------------------------------------------|
 | `distribution`        | Must be `"user-fetch"`.                                               |
 | `fetch_method`        | How the user acquires the source data (API, web portal, CLI, etc.).   |
-| `fetch_reference`     | URL or document reference for the user-facing download flow.          |
+| `fetch_reference`     | URL or document reference for the user‑facing download flow.          |
 | `auth`                | Required credentials or entitlements, if any.                         |
 | `transform_version`   | Version of the local transform pipeline that builds the final files.   |
 | `redistribution`      | Short note describing redistribution limits for the dataset.          |

@@ -66,11 +66,11 @@ class TardisBatchedDeltasStreamIterator:
 class TardisDataClientConfig:
     def __init__(
         self,
-        api_key: str | None = ...,
-        tardis_ws_url: str | None = ...,
-        normalize_symbols: bool | None = ...,
-        options: typing.Sequence[ReplayNormalizedRequestOptions] | None = ...,
-        stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = ...,
+        api_key: str | None = None,
+        tardis_ws_url: str | None = None,
+        normalize_symbols: bool | None = None,
+        options: typing.Sequence[ReplayNormalizedRequestOptions] | None = None,
+        stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = None,
     ) -> None: ...
 
 @typing.final
@@ -97,10 +97,10 @@ class TardisFundingRateStreamIterator:
 class TardisHttpClient:
     def __init__(
         self,
-        api_key: str | None,
-        base_url: str | None,
-        timeout_secs: int | None,
-        normalize_symbols: bool,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int | None = None,
+        normalize_symbols: bool = True,
     ) -> None: ...
     @property
     def api_key(self) -> str | None: ...
@@ -149,7 +149,10 @@ class TardisInstrumentMiniInfo:
 @typing.final
 class TardisMachineClient:
     def __init__(
-        self, base_url: str | None, normalize_symbols: bool, book_snapshot_output: str
+        self,
+        base_url: str | None = None,
+        normalize_symbols: bool = True,
+        book_snapshot_output: str = "deltas",
     ) -> None: ...
     def is_closed(self) -> bool: ...
     def close(self) -> None: ...
@@ -184,103 +187,103 @@ class TardisTradeStreamIterator:
 def bar_spec_to_tardis_trade_bar_string(bar_spec: model.BarSpecification) -> str: ...
 def load_tardis_deltas(
     filepath: str | os.PathLike | pathlib.Path,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.OrderBookDelta]: ...
 def load_tardis_depth10_from_snapshot25(
     filepath: str | os.PathLike | pathlib.Path,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.OrderBookDepth10]: ...
 def load_tardis_depth10_from_snapshot5(
     filepath: str | os.PathLike | pathlib.Path,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.OrderBookDepth10]: ...
 def load_tardis_funding_rates(
     filepath: str | os.PathLike | pathlib.Path,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.FundingRateUpdate]: ...
 def load_tardis_quotes(
     filepath: str | os.PathLike | pathlib.Path,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.QuoteTick]: ...
 def load_tardis_trades(
     filepath: str | os.PathLike | pathlib.Path,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> list[model.TradeTick]: ...
 def run_tardis_machine_replay(config_filepath: str) -> typing.Any: ...
 def stream_tardis_batched_deltas(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisBatchedDeltasStreamIterator: ...
 def stream_tardis_deltas(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisDeltaStreamIterator: ...
 def stream_tardis_depth10_from_snapshot25(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisDepth10StreamIterator: ...
 def stream_tardis_depth10_from_snapshot5(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisDepth10StreamIterator: ...
 def stream_tardis_funding_rates(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisFundingRateStreamIterator: ...
 def stream_tardis_quotes(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisQuoteStreamIterator: ...
 def stream_tardis_trades(
     filepath: str | os.PathLike | pathlib.Path,
-    chunk_size: int,
-    price_precision: int | None = ...,
-    size_precision: int | None = ...,
-    instrument_id: model.InstrumentId | None = ...,
-    limit: int | None = ...,
+    chunk_size: int = 100000,
+    price_precision: int | None = None,
+    size_precision: int | None = None,
+    instrument_id: model.InstrumentId | None = None,
+    limit: int | None = None,
 ) -> TardisTradeStreamIterator: ...
 def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
 def tardis_exchange_is_option_exchange(exchange_str: str) -> bool: ...
 def tardis_exchange_to_venue_str(exchange_str: str) -> str: ...
 def tardis_exchanges() -> list[str]: ...
 def tardis_normalize_symbol_str(
-    symbol: str, exchange: str, instrument_type: str, is_inverse: bool | None = ...
+    symbol: str, exchange: str, instrument_type: str, is_inverse: bool | None = None
 ) -> str: ...

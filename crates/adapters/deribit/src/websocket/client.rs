@@ -29,11 +29,11 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::{DashMap, DashSet};
 use futures_util::Stream;
 use nautilus_common::{enums::LogColor, live::get_runtime, log_info};
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::BarType,
@@ -84,7 +84,7 @@ const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
 )]
 pub struct DeribitWebSocketClient {
     url: String,
@@ -99,10 +99,10 @@ pub struct DeribitWebSocketClient {
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions_state: SubscriptionState,
-    instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
-    option_greeks_subs: Arc<DashSet<InstrumentId>>,
-    mark_price_subs: Arc<DashSet<InstrumentId>>,
-    index_price_subs: Arc<DashSet<InstrumentId>>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+    mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    index_price_subs: Arc<AtomicSet<InstrumentId>>,
     cancellation_token: CancellationToken,
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
@@ -137,7 +137,7 @@ impl DeribitWebSocketClient {
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        heartbeat_interval: Option<u64>,
+        heartbeat_interval: u64,
         is_testnet: bool,
     ) -> anyhow::Result<Self> {
         Self::new_inner(
@@ -155,7 +155,7 @@ impl DeribitWebSocketClient {
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        heartbeat_interval: Option<u64>,
+        heartbeat_interval: u64,
         is_testnet: bool,
         env_fallback: bool,
     ) -> anyhow::Result<Self> {
@@ -183,7 +183,7 @@ impl DeribitWebSocketClient {
         Ok(Self {
             url,
             is_testnet,
-            heartbeat_interval,
+            heartbeat_interval: Some(heartbeat_interval),
             credential,
             auth_state: Arc::new(tokio::sync::RwLock::new(None)),
             signal,
@@ -198,10 +198,10 @@ impl DeribitWebSocketClient {
             out_rx: None,
             task_handle: None,
             subscriptions_state,
-            instruments_cache: Arc::new(DashMap::new()),
-            option_greeks_subs: Arc::new(DashSet::new()),
-            mark_price_subs: Arc::new(DashSet::new()),
-            index_price_subs: Arc::new(DashSet::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
+            option_greeks_subs: Arc::new(AtomicSet::new()),
+            mark_price_subs: Arc::new(AtomicSet::new()),
+            index_price_subs: Arc::new(AtomicSet::new()),
             cancellation_token: CancellationToken::new(),
             account_id: None,
             bars_timestamp_on_close: true,
@@ -217,12 +217,11 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if initialization fails.
     pub fn new_public(is_testnet: bool) -> anyhow::Result<Self> {
-        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new_inner(
             None,
             None,
             None,
-            Some(heartbeat_interval),
+            DERIBIT_WS_HEARTBEAT_SECS,
             is_testnet,
             false,
         )
@@ -238,7 +237,7 @@ impl DeribitWebSocketClient {
     /// Returns an error if initialization fails.
     pub fn new_unauthenticated(
         url: Option<String>,
-        heartbeat_interval: Option<u64>,
+        heartbeat_interval: u64,
         is_testnet: bool,
     ) -> anyhow::Result<Self> {
         Self::new_inner(url, None, None, heartbeat_interval, is_testnet, false)
@@ -265,12 +264,11 @@ impl DeribitWebSocketClient {
         let api_secret = get_or_env_var_opt(None, secret_env)
             .ok_or_else(|| anyhow::anyhow!("Missing environment variable: {secret_env}"))?;
 
-        let heartbeat_interval = DERIBIT_WS_HEARTBEAT_SECS;
         Self::new(
             None,
             Some(api_key),
             Some(api_secret),
-            Some(heartbeat_interval),
+            DERIBIT_WS_HEARTBEAT_SECS,
             is_testnet,
         )
     }
@@ -372,10 +370,11 @@ impl DeribitWebSocketClient {
 
     /// Caches instruments for use during message parsing.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst.clone());
-        }
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
         log::debug!("Cached {} instruments", self.instruments_cache.len());
 
         // Send per-instrument updates to the live handler rather than
@@ -403,7 +402,7 @@ impl DeribitWebSocketClient {
         // If connected, send update to handler
         if self.is_active() {
             let tx = self.cmd_tx.clone();
-            let inst = self.instruments_cache.get(&symbol).map(|r| r.clone());
+            let inst = self.instruments_cache.get_cloned(&symbol);
             if let Some(inst) = inst {
                 get_runtime().spawn(async move {
                     let _ = tx
@@ -416,17 +415,17 @@ impl DeribitWebSocketClient {
     }
 
     /// Sets the shared option greeks subscription set for handler-side gating.
-    pub fn set_option_greeks_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+    pub fn set_option_greeks_subs(&mut self, subs: Arc<AtomicSet<InstrumentId>>) {
         self.option_greeks_subs = subs;
     }
 
     /// Sets the shared mark price subscription set for handler-side gating.
-    pub fn set_mark_price_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+    pub fn set_mark_price_subs(&mut self, subs: Arc<AtomicSet<InstrumentId>>) {
         self.mark_price_subs = subs;
     }
 
     /// Sets the shared index price subscription set for handler-side gating.
-    pub fn set_index_price_subs(&mut self, subs: Arc<DashSet<InstrumentId>>) {
+    pub fn set_index_price_subs(&mut self, subs: Arc<AtomicSet<InstrumentId>>) {
         self.index_price_subs = subs;
     }
 
@@ -541,7 +540,7 @@ impl DeribitWebSocketClient {
 
         // Replay cached instruments
         let instruments: Vec<InstrumentAny> =
-            self.instruments_cache.iter().map(|r| r.clone()).collect();
+            self.instruments_cache.load().values().cloned().collect();
 
         if !instruments.is_empty() {
             log::debug!(

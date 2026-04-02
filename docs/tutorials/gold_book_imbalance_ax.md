@@ -181,7 +181,7 @@ strategy = OrderBookImbalance(config=strategy_config)
 | `trigger_min_size`             | `1.0`    | Minimum 1 contract on the larger side.        |
 | `trigger_imbalance_ratio`      | `0.10`   | Trigger when ratio drops below 10%.           |
 | `min_seconds_between_triggers` | `5.0`    | 5-second cooldown between consecutive trades. |
-| `book_type`                    | `L1_MBP` | Top-of-book data only.                        |
+| `book_type`                    | `L1_MBP` | Top‑of‑book data only.                        |
 | `use_quote_ticks`              | `True`   | Drive the strategy from quote ticks.          |
 
 :::tip

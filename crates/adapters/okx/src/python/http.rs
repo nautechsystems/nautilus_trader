@@ -87,10 +87,10 @@ impl OKXHttpClient {
         api_secret=None,
         api_passphrase=None,
         base_url=None,
-        timeout_secs=None,
-        max_retries=None,
-        retry_delay_ms=None,
-        retry_delay_max_ms=None,
+        timeout_secs=60,
+        max_retries=3,
+        retry_delay_ms=1_000,
+        retry_delay_max_ms=10_000,
         is_demo=false,
         proxy_url=None,
     ))]
@@ -100,10 +100,10 @@ impl OKXHttpClient {
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         is_demo: bool,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
@@ -194,7 +194,7 @@ impl OKXHttpClient {
             .into_iter()
             .map(|inst| pyobject_to_instrument_any(py, inst))
             .collect();
-        self.cache_instruments(instruments?);
+        self.cache_instruments(&instruments?);
         Ok(())
     }
 
@@ -365,6 +365,53 @@ impl OKXHttpClient {
             Python::attach(|py| {
                 let pylist =
                     PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
+    /// Requests an order book snapshot as `OrderBookDeltas` for the `instrument_id`.
+    #[pyo3(name = "request_orderbook_snapshot")]
+    #[pyo3(signature = (instrument_id, depth=None))]
+    fn py_request_orderbook_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let deltas = client
+                .request_orderbook_snapshot(instrument_id, depth)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(deltas.into_py_any_unwrap(py)))
+        })
+    }
+
+    /// Requests historical funding rates for the `instrument_id`.
+    #[pyo3(name = "request_funding_rates")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
+    fn py_request_funding_rates<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let rates = client
+                .request_funding_rates(instrument_id, start, end, limit)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(py, rates.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -624,6 +671,8 @@ impl OKXHttpClient {
         quote_quantity=None,
         position_side=None,
         attach_algo_ords=None,
+        px_usd=None,
+        px_vol=None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn py_place_order<'py>(
@@ -644,6 +693,8 @@ impl OKXHttpClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<Py<PyDict>>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let attach_algo_ords = parse_attach_algo_ords(py, attach_algo_ords)?;
         let client = self.clone();
@@ -666,6 +717,8 @@ impl OKXHttpClient {
                     quote_quantity,
                     position_side,
                     attach_algo_ords,
+                    px_usd,
+                    px_vol,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;
@@ -885,6 +938,9 @@ impl OKXHttpClient {
     }
 
     /// Cancels multiple algo orders via HTTP in a single request.
+    ///
+    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// fail the entire batch.
     ///
     /// # References
     ///

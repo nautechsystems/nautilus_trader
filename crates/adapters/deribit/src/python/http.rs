@@ -51,10 +51,10 @@ impl DeribitHttpClient {
         api_secret=None,
         base_url=None,
         is_testnet=false,
-        timeout_secs=None,
-        max_retries=None,
-        retry_delay_ms=None,
-        retry_delay_max_ms=None,
+        timeout_secs=10,
+        max_retries=3,
+        retry_delay_ms=1000,
+        retry_delay_max_ms=10_000,
         proxy_url=None,
     ))]
     #[allow(clippy::too_many_arguments)]
@@ -64,10 +64,10 @@ impl DeribitHttpClient {
         api_secret: Option<String>,
         base_url: Option<String>,
         is_testnet: bool,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new_with_env(
@@ -109,7 +109,7 @@ impl DeribitHttpClient {
             .into_iter()
             .map(|inst| pyobject_to_instrument_any(py, inst))
             .collect();
-        self.cache_instruments(instruments?);
+        self.cache_instruments(&instruments?);
         Ok(())
     }
 
@@ -119,7 +119,7 @@ impl DeribitHttpClient {
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         let inst = pyobject_to_instrument_any(py, instrument)?;
-        self.cache_instruments(vec![inst]);
+        self.cache_instruments(std::slice::from_ref(&inst));
         Ok(())
     }
 

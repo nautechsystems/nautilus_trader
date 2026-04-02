@@ -53,6 +53,7 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -60,8 +61,8 @@ arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
-dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
@@ -88,6 +89,7 @@ nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
+dashmap = { workspace = true }
 iai = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }

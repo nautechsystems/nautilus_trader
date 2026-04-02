@@ -78,18 +78,25 @@ def get_cached_okx_http_client(
     OKXHttpClient
 
     """
-    return nautilus_pyo3.OKXHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        api_passphrase=api_passphrase,
-        base_url=base_url,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        is_demo=is_demo,
-        proxy_url=proxy_url,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "api_passphrase": api_passphrase,
+        "base_url": base_url,
+        "is_demo": is_demo,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+
+    return nautilus_pyo3.OKXHttpClient(**kwargs)
 
 
 @lru_cache(1)

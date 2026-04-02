@@ -376,7 +376,6 @@ impl StopLimitOrder {
             .map(|vec| vec.iter().map(|s| s.as_str()).collect())
     }
 
-    #[getter]
     #[pyo3(name = "events")]
     fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
@@ -425,7 +424,8 @@ impl StopLimitOrder {
         let reduce_only = get_required::<bool>(values, "is_reduce_only")?;
         let quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
         let expire_time = get_optional::<u64>(values, "expire_time_ns")?.map(UnixNanos::from);
-        let display_quantity = get_optional::<Quantity>(values, "display_qty")?;
+        let display_quantity =
+            get_optional_parsed(values, "display_qty", |s| Ok(Quantity::from(s.as_str())))?;
         let emulation_trigger = get_optional_parsed(values, "emulation_trigger", |s| {
             s.parse::<TriggerType>().map_err(|e| e.to_string())
         })?;
@@ -559,7 +559,10 @@ impl StopLimitOrder {
             || dict.set_item("emulation_trigger", py.None()),
             |x| dict.set_item("emulation_trigger", x.to_string()),
         )?;
-        dict.set_item("trigger_instrument_id", self.trigger_instrument_id)?;
+        self.trigger_instrument_id.map_or_else(
+            || dict.set_item("trigger_instrument_id", py.None()),
+            |x| dict.set_item("trigger_instrument_id", x.to_string()),
+        )?;
         self.contingency_type.map_or_else(
             || dict.set_item("contingency_type", py.None()),
             |x| dict.set_item("contingency_type", x.to_string()),

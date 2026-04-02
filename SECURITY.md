@@ -69,6 +69,8 @@ NautilusTrader employs multiple layers of security to protect against supply
 chain attacks and vulnerabilities:
 
 - **Dependency auditing**: Automated security scanning via cargo-deny, cargo-vet, and OSV Scanner (Rust) and Dependabot alerts (Python).
+- **Dependency cooldown**: Python dependency resolution excludes packages published within the last 3 days (`exclude-newer` in `pyproject.toml`), giving the community time to detect and quarantine compromised releases before they enter the lockfile.
+- **Toolchain pinning**: The uv package manager version is pinned via `required-version` in `pyproject.toml` and enforced across CI, Docker, and local development.
 - **Code scanning**: CodeQL static analysis for Python and Rust code.
 - **Pre-commit security**: Gitleaks credential screening, private key detection, Zizmor GitHub Actions auditing, and Unicode control character detection.
 - **CODEOWNERS**: Critical infrastructure files require Core team review before merge.

@@ -21,18 +21,17 @@
 //! - Tracked orders produce proper order events (OrderAccepted, OrderFilled, etc.).
 //! - Untracked orders fall back to execution reports for reconciliation.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
-use dashmap::{DashMap, DashSet};
-use nautilus_core::{UUID4, UnixNanos};
+use dashmap::DashMap;
+use nautilus_common::cache::fifo::FifoCache;
+use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
 };
-
-const DEDUP_CAPACITY: usize = 10_000;
 
 /// The type of operation a pending WS API request represents.
 #[derive(Debug, Clone, Copy)]
@@ -75,9 +74,8 @@ pub struct OrderIdentity {
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
-    pub emitted_accepted: DashSet<ClientOrderId>,
-    pub filled_orders: DashSet<ClientOrderId>,
-    clearing: AtomicBool,
+    emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
+    filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
 }
 
 impl Default for WsDispatchState {
@@ -85,43 +83,49 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
-            emitted_accepted: DashSet::default(),
-            filled_orders: DashSet::default(),
-            clearing: AtomicBool::new(false),
+            emitted_accepted: Mutex::new(FifoCache::new()),
+            filled_orders: Mutex::new(FifoCache::new()),
         }
     }
 }
 
+#[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
 impl WsDispatchState {
-    fn evict_if_full(&self, set: &DashSet<ClientOrderId>) {
-        if set.len() >= DEDUP_CAPACITY
-            && self
-                .clearing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
-                .is_ok()
-        {
-            set.clear();
-            self.clearing.store(false, Ordering::Release);
-        }
+    pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
+        self.emitted_accepted
+            .lock()
+            .expect(MUTEX_POISONED)
+            .contains(cid)
     }
 
     /// Marks an order as having emitted an OrderAccepted event.
     pub fn insert_accepted(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.emitted_accepted);
-        self.emitted_accepted.insert(cid);
+        self.emitted_accepted.lock().expect(MUTEX_POISONED).add(cid);
+    }
+
+    pub fn has_filled(&self, cid: &ClientOrderId) -> bool {
+        self.filled_orders
+            .lock()
+            .expect(MUTEX_POISONED)
+            .contains(cid)
     }
 
     /// Marks an order as having received a fill.
     pub fn insert_filled(&self, cid: ClientOrderId) {
-        self.evict_if_full(&self.filled_orders);
-        self.filled_orders.insert(cid);
+        self.filled_orders.lock().expect(MUTEX_POISONED).add(cid);
     }
 
     /// Removes all tracking state for a terminal order.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
-        self.emitted_accepted.remove(&cid);
-        self.filled_orders.remove(&cid);
+        self.emitted_accepted
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(&cid);
+        self.filled_orders
+            .lock()
+            .expect(MUTEX_POISONED)
+            .remove(&cid);
     }
 }
 
@@ -137,7 +141,7 @@ pub fn ensure_accepted_emitted(
     state: &WsDispatchState,
     ts_init: UnixNanos,
 ) {
-    if state.emitted_accepted.contains(&client_order_id) {
+    if state.has_emitted_accepted(&client_order_id) {
         return;
     }
     state.insert_accepted(client_order_id);

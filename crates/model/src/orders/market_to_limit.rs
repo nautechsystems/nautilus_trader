@@ -197,6 +197,12 @@ impl MarketToLimitOrder {
     }
 }
 
+impl PartialEq for MarketToLimitOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Deref for MarketToLimitOrder {
     type Target = OrderCore;
 

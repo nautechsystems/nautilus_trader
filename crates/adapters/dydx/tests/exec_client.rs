@@ -368,7 +368,7 @@ async fn test_get_orders_returns_parsed_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxRawHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
     let orders = client.get_orders("dydx1test", 0, None, None).await.unwrap();
 
     assert_eq!(orders.len(), 3);
@@ -386,7 +386,7 @@ async fn test_get_fills_returns_parsed_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxRawHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
     let result = client
         .get_fills("dydx1test", 0, Some("BTC-USD"), None)
         .await
@@ -404,7 +404,7 @@ async fn test_orders_to_reports_roundtrip() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxRawHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
     let orders = client.get_orders("dydx1test", 0, None, None).await.unwrap();
 
     let instrument = create_test_instrument();
@@ -434,7 +434,7 @@ async fn test_fills_to_reports_roundtrip() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = DydxRawHttpClient::new(Some(base_url), Some(30), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 30, None, false, None).unwrap();
     let result = client.get_fills("dydx1test", 0, None, None).await.unwrap();
 
     let instrument = create_test_instrument();
@@ -483,7 +483,7 @@ async fn test_http_error_handling_500() {
     wait_for_server(addr, "/v4/orders").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxRawHttpClient::new(Some(base_url), Some(5), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
 
     let result = client.get_orders("dydx1test", 0, None, None).await;
     assert!(result.is_err());
@@ -508,7 +508,7 @@ async fn test_empty_orders_response() {
     wait_for_server(addr, "/v4/orders").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxRawHttpClient::new(Some(base_url), Some(5), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
 
     let orders = client.get_orders("dydx1test", 0, None, None).await.unwrap();
     assert!(orders.is_empty());
@@ -533,7 +533,7 @@ async fn test_empty_fills_response() {
     wait_for_server(addr, "/v4/fills").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxRawHttpClient::new(Some(base_url), Some(5), None, false, None).unwrap();
+    let client = DydxRawHttpClient::new(Some(base_url), 5, None, false, None).unwrap();
 
     let result = client.get_fills("dydx1test", 0, None, None).await.unwrap();
     assert!(result.fills.is_empty());

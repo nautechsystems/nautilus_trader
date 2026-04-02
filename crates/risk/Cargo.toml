@@ -35,6 +35,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
 
 ahash = { workspace = true }
+bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }

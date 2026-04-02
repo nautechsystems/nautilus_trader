@@ -190,19 +190,19 @@ pub struct SubmitBroadcasterConfig {
     /// If connecting to BitMEX testnet.
     pub testnet: bool,
     /// Timeout in seconds for HTTP requests.
-    pub timeout_secs: Option<u64>,
+    pub timeout_secs: u64,
     /// Maximum number of retry attempts for failed requests.
-    pub max_retries: Option<u32>,
+    pub max_retries: u32,
     /// Initial delay in milliseconds between retry attempts.
-    pub retry_delay_ms: Option<u64>,
+    pub retry_delay_ms: u64,
     /// Maximum delay in milliseconds between retry attempts.
-    pub retry_delay_max_ms: Option<u64>,
+    pub retry_delay_max_ms: u64,
     /// Expiration window in milliseconds for signed requests.
-    pub recv_window_ms: Option<u64>,
+    pub recv_window_ms: u64,
     /// Maximum REST burst rate (requests per second).
-    pub max_requests_per_second: Option<u32>,
+    pub max_requests_per_second: u32,
     /// Maximum REST rolling rate (requests per minute).
-    pub max_requests_per_minute: Option<u32>,
+    pub max_requests_per_minute: u32,
     /// Interval in seconds between health check pings.
     pub health_check_interval_secs: u64,
     /// Timeout in seconds for health check requests.
@@ -225,13 +225,13 @@ impl Default for SubmitBroadcasterConfig {
             api_secret: None,
             base_url: None,
             testnet: false,
-            timeout_secs: Some(60),
-            max_retries: None,
-            retry_delay_ms: Some(1_000),
-            retry_delay_max_ms: Some(5_000),
-            recv_window_ms: Some(10_000),
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(120),
+            timeout_secs: 60,
+            max_retries: 3,
+            retry_delay_ms: 1_000,
+            retry_delay_max_ms: 5_000,
+            recv_window_ms: 10_000,
+            max_requests_per_second: 10,
+            max_requests_per_minute: 120,
             health_check_interval_secs: 30,
             health_check_timeout_secs: 5,
             expected_reject_patterns: vec!["Duplicate clOrdID".to_string()],
@@ -388,7 +388,7 @@ impl TransportClient {
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 #[derive(Debug)]
 pub struct SubmitBroadcaster {

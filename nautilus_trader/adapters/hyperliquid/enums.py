@@ -27,6 +27,7 @@ class HyperliquidProductType(str, Enum):
 
     SPOT = "spot"
     PERP = "perp"
+    PERP_HIP3 = "perp_hip3"
 
     @property
     def is_spot(self) -> bool:
@@ -34,7 +35,14 @@ class HyperliquidProductType(str, Enum):
 
     @property
     def is_perp(self) -> bool:
-        return self is HyperliquidProductType.PERP
+        """
+        Returns True for both standard perps and HIP-3 builder-deployed perps.
+        """
+        return self in (HyperliquidProductType.PERP, HyperliquidProductType.PERP_HIP3)
+
+    @property
+    def is_perp_hip3(self) -> bool:
+        return self is HyperliquidProductType.PERP_HIP3
 
 
 DEFAULT_PRODUCT_TYPES = frozenset({HyperliquidProductType.SPOT, HyperliquidProductType.PERP})

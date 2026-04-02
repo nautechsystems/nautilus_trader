@@ -58,3 +58,7 @@ reason = "bincode unmaintained, transitive via hypersync-client (not a security 
 [[IgnoredVulns]]
 id = "GHSA-7gcm-g887-7qv7"
 reason = "protobuf JSON recursion DoS, no fix available yet, low risk for internal use (we don't parse untrusted JSON with protobuf)"
+
+[[IgnoredVulns]]
+id = "GHSA-5239-wwwm-4pmq"
+reason = "pygments ReDoS in AdlLexer (CVSS 3.3), dev-only dependency, no fix available, requires local access"

@@ -105,6 +105,11 @@ register_arrow(
     decoder=make_dict_deserializer(BinanceFuturesMarkPriceUpdate),
 )
 
+decode_binance_spot_client_order_id = nautilus_pyo3.binance.decode_binance_spot_client_order_id  # type: ignore[attr-defined]
+decode_binance_futures_client_order_id = (
+    nautilus_pyo3.binance.decode_binance_futures_client_order_id  # type: ignore[attr-defined]
+)
+
 __all__ = [
     "BINANCE",
     "BINANCE_CLIENT_ID",
@@ -120,5 +125,7 @@ __all__ = [
     "BinanceLiveExecClientFactory",
     "BinanceOrderBookDeltaDataLoader",
     "BinanceSpotInstrumentProvider",
+    "decode_binance_futures_client_order_id",
+    "decode_binance_spot_client_order_id",
     "get_cached_binance_http_client",
 ]

@@ -27,6 +27,22 @@
 //! before polling the next, so `RefCell` borrows held across `.await` points
 //! within a single branch cannot conflict with borrows in other branches.
 //!
+//! # Startup sequencing
+//!
+//! Startup connects clients in two phases so that instruments are in the
+//! cache before execution clients read them:
+//!
+//! 1. Connect data clients (instruments arrive as buffered `DataEvent`s).
+//! 2. Flush all pending data events and commands into the cache via
+//!    `flush_pending_data`, which loops `try_recv` on the channel receivers
+//!    until no items remain.
+//! 3. Connect execution clients (`load_instruments_from_cache` now finds
+//!    populated instruments).
+//! 4. Drain remaining events, then run reconciliation.
+//!
+//! Both `run()` (integrated event loop) and `start()` (manual lifecycle)
+//! follow this sequence.
+//!
 //! # Reconciliation
 //!
 //! Three sub-checks run on independent intervals: inflight orders, open order
@@ -65,7 +81,7 @@ use nautilus_model::{
     identifiers::{StrategyId, TraderId},
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
-use nautilus_trading::strategy::Strategy;
+use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use tabled::{Table, Tabled, settings::Style};
 
 use crate::{
@@ -260,6 +276,8 @@ impl LiveNode {
         }
 
         let runner = AsyncRunner::new();
+        runner.bind_senders();
+
         let kernel = NautilusKernel::new(name, config.clone())?;
 
         let exec_manager_config =
@@ -290,7 +308,13 @@ impl LiveNode {
         self.handle.clone()
     }
 
-    /// Starts the live node.
+    /// Starts the live node without entering a select loop.
+    ///
+    /// Connects clients, runs reconciliation, and starts the trader, but does
+    /// not consume the runner or drive channel receivers. Channel traffic that
+    /// arrives after startup is not serviced until the caller provides a loop.
+    ///
+    /// For a self-contained entry point that owns the event loop, use [`run`](Self::run).
     ///
     /// # Errors
     ///
@@ -300,20 +324,27 @@ impl LiveNode {
             anyhow::bail!("Already running");
         }
 
+        if let Some(runner) = self.runner.as_ref() {
+            runner.bind_senders();
+        }
+
         self.handle.set_state(NodeState::Starting);
 
         self.kernel.start_async().await;
-        self.kernel.connect_clients().await;
+
+        // Connect data clients first and flush instrument events into cache
+        self.kernel.connect_data_clients().await;
+
+        if let Some(runner) = self.runner.as_mut() {
+            runner.flush_pending_data();
+        }
+
+        self.kernel.connect_exec_clients().await;
 
         if !self.await_engines_connected().await {
             log::error!("Cannot start trader: engine client(s) not connected");
             self.handle.set_state(NodeState::Running);
             return Ok(());
-        }
-
-        // Process pending data events before reconciliation and starting trader
-        if let Some(runner) = self.runner.as_mut() {
-            runner.drain_pending_data_events();
         }
 
         self.perform_startup_reconciliation().await?;
@@ -595,6 +626,7 @@ impl LiveNode {
         let Some(runner) = self.runner.take() else {
             anyhow::bail!("Runner already consumed - run() called twice");
         };
+        runner.bind_senders();
 
         let AsyncRunnerChannels {
             mut time_evt_rx,
@@ -612,54 +644,56 @@ impl LiveNode {
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
 
-        // Startup phase: process events while completing startup
+        // Startup phase 1: Connect data clients and drain instrument events into cache.
+        // This ensures the cache is populated before execution clients connect.
         // TODO: Add ctrl_c and stop_handle monitoring here to allow aborting a
         // hanging startup. Currently signals during startup are ignored, and
         // any pending stop_flag is cleared when transitioning to Running.
-        let engines_connected = {
-            let startup_future = self.complete_startup();
-            tokio::pin!(startup_future);
+        drive_with_event_buffering(
+            self.kernel.connect_data_clients(),
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        )
+        .await;
 
-            loop {
-                tokio::select! {
-                    biased;
+        // Flush any data events still queued in the channel receivers that the
+        // select loop did not capture before the connect future resolved, then
+        // drain everything into cache.
+        flush_pending_data(&mut pending, &mut data_evt_rx, &mut data_cmd_rx);
+        debug_assert!(
+            pending.data_evts.is_empty() && pending.data_cmds.is_empty(),
+            "data must be drained into cache before exec clients connect",
+        );
 
-                    result = &mut startup_future => {
-                        break result?;
-                    }
-                    Some(handler) = time_evt_rx.recv() => {
-                        AsyncRunner::handle_time_event(handler);
-                    }
-                    Some(evt) = data_evt_rx.recv() => {
-                        pending.data_evts.push(evt);
-                    }
-                    Some(cmd) = data_cmd_rx.recv() => {
-                        pending.data_cmds.push(cmd);
-                    }
-                    Some(evt) = exec_evt_rx.recv() => {
-                        // Only Account events are safe during startup, Report and
-                        // Order events need ExecEngine borrow_mut which conflicts
-                        // with the borrow held by connect().await
-                        match evt {
-                            ExecutionEvent::Account(_) => {
-                                AsyncRunner::handle_exec_event(evt);
-                            }
-                            ExecutionEvent::Report(report) => {
-                                pending.exec_reports.push(report);
-                            }
-                            ExecutionEvent::Order(order_evt) => {
-                                pending.order_evts.push(order_evt);
-                            }
-                        }
-                    }
-                    Some(cmd) = exec_cmd_rx.recv() => {
-                        pending.exec_cmds.push(cmd);
-                    }
-                }
-            }
-        };
+        // Startup phase 2: Connect execution clients (instruments now in cache)
+        let engines_connected = drive_with_event_buffering(
+            self.connect_exec_phase(),
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        )
+        .await?;
 
-        pending.drain();
+        // Flush channel receivers and drain all remaining pending events
+        flush_all_pending(
+            &mut pending,
+            &mut time_evt_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+        debug_assert!(
+            pending.is_empty(),
+            "all startup events must be processed before reconciliation",
+        );
 
         if engines_connected {
             // Run reconciliation now that instruments are in cache and start trader
@@ -944,10 +978,12 @@ impl LiveNode {
         }
     }
 
+    /// Connects execution clients and checks all engines are connected.
+    ///
     /// Returns `true` if all engines connected successfully, `false` otherwise.
-    /// Note: Does NOT run reconciliation - that happens after pending events are drained.
-    async fn complete_startup(&mut self) -> anyhow::Result<bool> {
-        self.kernel.connect_clients().await;
+    /// Must be called after data clients are connected and instrument events drained.
+    async fn connect_exec_phase(&mut self) -> anyhow::Result<bool> {
+        self.kernel.connect_exec_clients().await;
 
         if !self.await_engines_connected().await {
             return Ok(false);
@@ -966,13 +1002,17 @@ impl LiveNode {
     }
 
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
-        self.kernel.disconnect_clients().await?;
+        let disconnect_result = self.kernel.disconnect_clients().await;
+        if let Err(ref e) = disconnect_result {
+            log::error!("Error disconnecting clients: {e}");
+        }
+
         self.await_engines_disconnected().await;
         self.kernel.finalize_stop().await;
 
         self.handle.set_state(NodeState::Stopped);
 
-        Ok(())
+        disconnect_result
     }
 
     fn drain_channels(
@@ -1176,6 +1216,29 @@ impl LiveNode {
         self.kernel.trader.add_strategy(strategy)
     }
 
+    /// Adds an execution algorithm to the trader.
+    ///
+    /// Execution algorithms are registered in both the component registry (for lifecycle
+    /// management) and the actor registry (for data callbacks via msgbus).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is currently running.
+    /// - An execution algorithm with the same ID is already registered.
+    pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
+    where
+        T: ExecutionAlgorithm + Component + Debug + 'static,
+    {
+        if self.state() != NodeState::Idle {
+            anyhow::bail!(
+                "Cannot add exec algorithm while node is running, add exec algorithms before calling start()"
+            );
+        }
+
+        self.kernel.trader.add_exec_algorithm(exec_algorithm)
+    }
+
     // Runs up to three reconciliation sub-checks (inflight, open orders,
     // positions), each gated by its own interval. A single recon_timer in
     // the select! loop fires at the minimum enabled interval; this method
@@ -1242,6 +1305,137 @@ impl LiveNode {
     }
 }
 
+/// Flushes data events and commands from both `pending` and the channel receivers
+/// into the cache, looping until no progress is made.
+///
+/// This closes the gap where `drive_with_event_buffering` exits as soon as its
+/// driven future resolves (biased select), leaving items in the channel receivers
+/// that were not captured into `pending`.
+fn flush_pending_data(
+    pending: &mut PendingEvents,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+) {
+    loop {
+        let mut progressed = pending.drain_data();
+
+        while let Ok(evt) = data_evt_rx.try_recv() {
+            AsyncRunner::handle_data_event(evt);
+            progressed = true;
+        }
+
+        while let Ok(cmd) = data_cmd_rx.try_recv() {
+            AsyncRunner::handle_data_command(cmd);
+            progressed = true;
+        }
+
+        if !progressed {
+            break;
+        }
+    }
+}
+
+/// Flushes all channel receivers into `pending`, then drains everything.
+///
+/// Unlike [`flush_pending_data`] this is a single pass, not a drain-until-quiet
+/// loop. Sufficient for phase 2 where the goal is to capture items the biased
+/// select did not poll before the connect future resolved.
+fn flush_all_pending(
+    pending: &mut PendingEvents,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+) {
+    // Flush channel receivers into pending
+    while let Ok(handler) = time_evt_rx.try_recv() {
+        AsyncRunner::handle_time_event(handler);
+    }
+
+    while let Ok(evt) = data_evt_rx.try_recv() {
+        pending.data_evts.push(evt);
+    }
+
+    while let Ok(cmd) = data_cmd_rx.try_recv() {
+        pending.data_cmds.push(cmd);
+    }
+
+    while let Ok(evt) = exec_evt_rx.try_recv() {
+        match evt {
+            ExecutionEvent::Account(_) => {
+                AsyncRunner::handle_exec_event(evt);
+            }
+            ExecutionEvent::Report(report) => {
+                pending.exec_reports.push(report);
+            }
+            ExecutionEvent::Order(order_evt) => {
+                pending.order_evts.push(order_evt);
+            }
+        }
+    }
+
+    while let Ok(cmd) = exec_cmd_rx.try_recv() {
+        pending.exec_cmds.push(cmd);
+    }
+
+    pending.drain();
+}
+
+/// Drives a future to completion while buffering channel events.
+///
+/// Time events are handled immediately. Account events are forwarded directly.
+/// All other events are buffered in `pending` for later processing.
+async fn drive_with_event_buffering<F: std::future::Future>(
+    future: F,
+    pending: &mut PendingEvents,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+    data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
+) -> F::Output {
+    tokio::pin!(future);
+
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => {
+                break result;
+            }
+            Some(handler) = time_evt_rx.recv() => {
+                AsyncRunner::handle_time_event(handler);
+            }
+            Some(evt) = data_evt_rx.recv() => {
+                pending.data_evts.push(evt);
+            }
+            Some(cmd) = data_cmd_rx.recv() => {
+                pending.data_cmds.push(cmd);
+            }
+            Some(evt) = exec_evt_rx.recv() => {
+                // Account events are safe to process immediately. Report and
+                // Order events need ExecEngine borrow_mut which may conflict
+                // with the borrow held by the driven future.
+                match evt {
+                    ExecutionEvent::Account(_) => {
+                        AsyncRunner::handle_exec_event(evt);
+                    }
+                    ExecutionEvent::Report(report) => {
+                        pending.exec_reports.push(report);
+                    }
+                    ExecutionEvent::Order(order_evt) => {
+                        pending.order_evts.push(order_evt);
+                    }
+                }
+            }
+            Some(cmd) = exec_cmd_rx.recv() => {
+                pending.exec_cmds.push(cmd);
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct PendingEvents {
     data_cmds: Vec<DataCommand>,
@@ -1252,6 +1446,41 @@ struct PendingEvents {
 }
 
 impl PendingEvents {
+    fn is_empty(&self) -> bool {
+        self.data_evts.is_empty()
+            && self.data_cmds.is_empty()
+            && self.exec_cmds.is_empty()
+            && self.exec_reports.is_empty()
+            && self.order_evts.is_empty()
+    }
+
+    /// Drains only data events and commands into the cache.
+    ///
+    /// Returns `true` if any events or commands were drained.
+    fn drain_data(&mut self) -> bool {
+        let total = self.data_evts.len() + self.data_cmds.len();
+
+        if total > 0 {
+            log::debug!(
+                "Draining {total} data events/commands into cache \
+                 (data_evts={}, data_cmds={})",
+                self.data_evts.len(),
+                self.data_cmds.len(),
+            );
+        }
+
+        for evt in self.data_evts.drain(..) {
+            AsyncRunner::handle_data_event(evt);
+        }
+
+        for cmd in self.data_cmds.drain(..) {
+            AsyncRunner::handle_data_command(cmd);
+        }
+
+        total > 0
+    }
+
+    /// Drains all remaining pending events.
     fn drain(&mut self) {
         let total = self.data_evts.len()
             + self.data_cmds.len()
@@ -1274,15 +1503,19 @@ impl PendingEvents {
         for evt in self.data_evts.drain(..) {
             AsyncRunner::handle_data_event(evt);
         }
+
         for cmd in self.data_cmds.drain(..) {
             AsyncRunner::handle_data_command(cmd);
         }
+
         for report in self.exec_reports.drain(..) {
             AsyncRunner::handle_exec_event(ExecutionEvent::Report(report));
         }
+
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_exec_command(cmd);
         }
+
         for evt in self.order_evts.drain(..) {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
         }
@@ -1291,6 +1524,14 @@ impl PendingEvents {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "python")]
+    use std::sync::Arc;
+
+    #[cfg(feature = "python")]
+    use nautilus_common::runner::{
+        SyncDataCommandSender, SyncTradingCommandSender, replace_data_cmd_sender,
+        replace_exec_cmd_sender,
+    };
     use nautilus_model::identifiers::TraderId;
     use rstest::*;
 
@@ -1487,6 +1728,31 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
+    fn test_node_build_replaces_stale_runner_senders() {
+        replace_data_cmd_sender(Arc::new(SyncDataCommandSender));
+        replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+
+        let first = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_name("FirstNode")
+            .build()
+            .unwrap();
+
+        assert_eq!(first.state(), NodeState::Idle);
+        drop(first);
+
+        let second = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_name("SecondNode")
+            .build()
+            .unwrap();
+
+        assert_eq!(second.state(), NodeState::Idle);
+        assert!(!second.is_running());
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
     fn test_node_handle_reflects_node_state() {
         let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
@@ -1498,5 +1764,348 @@ mod tests {
 
         assert_eq!(handle.state(), NodeState::Idle);
         assert!(!handle.is_running());
+    }
+
+    #[rstest]
+    fn test_pending_drain_data_returns_false_when_empty() {
+        let mut pending = PendingEvents::default();
+
+        assert!(!pending.drain_data());
+    }
+
+    #[rstest]
+    fn test_pending_drain_data_returns_true_when_non_empty() {
+        use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
+
+        let mut pending = PendingEvents::default();
+        pending
+            .data_evts
+            .push(DataEvent::Instrument(InstrumentAny::CryptoPerpetual(
+                crypto_perpetual_ethusdt(),
+            )));
+
+        assert!(pending.drain_data());
+        assert!(pending.data_evts.is_empty());
+    }
+
+    fn stub_data_event() -> DataEvent {
+        use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
+
+        DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+    }
+
+    fn stub_data_command() -> DataCommand {
+        use nautilus_common::messages::data::{SubscribeCommand, subscribe::SubscribeInstruments};
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::identifiers::Venue;
+
+        DataCommand::Subscribe(SubscribeCommand::Instruments(SubscribeInstruments::new(
+            None,
+            Venue::from("TEST"),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+    }
+
+    #[rstest]
+    fn test_flush_pending_data_drains_events_and_commands() {
+        let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        // Pre-load pending (items captured by the select loop)
+        pending.data_evts.push(stub_data_event());
+        pending.data_cmds.push(stub_data_command());
+
+        // Pre-load channels (items missed by the select loop)
+        evt_tx.send(stub_data_event()).unwrap();
+        cmd_tx.send(stub_data_command()).unwrap();
+
+        flush_pending_data(&mut pending, &mut evt_rx, &mut cmd_rx);
+
+        assert!(pending.data_evts.is_empty());
+        assert!(pending.data_cmds.is_empty());
+        assert!(evt_rx.try_recv().is_err());
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_flush_pending_data_drains_mixed_sources() {
+        let (evt_tx, mut evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        // First pass: pending has an event, channel has a command
+        pending.data_evts.push(stub_data_event());
+        cmd_tx.send(stub_data_command()).unwrap();
+
+        // Second pass: channel has items that simulate arrival during first drain
+        evt_tx.send(stub_data_event()).unwrap();
+        evt_tx.send(stub_data_event()).unwrap();
+        cmd_tx.send(stub_data_command()).unwrap();
+
+        flush_pending_data(&mut pending, &mut evt_rx, &mut cmd_rx);
+
+        assert!(pending.data_evts.is_empty());
+        assert!(pending.data_cmds.is_empty());
+        assert!(evt_rx.try_recv().is_err());
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    fn stub_time_event_handler() -> TimeEventHandler {
+        use std::rc::Rc;
+
+        use nautilus_common::timer::{TimeEvent, TimeEventCallback, TimeEventHandler};
+        use nautilus_core::{UUID4, UnixNanos};
+        use ustr::Ustr;
+
+        TimeEventHandler::new(
+            TimeEvent::new(
+                Ustr::from("test-timer"),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+            TimeEventCallback::RustLocal(Rc::new(|_| {})),
+        )
+    }
+
+    fn stub_trading_command() -> TradingCommand {
+        use nautilus_common::messages::execution::query::QueryAccount;
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::identifiers::AccountId;
+
+        TradingCommand::QueryAccount(QueryAccount::new(
+            TraderId::from("TESTER-001"),
+            None,
+            AccountId::from("TEST-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn stub_exec_event() -> ExecutionEvent {
+        use nautilus_model::{
+            enums::{LiquiditySide, OrderSide},
+            identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
+            reports::FillReport,
+            types::{Money, Price, Quantity},
+        };
+
+        ExecutionEvent::Report(ExecutionReport::Fill(Box::new(FillReport::new(
+            AccountId::from("TEST-001"),
+            InstrumentId::from("TEST.VENUE"),
+            VenueOrderId::from("V-001"),
+            TradeId::from("T-001"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::from("0.01 USD"),
+            LiquiditySide::Maker,
+            None,
+            None,
+            nautilus_core::UnixNanos::default(),
+            nautilus_core::UnixNanos::default(),
+            None,
+        ))))
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_drains_all_channel_types() {
+        let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        // Pre-load pending with data items
+        pending.data_evts.push(stub_data_event());
+        pending.data_cmds.push(stub_data_command());
+
+        // Pre-load all channel types
+        time_tx.send(stub_time_event_handler()).unwrap();
+        data_evt_tx.send(stub_data_event()).unwrap();
+        data_cmd_tx.send(stub_data_command()).unwrap();
+        exec_evt_tx.send(stub_exec_event()).unwrap();
+        exec_cmd_tx.send(stub_trading_command()).unwrap();
+
+        flush_all_pending(
+            &mut pending,
+            &mut time_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        assert!(pending.data_evts.is_empty());
+        assert!(pending.data_cmds.is_empty());
+        assert!(pending.exec_reports.is_empty());
+        assert!(pending.exec_cmds.is_empty());
+        assert!(pending.order_evts.is_empty());
+        assert!(time_rx.try_recv().is_err());
+        assert!(data_evt_rx.try_recv().is_err());
+        assert!(data_cmd_rx.try_recv().is_err());
+        assert!(exec_evt_rx.try_recv().is_err());
+        assert!(exec_cmd_rx.try_recv().is_err());
+    }
+
+    fn stub_order_event() -> ExecutionEvent {
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::{
+            events::OrderSubmitted,
+            identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId},
+        };
+
+        ExecutionEvent::Order(OrderEventAny::Submitted(OrderSubmitted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("TEST.VENUE"),
+            ClientOrderId::from("O-001"),
+            AccountId::from("TEST-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+    }
+
+    fn stub_account_event() -> ExecutionEvent {
+        use nautilus_core::{UUID4, UnixNanos};
+        use nautilus_model::{
+            enums::AccountType, events::account::state::AccountState, identifiers::AccountId,
+        };
+
+        ExecutionEvent::Account(AccountState::new(
+            AccountId::from("TEST-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ))
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_routes_order_event_to_order_evts() {
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        exec_evt_tx.send(stub_order_event()).unwrap();
+        exec_evt_tx.send(stub_exec_event()).unwrap();
+
+        flush_all_pending(
+            &mut pending,
+            &mut time_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        // Both order and report events are drained by pending.drain()
+        assert!(pending.order_evts.is_empty());
+        assert!(pending.exec_reports.is_empty());
+        assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_flush_all_pending_routes_account_event_immediately() {
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let (exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
+
+        let mut pending = PendingEvents::default();
+
+        exec_evt_tx.send(stub_account_event()).unwrap();
+
+        flush_all_pending(
+            &mut pending,
+            &mut time_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+        );
+
+        // Account events are forwarded immediately, never buffered in pending
+        assert!(pending.exec_reports.is_empty());
+        assert!(pending.order_evts.is_empty());
+        assert!(pending.exec_cmds.is_empty());
+        assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_when_default() {
+        let pending = PendingEvents::default();
+
+        assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_false_with_data_evt() {
+        let mut pending = PendingEvents::default();
+        pending.data_evts.push(stub_data_event());
+
+        assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_false_with_data_cmd() {
+        let mut pending = PendingEvents::default();
+        pending.data_cmds.push(stub_data_command());
+
+        assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_false_with_exec_cmd() {
+        let mut pending = PendingEvents::default();
+        pending.exec_cmds.push(stub_trading_command());
+
+        assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_false_with_exec_report() {
+        let mut pending = PendingEvents::default();
+
+        if let ExecutionEvent::Report(report) = stub_exec_event() {
+            pending.exec_reports.push(report);
+        }
+
+        assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_is_empty_false_with_order_evt() {
+        let mut pending = PendingEvents::default();
+
+        if let ExecutionEvent::Order(order_evt) = stub_order_event() {
+            pending.order_evts.push(order_evt);
+        }
+
+        assert!(!pending.is_empty());
     }
 }

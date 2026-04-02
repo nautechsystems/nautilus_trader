@@ -15,9 +15,10 @@
 
 //! File-based loader for historical Betfair Exchange Streaming data.
 //!
-//! Reads gzip-compressed or plain JSON files containing newline-delimited
-//! Betfair ESA messages and produces Nautilus domain objects. The parsing
-//! logic mirrors the live data client handler in [`crate::data`].
+//! Reads compressed (gzip or bzip2) or plain JSON files containing
+//! newline-delimited Betfair ESA messages and produces Nautilus domain
+//! objects. The parsing logic mirrors the live data client handler in
+//! [`crate::data`].
 
 use std::{
     fs::File,
@@ -27,6 +28,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use nautilus_model::{
     data::{InstrumentClose, InstrumentStatus, OrderBookDeltas, TradeTick},
@@ -83,7 +85,7 @@ pub enum BetfairDataItem {
     RaceProgress(BetfairRaceProgress),
 }
 
-/// Reads Betfair historical `.gz` data files and converts them into Nautilus domain objects.
+/// Reads Betfair historical data files and converts them into Nautilus domain objects.
 ///
 /// Each file contains newline-delimited JSON from the Betfair Exchange Streaming API.
 /// The loader handles gzip decompression, stateful traded volume tracking, and
@@ -122,7 +124,7 @@ impl BetfairDataLoader {
 
     /// Loads a Betfair historical data file and returns all parsed data items.
     ///
-    /// Supports both gzip-compressed (`.gz`) and plain JSON files.
+    /// Supports gzip-compressed (`.gz`), bzip2-compressed (`.bz2`), and plain JSON files.
     /// Each line is deserialized as a Betfair stream message. MCM and RCM
     /// messages are parsed into Nautilus domain objects; other message types
     /// are skipped.
@@ -418,13 +420,12 @@ fn open_reader(filepath: &Path) -> anyhow::Result<Box<dyn BufRead>> {
     let file =
         File::open(filepath).with_context(|| format!("failed to open '{}'", filepath.display()))?;
 
-    let is_gzipped = filepath
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
+    let ext = filepath.extension().and_then(|e| e.to_str()).unwrap_or("");
 
-    if is_gzipped {
+    if ext.eq_ignore_ascii_case("gz") {
         Ok(Box::new(BufReader::new(GzDecoder::new(file))))
+    } else if ext.eq_ignore_ascii_case("bz2") {
+        Ok(Box::new(BufReader::new(BzDecoder::new(file))))
     } else {
         Ok(Box::new(BufReader::new(file)))
     }
@@ -450,6 +451,32 @@ mod tests {
             .nth(3)
             .unwrap()
             .join("tests/test_data/local/betfair")
+    }
+
+    fn test_data_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
+    }
+
+    #[rstest]
+    fn test_load_bz2_file() {
+        let filepath = test_data_dir().join("stream/sample.bz2");
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&filepath).unwrap();
+
+        let instrument_count = items
+            .iter()
+            .filter(|i| matches!(i, BetfairDataItem::Instrument(_)))
+            .count();
+        assert!(
+            instrument_count > 0,
+            "should parse instruments from bz2 file"
+        );
+        assert_eq!(loader.instruments().len(), instrument_count);
+
+        let has_sequence = items
+            .iter()
+            .any(|i| matches!(i, BetfairDataItem::SequenceCompleted(_)));
+        assert!(has_sequence, "should emit SequenceCompleted");
     }
 
     #[rstest]

@@ -218,8 +218,8 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 | `is_colored`          | Flag      | Enable ANSI colors (default: true).              |
 | `print_config`        | Flag      | Print config to stdout at startup.               |
 | `log_components_only` | Flag      | Only log components with explicit filters.       |
-| `<Component>`         | Log level | Component-specific level (exact match).          |
-| `<module::path>`      | Log level | Module-specific level (prefix match, Rust only). |
+| `<Component>`         | Log level | Component‑specific level (exact match).          |
+| `<module::path>`      | Log level | Module‑specific level (prefix match, Rust only). |
 
 Flags are enabled by their presence in the spec string (no value needed). Log levels are case-insensitive: `Off`, `Trace`, `Debug`, `Info`, `Warning` (or `Warn`), `Error`.
 

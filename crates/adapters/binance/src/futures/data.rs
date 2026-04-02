@@ -22,7 +22,6 @@ use std::sync::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
@@ -41,7 +40,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED,
+    AtomicMap, MUTEX_POISONED,
     datetime::{NANOSECONDS_IN_MILLISECOND, datetime_to_unix_nanos},
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -89,7 +88,7 @@ struct BufferedDepthUpdate {
     prev_final_update_id: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BookBuffer {
     updates: Vec<BufferedDepthUpdate>,
     epoch: u64,
@@ -117,11 +116,11 @@ pub struct BinanceFuturesDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
-    instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-    status_cache: Arc<RwLock<AHashMap<InstrumentId, MarketStatusAction>>>,
-    book_buffers: Arc<RwLock<AHashMap<InstrumentId, BookBuffer>>>,
-    book_subscriptions: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
-    mark_price_refs: Arc<RwLock<AHashMap<InstrumentId, u32>>>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    book_buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
+    book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
+    mark_price_refs: Arc<AtomicMap<InstrumentId, u32>>,
     book_epoch: Arc<RwLock<u64>>,
 }
 
@@ -181,11 +180,11 @@ impl BinanceFuturesDataClient {
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
-            instruments: Arc::new(RwLock::new(AHashMap::new())),
-            status_cache: Arc::new(RwLock::new(AHashMap::new())),
-            book_buffers: Arc::new(RwLock::new(AHashMap::new())),
-            book_subscriptions: Arc::new(RwLock::new(AHashMap::new())),
-            mark_price_refs: Arc::new(RwLock::new(AHashMap::new())),
+            instruments: Arc::new(AtomicMap::new()),
+            status_cache: Arc::new(AtomicMap::new()),
+            book_buffers: Arc::new(AtomicMap::new()),
+            book_subscriptions: Arc::new(AtomicMap::new()),
+            mark_price_refs: Arc::new(AtomicMap::new()),
             book_epoch: Arc::new(RwLock::new(0)),
         })
     }
@@ -215,59 +214,68 @@ impl BinanceFuturesDataClient {
     fn handle_ws_message(
         msg: BinanceFuturesWsStreamsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
-        ws_instruments: &Arc<DashMap<Ustr, InstrumentAny>>,
-        book_buffers: &Arc<RwLock<AHashMap<InstrumentId, BookBuffer>>>,
-        book_subscriptions: &Arc<RwLock<AHashMap<InstrumentId, u32>>>,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
+        book_buffers: &Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
         book_epoch: &Arc<RwLock<u64>>,
         http_client: &BinanceFuturesHttpClient,
         clock: &'static AtomicTime,
     ) {
         let ts_init = clock.get_time_ns();
+        let cache = ws_instruments.load();
 
         match msg {
             BinanceFuturesWsStreamsMessage::AggTrade(ref trade_msg) => {
-                if let Some(instrument) = ws_instruments.get(&trade_msg.symbol) {
-                    match parse_agg_trade(trade_msg, instrument.value(), ts_init) {
+                if let Some(instrument) = cache.get(&trade_msg.symbol) {
+                    match parse_agg_trade(trade_msg, instrument, ts_init) {
                         Ok(trade) => Self::send_data(data_sender, Data::Trade(trade)),
                         Err(e) => log::warn!("Failed to parse aggregate trade: {e}"),
                     }
                 }
             }
             BinanceFuturesWsStreamsMessage::Trade(ref trade_msg) => {
-                if let Some(instrument) = ws_instruments.get(&trade_msg.symbol) {
-                    match parse_trade(trade_msg, instrument.value(), ts_init) {
+                if let Some(instrument) = cache.get(&trade_msg.symbol) {
+                    match parse_trade(trade_msg, instrument, ts_init) {
                         Ok(trade) => Self::send_data(data_sender, Data::Trade(trade)),
                         Err(e) => log::warn!("Failed to parse trade: {e}"),
                     }
                 }
             }
             BinanceFuturesWsStreamsMessage::BookTicker(ref ticker_msg) => {
-                if let Some(instrument) = ws_instruments.get(&ticker_msg.symbol) {
-                    match parse_book_ticker(ticker_msg, instrument.value(), ts_init) {
+                if let Some(instrument) = cache.get(&ticker_msg.symbol) {
+                    match parse_book_ticker(ticker_msg, instrument, ts_init) {
                         Ok(quote) => Self::send_data(data_sender, Data::Quote(quote)),
                         Err(e) => log::warn!("Failed to parse book ticker: {e}"),
                     }
                 }
             }
             BinanceFuturesWsStreamsMessage::DepthUpdate(ref depth_msg) => {
-                if let Some(instrument) = ws_instruments.get(&depth_msg.symbol) {
-                    match parse_depth_update(depth_msg, instrument.value(), ts_init) {
+                if let Some(instrument) = cache.get(&depth_msg.symbol) {
+                    match parse_depth_update(depth_msg, instrument, ts_init) {
                         Ok(deltas) => {
                             let instrument_id = deltas.instrument_id;
                             let final_update_id = deltas.sequence;
                             let first_update_id = depth_msg.first_update_id;
                             let prev_final_update_id = depth_msg.prev_final_update_id;
 
-                            {
-                                let mut buffers = book_buffers.write().expect(MUTEX_POISONED);
-                                if let Some(buffer) = buffers.get_mut(&instrument_id) {
-                                    buffer.updates.push(BufferedDepthUpdate {
-                                        deltas,
-                                        first_update_id,
-                                        final_update_id,
-                                        prev_final_update_id,
-                                    });
+                            if book_buffers.contains_key(&instrument_id) {
+                                let mut was_buffered = false;
+                                book_buffers.rcu(|m| {
+                                    was_buffered = false;
+
+                                    if let Some(buffer) = m.get_mut(&instrument_id) {
+                                        buffer.updates.push(BufferedDepthUpdate {
+                                            deltas: deltas.clone(),
+                                            first_update_id,
+                                            final_update_id,
+                                            prev_final_update_id,
+                                        });
+                                        was_buffered = true;
+                                    }
+                                });
+
+                                if was_buffered {
                                     return;
                                 }
                             }
@@ -282,28 +290,46 @@ impl BinanceFuturesDataClient {
                 }
             }
             BinanceFuturesWsStreamsMessage::MarkPrice(ref mark_msg) => {
-                if let Some(instrument) = ws_instruments.get(&mark_msg.symbol) {
-                    match parse_mark_price(mark_msg, instrument.value(), ts_init) {
-                        Ok((mark_update, index_update, _funding_update)) => {
+                if let Some(instrument) = cache.get(&mark_msg.symbol) {
+                    match parse_mark_price(mark_msg, instrument, ts_init) {
+                        Ok((mark_update, index_update, funding_update)) => {
                             Self::send_data(data_sender, Data::MarkPriceUpdate(mark_update));
                             Self::send_data(data_sender, Data::IndexPriceUpdate(index_update));
+                            if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
+                            {
+                                log::error!("Failed to emit funding rate: {e}");
+                            }
                         }
                         Err(e) => log::warn!("Failed to parse mark price: {e}"),
                     }
                 }
             }
             BinanceFuturesWsStreamsMessage::Kline(ref kline_msg) => {
-                if let Some(instrument) = ws_instruments.get(&kline_msg.symbol) {
-                    match parse_kline(kline_msg, instrument.value(), ts_init) {
+                if let Some(instrument) = cache.get(&kline_msg.symbol) {
+                    match parse_kline(kline_msg, instrument, ts_init) {
                         Ok(Some(bar)) => Self::send_data(data_sender, Data::Bar(bar)),
                         Ok(None) => {} // Kline not closed yet
                         Err(e) => log::warn!("Failed to parse kline: {e}"),
                     }
                 }
             }
-            BinanceFuturesWsStreamsMessage::ForceOrder(_)
-            | BinanceFuturesWsStreamsMessage::Ticker(_) => {
-                log::debug!("Unhandled market data message type");
+            BinanceFuturesWsStreamsMessage::ForceOrder(ref liq_msg) => {
+                log::info!(
+                    "Liquidation: {} {:?} {:?} qty={} at price={}",
+                    liq_msg.order.symbol,
+                    liq_msg.order.side,
+                    liq_msg.order.status,
+                    liq_msg.order.original_qty,
+                    liq_msg.order.average_price,
+                );
+            }
+            BinanceFuturesWsStreamsMessage::Ticker(ref ticker_msg) => {
+                log::debug!(
+                    "Ticker: {} last={} vol={}",
+                    ticker_msg.symbol,
+                    ticker_msg.last_price,
+                    ticker_msg.volume,
+                );
             }
             // Execution messages ignored by data client
             BinanceFuturesWsStreamsMessage::AccountUpdate(_)
@@ -329,15 +355,12 @@ impl BinanceFuturesDataClient {
                 };
 
                 let subs: Vec<(InstrumentId, u32)> = {
-                    let guard = book_subscriptions.read().expect(MUTEX_POISONED);
+                    let guard = book_subscriptions.load();
                     guard.iter().map(|(k, v)| (*k, *v)).collect()
                 };
 
                 for (instrument_id, depth) in subs {
-                    {
-                        let mut buffers = book_buffers.write().expect(MUTEX_POISONED);
-                        buffers.insert(instrument_id, BookBuffer::new(epoch));
-                    }
+                    book_buffers.insert(instrument_id, BookBuffer::new(epoch));
 
                     log::info!(
                         "OrderBook snapshot rebuild for {instrument_id} @ depth {depth} \
@@ -371,8 +394,8 @@ impl BinanceFuturesDataClient {
     async fn fetch_and_emit_snapshot(
         http: BinanceFuturesHttpClient,
         sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        buffers: Arc<RwLock<AHashMap<InstrumentId, BookBuffer>>>,
-        instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
         depth: u32,
         epoch: u64,
@@ -396,8 +419,8 @@ impl BinanceFuturesDataClient {
     async fn fetch_and_emit_snapshot_inner(
         http: BinanceFuturesHttpClient,
         sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-        buffers: Arc<RwLock<AHashMap<InstrumentId, BookBuffer>>>,
-        instruments: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+        buffers: Arc<AtomicMap<InstrumentId, BookBuffer>>,
+        instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
         depth: u32,
         epoch: u64,
@@ -419,7 +442,7 @@ impl BinanceFuturesDataClient {
 
                 // Check if subscription was cancelled or epoch changed
                 {
-                    let guard = buffers.read().expect(MUTEX_POISONED);
+                    let guard = buffers.load();
                     match guard.get(&instrument_id) {
                         None => {
                             log::debug!(
@@ -442,12 +465,11 @@ impl BinanceFuturesDataClient {
 
                 // Get instrument for precision
                 let (price_precision, size_precision) = {
-                    let guard = instruments.read().expect(MUTEX_POISONED);
+                    let guard = instruments.load();
                     match guard.get(&instrument_id) {
                         Some(inst) => (inst.price_precision(), inst.size_precision()),
                         None => {
                             log::error!("No instrument in cache for snapshot: {instrument_id}");
-                            let mut buffers = buffers.write().expect(MUTEX_POISONED);
                             buffers.remove(&instrument_id);
                             return;
                         }
@@ -457,7 +479,7 @@ impl BinanceFuturesDataClient {
                 // Validate first applicable update per Binance spec:
                 // First update must satisfy: U <= lastUpdateId+1 AND u >= lastUpdateId+1
                 let first_valid = {
-                    let guard = buffers.read().expect(MUTEX_POISONED);
+                    let guard = buffers.load();
                     guard.get(&instrument_id).and_then(|buffer| {
                         buffer
                             .updates
@@ -486,14 +508,13 @@ impl BinanceFuturesDataClient {
                                 MAX_RETRIES
                             );
 
-                            {
-                                let mut buffers = buffers.write().expect(MUTEX_POISONED);
-                                if let Some(buffer) = buffers.get_mut(&instrument_id)
+                            buffers.rcu(|m| {
+                                if let Some(buffer) = m.get_mut(&instrument_id)
                                     && buffer.epoch == epoch
                                 {
                                     buffer.updates.clear();
                                 }
-                            }
+                            });
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -532,15 +553,23 @@ impl BinanceFuturesDataClient {
 
                 // Take buffered updates but keep buffer entry during replay
                 let buffered = {
-                    let mut buffers = buffers.write().expect(MUTEX_POISONED);
-                    if let Some(buffer) = buffers.get_mut(&instrument_id) {
-                        if buffer.epoch != epoch {
-                            return;
+                    let mut taken = Vec::new();
+                    let mut should_return = false;
+                    buffers.rcu(|m| {
+                        taken = Vec::new();
+                        should_return = false;
+                        match m.get_mut(&instrument_id) {
+                            Some(buffer) if buffer.epoch == epoch => {
+                                taken = std::mem::take(&mut buffer.updates);
+                            }
+                            _ => should_return = true,
                         }
-                        std::mem::take(&mut buffer.updates)
-                    } else {
+                    });
+
+                    if should_return {
                         return;
                     }
+                    taken
                 };
 
                 // Replay buffered updates with continuity validation
@@ -566,14 +595,13 @@ impl BinanceFuturesDataClient {
                                 MAX_RETRIES
                             );
 
-                            {
-                                let mut buffers = buffers.write().expect(MUTEX_POISONED);
-                                if let Some(buffer) = buffers.get_mut(&instrument_id)
+                            buffers.rcu(|m| {
+                                if let Some(buffer) = m.get_mut(&instrument_id)
                                     && buffer.epoch == epoch
                                 {
                                     buffer.updates.clear();
                                 }
-                            }
+                            });
 
                             Box::pin(Self::fetch_and_emit_snapshot_inner(
                                 http,
@@ -610,20 +638,28 @@ impl BinanceFuturesDataClient {
                 // Drain any updates that arrived during replay
                 loop {
                     let more = {
-                        let mut buffers = buffers.write().expect(MUTEX_POISONED);
-                        if let Some(buffer) = buffers.get_mut(&instrument_id) {
-                            if buffer.epoch != epoch {
-                                break;
+                        let mut taken = Vec::new();
+                        let mut should_break = false;
+                        buffers.rcu(|m| {
+                            taken = Vec::new();
+                            should_break = false;
+                            match m.get_mut(&instrument_id) {
+                                Some(buffer) if buffer.epoch == epoch => {
+                                    if buffer.updates.is_empty() {
+                                        m.remove(&instrument_id);
+                                        should_break = true;
+                                    } else {
+                                        taken = std::mem::take(&mut buffer.updates);
+                                    }
+                                }
+                                _ => should_break = true,
                             }
+                        });
 
-                            if buffer.updates.is_empty() {
-                                buffers.remove(&instrument_id);
-                                break;
-                            }
-                            std::mem::take(&mut buffer.updates)
-                        } else {
+                        if should_break {
                             break;
                         }
+                        taken
                     };
 
                     for update in more {
@@ -642,14 +678,13 @@ impl BinanceFuturesDataClient {
                                     MAX_RETRIES
                                 );
 
-                                {
-                                    let mut buffers = buffers.write().expect(MUTEX_POISONED);
-                                    if let Some(buffer) = buffers.get_mut(&instrument_id)
+                                buffers.rcu(|m| {
+                                    if let Some(buffer) = m.get_mut(&instrument_id)
                                         && buffer.epoch == epoch
                                     {
                                         buffer.updates.clear();
                                     }
-                                }
+                                });
 
                                 Box::pin(Self::fetch_and_emit_snapshot_inner(
                                     http,
@@ -689,7 +724,6 @@ impl BinanceFuturesDataClient {
             }
             Err(e) => {
                 log::error!("Failed to request order book snapshot for {instrument_id}: {e}");
-                let mut buffers = buffers.write().expect(MUTEX_POISONED);
                 buffers.remove(&instrument_id);
             }
         }
@@ -697,11 +731,10 @@ impl BinanceFuturesDataClient {
 }
 
 fn upsert_instrument(
-    cache: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument: InstrumentAny,
 ) {
-    let mut guard = cache.write().expect(MUTEX_POISONED);
-    guard.insert(instrument.id(), instrument);
+    cache.insert(instrument.id(), instrument);
 }
 
 fn parse_order_book_snapshot(
@@ -822,18 +855,9 @@ impl DataClient for BinanceFuturesDataClient {
         });
 
         // Clear subscription state so resubscribes issue fresh WS subscribes
-        {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            refs.clear();
-        }
-        {
-            let mut subs = self.book_subscriptions.write().expect(MUTEX_POISONED);
-            subs.clear();
-        }
-        {
-            let mut buffers = self.book_buffers.write().expect(MUTEX_POISONED);
-            buffers.clear();
-        }
+        self.mark_price_refs.store(AHashMap::new());
+        self.book_subscriptions.store(AHashMap::new());
+        self.book_buffers.store(AHashMap::new());
 
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
@@ -861,11 +885,11 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Seed the status cache from the HTTP client's instruments cache
         {
-            let mut inst_guard = self.instruments.write().expect(MUTEX_POISONED);
-            let mut status_guard = self.status_cache.write().expect(MUTEX_POISONED);
+            let mut inst_map = AHashMap::new();
+            let mut status_map = AHashMap::new();
 
             for instrument in &instruments {
-                inst_guard.insert(instrument.id(), instrument.clone());
+                inst_map.insert(instrument.id(), instrument.clone());
             }
 
             let http_instruments = self.http_client.instruments_cache();
@@ -882,11 +906,14 @@ impl DataClient for BinanceFuturesDataClient {
 
                 for instrument in &instruments {
                     if instrument.raw_symbol().as_str() == raw_symbol.as_str() {
-                        status_guard.insert(instrument.id(), action);
+                        status_map.insert(instrument.id(), action);
                         break;
                     }
                 }
             }
+
+            self.instruments.store(inst_map);
+            self.status_cache.store(status_map);
         }
 
         for instrument in instruments.clone() {
@@ -962,8 +989,7 @@ impl DataClient for BinanceFuturesDataClient {
                             match poll_http.request_symbol_statuses().await {
                                 Ok(symbol_statuses) => {
                                     let ts = poll_clock.get_time_ns();
-                                    let inst_guard = poll_instruments.read()
-                                        .expect(MUTEX_POISONED);
+                                    let inst_guard = poll_instruments.load();
 
                                     // Build raw_symbol -> InstrumentId lookup
                                     let raw_to_id: AHashMap<Ustr, InstrumentId> = inst_guard
@@ -979,11 +1005,11 @@ impl DataClient for BinanceFuturesDataClient {
                                     }
                                     drop(inst_guard);
 
-                                    let mut cache = poll_status_cache.write()
-                                        .expect(MUTEX_POISONED);
+                                    let mut cache = (**poll_status_cache.load()).clone();
                                     diff_and_emit_statuses(
                                         &new_statuses, &mut cache, &poll_sender, ts, ts,
                                     );
+                                    poll_status_cache.store(cache);
                                 }
                                 Err(e) => {
                                     log::warn!("Futures instrument status poll failed: {e}");
@@ -1023,18 +1049,9 @@ impl DataClient for BinanceFuturesDataClient {
         }
 
         // Clear subscription state so resubscribes issue fresh WS subscribes
-        {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            refs.clear();
-        }
-        {
-            let mut subs = self.book_subscriptions.write().expect(MUTEX_POISONED);
-            subs.clear();
-        }
-        {
-            let mut buffers = self.book_buffers.write().expect(MUTEX_POISONED);
-            buffers.clear();
-        }
+        self.mark_price_refs.store(AHashMap::new());
+        self.book_subscriptions.store(AHashMap::new());
+        self.book_buffers.store(AHashMap::new());
 
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
@@ -1079,10 +1096,7 @@ impl DataClient for BinanceFuturesDataClient {
         }
 
         // Track subscription for reconnect handling
-        {
-            let mut subs = self.book_subscriptions.write().expect(MUTEX_POISONED);
-            subs.insert(instrument_id, depth);
-        }
+        self.book_subscriptions.insert(instrument_id, depth);
 
         // Bump epoch to invalidate any in-flight snapshot from a prior subscription
         let epoch = {
@@ -1092,10 +1106,8 @@ impl DataClient for BinanceFuturesDataClient {
         };
 
         // Start buffering deltas for this instrument
-        {
-            let mut buffers = self.book_buffers.write().expect(MUTEX_POISONED);
-            buffers.insert(instrument_id, BookBuffer::new(epoch));
-        }
+        self.book_buffers
+            .insert(instrument_id, BookBuffer::new(epoch));
 
         log::info!("OrderBook snapshot rebuild for {instrument_id} @ depth {depth} starting");
 
@@ -1202,10 +1214,17 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Mark/index/funding share the same stream - use ref counting
         let should_subscribe = {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            let count = refs.entry(instrument_id).or_insert(0);
-            *count += 1;
-            *count == 1
+            let prev = self
+                .mark_price_refs
+                .load()
+                .get(&instrument_id)
+                .copied()
+                .unwrap_or(0);
+            self.mark_price_refs.rcu(|m| {
+                let count = m.entry(instrument_id).or_insert(0);
+                *count += 1;
+            });
+            prev == 0
         };
 
         if should_subscribe {
@@ -1232,10 +1251,17 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Mark/index/funding share the same stream - use ref counting
         let should_subscribe = {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            let count = refs.entry(instrument_id).or_insert(0);
-            *count += 1;
-            *count == 1
+            let prev = self
+                .mark_price_refs
+                .load()
+                .get(&instrument_id)
+                .copied()
+                .unwrap_or(0);
+            self.mark_price_refs.rcu(|m| {
+                let count = m.entry(instrument_id).or_insert(0);
+                *count += 1;
+            });
+            prev == 0
         };
 
         if should_subscribe {
@@ -1257,13 +1283,40 @@ impl DataClient for BinanceFuturesDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, _cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
-        // FundingRateUpdate is not a variant of the Data enum, so we cannot emit funding rates
-        // through the standard data channel. This requires custom data handling.
-        anyhow::bail!(
-            "Funding rate subscriptions are not yet supported for Binance Futures. \
-            The Data enum does not have a FundingRateUpdate variant."
-        )
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        let should_subscribe = {
+            let prev = self
+                .mark_price_refs
+                .load()
+                .get(&instrument_id)
+                .copied()
+                .unwrap_or(0);
+            self.mark_price_refs.rcu(|m| {
+                let count = m.entry(instrument_id).or_insert(0);
+                *count += 1;
+            });
+            prev == 0
+        };
+
+        if should_subscribe {
+            let ws = self.ws_client.clone();
+            let stream = format!(
+                "{}@markPrice@1s",
+                format_binance_stream_symbol(&instrument_id)
+            );
+
+            self.spawn_ws(
+                async move {
+                    ws.subscribe(vec![stream])
+                        .await
+                        .context("funding rates subscription")
+                },
+                "funding rates subscription",
+            );
+        }
+        Ok(())
     }
 
     fn subscribe_instrument_status(
@@ -1282,16 +1335,10 @@ impl DataClient for BinanceFuturesDataClient {
         let ws = self.ws_client.clone();
 
         // Remove subscription tracking
-        {
-            let mut subs = self.book_subscriptions.write().expect(MUTEX_POISONED);
-            subs.remove(&instrument_id);
-        }
+        self.book_subscriptions.remove(&instrument_id);
 
         // Remove buffer to prevent snapshot task from emitting after unsubscribe
-        {
-            let mut buffers = self.book_buffers.write().expect(MUTEX_POISONED);
-            buffers.remove(&instrument_id);
-        }
+        self.book_buffers.remove(&instrument_id);
 
         let symbol_lower = format_binance_stream_symbol(&instrument_id);
         let streams = vec![
@@ -1377,17 +1424,21 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Mark/index/funding share the same stream - use ref counting
         let should_unsubscribe = {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            if let Some(count) = refs.get_mut(&instrument_id) {
-                *count = count.saturating_sub(1);
-                if *count == 0 {
-                    refs.remove(&instrument_id);
+            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+            match prev {
+                Some(count) if count <= 1 => {
+                    self.mark_price_refs.remove(&instrument_id);
                     true
-                } else {
+                }
+                Some(_) => {
+                    self.mark_price_refs.rcu(|m| {
+                        if let Some(count) = m.get_mut(&instrument_id) {
+                            *count = count.saturating_sub(1);
+                        }
+                    });
                     false
                 }
-            } else {
-                false
+                None => false,
             }
         };
 
@@ -1417,17 +1468,21 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Mark/index/funding share the same stream - use ref counting
         let should_unsubscribe = {
-            let mut refs = self.mark_price_refs.write().expect(MUTEX_POISONED);
-            if let Some(count) = refs.get_mut(&instrument_id) {
-                *count = count.saturating_sub(1);
-                if *count == 0 {
-                    refs.remove(&instrument_id);
+            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+            match prev {
+                Some(count) if count <= 1 => {
+                    self.mark_price_refs.remove(&instrument_id);
                     true
-                } else {
+                }
+                Some(_) => {
+                    self.mark_price_refs.rcu(|m| {
+                        if let Some(count) = m.get_mut(&instrument_id) {
+                            *count = count.saturating_sub(1);
+                        }
+                    });
                     false
                 }
-            } else {
-                false
+                None => false,
             }
         };
 
@@ -1452,8 +1507,46 @@ impl DataClient for BinanceFuturesDataClient {
         Ok(())
     }
 
-    fn unsubscribe_funding_rates(&mut self, _cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        // Funding rate subscriptions are not supported (see subscribe_funding_rates)
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let instrument_id = cmd.instrument_id;
+
+        let should_unsubscribe = {
+            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+            match prev {
+                Some(count) if count <= 1 => {
+                    self.mark_price_refs.remove(&instrument_id);
+                    true
+                }
+                Some(_) => {
+                    self.mark_price_refs.rcu(|m| {
+                        if let Some(count) = m.get_mut(&instrument_id) {
+                            *count = count.saturating_sub(1);
+                        }
+                    });
+                    false
+                }
+                None => false,
+            }
+        };
+
+        if should_unsubscribe {
+            let ws = self.ws_client.clone();
+            let symbol_lower = format_binance_stream_symbol(&instrument_id);
+            let streams = vec![
+                format!("{symbol_lower}@markPrice"),
+                format!("{symbol_lower}@markPrice@1s"),
+                format!("{symbol_lower}@markPrice@3s"),
+            ];
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe(streams)
+                        .await
+                        .context("funding rates unsubscribe")
+                },
+                "funding rates unsubscribe",
+            );
+        }
         Ok(())
     }
 

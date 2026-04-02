@@ -47,17 +47,24 @@ use nautilus_bybit::{
     execution::BybitExecutionClient,
 };
 use nautilus_common::{
-    cache::Cache, clients::ExecutionClient, live::runner::set_exec_event_sender,
-    messages::ExecutionEvent, testing::wait_until_async,
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::set_exec_event_sender,
+    messages::{ExecutionEvent, execution::ExecutionReport},
+    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType},
+    enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
     events::AccountState,
-    identifiers::{AccountId, ClientId, TraderId, Venue},
-    types::{AccountBalance, Money},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
+        TraderId, Venue,
+    },
+    orders::{MarketOrder, OrderAny, TrailingStopMarketOrder},
+    types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -502,12 +509,12 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
         base_url_ws_trade: Some(format!("ws://{addr}/v5/trade")),
         http_proxy_url: None,
         ws_proxy_url: None,
-        http_timeout_secs: Some(10),
-        max_retries: Some(1),
-        retry_delay_initial_ms: Some(100),
-        retry_delay_max_ms: Some(1000),
-        heartbeat_interval_secs: Some(5),
-        recv_window_ms: Some(5000),
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
+        heartbeat_interval_secs: 5,
+        recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
         futures_leverages: None,
@@ -650,12 +657,12 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
         base_url_ws_trade: Some(format!("ws://{addr}/v5/trade")),
         http_proxy_url: None,
         ws_proxy_url: None,
-        http_timeout_secs: Some(10),
-        max_retries: Some(1),
-        retry_delay_initial_ms: Some(100),
-        retry_delay_max_ms: Some(1000),
-        heartbeat_interval_secs: Some(5),
-        recv_window_ms: Some(5000),
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
+        heartbeat_interval_secs: 5,
+        recv_window_ms: 5000,
         account_id: None,
         use_spot_position_reports: false,
         futures_leverages: None,
@@ -687,5 +694,406 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     assert_eq!(trade_count, 0, "Demo mode should NOT connect to trade WS");
 
     assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_query_order() {
+    use nautilus_common::messages::execution::QueryOrder;
+
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(10)).await;
+
+    // Drain connection events (account state, subscriptions)
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    let cmd = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("BYBIT")),
+        StrategyId::from("S-001"),
+        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT")),
+        ClientOrderId::from("client-open-1"),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.query_order(&cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for query_order event")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+            assert_eq!(
+                report.client_order_id,
+                Some(ClientOrderId::from("client-open-1")),
+            );
+        }
+        other => panic!("Expected OrderStatusReport, was {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_submit_order_list_demo() {
+    use nautilus_common::messages::execution::SubmitOrderList;
+    use nautilus_model::orders::OrderList;
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = ClientId::from("BYBIT");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("BYBIT"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = BybitExecClientConfig {
+        api_key: Some("test_api_key".to_string()),
+        api_secret: Some("test_api_secret".to_string()),
+        product_types: vec![BybitProductType::Linear],
+        environment: BybitEnvironment::Demo,
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws_private: Some(format!("ws://{addr}/v5/private")),
+        base_url_ws_trade: Some(format!("ws://{addr}/v5/trade")),
+        http_proxy_url: None,
+        ws_proxy_url: None,
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
+        heartbeat_interval_secs: 5,
+        recv_window_ms: 5000,
+        account_id: None,
+        use_spot_position_reports: false,
+        futures_leverages: None,
+        position_mode: None,
+        margin_mode: None,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Drain connection events (account state, subscriptions)
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    let cid1 = ClientOrderId::from("test-list-order-1");
+    let cid2 = ClientOrderId::from("test-list-order-2");
+
+    let order1 = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid1,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let order2 = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid2,
+        OrderSide::Sell,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+
+    let init1 = order1.init_event().clone();
+    let init2 = order2.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order1, None, Some(client_id), false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(order2, None, Some(client_id), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("test-list-1"),
+        instrument_id,
+        strategy_id,
+        vec![cid1, cid2],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        order_list,
+        vec![init1, init2],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order_list(&cmd).unwrap();
+
+    let mut submitted_count = 0;
+    for _ in 0..2 {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for OrderSubmitted")
+            .expect("channel closed");
+
+        if let ExecutionEvent::Order(ref order_event) = event
+            && order_event.to_string().contains("OrderSubmitted")
+        {
+            submitted_count += 1;
+        }
+    }
+
+    assert_eq!(submitted_count, 2, "Expected 2 OrderSubmitted events");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
+    use nautilus_common::messages::execution::SubmitOrderList;
+    use nautilus_model::orders::OrderList;
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = ClientId::from("BYBIT");
+    let strategy_id = StrategyId::from("S-001");
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), Venue::from("BYBIT"));
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("BYBIT"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = BybitExecClientConfig {
+        api_key: Some("test_api_key".to_string()),
+        api_secret: Some("test_api_secret".to_string()),
+        product_types: vec![BybitProductType::Linear],
+        environment: BybitEnvironment::Demo,
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws_private: Some(format!("ws://{addr}/v5/private")),
+        base_url_ws_trade: Some(format!("ws://{addr}/v5/trade")),
+        http_proxy_url: None,
+        ws_proxy_url: None,
+        http_timeout_secs: 10,
+        max_retries: 1,
+        retry_delay_initial_ms: 100,
+        retry_delay_max_ms: 1000,
+        heartbeat_interval_secs: 5,
+        recv_window_ms: 5000,
+        account_id: None,
+        use_spot_position_reports: false,
+        futures_leverages: None,
+        position_mode: None,
+        margin_mode: None,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    client.start().unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Drain connection events (account state, subscriptions)
+    while tokio::time::timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .is_ok()
+    {}
+
+    // Valid market order + unsupported TrailingStopMarket order
+    let cid1 = ClientOrderId::from("test-deny-order-1");
+    let cid2 = ClientOrderId::from("test-deny-order-2");
+
+    let order1 = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid1,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+
+    let order2 = OrderAny::TrailingStopMarket(TrailingStopMarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        cid2,
+        OrderSide::Sell,
+        Quantity::from("0.01"),
+        Price::from("1500.00"),
+        TriggerType::LastPrice,
+        rust_decimal::Decimal::new(100, 0),
+        TrailingOffsetType::BasisPoints,
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let init1 = order1.init_event().clone();
+    let init2 = order2.init_event().clone();
+
+    cache
+        .borrow_mut()
+        .add_order(order1, None, Some(client_id), false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(order2, None, Some(client_id), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("test-deny-list-1"),
+        instrument_id,
+        strategy_id,
+        vec![cid1, cid2],
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        order_list,
+        vec![init1, init2],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order_list(&cmd).unwrap();
+
+    // Both orders should be denied (not just the invalid one)
+    let mut denied_count = 0;
+    for _ in 0..2 {
+        match tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(ref event)))
+                if event.to_string().contains("OrderDenied") =>
+            {
+                denied_count += 1;
+            }
+            _ => break,
+        }
+    }
+
+    assert_eq!(
+        denied_count, 2,
+        "Both orders should be denied when one leg is invalid"
+    );
+
     client.disconnect().await.unwrap();
 }

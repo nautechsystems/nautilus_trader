@@ -4,7 +4,7 @@ pub use encoder::NewOrderFullResponseEncoder;
 use super::*;
 pub use super::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION, SBE_SEMANTIC_VERSION};
 
-pub const SBE_BLOCK_LENGTH: u16 = 153;
+pub const SBE_BLOCK_LENGTH: u16 = 154;
 pub const SBE_TEMPLATE_ID: u16 = 302;
 
 pub mod encoder {
@@ -449,6 +449,13 @@ pub mod encoder {
         pub fn pegged_price(&mut self, value: i64) {
             let offset = self.offset + 145;
             self.get_buf_mut().put_i64_at(offset, value);
+        }
+
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&mut self, value: expiry_reason::ExpiryReason) {
+            let offset = self.offset + 153;
+            self.get_buf_mut().put_u8_at(offset, value as u8)
         }
 
         /// GROUP ENCODER (id=100)
@@ -1197,6 +1204,16 @@ pub mod decoder {
             }
         }
 
+        /// REQUIRED enum
+        #[inline]
+        pub fn expiry_reason(&self) -> expiry_reason::ExpiryReason {
+            if self.acting_version() < 3 {
+                return expiry_reason::ExpiryReason::default();
+            }
+
+            self.get_buf().get_u8_at(self.offset + 153).into()
+        }
+
         /// GROUP DECODER (id=100)
         #[inline]
         pub fn fills_decoder(self) -> FillsDecoder<Self> {
@@ -1304,7 +1321,7 @@ pub mod decoder {
             self
         }
 
-        /// group token - Token{signal=BEGIN_GROUP, name='fills', referencedName='null', description='null', packageName='null', id=100, version=0, deprecated=0, encodedLength=42, offset=153, componentTokenCount=37, encoding=Encoding{presence=REQUIRED, primitiveType=null, byteOrder=LITTLE_ENDIAN, minValue=null, maxValue=null, nullValue=null, constValue=null, characterEncoding='null', epoch='null', timeUnit=null, semanticType='null'}}
+        /// group token - Token{signal=BEGIN_GROUP, name='fills', referencedName='null', description='null', packageName='null', id=100, version=0, deprecated=0, encodedLength=42, offset=154, componentTokenCount=37, encoding=Encoding{presence=REQUIRED, primitiveType=null, byteOrder=LITTLE_ENDIAN, minValue=null, maxValue=null, nullValue=null, constValue=null, characterEncoding='null', epoch='null', timeUnit=null, semanticType='null'}}
         #[inline]
         pub fn parent(&mut self) -> SbeResult<P> {
             self.parent.take().ok_or(SbeErr::ParentNotSet)

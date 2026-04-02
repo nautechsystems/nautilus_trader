@@ -29,29 +29,15 @@ and won't need to work directly with these lower-level components.
 
 You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/).
 
-## Revoking builder code approval
+## Builder attribution
 
-Previous versions of NautilusTrader required users to approve a builder code fee before trading.
-**This is no longer required.** If you previously approved the builder fee and wish to revoke it,
-you can run the revoke script.
+Orders submitted through the adapter include a NautilusTrader builder address with a zero fee
+rate. This is for attribution only and does not charge any additional fees. No builder code
+approval is required.
 
-The script reads your private key from environment variables (`HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK`).
-
-```bash
-python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
-```
-
-Testnet:
-
-```bash
-HYPERLIQUID_TESTNET=true python nautilus_trader/adapters/hyperliquid/scripts/builder_fee_revoke.py
-```
-
-Alternatively, from Rust:
-
-```bash
-cargo run --bin hyperliquid-builder-fee-revoke
-```
+When trading via a vault (`vault_address` configured), the builder address is omitted from
+orders. Hyperliquid does not allow vaults to approve builder fees, so including the builder
+address would cause the exchange to reject the order.
 
 ## Testnet setup
 
@@ -113,15 +99,19 @@ The adapter automatically loads these when `testnet=True` in the configuration.
 
 ## Product support
 
-Hyperliquid offers linear perpetual futures and native spot markets.
+Hyperliquid offers linear perpetual futures, HIP-3 builder-deployed perpetuals, and native
+spot markets.
 
-| Product Type      | Data Feed | Trading | Notes                      |
-|-------------------|-----------|---------|----------------------------|
-| Perpetual Futures | ✓         | ✓       | USDC-settled linear perps. |
-| Spot              | ✓         | ✓       | Native spot markets.       |
+| Product Type      | Data Feed | Trading | Notes                                           |
+|-------------------|-----------|---------|-------------------------------------------------|
+| Perpetual Futures | ✓         | ✓       | USDC‑settled linear perps (validator‑operated). |
+| HIP‑3 Perpetuals  | ✓         | ✓       | Builder‑deployed perps. Excluded by default.    |
+| Spot              | ✓         | ✓       | Native spot markets.                            |
 
 :::note
-Perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard currency pairs.
+All perpetual futures on Hyperliquid are settled in USDC. Spot markets are standard
+currency pairs. See [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals)
+for configuration and opt-in details.
 :::
 
 ## Symbology
@@ -145,6 +135,27 @@ InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
 InstrumentId.from_str("ETH-USD-PERP.HYPERLIQUID")
 ```
 
+### HIP-3 perpetuals
+
+Format: `{dex}:{Asset}-USD-PERP`
+
+[HIP-3](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-3-builder-deployed-perpetuals)
+markets use a dex prefix separated by a colon. The dex name identifies which
+builder-deployed perp dex the market belongs to.
+
+Examples:
+
+- `xyz:TSLA-USD-PERP` - Tesla perp on trade.xyz
+- `xyz:GOLD-USD-PERP` - Gold perp on trade.xyz
+- `flx:NVDA-USD-PERP` - Nvidia perp on Felix
+- `vntl:SPACEX-USD-PERP` - SpaceX perp on Ventuals
+
+To subscribe in your strategy:
+
+```python
+InstrumentId.from_str("xyz:TSLA-USD-PERP.HYPERLIQUID")
+```
+
 ### Spot markets
 
 Format: `{Base}-{Quote}-SPOT`
@@ -165,6 +176,81 @@ Spot instruments may include vault tokens (prefixed with `vntls:`). These are au
 handled by the instrument provider.
 :::
 
+## HIP-3 builder-deployed perpetuals
+
+[HIP-3](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-3-builder-deployed-perpetuals)
+allows qualified deployers to launch permissionless perp dexes on Hyperliquid. These markets
+include equities (TSLA, NVDA, AAPL), commodities (gold, crude oil), indices (S&P 500), and
+pre-IPO tokens (SpaceX, OpenAI).
+
+HIP-3 instruments are excluded by default. To load them, include
+`HyperliquidProductType.PERP_HIP3` in the requested product types.
+
+For direct instrument provider usage:
+
+```python
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
+from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
+
+provider = HyperliquidInstrumentProvider(
+    client=client,
+    product_types=[
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.SPOT,
+        HyperliquidProductType.PERP_HIP3,
+    ],
+)
+```
+
+For live `TradingNode` usage, pass the same `product_types` through the Hyperliquid
+client config:
+
+```python
+from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
+
+HyperliquidDataClientConfig(
+    product_types=(
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.PERP_HIP3,
+    ),
+)
+
+HyperliquidExecClientConfig(
+    product_types=(
+        HyperliquidProductType.PERP,
+        HyperliquidProductType.PERP_HIP3,
+    ),
+)
+```
+
+Once HIP-3 instruments are loaded, you can filter them with `InstrumentProviderConfig`:
+
+```python
+instrument_provider=InstrumentProviderConfig(
+    load_all=True,
+    filters={"market_types": ["perp_hip3"]},
+)
+```
+
+### Differences from standard perpetuals
+
+HIP-3 markets trade on the same HyperCore matching engine and use the same order API.
+The key differences are:
+
+- **Higher fees**: 2x standard perp fees by default. The deployer receives half.
+- **Isolated margin**: HIP-3 markets default to isolated-only margin.
+- **Deployer-managed oracles**: The deployer operates the oracle feed, not validators.
+- **Growth mode**: Some dexes enable growth mode, which reduces protocol fees by 90%.
+
+For full protocol details, see the Hyperliquid docs:
+
+- [HIP-3 proposal](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-3-builder-deployed-perpetuals)
+- [HIP-3 deployer actions](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/hip-3-deployer-actions)
+- [Asset IDs](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids)
+- [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees)
+
 ## Instrument provider
 
 The instrument provider supports filtering when loading instruments via
@@ -172,7 +258,7 @@ The instrument provider supports filtering when loading instruments via
 
 | Filter key                  | Type        | Description                                 |
 |-----------------------------|-------------|---------------------------------------------|
-| `market_types` (or `kinds`) | `list[str]` | `"perp"` or `"spot"`.                       |
+| `market_types` (or `kinds`) | `list[str]` | `"perp"`, `"perp_hip3"`, or `"spot"`.       |
 | `bases`                     | `list[str]` | Base currency codes, e.g. `["BTC", "ETH"]`. |
 | `quotes`                    | `list[str]` | Quote currency codes, e.g. `["USDC"]`.      |
 | `symbols`                   | `list[str]` | Full symbols, e.g. `["BTC-USD-PERP"]`.      |
@@ -188,17 +274,18 @@ instrument_provider=InstrumentProviderConfig(
 
 ## Data subscriptions
 
-The adapter supports the following data subscriptions:
+The adapter supports the following data subscriptions. All perpetual data types
+(mark prices, index prices, funding rates) apply to both standard and HIP-3 perps.
 
-| Data type         | Subscription | Historical | Nautilus type      | Notes                                      |
-|-------------------|--------------|------------|--------------------|--------------------------------------------|
-| Trade ticks       | ✓            | -          | `TradeTick`        | Via WebSocket trades channel.              |
-| Quote ticks       | ✓            | -          | `QuoteTick`        | Best bid/offer from WebSocket.             |
-| Order book deltas | ✓            | -          | `OrderBookDelta`   | L2 depth. Each message is a full snapshot. |
-| Bars              | ✓            | ✓          | `Bar`              | See supported intervals below.             |
-| Mark prices       | ✓            | -          | `MarkPriceUpdate`  | Perpetual mark price ticks.                |
-| Index prices      | ✓            | -          | `IndexPriceUpdate` | Underlying index reference prices.         |
-| Funding rates     | ✓            | -          | `FundingRate`      | Perpetual funding rate updates.            |
+| Data type         | Subscription | Snapshot | Historical | Nautilus type        | Notes                                      |
+|-------------------|--------------|----------|------------|----------------------|--------------------------------------------|
+| Trade ticks       | ✓            | -        | -          | `TradeTick`          | Via WebSocket trades channel.              |
+| Quote ticks       | ✓            | -        | -          | `QuoteTick`          | Best bid/offer from WebSocket.             |
+| Order book deltas | ✓            | ✓        | -          | `OrderBookDelta`     | L2 depth. Each message is a full snapshot. |
+| Bars              | ✓            | -        | ✓          | `Bar`                | See supported intervals below.             |
+| Mark prices       | ✓            | -        | -          | `MarkPriceUpdate`    | Perpetual mark price ticks.                |
+| Index prices      | ✓            | -        | -          | `IndexPriceUpdate`   | Underlying index reference prices.         |
+| Funding rates     | ✓            | -        | -          | `FundingRateUpdate`  | Perpetual funding rate updates.            |
 
 :::note
 Historical quote tick and trade tick requests are not yet supported by this adapter.
@@ -226,6 +313,12 @@ Historical quote tick and trade tick requests are not yet supported by this adap
 ## Orders capability
 
 Hyperliquid supports a full set of order types and execution options.
+
+:::note
+In the tables below, "Perpetuals" covers both standard validator-operated perps and
+HIP-3 builder-deployed perps. The same order types, time-in-force options, and execution
+instructions apply to both.
+:::
 
 ### Order types
 
@@ -301,7 +394,7 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 | Instruction   | Perpetuals | Spot | Notes                            |
 |---------------|------------|------|----------------------------------|
 | `post_only`   | ✓          | ✓    | Equivalent to ALO time in force. |
-| `reduce_only` | ✓          | ✓    | Close-only orders.               |
+| `reduce_only` | ✓          | ✓    | Close‑only orders.               |
 
 :::info
 Post-only orders that would immediately match are rejected by Hyperliquid. The adapter detects
@@ -341,10 +434,11 @@ There is a limitation of one order book per instrument per trader instance.
 
 ## Account and position management
 
-The adapter uses cross-margin mode and reports account state with USDC balances and margin
-usage. On connect, the execution client performs a full reconciliation of orders, fills, and
-positions against Hyperliquid's clearinghouse state. This ensures the local cache is
-consistent even after restarts or disconnections.
+The adapter reports account state with USDC balances and margin usage. Standard perps
+default to cross margin. HIP-3 perps typically require isolated margin. On connect,
+the execution client performs a full reconciliation of orders, fills, and positions
+against Hyperliquid's clearinghouse state. This keeps the local cache consistent
+even after restarts or disconnections.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
@@ -370,6 +464,7 @@ For Hyperliquid mainnet clients, you can set:
 
 - `HYPERLIQUID_PK`
 - `HYPERLIQUID_VAULT` (optional, for vault trading)
+- `HYPERLIQUID_ACCOUNT_ADDRESS` (optional, for agent wallet trading)
 
 For Hyperliquid testnet clients, you can set:
 
@@ -414,25 +509,28 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 |---------------------|---------|-------------------------------------------------|
 | `base_url_ws`       | `None`  | Override for the WebSocket base URL.            |
 | `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`. |
+| `product_types`     | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
 | `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
 | `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                        |
 | `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented.  |
 
 ### Execution client configuration options
 
-| Option                     | Default | Description                                                                               |
-|----------------------------|---------|-------------------------------------------------------------------------------------------|
-| `private_key`              | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
-| `vault_address`            | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
-| `base_url_ws`              | `None`  | Override for the WebSocket base URL.                                                      |
-| `testnet`                  | `False` | Connect to the Hyperliquid testnet when `True`.                                           |
-| `max_retries`              | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
-| `retry_delay_initial_ms`   | `None`  | Initial delay (milliseconds) between retries.                                             |
-| `retry_delay_max_ms`       | `None`  | Maximum delay (milliseconds) between retries.                                             |
-| `http_timeout_secs`        | `10`    | Timeout (seconds) applied to REST calls.                                                  |
-| `normalize_prices`         | `True`  | Normalize order prices to 5 significant figures before submission.                        |
-| `http_proxy_url`           | `None`  | Optional HTTP proxy URL.                                                                  |
-| `ws_proxy_url`             | `None`  | Reserved; WebSocket proxy not yet implemented.                                            |
+| Option                   | Default | Description                                                                               |
+|--------------------------|---------|-------------------------------------------------------------------------------------------|
+| `private_key`            | `None`  | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.   |
+| `vault_address`          | `None`  | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted. |
+| `account_address`        | `None`  | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`. |
+| `base_url_ws`            | `None`  | Override for the WebSocket base URL.                                                      |
+| `testnet`                | `False` | Connect to the Hyperliquid testnet when `True`.                                           |
+| `product_types`          | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps.                  |
+| `max_retries`            | `None`  | Maximum retry attempts for submit, cancel, or modify order requests.                      |
+| `retry_delay_initial_ms` | `None`  | Initial delay (milliseconds) between retries.                                             |
+| `retry_delay_max_ms`     | `None`  | Maximum delay (milliseconds) between retries.                                             |
+| `http_timeout_secs`      | `10`    | Timeout (seconds) applied to REST calls.                                                  |
+| `normalize_prices`       | `True`  | Normalize order prices to 5 significant figures before submission.                        |
+| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                                                  |
+| `ws_proxy_url`           | `None`  | Reserved; WebSocket proxy not yet implemented.                                            |
 
 ### Configuration example
 
@@ -440,6 +538,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
 
@@ -447,6 +546,10 @@ config = TradingNodeConfig(
     data_clients={
         HYPERLIQUID: HyperliquidDataClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
             testnet=True,  # Use testnet
         ),
     },
@@ -455,6 +558,10 @@ config = TradingNodeConfig(
             private_key=None,  # Loads from HYPERLIQUID_TESTNET_PK env var
             vault_address=None,  # Optional: loads from HYPERLIQUID_TESTNET_VAULT
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
             testnet=True,  # Use testnet
             normalize_prices=True,  # Rounds prices to 5 significant figures
         ),

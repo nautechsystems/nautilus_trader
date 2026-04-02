@@ -34,6 +34,7 @@ use nautilus_model::{
     },
     python::instruments::pyobject_to_instrument_any,
 };
+use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{

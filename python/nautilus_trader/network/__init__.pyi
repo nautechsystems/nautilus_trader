@@ -26,9 +26,9 @@ class HttpClient:
         default_headers: typing.Mapping[str, str],
         header_keys: typing.Sequence[str],
         keyed_quotas: typing.Sequence[tuple[str, Quota]],
-        default_quota: Quota | None = ...,
-        timeout_secs: int | None = ...,
-        proxy_url: str | None = ...,
+        default_quota: Quota | None = None,
+        timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     def request(
         self,
@@ -99,9 +99,9 @@ class SocketClient:
     @staticmethod
     def connect(
         config: SocketConfig,
-        post_connection: typing.Any | None = ...,
-        post_reconnection: typing.Any | None = ...,
-        post_disconnection: typing.Any | None = ...,
+        post_connection: typing.Any | None = None,
+        post_reconnection: typing.Any | None = None,
+        post_disconnection: typing.Any | None = None,
     ) -> typing.Any: ...
     def is_active(self) -> bool: ...
     def is_reconnecting(self) -> bool: ...
@@ -120,16 +120,16 @@ class SocketConfig:
         ssl: bool,
         suffix: typing.Sequence[int],
         handler: typing.Any,
-        heartbeat: tuple[int, typing.Sequence[int]] | None = ...,
-        reconnect_timeout_ms: int | None = ...,
-        reconnect_delay_initial_ms: int | None = ...,
-        reconnect_delay_max_ms: int | None = ...,
-        reconnect_backoff_factor: float | None = ...,
-        reconnect_jitter_ms: int | None = ...,
-        connection_max_retries: int | None = ...,
-        reconnect_max_attempts: int | None = ...,
-        idle_timeout_ms: int | None = ...,
-        certs_dir: str | None = ...,
+        heartbeat: tuple[int, typing.Sequence[int]] | None = None,
+        reconnect_timeout_ms: int | None = 10000,
+        reconnect_delay_initial_ms: int | None = 2000,
+        reconnect_delay_max_ms: int | None = 30000,
+        reconnect_backoff_factor: float | None = 1.5,
+        reconnect_jitter_ms: int | None = 100,
+        connection_max_retries: int | None = 5,
+        reconnect_max_attempts: int | None = None,
+        idle_timeout_ms: int | None = None,
+        certs_dir: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -142,7 +142,7 @@ class WebSocketClient:
         ping_handler: typing.Any | None,
         post_reconnection: typing.Any | None,
         keyed_quotas: typing.Sequence[tuple[str, Quota]],
-        default_quota: Quota | None = ...,
+        default_quota: Quota | None = None,
     ) -> typing.Any: ...
     def disconnect(self) -> typing.Any: ...
     def is_active(self) -> bool: ...
@@ -163,15 +163,15 @@ class WebSocketConfig:
         self,
         url: str,
         headers: typing.Sequence[tuple[str, str]],
-        heartbeat: int | None = ...,
-        heartbeat_msg: str | None = ...,
-        reconnect_timeout_ms: int | None = ...,
-        reconnect_delay_initial_ms: int | None = ...,
-        reconnect_delay_max_ms: int | None = ...,
-        reconnect_backoff_factor: float | None = ...,
-        reconnect_jitter_ms: int | None = ...,
-        reconnect_max_attempts: int | None = ...,
-        idle_timeout_ms: int | None = ...,
+        heartbeat: int | None = None,
+        heartbeat_msg: str | None = None,
+        reconnect_timeout_ms: int | None = 10000,
+        reconnect_delay_initial_ms: int | None = 2000,
+        reconnect_delay_max_ms: int | None = 30000,
+        reconnect_backoff_factor: float | None = 1.5,
+        reconnect_jitter_ms: int | None = 100,
+        reconnect_max_attempts: int | None = None,
+        idle_timeout_ms: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -186,34 +186,34 @@ class HttpMethod(enum.Enum):
 
 def http_delete(
     url: str,
-    params: typing.Any | None = ...,
-    headers: typing.Mapping[str, str] | None = ...,
-    timeout_secs: int | None = ...,
+    params: typing.Any | None = None,
+    headers: typing.Mapping[str, str] | None = None,
+    timeout_secs: int | None = None,
 ) -> HttpResponse: ...
 def http_download(
     url: str,
     filepath: str,
-    params: typing.Any | None = ...,
-    headers: typing.Mapping[str, str] | None = ...,
-    timeout_secs: int | None = ...,
+    params: typing.Any | None = None,
+    headers: typing.Mapping[str, str] | None = None,
+    timeout_secs: int | None = None,
 ) -> None: ...
 def http_get(
     url: str,
-    params: typing.Any | None = ...,
-    headers: typing.Mapping[str, str] | None = ...,
-    timeout_secs: int | None = ...,
+    params: typing.Any | None = None,
+    headers: typing.Mapping[str, str] | None = None,
+    timeout_secs: int | None = None,
 ) -> HttpResponse: ...
 def http_patch(
     url: str,
-    params: typing.Any | None = ...,
-    headers: typing.Mapping[str, str] | None = ...,
-    body: typing.Sequence[int] | None = ...,
-    timeout_secs: int | None = ...,
+    params: typing.Any | None = None,
+    headers: typing.Mapping[str, str] | None = None,
+    body: typing.Sequence[int] | None = None,
+    timeout_secs: int | None = None,
 ) -> HttpResponse: ...
 def http_post(
     url: str,
-    params: typing.Any | None = ...,
-    headers: typing.Mapping[str, str] | None = ...,
-    body: typing.Sequence[int] | None = ...,
-    timeout_secs: int | None = ...,
+    params: typing.Any | None = None,
+    headers: typing.Mapping[str, str] | None = None,
+    body: typing.Sequence[int] | None = None,
+    timeout_secs: int | None = None,
 ) -> HttpResponse: ...

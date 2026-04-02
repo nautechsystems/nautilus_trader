@@ -78,14 +78,14 @@ impl DeribitWebSocketClient {
         url=None,
         api_key=None,
         api_secret=None,
-        heartbeat_interval=None,
+        heartbeat_interval=30,
         is_testnet=false,
     ))]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
-        heartbeat_interval: Option<u64>,
+        heartbeat_interval: u64,
         is_testnet: bool,
     ) -> PyResult<Self> {
         Self::new(url, api_key, api_secret, heartbeat_interval, is_testnet).map_err(to_pyvalue_err)

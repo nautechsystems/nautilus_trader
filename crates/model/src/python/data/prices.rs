@@ -93,8 +93,8 @@ impl MarkPriceUpdate {
             .extract::<PriceRaw>()?;
         let value_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
-        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_event = py_tuple.get_item(3)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.value = Price::from_raw(value_raw, value_prec);
@@ -294,8 +294,8 @@ impl IndexPriceUpdate {
             .extract::<PriceRaw>()?;
         let value_prec = py_tuple.get_item(2)?.cast::<PyInt>()?.extract::<u8>()?;
 
-        let ts_event = py_tuple.get_item(7)?.cast::<PyInt>()?.extract::<u64>()?;
-        let ts_init = py_tuple.get_item(8)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_event = py_tuple.get_item(3)?.cast::<PyInt>()?.extract::<u64>()?;
+        let ts_init = py_tuple.get_item(4)?.cast::<PyInt>()?.extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.value = Price::from_raw(value_raw, value_prec);

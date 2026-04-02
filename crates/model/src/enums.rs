@@ -1922,3 +1922,20 @@ enum_strum_serde!(TimeInForce);
 enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);
 enum_strum_serde!(TriggerType);
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::no_aggressor(0, Some(AggressorSide::NoAggressor))]
+    #[case::buyer(1, Some(AggressorSide::Buyer))]
+    #[case::seller(2, Some(AggressorSide::Seller))]
+    #[case::invalid(3, None)]
+    #[case::max_u8(255, None)]
+    fn test_aggressor_side_from_u8(#[case] value: u8, #[case] expected: Option<AggressorSide>) {
+        assert_eq!(AggressorSide::from_u8(value), expected);
+    }
+}

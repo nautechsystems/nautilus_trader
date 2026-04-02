@@ -65,17 +65,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         BarType::from("ETH-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL"),
     ];
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_subscribe_index_prices(true)
-        .with_subscribe_mark_prices(true)
-        .with_subscribe_instrument_status(true)
-        .with_bar_types(bar_types)
-        .with_subscribe_bars(true)
-        .with_request_trades(true)
-        .with_request_bars(true)
-        .with_log_data(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .subscribe_index_prices(true)
+        .subscribe_mark_prices(true)
+        .subscribe_instrument_status(true)
+        .bar_types(bar_types)
+        .subscribe_bars(true)
+        .request_trades(true)
+        .request_bars(true)
+        .manage_book(true)
+        .build();
 
     let tester = DataTester::new(tester_config);
 

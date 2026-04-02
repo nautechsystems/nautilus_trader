@@ -314,18 +314,9 @@ async fn test_get_instruments() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
     let instruments = client.get_instruments(true).await.unwrap();
 
     assert_eq!(instruments.len(), 1);
@@ -338,18 +329,9 @@ async fn test_get_instrument_single_result() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
     let instrument = client.get_instrument("XBTUSD").await.unwrap();
 
     assert!(instrument.is_some());
@@ -367,14 +349,14 @@ async fn test_request_instrument() {
         None,
         None,
         false,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
 
@@ -395,14 +377,14 @@ async fn test_get_wallet_requires_auth() {
     // Test without credentials - should fail
     let client = BitmexRawHttpClient::new(
         Some(base_url.clone()),
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        30,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
     let result = client.get_wallet().await;
@@ -413,14 +395,14 @@ async fn test_get_wallet_requires_auth() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
     let wallet = client.get_wallet().await.unwrap();
@@ -437,14 +419,14 @@ async fn test_get_orders() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
 
@@ -465,14 +447,14 @@ async fn test_place_order() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
 
@@ -504,14 +486,14 @@ async fn test_cancel_order() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
 
@@ -551,14 +533,14 @@ async fn test_rate_limiting() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // proxy_url
     )
     .unwrap();
 
@@ -581,18 +563,9 @@ async fn test_client_creation() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
 
     let result = client.get_instruments(false).await;
     assert!(result.is_ok());
@@ -608,13 +581,13 @@ async fn test_client_with_credentials() {
         "test_key".to_string(),
         "test_secret".to_string(),
         base_url.clone(),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -629,18 +602,9 @@ async fn test_get_positions_requires_credentials() {
     let (addr, _state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
 
     let params = GetPositionParamsBuilder::default().build().unwrap();
     let result = client.get_positions(params).await;
@@ -658,18 +622,9 @@ async fn test_get_positions_requires_credentials() {
 async fn test_http_network_error() {
     let base_url = "http://127.0.0.1:1".to_string();
 
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 1, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
 
     let result = client.get_instruments(false).await;
 
@@ -710,18 +665,9 @@ async fn test_http_500_internal_server_error() {
     .await;
 
     let base_url = format!("http://{addr}");
-    let client = BitmexRawHttpClient::new(
-        Some(base_url),
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let client =
+        BitmexRawHttpClient::new(Some(base_url), 60, 3, 1_000, 10_000, 10_000, 10, 30, None)
+            .unwrap();
 
     let result = client.get_instruments(false).await;
 
@@ -743,13 +689,13 @@ async fn test_place_pegged_order() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -784,13 +730,13 @@ async fn test_place_pegged_order_with_negative_offset() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -824,13 +770,13 @@ async fn test_submit_order_pegged_via_high_level_client() {
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         false,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -884,13 +830,13 @@ async fn test_submit_order_pegged_rejects_non_limit() {
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         false,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -945,13 +891,13 @@ async fn test_submit_order_pegged_rejects_offset_without_type() {
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         false,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -1005,13 +951,13 @@ async fn test_cancel_all_after() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -1031,13 +977,13 @@ async fn test_cancel_all_after_disarm() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         base_url,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();
@@ -1058,13 +1004,13 @@ async fn test_cancel_all_after_high_level() {
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         false,
-        Some(60),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        60,
+        3,
+        1_000,
+        10_000,
+        10_000,
+        10,
+        120,
         None,
     )
     .unwrap();

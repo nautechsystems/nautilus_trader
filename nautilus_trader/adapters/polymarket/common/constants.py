@@ -46,3 +46,5 @@ POLYMARKET_FINALIZED_TRADE_STATUSES: Final[tuple[PolymarketTradeStatus, ...]] = 
 )
 
 POLYMARKET_HTTP_RATE_LIMIT: Final[int] = 100  # requests per minute
+
+DUST_SNAP_THRESHOLD: Final[float] = 0.01

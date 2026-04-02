@@ -47,18 +47,19 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_MILLISECOND,
-    env::get_or_env_var, string::REDACTED, time::get_atomic_clock_realtime,
+    AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
+    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::REDACTED,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, TradeTick,
+        Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, TradeTick,
     },
     enums::{
-        AggregationSource, BarAggregation, BookType, OrderSide, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        AggregationSource, BarAggregation, BookAction, BookType, OrderSide, OrderType,
+        PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
@@ -102,8 +103,8 @@ use super::{
 use crate::{
     common::{
         consts::{
-            OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE, should_retry_error_code,
+            OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
+            OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE, should_retry_error_code,
         },
         credential::Credential,
         enums::{
@@ -142,14 +143,20 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
             .and_then(serde_json::Value::as_array)
             .and_then(|items| items.first())
     {
-        if let Some(s_msg) = first_item.get("sMsg").and_then(serde_json::Value::as_str) {
+        if let Some(s_msg) = first_item
+            .get(OKX_FIELD_SMSG)
+            .and_then(serde_json::Value::as_str)
+        {
             let s_msg = s_msg.trim();
             if !s_msg.is_empty() {
                 return s_msg.to_string();
             }
         }
 
-        if let Some(s_code) = first_item.get("sCode").and_then(serde_json::Value::as_str) {
+        if let Some(s_code) = first_item
+            .get(OKX_FIELD_SCODE)
+            .and_then(serde_json::Value::as_str)
+        {
             let s_code = s_code.trim();
             if !s_code.is_empty() {
                 return s_code.to_string();
@@ -200,6 +207,12 @@ pub static OKX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 
 const OKX_GLOBAL_RATE_KEY: &str = "okx:global";
 
+// OKX returns at most 100 records per page for order, fill, and algo endpoints
+const OKX_PAGE_SIZE: usize = 100;
+
+// Safety cap on paginated reconciliation fetches to avoid unbounded loops
+const MAX_RECONCILIATION_PAGES: usize = 50;
+
 /// Represents an OKX HTTP response.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OKXResponse<T> {
@@ -227,7 +240,7 @@ pub struct OKXRawHttpClient {
 
 impl Default for OKXRawHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, false, None)
+        Self::new(None, 60, 3, 1000, 10_000, false, None)
             .expect("Failed to create default OKXRawHttpClient")
     }
 }
@@ -325,17 +338,17 @@ impl OKXRawHttpClient {
     /// Returns an error if the retry manager cannot be created.
     pub fn new(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         is_demo: bool,
         proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -352,7 +365,7 @@ impl OKXRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| {
@@ -377,17 +390,17 @@ impl OKXRawHttpClient {
         api_secret: String,
         api_passphrase: String,
         base_url: String,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         is_demo: bool,
         proxy_url: Option<String>,
     ) -> Result<Self, OKXHttpError> {
         let retry_config = RetryConfig {
-            max_retries: max_retries.unwrap_or(3),
-            initial_delay_ms: retry_delay_ms.unwrap_or(1000),
-            max_delay_ms: retry_delay_max_ms.unwrap_or(10_000),
+            max_retries,
+            initial_delay_ms: retry_delay_ms,
+            max_delay_ms: retry_delay_max_ms,
             backoff_factor: 2.0,
             jitter_ms: 1000,
             operation_timeout_ms: Some(60_000),
@@ -404,7 +417,7 @@ impl OKXRawHttpClient {
                 vec![],
                 Self::rate_limiter_quotas(),
                 Some(*OKX_REST_QUOTA),
-                timeout_secs,
+                Some(timeout_secs),
                 proxy_url,
             )
             .map_err(|e| {
@@ -1110,11 +1123,11 @@ impl OKXRawHttpClient {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.okx")
 )]
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
-    pub(crate) instruments_cache: Arc<DashMap<Ustr, InstrumentAny>>,
+    pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     clock: &'static AtomicTime,
     cache_initialized: AtomicBool,
 }
@@ -1139,7 +1152,7 @@ impl Clone for OKXHttpClient {
 
 impl Default for OKXHttpClient {
     fn default() -> Self {
-        Self::new(None, Some(60), None, None, None, false, None)
+        Self::new(None, 60, 3, 1000, 10_000, false, None)
             .expect("Failed to create default OKXHttpClient")
     }
 }
@@ -1156,10 +1169,10 @@ impl OKXHttpClient {
     /// Returns an error if the retry manager cannot be created.
     pub fn new(
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         is_demo: bool,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
@@ -1173,7 +1186,7 @@ impl OKXHttpClient {
                 is_demo,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: AtomicBool::new(false),
             clock: get_atomic_clock_realtime(),
         })
@@ -1191,7 +1204,7 @@ impl OKXHttpClient {
     ///
     /// Returns an error if the operation fails.
     pub fn from_env() -> anyhow::Result<Self> {
-        Self::with_credentials(None, None, None, None, None, None, None, None, false, None)
+        Self::with_credentials(None, None, None, None, 60, 3, 1000, 10_000, false, None)
     }
 
     /// Creates a new [`OKXHttpClient`] configured with credentials
@@ -1206,10 +1219,10 @@ impl OKXHttpClient {
         api_secret: Option<String>,
         api_passphrase: Option<String>,
         base_url: Option<String>,
-        timeout_secs: Option<u64>,
-        max_retries: Option<u32>,
-        retry_delay_ms: Option<u64>,
-        retry_delay_max_ms: Option<u64>,
+        timeout_secs: u64,
+        max_retries: u32,
+        retry_delay_ms: u64,
+        retry_delay_max_ms: u64,
         is_demo: bool,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
@@ -1231,7 +1244,7 @@ impl OKXHttpClient {
                 is_demo,
                 proxy_url,
             )?),
-            instruments_cache: Arc::new(DashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: AtomicBool::new(false),
             clock: get_atomic_clock_realtime(),
         })
@@ -1244,8 +1257,7 @@ impl OKXHttpClient {
     /// Returns an error if the instrument is not found in the cache.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         self.instruments_cache
-            .get(&symbol)
-            .map(|entry| entry.value().clone())
+            .get_cloned(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
@@ -1305,19 +1317,21 @@ impl OKXHttpClient {
     #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
-            .iter()
-            .map(|entry| entry.key().to_string())
+            .load()
+            .keys()
+            .map(|k| k.to_string())
             .collect()
     }
 
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same symbols will be replaced.
-    pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        for inst in instruments {
-            self.instruments_cache
-                .insert(inst.raw_symbol().inner(), inst);
-        }
+    pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        self.instruments_cache.rcu(|m| {
+            for inst in instruments {
+                m.insert(inst.raw_symbol().inner(), inst.clone());
+            }
+        });
         self.cache_initialized.store(true, Ordering::Release);
     }
 
@@ -1332,9 +1346,7 @@ impl OKXHttpClient {
 
     /// Gets an instrument from the cache by symbol.
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache
-            .get(symbol)
-            .map(|entry| entry.value().clone())
+        self.instruments_cache.get_cloned(symbol)
     }
 
     /// Requests the account state for the `account_id` from OKX.
@@ -1709,6 +1721,7 @@ impl OKXHttpClient {
         }
 
         let bids_len = snapshot.bids.len();
+
         for (i, level) in snapshot.asks.iter().enumerate() {
             let price = parse_price(&level.0, price_precision)?;
             let size = parse_quantity(&level.1, size_precision)?;
@@ -1724,6 +1737,103 @@ impl OKXHttpClient {
         );
 
         Ok(book)
+    }
+
+    /// Requests an order book snapshot as `OrderBookDeltas` for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_orderbook_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> anyhow::Result<OrderBookDeltas> {
+        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let price_precision = inst.price_precision();
+        let size_precision = inst.size_precision();
+
+        let params = GetOrderBookParams {
+            inst_id: instrument_id.symbol.to_string(),
+            sz: depth,
+        };
+
+        let resp = self
+            .inner
+            .get_order_book(params)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        let snapshot = resp
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No order book returned from OKX"))?;
+
+        let ts_event = UnixNanos::from(snapshot.ts * NANOSECONDS_IN_MILLISECOND);
+        let total_levels = snapshot.bids.len() + snapshot.asks.len();
+        let mut deltas = Vec::with_capacity(total_levels + 1);
+
+        let mut clear = OrderBookDelta::clear(instrument_id, 0, ts_event, ts_event);
+
+        if total_levels == 0 {
+            clear.flags |= RecordFlag::F_LAST as u8;
+        }
+        deltas.push(clear);
+
+        let mut processed = 0_usize;
+
+        for (i, level) in snapshot.bids.iter().enumerate() {
+            let price = parse_price(&level.0, price_precision)?;
+            let size = parse_quantity(&level.1, size_precision)?;
+            let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
+            processed += 1;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
+
+            if processed == total_levels {
+                flags |= RecordFlag::F_LAST as u8;
+            }
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_event,
+                ts_event,
+            ));
+        }
+
+        let bids_len = snapshot.bids.len();
+
+        for (i, level) in snapshot.asks.iter().enumerate() {
+            let price = parse_price(&level.0, price_precision)?;
+            let size = parse_quantity(&level.1, size_precision)?;
+            let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
+            processed += 1;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
+
+            if processed == total_levels {
+                flags |= RecordFlag::F_LAST as u8;
+            }
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_event,
+                ts_event,
+            ));
+        }
+
+        log::info!(
+            "Fetched order book snapshot for {} with {} bids and {} asks",
+            instrument_id,
+            snapshot.bids.len(),
+            snapshot.asks.len(),
+        );
+
+        OrderBookDeltas::new_checked(instrument_id, deltas)
+            .context("failed to assemble OrderBookDeltas from OKX snapshot")
     }
 
     /// Requests historical funding rates for the `instrument_id`.
@@ -1915,11 +2025,11 @@ impl OKXHttpClient {
 
                 log::debug!("Received {} raw trades from API", raw.len());
 
-                if !raw.is_empty() {
-                    let first_id = &raw.first().unwrap().trade_id;
-                    let last_id = &raw.last().unwrap().trade_id;
+                if let (Some(first), Some(last)) = (raw.first(), raw.last()) {
                     log::debug!(
-                        "Raw response trade ID range: first={first_id} (newest), last={last_id} (oldest)"
+                        "Raw response trade ID range: first={} (newest), last={} (oldest)",
+                        first.trade_id,
+                        last.trade_id,
                     );
                 }
 
@@ -2044,6 +2154,7 @@ impl OKXHttpClient {
             );
 
             let mut out: Vec<TradeTick> = Vec::new();
+
             for page in page_results.into_iter().rev() {
                 out.extend(page);
             }
@@ -2091,6 +2202,7 @@ impl OKXHttpClient {
             .map_err(anyhow::Error::new)?;
 
         let mut trades: Vec<TradeTick> = Vec::with_capacity(raw.len());
+
         for r in &raw {
             match parse_trade_tick(
                 r,
@@ -2469,6 +2581,7 @@ impl OKXHttpClient {
             // Parse, oldest → newest
             let ts_init = self.generate_ts_init();
             let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
+
             for r in &raw {
                 page.push(parse_candlestick(
                     r,
@@ -2496,14 +2609,14 @@ impl OKXHttpClient {
                 let tolerance_ns = slot_ns * 2; // Allow up to 2 bar periods before start
 
                 // Debug: log the page range
-                if !page.is_empty() {
+                if let (Some(first), Some(last)) = (page.first(), page.last()) {
                     log::debug!(
                         "Range mode bootstrap page: {} bars from {} to {}, filtering with start={:?} end={:?}",
                         page.len(),
-                        page.first().unwrap().ts_event.as_i64() / 1_000_000,
-                        page.last().unwrap().ts_event.as_i64() / 1_000_000,
+                        first.ts_event.as_i64() / 1_000_000,
+                        last.ts_event.as_i64() / 1_000_000,
                         start_ms,
-                        end_ms
+                        end_ms,
                     );
                 }
 
@@ -2704,6 +2817,7 @@ impl OKXHttpClient {
             if !raw.is_empty() {
                 let ts_init = self.generate_ts_init();
                 let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
+
                 for r in &raw {
                     page.push(parse_candlestick(
                         r,
@@ -2777,8 +2891,6 @@ impl OKXHttpClient {
         open_only: bool,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let mut history_params = GetOrderHistoryParamsBuilder::default();
-
         let instrument_type = if let Some(instrument_type) = instrument_type {
             instrument_type
         } else {
@@ -2789,48 +2901,31 @@ impl OKXHttpClient {
             okx_instrument_type(&instrument)?
         };
 
-        history_params.inst_type(instrument_type);
+        let mut history_base = GetOrderHistoryParamsBuilder::default();
+        history_base.inst_type(instrument_type);
 
         if let Some(instrument_id) = instrument_id.as_ref() {
-            history_params.inst_id(instrument_id.symbol.inner().to_string());
+            history_base.inst_id(instrument_id.symbol.inner().to_string());
         }
+        let history_base = history_base.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        if let Some(limit) = limit {
-            history_params.limit(limit);
-        }
-
-        let history_params = history_params.build().map_err(|e| anyhow::anyhow!(e))?;
-
-        let mut pending_params = GetOrderListParamsBuilder::default();
-        pending_params.inst_type(instrument_type);
+        let mut pending_base = GetOrderListParamsBuilder::default();
+        pending_base.inst_type(instrument_type);
 
         if let Some(instrument_id) = instrument_id.as_ref() {
-            pending_params.inst_id(instrument_id.symbol.inner().to_string());
+            pending_base.inst_id(instrument_id.symbol.inner().to_string());
         }
-
-        if let Some(limit) = limit {
-            pending_params.limit(limit);
-        }
-
-        let pending_params = pending_params.build().map_err(|e| anyhow::anyhow!(e))?;
+        let pending_base = pending_base.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let combined_resp = if open_only {
-            // Only request pending/open orders
-            self.inner
-                .get_orders_pending(pending_params)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?
+            self.paginate_orders_pending(&pending_base, limit).await?
         } else {
-            // Make both requests concurrently
-            let (history_resp, pending_resp) = tokio::try_join!(
-                self.inner.get_orders_history(history_params),
-                self.inner.get_orders_pending(pending_params)
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
-
-            // Combine both responses
-            let mut combined_resp = history_resp;
-            combined_resp.extend(pending_resp);
+            let (history, pending) = tokio::try_join!(
+                self.paginate_orders_history(&history_base, limit),
+                self.paginate_orders_pending(&pending_base, limit),
+            )?;
+            let mut combined_resp = history;
+            combined_resp.extend(pending);
             combined_resp
         };
 
@@ -2908,6 +3003,268 @@ impl OKXHttpClient {
         Ok(reports)
     }
 
+    // Paginates through order history using `ord_id` as the cursor
+    async fn paginate_orders_history(
+        &self,
+        base: &GetOrderHistoryParams,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OKXOrderHistory>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut exhausted = true;
+
+        for _ in 0..MAX_RECONCILIATION_PAGES {
+            let mut params = base.clone();
+            params.after = cursor.take();
+
+            let page = self
+                .inner
+                .get_orders_history(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            let page_len = page.len();
+            cursor = page.last().map(|o| o.ord_id.to_string());
+            all.extend(page);
+
+            if page_len < OKX_PAGE_SIZE {
+                exhausted = false;
+                break;
+            }
+
+            if let Some(lim) = limit
+                && all.len() >= lim as usize
+            {
+                exhausted = false;
+                break;
+            }
+        }
+
+        if exhausted && !all.is_empty() {
+            log::warn!(
+                "Order history pagination hit {MAX_RECONCILIATION_PAGES} page cap, \
+                 results may be truncated ({} records)",
+                all.len()
+            );
+        }
+
+        if let Some(lim) = limit {
+            all.truncate(lim as usize);
+        }
+
+        Ok(all)
+    }
+
+    // Paginates through pending orders using `ord_id` as the cursor
+    async fn paginate_orders_pending(
+        &self,
+        base: &GetOrderListParams,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OKXOrderHistory>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut exhausted = true;
+
+        for _ in 0..MAX_RECONCILIATION_PAGES {
+            let mut params = base.clone();
+            params.after = cursor.take();
+
+            let page = self
+                .inner
+                .get_orders_pending(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            let page_len = page.len();
+            cursor = page.last().map(|o| o.ord_id.to_string());
+            all.extend(page);
+
+            if page_len < OKX_PAGE_SIZE {
+                exhausted = false;
+                break;
+            }
+
+            if let Some(lim) = limit
+                && all.len() >= lim as usize
+            {
+                exhausted = false;
+                break;
+            }
+        }
+
+        if exhausted && !all.is_empty() {
+            log::warn!(
+                "Pending orders pagination hit {MAX_RECONCILIATION_PAGES} page cap, \
+                 results may be truncated ({} records)",
+                all.len()
+            );
+        }
+
+        if let Some(lim) = limit {
+            all.truncate(lim as usize);
+        }
+
+        Ok(all)
+    }
+
+    // Paginates through transaction details (fills) using `bill_id` as the cursor
+    async fn paginate_fills(
+        &self,
+        base: &GetTransactionDetailsParams,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<OKXTransactionDetail>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut exhausted = true;
+
+        for _ in 0..MAX_RECONCILIATION_PAGES {
+            let mut params = base.clone();
+            params.after = cursor.take();
+
+            let page = self
+                .inner
+                .get_fills(params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            let page_len = page.len();
+            cursor = page.last().map(|o| o.bill_id.to_string());
+            all.extend(page);
+
+            if page_len < OKX_PAGE_SIZE {
+                exhausted = false;
+                break;
+            }
+
+            if let Some(lim) = limit
+                && all.len() >= lim as usize
+            {
+                exhausted = false;
+                break;
+            }
+        }
+
+        if exhausted && !all.is_empty() {
+            log::warn!(
+                "Fill pagination hit {MAX_RECONCILIATION_PAGES} page cap, \
+                 results may be truncated ({} records)",
+                all.len()
+            );
+        }
+
+        if let Some(lim) = limit {
+            all.truncate(lim as usize);
+        }
+
+        Ok(all)
+    }
+
+    // Paginates through pending algo orders using `algo_id` as the cursor
+    async fn paginate_algo_pending(
+        &self,
+        base: &GetAlgoOrdersParams,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<OKXOrderAlgo>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut exhausted = true;
+
+        for _ in 0..MAX_RECONCILIATION_PAGES {
+            let mut params = base.clone();
+            params.after = cursor.take();
+
+            let page = match self.inner.get_order_algo_pending(params).await {
+                Ok(result) => result,
+                Err(OKXHttpError::UnexpectedStatus { status, .. })
+                    if status == StatusCode::NOT_FOUND =>
+                {
+                    exhausted = false;
+                    break;
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let page_len = page.len();
+            cursor = page.last().map(|o| o.algo_id.clone());
+            all.extend(page);
+
+            if page_len < OKX_PAGE_SIZE {
+                exhausted = false;
+                break;
+            }
+
+            if let Some(lim) = limit
+                && all.len() >= lim
+            {
+                exhausted = false;
+                break;
+            }
+        }
+
+        if exhausted && !all.is_empty() {
+            log::warn!(
+                "Algo pending pagination hit {MAX_RECONCILIATION_PAGES} page cap, \
+                 results may be truncated ({} records)",
+                all.len()
+            );
+        }
+
+        Ok(all)
+    }
+
+    // Paginates through historical algo orders using `algo_id` as the cursor
+    async fn paginate_algo_history(
+        &self,
+        base: &GetAlgoOrdersParams,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Vec<OKXOrderAlgo>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+        let mut exhausted = true;
+
+        for _ in 0..MAX_RECONCILIATION_PAGES {
+            let mut params = base.clone();
+            params.after = cursor.take();
+
+            let page = match self.inner.get_order_algo_history(params).await {
+                Ok(result) => result,
+                Err(OKXHttpError::UnexpectedStatus { status, .. })
+                    if status == StatusCode::NOT_FOUND =>
+                {
+                    exhausted = false;
+                    break;
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+            let page_len = page.len();
+            cursor = page.last().map(|o| o.algo_id.clone());
+            all.extend(page);
+
+            if page_len < OKX_PAGE_SIZE {
+                exhausted = false;
+                break;
+            }
+
+            if let Some(lim) = limit
+                && all.len() >= lim
+            {
+                exhausted = false;
+                break;
+            }
+        }
+
+        if exhausted && !all.is_empty() {
+            log::warn!(
+                "Algo history pagination hit {MAX_RECONCILIATION_PAGES} page cap, \
+                 results may be truncated ({} records)",
+                all.len()
+            );
+        }
+
+        Ok(all)
+    }
+
     /// Requests fill reports (transaction details) for the given parameters.
     ///
     /// # Errors
@@ -2947,17 +3304,9 @@ impl OKXHttpClient {
             params.inst_id(instrument_id.symbol.inner().to_string());
         }
 
-        if let Some(limit) = limit {
-            params.limit(limit);
-        }
-
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let resp = self
-            .inner
-            .get_fills(params)
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let resp = self.paginate_fills(&params, limit).await?;
 
         // Prepare time range filter
         let start_ns = start.map(UnixNanos::from);
@@ -3491,6 +3840,8 @@ impl OKXHttpClient {
         quote_quantity: Option<bool>,
         position_side: Option<PositionSide>,
         attach_algo_ords: Option<Vec<OKXAttachAlgoOrdRequest>>,
+        px_usd: Option<String>,
+        px_vol: Option<String>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         if !OKX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
             return Err(OKXHttpError::ValidationError(format!(
@@ -3531,6 +3882,16 @@ impl OKXHttpClient {
         let instrument_type = okx_instrument_type(&instrument)
             .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
+        // OKX options only support limit-style orders
+        if instrument_type == OKXInstrumentType::Option
+            && matches!(order_type, OrderType::Market | OrderType::MarketToLimit)
+        {
+            return Err(OKXHttpError::ValidationError(
+                "Market orders are not supported for OKX options, use Limit orders instead"
+                    .to_string(),
+            ));
+        }
+
         let side = OKXSide::from(order_side.as_specified());
         let pos_side = position_side.map(Into::into).or({
             if matches!(
@@ -3566,18 +3927,45 @@ impl OKXHttpClient {
                     ));
                 }
                 (OrderType::Market, TimeInForce::Ioc) => {
-                    if instrument_type == OKXInstrumentType::Spot {
+                    // optimal_limit_ioc only works for SWAP/FUTURES
+                    if matches!(
+                        instrument_type,
+                        OKXInstrumentType::Spot | OKXInstrumentType::Option
+                    ) {
                         (OKXOrderType::Market, price)
                     } else {
                         (OKXOrderType::OptimalLimitIoc, price)
                     }
                 }
-                (OrderType::Limit, TimeInForce::Fok) => (OKXOrderType::Fok, price),
+                (OrderType::Limit, TimeInForce::Fok) => {
+                    // OKX uses op_fok for options FOK orders
+                    if instrument_type == OKXInstrumentType::Option {
+                        (OKXOrderType::OpFok, price)
+                    } else {
+                        (OKXOrderType::Fok, price)
+                    }
+                }
                 (OrderType::Limit, TimeInForce::Ioc) => (OKXOrderType::Ioc, price),
                 _ => (OKXOrderType::from(order_type), price),
             }
         } else {
             (OKXOrderType::from(order_type), price)
+        };
+
+        // reduceOnly is not applicable to options per OKX docs
+        let reduce_only = if instrument_type == OKXInstrumentType::Option {
+            None
+        } else {
+            reduce_only
+        };
+
+        // For options: pxUsd/pxVol are mutually exclusive with px
+        let (px, px_usd, px_vol) = if px_usd.is_some() {
+            (None, px_usd, None)
+        } else if px_vol.is_some() {
+            (None, None, px_vol)
+        } else {
+            (px.map(|p| p.to_string()), None, None)
         };
 
         let request = OKXPlaceOrderRequest {
@@ -3590,7 +3978,9 @@ impl OKXHttpClient {
             pos_side,
             ord_type,
             sz: quantity.to_string(),
-            px: px.map(|p| p.to_string()),
+            px,
+            px_usd,
+            px_vol,
             reduce_only,
             tgt_ccy,
             attach_algo_ords,
@@ -3865,23 +4255,12 @@ impl OKXHttpClient {
                 params_builder.state(state);
             }
 
-            if let Some(limit) = limit {
-                params_builder.limit(limit);
-            }
-
             let params = params_builder
                 .build()
                 .map_err(|e| anyhow::anyhow!(format!("Failed to build algo order params: {e}")))?;
 
-            let pending = match self.inner.get_order_algo_pending(params.clone()).await {
-                Ok(result) => result,
-                Err(OKXHttpError::UnexpectedStatus { status, .. })
-                    if status == StatusCode::NOT_FOUND =>
-                {
-                    Vec::new()
-                }
-                Err(e) => return Err(e.into()),
-            };
+            let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
+            let pending = self.paginate_algo_pending(&params, remaining).await?;
             self.collect_algo_reports(
                 account_id,
                 &pending,
@@ -3896,15 +4275,15 @@ impl OKXHttpClient {
                 return Ok(reports);
             }
 
-            let history = match self.inner.get_order_algo_history(params).await {
-                Ok(result) => result,
-                Err(OKXHttpError::UnexpectedStatus { status, .. })
-                    if status == StatusCode::NOT_FOUND =>
-                {
-                    Vec::new()
-                }
-                Err(e) => return Err(e.into()),
-            };
+            if let Some(lim) = limit
+                && reports.len() >= lim as usize
+            {
+                reports.truncate(lim as usize);
+                return Ok(reports);
+            }
+
+            let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
+            let history = self.paginate_algo_history(&params, remaining).await?;
             self.collect_algo_reports(
                 account_id,
                 &history,
@@ -3916,6 +4295,13 @@ impl OKXHttpClient {
             .await?;
 
             if has_specific_lookup && !reports.is_empty() {
+                return Ok(reports);
+            }
+
+            if let Some(lim) = limit
+                && reports.len() >= lim as usize
+            {
+                reports.truncate(lim as usize);
                 return Ok(reports);
             }
         }

@@ -15,14 +15,13 @@
 
 //! Order book imbalance actor implementation.
 
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::{collections::BTreeMap, fmt::Debug};
 
 use ahash::AHashMap;
-use nautilus_common::actor::{DataActor, DataActorConfig, DataActorCore};
+use nautilus_common::{
+    actor::{DataActor, DataActorConfig, DataActorCore},
+    nautilus_actor,
+};
 use nautilus_model::{
     data::OrderBookDeltas,
     enums::{BookType, OrderSide},
@@ -135,18 +134,7 @@ impl BookImbalanceActor {
     }
 }
 
-impl Deref for BookImbalanceActor {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for BookImbalanceActor {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(BookImbalanceActor);
 
 impl Debug for BookImbalanceActor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

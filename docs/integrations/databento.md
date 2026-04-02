@@ -79,14 +79,14 @@ The following Databento schemas are supported by NautilusTrader:
 | [CMBP_1](https://databento.com/docs/schemas-and-data-formats/cmbp-1)          | `(QuoteTick, TradeTick \| None)`  | Consolidated MBP across venues. |
 | [CBBO_1S](https://databento.com/docs/schemas-and-data-formats/cbbo-1s)        | `QuoteTick`                       | Consolidated 1-second BBO.      |
 | [CBBO_1M](https://databento.com/docs/schemas-and-data-formats/cbbo-1m)        | `QuoteTick`                       | Consolidated 1-minute BBO.      |
-| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)            | `(QuoteTick, TradeTick)`          | Trade-sampled consolidated BBO. |
-| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)              | `(QuoteTick, TradeTick)`          | Trade-sampled best bid/offer.   |
+| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)            | `(QuoteTick, TradeTick)`          | Trade‑sampled consolidated BBO. |
+| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)              | `(QuoteTick, TradeTick)`          | Trade‑sampled best bid/offer.   |
 | [TRADES](https://databento.com/docs/schemas-and-data-formats/trades)          | `TradeTick`                       | Trade ticks.                    |
 | [OHLCV_1S](https://databento.com/docs/schemas-and-data-formats/ohlcv-1s)      | `Bar`                             | 1-second bars.                  |
 | [OHLCV_1M](https://databento.com/docs/schemas-and-data-formats/ohlcv-1m)      | `Bar`                             | 1-minute bars.                  |
 | [OHLCV_1H](https://databento.com/docs/schemas-and-data-formats/ohlcv-1h)      | `Bar`                             | 1-hour bars.                    |
 | [OHLCV_1D](https://databento.com/docs/schemas-and-data-formats/ohlcv-1d)      | `Bar`                             | Daily bars.                     |
-| [OHLCV_EOD](https://databento.com/docs/schemas-and-data-formats/ohlcv-eod)    | `Bar`                             | End-of-day bars.                |
+| [OHLCV_EOD](https://databento.com/docs/schemas-and-data-formats/ohlcv-eod)    | `Bar`                             | End‑of‑day bars.                |
 | [DEFINITION](https://databento.com/docs/schemas-and-data-formats/definition)  | `Instrument` (various types)      | Instrument definitions.         |
 | [IMBALANCE](https://databento.com/docs/schemas-and-data-formats/imbalance)    | `DatabentoImbalance`              | Auction imbalance data.         |
 | [STATISTICS](https://databento.com/docs/schemas-and-data-formats/statistics)  | `DatabentoStatistics`             | Market statistics.              |
@@ -563,7 +563,7 @@ file also works). The data covers one month of TSLA trades on Nasdaq:
 TSLA_NASDAQ = TestInstrumentProvider.equity(symbol="TSLA")
 engine.add_instrument(TSLA_NASDAQ)
 
-# Decode data to legacy Cython objects
+# Decode data to Cython objects
 loader = DatabentoDataLoader()
 trades = loader.from_dbn_file(
     path=TEST_DATA_DIR / "databento" / "temp" / "tsla-xnas-20240107-20240206.trades.dbn.zst",
@@ -577,8 +577,7 @@ engine.add_data(trades)
 ### DBN data to a ParquetDataCatalog
 
 Load DBN data and write to a `ParquetDataCatalog`. Set `as_legacy_cython=False`
-to decode as PyO3 objects. Cython objects also work with `write_data` but require
-conversion under the hood, so PyO3 objects are faster.
+to decode as PyO3 objects.
 
 ### Loading instruments
 
@@ -797,7 +796,7 @@ node.build()
 |---------------------------|---------|----------------------------------------------------------------------------------------------------------------------|
 | `api_key`                 | `None`  | Databento API secret. Falls back to the `DATABENTO_API_KEY` environment variable when `None`.                        |
 | `http_gateway`            | `None`  | Historical HTTP gateway override for testing custom endpoints.                                                       |
-| `live_gateway`            | `None`  | Raw TCP real-time gateway override, typically for testing only.                                                       |
+| `live_gateway`            | `None`  | Raw TCP real‑time gateway override, typically for testing only.                                                       |
 | `use_exchange_as_venue`   | `True`  | Use the exchange MIC for Nautilus venues (e.g., `XCME`). `False` retains the default GLBX mapping.                   |
 | `timeout_initial_load`    | `15.0`  | Seconds to wait for instrument definitions per dataset before proceeding.                                            |
 | `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots replay in order.                               |

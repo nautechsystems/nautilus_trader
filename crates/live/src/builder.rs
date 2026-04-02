@@ -20,6 +20,7 @@ use std::{collections::HashMap, time::Duration};
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
+use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
@@ -240,6 +241,8 @@ impl LiveNodeBuilder {
         );
 
         let runner = AsyncRunner::new();
+        runner.bind_senders();
+
         let kernel = NautilusKernel::new(self.name.clone(), self.config.clone())?;
 
         for (name, factory) in self.data_client_factories {
@@ -274,8 +277,10 @@ impl LiveNodeBuilder {
 
                 let client = factory.create(&name, config.as_ref(), kernel.cache())?;
                 let client_id = client.client_id();
+                let venue = client.venue();
 
                 kernel.exec_engine.borrow_mut().register_client(client)?;
+                ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
 
                 log::info!("Registered ExecutionClient-{client_id}");
             } else {

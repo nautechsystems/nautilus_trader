@@ -51,7 +51,10 @@ use super::{
     subscription::topic_from_websocket_arg,
 };
 use crate::{
-    common::{consts::should_retry_error_code, models::OKXInstrument},
+    common::{
+        consts::{OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_SUCCESS_CODE, should_retry_error_code},
+        models::OKXInstrument,
+    },
     websocket::client::OKX_RATE_LIMIT_KEY_SUBSCRIPTION,
 };
 
@@ -257,7 +260,7 @@ impl OKXWsFeedHandler {
                         OKXWsFrame::Login {
                             code, msg, conn_id, ..
                         } => {
-                            if code == "0" {
+                            if code == OKX_SUCCESS_CODE {
                                 self.auth_tracker.succeed();
                                 return Some(OKXWsMessage::Authenticated);
                             }
@@ -368,7 +371,7 @@ impl OKXWsFeedHandler {
         msg: Option<&str>,
     ) {
         let topic = topic_from_websocket_arg(arg);
-        let success = code.is_none_or(|c| c == "0");
+        let success = code.is_none_or(|c| c == OKX_SUCCESS_CODE);
 
         match event {
             OKXSubscriptionEvent::Subscribe => {
@@ -476,7 +479,7 @@ impl OKXWsFeedHandler {
                             msg,
                             conn_id,
                         } => {
-                            if code == "0" {
+                            if code == OKX_SUCCESS_CODE {
                                 log::info!("WebSocket authenticated: conn_id={conn_id}");
                             } else {
                                 log::error!(
@@ -523,14 +526,14 @@ impl OKXWsFeedHandler {
                         OKXWsFrame::OrderResponse {
                             id, op, code, data, ..
                         } => {
-                            if code == "0" {
+                            if code == OKX_SUCCESS_CODE {
                                 log::debug!(
                                     "Order operation successful: id={id:?}, op={op}, code={code}"
                                 );
 
                                 if let Some(order_data) = data.first() {
                                     let success_msg = order_data
-                                        .get("sMsg")
+                                        .get(OKX_FIELD_SMSG)
                                         .and_then(|s| s.as_str())
                                         .unwrap_or("Order operation successful");
                                     log::debug!("Order success details: {success_msg}");
@@ -582,7 +585,7 @@ pub fn is_post_only_rejection(code: &str, data: &[Value]) -> bool {
     }
 
     for entry in data {
-        if let Some(s_code) = entry.get("sCode").and_then(|value| value.as_str())
+        if let Some(s_code) = entry.get(OKX_FIELD_SCODE).and_then(|value| value.as_str())
             && s_code == OKX_POST_ONLY_ERROR_CODE
         {
             return true;

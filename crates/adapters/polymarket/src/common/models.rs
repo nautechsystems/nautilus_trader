@@ -105,7 +105,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::PolymarketOutcome;
+    use crate::{common::enums::PolymarketOutcome, http::models::PolymarketTradeReport};
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
@@ -183,8 +183,6 @@ mod tests {
     // Tests for embedded maker orders from the trade report fixture
     #[rstest]
     fn test_maker_orders_from_trade_report() {
-        // Uses the trade report fixture which contains nested maker orders
-        use crate::http::models::PolymarketTradeReport;
         let trade: PolymarketTradeReport = load("http_trade_report.json");
 
         assert_eq!(trade.maker_orders.len(), 2);

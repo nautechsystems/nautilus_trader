@@ -313,9 +313,22 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
             if instrument is None:
-                raise ValueError(
-                    f"Cannot process fill for {instrument_id}: instrument not found in cache",
+                exec_client._log.warning(
+                    f"Instrument {instrument_id} not in cache, "
+                    f"sending order status report for reconciliation",
                 )
+
+                report = self.parse_to_order_status_report(
+                    account_id=exec_client.account_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=ts_event,
+                    ts_init=exec_client._clock.timestamp_ns(),
+                    enum_parser=exec_client._enum_parser,
+                )
+                exec_client._send_order_status_report(report)
+                return
 
             # Determine commission
             commission_asset = self.N

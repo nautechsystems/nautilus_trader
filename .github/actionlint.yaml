@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - depot-ubuntu-22.04-8
+    - depot-ubuntu-22.04-arm-8
+    - depot-windows-2022-8
+    - depot-macos-14
+    - depot-macos-15

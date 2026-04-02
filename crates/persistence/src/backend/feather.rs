@@ -40,7 +40,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
-use object_store::{ObjectStore, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt, path::Path};
 
 use super::catalog::urisafe_instrument_id;
 use crate::backend::{
@@ -541,28 +541,25 @@ impl FeatherWriter {
         if type_str.starts_with("data/custom/") {
             // Custom data: data/custom/{type_name}/[{identifier_segments}/]{file_stem}_{ts}.feather
             let type_name = type_str.strip_prefix("data/custom/").unwrap_or(&type_str);
-            path = path
-                .child("data")
-                .child("custom")
-                .child(type_name.to_string());
+            path = path.join("data").join("custom").join(type_name.to_string());
 
             if let Some(ref id) = instrument_id {
                 let safe = safe_directory_identifier(id);
                 if !safe.is_empty() {
                     for segment in safe.split('/') {
-                        path = path.child(segment.to_string());
+                        path = path.join(segment.to_string());
                     }
                 }
             }
             let file_stem = instrument_id.as_deref().unwrap_or(type_name);
-            path = path.child(format!("{file_stem}_{timestamp}.feather"));
+            path = path.join(format!("{file_stem}_{timestamp}.feather"));
         } else if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.child(type_str.clone());
-            path = path.child(safe_id.clone());
-            path = path.child(format!("{safe_id}_{timestamp}.feather"));
+            path = path.join(type_str.clone());
+            path = path.join(safe_id.clone());
+            path = path.join(format!("{safe_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{type_str}_{timestamp}.feather"));
+            path = path.join(format!("{type_str}_{timestamp}.feather"));
         }
 
         FileWriterPath {
@@ -579,21 +576,18 @@ impl FeatherWriter {
         let instrument_id = identifier.map(String::from);
 
         let mut path = Path::from(self.base_path.clone());
-        path = path
-            .child("data")
-            .child("custom")
-            .child(type_name.to_string());
+        path = path.join("data").join("custom").join(type_name.to_string());
 
         if let Some(id) = &identifier {
             let safe = safe_directory_identifier(id);
             if !safe.is_empty() {
                 for segment in safe.split('/') {
-                    path = path.child(segment.to_string());
+                    path = path.join(segment.to_string());
                 }
             }
         }
         let file_stem = identifier.unwrap_or(type_name);
-        path = path.child(format!("{file_stem}_{timestamp}.feather"));
+        path = path.join(format!("{file_stem}_{timestamp}.feather"));
 
         FileWriterPath {
             path,
@@ -636,11 +630,11 @@ impl FeatherWriter {
 
         if let Some(ref instrument_id) = instrument_id {
             let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.child(type_str);
-            path = path.child(safe_id.clone());
-            path = path.child(format!("{safe_id}_{timestamp}.feather"));
+            path = path.join(type_str);
+            path = path.join(safe_id.clone());
+            path = path.join(format!("{safe_id}_{timestamp}.feather"));
         } else {
-            path = path.child(format!("{type_str}_{timestamp}.feather"));
+            path = path.join(format!("{type_str}_{timestamp}.feather"));
         }
 
         Ok(FileWriterPath {

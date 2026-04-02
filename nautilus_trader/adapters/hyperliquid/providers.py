@@ -95,8 +95,9 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
     async def _load_instruments(self) -> list[Instrument]:
         try:
             pyo3_instruments = await self._client.load_instrument_definitions(
-                include_perp=HyperliquidProductType.PERP in self._product_types,
                 include_spot=HyperliquidProductType.SPOT in self._product_types,
+                include_perps=HyperliquidProductType.PERP in self._product_types,
+                include_perps_hip3=HyperliquidProductType.PERP_HIP3 in self._product_types,
             )
             # Store PyO3 instruments for WebSocket client
             self._instruments_pyo3 = pyo3_instruments
@@ -148,6 +149,8 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
         instrument: Instrument,
     ) -> HyperliquidProductType | None:
         if isinstance(instrument, CryptoPerpetual):
+            if ":" in instrument.id.symbol.value:
+                return HyperliquidProductType.PERP_HIP3
             return HyperliquidProductType.PERP
         if isinstance(instrument, CurrencyPair):
             return HyperliquidProductType.SPOT
@@ -178,7 +181,10 @@ class HyperliquidInstrumentProvider(InstrumentProvider):
                 if isinstance(item, str)
             }
 
-        market_type = "perp" if isinstance(instrument, CryptoPerpetual) else "spot"
+        if isinstance(instrument, CryptoPerpetual):
+            market_type = "perp_hip3" if ":" in instrument.id.symbol.value else "perp"
+        else:
+            market_type = "spot"
         kinds = _normalize(filters.get("market_types") or filters.get("kinds"), to_lower=True)
         if kinds and market_type not in kinds:
             return False

@@ -403,12 +403,113 @@ impl Instrument for OptionContract {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use ustr::Ustr;
 
-    use crate::instruments::{OptionContract, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass, OptionKind},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{Instrument, OptionContract, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(option_contract_appl: OptionContract) {
-        let option_contract_appl2 = option_contract_appl.clone();
-        assert_eq!(option_contract_appl, option_contract_appl2);
+    fn test_trait_accessors(option_contract_appl: OptionContract) {
+        assert_eq!(
+            option_contract_appl.id(),
+            InstrumentId::from("AAPL211217C00150000.OPRA"),
+        );
+        assert_eq!(option_contract_appl.asset_class(), AssetClass::Equity);
+        assert_eq!(
+            option_contract_appl.instrument_class(),
+            InstrumentClass::Option
+        );
+        assert_eq!(option_contract_appl.quote_currency(), Currency::USD());
+        assert!(!option_contract_appl.is_inverse());
+        assert_eq!(option_contract_appl.option_kind(), Some(OptionKind::Call));
+        assert_eq!(
+            option_contract_appl.strike_price(),
+            Some(Price::from("149.0"))
+        );
+        assert_eq!(option_contract_appl.underlying(), Some(Ustr::from("AAPL")));
+        assert_eq!(option_contract_appl.exchange(), Some(Ustr::from("GMNI")));
+        assert!(option_contract_appl.activation_ns().is_some());
+        assert!(option_contract_appl.expiration_ns().is_some());
+        assert_eq!(option_contract_appl.size_precision(), 0);
+        assert_eq!(option_contract_appl.size_increment(), Quantity::from("1"));
+        assert_eq!(
+            option_contract_appl.min_quantity(),
+            Some(Quantity::from("1"))
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = OptionContract::new_checked(
+            InstrumentId::from("TEST.OPRA"),
+            Symbol::from("TEST"),
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            OptionKind::Call,
+            Price::from("150.0"),
+            Currency::USD(),
+            0.into(),
+            0.into(),
+            4, // mismatch
+            Price::from("0.01"),
+            Quantity::from(1),
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_zero_multiplier() {
+        let result = OptionContract::new_checked(
+            InstrumentId::from("TEST.OPRA"),
+            Symbol::from("TEST"),
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            OptionKind::Call,
+            Price::from("150.0"),
+            Currency::USD(),
+            0.into(),
+            0.into(),
+            2,
+            Price::from("0.01"),
+            Quantity::from("0"), // zero multiplier
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(option_contract_appl: OptionContract) {
+        let json = serde_json::to_string(&option_contract_appl).unwrap();
+        let deserialized: OptionContract = serde_json::from_str(&json).unwrap();
+        assert_eq!(option_contract_appl, deserialized);
     }
 }

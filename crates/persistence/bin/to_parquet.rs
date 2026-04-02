@@ -104,7 +104,7 @@ where
     {
         let writer_props = WriterProperties::builder()
             .set_compression(Compression::ZSTD(ZstdLevel::default()))
-            .set_max_row_group_size(rows_per_group)
+            .set_max_row_group_row_count(Some(rows_per_group))
             .build();
 
         let mut writer = ArrowWriter::try_new(&mut output_file, schema.into(), Some(writer_props))?;

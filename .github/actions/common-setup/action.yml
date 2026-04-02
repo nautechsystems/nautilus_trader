@@ -25,6 +25,10 @@ inputs:
     description: Whether to save the Rust cache when the job fails
     required: false
     default: "true"
+  rust-cache-save-if:
+    description: Whether to save the Rust cache (set to false for read-only cache on PR builds)
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
@@ -42,7 +46,7 @@ runs:
         haskell: ${{ inputs.build-type != 'pre-commit' }}
         large-packages: ${{ inputs.build-type != 'pre-commit' }}
         docker-images: true
-        swap-storage: ${{ inputs.build-type != 'pre-commit' }}
+        swap-storage: true
 
     - name: Free disk space (macOS)
       if: inputs.free-disk-space == 'true' && runner.os == 'macOS'
@@ -108,55 +112,45 @@ runs:
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
-        cache-key: ${{ inputs.rust-cache-key }}
-        cache-workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
-        cache-on-failure: ${{ inputs.rust-cache-on-failure }}
+        cache: false
         override: true
 
-    - name: Install cargo-nextest
+    # https://github.com/Swatinem/rust-cache
+    - name: Rust cache
+      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      with:
+        workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
+        cache-on-failure: ${{ inputs.rust-cache-on-failure }}
+        key: ${{ inputs.rust-cache-key }}
+        save-if: ${{ inputs.rust-cache-save-if }}
+
+    - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
+      shell: bash
+      run: |
+        version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
+        if [ -z "$version" ]; then
+          echo "::error::Failed to extract cargo-nextest version"
+          exit 1
+        fi
+        echo "CARGO_NEXTEST_VERSION=$version" >> "$GITHUB_ENV"
+
+    - name: Install cargo-nextest
+      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
       uses: taiki-e/install-action@cede0bb282aae847dfa8aacca3a41c86d973d4d7 # v2.68.1
       with:
-        tool: nextest
+        tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
 
-    # > --------------------------------------------------
-    # > sccache (disabled on macOS: causes filesystem corruption on GH runners)
-    - name: Set sccache env vars (common)
-      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
+    - name: Install cargo-nextest (macOS)
+      if: inputs.build-type != 'pre-commit' && runner.os == 'macOS'
       shell: bash
-      run: |
-        echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+      run: bash scripts/ci/install-cargo-nextest.sh "${CARGO_NEXTEST_VERSION}"
 
-        # Respect pre-existing settings from the workflow env; otherwise set sane defaults
-        if [ -z "${SCCACHE_CACHE_SIZE:-}" ]; then echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_IDLE_TIMEOUT:-}" ]; then echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_DIRECT:-}" ]; then echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV; fi
-        if [ -z "${SCCACHE_CACHE_MULTIARCH:-}" ]; then echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV; fi
-
-        echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-
-    - name: Set sccache env vars (Linux)
-      if: runner.os == 'Linux' && inputs.build-type != 'pre-commit'
+    - name: Set CARGO_INCREMENTAL=0 for CI
+      if: inputs.build-type != 'pre-commit'
       shell: bash
-      run: |
-        echo "SCCACHE_DIR=$GITHUB_WORKSPACE/.cache/sccache" >> $GITHUB_ENV
-        echo "CC=sccache clang" >> $GITHUB_ENV
-        echo "CXX=sccache clang++" >> $GITHUB_ENV
-
-    - name: Set sccache env vars (Windows)
-      if: runner.os == 'Windows' && inputs.build-type != 'pre-commit'
-      shell: bash
-      run: |
-        echo SCCACHE_DIR="C:\.cache\sccache" >> $GITHUB_ENV
-        echo CMAKE_C_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-        echo CMAKE_CXX_COMPILER_LAUNCHER=sccache >> $GITHUB_ENV
-
-    - name: Run sccache
-      if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
-      # https://github.com/Mozilla-Actions/sccache-action
-      uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
-      continue-on-error: true # Build continues without cache if sccache setup fails
+      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     # > --------------------------------------------------
     # > Python
@@ -220,10 +214,10 @@ runs:
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from uv-version
+    - name: Get uv version from pyproject.toml
       shell: bash
       run: |
-        echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+        echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv

@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
 
     log::info!("Fetching asset pairs for BTC/USD...");
     let pairs = client
-        .get_asset_pairs(Some(vec!["XBTUSDT".to_string()]))
+        .get_asset_pairs(Some(vec!["XBTUSDT".to_string()]), None)
         .await?;
     log::info!("Asset pairs count: {}", pairs.len());
 

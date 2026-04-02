@@ -93,11 +93,11 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 | :----------------- | :------ | :------ |
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | ✓       |
+| `macOS (ARM64)`    | ✓       | -       |
 | `Windows (x86_64)` | ✓       | ✓       |
 
-**Note**: Development wheels from the `develop` branch publish for every supported platform except Linux ARM64.
-Skipping that target keeps CI feedback fast while avoiding unnecessary build resource usage.
+**Note**: Development wheels from the `develop` branch publish for Linux x86_64 and Windows only.
+macOS and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.
@@ -167,59 +167,65 @@ Development wheels from `develop` and `nightly` branches are also attested and c
 
 It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
 
-1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
-   - Linux and macOS:
+### 1. Install rustup
 
-     ```bash
-     curl https://sh.rustup.rs -sSf | sh
-     ```
+Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
 
-   - Windows:
-     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-     - Install "Desktop development with C++" using [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-   - Verify (any system): From a terminal session run `rustc --version`
+```bash tab="Linux/macOS"
+curl https://sh.rustup.rs -sSf | sh
+```
 
-2. Enable `cargo` in the current shell:
-   - Linux and macOS:
+```powershell tab="Windows"
+# Download and install rustup-init.exe from https://win.rustup.rs/x86_64
+# Also install "Desktop development with C++" via Build Tools for Visual Studio 2022
+```
 
-     ```bash
-     source $HOME/.cargo/env
-     ```
+Verify: `rustc --version`
 
-   - Windows: Start a new PowerShell
+### 2. Enable cargo
 
-3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
-   - Linux:
+Enable `cargo` in the current shell:
 
-     ```bash
-     sudo apt-get install clang
-     ```
+```bash tab="Linux/macOS"
+source $HOME/.cargo/env
+```
 
-   - Windows:
-     1. Add Clang to your [Build Tools for Visual Studio 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/):
-        - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (latest) = checked | Modify
-     2. Enable `clang` in the current shell:
+```powershell tab="Windows"
+# Start a new PowerShell session
+```
 
-        ```powershell
-        [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
-        ```
+### 3. Install clang
 
-   - Verify (any system): From a terminal session run `clang --version`
+Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
 
-4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
-   - Linux and macOS:
+```bash tab="Linux"
+sudo apt-get install clang
+```
 
-     ```bash
-     curl -LsSf https://astral.sh/uv/install.sh | sh
-     ```
+```powershell tab="Windows"
+# 1. Add Clang via Visual Studio Installer:
+#    Modify > C++ Clang tools for Windows (latest) > Modify
+# 2. Add to PATH:
+[System.Environment]::SetEnvironmentVariable('path', "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+```
 
-   - Windows (PowerShell):
+Verify: `clang --version`
 
-     ```powershell
-     irm https://astral.sh/uv/install.ps1 | iex
-     ```
+### 4. Install uv
 
-5. Clone the source with `git`, and install from the project's root directory:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation):
+
+```bash tab="Linux/macOS"
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```powershell tab="Windows"
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+### 5. Clone and install
+
+Clone the source with `git`, and install from the project's root directory:
 
 ```bash
 git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
@@ -231,7 +237,9 @@ uv sync --all-extras
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
-6. Set environment variables for PyO3 compilation (Linux and macOS only):
+### 6. Set environment variables
+
+Set environment variables for PyO3 compilation (Linux and macOS only):
 
 ```bash
 # Linux only: Set the library path for the Python interpreter
@@ -333,16 +341,12 @@ The precision mode is determined by:
 - Setting the `HIGH_PRECISION` environment variable during compilation, **and/or**
 - Enabling the `high-precision` Rust feature flag explicitly.
 
-#### High-precision mode (128-bit)
-
-```bash
+```bash tab="High-precision (128-bit)"
 export HIGH_PRECISION=true
 make install-debug
 ```
 
-#### Standard-precision mode (64-bit)
-
-```bash
+```bash tab="Standard-precision (64-bit)"
 export HIGH_PRECISION=false
 make install-debug
 ```

@@ -84,20 +84,30 @@ def get_bitmex_http_client(
     nautilus_pyo3.BitmexHttpClient
 
     """
-    return nautilus_pyo3.BitmexHttpClient(
-        api_key=api_key,
-        api_secret=api_secret,
-        base_url=base_url,
-        testnet=testnet,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        recv_window_ms=recv_window_ms,
-        max_requests_per_second=max_requests_per_second,
-        max_requests_per_minute=max_requests_per_minute,
-        proxy_url=proxy_url,
-    )
+    kwargs: dict = {
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "base_url": base_url,
+        "testnet": testnet,
+        "proxy_url": proxy_url,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+    if recv_window_ms is not None:
+        kwargs["recv_window_ms"] = recv_window_ms
+    if max_requests_per_second is not None:
+        kwargs["max_requests_per_second"] = max_requests_per_second
+    if max_requests_per_minute is not None:
+        kwargs["max_requests_per_minute"] = max_requests_per_minute
+
+    return nautilus_pyo3.BitmexHttpClient(**kwargs)
 
 
 @lru_cache(maxsize=1)

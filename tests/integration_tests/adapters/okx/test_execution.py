@@ -921,7 +921,7 @@ async def test_cancel_all_orders_handles_mixed_regular_and_algo_orders(
         client._algo_order_instruments[client_id] = instrument.id
 
     # Mock the HTTP cancel_algo_order call
-    http_client.cancel_algo_order = AsyncMock()
+    http_client.cancel_algo_order = AsyncMock(return_value={"s_code": "0"})
 
     # Act - Create batch with regular orders only (algo orders should be skipped)
     regular_cancels = [

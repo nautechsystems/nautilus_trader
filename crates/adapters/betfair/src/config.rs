@@ -96,17 +96,18 @@ fn build_stream_config(
 }
 
 /// Configuration for the Betfair live data client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.betfair", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
 )]
 pub struct BetfairDataConfig {
     /// Account currency code.
+    #[builder(default = "GBP".to_string())]
     pub account_currency: String,
     /// Optional Betfair username.
     pub username: Option<String>,
@@ -117,6 +118,7 @@ pub struct BetfairDataConfig {
     /// Optional proxy URL for HTTP requests.
     pub proxy_url: Option<String>,
     /// General HTTP request rate limit per second.
+    #[builder(default = 5)]
     pub request_rate_per_second: u32,
     /// Optional default minimum notional in `account_currency`.
     pub default_min_notional: Option<f64>,
@@ -141,55 +143,34 @@ pub struct BetfairDataConfig {
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
     /// Interval between stream heartbeat messages in milliseconds.
+    #[builder(default = 5_000)]
     pub stream_heartbeat_ms: u64,
     /// Stream idle timeout in milliseconds.
+    #[builder(default = 60_000)]
     pub stream_idle_timeout_ms: u64,
     /// Initial reconnection backoff in milliseconds.
+    #[builder(default = 2_000)]
     pub stream_reconnect_delay_initial_ms: u64,
     /// Maximum reconnection backoff in milliseconds.
+    #[builder(default = 30_000)]
     pub stream_reconnect_delay_max_ms: u64,
     /// Whether to use TLS for the stream connection.
+    #[builder(default = true)]
     pub stream_use_tls: bool,
     /// Stream conflation setting in milliseconds. When set, Betfair batches
     /// stream updates for this interval. `None` uses Betfair defaults.
     pub stream_conflate_ms: Option<u64>,
     /// Delay in seconds before sending the initial subscription message after connecting.
-    pub subscription_delay_secs: Option<u64>,
+    #[builder(default = 3)]
+    pub subscription_delay_secs: u64,
     /// Subscribe to the race stream for Total Performance Data (TPD).
+    #[builder(default)]
     pub subscribe_race_data: bool,
 }
 
 impl Default for BetfairDataConfig {
     fn default() -> Self {
-        let stream_defaults = BetfairStreamConfig::default();
-
-        Self {
-            account_currency: "GBP".to_string(),
-            username: None,
-            password: None,
-            app_key: None,
-            proxy_url: None,
-            request_rate_per_second: 5,
-            default_min_notional: None,
-            event_type_ids: None,
-            event_type_names: None,
-            event_ids: None,
-            country_codes: None,
-            market_types: None,
-            market_ids: None,
-            min_market_start_time: None,
-            max_market_start_time: None,
-            stream_host: None,
-            stream_port: None,
-            stream_heartbeat_ms: stream_defaults.heartbeat_ms,
-            stream_idle_timeout_ms: stream_defaults.idle_timeout_ms,
-            stream_reconnect_delay_initial_ms: stream_defaults.reconnect_delay_initial_ms,
-            stream_reconnect_delay_max_ms: stream_defaults.reconnect_delay_max_ms,
-            stream_use_tls: stream_defaults.use_tls,
-            stream_conflate_ms: None,
-            subscription_delay_secs: Some(3),
-            subscribe_race_data: false,
-        }
+        Self::builder().build()
     }
 }
 
@@ -280,21 +261,24 @@ impl BetfairDataConfig {
 }
 
 /// Configuration for the Betfair live execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.betfair", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.betfair")
 )]
 pub struct BetfairExecConfig {
     /// Trader ID for the client core.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// Account ID for the client core.
+    #[builder(default = AccountId::from("BETFAIR-001"))]
     pub account_id: AccountId,
     /// Account currency code.
+    #[builder(default = "GBP".to_string())]
     pub account_currency: String,
     /// Optional Betfair username.
     pub username: Option<String>,
@@ -305,69 +289,55 @@ pub struct BetfairExecConfig {
     /// Optional proxy URL for HTTP requests.
     pub proxy_url: Option<String>,
     /// General HTTP request rate limit per second.
+    #[builder(default = 5)]
     pub request_rate_per_second: u32,
     /// Order HTTP request rate limit per second.
+    #[builder(default = 20)]
     pub order_request_rate_per_second: u32,
     /// Optional override for stream host.
     pub stream_host: Option<String>,
     /// Optional override for stream port.
     pub stream_port: Option<u16>,
     /// Interval between stream heartbeat messages in milliseconds.
+    #[builder(default = 5_000)]
     pub stream_heartbeat_ms: u64,
     /// Stream idle timeout in milliseconds.
+    #[builder(default = 60_000)]
     pub stream_idle_timeout_ms: u64,
     /// Initial reconnection backoff in milliseconds.
+    #[builder(default = 2_000)]
     pub stream_reconnect_delay_initial_ms: u64,
     /// Maximum reconnection backoff in milliseconds.
+    #[builder(default = 30_000)]
     pub stream_reconnect_delay_max_ms: u64,
     /// Whether to use TLS for the stream connection.
+    #[builder(default = true)]
     pub stream_use_tls: bool,
     /// Market IDs to filter on the order stream. When set, OCM updates for
     /// markets not in this list are skipped. `None` processes all markets.
     pub stream_market_ids_filter: Option<Vec<String>>,
     /// When true, silently ignore orders from OCM that are not tracked in the local cache.
+    #[builder(default)]
     pub ignore_external_orders: bool,
     /// Whether to poll account state periodically.
+    #[builder(default = true)]
     pub calculate_account_state: bool,
     /// Interval in seconds between account state polls.
+    #[builder(default = 300)]
     pub request_account_state_secs: u64,
     /// When true, reconciliation only requests orders matching `reconcile_market_ids`.
+    #[builder(default)]
     pub reconcile_market_ids_only: bool,
     /// Market IDs to restrict reconciliation to.
     pub reconcile_market_ids: Option<Vec<String>>,
     /// When true, attach the latest market version to placeOrders and replaceOrders requests.
+    #[builder(default)]
     pub use_market_version: bool,
 }
 
 impl Default for BetfairExecConfig {
     fn default() -> Self {
-        let stream_defaults = BetfairStreamConfig::default();
-
-        Self {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("BETFAIR-001"),
-            account_currency: "GBP".to_string(),
-            username: None,
-            password: None,
-            app_key: None,
-            proxy_url: None,
-            request_rate_per_second: 5,
-            order_request_rate_per_second: 20,
-            stream_host: None,
-            stream_port: None,
-            stream_heartbeat_ms: stream_defaults.heartbeat_ms,
-            stream_idle_timeout_ms: stream_defaults.idle_timeout_ms,
-            stream_reconnect_delay_initial_ms: stream_defaults.reconnect_delay_initial_ms,
-            stream_reconnect_delay_max_ms: stream_defaults.reconnect_delay_max_ms,
-            stream_use_tls: stream_defaults.use_tls,
-            stream_market_ids_filter: None,
-            ignore_external_orders: false,
-            calculate_account_state: true,
-            request_account_state_secs: 300,
-            reconcile_market_ids_only: false,
-            reconcile_market_ids: None,
-            use_market_version: false,
-        }
+        Self::builder().build()
     }
 }
 
@@ -449,7 +419,7 @@ mod tests {
         assert!(config.market_ids.is_none());
         assert_eq!(config.stream_heartbeat_ms, 5_000);
         assert!(config.stream_conflate_ms.is_none());
-        assert_eq!(config.subscription_delay_secs, Some(3));
+        assert_eq!(config.subscription_delay_secs, 3);
         assert!(!config.subscribe_race_data);
     }
 

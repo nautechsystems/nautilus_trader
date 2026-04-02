@@ -24,9 +24,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
@@ -39,7 +39,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicSet, MUTEX_POISONED, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -55,7 +55,8 @@ use nautilus_model::{
         OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue,
+        VenueOrderId,
     },
     instruments::Instrument,
     orders::Order,
@@ -69,7 +70,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     http::{
         BinanceFuturesHttpError,
-        client::{BinanceFuturesHttpClient, is_algo_order_type},
+        client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, is_algo_order_type},
         models::{BatchOrderResult, BinancePositionRisk},
         query::{
             BatchCancelItem, BinanceAllOrdersParamsBuilder, BinanceOpenOrdersParamsBuilder,
@@ -80,7 +81,10 @@ use super::{
     websocket::{
         streams::{
             client::BinanceFuturesWebSocketClient,
-            messages::{BinanceExecutionType, BinanceFuturesWsStreamsMessage},
+            messages::{
+                BinanceExecutionType, BinanceFuturesAlgoUpdateMsg, BinanceFuturesOrderUpdateMsg,
+                BinanceFuturesWsStreamsMessage,
+            },
             parse_exec::{
                 decode_algo_client_id, parse_futures_account_update,
                 parse_futures_algo_update_to_order_status, parse_futures_order_update_to_fill,
@@ -145,8 +149,8 @@ pub struct BinanceFuturesExecutionClient {
     ws_trading_handle: Mutex<Option<JoinHandle<()>>>,
     listen_key: Arc<RwLock<Option<String>>>,
     cancellation_token: CancellationToken,
-    triggered_algo_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
-    algo_client_order_ids: Arc<RwLock<AHashSet<ClientOrderId>>>,
+    triggered_algo_order_ids: Arc<AtomicSet<ClientOrderId>>,
+    algo_client_order_ids: Arc<AtomicSet<ClientOrderId>>,
     ws_task: Mutex<Option<JoinHandle<()>>>,
     keepalive_task: Mutex<Option<JoinHandle<()>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
@@ -243,8 +247,8 @@ impl BinanceFuturesExecutionClient {
             ws_trading_handle: Mutex::new(None),
             listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
-            triggered_algo_order_ids: Arc::new(RwLock::new(AHashSet::new())),
-            algo_client_order_ids: Arc::new(RwLock::new(AHashSet::new())),
+            triggered_algo_order_ids: Arc::new(AtomicSet::new()),
+            algo_client_order_ids: Arc::new(AtomicSet::new()),
             ws_task: Mutex::new(None),
             keepalive_task: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
@@ -256,6 +260,13 @@ impl BinanceFuturesExecutionClient {
     #[must_use]
     pub fn is_hedge_mode(&self) -> bool {
         self.is_hedge_mode.load(Ordering::Acquire)
+    }
+
+    /// Returns a clone of the HTTP client's instruments cache Arc.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn instruments_cache(&self) -> Arc<DashMap<ustr::Ustr, BinanceFuturesInstrument>> {
+        self.http_client.instruments_cache()
     }
 
     /// Determines the position side for hedge mode based on order direction.
@@ -430,6 +441,12 @@ impl BinanceFuturesExecutionClient {
 
         let use_algo_api = is_algo_order_type(order_type);
 
+        let close_position = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
         // Convert trailing offset (basis points) to Binance callback rate (percentage).
         // Binance accepts 1 decimal place (0.1% granularity = 10 bp increments).
         let callback_rate = trailing_offset
@@ -559,6 +576,7 @@ impl BinanceFuturesExecutionClient {
                         price,
                         trigger_price,
                         reduce_only,
+                        close_position,
                         position_side,
                         activation_price,
                         callback_rate,
@@ -643,8 +661,6 @@ impl BinanceFuturesExecutionClient {
             .is_some_and(|order| is_algo_order_type(order.order_type()));
         let is_triggered = self
             .triggered_algo_order_ids
-            .read()
-            .expect("triggered_algo_order_ids lock poisoned")
             .contains(&command.client_order_id);
         let use_algo_cancel = is_algo && !is_triggered;
 
@@ -972,6 +988,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let account_id = self.core.account_id;
             let clock = self.clock;
             let product_type = self.product_type;
+            let use_position_ids = self.config.use_position_ids;
+            let default_taker_fee = self.config.default_taker_fee;
             let dispatch_state = self.dispatch_state.clone();
             let triggered_algo_ids = self.triggered_algo_order_ids.clone();
             let algo_client_ids = self.algo_client_order_ids.clone();
@@ -992,6 +1010,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                 &dispatch_state,
                                 &triggered_algo_ids,
                                 &algo_client_ids,
+                                use_position_ids,
+                                default_taker_fee,
                             );
                         }
                         () = cancel.cancelled() => {
@@ -1608,7 +1628,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(());
         }
 
-        // Validate trailing offset before submission (Initialized -> Denied is valid,
+        // Validate before submission (Initialized -> Denied is valid,
         // but Submitted -> Denied is not, so validate before emitting OrderSubmitted)
         if let Some(offset_type) = order.trailing_offset_type() {
             if offset_type != TrailingOffsetType::BasisPoints {
@@ -1624,6 +1644,29 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 {
                     anyhow::bail!("callbackRate {rate}% out of Binance range [0.1, 10.0]");
                 }
+            }
+        }
+
+        let close_position = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("close_position"))
+            .unwrap_or(false);
+
+        if close_position {
+            let order_type = order.order_type();
+
+            if !matches!(
+                order_type,
+                OrderType::StopMarket | OrderType::MarketIfTouched
+            ) {
+                anyhow::bail!(
+                    "`close_position` is not supported for order type {order_type:?} on Binance"
+                );
+            }
+
+            if order.is_reduce_only() {
+                anyhow::bail!("`close_position` cannot be combined with `reduce_only` on Binance");
             }
         }
 
@@ -2029,8 +2072,10 @@ fn dispatch_ws_message(
     product_type: BinanceProductType,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
-    triggered_algo_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
-    algo_client_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
+    triggered_algo_ids: &Arc<AtomicSet<ClientOrderId>>,
+    algo_client_ids: &Arc<AtomicSet<ClientOrderId>>,
+    use_position_ids: bool,
+    default_taker_fee: Decimal,
 ) {
     match msg {
         BinanceFuturesWsStreamsMessage::OrderUpdate(update) => {
@@ -2042,6 +2087,8 @@ fn dispatch_ws_message(
                 product_type,
                 clock,
                 dispatch_state,
+                use_position_ids,
+                default_taker_fee,
             );
         }
         BinanceFuturesWsStreamsMessage::AlgoUpdate(update) => {
@@ -2110,13 +2157,15 @@ fn dispatch_ws_message(
 /// to execution reports for reconciliation.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_order_update(
-    msg: &super::websocket::streams::messages::BinanceFuturesOrderUpdateMsg,
+    msg: &BinanceFuturesOrderUpdateMsg,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceFuturesHttpClient,
     account_id: AccountId,
     product_type: BinanceProductType,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
+    use_position_ids: bool,
+    default_taker_fee: Decimal,
 ) {
     let order = &msg.order;
     let symbol_ustr = ustr::Ustr::from(order.symbol.as_str());
@@ -2126,15 +2175,8 @@ fn dispatch_order_update(
     let cache = http_client.instruments_cache();
     let cached_instrument = cache.get(&symbol_ustr);
 
-    if cached_instrument.is_none() && order.execution_type == BinanceExecutionType::Trade {
-        log::error!(
-            "Instrument not in cache for fill: {}, skipping to avoid precision mismatch",
-            order.symbol
-        );
-        return;
-    }
-
-    let (instrument_id, price_precision, size_precision) = if let Some(inst) = cached_instrument {
+    let (instrument_id, price_precision, size_precision) = if let Some(ref inst) = cached_instrument
+    {
         (
             inst.id(),
             inst.price_precision() as u8,
@@ -2154,6 +2196,44 @@ fn dispatch_order_update(
         BINANCE_NAUTILUS_FUTURES_BROKER_ID,
     ));
 
+    // Exchange-generated orders (liquidation/ADL/settlement) are routed through
+    // reconciliation reports regardless of tracked/untracked state, because
+    // they have no locally submitted identity
+    if order.is_exchange_generated() {
+        let is_linear = cached_instrument
+            .as_ref()
+            .map_or(product_type == BinanceProductType::UsdM, |inst| {
+                matches!(inst.value(), BinanceFuturesInstrument::UsdM(_))
+            });
+
+        let quote_currency = cached_instrument
+            .as_ref()
+            .map_or_else(Currency::USDT, |inst| inst.value().quote_currency());
+
+        let taker_fee = if is_linear {
+            Some(default_taker_fee)
+        } else {
+            None
+        };
+
+        let venue_position_id =
+            make_venue_position_id(use_position_ids, instrument_id, order.position_side);
+
+        dispatch_exchange_generated_fill(
+            msg,
+            emitter,
+            instrument_id,
+            price_precision,
+            size_precision,
+            account_id,
+            ts_init,
+            taker_fee,
+            quote_currency,
+            venue_position_id,
+        );
+        return;
+    }
+
     let identity = dispatch_state
         .order_identities
         .get(&client_order_id)
@@ -2164,8 +2244,8 @@ fn dispatch_order_update(
 
         match order.execution_type {
             BinanceExecutionType::New => {
-                if dispatch_state.emitted_accepted.contains(&client_order_id)
-                    || dispatch_state.filled_orders.contains(&client_order_id)
+                if dispatch_state.has_emitted_accepted(&client_order_id)
+                    || dispatch_state.has_filled(&client_order_id)
                 {
                     log::debug!("Skipping duplicate Accepted for {client_order_id}");
                     return;
@@ -2296,22 +2376,28 @@ fn dispatch_order_update(
             }
             BinanceExecutionType::Calculated => {
                 log::warn!(
-                    "Calculated execution (liquidation/ADL): symbol={}, client_order_id={}",
+                    "CALCULATED for non-exchange-generated order: symbol={}, client_order_id={}",
                     order.symbol,
-                    order.client_order_id
+                    order.client_order_id,
                 );
             }
         }
     } else {
-        // Untracked: fall back to reports for reconciliation
+        // Untracked: fall back to reports for reconciliation.
+        // venue_position_id is intentionally None here: the engine assigns
+        // position IDs during event processing, and setting one from the
+        // adapter could split a partially filled order across two positions.
         match order.execution_type {
             BinanceExecutionType::Trade => {
                 match parse_futures_order_update_to_fill(
                     msg,
+                    account_id,
                     instrument_id,
                     price_precision,
                     size_precision,
-                    account_id,
+                    None,
+                    None,
+                    None,
                     ts_init,
                 ) {
                     Ok(fill) => emitter.send_fill_report(fill),
@@ -2347,26 +2433,126 @@ fn dispatch_order_update(
             }
             BinanceExecutionType::Calculated => {
                 log::warn!(
-                    "Calculated execution (liquidation/ADL): symbol={}, client_order_id={}",
+                    "CALCULATED for non-exchange-generated order: symbol={}, client_order_id={}",
                     order.symbol,
-                    order.client_order_id
+                    order.client_order_id,
                 );
             }
         }
     }
 }
 
+/// Dispatches exchange-generated order fills (liquidation, ADL, settlement).
+///
+/// Sends a `FillReport` first, then an `OrderStatusReport`. The fill report
+/// is dropped by the engine (order not yet in cache). The status report
+/// triggers `create_external_order`, which builds the order and applies an
+/// inferred fill from `avg_px`/`filled_qty`. Real fill metadata (commission,
+/// trade_id) is lost; see `engine-bundled-fill-reconciliation` plan for the
+/// path to preserving it.
+///
+/// Derives a venue position ID from the instrument and Binance position side.
+///
+/// Returns `None` when `use_position_ids` is false.
+fn make_venue_position_id(
+    use_position_ids: bool,
+    instrument_id: InstrumentId,
+    position_side: BinancePositionSide,
+) -> Option<PositionId> {
+    if !use_position_ids {
+        return None;
+    }
+
+    let side = match position_side {
+        BinancePositionSide::Long => "LONG",
+        BinancePositionSide::Short => "SHORT",
+        BinancePositionSide::Both => "BOTH",
+        _ => "UNKNOWN",
+    };
+    Some(PositionId::new(format!("{instrument_id}-{side}")))
+}
+
+/// Skips events with zero fill quantity (pending liquidation notifications).
+#[allow(clippy::too_many_arguments)]
+fn dispatch_exchange_generated_fill(
+    msg: &BinanceFuturesOrderUpdateMsg,
+    emitter: &ExecutionEventEmitter,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    taker_fee: Option<Decimal>,
+    quote_currency: Currency,
+    venue_position_id: Option<PositionId>,
+) {
+    let order = &msg.order;
+    let last_qty: f64 = order.last_filled_qty.parse().unwrap_or(0.0);
+
+    let order_kind = if order.is_liquidation() {
+        "liquidation"
+    } else if order.is_adl() {
+        "ADL"
+    } else {
+        "settlement"
+    };
+
+    if last_qty == 0.0 {
+        log::warn!(
+            "Exchange-generated {order_kind} pending: symbol={}, client_order_id={}, status={:?}",
+            order.symbol,
+            order.client_order_id,
+            order.order_status,
+        );
+        return;
+    }
+
+    log::warn!(
+        "Exchange-generated {order_kind} fill: symbol={}, client_order_id={}, qty={last_qty}, exec_type={:?}",
+        order.symbol,
+        order.client_order_id,
+        order.execution_type,
+    );
+
+    match parse_futures_order_update_to_fill(
+        msg,
+        account_id,
+        instrument_id,
+        price_precision,
+        size_precision,
+        taker_fee,
+        Some(quote_currency),
+        venue_position_id,
+        ts_init,
+    ) {
+        Ok(fill) => emitter.send_fill_report(fill),
+        Err(e) => log::error!("Failed to parse fill report: {e}"),
+    }
+
+    match parse_futures_order_update_to_order_status(
+        msg,
+        instrument_id,
+        price_precision,
+        size_precision,
+        account_id,
+        ts_init,
+    ) {
+        Ok(status) => emitter.send_order_status_report(status),
+        Err(e) => log::error!("Failed to parse order status report: {e}"),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn dispatch_algo_update(
-    msg: &super::websocket::streams::messages::BinanceFuturesAlgoUpdateMsg,
+    msg: &BinanceFuturesAlgoUpdateMsg,
     emitter: &ExecutionEventEmitter,
     http_client: &BinanceFuturesHttpClient,
     account_id: AccountId,
     product_type: BinanceProductType,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
-    triggered_algo_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
-    algo_client_ids: &Arc<RwLock<AHashSet<ClientOrderId>>>,
+    triggered_algo_ids: &Arc<AtomicSet<ClientOrderId>>,
+    algo_client_ids: &Arc<AtomicSet<ClientOrderId>>,
 ) {
     use crate::common::enums::BinanceAlgoStatus;
 
@@ -2399,10 +2585,7 @@ fn dispatch_algo_update(
 
     match algo_data.algo_status {
         BinanceAlgoStatus::New => {
-            algo_client_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .insert(client_order_id);
+            algo_client_ids.insert(client_order_id);
         }
         BinanceAlgoStatus::Triggering => {
             log::info!(
@@ -2413,10 +2596,7 @@ fn dispatch_algo_update(
             );
         }
         BinanceAlgoStatus::Triggered => {
-            triggered_algo_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .insert(client_order_id);
+            triggered_algo_ids.insert(client_order_id);
             log::info!(
                 "Algo order triggered: client_order_id={}, algo_id={}, actual_order_id={:?}",
                 algo_data.client_algo_id,
@@ -2425,14 +2605,8 @@ fn dispatch_algo_update(
             );
         }
         BinanceAlgoStatus::Canceled | BinanceAlgoStatus::Expired => {
-            algo_client_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
-            triggered_algo_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
+            algo_client_ids.remove(&client_order_id);
+            triggered_algo_ids.remove(&client_order_id);
 
             if let Some(identity) = identity {
                 let venue_order_id = algo_data
@@ -2468,14 +2642,8 @@ fn dispatch_algo_update(
             }
         }
         BinanceAlgoStatus::Rejected => {
-            algo_client_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
-            triggered_algo_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
+            algo_client_ids.remove(&client_order_id);
+            triggered_algo_ids.remove(&client_order_id);
 
             if let Some(identity) = identity {
                 dispatch_state.cleanup_terminal(client_order_id);
@@ -2500,14 +2668,8 @@ fn dispatch_algo_update(
             }
         }
         BinanceAlgoStatus::Finished => {
-            algo_client_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
-            triggered_algo_ids
-                .write()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
+            algo_client_ids.remove(&client_order_id);
+            triggered_algo_ids.remove(&client_order_id);
             dispatch_state.cleanup_terminal(client_order_id);
 
             let executed_qty: f64 = algo_data
@@ -2690,5 +2852,36 @@ fn dispatch_ws_trading_message(
         BinanceFuturesWsTradingMessage::Error(err) => {
             log::error!("WS trading API error: {err}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::long(BinancePositionSide::Long, "ETHUSDT-PERP.BINANCE-LONG")]
+    #[case::short(BinancePositionSide::Short, "ETHUSDT-PERP.BINANCE-SHORT")]
+    #[case::both(BinancePositionSide::Both, "ETHUSDT-PERP.BINANCE-BOTH")]
+    #[case::unknown(BinancePositionSide::Unknown, "ETHUSDT-PERP.BINANCE-UNKNOWN")]
+    fn test_make_venue_position_id_enabled(
+        #[case] side: BinancePositionSide,
+        #[case] expected: &str,
+    ) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let result = make_venue_position_id(true, instrument_id, side);
+        assert_eq!(result, Some(PositionId::from(expected)));
+    }
+
+    #[rstest]
+    #[case::long(BinancePositionSide::Long)]
+    #[case::short(BinancePositionSide::Short)]
+    #[case::both(BinancePositionSide::Both)]
+    fn test_make_venue_position_id_disabled(#[case] side: BinancePositionSide) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let result = make_venue_position_id(false, instrument_id, side);
+        assert_eq!(result, None);
     }
 }

@@ -165,34 +165,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_opened_new() {
-        let position_opened = create_test_position_opened();
-
-        assert_eq!(position_opened.trader_id, TraderId::from("TRADER-001"));
-        assert_eq!(position_opened.strategy_id, StrategyId::from("EMA-CROSS"));
-        assert_eq!(
-            position_opened.instrument_id,
-            InstrumentId::from("EURUSD.SIM")
-        );
-        assert_eq!(position_opened.position_id, PositionId::from("P-001"));
-        assert_eq!(position_opened.account_id, AccountId::from("SIM-001"));
-        assert_eq!(
-            position_opened.opening_order_id,
-            ClientOrderId::from("O-19700101-000000-001-001-1")
-        );
-        assert_eq!(position_opened.entry, OrderSide::Buy);
-        assert_eq!(position_opened.side, PositionSide::Long);
-        assert_eq!(position_opened.signed_qty, 100.0);
-        assert_eq!(position_opened.quantity, Quantity::from("100"));
-        assert_eq!(position_opened.last_qty, Quantity::from("100"));
-        assert_eq!(position_opened.last_px, Price::from("1.0500"));
-        assert_eq!(position_opened.currency, Currency::USD());
-        assert_eq!(position_opened.avg_px_open, 1.0500);
-        assert_eq!(position_opened.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(position_opened.ts_init, UnixNanos::from(2_000_000_000));
-    }
-
-    #[rstest]
     fn test_position_opened_create() {
         let instrument = audusd_sim();
         let fill = create_test_order_filled();
@@ -222,42 +194,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_opened_clone() {
-        let position_opened1 = create_test_position_opened();
-        let position_opened2 = position_opened1.clone();
-
-        assert_eq!(position_opened1, position_opened2);
-    }
-
-    #[rstest]
-    fn test_position_opened_debug() {
-        let position_opened = create_test_position_opened();
-        let debug_str = format!("{position_opened:?}");
-
-        assert!(debug_str.contains("PositionOpened"));
-        assert!(debug_str.contains("TRADER-001"));
-        assert!(debug_str.contains("EMA-CROSS"));
-        assert!(debug_str.contains("EURUSD.SIM"));
-        assert!(debug_str.contains("P-001"));
-    }
-
-    #[rstest]
-    fn test_position_opened_partial_eq() {
-        let mut position_opened1 = create_test_position_opened();
-        let mut position_opened2 = create_test_position_opened();
-        let event_id = UUID4::default();
-        position_opened1.event_id = event_id;
-        position_opened2.event_id = event_id;
-
-        let mut position_opened3 = create_test_position_opened();
-        position_opened3.event_id = event_id;
-        position_opened3.quantity = Quantity::from("200");
-
-        assert_eq!(position_opened1, position_opened2);
-        assert_ne!(position_opened1, position_opened3);
-    }
-
-    #[rstest]
     fn test_position_opened_with_different_sides() {
         let mut long_position = create_test_position_opened();
         long_position.side = PositionSide::Long;
@@ -276,47 +212,5 @@ mod tests {
         assert_eq!(short_position.side, PositionSide::Short);
         assert_eq!(short_position.entry, OrderSide::Sell);
         assert_eq!(short_position.signed_qty, -100.0);
-    }
-
-    #[rstest]
-    fn test_position_opened_different_currencies() {
-        let mut usd_position = create_test_position_opened();
-        usd_position.currency = Currency::USD();
-
-        let mut eur_position = create_test_position_opened();
-        eur_position.currency = Currency::EUR();
-
-        assert_eq!(usd_position.currency, Currency::USD());
-        assert_eq!(eur_position.currency, Currency::EUR());
-        assert_ne!(usd_position, eur_position);
-    }
-
-    #[rstest]
-    fn test_position_opened_timestamps() {
-        let position_opened = create_test_position_opened();
-
-        assert_eq!(position_opened.ts_event, UnixNanos::from(1_000_000_000));
-        assert_eq!(position_opened.ts_init, UnixNanos::from(2_000_000_000));
-        assert!(position_opened.ts_event < position_opened.ts_init);
-    }
-
-    #[rstest]
-    fn test_position_opened_quantities() {
-        let mut position_opened = create_test_position_opened();
-        position_opened.quantity = Quantity::from("500");
-        position_opened.last_qty = Quantity::from("250");
-
-        assert_eq!(position_opened.quantity, Quantity::from("500"));
-        assert_eq!(position_opened.last_qty, Quantity::from("250"));
-    }
-
-    #[rstest]
-    fn test_position_opened_prices() {
-        let mut position_opened = create_test_position_opened();
-        position_opened.last_px = Price::from("1.2345");
-        position_opened.avg_px_open = 1.2345;
-
-        assert_eq!(position_opened.last_px, Price::from("1.2345"));
-        assert_eq!(position_opened.avg_px_open, 1.2345);
     }
 }

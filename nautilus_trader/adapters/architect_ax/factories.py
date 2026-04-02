@@ -90,28 +90,27 @@ def get_cached_ax_http_client(
         else:
             orders_base_url = "https://gateway.architect.exchange/orders"
 
-    if api_key and api_secret:
-        return nautilus_pyo3.AxHttpClient.with_credentials(
-            api_key=api_key,
-            api_secret=api_secret,
-            base_url=base_url,
-            orders_base_url=orders_base_url,
-            timeout_secs=timeout_secs,
-            max_retries=max_retries,
-            retry_delay_ms=retry_delay_ms,
-            retry_delay_max_ms=retry_delay_max_ms,
-            proxy_url=proxy_url,
-        )
+    kwargs: dict = {
+        "base_url": base_url,
+        "orders_base_url": orders_base_url,
+        "proxy_url": proxy_url,
+    }
 
-    return nautilus_pyo3.AxHttpClient(
-        base_url=base_url,
-        orders_base_url=orders_base_url,
-        timeout_secs=timeout_secs,
-        max_retries=max_retries,
-        retry_delay_ms=retry_delay_ms,
-        retry_delay_max_ms=retry_delay_max_ms,
-        proxy_url=proxy_url,
-    )
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    if retry_delay_ms is not None:
+        kwargs["retry_delay_ms"] = retry_delay_ms
+    if retry_delay_max_ms is not None:
+        kwargs["retry_delay_max_ms"] = retry_delay_max_ms
+
+    if api_key and api_secret:
+        kwargs["api_key"] = api_key
+        kwargs["api_secret"] = api_secret
+        return nautilus_pyo3.AxHttpClient.with_credentials(**kwargs)
+
+    return nautilus_pyo3.AxHttpClient(**kwargs)
 
 
 @lru_cache(1)

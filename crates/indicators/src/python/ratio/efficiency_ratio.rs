@@ -59,6 +59,7 @@ impl EfficiencyRatio {
         self.initialized
     }
 
+    #[getter]
     #[pyo3(name = "has_inputs")]
     fn py_has_inputs(&self) -> bool {
         self.has_inputs()

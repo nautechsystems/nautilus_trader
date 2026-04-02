@@ -1415,7 +1415,7 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
         let zstd_level = parquet::basic::ZstdLevel::try_new(3).unwrap();
         let props = WriterProperties::builder()
             .set_compression(parquet::basic::Compression::ZSTD(zstd_level))
-            .set_max_row_group_size(1_000_000)
+            .set_max_row_group_row_count(Some(1_000_000))
             .build();
         let mut writer = ArrowWriter::try_new(file, Arc::new(schema), Some(props)).unwrap();
 

@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Testnet: {testnet}");
 
     // Load instruments first
-    let http_client = HyperliquidHttpClient::new(testnet, None, None)?;
+    let http_client = HyperliquidHttpClient::new(testnet, 60, None)?;
     let instruments = http_client.request_instruments().await?;
     log::info!("Loaded {} instruments", instruments.len());
 

@@ -15,8 +15,8 @@ class OptionChainManager:
         series_id: model.OptionSeriesId,
         strike_range: model.StrikeRange,
         instruments: typing.Mapping[model.InstrumentId, tuple[model.Price, int]],
-        snapshot_interval_ms: int | None = ...,
-        initial_atm_price: model.Price | None = ...,
+        snapshot_interval_ms: int | None = None,
+        initial_atm_price: model.Price | None = None,
     ) -> None: ...
     def handle_quote(self, quote: typing.Any) -> bool: ...
     def handle_greeks(self, greeks_obj: typing.Any) -> bool: ...

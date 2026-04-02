@@ -22,28 +22,28 @@ use nautilus_network::ratelimiter::quota::Quota;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{
-        consts::{DYDX_CHAIN_ID, DYDX_TESTNET_CHAIN_ID},
-        enums::DydxNetwork,
-        urls,
-    },
+    common::{consts::DYDX_CHAIN_ID, enums::DydxNetwork, urls},
     grpc::types::ChainId,
 };
 
 /// Configuration for the dYdX adapter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 pub struct DydxAdapterConfig {
     /// Network environment (mainnet or testnet).
     #[serde(default)]
+    #[builder(default)]
     pub network: DydxNetwork,
     /// Base URL for the HTTP API.
+    #[builder(default = urls::http_base_url(false).to_string())]
     pub base_url: String,
     /// Base URL for the WebSocket API.
+    #[builder(default = urls::ws_url(false).to_string())]
     pub ws_url: String,
     /// Base URL for the gRPC API (Cosmos SDK transactions).
     ///
     /// For backwards compatibility, a single URL can be provided.
     /// Consider using `grpc_urls` for fallback support.
+    #[builder(default = urls::grpc_urls(false)[0].to_string())]
     pub grpc_url: String,
     /// List of gRPC URLs with fallback support.
     ///
@@ -51,10 +51,13 @@ pub struct DydxAdapterConfig {
     /// until a successful connection is established. This is recommended for
     /// production use in DEX environments where nodes can fail.
     #[serde(default)]
+    #[builder(default = urls::grpc_urls(false).iter().map(|&s| s.to_string()).collect())]
     pub grpc_urls: Vec<String>,
     /// Chain ID (e.g., "dydx-mainnet-1" for mainnet, "dydx-testnet-4" for testnet).
+    #[builder(default = DYDX_CHAIN_ID.to_string())]
     pub chain_id: String,
     /// Request timeout in seconds.
+    #[builder(default = 30)]
     pub timeout_secs: u64,
     /// Wallet address for the account.
     ///
@@ -67,6 +70,7 @@ pub struct DydxAdapterConfig {
     pub wallet_address: Option<String>,
     /// Subaccount number (default: 0).
     #[serde(default)]
+    #[builder(default)]
     pub subaccount: u32,
     /// Whether this is a testnet configuration.
     ///
@@ -75,6 +79,7 @@ pub struct DydxAdapterConfig {
     /// This flag exists for backwards compatibility and may be derived from
     /// `network` in future versions.
     #[serde(default)]
+    #[builder(default)]
     pub is_testnet: bool,
     /// Private key (hex) for wallet signing.
     ///
@@ -94,15 +99,19 @@ pub struct DydxAdapterConfig {
     /// See <https://docs.dydx.xyz/concepts/trading/authenticators> for details on
     /// permissioned keys and authenticator configuration.
     #[serde(default)]
+    #[builder(default)]
     pub authenticator_ids: Vec<u64>,
     /// Maximum number of retries for failed requests (default: 3).
     #[serde(default = "default_max_retries")]
+    #[builder(default = 3)]
     pub max_retries: u32,
     /// Initial retry delay in milliseconds (default: 1000ms).
     #[serde(default = "default_retry_delay_initial_ms")]
+    #[builder(default = 1000)]
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds (default: 10000ms).
     #[serde(default = "default_retry_delay_max_ms")]
+    #[builder(default = 10000)]
     pub retry_delay_max_ms: u64,
     /// gRPC rate limit: maximum broadcast requests per second.
     ///
@@ -113,7 +122,7 @@ pub struct DydxAdapterConfig {
     /// - AutoStake: 4 req/s
     ///
     /// Default: 4 requests per second (conservative, works across all public providers).
-    /// Set to `None` to disable rate limiting.
+    /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
 }
@@ -130,9 +139,28 @@ fn default_retry_delay_max_ms() -> u64 {
     10000
 }
 
-#[allow(clippy::unnecessary_wraps)]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "serde default must match field type Option<u32>"
+)]
 fn default_grpc_rate_limit_per_second() -> Option<u32> {
     Some(4)
+}
+
+fn default_http_timeout_secs() -> u64 {
+    60
+}
+
+fn default_data_max_retries() -> u64 {
+    3
+}
+
+fn default_data_retry_delay_initial_ms() -> u64 {
+    100
+}
+
+fn default_data_retry_delay_max_ms() -> u64 {
+    5000
 }
 
 impl DydxAdapterConfig {
@@ -177,44 +205,22 @@ impl DydxAdapterConfig {
 
 impl Default for DydxAdapterConfig {
     fn default() -> Self {
-        let network = DydxNetwork::default();
-        let is_testnet = matches!(network, DydxNetwork::Testnet);
-        let grpc_urls = urls::grpc_urls(is_testnet);
         Self {
-            network,
-            base_url: urls::http_base_url(is_testnet).to_string(),
-            ws_url: urls::ws_url(is_testnet).to_string(),
-            grpc_url: grpc_urls[0].to_string(),
-            grpc_urls: grpc_urls.iter().map(|&s| s.to_string()).collect(),
-            chain_id: if is_testnet {
-                DYDX_TESTNET_CHAIN_ID
-            } else {
-                DYDX_CHAIN_ID
-            }
-            .to_string(),
-            timeout_secs: 30,
-            wallet_address: None,
-            subaccount: 0,
-            is_testnet,
-            private_key: None,
-            authenticator_ids: Vec::new(),
-            max_retries: default_max_retries(),
-            retry_delay_initial_ms: default_retry_delay_initial_ms(),
-            retry_delay_max_ms: default_retry_delay_max_ms(),
             grpc_rate_limit_per_second: default_grpc_rate_limit_per_second(),
+            ..Self::builder().build()
         }
     }
 }
 
 /// Configuration for the dYdX data client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
 )]
 pub struct DydxDataClientConfig {
     /// Base URL for the HTTP API.
@@ -222,14 +228,23 @@ pub struct DydxDataClientConfig {
     /// Base URL for the WebSocket API.
     pub base_url_ws: Option<String>,
     /// HTTP request timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
+    #[serde(default = "default_http_timeout_secs")]
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for failed HTTP requests.
-    pub max_retries: Option<u64>,
+    #[serde(default = "default_data_max_retries")]
+    #[builder(default = 3)]
+    pub max_retries: u64,
     /// Initial retry delay in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
+    #[serde(default = "default_data_retry_delay_initial_ms")]
+    #[builder(default = 100)]
+    pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
+    #[serde(default = "default_data_retry_delay_max_ms")]
+    #[builder(default = 5000)]
+    pub retry_delay_max_ms: u64,
     /// Whether this is a testnet configuration.
+    #[builder(default)]
     pub is_testnet: bool,
     /// HTTP proxy URL.
     pub http_proxy_url: Option<String>,
@@ -239,42 +254,36 @@ pub struct DydxDataClientConfig {
 
 impl Default for DydxDataClientConfig {
     fn default() -> Self {
-        Self {
-            base_url_http: None,
-            base_url_ws: None,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(100),
-            retry_delay_max_ms: Some(5000),
-            is_testnet: false,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-        }
+        Self::builder().build()
     }
 }
 
 /// Configuration for the dYdX execution client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.dydx", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.dydx")
 )]
 pub struct DydxExecClientConfig {
     /// The trader ID for the client.
+    #[builder(default = TraderId::from("TRADER-001"))]
     pub trader_id: TraderId,
     /// The account ID for the client.
+    #[builder(default = AccountId::from("DYDX-001"))]
     pub account_id: AccountId,
     /// Network environment (mainnet or testnet).
     #[serde(default)]
+    #[builder(default)]
     pub network: DydxNetwork,
     /// gRPC endpoint URL (optional, uses default for network if not provided).
     pub grpc_endpoint: Option<String>,
     /// Additional gRPC URLs for fallback support.
     #[serde(default)]
+    #[builder(default)]
     pub grpc_urls: Vec<String>,
     /// WebSocket endpoint URL (optional, uses default for network if not provided).
     pub ws_endpoint: Option<String>,
@@ -294,9 +303,11 @@ pub struct DydxExecClientConfig {
     pub wallet_address: Option<String>,
     /// Subaccount number (default: 0).
     #[serde(default)]
+    #[builder(default)]
     pub subaccount_number: u32,
     /// Authenticator IDs for permissioned key trading.
     #[serde(default)]
+    #[builder(default)]
     pub authenticator_ids: Vec<u64>,
     /// HTTP request timeout in seconds.
     pub http_timeout_secs: Option<u64>,
@@ -307,6 +318,7 @@ pub struct DydxExecClientConfig {
     /// Maximum retry delay in milliseconds.
     pub retry_delay_max_ms: Option<u64>,
     /// gRPC rate limit: maximum broadcast requests per second.
+    /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
 }
@@ -314,22 +326,8 @@ pub struct DydxExecClientConfig {
 impl Default for DydxExecClientConfig {
     fn default() -> Self {
         Self {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("DYDX-001"),
-            network: DydxNetwork::default(),
-            grpc_endpoint: None,
-            grpc_urls: Vec::new(),
-            ws_endpoint: None,
-            http_endpoint: None,
-            private_key: None,
-            wallet_address: None,
-            subaccount_number: 0,
-            authenticator_ids: Vec::new(),
-            http_timeout_secs: None,
-            max_retries: None,
-            retry_delay_initial_ms: None,
-            retry_delay_max_ms: None,
             grpc_rate_limit_per_second: default_grpc_rate_limit_per_second(),
+            ..Self::builder().build()
         }
     }
 }

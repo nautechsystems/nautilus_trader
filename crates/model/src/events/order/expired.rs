@@ -321,11 +321,19 @@ mod tests {
     use crate::events::order::{expired::OrderExpired, stubs::*};
 
     #[rstest]
-    fn test_order_cancel_rejected(order_expired: OrderExpired) {
+    fn test_order_expired_display(order_expired: OrderExpired) {
         let display = format!("{order_expired}");
         assert_eq!(
             display,
             "OrderExpired(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, ts_event=0)"
         );
+    }
+
+    #[rstest]
+    fn test_order_expired_serialization() {
+        let original = OrderExpired::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderExpired = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
     }
 }

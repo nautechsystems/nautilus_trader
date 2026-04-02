@@ -97,7 +97,7 @@ impl BitmexWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
     ) -> anyhow::Result<Self> {
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
@@ -116,7 +116,7 @@ impl BitmexWebSocketClient {
         Ok(Self {
             url: url.unwrap_or(BITMEX_WS_URL.to_string()),
             credential,
-            heartbeat,
+            heartbeat: Some(heartbeat),
             account_id,
             auth_tracker: AuthTracker::new(),
             signal: Arc::new(AtomicBool::new(false)),
@@ -144,7 +144,7 @@ impl BitmexWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
         testnet: bool,
     ) -> anyhow::Result<Self> {
         let (api_key_env, api_secret_env) = credential_env_vars(testnet);
@@ -166,7 +166,7 @@ impl BitmexWebSocketClient {
         let api_key = get_env_var(key_var)?;
         let api_secret = get_env_var(secret_var)?;
 
-        Self::new(Some(url), Some(api_key), Some(api_secret), None, None)
+        Self::new(Some(url), Some(api_key), Some(api_secret), None, 5)
     }
 
     /// Returns the websocket url being used by the client.
@@ -1204,7 +1204,7 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1267,7 +1267,7 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1296,7 +1296,7 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1310,7 +1310,7 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1377,7 +1377,7 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1423,7 +1423,7 @@ mod tests {
             None,
             None,
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 
@@ -1476,7 +1476,7 @@ mod tests {
             Some("test_key".to_string()),
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
-            None,
+            5,
         )
         .unwrap();
 

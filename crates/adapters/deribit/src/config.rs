@@ -26,14 +26,14 @@ use crate::{
 };
 
 /// Configuration for the Deribit data client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
 )]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
@@ -41,43 +41,38 @@ pub struct DeribitDataClientConfig {
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
     /// Product types to load (e.g., Future, Option, Spot).
+    #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// When true the client will use Deribit testnet endpoints.
+    #[builder(default)]
     pub use_testnet: bool,
-    /// Optional HTTP timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
-    /// Optional maximum retry attempts for requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry delay in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry delay in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
-    /// Optional heartbeat interval in seconds for WebSocket connection.
-    pub heartbeat_interval_secs: Option<u64>,
-    /// Optional interval for refreshing instruments (in minutes).
-    pub update_instruments_interval_mins: Option<u64>,
+    /// HTTP timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// Maximum retry attempts for requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry delay in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
+    /// Heartbeat interval in seconds for WebSocket connection.
+    #[builder(default = 30)]
+    pub heartbeat_interval_secs: u64,
+    /// Interval for refreshing instruments (in minutes).
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
 }
 
 impl Default for DeribitDataClientConfig {
     fn default() -> Self {
-        Self {
-            api_key: None,
-            api_secret: None,
-            product_types: vec![DeribitProductType::Future],
-            base_url_http: None,
-            base_url_ws: None,
-            use_testnet: false,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-            heartbeat_interval_secs: Some(30),
-            update_instruments_interval_mins: Some(60),
-        }
+        Self::builder().build()
     }
 }
 
@@ -115,58 +110,53 @@ impl DeribitDataClientConfig {
 }
 
 /// Configuration for the Deribit execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.deribit")
 )]
 pub struct DeribitExecClientConfig {
     /// The trader ID for this client.
+    #[builder(default)]
     pub trader_id: TraderId,
     /// The account ID for this client.
+    #[builder(default = AccountId::from("DERIBIT-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<String>,
     /// Optional API secret for authenticated endpoints.
     pub api_secret: Option<String>,
     /// Product types to load (e.g., Future, Option, Spot).
+    #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// When true the client will use Deribit testnet endpoints.
+    #[builder(default)]
     pub use_testnet: bool,
-    /// Optional HTTP timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
-    /// Optional maximum retry attempts for requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry delay in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry delay in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
+    /// HTTP timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// Maximum retry attempts for requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry delay in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
 }
 
 impl Default for DeribitExecClientConfig {
     fn default() -> Self {
-        Self {
-            trader_id: TraderId::default(),
-            account_id: AccountId::from("DERIBIT-001"),
-            api_key: None,
-            api_secret: None,
-            product_types: vec![DeribitProductType::Future],
-            base_url_http: None,
-            base_url_ws: None,
-            use_testnet: false,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-        }
+        Self::builder().build()
     }
 }
 
@@ -218,7 +208,7 @@ mod tests {
         let config = DeribitDataClientConfig::default();
         assert!(!config.use_testnet);
         assert_eq!(config.product_types.len(), 1);
-        assert_eq!(config.http_timeout_secs, Some(60));
+        assert_eq!(config.http_timeout_secs, 60);
     }
 
     #[rstest]

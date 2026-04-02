@@ -21,14 +21,14 @@ use crate::common::urls;
 
 /// Gets the BitMEX HTTP base URL.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bitmex")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bitmex")]
 pub fn get_bitmex_http_base_url(testnet: bool) -> String {
     urls::get_http_base_url(testnet)
 }
 
 /// Gets the BitMEX WebSocket URL.
 #[pyfunction]
-#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.bitmex")]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.bitmex")]
 pub fn get_bitmex_ws_url(testnet: bool) -> String {
     urls::get_ws_url(testnet)
 }

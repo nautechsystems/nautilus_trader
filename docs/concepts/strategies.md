@@ -688,5 +688,6 @@ See the [`StrategyId` API Reference](/docs/python-api-latest/model/identifiers.h
 ## Related guides
 
 - [Actors](actors.md) - Base class that strategies extend.
+- [Events](events.md) - Event types and handler dispatch.
 - [Orders](orders.md) - Order types and management from strategies.
 - [Backtesting](backtesting.md) - Test strategies with historical data.

@@ -44,17 +44,17 @@ __all__ = [
 class KrakenDataClientConfig:
     def __init__(
         self,
-        product_type: KrakenProductType | None = ...,
-        environment: KrakenEnvironment | None = ...,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
-        base_url: str | None = ...,
-        ws_public_url: str | None = ...,
-        ws_private_url: str | None = ...,
-        http_proxy: str | None = ...,
-        timeout_secs: int | None = ...,
-        heartbeat_interval_secs: int | None = ...,
-        max_requests_per_second: int | None = ...,
+        product_type: KrakenProductType | None = None,
+        environment: KrakenEnvironment | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        ws_public_url: str | None = None,
+        ws_private_url: str | None = None,
+        http_proxy: str | None = None,
+        timeout_secs: int | None = None,
+        heartbeat_interval_secs: int | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -70,14 +70,14 @@ class KrakenExecClientConfig:
         account_id: model.AccountId,
         api_key: str,
         api_secret: str,
-        product_type: KrakenProductType | None = ...,
-        environment: KrakenEnvironment | None = ...,
-        base_url: str | None = ...,
-        ws_url: str | None = ...,
-        http_proxy: str | None = ...,
-        timeout_secs: int | None = ...,
-        heartbeat_interval_secs: int | None = ...,
-        max_requests_per_second: int | None = ...,
+        product_type: KrakenProductType | None = None,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        ws_url: str | None = None,
+        http_proxy: str | None = None,
+        timeout_secs: int | None = None,
+        heartbeat_interval_secs: int | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -89,16 +89,16 @@ class KrakenExecutionClientFactory:
 class KrakenFuturesHttpClient:
     def __init__(
         self,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        demo: bool,
-        timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        proxy_url: str | None = ...,
-        max_requests_per_second: int | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        demo: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
@@ -183,11 +183,11 @@ class KrakenFuturesHttpClient:
 class KrakenFuturesWebSocketClient:
     def __init__(
         self,
-        environment: KrakenEnvironment | None = ...,
-        base_url: str | None = ...,
-        heartbeat_secs: int | None = ...,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
+        environment: KrakenEnvironment | None = None,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
     ) -> None: ...
     @property
     def has_credentials(self) -> bool: ...
@@ -240,16 +240,16 @@ class KrakenFuturesWebSocketClient:
 class KrakenSpotHttpClient:
     def __init__(
         self,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        demo: bool,
-        timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        proxy_url: str | None = ...,
-        max_requests_per_second: int | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        demo: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
+        max_requests_per_second: int | None = None,
     ) -> None: ...
     @property
     def base_url(self) -> str: ...
@@ -336,12 +336,12 @@ class KrakenSpotHttpClient:
 class KrakenSpotWebSocketClient:
     def __init__(
         self,
-        environment: KrakenEnvironment | None,
-        private: bool,
-        base_url: str | None = ...,
-        heartbeat_secs: int | None = ...,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
+        environment: KrakenEnvironment | None = None,
+        private: bool = False,
+        base_url: str | None = None,
+        heartbeat_secs: int | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -391,8 +391,8 @@ class KrakenAssetClass(enum.Enum):
 
 @typing.final
 class KrakenEnvironment(enum.Enum):
-    Mainnet = ...
-    Demo = ...
+    MAINNET = ...
+    DEMO = ...
 
 @typing.final
 class KrakenFillType(enum.Enum):
@@ -461,8 +461,8 @@ class KrakenPositionSide(enum.Enum):
 
 @typing.final
 class KrakenProductType(enum.Enum):
-    Spot = ...
-    Futures = ...
+    SPOT = ...
+    FUTURES = ...
 
 @typing.final
 class KrakenSendStatus(enum.Enum):

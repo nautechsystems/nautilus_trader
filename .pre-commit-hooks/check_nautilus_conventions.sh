@@ -312,8 +312,49 @@ else
   echo "✓ No ', got' phrasing found"
 fi
 
+# Check for fully qualified macro calls
+echo "Checking for fully qualified macro calls..."
+
+MACRO_VIOLATIONS=0
+macro_output=$(rg -n --no-heading \
+  'nautilus_(common|trading)::(nautilus_actor|nautilus_strategy)!' \
+  crates tests examples \
+  --type rust \
+  2> /dev/null || true)
+
+if [[ -n "$macro_output" ]]; then
+  # Filter out use statements
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
+      line_content="${BASH_REMATCH[3]}"
+      trimmed="${line_content#"${line_content%%[![:space:]]*}"}"
+
+      if [[ "$trimmed" =~ ^use[[:space:]] ]] || [[ "$trimmed" =~ ^pub[[:space:]]+use[[:space:]] ]]; then
+        continue
+      fi
+
+      file="${BASH_REMATCH[1]}"
+      line_num="${BASH_REMATCH[2]}"
+      echo -e "${RED}Error:${NC} Fully qualified macro call in $file:$line_num"
+      echo "  ${trimmed:0:100}"
+      echo "  Import the macro and call it unqualified: nautilus_actor!(...) or nautilus_strategy!(...)"
+      echo
+      MACRO_VIOLATIONS=$((MACRO_VIOLATIONS + 1))
+    fi
+  done <<< "$macro_output"
+
+  if [ $MACRO_VIOLATIONS -gt 0 ]; then
+    echo -e "${RED}Found $MACRO_VIOLATIONS fully qualified macro call(s)${NC}"
+    echo
+    echo -e "${YELLOW}To fix:${NC} Add 'use nautilus_common::nautilus_actor;' or"
+    echo "'use nautilus_trading::nautilus_strategy;' and call the macro unqualified"
+  fi
+else
+  echo "✓ No fully qualified macro calls found"
+fi
+
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ] || [ $MACRO_VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 

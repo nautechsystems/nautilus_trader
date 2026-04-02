@@ -1944,8 +1944,8 @@ class TestBacktestNodeWithBacktestDataIterator:
         expected_spread_bar_messages = [
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12928.25,12928.25,12927.25,12927.25,4,1715248560000000000, ts=2024-05-09T09:56:00.000000000Z",
             "Historical Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12927.50,12928.00,12927.50,12928.00,3,1715248680000000000, ts=2024-05-09T09:58:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.25,12930.25,12930.25,1,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
-            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.50,12931.75,12930.25,12931.75,10,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12930.50,12930.25,12930.50,3,1715248800000000000, ts=2024-05-09T10:00:00.000000000Z",
+            "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12930.25,12931.75,12930.25,12931.75,8,1715248920000000000, ts=2024-05-09T10:02:00.000000000Z",
             "Bar: ((1))ESM4___(1)NQM4.XCME-2-MINUTE-ASK-INTERNAL,12933.00,12933.00,12932.50,12932.50,4,1715249040000000000, ts=2024-05-09T10:04:00.000000000Z",
         ]
         assert spread_bar_messages == expected_spread_bar_messages
@@ -2334,8 +2334,7 @@ class OptionStrategy(Strategy):
         self.request_quote_ticks(
             self.config.spread_id2,
             start=time_object_to_dt(self.config.start_time),
-            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
-            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
+            end=self.clock.utc_now() - pd.Timedelta(minutes=1),
             params=self.default_data_params,
         )
 
@@ -2343,8 +2342,7 @@ class OptionStrategy(Strategy):
         self.request_aggregated_bars(
             [self.bar_type_3],
             start=time_object_to_dt(self.config.start_time),
-            # Note: we need to request up to 10:00 so the spread quote at 9:59 is produced
-            end=self.clock.utc_now() - pd.Timedelta(minutes=0),
+            end=self.clock.utc_now() - pd.Timedelta(minutes=1),
             update_subscriptions=True,
             params=self.default_data_params,
         )

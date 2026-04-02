@@ -17,11 +17,7 @@
 //!
 //! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain`
 
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Arc,
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use nautilus_blockchain::{
     config::{BlockchainDataClientConfig, DexPoolFilters},
@@ -33,6 +29,7 @@ use nautilus_common::{
     live::get_runtime,
     log_warn,
     logging::log_info,
+    nautilus_actor,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
@@ -192,19 +189,7 @@ pub struct BlockchainSubscriberActor {
     pub received_pools: Vec<Pool>,
 }
 
-impl Deref for BlockchainSubscriberActor {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for BlockchainSubscriberActor {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(BlockchainSubscriberActor);
 
 impl DataActor for BlockchainSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {

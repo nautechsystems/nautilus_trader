@@ -9,7 +9,7 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ## Composite actions (`.github/actions`)
 
 - **cargo-tool-install**: installs cargo tools (cargo-deny, cargo-vet) with caching.
-- **common-setup**: prepares the environment (OS packages, Rust toolchain, Python, sccache, pre-commit).
+- **common-setup**: prepares the environment (OS packages, Rust toolchain, Rust cache, Python, pre-commit, swap space).
 - **common-test-data**: caches large test data under `tests/test_data/large`.
 - **common-wheel-build**: builds and installs Python wheels across Linux, macOS, and Windows for multiple Python versions.
 - **install-capnp**: installs the Cap'n Proto compiler with caching across Linux, macOS, and Windows.
@@ -18,8 +18,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main CI pipeline - pre-commit, cargo-deny, Rust tests, Python tests, wheel builds, and artifact uploads.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system.
+- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests, wheel builds, and artifact uploads. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only changes.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Uses Depot 8-core runners for Linux builds.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
@@ -45,7 +45,8 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 ### Dependency security
 
 - **cargo-deny**: Rust dependency auditing for security advisories (RUSTSEC/GHSA), license compliance, banned crates, and supply chain integrity. Configuration in `deny.toml`.
-- **Dependency pinning**: Key tools (pre-commit, Python versions, Rust toolchain, cargo-nextest) are locked to fixed versions or SHAs.
+- **Dependency pinning**: Key tools (pre-commit, Python versions, Rust toolchain, cargo-nextest, uv) are locked to fixed versions or SHAs. The uv version is pinned via `required-version` in `pyproject.toml` and extracted by `scripts/uv-version.sh` for CI, Docker, and local builds.
+- **Dependency cooldown**: Python dependency resolution excludes packages published within the last 3 days (`exclude-newer = "3 days"` in `[tool.uv]`). This gives the community time to detect and quarantine compromised releases before they enter the lockfile.
 - **Code scanning**: CodeQL is enabled for continuous security analysis of Python and Rust code on all PRs and weekly via cron.
 
 ### Build integrity
@@ -53,7 +54,9 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Build attestations**: All published artifacts include cryptographic SLSA build provenance attestations, linking each artifact to a specific commit SHA. Verify via `gh attestation verify`.
 - **Immutable action pinning**: All third-party GitHub Actions are pinned to specific commit SHAs.
 - **Docker image pinning**: Base images in Dockerfiles and service containers in workflows are pinned to SHA256 digests to prevent supply-chain attacks via tag mutation.
-- **Caching**: Caches for sccache, pip/site-packages, pre-commit, and test data speed up workflows while preserving hermetic (reproducible) builds.
+- **Caching**: Rust target directory cache (`Swatinem/rust-cache`), pip/site-packages, pre-commit, and test data caches speed up workflows while preserving hermetic (reproducible) builds. Rust cache saves are restricted to push events to prevent PR cache pollution.
+- **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to mainline branches are never cancelled.
+- **Runners**: Linux and Windows builds use Depot 8-core runners (32 GB RAM, 150 GB SSD). macOS builds use GitHub free runners. Lightweight jobs (plan, cargo-deny, cargo-vet, publish) use GitHub free runners. Custom runner labels are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 
@@ -67,6 +70,32 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Fork PR handling**: `build.yml` falls back to `egress-policy: audit` for fork PRs. Forks cannot
   access repo or org variables, so the allow lists would be empty and block all network access. Fork PRs
   run with read-only permissions and no access to secrets, so audit mode is safe.
+
+### Security gate override
+
+The `security-gate-nightly` job runs `cargo audit` and `osv-scanner` to catch vulnerabilities
+before publishing. Occasionally, upstream events outside our control (transitive dependency
+advisories, crate yanks for non-security reasons) can block the nightly pipeline with no
+actionable fix on our side.
+
+The repo-scoped variable `SECURITY_GATE_OVERRIDE` holds an ISO 8601 UTC timestamp
+(e.g. `2026-03-28T02:00:00Z`). When the current time is before the timestamp, the security
+gate is skipped. When the timestamp passes, the gate re-enables automatically with no manual
+reset. The variable will be left unset for normal operations.
+
+A repo admin will thoroughly assess all flagged items before setting the timestamp, and will
+scope it to the minimum window needed for the blocked build to complete:
+
+```
+date -u -d '+2 hours' --iso-8601=seconds  # e.g. 2 hour window
+```
+
+Modifying repo variables requires admin access. An attacker with that level of access can
+already disable workflows or push directly, so the override does not widen the attack surface.
+
+`cargo audit` catches CVEs and unsound code advisories independent of yank status. A crate
+yanked for non-security reasons (MSRV mistakes, broken builds, accidental publishes) produces
+a warning but does not indicate a vulnerability.
 
 ### Allowed network endpoints
 

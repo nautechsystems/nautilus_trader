@@ -23,7 +23,7 @@ use std::sync::{
 use ahash::AHashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    UnixNanos,
+    AtomicMap, UnixNanos,
     python::{call_python_threadsafe, to_pyruntime_err},
     time::get_atomic_clock_realtime,
 };
@@ -70,11 +70,11 @@ use crate::{
 impl KrakenFuturesWebSocketClient {
     /// WebSocket client for the Kraken Futures v1 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
+    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         base_url: Option<String>,
-        heartbeat_secs: Option<u64>,
+        heartbeat_secs: u64,
         api_key: Option<String>,
         api_secret: Option<String>,
     ) -> Self {
@@ -182,10 +182,10 @@ impl KrakenFuturesWebSocketClient {
                 get_runtime().spawn(async move {
                     let mut order_books: AHashMap<InstrumentId, OrderBook> = AHashMap::new();
                     let mut last_quotes: AHashMap<InstrumentId, QuoteTick> = AHashMap::new();
-                    let venue_client_map: Arc<RwLock<AHashMap<String, ClientOrderId>>> =
-                        Arc::new(RwLock::new(AHashMap::new()));
-                    let venue_order_qty: Arc<RwLock<AHashMap<String, Quantity>>> =
-                        Arc::new(RwLock::new(AHashMap::new()));
+                    let venue_client_map: Arc<AtomicMap<String, ClientOrderId>> =
+                        Arc::new(AtomicMap::new());
+                    let venue_order_qty: Arc<AtomicMap<String, Quantity>> =
+                        Arc::new(AtomicMap::new());
 
                     while let Some(msg) = rx.recv().await {
                         let ts_init = clock.get_time_ns();
@@ -307,7 +307,7 @@ impl KrakenFuturesWebSocketClient {
         for inst in instruments {
             inst_vec.push(pyobject_to_instrument_any(py, inst)?);
         }
-        self.cache_instruments(inst_vec);
+        self.cache_instruments(&inst_vec);
         Ok(())
     }
 
@@ -665,24 +665,21 @@ impl KrakenFuturesWebSocketClient {
 }
 
 fn lookup_instrument(
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     product_id: &str,
 ) -> Option<InstrumentAny> {
     let instrument_id = InstrumentId::new(Symbol::new(product_id), *KRAKEN_VENUE);
-    instruments
-        .read()
-        .ok()
-        .and_then(|guard| guard.get(&instrument_id).cloned())
+    instruments.load().get(&instrument_id).cloned()
 }
 
 fn resolve_client_order_id(
     truncated: &str,
-    truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
+    truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
 ) -> ClientOrderId {
     truncated_id_map
-        .read()
-        .ok()
-        .and_then(|map| map.get(truncated).copied())
+        .load()
+        .get(truncated)
+        .copied()
         .unwrap_or_else(|| ClientOrderId::new(truncated))
 }
 
@@ -707,12 +704,12 @@ fn dispatch_fill_to_python(report: FillReport, call_soon: &Py<PyAny>, callback: 
 #[allow(clippy::too_many_arguments)]
 fn handle_open_orders_delta(
     delta: &KrakenFuturesOpenOrdersDelta,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     account_id: &Arc<RwLock<Option<AccountId>>>,
-    truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    order_instrument_map: &Arc<RwLock<AHashMap<String, InstrumentId>>>,
-    venue_client_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    venue_order_qty: &Arc<RwLock<AHashMap<String, Quantity>>>,
+    truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    order_instrument_map: &Arc<AtomicMap<String, InstrumentId>>,
+    venue_client_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    venue_order_qty: &Arc<AtomicMap<String, Quantity>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -729,14 +726,10 @@ fn handle_open_orders_delta(
         return;
     };
 
-    if let Ok(mut map) = order_instrument_map.write() {
-        map.insert(delta.order.order_id.clone(), instrument.id());
-    }
+    order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
 
-    if let Ok(mut map) = venue_order_qty.write() {
-        let qty = Quantity::new(delta.order.qty, instrument.size_precision());
-        map.insert(delta.order.order_id.clone(), qty);
-    }
+    let qty = Quantity::new(delta.order.qty, instrument.size_precision());
+    venue_order_qty.insert(delta.order.order_id.clone(), qty);
 
     match parse_futures_ws_order_status_report(
         &delta.order,
@@ -751,9 +744,7 @@ fn handle_open_orders_delta(
                 let full_id = resolve_client_order_id(cl_ord_id, truncated_id_map);
                 report = report.with_client_order_id(full_id);
 
-                if let Ok(mut map) = venue_client_map.write() {
-                    map.insert(delta.order.order_id.clone(), full_id);
-                }
+                venue_client_map.insert(delta.order.order_id.clone(), full_id);
             }
             dispatch_report_to_python(report, call_soon, callback);
         }
@@ -765,10 +756,10 @@ fn handle_open_orders_delta(
 fn handle_open_orders_cancel(
     cancel: &KrakenFuturesOpenOrdersCancel,
     account_id: &Arc<RwLock<Option<AccountId>>>,
-    truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    order_instrument_map: &Arc<RwLock<AHashMap<String, InstrumentId>>>,
-    venue_client_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
-    venue_order_qty: &Arc<RwLock<AHashMap<String, Quantity>>>,
+    truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    order_instrument_map: &Arc<AtomicMap<String, InstrumentId>>,
+    venue_client_map: &Arc<AtomicMap<String, ClientOrderId>>,
+    venue_order_qty: &Arc<AtomicMap<String, Quantity>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -790,10 +781,7 @@ fn handle_open_orders_cancel(
 
     let venue_order_id = VenueOrderId::new(&cancel.order_id);
 
-    let instrument_id = order_instrument_map
-        .read()
-        .ok()
-        .and_then(|map| map.get(&cancel.order_id).copied());
+    let instrument_id = order_instrument_map.load().get(&cancel.order_id).copied();
 
     let Some(instrument_id) = instrument_id else {
         log::warn!(
@@ -808,18 +796,9 @@ fn handle_open_orders_cancel(
         .cli_ord_id
         .as_ref()
         .map(|id| resolve_client_order_id(id, truncated_id_map))
-        .or_else(|| {
-            venue_client_map
-                .read()
-                .ok()
-                .and_then(|map| map.get(&cancel.order_id).copied())
-        });
+        .or_else(|| venue_client_map.load().get(&cancel.order_id).copied());
 
-    let Some(quantity) = venue_order_qty
-        .read()
-        .ok()
-        .and_then(|map| map.get(&cancel.order_id).copied())
-    else {
+    let Some(quantity) = venue_order_qty.load().get(&cancel.order_id).copied() else {
         log::warn!(
             "Cannot resolve quantity for cancel: order_id={}, skipping",
             cancel.order_id
@@ -858,9 +837,9 @@ fn handle_open_orders_cancel(
 #[allow(clippy::too_many_arguments)]
 fn handle_fills_delta(
     fills_delta: &KrakenFuturesFillsDelta,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     account_id: &Arc<RwLock<Option<AccountId>>>,
-    truncated_id_map: &Arc<RwLock<AHashMap<String, ClientOrderId>>>,
+    truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -899,7 +878,7 @@ fn handle_fills_delta(
 
 fn handle_ticker(
     ticker: &KrakenFuturesTickerData,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -932,7 +911,7 @@ fn handle_ticker(
 
 fn handle_trade(
     trade: &KrakenFuturesTradeData,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     ts_init: UnixNanos,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -955,7 +934,7 @@ fn handle_trade(
 #[allow(clippy::too_many_arguments)]
 fn handle_book_snapshot(
     snapshot: &KrakenFuturesBookSnapshot,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscriptions: &SubscriptionState,
     order_books: &mut AHashMap<InstrumentId, OrderBook>,
     last_quotes: &mut AHashMap<InstrumentId, QuoteTick>,
@@ -1017,7 +996,7 @@ fn handle_book_snapshot(
 #[allow(clippy::too_many_arguments)]
 fn handle_book_delta(
     delta: &KrakenFuturesBookDelta,
-    instruments: &Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscriptions: &SubscriptionState,
     order_books: &mut AHashMap<InstrumentId, OrderBook>,
     last_quotes: &mut AHashMap<InstrumentId, QuoteTick>,

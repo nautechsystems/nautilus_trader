@@ -95,18 +95,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let tester_config = DataTesterConfig::new(client_id, instrument_ids)
-        .with_subscribe_quotes(true)
-        .with_subscribe_trades(true)
-        .with_bar_types(bar_types)
-        .with_subscribe_bars(subscribe_bars)
-        .with_subscribe_mark_prices(subscribe_mark_prices)
-        .with_subscribe_index_prices(subscribe_index_prices)
-        .with_request_trades(true)
-        .with_request_bars(subscribe_bars)
-        // .with_book_interval_ms(NonZeroUsize::new(10).unwrap())
-        // .with_subscribe_book_at_interval(true)
-        .with_log_data(true);
+    let tester_config = DataTesterConfig::builder()
+        .client_id(client_id)
+        .instrument_ids(instrument_ids)
+        .subscribe_quotes(true)
+        .subscribe_trades(true)
+        .bar_types(bar_types)
+        .subscribe_bars(subscribe_bars)
+        .subscribe_mark_prices(subscribe_mark_prices)
+        .subscribe_index_prices(subscribe_index_prices)
+        .request_trades(true)
+        .request_bars(subscribe_bars)
+        // .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        // .subscribe_book_at_interval(true)
+        .manage_book(true)
+        .build();
 
     let tester = DataTester::new(tester_config);
 

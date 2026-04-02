@@ -13,10 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    sync::{Arc, RwLock},
-    time::Duration as StdDuration,
-};
+//! Databento live feed handler.
+//!
+//! The feed handler runs a single async task per dataset. It receives
+//! [`HandlerCommand`] messages over an unbounded channel and streams decoded
+//! market data back as [`DatabentoMessage`]s on a bounded tokio channel.
+//!
+//! The inner loop uses `tokio::select!` to concurrently await the next record
+//! from the Databento gateway and the next command from the engine, giving
+//! near-zero idle CPU and immediate command responsiveness.
+//!
+//! Heartbeat detection is delegated to the upstream `databento` client, which
+//! returns `Error::HeartbeatTimeout` when no data arrives within
+//! `heartbeat_interval + 5 s` (default 35 s). The handler treats this as a
+//! connection error and enters the reconnection backoff loop.
+
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
@@ -24,7 +36,9 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
@@ -32,35 +46,28 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::backoff::ExponentialBackoff;
-use tokio::{
-    sync::mpsc::error::TryRecvError,
-    time::{Duration, Instant},
-};
 
 use super::{
     decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
     types::{DatabentoImbalance, DatabentoStatistics, SubscriptionAckEvent},
 };
 use crate::{
+    common::Credential,
     decode::{decode_instrument_def_msg, decode_record},
     types::PublisherId,
 };
 
 #[derive(Debug)]
-pub enum LiveCommand {
+pub enum HandlerCommand {
     Subscribe(Subscription),
     Start,
     Close,
 }
 
 #[derive(Debug)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "TODO: Optimize this (largest variant 1096 vs 80 bytes)"
-)]
-pub enum LiveMessage {
+pub enum DatabentoMessage {
     Data(Data),
-    Instrument(InstrumentAny),
+    Instrument(Box<InstrumentAny>),
     Status(InstrumentStatus),
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
@@ -71,8 +78,8 @@ pub enum LiveMessage {
 
 /// Handles a raw TCP data feed from the Databento LSG for a single dataset.
 ///
-/// [`LiveCommand`] messages are received synchronously across a channel,
-/// decoded records are sent asynchronously on a tokio channel as [`LiveMessage`]s
+/// [`HandlerCommand`] messages are received synchronously across a channel,
+/// decoded records are sent asynchronously on a tokio channel as [`DatabentoMessage`]s
 /// back to a message processing task.
 ///
 /// # Crash Policy
@@ -82,21 +89,34 @@ pub enum LiveMessage {
 /// misbehavior), the process will run out of memory and terminate. This is by
 /// design - such scenarios indicate fundamental problems that require external
 /// intervention.
-#[derive(Debug)]
 pub struct DatabentoFeedHandler {
-    key: String,
+    credential: Credential,
     dataset: String,
-    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
-    msg_tx: tokio::sync::mpsc::Sender<LiveMessage>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    msg_tx: tokio::sync::mpsc::Sender<DatabentoMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
+    symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
     replay: bool,
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
     reconnect_timeout_mins: Option<u64>,
     backoff: ExponentialBackoff,
     subscriptions: Vec<Subscription>,
-    buffered_commands: Vec<LiveCommand>,
+    buffered_commands: Vec<HandlerCommand>,
+    gateway_addr: Option<String>,
+    success_threshold: Duration,
+}
+
+impl Debug for DatabentoFeedHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DatabentoFeedHandler))
+            .field("credential", &self.credential)
+            .field("dataset", &self.dataset)
+            .field("replay", &self.replay)
+            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
+            .field("subscriptions", &self.subscriptions.len())
+            .finish()
+    }
 }
 
 impl DatabentoFeedHandler {
@@ -108,12 +128,12 @@ impl DatabentoFeedHandler {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        key: String,
+        credential: Credential,
         dataset: String,
-        rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
-        tx: tokio::sync::mpsc::Sender<LiveMessage>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        tx: tokio::sync::mpsc::Sender<DatabentoMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
-        symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
+        symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: bool,
         reconnect_timeout_mins: Option<u64>,
@@ -131,7 +151,7 @@ impl DatabentoFeedHandler {
             .expect("hardcoded backoff parameters are valid");
 
         Self {
-            key,
+            credential,
             dataset,
             cmd_rx: rx,
             msg_tx: tx,
@@ -144,7 +164,26 @@ impl DatabentoFeedHandler {
             backoff,
             subscriptions: Vec::new(),
             buffered_commands: Vec::new(),
+            gateway_addr: None,
+            success_threshold: Duration::from_secs(60),
         }
+    }
+
+    /// Sets a custom gateway address, overriding the default Databento LSG endpoint.
+    #[must_use]
+    pub fn with_gateway_addr(mut self, addr: String) -> Self {
+        self.gateway_addr = Some(addr);
+        self
+    }
+
+    /// Sets the duration a session must run before it counts as successful.
+    ///
+    /// A successful session resets the reconnection backoff cycle.
+    /// Defaults to 60 seconds.
+    #[must_use]
+    pub fn with_success_threshold(mut self, threshold: Duration) -> Self {
+        self.success_threshold = threshold;
+        self
     }
 
     /// Runs the feed handler main loop, processing commands and streaming market data.
@@ -163,7 +202,7 @@ impl DatabentoFeedHandler {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         log::debug!("Running feed handler");
 
-        let mut reconnect_start: Option<Instant> = None;
+        let mut reconnect_start: Option<tokio::time::Instant> = None;
         let mut attempt = 0;
 
         loop {
@@ -182,7 +221,7 @@ impl DatabentoFeedHandler {
                     }
                 }
                 Err(e) => {
-                    let cycle_start = reconnect_start.get_or_insert_with(Instant::now);
+                    let cycle_start = reconnect_start.get_or_insert_with(tokio::time::Instant::now);
 
                     if let Some(timeout_mins) = self.reconnect_timeout_mins {
                         let elapsed = cycle_start.elapsed();
@@ -190,7 +229,7 @@ impl DatabentoFeedHandler {
 
                         if elapsed >= timeout {
                             log::error!("Giving up reconnection after {timeout_mins} minutes");
-                            self.send_msg(LiveMessage::Error(anyhow::anyhow!(
+                            self.send_msg(DatabentoMessage::Error(anyhow::anyhow!(
                                 "Reconnection timeout after {timeout_mins} minutes: {e}"
                             )))
                             .await;
@@ -211,7 +250,7 @@ impl DatabentoFeedHandler {
                         () = tokio::time::sleep(delay) => {}
                         cmd = self.cmd_rx.recv() => {
                             match cmd {
-                                Some(LiveCommand::Close) => {
+                                Some(HandlerCommand::Close) => {
                                     log::info!("Close received during backoff");
                                     return Ok(());
                                 }
@@ -244,7 +283,7 @@ impl DatabentoFeedHandler {
             log::info!("Reconnecting (attempt {attempt})...");
         }
 
-        let session_start = Instant::now();
+        let session_start = tokio::time::Instant::now();
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
         let mut instrument_id_map: AHashMap<u32, InstrumentId> = AHashMap::new();
@@ -255,14 +294,23 @@ impl DatabentoFeedHandler {
         let mut initialized_books = HashSet::new();
         let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
-        let result = tokio::time::timeout(
-            timeout,
-            databento::LiveClient::builder()
-                .user_agent_extension(NAUTILUS_USER_AGENT.into())
-                .key(self.key.clone())?
-                .dataset(self.dataset.clone())
-                .build(),
-        )
+        let gateway_addr = self.gateway_addr.clone();
+        let api_key = self.credential.api_key().to_owned();
+        let dataset = self.dataset.clone();
+
+        let result = tokio::time::timeout(timeout, async move {
+            let base = databento::LiveClient::builder();
+            let base = if let Some(addr) = gateway_addr {
+                base.addr(addr).await?
+            } else {
+                base
+            };
+            base.user_agent_extension(NAUTILUS_USER_AGENT.into())
+                .key(api_key)?
+                .dataset(dataset)
+                .build()
+                .await
+        })
         .await?;
 
         let mut client = match result {
@@ -289,16 +337,16 @@ impl DatabentoFeedHandler {
             );
             for cmd in self.buffered_commands.drain(..) {
                 match cmd {
-                    LiveCommand::Subscribe(sub) => {
+                    HandlerCommand::Subscribe(sub) => {
                         if !self.replay && sub.start.is_some() {
                             self.replay = true;
                         }
                         self.subscriptions.push(sub);
                     }
-                    LiveCommand::Start => {
+                    HandlerCommand::Start => {
                         start_buffered = true;
                     }
-                    LiveCommand::Close => {
+                    HandlerCommand::Close => {
                         log::warn!("Close command was buffered, shutting down");
                         return Ok(false);
                     }
@@ -306,7 +354,6 @@ impl DatabentoFeedHandler {
             }
         }
 
-        let timeout = Duration::from_millis(10);
         let mut running = false;
 
         if !self.subscriptions.is_empty() {
@@ -341,71 +388,90 @@ impl DatabentoFeedHandler {
                 return Ok(false);
             }
 
-            match self.cmd_rx.try_recv() {
-                Ok(cmd) => {
-                    log::debug!("Received command: {cmd:?}");
-                    match cmd {
-                        LiveCommand::Subscribe(sub) => {
-                            if !self.replay && sub.start.is_some() {
-                                self.replay = true;
-                            }
-                            client.subscribe(sub.clone()).await?;
-                            // Store without start to avoid replaying history on reconnect
-                            let mut sub_for_reconnect = sub;
-                            sub_for_reconnect.start = None;
-                            self.subscriptions.push(sub_for_reconnect);
-                        }
-                        LiveCommand::Start => {
-                            buffering_start = if self.replay {
-                                Some(clock.get_time_ns())
-                            } else {
-                                None
-                            };
-                            client.start().await?;
-                            running = true;
-                            log::debug!("Started");
-                        }
-                        LiveCommand::Close => {
-                            self.msg_tx.send(LiveMessage::Close).await?;
+            // Wait for either a command or a record. When the session has not
+            // started yet (`!running`), only commands are awaited. Once running,
+            // `next_record` is cancel-safe so `tokio::select!` can safely
+            // race both futures.
+            if !running {
+                match self.cmd_rx.recv().await {
+                    Some(HandlerCommand::Subscribe(sub)) => {
+                        log::debug!("Received command: Subscribe");
 
-                            if running {
-                                client.close().await?;
-                                log::debug!("Closed inner client");
-                            }
-                            return Ok(false);
+                        if !self.replay && sub.start.is_some() {
+                            self.replay = true;
                         }
+                        client.subscribe(sub.clone()).await?;
+                        let mut sub_for_reconnect = sub;
+                        sub_for_reconnect.start = None;
+                        self.subscriptions.push(sub_for_reconnect);
+                        continue;
+                    }
+                    Some(HandlerCommand::Start) => {
+                        log::debug!("Received command: Start");
+                        buffering_start = if self.replay {
+                            Some(clock.get_time_ns())
+                        } else {
+                            None
+                        };
+                        client.start().await?;
+                        running = true;
+                        continue;
+                    }
+                    Some(HandlerCommand::Close) => {
+                        self.msg_tx.send(DatabentoMessage::Close).await?;
+                        return Ok(false);
+                    }
+                    None => {
+                        log::debug!("Command channel disconnected");
+                        return Ok(false);
                     }
                 }
-                Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => {
-                    log::debug!("Command channel disconnected");
-                    return Ok(false);
-                }
             }
 
-            if !running {
-                continue;
-            }
+            let record_opt = tokio::select! {
+                cmd = self.cmd_rx.recv() =>
+                match cmd {
+                    Some(HandlerCommand::Subscribe(sub)) => {
+                        log::debug!("Received command: Subscribe");
 
-            let result = tokio::time::timeout(timeout, client.next_record()).await;
-            let record_opt = match result {
-                Ok(record_opt) => record_opt,
-                Err(_) => continue,
+                        if !self.replay && sub.start.is_some() {
+                            self.replay = true;
+                        }
+                        client.subscribe(sub.clone()).await?;
+                        let mut sub_for_reconnect = sub;
+                        sub_for_reconnect.start = None;
+                        self.subscriptions.push(sub_for_reconnect);
+                        continue;
+                    }
+                    Some(HandlerCommand::Start) => {
+                        log::warn!("Received Start command but session already running");
+                        continue;
+                    }
+                    Some(HandlerCommand::Close) => {
+                        self.msg_tx.send(DatabentoMessage::Close).await?;
+                        client.close().await?;
+                        log::debug!("Closed inner client");
+                        return Ok(false);
+                    }
+                    None => {
+                        log::debug!("Command channel disconnected");
+                        return Ok(false);
+                    }
+                },
+                result = client.next_record() => result,
             };
 
             let record = match record_opt {
                 Ok(Some(record)) => record,
                 Ok(None) => {
-                    const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
-                    if session_start.elapsed() >= SUCCESS_THRESHOLD {
+                    if session_start.elapsed() >= self.success_threshold {
                         log::info!("Session ended after successful run");
                         return Ok(true);
                     }
                     anyhow::bail!("Session ended by gateway");
                 }
                 Err(e) => {
-                    const SUCCESS_THRESHOLD: Duration = Duration::from_secs(60);
-                    if session_start.elapsed() >= SUCCESS_THRESHOLD {
+                    if session_start.elapsed() >= self.success_threshold {
                         log::info!("Connection error after successful run: {e}");
                         return Ok(true);
                     }
@@ -420,7 +486,7 @@ impl DatabentoFeedHandler {
                 handle_error_msg(msg);
             } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
                 if let Some(ack) = handle_system_msg(msg, ts_init) {
-                    self.send_msg(LiveMessage::SubscriptionAck(ack)).await;
+                    self.send_msg(DatabentoMessage::SubscriptionAck(ack)).await;
                 }
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
@@ -440,7 +506,7 @@ impl DatabentoFeedHandler {
                     }
                 }
                 let data = {
-                    let sym_map = self.read_symbol_venue_map()?;
+                    let sym_map = self.symbol_venue_map.load();
                     handle_instrument_def_msg(
                         msg,
                         &record,
@@ -452,10 +518,11 @@ impl DatabentoFeedHandler {
                     )?
                 };
                 price_precision_map.insert(msg.hd.instrument_id, data.price_precision());
-                self.send_msg(LiveMessage::Instrument(data)).await;
+                self.send_msg(DatabentoMessage::Instrument(Box::new(data)))
+                    .await;
             } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
                 let data = {
-                    let sym_map = self.read_symbol_venue_map()?;
+                    let sym_map = self.symbol_venue_map.load();
                     handle_status_msg(
                         msg,
                         &record,
@@ -466,10 +533,10 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                self.send_msg(LiveMessage::Status(data)).await;
+                self.send_msg(DatabentoMessage::Status(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = {
-                    let sym_map = self.read_symbol_venue_map()?;
+                    let sym_map = self.symbol_venue_map.load();
                     handle_imbalance_msg(
                         msg,
                         &record,
@@ -481,10 +548,10 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                self.send_msg(LiveMessage::Imbalance(data)).await;
+                self.send_msg(DatabentoMessage::Imbalance(data)).await;
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
                 let data = {
-                    let sym_map = self.read_symbol_venue_map()?;
+                    let sym_map = self.symbol_venue_map.load();
                     handle_statistics_msg(
                         msg,
                         &record,
@@ -496,11 +563,11 @@ impl DatabentoFeedHandler {
                         ts_init,
                     )?
                 };
-                self.send_msg(LiveMessage::Statistics(data)).await;
+                self.send_msg(DatabentoMessage::Statistics(data)).await;
             } else {
                 // Decode a generic record with possible errors
                 let res = {
-                    let sym_map = self.read_symbol_venue_map()?;
+                    let sym_map = self.symbol_venue_map.load();
                     handle_record(
                         record,
                         &symbol_map,
@@ -522,122 +589,49 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
-                    // Check if should mark book initialized
                     if let Some(Data::Delta(delta)) = &data1 {
                         initialized_books.insert(delta.instrument_id);
                     } else {
-                        continue; // No delta yet
+                        continue;
                     }
 
                     if let Some(Data::Delta(delta)) = &data1 {
-                        let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
-                        buffer.push(*delta);
-
                         log::trace!(
                             "Buffering delta: {} {buffering_start:?} flags={}",
                             delta.ts_event,
                             msg.flags.raw(),
                         );
 
-                        // Check if last message in the book event
-                        if !RecordFlag::F_LAST.matches(msg.flags.raw()) {
-                            continue; // NOT last message
+                        match process_mbo_delta(
+                            *delta,
+                            msg.flags.raw(),
+                            &mut buffering_start,
+                            &mut buffered_deltas,
+                        )? {
+                            Some(deltas) => data1 = Some(Data::Deltas(deltas)),
+                            None => continue,
                         }
-
-                        // Check if snapshot
-                        if RecordFlag::F_SNAPSHOT.matches(msg.flags.raw()) {
-                            continue; // Buffer snapshot
-                        }
-
-                        // Check if buffering a replay
-                        if let Some(start_ns) = buffering_start {
-                            if delta.ts_event <= start_ns {
-                                continue; // Continue buffering replay
-                            }
-                            buffering_start = None;
-                        }
-
-                        // We can guarantee a deltas vec exists
-                        let buffer =
-                            buffered_deltas
-                                .remove(&delta.instrument_id)
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(
-                                        "Internal error: no buffered deltas for instrument {id}",
-                                        id = delta.instrument_id
-                                    )
-                                })?;
-                        let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
-                        let deltas = OrderBookDeltas_API::new(deltas);
-                        data1 = Some(Data::Deltas(deltas));
                     }
                 }
 
                 if let Some(data) = data1 {
-                    self.send_msg(LiveMessage::Data(data)).await;
+                    self.send_msg(DatabentoMessage::Data(data)).await;
                 }
 
                 if let Some(data) = data2 {
-                    self.send_msg(LiveMessage::Data(data)).await;
+                    self.send_msg(DatabentoMessage::Data(data)).await;
                 }
             }
         }
     }
 
     /// Sends a message to the message processing task.
-    async fn send_msg(&self, msg: LiveMessage) {
+    async fn send_msg(&self, msg: DatabentoMessage) {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg).await {
             Ok(()) => {}
             Err(e) => log::error!("Error sending message: {e}"),
         }
-    }
-
-    /// Acquires a read lock on the symbol-venue map with exponential backoff and timeout.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the read lock cannot be acquired within the deadline.
-    fn read_symbol_venue_map(
-        &self,
-    ) -> anyhow::Result<std::sync::RwLockReadGuard<'_, AHashMap<Symbol, Venue>>> {
-        // Try to acquire the lock with exponential backoff and deadline
-        const MAX_WAIT_MS: u64 = 500; // Total maximum wait time
-        const INITIAL_DELAY_MICROS: u64 = 10;
-        const MAX_DELAY_MICROS: u64 = 1000;
-
-        let deadline = std::time::Instant::now() + StdDuration::from_millis(MAX_WAIT_MS);
-        let mut delay = INITIAL_DELAY_MICROS;
-
-        loop {
-            match self.symbol_venue_map.try_read() {
-                Ok(guard) => return Ok(guard),
-                Err(std::sync::TryLockError::WouldBlock) => {
-                    if std::time::Instant::now() >= deadline {
-                        break;
-                    }
-
-                    // Yield to other threads first
-                    std::thread::yield_now();
-
-                    // Then sleep with exponential backoff if still blocked
-                    if std::time::Instant::now() < deadline {
-                        let remaining = deadline - std::time::Instant::now();
-                        let sleep_duration = StdDuration::from_micros(delay).min(remaining);
-                        std::thread::sleep(sleep_duration);
-                        // Exponential backoff with cap and jitter
-                        delay = ((delay * 2) + delay / 4).min(MAX_DELAY_MICROS);
-                    }
-                }
-                Err(std::sync::TryLockError::Poisoned(e)) => {
-                    anyhow::bail!("symbol_venue_map lock poisoned: {e}");
-                }
-            }
-        }
-
-        anyhow::bail!(
-            "Failed to acquire read lock on symbol_venue_map after {MAX_WAIT_MS}ms deadline"
-        )
     }
 }
 
@@ -713,7 +707,7 @@ fn handle_symbol_mapping_msg(
 /// Updates the instrument ID map using exchange information from the symbol map.
 fn update_instrument_id_map_with_exchange(
     symbol_map: &PitSymbolMap,
-    symbol_venue_map: &RwLock<AHashMap<Symbol, Venue>>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     raw_instrument_id: u32,
     exchange: &str,
@@ -725,10 +719,9 @@ fn update_instrument_id_map_with_exchange(
     let venue = Venue::from_code(exchange)
         .map_err(|e| anyhow::anyhow!("Invalid venue code '{exchange}': {e}"))?;
     let instrument_id = InstrumentId::new(symbol, venue);
-    let mut map = symbol_venue_map
-        .write()
-        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
-    map.entry(symbol).or_insert(venue);
+    symbol_venue_map.rcu(|m| {
+        m.entry(symbol).or_insert(venue);
+    });
     instrument_id_map.insert(raw_instrument_id, instrument_id);
     Ok(instrument_id)
 }
@@ -916,6 +909,46 @@ fn handle_record(
     )
 }
 
+/// Processes an MBO delta through the buffering state machine.
+///
+/// Returns `Some(deltas)` when a complete batch is ready to emit (non-snapshot
+/// F_LAST with replay buffering complete), or `None` when still accumulating.
+fn process_mbo_delta(
+    delta: OrderBookDelta,
+    flags: u8,
+    buffering_start: &mut Option<UnixNanos>,
+    buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
+) -> anyhow::Result<Option<OrderBookDeltas_API>> {
+    let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
+    buffer.push(delta);
+
+    if !RecordFlag::F_LAST.matches(flags) {
+        return Ok(None);
+    }
+
+    if RecordFlag::F_SNAPSHOT.matches(flags) {
+        return Ok(None);
+    }
+
+    if let Some(start_ns) = *buffering_start {
+        if delta.ts_event <= start_ns {
+            return Ok(None);
+        }
+        *buffering_start = None;
+    }
+
+    let buffer = buffered_deltas
+        .remove(&delta.instrument_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Internal error: no buffered deltas for instrument {id}",
+                id = delta.instrument_id
+            )
+        })?;
+    let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
+    Ok(Some(OrderBookDeltas_API::new(deltas)))
+}
+
 #[cfg(test)]
 mod tests {
     use databento::live::Subscription;
@@ -930,12 +963,12 @@ mod tests {
         let (msg_tx, _msg_rx) = tokio::sync::mpsc::channel(100);
 
         DatabentoFeedHandler::new(
-            "test_key".to_string(),
+            Credential::new("test_key"),
             "GLBX.MDP3".to_string(),
             cmd_rx,
             msg_tx,
             IndexMap::new(),
-            Arc::new(RwLock::new(AHashMap::new())),
+            Arc::new(AtomicMap::new()),
             false,
             false,
             reconnect_timeout_mins,
@@ -977,7 +1010,7 @@ mod tests {
 
         assert!(!handler.replay);
         assert_eq!(handler.dataset, "GLBX.MDP3");
-        assert_eq!(handler.key, "test_key");
+        assert_eq!(handler.credential.api_key(), "test_key");
         assert!(handler.subscriptions.is_empty());
         assert!(handler.buffered_commands.is_empty());
     }
@@ -996,5 +1029,265 @@ mod tests {
 
         assert_eq!(handler.reconnect_timeout_mins, Some(0));
         assert!(!handler.replay);
+    }
+
+    fn test_delta(instrument_id: InstrumentId, ts_event: u64) -> OrderBookDelta {
+        OrderBookDelta::clear(instrument_id, 0, ts_event.into(), 0.into())
+    }
+
+    #[rstest]
+    fn test_mbo_delta_without_f_last_buffers() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let delta = test_delta(instrument_id, 1_000_000_000);
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        let result = process_mbo_delta(delta, 0, &mut buffering_start, &mut buffered).unwrap();
+
+        assert!(result.is_none());
+        assert_eq!(buffered[&instrument_id].len(), 1);
+    }
+
+    #[rstest]
+    fn test_mbo_delta_with_f_last_emits() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        process_mbo_delta(
+            test_delta(instrument_id, 1_000_000_000),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 2_000_000_000),
+            128, // F_LAST
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().deltas.len(), 2);
+        assert!(buffered.is_empty());
+    }
+
+    #[rstest]
+    fn test_mbo_snapshot_with_f_last_buffers() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 1_000_000_000),
+            128 | 32, // F_LAST | F_SNAPSHOT
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+        assert_eq!(buffered[&instrument_id].len(), 1);
+    }
+
+    #[rstest]
+    fn test_mbo_replay_buffers_until_past_start() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let start_ns = 5_000_000_000u64;
+        let mut buffering_start = Some(start_ns.into());
+        let mut buffered = AHashMap::new();
+
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 4_000_000_000),
+            128, // F_LAST
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+        assert!(result.is_none());
+
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 5_000_000_000),
+            128,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+        assert!(result.is_none());
+
+        // Delta past start: emits and clears buffering_start
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 6_000_000_000),
+            128,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+        assert!(result.is_some());
+        assert!(buffering_start.is_none());
+    }
+
+    #[rstest]
+    fn test_mbo_multiple_deltas_accumulated() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        for i in 0..5 {
+            process_mbo_delta(
+                test_delta(instrument_id, 1_000_000_000 + i),
+                0,
+                &mut buffering_start,
+                &mut buffered,
+            )
+            .unwrap();
+        }
+
+        let result = process_mbo_delta(
+            test_delta(instrument_id, 2_000_000_000),
+            128,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().deltas.len(), 6);
+    }
+
+    #[rstest]
+    fn test_mbo_multi_instrument_isolation() {
+        let id_a = InstrumentId::from("ESM4.GLBX");
+        let id_b = InstrumentId::from("NQM4.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        process_mbo_delta(
+            test_delta(id_a, 1_000_000_000),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+        process_mbo_delta(
+            test_delta(id_b, 1_000_000_000),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        // F_LAST for A: only A's deltas emitted, B remains
+        let result = process_mbo_delta(
+            test_delta(id_a, 2_000_000_000),
+            128,
+            &mut buffering_start,
+            &mut buffered,
+        )
+        .unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().instrument_id, id_a);
+        assert!(buffered.contains_key(&id_b));
+        assert!(!buffered.contains_key(&id_a));
+    }
+
+    mod property_tests {
+        use proptest::prelude::*;
+        use rstest::rstest;
+
+        use super::*;
+
+        proptest! {
+            #[rstest]
+            fn mbo_buffering_conserves_deltas(
+                num_non_last in 0usize..=20,
+            ) {
+                let instrument_id = InstrumentId::from("ESM4.GLBX");
+                let mut buffering_start = None;
+                let mut buffered = AHashMap::new();
+                let total = num_non_last + 1;
+
+                for i in 0..num_non_last {
+                    let result = process_mbo_delta(
+                        test_delta(instrument_id, 1_000_000_000 + i as u64),
+                        0, // No F_LAST
+                        &mut buffering_start,
+                        &mut buffered,
+                    ).unwrap();
+                    prop_assert!(result.is_none());
+                }
+
+                let result = process_mbo_delta(
+                    test_delta(instrument_id, 2_000_000_000),
+                    128, // F_LAST
+                    &mut buffering_start,
+                    &mut buffered,
+                ).unwrap();
+
+                prop_assert!(result.is_some());
+                let emitted = result.unwrap();
+                prop_assert_eq!(emitted.deltas.len(), total);
+                prop_assert!(buffered.is_empty());
+            }
+
+            #[rstest]
+            fn mbo_snapshots_never_emit(
+                num_snapshots in 1usize..=20,
+            ) {
+                let instrument_id = InstrumentId::from("ESM4.GLBX");
+                let mut buffering_start = None;
+                let mut buffered = AHashMap::new();
+
+                for i in 0..num_snapshots {
+                    let result = process_mbo_delta(
+                        test_delta(instrument_id, 1_000_000_000 + i as u64),
+                        128 | 32, // F_LAST | F_SNAPSHOT
+                        &mut buffering_start,
+                        &mut buffered,
+                    ).unwrap();
+                    prop_assert!(result.is_none());
+                }
+
+                prop_assert_eq!(buffered[&instrument_id].len(), num_snapshots);
+            }
+
+            #[rstest]
+            fn mbo_replay_delays_emission(
+                start_offset in 1u64..=100,
+                num_before in 1usize..=10,
+            ) {
+                let instrument_id = InstrumentId::from("ESM4.GLBX");
+                let start_ns = 1_000_000_000u64 * start_offset;
+                let mut buffering_start = Some(start_ns.into());
+                let mut buffered = AHashMap::new();
+
+                for i in 0..num_before {
+                    let ts = start_ns - (num_before as u64 - i as u64);
+                    let result = process_mbo_delta(
+                        test_delta(instrument_id, ts),
+                        128, // F_LAST
+                        &mut buffering_start,
+                        &mut buffered,
+                    ).unwrap();
+                    prop_assert!(result.is_none());
+                }
+
+                let result = process_mbo_delta(
+                    test_delta(instrument_id, start_ns + 1),
+                    128,
+                    &mut buffering_start,
+                    &mut buffered,
+                ).unwrap();
+
+                prop_assert!(result.is_some());
+                prop_assert!(buffering_start.is_none());
+                let total = num_before + 1;
+                prop_assert_eq!(result.unwrap().deltas.len(), total);
+            }
+        }
     }
 }

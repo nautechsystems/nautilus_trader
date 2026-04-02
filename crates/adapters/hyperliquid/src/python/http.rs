@@ -20,7 +20,7 @@ use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::Instrument,
     orders::OrderAny,
     python::{
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -31,7 +31,7 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyList};
 use serde_json::to_string;
 
-use crate::http::client::HyperliquidHttpClient;
+use crate::http::{client::HyperliquidHttpClient, parse::HyperliquidMarketType};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -42,13 +42,13 @@ impl HyperliquidHttpClient {
     /// with Nautilus domain types. It maintains an instrument cache and handles conversions
     /// between Hyperliquid API responses and Nautilus domain models.
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, account_address=None, is_testnet=false, timeout_secs=None, proxy_url=None, normalize_prices=true))]
+    #[pyo3(signature = (private_key=None, vault_address=None, account_address=None, is_testnet=false, timeout_secs=60, proxy_url=None, normalize_prices=true))]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
         account_address: Option<String>,
         is_testnet: bool,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         proxy_url: Option<String>,
         normalize_prices: bool,
     ) -> PyResult<Self> {
@@ -78,12 +78,12 @@ impl HyperliquidHttpClient {
 
     /// Creates a new `HyperliquidHttpClient` configured with explicit credentials.
     #[staticmethod]
-    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=None, proxy_url=None))]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, is_testnet=false, timeout_secs=60, proxy_url=None))]
     fn py_from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
         is_testnet: bool,
-        timeout_secs: Option<u64>,
+        timeout_secs: u64,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::from_credentials(
@@ -102,7 +102,7 @@ impl HyperliquidHttpClient {
     /// Any existing instrument with the same symbol will be replaced.
     #[pyo3(name = "cache_instrument")]
     fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
-        self.cache_instrument(pyobject_to_instrument_any(py, instrument)?);
+        self.cache_instrument(&pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 
@@ -159,26 +159,34 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "load_instrument_definitions", signature = (include_perp=true, include_spot=true))]
+    #[pyo3(name = "load_instrument_definitions", signature = (include_spot=true, include_perps=true, include_perps_hip3=false))]
     fn py_load_instrument_definitions<'py>(
         &self,
         py: Python<'py>,
-        include_perp: bool,
         include_spot: bool,
+        include_perps: bool,
+        include_perps_hip3: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
+            let mut defs = client
+                .request_instrument_defs()
+                .await
+                .map_err(to_pyvalue_err)?;
 
-            if !include_perp || !include_spot {
-                instruments.retain(|instrument| match instrument {
-                    InstrumentAny::CryptoPerpetual(_) => include_perp,
-                    InstrumentAny::CurrencyPair(_) => include_spot,
-                    _ => true,
-                });
-            }
+            defs.retain(|def| match def.market_type {
+                HyperliquidMarketType::Perp => {
+                    if def.is_hip3 {
+                        include_perps_hip3
+                    } else {
+                        include_perps
+                    }
+                }
+                HyperliquidMarketType::Spot => include_spot,
+            });
 
+            let mut instruments = client.convert_defs(defs);
             instruments.sort_by_key(|instrument| instrument.id());
 
             Python::attach(|py| {
@@ -414,6 +422,13 @@ impl HyperliquidHttpClient {
         })
     }
 
+    /// Request order status reports for a user.
+    ///
+    /// Fetches open orders via `info_frontend_open_orders` and parses them into OrderStatusReports.
+    /// This method requires instruments to be added to the client cache via `cache_instrument()`.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
+    /// will be created automatically.
     #[pyo3(name = "request_order_status_reports")]
     fn py_request_order_status_reports<'py>(
         &self,

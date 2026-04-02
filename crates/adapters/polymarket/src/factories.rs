@@ -27,6 +27,7 @@ use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
+use nautilus_network::retry::RetryConfig;
 use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
@@ -81,6 +82,16 @@ impl DataClientFactory for PolymarketDataClientFactory {
         let gamma_client = PolymarketGammaHttpClient::new(
             Some(polymarket_config.gamma_url()),
             polymarket_config.http_timeout_secs,
+            RetryConfig {
+                max_retries: 10,
+                initial_delay_ms: 5_000,
+                max_delay_ms: 30_000,
+                backoff_factor: 1.5,
+                jitter_ms: 2_000,
+                operation_timeout_ms: Some(30_000),
+                immediate_first: true,
+                max_elapsed_ms: Some(300_000),
+            },
         )?;
 
         let clob_public_client = PolymarketClobPublicClient::new(
@@ -93,7 +104,10 @@ impl DataClientFactory for PolymarketDataClientFactory {
             polymarket_config.http_timeout_secs,
         )?;
 
-        let ws_client = PolymarketWebSocketClient::new_market(None);
+        let ws_client = PolymarketWebSocketClient::new_market(
+            polymarket_config.base_url_ws.clone(),
+            polymarket_config.subscribe_new_markets,
+        );
 
         let mut client = PolymarketDataClient::new(
             client_id,
@@ -169,11 +183,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
             cache,
         );
 
-        let mut client = PolymarketExecutionClient::new(core, polymarket_config.clone())?;
-
-        for filter in &polymarket_config.filters {
-            client.add_instrument_filter(Arc::clone(filter));
-        }
+        let client = PolymarketExecutionClient::new(core, polymarket_config)?;
 
         Ok(Box::new(client))
     }

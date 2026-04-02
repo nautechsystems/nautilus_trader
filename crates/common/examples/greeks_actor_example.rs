@@ -15,11 +15,7 @@
 
 //! Example showing how to use the `GreeksCalculator` with a `DataActor`.
 
-use std::{
-    cell::RefCell,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     actor::data_actor::{DataActor, DataActorConfig, DataActorCore},
@@ -27,6 +23,7 @@ use nautilus_common::{
     component::Component,
     greeks::GreeksCalculator,
     live::clock::LiveClock,
+    nautilus_actor,
 };
 use nautilus_model::{
     data::{
@@ -152,19 +149,7 @@ impl GreeksActor {
     }
 }
 
-impl Deref for GreeksActor {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for GreeksActor {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
+nautilus_actor!(GreeksActor);
 
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {

@@ -25,18 +25,18 @@ __all__ = [
 class DeribitDataClientConfig:
     def __init__(
         self,
-        product_types: typing.Sequence[DeribitProductType] | None = ...,
-        use_testnet: bool | None = ...,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
-        base_url_http: str | None = ...,
-        base_url_ws: str | None = ...,
-        http_timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_initial_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        heartbeat_interval_secs: int | None = ...,
-        update_instruments_interval_mins: int | None = ...,
+        product_types: typing.Sequence[DeribitProductType] | None = None,
+        use_testnet: bool | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url_http: str | None = None,
+        base_url_ws: str | None = None,
+        http_timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        heartbeat_interval_secs: int | None = None,
+        update_instruments_interval_mins: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -50,16 +50,16 @@ class DeribitExecClientConfig:
         self,
         trader_id: model.TraderId,
         account_id: model.AccountId,
-        product_types: typing.Sequence[DeribitProductType] | None = ...,
-        use_testnet: bool | None = ...,
-        api_key: str | None = ...,
-        api_secret: str | None = ...,
-        base_url_http: str | None = ...,
-        base_url_ws: str | None = ...,
-        http_timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_initial_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
+        product_types: typing.Sequence[DeribitProductType] | None = None,
+        use_testnet: bool | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url_http: str | None = None,
+        base_url_ws: str | None = None,
+        http_timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_initial_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
     ) -> None: ...
 
 @typing.final
@@ -71,15 +71,15 @@ class DeribitExecutionClientFactory:
 class DeribitHttpClient:
     def __init__(
         self,
-        api_key: str | None,
-        api_secret: str | None,
-        base_url: str | None,
-        is_testnet: bool,
-        timeout_secs: int | None = ...,
-        max_retries: int | None = ...,
-        retry_delay_ms: int | None = ...,
-        retry_delay_max_ms: int | None = ...,
-        proxy_url: str | None = ...,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+        is_testnet: bool = False,
+        timeout_secs: int | None = None,
+        max_retries: int | None = None,
+        retry_delay_ms: int | None = None,
+        retry_delay_max_ms: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def is_testnet(self) -> bool: ...
@@ -134,17 +134,17 @@ class DeribitHttpClient:
 class DeribitWebSocketClient:
     def __init__(
         self,
-        url: str | None,
-        api_key: str | None,
-        api_secret: str | None,
-        heartbeat_interval: int | None,
-        is_testnet: bool,
+        url: str | None = None,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        heartbeat_interval: int | None = None,
+        is_testnet: bool = False,
     ) -> None: ...
     @staticmethod
     def new_public(is_testnet: bool) -> DeribitWebSocketClient: ...
     @staticmethod
     def with_credentials(
-        is_testnet: bool, account_id: model.AccountId | None = ...
+        is_testnet: bool, account_id: model.AccountId | None = None
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...
@@ -302,11 +302,11 @@ class DeribitCurrency(enum.Enum):
 
 @typing.final
 class DeribitProductType(enum.Enum):
-    Future = ...
-    Option = ...
-    Spot = ...
-    FutureCombo = ...
-    OptionCombo = ...
+    FUTURE = ...
+    OPTION = ...
+    SPOT = ...
+    FUTURE_COMBO = ...
+    OPTION_COMBO = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...
@@ -321,9 +321,9 @@ class DeribitProductType(enum.Enum):
 
 @typing.final
 class DeribitUpdateInterval(enum.Enum):
-    Raw = ...
-    Ms100 = ...
-    Agg2 = ...
+    RAW = ...
+    MS100 = ...
+    AGG2 = ...
 
     def __init__(self, value: typing.Any) -> None: ...
     def __hash__(self) -> int: ...

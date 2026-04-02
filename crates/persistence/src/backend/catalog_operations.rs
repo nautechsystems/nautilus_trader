@@ -26,7 +26,7 @@ use nautilus_model::data::{
     OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
-use object_store::path::Path as ObjectPath;
+use object_store::{ObjectStoreExt, path::Path as ObjectPath};
 
 use crate::{
     backend::catalog::{
@@ -1486,8 +1486,10 @@ impl ParquetDataCatalog {
     /// authentication problems, or other I/O errors.
     fn file_exists(&self, path: &str) -> anyhow::Result<bool> {
         let object_path = self.to_object_path(path);
-        let exists =
-            self.execute_async(async { Ok(self.object_store.head(&object_path).await.is_ok()) })?;
+        let exists = self.execute_async(async {
+            let result: bool = self.object_store.head(&object_path).await.is_ok();
+            Ok(result)
+        })?;
         Ok(exists)
     }
 

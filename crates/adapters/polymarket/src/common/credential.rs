@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
 };
 
-use alloy_signer_local::PrivateKeySigner;
+use alloy::signers::local::PrivateKeySigner;
 use aws_lc_rs::hmac;
 use base64::{Engine, engine::general_purpose::URL_SAFE};
 use nautilus_core::env::{get_or_env_var, get_or_env_var_opt};

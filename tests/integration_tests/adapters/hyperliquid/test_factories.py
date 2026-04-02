@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 
 
 class TestHyperliquidDataClientConfig:
@@ -60,6 +61,21 @@ class TestHyperliquidDataClientConfig:
 
         # Assert
         assert config.http_proxy_url == "http://proxy:8080"
+
+    def test_with_product_types(self):
+        # Arrange & Act
+        config = HyperliquidDataClientConfig(
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
+        )
+
+        # Assert
+        assert config.product_types == (
+            HyperliquidProductType.PERP,
+            HyperliquidProductType.PERP_HIP3,
+        )
 
 
 class TestHyperliquidExecClientConfig:
@@ -135,6 +151,21 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.base_url_ws == "wss://custom.ws.com"
+
+    def test_with_product_types(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(
+            product_types=(
+                HyperliquidProductType.PERP,
+                HyperliquidProductType.PERP_HIP3,
+            ),
+        )
+
+        # Assert
+        assert config.product_types == (
+            HyperliquidProductType.PERP,
+            HyperliquidProductType.PERP_HIP3,
+        )
 
 
 class TestConfigValidation:

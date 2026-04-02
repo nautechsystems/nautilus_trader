@@ -49,7 +49,9 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
+bon = { workspace = true }
 bytes = { workspace = true }
+bzip2 = { workspace = true }
 chrono = { workspace = true }
 flate2 = { workspace = true }
 log = { workspace = true }

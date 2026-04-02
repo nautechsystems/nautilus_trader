@@ -29,7 +29,7 @@ pub use crate::machine::client::TardisMachineClient;
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
 )]
 pub struct TardisInstrumentMiniInfo {
     /// The instrument ID with optionally Nautilus normalized symbol.
@@ -79,7 +79,7 @@ impl TardisInstrumentMiniInfo {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
 )]
 pub struct TardisInstrumentKey {
     /// The Tardis raw symbol.
@@ -108,7 +108,7 @@ impl TardisInstrumentKey {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
 )]
 pub struct ReplayNormalizedRequestOptions {
     /// Requested [`TardisExchange`].
@@ -143,7 +143,7 @@ pub struct ReplayNormalizedRequestOptions {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.tardis")
 )]
 pub struct StreamNormalizedRequestOptions {
     /// Requested [`TardisExchange`].

@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use arrow::record_batch::RecordBatch;
-use object_store::{ObjectStore, path::Path as ObjectPath};
+use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
     file::{
@@ -92,7 +92,8 @@ pub async fn read_parquet_from_object_store(
     object_store: Arc<dyn ObjectStore>,
     path: &ObjectPath,
 ) -> anyhow::Result<(Vec<RecordBatch>, Arc<arrow::datatypes::Schema>)> {
-    let data = object_store.get(path).await?.bytes().await?;
+    let result: object_store::GetResult = object_store.get(path).await?;
+    let data = result.bytes().await?;
     if data.is_empty() {
         return Ok((
             Vec::new(),
@@ -130,7 +131,7 @@ pub async fn write_batches_to_object_store(
 
     let mut props_builder = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
-        .set_max_row_group_size(max_row_group_size.unwrap_or(5000));
+        .set_max_row_group_row_count(Some(max_row_group_size.unwrap_or(5000)));
 
     if let Some(kv) = key_value_metadata {
         props_builder = props_builder.set_key_value_metadata(Some(kv));
@@ -271,7 +272,8 @@ pub async fn combine_parquet_files_from_object_store(
 
     // Read all files from object store
     for path in &file_paths {
-        let data = object_store.get(path).await?.bytes().await?;
+        let result: object_store::GetResult = object_store.get(path).await?;
+        let data = result.bytes().await?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(data)?;
 
         // Capture the schema from the first file's builder; it includes the Arrow
@@ -362,7 +364,8 @@ pub async fn min_max_from_parquet_metadata_object_store(
     column_name: &str,
 ) -> anyhow::Result<(u64, u64)> {
     // Download the parquet file from object store
-    let data = object_store.get(file_path).await?.bytes().await?;
+    let result: object_store::GetResult = object_store.get(file_path).await?;
+    let data = result.bytes().await?;
     let reader = SerializedFileReader::new(data)?;
 
     let metadata = reader.metadata();

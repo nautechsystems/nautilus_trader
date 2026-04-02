@@ -30,6 +30,7 @@ pub const MAX_PRICE: &str = "0.999";
 pub const MIN_PRICE: &str = "0.001";
 pub const USDC_DECIMALS: u32 = 6;
 pub const LOT_SIZE_SCALE: u32 = 2;
+pub const DUST_SNAP_THRESHOLD: f64 = 0.01;
 
 pub const WS_MAX_SUBSCRIPTIONS: usize = 200;
 pub const WS_DEFAULT_SUBSCRIPTIONS: usize = 200;

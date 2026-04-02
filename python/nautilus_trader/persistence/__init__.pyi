@@ -32,13 +32,13 @@ class BarDataWrangler:
 
 @typing.final
 class DataBackendSession:
-    def new_session(self, chunk_size: int) -> DataBackendSession: ...
+    def new_session(self, chunk_size: int = 10000) -> DataBackendSession: ...
     def add_file(
         self,
         data_type: NautilusDataType,
         table_name: str,
         file_path: str,
-        sql_query: str | None = ...,
+        sql_query: str | None = None,
     ) -> None: ...
     def add_custom_file(
         self,
@@ -49,7 +49,7 @@ class DataBackendSession:
     ) -> None: ...
     def to_query_result(self) -> DataQueryResult: ...
     def register_object_store_from_uri(
-        self, uri: str, storage_options: typing.Mapping[str, str] | None = ...
+        self, uri: str, storage_options: typing.Mapping[str, str] | None = None
     ) -> None: ...
 
 @typing.final
@@ -84,195 +84,198 @@ class ParquetDataCatalogV2:
     def new(
         self,
         base_path: str,
-        storage_options: typing.Mapping[str, str] | None = ...,
-        batch_size: int | None = ...,
-        compression: int | None = ...,
-        max_row_group_size: int | None = ...,
+        storage_options: typing.Mapping[str, str] | None = None,
+        batch_size: int | None = None,
+        compression: int | None = None,
+        max_row_group_size: int | None = None,
     ) -> ParquetDataCatalogV2: ...
     def write_quote_ticks(
         self,
         data: typing.Sequence[model.QuoteTick],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_trade_ticks(
         self,
         data: typing.Sequence[model.TradeTick],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_order_book_deltas(
         self,
         data: typing.Sequence[model.OrderBookDelta],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_bars(
         self,
         data: typing.Sequence[model.Bar],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_order_book_depths(
         self,
         data: typing.Sequence[model.OrderBookDepth10],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_mark_price_updates(
         self,
         data: typing.Sequence[model.MarkPriceUpdate],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_index_price_updates(
         self,
         data: typing.Sequence[model.IndexPriceUpdate],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def write_instruments(self, data: typing.Any) -> list[str]: ...
     def instruments(
-        self, instrument_ids: typing.Sequence[str] | None = ...
+        self,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[typing.Any]: ...
     def extend_file_name(
         self, data_cls: str, instrument_id: str | None, start: int, end: int
     ) -> None: ...
     def consolidate_catalog(
         self,
-        start: int | None = ...,
-        end: int | None = ...,
-        ensure_contiguous_files: bool | None = ...,
-        deduplicate: bool | None = ...,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
+        deduplicate: bool | None = None,
     ) -> None: ...
     def consolidate_data(
         self,
         type_name: str,
-        instrument_id: str | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        ensure_contiguous_files: bool | None = ...,
-        deduplicate: bool | None = ...,
+        instrument_id: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
+        deduplicate: bool | None = None,
     ) -> None: ...
     def consolidate_catalog_by_period(
         self,
-        period_nanos: int | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        ensure_contiguous_files: bool | None = ...,
+        period_nanos: int | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
     ) -> None: ...
     def consolidate_data_by_period(
         self,
         type_name: str,
-        identifier: str | None = ...,
-        period_nanos: int | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        ensure_contiguous_files: bool | None = ...,
+        identifier: str | None = None,
+        period_nanos: int | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        ensure_contiguous_files: bool | None = None,
     ) -> None: ...
     def reset_all_file_names(self) -> None: ...
-    def reset_data_file_names(self, data_cls: str, instrument_id: str | None = ...) -> None: ...
-    def delete_catalog_range(self, start: int | None = ..., end: int | None = ...) -> None: ...
+    def reset_data_file_names(self, data_cls: str, instrument_id: str | None = None) -> None: ...
+    def delete_catalog_range(self, start: int | None = None, end: int | None = None) -> None: ...
     def delete_data_range(
         self,
         type_name: str,
-        instrument_id: str | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
+        instrument_id: str | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> None: ...
     def write_custom_data(
         self,
         data: typing.Sequence[typing.Any],
-        start: int | None,
-        end: int | None,
-        skip_disjoint_check: bool,
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> str: ...
     def list_instruments(self, data_type: str) -> list[str]: ...
     def list_parquet_files(self, data_type: str, instrument_id: str) -> list[str]: ...
     def query_files(
         self,
         data_cls: str,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
     ) -> list[str]: ...
     def get_missing_intervals_for_request(
-        self, start: int, end: int, data_cls: str, instrument_id: str | None = ...
+        self, start: int, end: int, data_cls: str, instrument_id: str | None = None
     ) -> list[tuple[int, int]]: ...
     def query_first_timestamp(
-        self, data_cls: str, instrument_id: str | None = ...
+        self, data_cls: str, instrument_id: str | None = None
     ) -> int | None: ...
     def query_last_timestamp(
-        self, data_cls: str, instrument_id: str | None = ...
+        self, data_cls: str, instrument_id: str | None = None
     ) -> int | None: ...
     def get_intervals(
-        self, data_cls: str, instrument_id: str | None = ...
+        self, data_cls: str, instrument_id: str | None = None
     ) -> list[tuple[int, int]]: ...
     def query(
         self,
         data_type: str,
-        identifiers: typing.Sequence[str] | None,
-        start: int | None,
-        end: int | None,
-        where_clause: str | None,
-        files: typing.Sequence[str] | None,
-        optimize_file_loading: bool,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+        files: typing.Sequence[str] | None = None,
+        optimize_file_loading: bool = True,
     ) -> list[typing.Any]: ...
     def query_quote_ticks(
         self,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.QuoteTick]: ...
     def query_trade_ticks(
         self,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.TradeTick]: ...
     def query_order_book_deltas(
         self,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.OrderBookDelta]: ...
     def query_bars(
         self,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.Bar]: ...
     def query_order_book_depths(
         self,
-        instrument_ids: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.OrderBookDepth10]: ...
     def query_mark_price_updates(
         self,
-        instrument_ids: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.MarkPriceUpdate]: ...
     def query_index_price_updates(
         self,
-        instrument_ids: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        instrument_ids: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[model.IndexPriceUpdate]: ...
     def list_data_types(self) -> list[str]: ...
     def list_live_runs(self) -> list[str]: ...
@@ -284,17 +287,17 @@ class ParquetDataCatalogV2:
         self,
         instance_id: str,
         data_cls: str,
-        subdirectory: str | None,
-        identifiers: typing.Sequence[str] | None,
-        use_ts_event_for_ts_init: bool,
+        subdirectory: str | None = None,
+        identifiers: typing.Sequence[str] | None = None,
+        use_ts_event_for_ts_init: bool = False,
     ) -> None: ...
     def query_custom_data(
         self,
         type_name: str,
-        identifiers: typing.Sequence[str] | None = ...,
-        start: int | None = ...,
-        end: int | None = ...,
-        where_clause: str | None = ...,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
     ) -> list[typing.Any]: ...
 
 @typing.final
@@ -320,11 +323,11 @@ class StreamingFeatherWriterV2:
         include_types: typing.Sequence[str] | None,
         rotation_mode: int,
         max_file_size: int,
-        rotation_interval_ns: int | None,
-        rotation_time_ns: int | None,
-        rotation_timezone: str,
-        flush_interval_ms: int | None,
-        replace: bool,
+        rotation_interval_ns: int | None = None,
+        rotation_time_ns: int | None = None,
+        rotation_timezone: str = "UTC",
+        flush_interval_ms: int | None = None,
+        replace: bool = False,
     ) -> StreamingFeatherWriterV2: ...
     def subscribe(self) -> None: ...
     def unsubscribe(self) -> None: ...
@@ -335,7 +338,7 @@ class StreamingFeatherWriterV2:
     def is_closed(self) -> bool: ...
     def get_current_file_info(self) -> dict[str, tuple[int, str]]: ...
     def get_next_rotation_time(
-        self, type_str: str, instrument_id: str | None = ...
+        self, type_str: str, instrument_id: str | None = None
     ) -> int | None: ...
 
 @typing.final

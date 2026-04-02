@@ -445,7 +445,6 @@ impl LimitOrder {
         self.ts_last.as_u64()
     }
 
-    #[getter]
     #[pyo3(name = "events")]
     fn py_events(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
         self.events()
@@ -490,7 +489,8 @@ impl LimitOrder {
         let is_post_only = get_required::<bool>(values, "is_post_only")?;
         let is_reduce_only = get_required::<bool>(values, "is_reduce_only")?;
         let is_quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
-        let display_qty = get_optional::<Quantity>(values, "display_qty")?;
+        let display_qty =
+            get_optional_parsed(values, "display_qty", |s| Ok(Quantity::from(s.as_str())))?;
         let emulation_trigger = get_optional_parsed(values, "emulation_trigger", |s| {
             s.parse::<TriggerType>().map_err(|e| e.to_string())
         })?;

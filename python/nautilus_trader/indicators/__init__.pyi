@@ -60,7 +60,7 @@ class AdaptiveMovingAverage:
         period_efficiency_ratio: int,
         period_fast: int,
         period_slow: int,
-        price_type: model.PriceType | None = ...,
+        price_type: model.PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -83,7 +83,7 @@ class ArcherMovingAveragesTrends:
         fast_period: int,
         slow_period: int,
         signal_period: int,
-        ma_type: MovingAverageType | None = ...,
+        ma_type: MovingAverageType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -137,9 +137,9 @@ class AverageTrueRange:
     def __init__(
         self,
         period: int,
-        ma_type: MovingAverageType | None = ...,
-        use_previous: bool | None = ...,
-        value_floor: float | None = ...,
+        ma_type: MovingAverageType | None = None,
+        use_previous: bool | None = None,
+        value_floor: float | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -161,7 +161,7 @@ class AverageTrueRange:
 
 @typing.final
 class Bias:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -182,7 +182,7 @@ class Bias:
 
 @typing.final
 class BollingerBands:
-    def __init__(self, period: int, k: float, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, k: float, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -220,13 +220,13 @@ class BookImbalanceRatio:
     def initialized(self) -> bool: ...
     def handle_book(self, book: model.OrderBook) -> None: ...
     def update(
-        self, best_bid: model.Quantity | None = ..., best_ask: model.Quantity | None = ...
+        self, best_bid: model.Quantity | None = None, best_ask: model.Quantity | None = None
     ) -> None: ...
     def reset(self) -> None: ...
 
 @typing.final
 class ChandeMomentumOscillator:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -248,7 +248,7 @@ class ChandeMomentumOscillator:
 @typing.final
 class CommodityChannelIndex:
     def __init__(
-        self, period: int, scalar: float, ma_type: MovingAverageType | None = ...
+        self, period: int, scalar: float, ma_type: MovingAverageType | None = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -268,7 +268,7 @@ class CommodityChannelIndex:
 
 @typing.final
 class DirectionalMovement:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -308,7 +308,7 @@ class DonchianChannel:
 
 @typing.final
 class DoubleExponentialMovingAverage:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -329,7 +329,7 @@ class DoubleExponentialMovingAverage:
 
 @typing.final
 class EfficiencyRatio:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -338,12 +338,13 @@ class EfficiencyRatio:
     def value(self) -> float: ...
     @property
     def initialized(self) -> bool: ...
+    @property
     def has_inputs(self) -> bool: ...
     def update_raw(self, value: float) -> None: ...
 
 @typing.final
 class ExponentialMovingAverage:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -421,7 +422,7 @@ class FuzzyCandlesticks:
 
 @typing.final
 class HullMovingAverage:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -443,7 +444,11 @@ class HullMovingAverage:
 @typing.final
 class IchimokuCloud:
     def __init__(
-        self, tenkan_period: int, kijun_period: int, senkou_period: int, displacement: int
+        self,
+        tenkan_period: int = 9,
+        kijun_period: int = 26,
+        senkou_period: int = 52,
+        displacement: int = 26,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -479,10 +484,10 @@ class KeltnerChannel:
         self,
         period: int,
         k_multiplier: float,
-        ma_type: MovingAverageType | None = ...,
-        ma_type_atr: MovingAverageType | None = ...,
-        use_previous: bool | None = ...,
-        atr_floor: float | None = ...,
+        ma_type: MovingAverageType | None = None,
+        ma_type_atr: MovingAverageType | None = None,
+        use_previous: bool | None = None,
+        atr_floor: float | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -514,10 +519,10 @@ class KeltnerPosition:
         self,
         period: int,
         k_multiplier: float,
-        ma_type: MovingAverageType | None = ...,
-        ma_type_atr: MovingAverageType | None = ...,
-        use_previous: bool | None = ...,
-        atr_floor: float | None = ...,
+        ma_type: MovingAverageType | None = None,
+        ma_type_atr: MovingAverageType | None = None,
+        use_previous: bool | None = None,
+        atr_floor: float | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -546,7 +551,7 @@ class KlingerVolumeOscillator:
         fast_period: int,
         slow_period: int,
         signal_period: int,
-        ma_type: MovingAverageType | None = ...,
+        ma_type: MovingAverageType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -599,8 +604,8 @@ class MovingAverageConvergenceDivergence:
         self,
         fast_period: int,
         slow_period: int,
-        ma_type: MovingAverageType | None = ...,
-        price_type: model.PriceType | None = ...,
+        ma_type: MovingAverageType | None = None,
+        price_type: model.PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -642,7 +647,7 @@ class OnBalanceVolume:
 @typing.final
 class Pressure:
     def __init__(
-        self, period: int, ma_type: MovingAverageType | None = ..., atr_floor: float | None = ...
+        self, period: int, ma_type: MovingAverageType | None = None, atr_floor: float | None = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -662,7 +667,7 @@ class Pressure:
 
 @typing.final
 class PsychologicalLine:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -679,7 +684,7 @@ class PsychologicalLine:
 
 @typing.final
 class RateOfChange:
-    def __init__(self, period: int, use_log: bool | None = ...) -> None: ...
+    def __init__(self, period: int, use_log: bool | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -700,7 +705,7 @@ class RateOfChange:
 
 @typing.final
 class RelativeStrengthIndex:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -719,7 +724,7 @@ class RelativeStrengthIndex:
 @typing.final
 class RelativeVolatilityIndex:
     def __init__(
-        self, period: int, scalar: float | None = ..., ma_type: MovingAverageType | None = ...
+        self, period: int, scalar: float | None = None, ma_type: MovingAverageType | None = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -741,7 +746,7 @@ class RelativeVolatilityIndex:
 
 @typing.final
 class SimpleMovingAverage:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -773,6 +778,7 @@ class SpreadAnalyzer:
     def average(self) -> float: ...
     @property
     def initialized(self) -> bool: ...
+    @property
     def has_inputs(self) -> bool: ...
     def handle_quote_tick(self, quote: model.QuoteTick) -> None: ...
     def reset(self) -> None: ...
@@ -783,9 +789,9 @@ class Stochastics:
         self,
         period_k: int,
         period_d: int,
-        slowing: int | None = ...,
-        ma_type: MovingAverageType | None = ...,
-        d_method: StochasticsDMethod | None = ...,
+        slowing: int | None = None,
+        ma_type: MovingAverageType | None = None,
+        d_method: StochasticsDMethod | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -853,8 +859,8 @@ class VariableIndexDynamicAverage:
     def __init__(
         self,
         period: int,
-        price_type: model.PriceType | None = ...,
-        cmo_ma_type: MovingAverageType | None = ...,
+        price_type: model.PriceType | None = None,
+        cmo_ma_type: MovingAverageType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -880,7 +886,7 @@ class VariableIndexDynamicAverage:
 
 @typing.final
 class VerticalHorizontalFilter:
-    def __init__(self, period: int, ma_type: MovingAverageType | None = ...) -> None: ...
+    def __init__(self, period: int, ma_type: MovingAverageType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property
@@ -903,9 +909,9 @@ class VolatilityRatio:
         self,
         fast_period: int,
         slow_period: int,
-        use_previous: bool | None = ...,
-        value_floor: float | None = ...,
-        ma_type: MovingAverageType | None = ...,
+        use_previous: bool | None = None,
+        value_floor: float | None = None,
+        ma_type: MovingAverageType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -947,7 +953,10 @@ class VolumeWeightedAveragePrice:
 @typing.final
 class WeightedMovingAverage:
     def __init__(
-        self, period: int, weights: typing.Sequence[float], price_type: model.PriceType | None = ...
+        self,
+        period: int,
+        weights: typing.Sequence[float],
+        price_type: model.PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -967,7 +976,7 @@ class WeightedMovingAverage:
 
 @typing.final
 class WilderMovingAverage:
-    def __init__(self, period: int, price_type: model.PriceType | None = ...) -> None: ...
+    def __init__(self, period: int, price_type: model.PriceType | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     @property

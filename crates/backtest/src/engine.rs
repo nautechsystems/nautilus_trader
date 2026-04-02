@@ -32,8 +32,8 @@ use nautilus_common::{
     },
     runner::{
         SyncDataCommandSender, SyncTradingCommandSender, data_cmd_queue_is_empty,
-        drain_data_cmd_queue, drain_trading_cmd_queue, init_data_cmd_sender, init_exec_cmd_sender,
-        trading_cmd_queue_is_empty,
+        drain_data_cmd_queue, drain_trading_cmd_queue, replace_data_cmd_sender,
+        replace_exec_cmd_sender, trading_cmd_queue_is_empty,
     },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
@@ -50,7 +50,7 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
-use nautilus_trading::strategy::Strategy;
+use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -313,12 +313,14 @@ impl BacktestEngine {
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
-            if matches!(instrument, InstrumentAny::CurrencyPair(_))
-                && exchange.borrow().account_type != AccountType::Margin
+            if matches!(
+                instrument,
+                InstrumentAny::CurrencyPair(_) | InstrumentAny::TokenizedAsset(_)
+            ) && exchange.borrow().account_type != AccountType::Margin
                 && exchange.borrow().base_currency.is_some()
             {
                 anyhow::bail!(
-                    "Cannot add a `CurrencyPair` instrument {instrument_id} for a venue with a single-currency CASH account"
+                    "Cannot add a multi-currency spot instrument {instrument_id} for a venue with a single-currency CASH account"
                 )
             }
             exchange.borrow_mut().add_instrument(instrument.clone())?;
@@ -435,7 +437,7 @@ impl BacktestEngine {
     /// Returns an error if the algorithm is already registered or the trader is running.
     pub fn add_exec_algorithm<T>(&mut self, exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: ExecutionAlgorithm + Component + Debug + 'static,
     {
         self.kernel.trader.add_exec_algorithm(exec_algorithm)
     }
@@ -1095,8 +1097,8 @@ impl BacktestEngine {
     }
 
     fn init_command_senders() {
-        init_data_cmd_sender(Arc::new(SyncDataCommandSender));
-        init_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
+        replace_data_cmd_sender(Arc::new(SyncDataCommandSender));
+        replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
     }
 
     fn advance_clock_on_accumulator(

@@ -725,6 +725,63 @@ fn test_order_accept_updates_margin_init(
 }
 
 #[rstest]
+fn test_initialize_orders_cash_account_with_base_currency() {
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("AUD/USD"),
+        Some(Venue::from("SIM")),
+    ));
+
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut portfolio = Portfolio::new(cache.clone(), clock, None);
+
+    // Cash account with base_currency set (like Polymarket with USDC)
+    let account_state = AccountState::new(
+        AccountId::from("SIM-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::new(1000.0, Currency::USD()),
+            Money::new(0.0, Currency::USD()),
+            Money::new(1000.0, Currency::USD()),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        Some(Currency::USD()),
+    );
+    portfolio.update_account(&account_state);
+
+    // Create and accept an open order
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::new(0.50, 2))
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+
+    let submitted = submit_order(&order);
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+
+    let accepted = accept_order(&order);
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    cache.borrow_mut().update_order(&order).unwrap();
+
+    // This previously panicked with "RefCell already mutably borrowed"
+    portfolio.initialize_orders();
+}
+
+#[rstest]
 fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: InstrumentAny) {
     let account_state = get_cash_account(None);
     portfolio.update_account(&account_state);

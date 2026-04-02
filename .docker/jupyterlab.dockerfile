@@ -13,8 +13,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install UV
-COPY uv-version ./
-RUN UV_VERSION=$(cat uv-version) && curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
+COPY scripts/uv-version.sh scripts/
+COPY pyproject.toml ./
+RUN UV_VERSION=$(bash scripts/uv-version.sh) && curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh
 
 RUN uv pip install --system jupyterlab datafusion
 

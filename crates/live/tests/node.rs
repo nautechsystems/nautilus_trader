@@ -18,17 +18,88 @@
 //! These tests use global logging state (one logger per process).
 //! Run with cargo-nextest for process isolation, or use --test-threads=1.
 
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
-use nautilus_common::{enums::Environment, testing::wait_until_async};
+use nautilus_common::{
+    actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
+    enums::Environment,
+    nautilus_actor,
+    testing::wait_until_async,
+};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, NodeState},
 };
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{
+    identifiers::{ExecAlgorithmId, TraderId},
+    orders::OrderAny,
+};
+use nautilus_trading::{
+    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_strategy,
+    strategy::{StrategyConfig, StrategyCore},
+};
 use rstest::rstest;
 
-// -- LiveNodeHandle tests (no global state, can run in parallel) ----------------------------------
+#[derive(Debug)]
+struct TestActor {
+    core: DataActorCore,
+}
+
+impl TestActor {
+    fn new(config: DataActorConfig) -> Self {
+        Self {
+            core: DataActorCore::new(config),
+        }
+    }
+}
+
+impl DataActor for TestActor {}
+
+nautilus_actor!(TestActor);
+
+#[derive(Debug)]
+struct TestStrategy {
+    core: StrategyCore,
+}
+
+impl TestStrategy {
+    fn new(config: StrategyConfig) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+        }
+    }
+}
+
+impl DataActor for TestStrategy {}
+
+nautilus_strategy!(TestStrategy);
+
+#[derive(Debug)]
+struct TestExecAlgorithm {
+    core: ExecutionAlgorithmCore,
+}
+
+impl TestExecAlgorithm {
+    fn new(config: ExecutionAlgorithmConfig) -> Self {
+        Self {
+            core: ExecutionAlgorithmCore::new(config),
+        }
+    }
+}
+
+impl DataActor for TestExecAlgorithm {}
+
+nautilus_actor!(TestExecAlgorithm);
+
+impl ExecutionAlgorithm for TestExecAlgorithm {
+    fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
+        &mut self.core
+    }
+
+    fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
 
 #[rstest]
 fn test_handle_initial_state() {
@@ -76,8 +147,6 @@ fn test_node_state_is_running() {
     assert!(!NodeState::Stopped.is_running());
 }
 
-// -- LiveNode builder validation tests (no global state conflicts) --------------------------------
-
 #[rstest]
 fn test_builder_rejects_backtest_environment() {
     let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Backtest);
@@ -121,7 +190,7 @@ mod serial_tests {
     }
 
     #[rstest]
-    fn test_live_node_build_with_sandbox_environment() {
+    fn test_live_node_build_overrides_environment_to_live() {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             trader_id: TraderId::from("TESTER-001"),
@@ -157,6 +226,58 @@ mod serial_tests {
         let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
 
         assert_eq!(node.state(), NodeState::Idle);
+    }
+
+    #[rstest]
+    fn test_add_actor() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+
+        let actor = TestActor::new(DataActorConfig::default());
+
+        let result = node.add_actor(actor);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_add_strategy() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+
+        let strategy = TestStrategy::new(StrategyConfig::default());
+
+        let result = node.add_strategy(strategy);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_add_exec_algorithm() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+
+        let config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(ExecAlgorithmId::from("TEST_ALGO")),
+            ..Default::default()
+        };
+        let algo = TestExecAlgorithm::new(config);
+
+        let result = node.add_exec_algorithm(algo);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_add_exec_algorithm_registers_execute_endpoint() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+
+        let config = ExecutionAlgorithmConfig {
+            exec_algorithm_id: Some(ExecAlgorithmId::from("MY_ALGO")),
+            ..Default::default()
+        };
+        let algo = TestExecAlgorithm::new(config);
+
+        node.add_exec_algorithm(algo).unwrap();
+
+        assert!(nautilus_common::msgbus::has_endpoint("MY_ALGO.execute"));
     }
 
     #[rstest]

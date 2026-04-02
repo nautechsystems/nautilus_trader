@@ -294,6 +294,15 @@ pub struct TickSizeResponse {
     pub minimum_tick_size: f64,
 }
 
+/// Fee rate response from CLOB `GET /fee-rate`.
+///
+/// Returns the taker fee rate in basis points for a given token.
+#[derive(Clone, Debug, Deserialize)]
+pub struct FeeRateResponse {
+    /// Fee rate in basis points.
+    pub base_fee: Decimal,
+}
+
 /// A single price level from the CLOB order book.
 #[derive(Clone, Debug, Deserialize)]
 pub struct ClobBookLevel {
@@ -308,6 +317,17 @@ pub struct ClobBookLevel {
 pub struct ClobBookResponse {
     pub bids: Vec<ClobBookLevel>,
     pub asks: Vec<ClobBookLevel>,
+}
+
+/// A position from the Polymarket Data API `GET /positions` endpoint.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DataApiPosition {
+    pub asset: String,
+    #[serde(alias = "conditionId", alias = "condition_id")]
+    pub condition_id: String,
+    pub size: f64,
+    #[serde(alias = "avgPrice", alias = "avg_price")]
+    pub avg_price: Option<f64>,
 }
 
 /// A trade from the Polymarket Data API `GET /trades` endpoint.
@@ -352,7 +372,7 @@ mod tests {
         assert_eq!(order.original_size, dec!(100.0000));
         assert_eq!(order.price, dec!(0.5000));
         assert_eq!(order.size_matched, dec!(25.0000));
-        assert_eq!(order.created_at, 1703875200000);
+        assert_eq!(order.created_at, 1703875200);
         assert!(order.expiration.is_none());
         assert_eq!(order.associate_trades, Some(vec!["0xabc001".to_string()]));
     }
@@ -612,6 +632,51 @@ mod tests {
         let response: ClobBookResponse = serde_json::from_str(json).unwrap();
         assert!(response.bids.is_empty());
         assert!(response.asks.is_empty());
+    }
+
+    #[rstest]
+    fn test_fee_rate_response_zero() {
+        let response: FeeRateResponse = load("clob_fee_rate_response_zero.json");
+        assert_eq!(response.base_fee, dec!(0));
+    }
+
+    #[rstest]
+    fn test_fee_rate_response_nonzero() {
+        let response: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
+        assert_eq!(response.base_fee, dec!(150));
+    }
+
+    #[rstest]
+    fn test_data_api_position_deserialization() {
+        let positions: Vec<DataApiPosition> = load("data_api_positions_response.json");
+
+        assert_eq!(positions.len(), 4);
+        assert_eq!(
+            positions[0].asset,
+            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+        );
+        assert_eq!(
+            positions[0].condition_id,
+            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+        );
+        assert_eq!(positions[0].size, 150.5);
+        assert_eq!(positions[0].avg_price, Some(0.55));
+
+        // Zero-size position
+        assert_eq!(positions[1].size, 0.0);
+        assert_eq!(positions[1].avg_price, Some(0.45));
+
+        // Third position
+        assert_eq!(
+            positions[2].condition_id,
+            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+        );
+        assert_eq!(positions[2].size, 42.0);
+        assert_eq!(positions[2].avg_price, Some(0.3));
+
+        // Dust position (below DUST_SNAP_THRESHOLD)
+        assert_eq!(positions[3].size, 0.005);
+        assert_eq!(positions[3].avg_price, Some(0.7));
     }
 
     #[rstest]

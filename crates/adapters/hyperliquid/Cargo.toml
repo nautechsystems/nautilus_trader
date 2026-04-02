@@ -53,17 +53,16 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
+alloy = { workspace = true }
 alloy-primitives = { workspace = true }
-alloy-signer = { workspace = true }
-alloy-signer-local = { workspace = true }
-alloy-sol-types = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
+bon = { workspace = true }
 chrono = { workspace = true }
-ctrlc = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
@@ -126,11 +125,6 @@ doc = false
 [[bin]]
 name = "hyperliquid-capture-test-data"
 path = "bin/capture_test_data.rs"
-doc = false
-
-[[bin]]
-name = "hyperliquid-builder-fee-revoke"
-path = "bin/builder_fee_revoke.rs"
 doc = false
 
 # Run with `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`.

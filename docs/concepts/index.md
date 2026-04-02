@@ -32,6 +32,12 @@ including their arithmetic behavior, precision handling, and type-specific const
 
 Built-in data types for the trading domain, and how to work with custom data.
 
+## Events
+
+The event types that drive the system: order events, position events, account
+events, and time events. Covers handler dispatch, the causal chain from order
+fills to position events, and tracing orders to positions.
+
 ## Options
 
 Option instrument types, venue-provided Greeks streaming, option chain subscriptions
@@ -98,6 +104,11 @@ Running simulated trading on historical data using a specific system implementat
 Interactive tearsheets for analyzing backtest results, including charts, themes,
 customization options, and custom visualizations via the extensible chart registry.
 
+## Configuration
+
+How config structs work across Python and Rust: default resolution, the `T` vs `Option<T>`
+convention, builder patterns, and common fields shared across adapters and engines.
+
 ## Live trading
 
 Deploying backtested strategies in real-time without code changes, and the key differences
@@ -107,7 +118,11 @@ between backtesting and live trading.
 
 Requirements and best practices for developing integration adapters for data providers and trading venues.
 
+## Rust
+
+Writing actors, strategies, and running backtests and live trading in pure Rust
+using the `crates/` implementation directly.
+
 :::note
-The Python API reference (linked in the sidebar) is the source of truth for the platform.
 If there are discrepancies between these guides and the API reference, the API reference is correct.
 :::

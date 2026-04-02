@@ -68,7 +68,7 @@ pub enum BybitUnifiedMarginStatus {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitMarginMode {
     IsolatedMargin,
@@ -105,7 +105,7 @@ pub enum BybitMarginMode {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitPositionMode {
     /// Merged single position mode.
@@ -154,7 +154,7 @@ pub enum BybitPositionIdx {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitAccountType {
     Unified,
@@ -188,7 +188,7 @@ pub enum BybitAccountType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitEnvironment {
     /// Live trading environment.
@@ -228,7 +228,7 @@ pub enum BybitEnvironment {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitProductType {
     #[default]
@@ -503,7 +503,7 @@ impl Display for BybitKlineInterval {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitOrderStatus {
     #[serde(rename = "Created")]
@@ -541,7 +541,7 @@ pub enum BybitOrderStatus {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitOrderSide {
     #[serde(rename = "")]
@@ -609,7 +609,7 @@ impl From<BybitTriggerType> for TriggerType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitCancelType {
     CancelByUser,
@@ -669,7 +669,7 @@ pub enum BybitCreateType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitOrderType {
     #[serde(rename = "Market")]
@@ -693,7 +693,7 @@ pub enum BybitOrderType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitStopOrderType {
     #[serde(rename = "")]
@@ -735,7 +735,7 @@ pub enum BybitStopOrderType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitTriggerType {
     #[serde(rename = "")]
@@ -762,7 +762,7 @@ pub enum BybitTriggerType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitTriggerDirection {
     None = 0,
@@ -784,7 +784,7 @@ pub enum BybitTriggerDirection {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitTpSlMode {
     Full,
@@ -806,7 +806,7 @@ pub enum BybitTpSlMode {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitTimeInForce {
     #[serde(rename = "GTC")]
@@ -890,7 +890,7 @@ pub enum BybitEndpointType {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitOpenOnly {
     /// Query open status orders only (New, PartiallyFilled).
@@ -915,7 +915,7 @@ pub enum BybitOpenOnly {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitOrderFilter {
     /// Active orders (default).
@@ -963,7 +963,7 @@ pub enum BybitOrderFilter {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
 )]
 pub enum BybitMarginAction {
     /// Borrow funds for margin trading.
@@ -972,6 +972,37 @@ pub enum BybitMarginAction {
     Repay,
     /// Query current borrowed amount.
     GetBorrowAmount,
+}
+
+/// Position status enumeration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum BybitPositionStatus {
+    Normal,
+    Settle,
+    Delivering,
+    #[serde(other)]
+    Other,
+}
+
+/// Market unit for spot market orders.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum BybitMarketUnit {
+    #[serde(rename = "baseCoin")]
+    BaseCoin,
+    #[serde(rename = "quoteCoin")]
+    QuoteCoin,
+}
+
+/// Self-match prevention type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum BybitSmpType {
+    None,
+    CancelMaker,
+    CancelTaker,
+    CancelBoth,
+    #[serde(other)]
+    Other,
 }
 
 #[cfg(test)]

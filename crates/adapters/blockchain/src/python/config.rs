@@ -24,7 +24,7 @@ use pyo3::prelude::*;
 use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
 
 #[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.blockchain")]
 impl DexPoolFilters {
     /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
     #[new]
@@ -35,7 +35,7 @@ impl DexPoolFilters {
 }
 
 #[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.blockchain")]
 impl BlockchainDataClientConfig {
     /// Configuration for blockchain data clients.
     #[new]

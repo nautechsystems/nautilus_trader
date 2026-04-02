@@ -33,7 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::any::InstrumentAny,
     reports::{FillReport, OrderStatusReport},
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, HttpResponse, Method},
@@ -1075,6 +1075,16 @@ impl BinanceFuturesInstrument {
             Self::CoinM(s) => format_instrument_id(&s.symbol, BinanceProductType::CoinM),
         }
     }
+
+    /// Returns the quote currency for the instrument.
+    #[must_use]
+    pub fn quote_currency(&self) -> Currency {
+        let quote_asset = match self {
+            Self::UsdM(s) => &s.quote_asset,
+            Self::CoinM(s) => &s.quote_asset,
+        };
+        Currency::from(quote_asset.as_str())
+    }
 }
 
 /// Binance Futures HTTP client for USD-M and COIN-M perpetuals.
@@ -1656,6 +1666,7 @@ impl BinanceFuturesHttpClient {
         price: Option<Price>,
         trigger_price: Option<Price>,
         reduce_only: bool,
+        close_position: bool,
         position_side: Option<BinancePositionSide>,
         activation_price: Option<Price>,
         callback_rate: Option<String>,
@@ -1677,34 +1688,62 @@ impl BinanceFuturesHttpClient {
         let requires_time_in_force =
             matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched);
 
-        let qty_str = quantity.to_string();
         let price_str = price.map(|p| p.to_string());
         let trigger_price_str = trigger_price.map(|p| p.to_string());
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
-        let params = BinanceNewAlgoOrderParams {
-            symbol,
-            side: binance_side,
-            order_type: binance_order_type,
-            algo_type: BinanceAlgoType::Conditional,
-            position_side,
-            quantity: Some(qty_str),
-            price: price_str,
-            trigger_price: trigger_price_str,
-            time_in_force: if requires_time_in_force {
-                Some(binance_tif)
-            } else {
-                None
-            },
-            working_type,
-            close_position: None,
-            price_protect: None,
-            reduce_only: if reduce_only { Some(true) } else { None },
-            activation_price: activation_price.map(|p| p.to_string()),
-            callback_rate,
-            client_algo_id: Some(client_id_str),
-            good_till_date: None,
-            recv_window: None,
+        // closePosition is mutually exclusive with quantity and reduceOnly
+        let params = if close_position {
+            BinanceNewAlgoOrderParams {
+                symbol,
+                side: binance_side,
+                order_type: binance_order_type,
+                algo_type: BinanceAlgoType::Conditional,
+                position_side,
+                quantity: None,
+                price: price_str,
+                trigger_price: trigger_price_str,
+                time_in_force: if requires_time_in_force {
+                    Some(binance_tif)
+                } else {
+                    None
+                },
+                working_type,
+                close_position: Some(true),
+                price_protect: None,
+                reduce_only: None,
+                activation_price: activation_price.map(|p| p.to_string()),
+                callback_rate,
+                client_algo_id: Some(client_id_str),
+                good_till_date: None,
+                recv_window: None,
+            }
+        } else {
+            let qty_str = quantity.to_string();
+            BinanceNewAlgoOrderParams {
+                symbol,
+                side: binance_side,
+                order_type: binance_order_type,
+                algo_type: BinanceAlgoType::Conditional,
+                position_side,
+                quantity: Some(qty_str),
+                price: price_str,
+                trigger_price: trigger_price_str,
+                time_in_force: if requires_time_in_force {
+                    Some(binance_tif)
+                } else {
+                    None
+                },
+                working_type,
+                close_position: None,
+                price_protect: None,
+                reduce_only: if reduce_only { Some(true) } else { None },
+                activation_price: activation_price.map(|p| p.to_string()),
+                callback_rate,
+                client_algo_id: Some(client_id_str),
+                good_till_date: None,
+                recv_window: None,
+            }
         };
 
         let order = self.raw.submit_algo_order(&params).await?;

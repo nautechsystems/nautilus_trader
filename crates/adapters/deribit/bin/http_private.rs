@@ -29,17 +29,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let is_testnet = !std::env::args().any(|x| x == "--mainnet");
-    let client = DeribitHttpClient::new_with_env(
-        None,
-        None,
-        None,
-        is_testnet,
-        Some(30),
-        None,
-        None,
-        None,
-        None,
-    )?;
+    let client =
+        DeribitHttpClient::new_with_env(None, None, None, is_testnet, 30, 3, 1000, 10_000, None)?;
 
     let account_id = AccountId::from("DERIBIT-001");
 

@@ -77,12 +77,12 @@ When the strategy and venue OMS types differ, the `ExecutionEngine` handles this
 A "virtual position" refers to a position ID that exists within the Nautilus system but not on the venue in
 reality.
 
-| Strategy OMS                 | Venue OMS              | Description                                                                                                                                                |
-|:-----------------------------|:-----------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `NETTING`                    | `NETTING`              | The strategy uses the venue's native OMS type, with a single position ID per instrument ID.                                                                 |
-| `HEDGING`                    | `HEDGING`              | The strategy uses the venue's native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
-| `NETTING`                    | `HEDGING`              | The strategy **overrides** the venue's native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
-| `HEDGING`                    | `NETTING`              | The strategy **overrides** the venue's native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
+| Strategy OMS | Venue OMS | Description                                                                                                                                                 |
+|:-------------|:----------|:------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `NETTING`    | `NETTING` | The strategy uses the venue's native OMS type, with a single position ID per instrument ID.                                                                 |
+| `HEDGING`    | `HEDGING` | The strategy uses the venue's native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
+| `NETTING`    | `HEDGING` | The strategy **overrides** the venue's native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
+| `HEDGING`    | `NETTING` | The strategy **overrides** the venue's native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
 
 :::note
 Configuring OMS types separately for strategies and venues increases platform complexity but allows
@@ -421,7 +421,7 @@ The likelihood of reconciliation race conditions increases when:
   provides time for WebSocket connections to stabilize before continuous reconciliation begins.
   Reducing this increases the chance of duplicate fills during the startup window.
 
-See [Continuous reconciliation](live.md#continuous-reconciliation) for configuration details.
+See [Continuous reconciliation](../how_to/configure_live_trading.md#continuous-reconciliation) for configuration details.
 
 ### System behavior
 
@@ -499,6 +499,7 @@ features to detect and resolve such discrepancies.
 
 ## Related guides
 
+- [Events](events.md) - Order and position event types and dispatch.
 - [Orders](orders.md) - Order types and management.
 - [Positions](positions.md) - Position tracking from executions.
 - [Strategies](strategies.md) - Order submission from strategies.

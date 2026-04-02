@@ -46,6 +46,7 @@ use nautilus_polymarket::{
     filters::EventSlugFilter,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,8 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Use EventSlugFilter to load only instruments for this event
     let event_slugs = vec!["presidential-election-winner-2028".to_string()];
-    let data_filter = EventSlugFilter::from_slugs(event_slugs.clone());
-    let exec_filter = EventSlugFilter::from_slugs(event_slugs);
+    let data_filter = EventSlugFilter::from_slugs(event_slugs);
 
     let data_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(data_filter)],
@@ -78,7 +78,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
-        filters: vec![Arc::new(exec_filter)],
         ..Default::default()
     };
     let exec_factory = PolymarketExecutionClientFactory;
@@ -99,23 +98,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let mut tester_config = ExecTesterConfig::new(
-        StrategyId::from("EXEC_TESTER-001"),
-        instrument_id,
-        client_id,
-        Quantity::from("5"), // Polymarket min_qty = 5 shares
-    )
-    .with_log_data(false)
-    .with_use_post_only(true)
-    .with_tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false) // Can't sell without inventory on Polymarket
-    .with_enable_stop_buys(false) // Polymarket doesn't support stop orders
-    .with_enable_stop_sells(false)
-    .with_cancel_orders_on_stop(true)
-    .with_close_positions_on_stop(true);
-
-    tester_config.base.external_order_claims = Some(vec![instrument_id]);
+    let tester_config = ExecTesterConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("EXEC_TESTER-001")),
+            external_order_claims: Some(vec![instrument_id]),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .client_id(client_id)
+        .order_qty(Quantity::from("5")) // Polymarket min_qty = 5 shares
+        .log_data(false)
+        .use_post_only(true)
+        .tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
+        .enable_limit_sells(false) // Can't sell without inventory on Polymarket
+        .enable_stop_buys(false) // Polymarket doesn't support stop orders
+        .enable_stop_sells(false)
+        .build();
 
     let tester = ExecTester::new(tester_config);
 

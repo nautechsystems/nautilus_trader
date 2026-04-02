@@ -29,6 +29,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
+    common::parse::normalize_order,
     http::{
         models::{HyperliquidL2Book, HyperliquidLevel},
         parse::get_currency,
@@ -214,7 +215,7 @@ impl HyperliquidDataConverter {
         });
         let min_notional = config.min_notional.unwrap_or_else(|| Decimal::from(10)); // $10 minimum
 
-        crate::common::parse::normalize_order(
+        normalize_order(
             price,
             qty,
             tick_size,
@@ -817,15 +818,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-
-    fn load_test_data<T>(filename: &str) -> T
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let path = format!("test_data/{filename}");
-        let content = std::fs::read_to_string(path).expect("Failed to read test data");
-        serde_json::from_str(&content).expect("Failed to parse test data")
-    }
+    use crate::common::testing::load_test_data;
 
     fn test_instrument_id() -> InstrumentId {
         InstrumentId::from("BTC.HYPER")

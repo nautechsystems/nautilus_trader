@@ -3,6 +3,12 @@
 import typing
 
 __all__ = [
+    "MILLISECONDS_IN_SECOND",
+    "NANOSECONDS_IN_MICROSECOND",
+    "NANOSECONDS_IN_MILLISECOND",
+    "NANOSECONDS_IN_SECOND",
+    "NAUTILUS_USER_AGENT",
+    "NAUTILUS_VERSION",
     "UUID4",
     "convert_to_snake_case",
     "is_pycapsule",
@@ -18,6 +24,13 @@ __all__ = [
     "secs_to_nanos",
     "unix_nanos_to_iso8601",
 ]
+
+NAUTILUS_VERSION: str
+NAUTILUS_USER_AGENT: str
+MILLISECONDS_IN_SECOND: int
+NANOSECONDS_IN_SECOND: int
+NANOSECONDS_IN_MILLISECOND: int
+NANOSECONDS_IN_MICROSECOND: int
 
 @typing.final
 class UUID4:
@@ -43,4 +56,4 @@ def nanos_to_millis(nanos: int) -> int: ...
 def nanos_to_secs(nanos: int) -> float: ...
 def secs_to_millis(secs: float) -> int: ...
 def secs_to_nanos(secs: float) -> int: ...
-def unix_nanos_to_iso8601(timestamp_ns: int, nanos_precision: bool | None = ...) -> str: ...
+def unix_nanos_to_iso8601(timestamp_ns: int, nanos_precision: bool | None = True) -> str: ...

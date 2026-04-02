@@ -3864,6 +3864,8 @@ cdef class DataEngine(Component):
         key = self._get_spread_quote_aggregator_key(spread_instrument_id, used_request_id)
         aggregator = self._spread_quote_aggregators.get(key)
         if aggregator:
+            aggregator.flush_pending_historical_quotes()
+
             # After a request we set is_running to False so a request using the same aggregator
             # or a subscription can use the aggregator
             aggregator.set_running(False)

@@ -18,11 +18,11 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use futures_util::StreamExt;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    UUID4, UnixNanos,
+    AtomicMap, AtomicSet, UUID4, UnixNanos,
     python::{call_python_threadsafe, to_pyruntime_err, to_pyvalue_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -131,12 +131,12 @@ impl BybitWebSocketClient {
     /// Creates a new Bybit public WebSocket client.
     #[staticmethod]
     #[pyo3(name = "new_public")]
-    #[pyo3(signature = (product_type, environment, url=None, heartbeat=None))]
+    #[pyo3(signature = (product_type, environment, url=None, heartbeat=20))]
     fn py_new_public(
         product_type: BybitProductType,
         environment: BybitEnvironment,
         url: Option<String>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
     ) -> Self {
         Self::new_public_with(product_type, environment, url, heartbeat)
     }
@@ -150,13 +150,13 @@ impl BybitWebSocketClient {
     /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_private")]
-    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20))]
     fn py_new_private(
         environment: BybitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
         url: Option<String>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
     ) -> Self {
         Self::new_private(environment, api_key, api_secret, url, heartbeat)
     }
@@ -170,13 +170,13 @@ impl BybitWebSocketClient {
     /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_trade")]
-    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=None))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20))]
     fn py_new_trade(
         environment: BybitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
         url: Option<String>,
-        heartbeat: Option<u64>,
+        heartbeat: u64,
     ) -> Self {
         Self::new_trade(environment, api_key, api_secret, url, heartbeat)
     }
@@ -263,6 +263,7 @@ impl BybitWebSocketClient {
             let product_type = client.product_type();
             let account_id = client.account_id();
             let bar_types_cache = client.bar_types_cache().clone();
+            let trade_subs = client.trade_subs().clone();
             let option_greeks_subs = client.option_greeks_subs().clone();
             let bars_timestamp_on_close = client.bars_timestamp_on_close();
             let instruments = Arc::clone(client.instruments_cache_ref());
@@ -276,7 +277,7 @@ impl BybitWebSocketClient {
                 let _resolve = |raw_symbol: &Ustr| -> Option<InstrumentAny> {
                     let key =
                         product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-                    instruments.get(&key).map(|r| r.value().clone())
+                    instruments.get_cloned(&key)
                 };
 
                 tokio::pin!(stream);
@@ -299,6 +300,7 @@ impl BybitWebSocketClient {
                                 msg,
                                 product_type,
                                 &instruments,
+                                &trade_subs,
                                 clock,
                                 &call_soon,
                                 &callback,
@@ -394,7 +396,6 @@ impl BybitWebSocketClient {
                         BybitWsMessage::Auth(_) => {
                             log::info!("WebSocket authenticated");
                         }
-                        _ => {}
                     }
                 }
             });
@@ -1277,10 +1278,10 @@ fn register_batch_pending(
 fn resolve_instrument(
     raw_symbol: &Ustr,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
 ) -> Option<InstrumentAny> {
     let key = product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-    instruments.get(&key).map(|r| r.value().clone())
+    instruments.get_cloned(&key)
 }
 
 fn send_data_to_python(data: Data, call_soon: &Py<PyAny>, callback: &Py<PyAny>) {
@@ -1305,7 +1306,7 @@ fn send_to_python<T: for<'py> IntoPyObjectExt<'py>>(
 fn handle_orderbook(
     msg: &crate::websocket::messages::BybitWsOrderbookDepthMsg,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
@@ -1342,7 +1343,8 @@ fn handle_orderbook(
 fn handle_trade(
     msg: &crate::websocket::messages::BybitWsTradeMsg,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    trade_subs: &AtomicSet<InstrumentId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -1352,6 +1354,13 @@ fn handle_trade(
         let Some(instrument) = resolve_instrument(&trade.s, product_type, instruments) else {
             continue;
         };
+
+        if product_type == Some(BybitProductType::Option)
+            && !trade_subs.is_empty()
+            && !trade_subs.contains(&instrument.id())
+        {
+            continue;
+        }
 
         match parse_ws_trade_tick(trade, &instrument, ts_init) {
             Ok(tick) => send_data_to_python(Data::Trade(tick), call_soon, callback),
@@ -1364,8 +1373,8 @@ fn handle_trade(
 fn handle_kline(
     msg: &crate::websocket::messages::BybitWsKlineMsg,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
-    bar_types_cache: &DashMap<String, BarType>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    bar_types_cache: &AtomicMap<String, BarType>,
     bars_timestamp_on_close: bool,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
@@ -1378,7 +1387,7 @@ fn handle_kline(
     let Some(instrument) = resolve_instrument(&ustr_symbol, product_type, instruments) else {
         return;
     };
-    let Some(bar_type) = bar_types_cache.get(msg.topic.as_str()).map(|e| *e.value()) else {
+    let Some(bar_type) = bar_types_cache.load().get(msg.topic.as_str()).copied() else {
         return;
     };
 
@@ -1405,7 +1414,7 @@ fn handle_kline(
 fn handle_ticker_linear(
     msg: &crate::websocket::messages::BybitWsTickerLinearMsg,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
     funding_cache: &mut AHashMap<Ustr, (Option<String>, Option<String>)>,
     clock: &AtomicTime,
@@ -1483,9 +1492,9 @@ fn handle_ticker_linear(
 fn handle_ticker_option(
     msg: &crate::websocket::messages::BybitWsTickerOptionMsg,
     product_type: Option<BybitProductType>,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
-    option_greeks_subs: &DashSet<InstrumentId>,
+    option_greeks_subs: &AtomicSet<InstrumentId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -1528,7 +1537,7 @@ fn handle_ticker_option(
 
 fn handle_account_order(
     msg: &crate::websocket::messages::BybitWsAccountOrderMsg,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     account_id: Option<AccountId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
@@ -1537,7 +1546,7 @@ fn handle_account_order(
     let ts_init = clock.get_time_ns();
     for order in &msg.data {
         let symbol = make_bybit_symbol(order.symbol, order.category);
-        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+        let Some(instrument) = instruments.get_cloned(&symbol) else {
             log::warn!("No instrument for order update: {symbol}");
             continue;
         };
@@ -1554,7 +1563,7 @@ fn handle_account_order(
 
 fn handle_account_execution(
     msg: &crate::websocket::messages::BybitWsAccountExecutionMsg,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     account_id: Option<AccountId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
@@ -1563,7 +1572,7 @@ fn handle_account_execution(
     let ts_init = clock.get_time_ns();
     for exec in &msg.data {
         let symbol = make_bybit_symbol(exec.symbol, exec.category);
-        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+        let Some(instrument) = instruments.get_cloned(&symbol) else {
             log::warn!("No instrument for execution update: {symbol}");
             continue;
         };
@@ -1601,7 +1610,7 @@ fn handle_account_wallet(
 
 fn handle_account_position(
     msg: &crate::websocket::messages::BybitWsAccountPositionMsg,
-    instruments: &DashMap<Ustr, InstrumentAny>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
     account_id: Option<AccountId>,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
@@ -1610,7 +1619,7 @@ fn handle_account_position(
     let ts_init = clock.get_time_ns();
     for position in &msg.data {
         let symbol = make_bybit_symbol(position.symbol, position.category);
-        let Some(instrument) = instruments.get(&symbol).map(|r| r.value().clone()) else {
+        let Some(instrument) = instruments.get_cloned(&symbol) else {
             log::warn!("No instrument for position update: {symbol}");
             continue;
         };

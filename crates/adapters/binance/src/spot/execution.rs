@@ -16,16 +16,16 @@
 //! Live execution client implementation for the Binance Spot adapter.
 
 use std::{
-    collections::VecDeque,
     future::Future,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
+    cache::fifo::FifoCache,
     clients::ExecutionClient,
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
@@ -95,51 +95,6 @@ use crate::{
         },
     },
 };
-
-/// Bounded deduplication set for trade IDs.
-///
-/// Prevents duplicate fill events when the same trade is received from both
-/// HTTP reconciliation and WebSocket user data stream.
-struct BoundedDedup<T: std::hash::Hash + Eq + Copy> {
-    set: AHashSet<T>,
-    order: VecDeque<T>,
-    capacity: usize,
-}
-
-impl<T: std::hash::Hash + Eq + Copy> std::fmt::Debug for BoundedDedup<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BoundedDedup))
-            .field("len", &self.set.len())
-            .field("capacity", &self.capacity)
-            .finish()
-    }
-}
-
-impl<T: std::hash::Hash + Eq + Copy> BoundedDedup<T> {
-    fn new(capacity: usize) -> Self {
-        Self {
-            set: AHashSet::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    /// Returns `true` if the value was already present.
-    fn insert(&mut self, value: T) -> bool {
-        if self.set.contains(&value) {
-            return true;
-        }
-
-        if self.order.len() >= self.capacity
-            && let Some(old) = self.order.pop_front()
-        {
-            self.set.remove(&old);
-        }
-        self.set.insert(value);
-        self.order.push_back(value);
-        false
-    }
-}
 
 /// Live execution client for Binance Spot trading.
 ///
@@ -639,8 +594,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     let http_client = self.http_client.clone();
                     let dispatch_state = self.dispatch_state.clone();
                     let ws_authenticated = self.ws_authenticated.clone();
-                    let seen_trade_ids =
-                        std::sync::Arc::new(Mutex::new(BoundedDedup::<(Ustr, i64)>::new(10_000)));
+                    let seen_trade_ids = std::sync::Arc::new(Mutex::new(FifoCache::new()));
 
                     let handle = get_runtime().spawn(async move {
                         loop {
@@ -1365,7 +1319,7 @@ fn dispatch_ws_trading_message(
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
     ws_authenticated: &tokio::sync::Notify,
-    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
+    seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
 ) {
     match msg {
         BinanceSpotWsTradingMessage::OrderAccepted {
@@ -1700,7 +1654,7 @@ fn dispatch_execution_report(
     http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
     dispatch_state: &WsDispatchState,
-    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
+    seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     ts_init: UnixNanos,
 ) {
     let symbol = report.symbol;
@@ -1755,7 +1709,7 @@ fn dispatch_tracked_execution_report(
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
     state: &WsDispatchState,
-    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
+    seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     client_order_id: ClientOrderId,
     identity: &OrderIdentity,
     instrument_id: InstrumentId,
@@ -1768,12 +1722,12 @@ fn dispatch_tracked_execution_report(
 
     match report.execution_type {
         BinanceSpotExecutionType::New => {
-            if state.filled_orders.contains(&client_order_id) {
+            if state.has_filled(&client_order_id) {
                 log::debug!("Skipping New for already-filled {client_order_id}");
                 return;
             }
 
-            if state.emitted_accepted.contains(&client_order_id) {
+            if state.has_emitted_accepted(&client_order_id) {
                 // Already accepted: this New is a cancel-replace result
                 let price: f64 = report.price.parse().unwrap_or(0.0);
                 let quantity: f64 = report.original_qty.parse().unwrap_or(0.0);
@@ -1820,10 +1774,10 @@ fn dispatch_tracked_execution_report(
         }
         BinanceSpotExecutionType::Trade => {
             let dedup_key = (report.symbol, report.trade_id);
-            let is_duplicate = seen_trade_ids
-                .lock()
-                .expect(MUTEX_POISONED)
-                .insert(dedup_key);
+            let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+            let is_duplicate = guard.contains(&dedup_key);
+            guard.add(dedup_key);
+            drop(guard);
 
             if is_duplicate {
                 log::debug!(
@@ -1954,7 +1908,7 @@ fn dispatch_untracked_execution_report(
     emitter: &ExecutionEventEmitter,
     _http_client: &BinanceSpotHttpClient,
     account_id: AccountId,
-    seen_trade_ids: &std::sync::Arc<Mutex<BoundedDedup<(Ustr, i64)>>>,
+    seen_trade_ids: &std::sync::Arc<Mutex<FifoCache<(Ustr, i64), 10_000>>>,
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
@@ -1963,10 +1917,10 @@ fn dispatch_untracked_execution_report(
     match report.execution_type {
         BinanceSpotExecutionType::Trade => {
             let dedup_key = (report.symbol, report.trade_id);
-            let is_duplicate = seen_trade_ids
-                .lock()
-                .expect(MUTEX_POISONED)
-                .insert(dedup_key);
+            let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+            let is_duplicate = guard.contains(&dedup_key);
+            guard.add(dedup_key);
+            drop(guard);
 
             if is_duplicate {
                 log::debug!(

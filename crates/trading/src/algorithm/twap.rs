@@ -30,16 +30,10 @@
 //! An order with `horizon_secs=60` and `interval_secs=10` will spawn 6 child
 //! orders over 60 seconds, one every 10 seconds.
 
-use std::{
-    ops::{Deref, DerefMut},
-    time::Duration,
-};
+use std::time::Duration;
 
 use ahash::AHashMap;
-use nautilus_common::{
-    actor::{DataActor, DataActorCore},
-    timer::TimeEvent,
-};
+use nautilus_common::{actor::DataActor, nautilus_actor, timer::TimeEvent};
 use nautilus_model::{
     enums::OrderType,
     identifiers::ClientOrderId,
@@ -88,20 +82,9 @@ impl TwapAlgorithm {
     }
 }
 
-impl Deref for TwapAlgorithm {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
-        &self.core.actor
-    }
-}
-
-impl DerefMut for TwapAlgorithm {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core.actor
-    }
-}
-
 impl DataActor for TwapAlgorithm {}
+
+nautilus_actor!(TwapAlgorithm);
 
 impl ExecutionAlgorithm for TwapAlgorithm {
     fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {

@@ -15,37 +15,10 @@
 
 //! Time event accumulation and scheduling for the backtest engine.
 
-use std::{cmp::Ordering, collections::BinaryHeap};
+use std::{cmp::Reverse, collections::BinaryHeap};
 
 use nautilus_common::{clock::TestClock, timer::TimeEventHandler};
 use nautilus_core::UnixNanos;
-
-/// Wrapper for heap ordering (earlier timestamps = higher priority).
-///
-/// Uses reverse ordering so the BinaryHeap (max-heap) behaves as a min-heap.
-#[derive(Clone, Debug)]
-pub struct ScheduledTimeEventHandler(pub TimeEventHandler);
-
-impl PartialEq for ScheduledTimeEventHandler {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.event.ts_event == other.0.event.ts_event
-    }
-}
-
-impl Eq for ScheduledTimeEventHandler {}
-
-impl PartialOrd for ScheduledTimeEventHandler {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ScheduledTimeEventHandler {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // Reverse ordering for min-heap behavior (earlier timestamps = higher priority)
-        other.0.event.ts_event.cmp(&self.0.event.ts_event)
-    }
-}
 
 /// Provides a means of accumulating and draining time event handlers using a priority queue.
 ///
@@ -53,7 +26,7 @@ impl Ord for ScheduledTimeEventHandler {
 /// retrieval of the next event to process.
 #[derive(Debug)]
 pub struct TimeEventAccumulator {
-    heap: BinaryHeap<ScheduledTimeEventHandler>,
+    heap: BinaryHeap<Reverse<TimeEventHandler>>,
 }
 
 impl TimeEventAccumulator {
@@ -70,7 +43,7 @@ impl TimeEventAccumulator {
         let events = clock.advance_time(to_time_ns, set_time);
         let handlers = clock.match_handlers(events);
         for handler in handlers {
-            self.heap.push(ScheduledTimeEventHandler(handler));
+            self.heap.push(Reverse(handler));
         }
     }
 
@@ -174,9 +147,9 @@ mod tests {
             let handler2 = TimeEventHandler::new(time_event2.clone(), callback.clone());
             let handler3 = TimeEventHandler::new(time_event3.clone(), callback);
 
-            accumulator.heap.push(ScheduledTimeEventHandler(handler1));
-            accumulator.heap.push(ScheduledTimeEventHandler(handler2));
-            accumulator.heap.push(ScheduledTimeEventHandler(handler3));
+            accumulator.heap.push(Reverse(handler1));
+            accumulator.heap.push(Reverse(handler2));
+            accumulator.heap.push(Reverse(handler3));
             assert_eq!(accumulator.len(), 3);
 
             let popped1 = accumulator.pop_next_at_or_before(1000.into()).unwrap();
@@ -189,6 +162,48 @@ mod tests {
             assert_eq!(popped3.event.ts_event, time_event2.ts_event);
 
             assert!(accumulator.is_empty());
+        });
+    }
+
+    #[rstest]
+    fn test_accumulator_pop_same_timestamp_in_name_order() {
+        Python::initialize();
+        Python::attach(|py| {
+            let py_list = PyList::empty(py);
+            let py_append = Py::from(py_list.getattr("append").unwrap());
+
+            let mut accumulator = TimeEventAccumulator::new();
+            let callback = TimeEventCallback::from(py_append.into_any());
+
+            let spread_event = TimeEvent::new(
+                Ustr::from("spread_quote_ESM4"),
+                UUID4::new(),
+                100.into(),
+                100.into(),
+            );
+            let time_bar_event = TimeEvent::new(
+                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                UUID4::new(),
+                100.into(),
+                100.into(),
+            );
+
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                time_bar_event.clone(),
+                callback.clone(),
+            )));
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                spread_event.clone(),
+                callback,
+            )));
+
+            let popped1 = accumulator.pop_next_at_or_before(100.into()).unwrap();
+            assert_eq!(popped1.event.ts_event, spread_event.ts_event);
+            assert_eq!(popped1.event.name, spread_event.name);
+
+            let popped2 = accumulator.pop_next_at_or_before(100.into()).unwrap();
+            assert_eq!(popped2.event.ts_event, time_bar_event.ts_event);
+            assert_eq!(popped2.event.name, time_bar_event.name);
         });
     }
 
@@ -216,18 +231,14 @@ mod tests {
 
             let callback = TimeEventCallback::from(py_append.into_any());
 
-            accumulator
-                .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    time_event1.clone(),
-                    callback.clone(),
-                )));
-            accumulator
-                .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    time_event2.clone(),
-                    callback,
-                )));
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                time_event1.clone(),
+                callback.clone(),
+            )));
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                time_event2.clone(),
+                callback,
+            )));
 
             let popped1 = accumulator.pop_next_at_or_before(200.into()).unwrap();
             assert_eq!(popped1.event.ts_event, time_event1.ts_event);
@@ -264,20 +275,15 @@ mod tests {
                 100.into(),
             );
 
-            accumulator
-                .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    time_event1,
-                    callback.clone(),
-                )));
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                time_event1,
+                callback.clone(),
+            )));
             assert_eq!(accumulator.peek_next_time(), Some(200.into()));
 
             accumulator
                 .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    time_event2,
-                    callback,
-                )));
+                .push(Reverse(TimeEventHandler::new(time_event2, callback)));
             assert_eq!(accumulator.peek_next_time(), Some(100.into()));
         });
     }
@@ -296,10 +302,7 @@ mod tests {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
                 accumulator
                     .heap
-                    .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                        event,
-                        callback.clone(),
-                    )));
+                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
             }
 
             let handlers = accumulator.drain();
@@ -327,10 +330,7 @@ mod tests {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
                 accumulator
                     .heap
-                    .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                        event,
-                        callback.clone(),
-                    )));
+                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
             }
 
             let handler = accumulator.pop_next_at_or_before(1000.into()).unwrap();
@@ -340,9 +340,7 @@ mod tests {
             let event = TimeEvent::new(Ustr::from("NEW"), UUID4::new(), 150.into(), 150.into());
             accumulator
                 .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    event, callback,
-                )));
+                .push(Reverse(TimeEventHandler::new(event, callback)));
 
             while let Some(handler) = accumulator.pop_next_at_or_before(1000.into()) {
                 popped_timestamps.push(handler.event.ts_event.as_u64());
@@ -371,10 +369,7 @@ mod tests {
                 );
                 accumulator
                     .heap
-                    .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                        event,
-                        callback.clone(),
-                    )));
+                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
             }
 
             let mut count = 0;
@@ -399,23 +394,17 @@ mod tests {
             let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), 100.into(), 100.into());
             accumulator
                 .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    event, callback,
-                )));
+                .push(Reverse(TimeEventHandler::new(event, callback)));
 
             let handler = accumulator.pop_next_at_or_before(100.into());
             assert!(handler.is_some());
             assert_eq!(handler.unwrap().event.ts_event.as_u64(), 100);
 
             let event2 = TimeEvent::new(Ustr::from("TEST2"), UUID4::new(), 200.into(), 200.into());
-            accumulator
-                .heap
-                .push(ScheduledTimeEventHandler(TimeEventHandler::new(
-                    event2,
-                    TimeEventCallback::from(
-                        Py::from(py_list.getattr("append").unwrap()).into_any(),
-                    ),
-                )));
+            accumulator.heap.push(Reverse(TimeEventHandler::new(
+                event2,
+                TimeEventCallback::from(Py::from(py_list.getattr("append").unwrap()).into_any()),
+            )));
 
             assert!(accumulator.pop_next_at_or_before(199.into()).is_none());
             assert!(accumulator.pop_next_at_or_before(200.into()).is_some());

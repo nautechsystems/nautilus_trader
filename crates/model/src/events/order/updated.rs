@@ -366,4 +366,12 @@ mod tests {
             "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22_000, trigger_price=None, protection_price=None, ts_event=0)"
         );
     }
+
+    #[rstest]
+    fn test_order_updated_serialization() {
+        let original = OrderUpdated::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderUpdated = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
 }

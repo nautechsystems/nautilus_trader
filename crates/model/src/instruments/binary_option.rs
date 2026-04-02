@@ -400,11 +400,64 @@ impl Instrument for BinaryOption {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{BinaryOption, stubs::*};
+    use crate::{
+        enums::{AssetClass, InstrumentClass},
+        identifiers::{InstrumentId, Symbol},
+        instruments::{BinaryOption, Instrument, stubs::*},
+        types::{Currency, Price, Quantity},
+    };
 
     #[rstest]
-    fn test_equality(binary_option: BinaryOption) {
-        let cloned = binary_option.clone();
-        assert_eq!(binary_option, cloned);
+    fn test_trait_accessors(binary_option: BinaryOption) {
+        assert_eq!(binary_option.asset_class(), AssetClass::Alternative);
+        assert_eq!(
+            binary_option.instrument_class(),
+            InstrumentClass::BinaryOption
+        );
+        assert_eq!(binary_option.quote_currency(), Currency::USDC());
+        assert!(!binary_option.is_inverse());
+        assert_eq!(binary_option.price_precision(), 3);
+        assert_eq!(binary_option.size_precision(), 2);
+        assert!(binary_option.activation_ns().is_some());
+        assert!(binary_option.expiration_ns().is_some());
+    }
+
+    #[rstest]
+    fn test_new_checked_price_precision_mismatch() {
+        let result = BinaryOption::new_checked(
+            InstrumentId::from("TEST.POLYMARKET"),
+            Symbol::from("TEST"),
+            AssetClass::Alternative,
+            Currency::USDC(),
+            0.into(),
+            0.into(),
+            4, // mismatch
+            2,
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip(binary_option: BinaryOption) {
+        let json = serde_json::to_string(&binary_option).unwrap();
+        let deserialized: BinaryOption = serde_json::from_str(&json).unwrap();
+        assert_eq!(binary_option, deserialized);
     }
 }

@@ -65,6 +65,7 @@ pub mod factories;
 pub mod generators;
 pub mod greeks;
 pub mod logging;
+mod macros;
 pub mod messages;
 pub mod msgbus;
 pub mod providers;

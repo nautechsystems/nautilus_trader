@@ -86,12 +86,28 @@ pub fn is_market_price(px: &str) -> bool {
 /// For FOK, IOC, and OptimalLimitIoc orders, the presence of a price
 /// determines whether it's a market or limit order execution.
 pub fn determine_order_type(okx_ord_type: OKXOrderType, px: &str) -> OrderType {
+    determine_order_type_with_alt(okx_ord_type, px, "", "")
+}
+
+/// Like [`determine_order_type`] but considers alternative pricing fields.
+///
+/// When options are priced via `px_vol` or `px_usd`, the primary `px` field
+/// is empty. Treating that as a market order is wrong: the order was a limit
+/// priced in an alternative unit.
+pub fn determine_order_type_with_alt(
+    okx_ord_type: OKXOrderType,
+    px: &str,
+    px_vol: &str,
+    px_usd: &str,
+) -> OrderType {
     match okx_ord_type {
+        OKXOrderType::OpFok => OrderType::Limit,
         OKXOrderType::Fok | OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => {
-            if is_market_price(px) {
-                OrderType::Market
-            } else {
+            let has_alt_price = !px_vol.is_empty() || !px_usd.is_empty();
+            if has_alt_price || !is_market_price(px) {
                 OrderType::Limit
+            } else {
+                OrderType::Market
             }
         }
         _ => okx_ord_type.into(),
@@ -554,7 +570,8 @@ pub fn parse_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let okx_ord_type: OKXOrderType = order.ord_type;
-    let order_type = determine_order_type(okx_ord_type, &order.px);
+    let order_type =
+        determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd);
 
     // Parse quantities based on target currency
     // OKX always returns acc_fill_sz in base currency, but sz depends on tgt_ccy
@@ -621,7 +638,8 @@ pub fn parse_order_status_report(
             }
         } else {
             log::warn!(
-                "Cannot convert quote quantity without price: ord_id={}, sz={}, px='{}', avg_px='{}', using sz as-is",
+                "Cannot convert quote quantity to base without price, using raw sz: \
+                 ord_id={}, sz={}, px='{}', avg_px='{}'",
                 order.ord_id.as_str(),
                 order.sz,
                 order.px,
@@ -680,7 +698,7 @@ pub fn parse_order_status_report(
     let okx_status: OKXOrderStatus = order.state;
     let order_status: OrderStatus = okx_status.into();
     let time_in_force = match okx_ord_type {
-        OKXOrderType::Fok => TimeInForce::Fok,
+        OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
         OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
         _ => TimeInForce::Gtc,
     };
@@ -2034,6 +2052,7 @@ pub fn parse_account_state(
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
+
     for b in &okx_account.details {
         // Skip balances with empty or whitespace-only currency codes
         let ccy_str = b.ccy.as_str().trim();
@@ -3150,6 +3169,45 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_account_state_empty_balance_account() {
+        // Reproduces GH-3772: OKX returns empty strings for numeric fields
+        // when the account has zero balance and no positions
+        let account_json = r#"{
+            "adjEq": "",
+            "borrowFroz": "",
+            "details": [],
+            "imr": "",
+            "isoEq": "0",
+            "mgnRatio": "",
+            "mmr": "",
+            "notionalUsd": "",
+            "notionalUsdForBorrow": "",
+            "notionalUsdForFutures": "",
+            "notionalUsdForOption": "",
+            "notionalUsdForSwap": "",
+            "ordFroz": "",
+            "totalEq": "0",
+            "uTime": "1774795570586",
+            "upl": ""
+        }"#;
+
+        let okx_account: OKXAccount = serde_json::from_str(account_json).unwrap();
+        let account_id = AccountId::new("OKX-001");
+        let account_state =
+            parse_account_state(&okx_account, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(account_state.account_id, account_id);
+        assert_eq!(account_state.account_type, AccountType::Margin);
+        assert_eq!(account_state.margins.len(), 0);
+
+        assert_eq!(account_state.balances.len(), 1);
+        let balance = &account_state.balances[0];
+        assert_eq!(balance.total, Money::new(0.0, Currency::USD()));
+        assert_eq!(balance.free, Money::new(0.0, Currency::USD()));
+        assert_eq!(balance.locked, Money::new(0.0, Currency::USD()));
+    }
+
+    #[rstest]
     fn test_parse_order_status_report() {
         let json_data = load_test_json("http_get_orders_history.json");
         let response: OKXResponse<OKXOrderHistory> = serde_json::from_str(&json_data).unwrap();
@@ -3607,6 +3665,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: "BTC".to_string(),
             usd_px: "50000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -3675,6 +3737,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: "BTC".to_string(),
             usd_px: "50000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -3743,6 +3809,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: "ETH".to_string(),
             usd_px: "3000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -3811,6 +3881,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: "BTC".to_string(),
             usd_px: "50000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -3883,6 +3957,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: "BTC".to_string(),
             usd_px: "50000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -3955,6 +4033,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: String::new(),
             usd_px: "4000".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4023,6 +4105,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: String::new(),
             usd_px: "4092".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4092,6 +4178,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: String::new(),
             usd_px: "3333.33".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let report = parse_position_status_report(
@@ -4166,6 +4256,10 @@ mod tests {
             spot_in_use_amt: "0".to_string(),
             spot_in_use_ccy: String::new(),
             usd_px: "0".to_string(),
+            delta_bs: String::new(),
+            gamma_bs: String::new(),
+            theta_bs: String::new(),
+            vega_bs: String::new(),
         };
 
         let account_id = AccountId::new("OKX-001");
@@ -4707,7 +4801,7 @@ mod tests {
         #[case] expected_tif: TimeInForce,
     ) {
         let time_in_force = match okx_ord_type {
-            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
             OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
             _ => TimeInForce::Gtc,
         };
@@ -4779,7 +4873,7 @@ mod tests {
         assert_eq!(okx_ord_type, expected_okx_type);
 
         let parsed_tif = match okx_ord_type {
-            OKXOrderType::Fok => TimeInForce::Fok,
+            OKXOrderType::Fok | OKXOrderType::OpFok => TimeInForce::Fok,
             OKXOrderType::Ioc | OKXOrderType::OptimalLimitIoc => TimeInForce::Ioc,
             _ => TimeInForce::Gtc,
         };

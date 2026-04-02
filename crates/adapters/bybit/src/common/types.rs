@@ -25,7 +25,7 @@
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")
 )]
 pub struct BybitMarginBorrowResult {
     /// The coin that was borrowed.
@@ -50,7 +50,7 @@ pub struct BybitMarginBorrowResult {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")
 )]
 pub struct BybitMarginRepayResult {
     /// The coin that was repaid.
@@ -77,7 +77,7 @@ pub struct BybitMarginRepayResult {
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bybit")
 )]
 pub struct BybitMarginStatusResult {
     /// The coin being queried.

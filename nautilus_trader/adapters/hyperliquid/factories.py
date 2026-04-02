@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
+from nautilus_trader.adapters.hyperliquid.enums import HyperliquidProductType
 from nautilus_trader.adapters.hyperliquid.execution import HyperliquidExecutionClient
 from nautilus_trader.adapters.hyperliquid.providers import HyperliquidInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -32,12 +34,16 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+
 @lru_cache(1)
 def get_cached_hyperliquid_http_client(
     private_key: str | None = None,
     vault_address: str | None = None,
     account_address: str | None = None,
-    timeout_secs: int = 10,
+    timeout_secs: int | None = None,
     testnet: bool = False,
     proxy_url: str | None = None,
     normalize_prices: bool = True,
@@ -62,7 +68,7 @@ def get_cached_hyperliquid_http_client(
     account_address : str, optional
         The main account address when using an agent wallet (API sub-key).
         If ``None`` then will source the `HYPERLIQUID_ACCOUNT_ADDRESS` env var.
-    timeout_secs : int, default 10
+    timeout_secs : int, optional
         The timeout (seconds) for HTTP requests to Hyperliquid.
     testnet : bool, default False
         If the client is connecting to the testnet API.
@@ -77,21 +83,26 @@ def get_cached_hyperliquid_http_client(
         The Hyperliquid HTTP client instance.
 
     """
-    return nautilus_pyo3.HyperliquidHttpClient(
-        private_key=private_key,
-        vault_address=vault_address,
-        account_address=account_address,
-        is_testnet=testnet,
-        timeout_secs=timeout_secs,
-        proxy_url=proxy_url,
-        normalize_prices=normalize_prices,
-    )
+    kwargs: dict = {
+        "private_key": private_key,
+        "vault_address": vault_address,
+        "account_address": account_address,
+        "is_testnet": testnet,
+        "proxy_url": proxy_url,
+        "normalize_prices": normalize_prices,
+    }
+
+    if timeout_secs is not None:
+        kwargs["timeout_secs"] = timeout_secs
+
+    return nautilus_pyo3.HyperliquidHttpClient(**kwargs)
 
 
 @lru_cache(1)
 def get_cached_hyperliquid_instrument_provider(
     client: nautilus_pyo3.HyperliquidHttpClient,
     config: InstrumentProviderConfig | None = None,
+    product_types: tuple[HyperliquidProductType, ...] | None = None,
 ) -> HyperliquidInstrumentProvider:
     """
     Cache and return a Hyperliquid instrument provider.
@@ -104,6 +115,8 @@ def get_cached_hyperliquid_instrument_provider(
         The Hyperliquid HTTP client.
     config : InstrumentProviderConfig, optional
         The instrument provider configuration, by default None.
+    product_types : tuple[HyperliquidProductType, ...], optional
+        The Hyperliquid product types to enable for the provider.
 
     Returns
     -------
@@ -113,7 +126,17 @@ def get_cached_hyperliquid_instrument_provider(
     return HyperliquidInstrumentProvider(
         client=client,
         config=config,
+        product_types=product_types,
     )
+
+
+def _resolve_product_types(
+    product_types: Iterable[HyperliquidProductType] | None,
+) -> tuple[HyperliquidProductType, ...] | None:
+    if product_types is None:
+        return None
+
+    return tuple(HyperliquidProductType(pt) for pt in product_types)
 
 
 class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
@@ -161,6 +184,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
             config=config.instrument_provider,
+            product_types=_resolve_product_types(config.product_types),
         )
         return HyperliquidDataClient(
             loop=loop,
@@ -223,6 +247,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
             config=config.instrument_provider,
+            product_types=_resolve_product_types(config.product_types),
         )
         return HyperliquidExecutionClient(
             loop=loop,

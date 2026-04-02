@@ -289,6 +289,32 @@ impl TradeTick {
         Ok(py_dict)
     }
 
+    #[staticmethod]
+    #[pyo3(name = "from_raw")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_from_raw(
+        instrument_id: InstrumentId,
+        price_raw: PriceRaw,
+        price_prec: u8,
+        size_raw: QuantityRaw,
+        size_prec: u8,
+        aggressor_side: AggressorSide,
+        trade_id: TradeId,
+        ts_event: u64,
+        ts_init: u64,
+    ) -> PyResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            Price::from_raw(price_raw, price_prec),
+            Quantity::from_raw(size_raw, size_prec),
+            aggressor_side,
+            trade_id,
+            ts_event.into(),
+            ts_init.into(),
+        )
+        .map_err(to_pyvalue_err)
+    }
+
     /// Returns a new object from the given dictionary representation.
     #[staticmethod]
     #[pyo3(name = "from_dict")]

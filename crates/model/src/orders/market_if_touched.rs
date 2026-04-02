@@ -204,6 +204,12 @@ impl MarketIfTouchedOrder {
     }
 }
 
+impl PartialEq for MarketIfTouchedOrder {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id == other.client_order_id
+    }
+}
+
 impl Deref for MarketIfTouchedOrder {
     type Target = OrderCore;
 

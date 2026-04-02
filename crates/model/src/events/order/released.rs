@@ -304,4 +304,12 @@ mod tests {
             "OrderReleased(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, released_price=22_000)"
         );
     }
+
+    #[rstest]
+    fn test_order_released_serialization() {
+        let original = OrderReleased::default();
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderReleased = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
 }

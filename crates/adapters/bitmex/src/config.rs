@@ -23,14 +23,14 @@ use crate::common::{
 };
 
 /// Configuration for the BitMEX live data client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexDataClientConfig {
     /// Optional API key used for authenticated REST/WebSocket requests.
@@ -48,17 +48,21 @@ pub struct BitmexDataClientConfig {
     /// Note: WebSocket proxy support is not yet implemented. This field is reserved
     /// for future functionality. Use `http_proxy_url` for REST API proxy support.
     pub ws_proxy_url: Option<String>,
-    /// Optional REST timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
-    /// Optional maximum retry attempts for REST requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry backoff in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry backoff in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
+    /// REST timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// Maximum retry attempts for REST requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry backoff in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry backoff in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
     /// Optional heartbeat interval (seconds) for the WebSocket client.
     pub heartbeat_interval_secs: Option<u64>,
-    /// Optional receive window in milliseconds for signed requests (default 10_000).
+    /// Receive window in milliseconds for signed requests.
     ///
     /// This value determines how far in the future the `api-expires` timestamp will be set
     /// for signed REST requests. BitMEX uses seconds-granularity Unix timestamps in the
@@ -73,40 +77,27 @@ pub struct BitmexDataClientConfig {
     /// increases the replay attack window. The default of 10 seconds should be sufficient
     /// for most deployments. Consider increasing this value (e.g., to 30_000ms = 30s) if you
     /// experience request expiration errors due to clock drift or high network latency.
-    pub recv_window_ms: Option<u64>,
+    #[builder(default = 10_000)]
+    pub recv_window_ms: u64,
     /// When `true`, only active instruments are requested during bootstrap.
+    #[builder(default = true)]
     pub active_only: bool,
     /// Optional interval (minutes) for instrument refresh from REST.
     pub update_instruments_interval_mins: Option<u64>,
     /// When `true`, use BitMEX testnet endpoints by default.
+    #[builder(default)]
     pub use_testnet: bool,
     /// Maximum number of requests per second (burst limit).
-    pub max_requests_per_second: Option<u32>,
+    #[builder(default = 10)]
+    pub max_requests_per_second: u32,
     /// Maximum number of requests per minute (rolling window).
-    pub max_requests_per_minute: Option<u32>,
+    #[builder(default = 120)]
+    pub max_requests_per_minute: u32,
 }
 
 impl Default for BitmexDataClientConfig {
     fn default() -> Self {
-        Self {
-            api_key: None,
-            api_secret: None,
-            base_url_http: None,
-            base_url_ws: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-            heartbeat_interval_secs: None,
-            recv_window_ms: Some(10_000),
-            active_only: true,
-            update_instruments_interval_mins: None,
-            use_testnet: false,
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(120),
-        }
+        Self::builder().build()
     }
 }
 
@@ -153,14 +144,14 @@ impl BitmexDataClientConfig {
 }
 
 /// Configuration for the BitMEX live execution client.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.bitmex", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.bitmex")
 )]
 pub struct BitmexExecClientConfig {
     /// API key used for authenticated requests.
@@ -178,17 +169,22 @@ pub struct BitmexExecClientConfig {
     /// Note: WebSocket proxy support is not yet implemented. This field is reserved
     /// for future functionality. Use `http_proxy_url` for REST API proxy support.
     pub ws_proxy_url: Option<String>,
-    /// Optional REST timeout in seconds.
-    pub http_timeout_secs: Option<u64>,
-    /// Optional maximum retry attempts for REST requests.
-    pub max_retries: Option<u32>,
-    /// Optional initial retry backoff in milliseconds.
-    pub retry_delay_initial_ms: Option<u64>,
-    /// Optional maximum retry backoff in milliseconds.
-    pub retry_delay_max_ms: Option<u64>,
-    /// Optional heartbeat interval (seconds) for the WebSocket client.
-    pub heartbeat_interval_secs: Option<u64>,
-    /// Optional receive window in milliseconds for signed requests (default 10000).
+    /// REST timeout in seconds.
+    #[builder(default = 60)]
+    pub http_timeout_secs: u64,
+    /// Maximum retry attempts for REST requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
+    /// Initial retry backoff in milliseconds.
+    #[builder(default = 1_000)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum retry backoff in milliseconds.
+    #[builder(default = 10_000)]
+    pub retry_delay_max_ms: u64,
+    /// Heartbeat interval (seconds) for the WebSocket client.
+    #[builder(default = 5)]
+    pub heartbeat_interval_secs: u64,
+    /// Receive window in milliseconds for signed requests.
     ///
     /// This value determines how far in the future the `api-expires` timestamp will be set
     /// for signed REST requests. BitMEX uses seconds-granularity Unix timestamps in the
@@ -203,17 +199,22 @@ pub struct BitmexExecClientConfig {
     /// increases the replay attack window. The default of 10 seconds should be sufficient
     /// for most deployments. Consider increasing this value (e.g., to 30000ms = 30s) if you
     /// experience request expiration errors due to clock drift or high network latency.
-    pub recv_window_ms: Option<u64>,
+    #[builder(default = 10_000)]
+    pub recv_window_ms: u64,
     /// When `true`, only active instruments are requested during bootstrap.
+    #[builder(default = true)]
     pub active_only: bool,
     /// When `true`, use BitMEX testnet endpoints by default.
+    #[builder(default)]
     pub use_testnet: bool,
     /// Optional account identifier to associate with the execution client.
     pub account_id: Option<AccountId>,
     /// Maximum number of requests per second (burst limit).
-    pub max_requests_per_second: Option<u32>,
+    #[builder(default = 10)]
+    pub max_requests_per_second: u32,
     /// Maximum number of requests per minute (rolling window).
-    pub max_requests_per_minute: Option<u32>,
+    #[builder(default = 120)]
+    pub max_requests_per_minute: u32,
     /// Number of HTTP clients in the submit broadcaster pool (defaults to 1).
     pub submitter_pool_size: Option<usize>,
     /// Number of HTTP clients in the cancel broadcaster pool (defaults to 1).
@@ -233,30 +234,7 @@ pub struct BitmexExecClientConfig {
 
 impl Default for BitmexExecClientConfig {
     fn default() -> Self {
-        Self {
-            api_key: None,
-            api_secret: None,
-            base_url_http: None,
-            base_url_ws: None,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            http_timeout_secs: Some(60),
-            max_retries: Some(3),
-            retry_delay_initial_ms: Some(1_000),
-            retry_delay_max_ms: Some(10_000),
-            heartbeat_interval_secs: Some(5),
-            recv_window_ms: Some(10_000),
-            active_only: true,
-            use_testnet: false,
-            account_id: None,
-            max_requests_per_second: Some(10),
-            max_requests_per_minute: Some(120),
-            submitter_pool_size: None,
-            canceller_pool_size: None,
-            submitter_proxy_urls: None,
-            canceller_proxy_urls: None,
-            deadmans_switch_timeout_secs: None,
-        }
+        Self::builder().build()
     }
 }
 

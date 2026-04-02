@@ -47,15 +47,15 @@ orders_report = ReportProvider.generate_orders_report(orders)
 | `strategy_id`      | Strategy that created the order.                        |
 | `trader_id`        | Trader identifier.                                      |
 | `account_id`       | Account identifier (if assigned).                       |
-| `venue_order_id`   | Venue-assigned order ID (if accepted).                  |
+| `venue_order_id`   | Venue‑assigned order ID (if accepted).                  |
 | `side`             | BUY or SELL.                                            |
 | `type`             | MARKET, LIMIT, etc.                                     |
 | `status`           | Current order status.                                   |
 | `quantity`         | Original order quantity (string).                       |
 | `filled_qty`       | Amount filled (string).                                 |
-| `price`            | Limit price (order-type dependent).                     |
+| `price`            | Limit price (order‑type dependent).                     |
 | `avg_px`           | Average fill price (if filled).                         |
-| `time_in_force`    | Time-in-force instruction.                              |
+| `time_in_force`    | Time‑in‑force instruction.                              |
 | `ts_init`          | Order initialization timestamp (Unix nanoseconds).      |
 | `ts_last`          | Last update timestamp (Unix nanoseconds).               |
 
@@ -98,7 +98,7 @@ fills_report = ReportProvider.generate_fills_report(orders)
 |--------------------|------------------------------------------|
 | `client_order_id`  | Index - order identifier.                |
 | `trade_id`         | Unique trade/fill identifier.            |
-| `venue_order_id`   | Venue-assigned order ID.                 |
+| `venue_order_id`   | Venue‑assigned order ID.                 |
 | `instrument_id`    | Trading instrument.                      |
 | `strategy_id`      | Strategy that created the order.         |
 | `account_id`       | Account identifier.                      |
@@ -190,7 +190,7 @@ account_report = ReportProvider.generate_account_report(account)
 | `currency`      | Currency of the balance.                   |
 | `reported`      | Whether balance was reported by venue.     |
 | `margins`       | Margin information (list, if applicable).  |
-| `info`          | Additional venue-specific information.     |
+| `info`          | Additional venue‑specific information.     |
 
 Each row represents a balance entry; accounts with multiple currencies produce multiple rows
 per account state event.

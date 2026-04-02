@@ -15,10 +15,11 @@
 
 use std::str::FromStr;
 
+use alloy::{
+    signers::{SignerSync, local::PrivateKeySigner},
+    sol_types::{SolStruct, eip712_domain},
+};
 use alloy_primitives::{Address, B256, keccak256};
-use alloy_signer::SignerSync;
-use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{SolStruct, eip712_domain};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -29,7 +30,7 @@ use crate::{
 };
 
 // Define the Agent struct for L1 signing
-alloy_sol_types::sol! {
+alloy::sol! {
     #[derive(Debug, Serialize, Deserialize)]
     struct Agent {
         string source;
@@ -185,7 +186,7 @@ impl HyperliquidEip712Signer {
 
 #[cfg(test)]
 mod tests {
-    use alloy_sol_types::SolStruct;
+    use alloy::sol_types::SolStruct;
     use nautilus_model::{identifiers::ClientOrderId, types::Price};
     use rstest::rstest;
     use rust_decimal_macros::dec;

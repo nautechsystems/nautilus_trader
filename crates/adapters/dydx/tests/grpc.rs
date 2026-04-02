@@ -736,3 +736,150 @@ fn test_batch_cancel_partitioning_by_order_lifetime() {
     assert_eq!(ORDER_FLAG_LONG_TERM, 64);
     assert_eq!(ORDER_FLAG_CONDITIONAL, 32);
 }
+
+#[rstest]
+fn test_take_profit_market_buy_order() {
+    use nautilus_dydx::proto::dydxprotocol::clob::order::{ConditionType, Side};
+
+    let market = sample_btc_market_params();
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        20001,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
+
+    let until_time = Utc::now() + Duration::hours(1);
+    let order = builder
+        .take_profit_market(Side::Buy, dec!(48000), dec!(0.01))
+        .until(OrderGoodUntil::Time(until_time))
+        .build()
+        .unwrap();
+
+    assert_eq!(order.order_id.as_ref().unwrap().order_flags, 32);
+    assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
+    assert!(order.conditional_order_trigger_subticks > 0);
+    assert_eq!(order.side, Side::Buy as i32);
+}
+
+#[rstest]
+fn test_take_profit_market_sell_order() {
+    use nautilus_dydx::proto::dydxprotocol::clob::order::{ConditionType, Side};
+
+    let market = sample_btc_market_params();
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        20002,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
+
+    let until_time = Utc::now() + Duration::hours(1);
+    let order = builder
+        .take_profit_market(Side::Sell, dec!(52000), dec!(0.01))
+        .until(OrderGoodUntil::Time(until_time))
+        .build()
+        .unwrap();
+
+    assert_eq!(order.order_id.as_ref().unwrap().order_flags, 32);
+    assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
+    assert!(order.conditional_order_trigger_subticks > 0);
+    assert_eq!(order.side, Side::Sell as i32);
+}
+
+#[rstest]
+fn test_take_profit_limit_buy_order() {
+    use nautilus_dydx::proto::dydxprotocol::clob::order::{ConditionType, Side};
+
+    let market = sample_btc_market_params();
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        20003,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
+
+    let until_time = Utc::now() + Duration::hours(1);
+    let order = builder
+        .take_profit_limit(Side::Buy, dec!(47500), dec!(48000), dec!(0.01))
+        .until(OrderGoodUntil::Time(until_time))
+        .build()
+        .unwrap();
+
+    assert_eq!(order.order_id.as_ref().unwrap().order_flags, 32);
+    assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
+    assert!(order.conditional_order_trigger_subticks > 0);
+    assert!(order.subticks > 0, "Limit price should produce subticks");
+    assert_eq!(order.side, Side::Buy as i32);
+}
+
+#[rstest]
+fn test_take_profit_limit_sell_order() {
+    use nautilus_dydx::proto::dydxprotocol::clob::order::{ConditionType, Side};
+
+    let market = sample_btc_market_params();
+    let builder = OrderBuilder::new(
+        market,
+        "dydx1test".to_string(),
+        0,
+        20004,
+        DEFAULT_RUST_CLIENT_METADATA,
+    );
+
+    let until_time = Utc::now() + Duration::hours(1);
+    let order = builder
+        .take_profit_limit(Side::Sell, dec!(52500), dec!(52000), dec!(0.01))
+        .until(OrderGoodUntil::Time(until_time))
+        .build()
+        .unwrap();
+
+    assert_eq!(order.order_id.as_ref().unwrap().order_flags, 32);
+    assert_eq!(order.condition_type, ConditionType::TakeProfit as i32);
+    assert!(order.conditional_order_trigger_subticks > 0);
+    assert!(order.subticks > 0, "Limit price should produce subticks");
+    assert_eq!(order.side, Side::Sell as i32);
+}
+
+#[rstest]
+fn test_take_profit_market_quantization() {
+    use nautilus_dydx::proto::dydxprotocol::clob::order::Side;
+
+    let btc_market = sample_btc_market_params();
+    let eth_market = sample_eth_market_params();
+
+    let until_time = Utc::now() + Duration::hours(1);
+
+    let btc_order = OrderBuilder::new(
+        btc_market,
+        "dydx1test".to_string(),
+        0,
+        20005,
+        DEFAULT_RUST_CLIENT_METADATA,
+    )
+    .take_profit_market(Side::Sell, dec!(55000), dec!(0.05))
+    .until(OrderGoodUntil::Time(until_time))
+    .build()
+    .unwrap();
+
+    let eth_order = OrderBuilder::new(
+        eth_market,
+        "dydx1test".to_string(),
+        0,
+        20006,
+        DEFAULT_RUST_CLIENT_METADATA,
+    )
+    .take_profit_market(Side::Sell, dec!(3500), dec!(0.1))
+    .until(OrderGoodUntil::Time(until_time))
+    .build()
+    .unwrap();
+
+    assert!(btc_order.conditional_order_trigger_subticks > 0);
+    assert!(eth_order.conditional_order_trigger_subticks > 0);
+    assert_ne!(
+        btc_order.conditional_order_trigger_subticks, eth_order.conditional_order_trigger_subticks,
+        "Different markets should produce different subtick values"
+    );
+}

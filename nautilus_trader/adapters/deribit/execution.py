@@ -54,6 +54,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import order_type_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
@@ -365,7 +366,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                 ts_event=self._clock.timestamp_ns(),
             )
 
-            pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+            pyo3_order_side = order_side_to_pyo3(order.side)
             await self._ws_client.submit_order(
                 order_side=pyo3_order_side,
                 quantity=pyo3_quantity,
@@ -434,7 +435,7 @@ class DeribitExecutionClient(LiveExecutionClient):
                     f"({order.side.name} {order.quantity} @ {order.price})",
                 )
 
-                pyo3_order_side = nautilus_pyo3.OrderSide.from_str(order.side.name)
+                pyo3_order_side = order_side_to_pyo3(order.side)
                 await self._ws_client.submit_order(
                     order_side=pyo3_order_side,
                     quantity=pyo3_quantity,

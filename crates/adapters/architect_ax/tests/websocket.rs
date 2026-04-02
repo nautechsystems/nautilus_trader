@@ -493,7 +493,7 @@ async fn test_md_client_connection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), Some(30));
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -508,7 +508,7 @@ async fn test_md_client_connection() {
 #[tokio::test]
 async fn test_md_client_url_accessor() {
     let ws_url = "ws://localhost:9999/md/ws".to_string();
-    let client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+    let client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), 30);
 
     assert_eq!(client.url(), ws_url);
 }
@@ -519,7 +519,7 @@ async fn test_md_client_not_active_before_connect() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
-        None,
+        30,
     );
 
     assert!(!client.is_active());
@@ -532,7 +532,7 @@ async fn test_md_connection_failure_to_invalid_url() {
     let mut client = AxMdWebSocketClient::new(
         "ws://127.0.0.1:9999/invalid".to_string(),
         "test_token".to_string(),
-        None,
+        30,
     );
 
     let result = client.connect().await;
@@ -545,7 +545,7 @@ async fn test_md_close_sets_closed_flag() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -563,7 +563,7 @@ async fn test_md_disconnect_without_close() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -584,7 +584,7 @@ async fn test_md_subscribe_l1() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -615,7 +615,7 @@ async fn test_md_subscribe_l2() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -646,7 +646,7 @@ async fn test_md_subscribe_l3() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -677,7 +677,7 @@ async fn test_md_subscribe_multiple_symbols() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -715,7 +715,7 @@ async fn test_md_unsubscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -750,7 +750,7 @@ async fn test_md_subscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -781,7 +781,7 @@ async fn test_md_unsubscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -819,7 +819,7 @@ async fn test_md_subscription_count_starts_at_zero() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
-        None,
+        30,
     );
 
     assert_eq!(client.subscription_count(), 0);
@@ -834,7 +834,7 @@ async fn test_md_ping_pong() {
     let mut client = AxMdWebSocketClient::new(
         ws_url,
         "test_token".to_string(),
-        Some(1), // 1 second heartbeat
+        1, // 1 second heartbeat
     );
 
     client.connect().await.unwrap();
@@ -857,7 +857,7 @@ async fn test_md_server_disconnect_handling() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -890,7 +890,7 @@ async fn test_md_reconnection_after_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -908,7 +908,7 @@ async fn test_md_reconnection_after_disconnect() {
 
     state.reset().await;
 
-    let mut client2 = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client2 = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client2.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -925,7 +925,7 @@ async fn test_md_rapid_subscribe_unsubscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -960,7 +960,7 @@ async fn test_md_subscribe_same_symbol_different_levels() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1001,7 +1001,7 @@ async fn test_orders_client_connection() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, Some(30));
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     client.connect("test_bearer_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1018,7 +1018,7 @@ async fn test_orders_client_url_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
-    let client = AxOrdersWebSocketClient::new(ws_url.clone(), account_id, trader_id, None);
+    let client = AxOrdersWebSocketClient::new(ws_url.clone(), account_id, trader_id, 30);
 
     assert_eq!(client.url(), ws_url);
 }
@@ -1029,7 +1029,7 @@ async fn test_orders_client_account_id_accessor() {
     let ws_url = "ws://localhost:9999/orders/ws".to_string();
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
-    let client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     assert_eq!(client.account_id(), account_id);
 }
@@ -1043,7 +1043,7 @@ async fn test_orders_client_not_active_before_connect() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
-        None,
+        30,
     );
 
     assert!(!client.is_active());
@@ -1059,7 +1059,7 @@ async fn test_orders_connection_failure_to_invalid_url() {
         "ws://127.0.0.1:9999/invalid".to_string(),
         account_id,
         trader_id,
-        None,
+        30,
     );
 
     let result = client.connect("test_token").await;
@@ -1074,7 +1074,7 @@ async fn test_orders_close_sets_closed_flag() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1094,7 +1094,7 @@ async fn test_orders_submit_order() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     // Cache instrument before submitting order
     let instrument = create_test_instrument("EURUSD-PERP");
@@ -1142,7 +1142,7 @@ async fn test_orders_cancel_order_rejects_without_venue_order_id() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1165,7 +1165,7 @@ async fn test_orders_cancel_order_with_venue_order_id() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1196,7 +1196,7 @@ async fn test_orders_get_open_orders() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
 
-    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, None);
+    let mut client = AxOrdersWebSocketClient::new(ws_url, account_id, trader_id, 30);
 
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
@@ -1223,7 +1223,7 @@ async fn test_orders_cache_instrument() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
-        None,
+        30,
     );
 
     let instrument = create_test_instrument("EURUSD-PERP");
@@ -1242,7 +1242,7 @@ async fn test_orders_get_cached_instrument_returns_none_for_unknown() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
-        None,
+        30,
     );
 
     let cached = client.get_cached_instrument(&Ustr::from("UNKNOWN-SYMBOL"));
@@ -1255,7 +1255,7 @@ async fn test_md_subscription_events_tracking() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1291,7 +1291,7 @@ async fn test_md_subscription_failure_tracking() {
         .set_subscription_failures(vec!["FAIL-SYMBOL:LEVEL_1".to_string()])
         .await;
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -1323,8 +1323,8 @@ async fn test_multiple_md_clients() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client1 = AxMdWebSocketClient::new(ws_url.clone(), "token1".to_string(), None);
-    let mut client2 = AxMdWebSocketClient::new(ws_url, "token2".to_string(), None);
+    let mut client1 = AxMdWebSocketClient::new(ws_url.clone(), "token1".to_string(), 30);
+    let mut client2 = AxMdWebSocketClient::new(ws_url, "token2".to_string(), 30);
 
     client1.connect().await.unwrap();
 
@@ -1354,7 +1354,7 @@ async fn test_md_client_debug() {
     let client = AxMdWebSocketClient::new(
         "ws://localhost:9999/md/ws".to_string(),
         "test_token".to_string(),
-        Some(30),
+        30,
     );
 
     let debug_str = format!("{client:?}");
@@ -1371,7 +1371,7 @@ async fn test_orders_client_debug() {
         "ws://localhost:9999/orders/ws".to_string(),
         account_id,
         trader_id,
-        Some(30),
+        30,
     );
 
     let debug_str = format!("{client:?}");
@@ -1386,7 +1386,7 @@ async fn test_md_rapid_connect_disconnect() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     for _ in 0..3 {
-        let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), None);
+        let mut client = AxMdWebSocketClient::new(ws_url.clone(), "test_token".to_string(), 30);
 
         client.connect().await.unwrap();
         wait_for_connection(&state).await;
@@ -1409,7 +1409,7 @@ async fn test_md_many_subscriptions() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), None);
+    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
 
     client.connect().await.unwrap();
     wait_for_connection(&state).await;

@@ -88,6 +88,21 @@ impl AllowedSelfTradePreventionModes {
     }
 
     #[inline]
+    pub fn get_transfer(&self) -> bool {
+        0 != self.0 & (1 << 5)
+    }
+
+    #[inline]
+    pub fn set_transfer(&mut self, value: bool) -> &mut Self {
+        self.0 = if value {
+            self.0 | (1 << 5)
+        } else {
+            self.0 & !(1 << 5)
+        };
+        self
+    }
+
+    #[inline]
     pub fn get_non_representable(&self) -> bool {
         0 != self.0 & (1 << 7)
     }
@@ -107,12 +122,13 @@ impl core::fmt::Debug for AllowedSelfTradePreventionModes {
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             fmt,
-            "AllowedSelfTradePreventionModes[none(0)={},expire_taker(1)={},expire_maker(2)={},expire_both(3)={},decrement(4)={},non_representable(7)={}]",
+            "AllowedSelfTradePreventionModes[none(0)={},expire_taker(1)={},expire_maker(2)={},expire_both(3)={},decrement(4)={},transfer(5)={},non_representable(7)={}]",
             self.get_none(),
             self.get_expire_taker(),
             self.get_expire_maker(),
             self.get_expire_both(),
             self.get_decrement(),
+            self.get_transfer(),
             self.get_non_representable(),
         )
     }
