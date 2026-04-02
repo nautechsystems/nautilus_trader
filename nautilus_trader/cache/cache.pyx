@@ -963,10 +963,14 @@ cdef class Cache(CacheFacade):
                         self._index_account_orders.pop(order.account_id, None)
 
             if order.position_id is not None:
-                self._index_position_orders[order.position_id].discard(client_order_id)
+                position_orders = self._index_position_orders.get(order.position_id)
+                if position_orders is not None:
+                    position_orders.discard(client_order_id)
 
             if order.exec_algorithm_id is not None:
-                self._index_exec_algorithm_orders[order.exec_algorithm_id].discard(client_order_id)
+                exec_algo_orders = self._index_exec_algorithm_orders.get(order.exec_algorithm_id)
+                if exec_algo_orders is not None:
+                    exec_algo_orders.discard(client_order_id)
 
             # Clean up strategy orders reverse index
             strategy_orders = self._index_strategy_orders.get(order.strategy_id)
