@@ -20,12 +20,28 @@ use nautilus_core::{
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use nautilus_model::data::{
-    Bar, DataFFI, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+    Bar, Data, DataFFI, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };
 use nautilus_serialization::arrow::custom::CustomDataDecoder;
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
+
+/// Converts a `Data` variant into a Python object via PyO3.
+fn data_to_pyobject(py: Python<'_>, item: Data) -> PyResult<Py<PyAny>> {
+    match item {
+        Data::Quote(quote) => Py::new(py, quote).map(|x| x.into_any()),
+        Data::Trade(trade) => Py::new(py, trade).map(|x| x.into_any()),
+        Data::Bar(bar) => Py::new(py, bar).map(|x| x.into_any()),
+        Data::Delta(delta) => Py::new(py, delta).map(|x| x.into_any()),
+        Data::Deltas(deltas) => Py::new(py, (*deltas).clone()).map(|x| x.into_any()),
+        Data::Depth10(depth) => Py::new(py, *depth).map(|x| x.into_any()),
+        Data::IndexPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::MarkPriceUpdate(price) => Py::new(py, price).map(|x| x.into_any()),
+        Data::InstrumentClose(close) => Py::new(py, close).map(|x| x.into_any()),
+        Data::Custom(custom) => Py::new(py, custom).map(|x| x.into_any()),
+    }
+}
 
 #[repr(C)]
 #[pyclass(frozen, eq, eq_int, from_py_object)]
@@ -150,23 +166,39 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
-    /// The capsule contains a CVec of DataFFI (C layout) so Cython capsule_to_list can read it.
+    ///
+    /// For built-in types, returns a PyCapsule containing a CVec of DataFFI (C layout)
+    /// consumed by Cython `capsule_to_list`. For custom data types (which are not
+    /// FFI-safe), returns a Python list of PyO3 objects directly.
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
         match slf.next() {
             Some(acc) if !acc.is_empty() => {
-                let ffi_data: Vec<DataFFI> = acc
-                    .into_iter()
-                    .map(DataFFI::try_from)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(to_pyruntime_err)?;
-                let cvec: CVec = ffi_data.into();
-                Python::attach(|py| {
-                    // No destructor: Python must call drop_cvec_pycapsule to take ownership and free.
-                    match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
-                        Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
-                        Err(e) => Err(to_pyruntime_err(e)),
-                    }
-                })
+                let has_custom = acc.iter().any(|d| matches!(d, Data::Custom(_)));
+
+                if has_custom {
+                    // Custom data: convert directly to Python objects (bypasses FFI)
+                    Python::attach(|py| {
+                        let objects: Vec<Py<PyAny>> = acc
+                            .into_iter()
+                            .map(|item| data_to_pyobject(py, item))
+                            .collect::<PyResult<_>>()?;
+                        Ok(Some(objects.into_py_any_unwrap(py)))
+                    })
+                } else {
+                    // Built-in types: FFI capsule path
+                    let ffi_data: Vec<DataFFI> = acc
+                        .into_iter()
+                        .map(DataFFI::try_from)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(to_pyruntime_err)?;
+                    let cvec: CVec = ffi_data.into();
+                    Python::attach(|py| {
+                        match PyCapsule::new_with_destructor::<CVec, _>(py, cvec, None, |_, _| {}) {
+                            Ok(capsule) => Ok(Some(capsule.into_py_any_unwrap(py))),
+                            Err(e) => Err(to_pyruntime_err(e)),
+                        }
+                    })
+                }
             }
             _ => Ok(None),
         }

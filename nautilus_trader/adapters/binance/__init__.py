@@ -82,44 +82,6 @@ register_rust_custom_serializer(
 )
 
 
-def _decode_binance_bar(batch: pa.RecordBatch | pa.Table) -> list[BinanceBar]:
-    """
-    Decode Arrow RecordBatch/Table to BinanceBar via Rust decoder.
-    """
-    if isinstance(batch, pa.Table):
-        batch = batch.to_batches()[0]
-    sink = pa.BufferOutputStream()
-    writer = pa.ipc.new_stream(sink, batch.schema)
-    writer.write_batch(batch)
-    writer.close()
-    pyo3_bars = _binance_mod.binance_bar_from_arrow_record_batch_bytes(
-        sink.getvalue().to_pybytes(),
-    )
-    return [BinanceBar.from_dict(b.to_dict()) for b in pyo3_bars]
-
-
-BINANCE_BAR_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
-    {
-        "open": pa.large_binary(),
-        "high": pa.large_binary(),
-        "low": pa.large_binary(),
-        "close": pa.large_binary(),
-        "volume": pa.large_binary(),
-        "quote_volume": pa.string(),
-        "count": pa.uint64(),
-        "taker_buy_base_volume": pa.string(),
-        "taker_buy_quote_volume": pa.string(),
-        "ts_event": pa.uint64(),
-        "ts_init": pa.uint64(),
-    },
-)
-
-register_arrow(
-    BinanceBar,
-    schema=BINANCE_BAR_ARROW_SCHEMA,
-    decoder=_decode_binance_bar,
-)
-
 BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
     {
         "instrument_id": pa.dictionary(pa.int64(), pa.string()),

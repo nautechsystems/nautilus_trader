@@ -84,9 +84,8 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
 # and can be queried through the DataFusion/Rust backend using add_custom_file.
 # Types listed here must have compatible Arrow schemas between their Python and Rust
 # encoders, and must be written with the Rust encoder for the Rust read path to work.
-# NOTE: Data::Custom cannot be returned via the DataFFI capsule path, so custom data
-# types should use the PyArrow read path (not listed here) until FFI support is added.
-_RUST_CUSTOM_DATA_TYPES: set[str] = set()
+# Custom data is returned as Python lists (not FFI capsules) from the Rust backend.
+_RUST_CUSTOM_DATA_TYPES: set[str] = {"BinanceBar"}
 
 
 class FeatherFile(NamedTuple):
@@ -1699,10 +1698,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         result = session.to_query_result()
 
-        # Gather data
+        # Gather data (chunks are either PyCapsule for built-in types
+        # or list for custom data types returned as pyo3 CustomData)
         data = []
         for chunk in result:
-            data.extend(capsule_to_list(chunk))
+            if isinstance(chunk, list):
+                for item in chunk:
+                    inner = item.data if hasattr(item, "data") else item
+                    data.append(data_cls.from_dict(inner.to_dict()))  # type: ignore[attr-defined]
+            else:
+                data.extend(capsule_to_list(chunk))
 
         if data_cls == OrderBookDeltas:
             # Batch process deltas into `OrderBookDeltas`, will warn
