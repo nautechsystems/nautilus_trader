@@ -52,6 +52,26 @@ async def test_ib_is_ready_by_notification_1102(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_ib_is_not_ready_by_error_326(ib_client):
+    """
+    Test that error 326 (client id already in use) clears the connection flag.
+    """
+    # Arrange
+    ib_client._is_ib_connected.set()
+
+    # Act
+    await ib_client.process_error(
+        req_id=-1,
+        error_time=0,
+        error_code=326,
+        error_string="Unable to connect as the client id is already in use",
+    )
+
+    # Assert
+    assert not ib_client._is_ib_connected.is_set()
+
+
+@pytest.mark.asyncio
 async def test_ib_is_not_ready_by_error_10182(ib_client):
     # Arrange
     req_id = 6
