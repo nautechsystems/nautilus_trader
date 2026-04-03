@@ -46,7 +46,10 @@ use nautilus_model::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce,
     },
-    events::{OrderEventAny, OrderFilled, account::state::AccountState},
+    events::{
+        OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
+        account::state::AccountState,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
@@ -1444,6 +1447,88 @@ fn test_inflight_increments_retry_count_before_max() {
     assert!(matches!(events3[0], OrderEventAny::Rejected(_)));
 }
 
+#[rstest]
+fn test_inflight_pending_update_generates_canceled() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING-UPD");
+    let venue_order_id = VenueOrderId::from("V-001");
+
+    ctx.add_instrument(test_instrument());
+
+    let order = create_pending_update_order(
+        "O-PENDING-UPD",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000); // 200ms, past threshold
+
+    let events = ctx.manager.check_inflight_orders();
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(events[0], OrderEventAny::Canceled(_)),
+        "Expected Canceled for PendingUpdate, was {:?}",
+        events[0]
+    );
+
+    if let OrderEventAny::Canceled(canceled) = &events[0] {
+        assert_eq!(canceled.client_order_id, client_order_id);
+    }
+}
+
+#[rstest]
+fn test_inflight_pending_cancel_generates_canceled() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-PENDING-CXL");
+    let venue_order_id = VenueOrderId::from("V-002");
+
+    ctx.add_instrument(test_instrument());
+
+    let order = create_pending_cancel_order(
+        "O-PENDING-CXL",
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    );
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    ctx.advance_time(200_000_000);
+
+    let events = ctx.manager.check_inflight_orders();
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(events[0], OrderEventAny::Canceled(_)),
+        "Expected Canceled for PendingCancel, was {:?}",
+        events[0]
+    );
+
+    if let OrderEventAny::Canceled(canceled) = &events[0] {
+        assert_eq!(canceled.client_order_id, client_order_id);
+    }
+}
+
 #[tokio::test]
 async fn test_reconcile_mass_status_external_order_partially_filled() {
     let mut ctx = TestContext::new();
@@ -1571,6 +1656,70 @@ fn create_accepted_order(
     let mut order = create_submitted_order(client_order_id, instrument_id, side, quantity, price);
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     order.apply(accepted).unwrap();
+    order
+}
+
+fn create_pending_update_order(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let mut order = create_accepted_order(
+        client_order_id,
+        instrument_id,
+        side,
+        quantity,
+        price,
+        venue_order_id,
+    );
+    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    ));
+    order.apply(pending).unwrap();
+    order
+}
+
+fn create_pending_cancel_order(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    quantity: &str,
+    price: &str,
+    venue_order_id: VenueOrderId,
+) -> OrderAny {
+    let mut order = create_accepted_order(
+        client_order_id,
+        instrument_id,
+        side,
+        quantity,
+        price,
+        venue_order_id,
+    );
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    ));
+    order.apply(pending).unwrap();
     order
 }
 

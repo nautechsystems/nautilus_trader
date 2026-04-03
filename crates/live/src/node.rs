@@ -969,6 +969,12 @@ impl LiveNode {
                                 self.exec_manager.register_inflight(order_init.client_order_id);
                             }
                         }
+                        TradingCommand::ModifyOrder(modify) => {
+                            self.exec_manager.register_inflight(modify.client_order_id);
+                        }
+                        TradingCommand::CancelOrder(cancel) => {
+                            self.exec_manager.register_inflight(cancel.client_order_id);
+                        }
                         _ => {}
                     }
                     AsyncRunner::handle_exec_command(cmd);

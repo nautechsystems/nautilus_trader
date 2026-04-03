@@ -52,7 +52,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderEventAny, OrderFilled, OrderInitialized},
+    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
@@ -820,14 +820,40 @@ impl ExecutionManager {
                     .insert(client_order_id, check.retry_count);
 
                 if check.retry_count >= self.config.inflight_max_retries {
-                    // Generate rejection after max retries
                     let ts_now = self.clock.borrow().timestamp_ns();
 
-                    if let Some(order) = self.get_order(&client_order_id)
-                        && let Some(event) =
-                            create_reconciliation_rejected(&order, Some("INFLIGHT_TIMEOUT"), ts_now)
-                    {
-                        events.push(event);
+                    if let Some(order) = self.get_order(&client_order_id) {
+                        match order.status() {
+                            OrderStatus::Submitted => {
+                                // Generate rejection for submitted orders that never got accepted
+                                if let Some(event) = create_reconciliation_rejected(
+                                    &order,
+                                    Some("INFLIGHT_TIMEOUT"),
+                                    ts_now,
+                                ) {
+                                    events.push(event);
+                                }
+                            }
+                            OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
+                                // Generate cancellation for orders stuck in pending modify/cancel
+                                let event = OrderEventAny::Canceled(OrderCanceled::new(
+                                    order.trader_id(),
+                                    order.strategy_id(),
+                                    order.instrument_id(),
+                                    order.client_order_id(),
+                                    UUID4::new(),
+                                    ts_now,
+                                    ts_now,
+                                    true, // reconciliation
+                                    order.venue_order_id(),
+                                    order.account_id(),
+                                ));
+                                events.push(event);
+                            }
+                            _ => {
+                                // Order already resolved, just clear tracking
+                            }
+                        }
                     }
                     // Remove from inflight checks regardless of whether order exists
                     self.clear_recon_tracking(&client_order_id, true);
