@@ -79,6 +79,7 @@ use nautilus_core::{
 use nautilus_model::{
     events::OrderEventAny,
     identifiers::{StrategyId, TraderId},
+    orders::Order,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
@@ -912,7 +913,7 @@ impl LiveNode {
                         residual_events += 1;
                     }
 
-                    match &evt {
+                    let maybe_close_id = match &evt {
                         ExecutionEvent::Order(order_evt) => {
                             self.exec_manager.record_local_activity(order_evt.client_order_id());
                             match order_evt {
@@ -938,6 +939,7 @@ impl LiveNode {
                                 }
                                 _ => {}
                             }
+                            Some(order_evt.client_order_id())
                         }
                         ExecutionEvent::Report(report) => {
                             if let ExecutionReport::Fill(fill_report) = report
@@ -949,11 +951,21 @@ impl LiveNode {
                                     continue;
                             }
                             self.exec_manager.observe_execution_report(report);
+                            None
                         }
-                        ExecutionEvent::Account(_) => {}
-                    }
+                        ExecutionEvent::Account(_) => None,
+                    };
 
                     AsyncRunner::handle_exec_event(evt);
+
+                    // Post-dispatch cleanup: clear tracking when order closes
+                    if let Some(coid) = maybe_close_id {
+                        let is_closed = self.kernel.cache().borrow()
+                            .order(&coid).is_some_and(|o| o.is_closed());
+                        if is_closed {
+                            self.exec_manager.clear_recon_tracking(&coid, true);
+                        }
+                    }
                 }
                 Some(cmd) = exec_cmd_rx.recv() => {
                     if is_shutting_down {
