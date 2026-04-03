@@ -407,6 +407,7 @@ def register_rust_custom_serializer(
     """
     _RUST_CUSTOM_SERIALIZERS[class_name] = (encoder_fn, converter_fn)
     RUST_STR_SERIALIZERS.add(class_name)
+
     if data_cls is not None:
         _RUST_CUSTOM_TYPE_REGISTRY[class_name] = data_cls
 
