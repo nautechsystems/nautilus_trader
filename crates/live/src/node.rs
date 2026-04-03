@@ -1321,8 +1321,11 @@ impl LiveNode {
             if self.state() == NodeState::ShuttingDown {
                 return Ok(());
             }
-            let events = self.exec_manager.check_inflight_orders();
-            self.process_reconciliation_events(&events);
+            let result = self.exec_manager.check_inflight_orders();
+            self.process_reconciliation_events(&result.events);
+            for cmd in result.queries {
+                AsyncRunner::handle_exec_command(cmd);
+            }
             *ts_last_inflight = ts_now;
         }
 

@@ -31,7 +31,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReports,
             GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-            SubmitOrderList,
+            SubmitOrderList, TradingCommand,
         },
     },
 };
@@ -300,8 +300,8 @@ fn test_observe_order_report_clears_inflight_tracking() {
     ctx.advance_time(200_000_000);
 
     // Inflight check should return empty — tracking was cleared by observation
-    let events = ctx.manager.check_inflight_orders();
-    assert!(events.is_empty());
+    let result = ctx.manager.check_inflight_orders();
+    assert!(result.events.is_empty());
 }
 
 #[rstest]
@@ -1234,12 +1234,12 @@ fn test_inflight_order_generates_rejection_after_max_retries() {
     ctx.manager.register_inflight(client_order_id);
     ctx.advance_time(200_000_000); // 200ms, past threshold
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(events.len(), 1);
-    assert!(matches!(events[0], OrderEventAny::Rejected(_)));
+    assert_eq!(result.events.len(), 1);
+    assert!(matches!(result.events[0], OrderEventAny::Rejected(_)));
 
-    if let OrderEventAny::Rejected(rejected) = &events[0] {
+    if let OrderEventAny::Rejected(rejected) = &result.events[0] {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason.as_str(), "INFLIGHT_TIMEOUT");
     }
@@ -1272,10 +1272,10 @@ fn test_inflight_check_skips_filtered_order_ids() {
     ctx.manager.register_inflight(filtered_id);
     ctx.advance_time(200_000_000);
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
     // Filtered order should not generate rejection
-    assert!(events.is_empty());
+    assert!(result.events.is_empty());
 }
 
 #[rstest]
@@ -1430,21 +1430,24 @@ fn test_inflight_increments_retry_count_before_max() {
 
     ctx.manager.register_inflight(client_order_id);
 
-    // First check - past threshold, retry count becomes 1
+    // First check - past threshold, retry count becomes 1, generates QueryOrder
     ctx.advance_time(200_000_000);
-    let events1 = ctx.manager.check_inflight_orders();
-    assert!(events1.is_empty()); // Not at max yet
+    let result1 = ctx.manager.check_inflight_orders();
+    assert!(result1.events.is_empty()); // Not at max yet
+    assert_eq!(result1.queries.len(), 1);
 
-    // Second check - retry count becomes 2
+    // Second check - retry count becomes 2, generates QueryOrder
     ctx.advance_time(200_000_000);
-    let events2 = ctx.manager.check_inflight_orders();
-    assert!(events2.is_empty()); // Still not at max
+    let result2 = ctx.manager.check_inflight_orders();
+    assert!(result2.events.is_empty()); // Still not at max
+    assert_eq!(result2.queries.len(), 1);
 
     // Third check - retry count becomes 3, equals max, generates rejection
     ctx.advance_time(200_000_000);
-    let events3 = ctx.manager.check_inflight_orders();
-    assert_eq!(events3.len(), 1);
-    assert!(matches!(events3[0], OrderEventAny::Rejected(_)));
+    let result3 = ctx.manager.check_inflight_orders();
+    assert_eq!(result3.events.len(), 1);
+    assert!(matches!(result3.events[0], OrderEventAny::Rejected(_)));
+    assert!(result3.queries.is_empty());
 }
 
 #[rstest]
@@ -1474,16 +1477,16 @@ fn test_inflight_pending_update_generates_canceled() {
     ctx.manager.register_inflight(client_order_id);
     ctx.advance_time(200_000_000); // 200ms, past threshold
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(events.len(), 1);
+    assert_eq!(result.events.len(), 1);
     assert!(
-        matches!(events[0], OrderEventAny::Canceled(_)),
+        matches!(result.events[0], OrderEventAny::Canceled(_)),
         "Expected Canceled for PendingUpdate, was {:?}",
-        events[0]
+        result.events[0]
     );
 
-    if let OrderEventAny::Canceled(canceled) = &events[0] {
+    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
     }
 }
@@ -1515,18 +1518,91 @@ fn test_inflight_pending_cancel_generates_canceled() {
     ctx.manager.register_inflight(client_order_id);
     ctx.advance_time(200_000_000);
 
-    let events = ctx.manager.check_inflight_orders();
+    let result = ctx.manager.check_inflight_orders();
 
-    assert_eq!(events.len(), 1);
+    assert_eq!(result.events.len(), 1);
     assert!(
-        matches!(events[0], OrderEventAny::Canceled(_)),
+        matches!(result.events[0], OrderEventAny::Canceled(_)),
         "Expected Canceled for PendingCancel, was {:?}",
-        events[0]
+        result.events[0]
     );
 
-    if let OrderEventAny::Canceled(canceled) = &events[0] {
+    if let OrderEventAny::Canceled(canceled) = &result.events[0] {
         assert_eq!(canceled.client_order_id, client_order_id);
     }
+}
+
+#[rstest]
+fn test_inflight_generates_query_before_max_retries() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 3,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-QUERY");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-QUERY", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // First check - past threshold, retry 1 < max 3 -> generates QueryOrder
+    ctx.advance_time(200_000_000);
+    let result = ctx.manager.check_inflight_orders();
+
+    assert!(
+        result.events.is_empty(),
+        "Should not generate terminal events yet"
+    );
+    assert_eq!(result.queries.len(), 1, "Should generate one QueryOrder");
+
+    if let TradingCommand::QueryOrder(query) = &result.queries[0] {
+        assert_eq!(query.client_order_id, client_order_id);
+    } else {
+        panic!("Expected QueryOrder, was {:?}", result.queries[0]);
+    }
+}
+
+#[rstest]
+fn test_inflight_no_query_at_max_retries() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 2,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-MAX");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-MAX", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+
+    // First check - intermediate, generates query
+    ctx.advance_time(200_000_000);
+    let result1 = ctx.manager.check_inflight_orders();
+    assert!(result1.events.is_empty());
+    assert_eq!(result1.queries.len(), 1);
+
+    // Second check - at max retries, generates terminal event only
+    ctx.advance_time(200_000_000);
+    let result2 = ctx.manager.check_inflight_orders();
+
+    assert_eq!(
+        result2.events.len(),
+        1,
+        "Should generate terminal event at max retries"
+    );
+    assert!(
+        result2.queries.is_empty(),
+        "Should not generate queries at max retries"
+    );
+    assert!(matches!(result2.events[0], OrderEventAny::Rejected(_)));
 }
 
 #[tokio::test]
@@ -1640,8 +1716,8 @@ fn test_clear_recon_tracking_removes_inflight() {
     ctx.advance_time(200_000_000);
 
     // Check should not generate events since order was cleared
-    let events = ctx.manager.check_inflight_orders();
-    assert!(events.is_empty());
+    let result = ctx.manager.check_inflight_orders();
+    assert!(result.events.is_empty());
 }
 
 /// Creates an accepted order with venue_order_id set

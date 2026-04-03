@@ -30,7 +30,10 @@ use nautilus_common::{
     log_info,
     messages::{
         ExecutionReport,
-        execution::report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
+        execution::{
+            QueryOrder, TradingCommand,
+            report::{GenerateOrderStatusReports, GeneratePositionStatusReports},
+        },
     },
 };
 use nautilus_core::{
@@ -91,6 +94,15 @@ pub struct ReconciliationResult {
     pub events: Vec<OrderEventAny>,
     /// External orders that need to be registered with execution clients.
     pub external_orders: Vec<ExternalOrderMetadata>,
+}
+
+/// Result of inflight order checks containing terminal events and intermediate queries.
+#[derive(Debug, Default)]
+pub struct InflightCheckResult {
+    /// Terminal events (rejection/cancellation) for orders that exceeded max retries.
+    pub events: Vec<OrderEventAny>,
+    /// Intermediate venue queries for orders still within retry budget.
+    pub queries: Vec<TradingCommand>,
 }
 
 /// Configuration for execution manager.
@@ -783,9 +795,13 @@ impl ExecutionManager {
         }
     }
 
-    /// Checks inflight orders and returns events for any that need reconciliation.
-    pub fn check_inflight_orders(&mut self) -> Vec<OrderEventAny> {
-        let mut events = Vec::new();
+    /// Checks inflight orders and returns terminal events and intermediate venue queries.
+    ///
+    /// For retries below `inflight_max_retries`, generates `QueryOrder` commands to poll
+    /// the venue for the order's current status. At max retries, generates terminal events
+    /// (rejection or cancellation) based on the order's status.
+    pub fn check_inflight_orders(&mut self) -> InflightCheckResult {
+        let mut result = InflightCheckResult::default();
         let current_time = self.clock.borrow().timestamp_ns();
         let threshold_ns = self.config.inflight_threshold_ms * NANOSECONDS_IN_MILLISECOND;
 
@@ -831,7 +847,7 @@ impl ExecutionManager {
                                     Some("INFLIGHT_TIMEOUT"),
                                     ts_now,
                                 ) {
-                                    events.push(event);
+                                    result.events.push(event);
                                 }
                             }
                             OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
@@ -848,7 +864,7 @@ impl ExecutionManager {
                                     order.venue_order_id(),
                                     order.account_id(),
                                 ));
-                                events.push(event);
+                                result.events.push(event);
                             }
                             _ => {
                                 // Order already resolved, just clear tracking
@@ -857,11 +873,24 @@ impl ExecutionManager {
                     }
                     // Remove from inflight checks regardless of whether order exists
                     self.clear_recon_tracking(&client_order_id, true);
+                } else if let Some(order) = self.get_order(&client_order_id) {
+                    // Intermediate retry: query the venue for current order status
+                    let query = TradingCommand::QueryOrder(QueryOrder::new(
+                        order.trader_id(),
+                        None, // client_id determined by execution engine routing
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        order.client_order_id(),
+                        order.venue_order_id(),
+                        UUID4::new(),
+                        current_time,
+                    ));
+                    result.queries.push(query);
                 }
             }
         }
 
-        events
+        result
     }
 
     /// Checks open orders consistency between cache and venue.
