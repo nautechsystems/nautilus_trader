@@ -391,17 +391,24 @@ RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 #   converter_fn: callable that converts a Python object to a Rust pyo3 object
 _RUST_CUSTOM_SERIALIZERS: dict[str, tuple[Callable, Callable]] = {}
 
+# Maps class name to the Python type for Rust custom serializers.
+# Used by filename_to_class to resolve directory names back to types.
+_RUST_CUSTOM_TYPE_REGISTRY: dict[str, type] = {}
+
 
 def register_rust_custom_serializer(
     class_name: str,
     encoder_fn: Callable,
     converter_fn: Callable,
+    data_cls: type | None = None,
 ) -> None:
     """
     Register a Rust custom data serializer for Arrow encoding.
     """
     _RUST_CUSTOM_SERIALIZERS[class_name] = (encoder_fn, converter_fn)
     RUST_STR_SERIALIZERS.add(class_name)
+    if data_cls is not None:
+        _RUST_CUSTOM_TYPE_REGISTRY[class_name] = data_cls
 
 
 # TODO - breaking while we don't have access to rust schemas

@@ -79,6 +79,7 @@ register_rust_custom_serializer(
     "BinanceBar",
     _binance_mod.binance_bar_to_arrow_record_batch_bytes,
     _convert_binance_bar_to_pyo3,
+    data_cls=BinanceBar,
 )
 
 
