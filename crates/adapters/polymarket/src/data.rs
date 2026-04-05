@@ -784,23 +784,9 @@ impl DataClient for PolymarketDataClient {
 
         self.ws_client.connect().await?;
 
-        // Subscribe all loaded instruments to WS market channel.
-        let token_ids: Vec<String> = self
-            .instruments
-            .load()
-            .values()
-            .map(|inst| inst.raw_symbol().as_str().to_string())
-            .collect();
-
-        if !token_ids.is_empty() || self.config.subscribe_new_markets {
-            log::info!(
-                "Subscribing {} token IDs to WS market channel (subscribe_new_markets={})...",
-                token_ids.len(),
-                self.config.subscribe_new_markets,
-            );
-            self.ws_client.subscribe_market(token_ids).await?;
-        } else {
-            log::info!("No instruments to subscribe (skipped)");
+        if self.config.subscribe_new_markets {
+            log::info!("Subscribing to new markets...");
+            self.ws_client.subscribe_market(vec![]).await?;
         }
 
         let rx = self
