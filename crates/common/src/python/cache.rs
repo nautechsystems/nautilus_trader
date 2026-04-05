@@ -70,6 +70,12 @@ impl PyCache {
     pub fn from_rc(rc: Rc<RefCell<Cache>>) -> Self {
         Self(rc)
     }
+
+    /// Gets the inner `Rc<RefCell<Cache>>` for use in Rust code.
+    #[must_use]
+    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        self.0.clone()
+    }
 }
 
 #[pymethods]

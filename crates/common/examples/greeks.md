@@ -76,6 +76,7 @@ impl MyActor {
         let vol_shock = 0.0;
         let time_to_expiry_shock = 0.0;
         let use_cached_greeks = false;
+        let update_vol = false;
         let cache_greeks = true;
         let publish_greeks = true;
         let ts_event = self.core.clock.borrow().timestamp_ns();
@@ -93,6 +94,7 @@ impl MyActor {
             Some(vol_shock),
             Some(time_to_expiry_shock),
             Some(use_cached_greeks),
+            Some(update_vol),
             Some(cache_greeks),
             Some(publish_greeks),
             Some(ts_event),

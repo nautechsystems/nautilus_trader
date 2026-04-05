@@ -9523,7 +9523,11 @@ class GreeksData(Data):
     ): ...
     @classmethod
     def from_delta(
-        cls, instrument_id: InstrumentId, delta: float, ts_event: int = 0
+        cls,
+        instrument_id: InstrumentId,
+        delta: float,
+        multiplier: float,
+        ts_event: int = 0,
     ) -> GreeksData: ...
 
 class PortfolioGreeks(Data):

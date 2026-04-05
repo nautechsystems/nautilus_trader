@@ -24,6 +24,7 @@ __all__ = [
     "Environment",
     "FifoCache",
     "FileWriterConfig",
+    "GreeksCalculator",
     "ImportableActorConfig",
     "LogColor",
     "LogFormat",
@@ -962,6 +963,73 @@ class FifoCache:
     def add(self, key: str) -> None: ...
     def remove(self, key: str) -> None: ...
     def clear(self) -> None: ...
+
+@typing.final
+class GreeksCalculator:
+    def __init__(self, cache: Cache, clock: Clock) -> None: ...
+    def instrument_greeks(
+        self,
+        instrument_id: model.InstrumentId,
+        flat_interest_rate: float = 0.0425,
+        flat_dividend_yield: float | None = None,
+        spot_shock: float = 0.0,
+        vol_shock: float = 0.0,
+        time_to_expiry_shock: float = 0.0,
+        use_cached_greeks: bool = False,
+        update_vol: bool = False,
+        cache_greeks: bool = False,
+        ts_event: int = 0,
+        position: model.Position | None = None,
+        percent_greeks: bool = False,
+        index_instrument_id: model.InstrumentId | None = None,
+        beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
+        vega_time_weight_base: int | None = None,
+    ) -> model.GreeksData: ...
+    def modify_greeks(
+        self,
+        delta_input: float,
+        gamma_input: float,
+        underlying_instrument_id: model.InstrumentId,
+        underlying_price: float,
+        unshocked_underlying_price: float,
+        percent_greeks: bool,
+        index_instrument_id: model.InstrumentId | None = None,
+        beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
+        vega_input: float = 0.0,
+        vol: float = 0.0,
+        expiry_in_days: int = 0,
+        vega_time_weight_base: int | None = None,
+    ) -> tuple[float, float, float]: ...
+    def portfolio_greeks(
+        self,
+        underlyings: typing.Sequence[str] | None = None,
+        venue: model.Venue | None = None,
+        instrument_id: model.InstrumentId | None = None,
+        strategy_id: model.StrategyId | None = None,
+        side: model.PositionSide | None = None,
+        flat_interest_rate: float = 0.0425,
+        flat_dividend_yield: float | None = None,
+        spot_shock: float = 0.0,
+        vol_shock: float = 0.0,
+        time_to_expiry_shock: float = 0.0,
+        use_cached_greeks: bool = False,
+        update_vol: bool = False,
+        cache_greeks: bool = False,
+        percent_greeks: bool = False,
+        index_instrument_id: model.InstrumentId | None = None,
+        beta_weights: typing.Mapping[model.InstrumentId, float] | None = None,
+        greeks_filter: typing.Any | None = None,
+        vega_time_weight_base: int | None = None,
+    ) -> model.PortfolioGreeks: ...
+    def cache_futures_spread(
+        self,
+        call_instrument_id: model.InstrumentId,
+        put_instrument_id: model.InstrumentId,
+        futures_instrument_id: model.InstrumentId,
+    ) -> model.Price: ...
+    def get_cached_futures_spread_price(
+        self, underlying_instrument_id: model.InstrumentId
+    ) -> model.Price | None: ...
 
 @typing.final
 class Logger:
