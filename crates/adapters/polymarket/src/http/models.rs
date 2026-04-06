@@ -25,7 +25,9 @@ use crate::common::{
         PolymarketOutcome, PolymarketTradeStatus, SignatureType,
     },
     models::PolymarketMakerOrder,
-    parse::{deserialize_decimal_from_str, serialize_decimal_as_str},
+    parse::{
+        deserialize_decimal_from_str, deserialize_optional_string_to_u64, serialize_decimal_as_str,
+    },
 };
 
 /// A signed limit order for submission to the CLOB exchange.
@@ -222,6 +224,23 @@ pub struct GammaMarket {
     /// Neg-risk market ID for CTF exchange interaction.
     #[serde(rename = "negRiskMarketID")]
     pub neg_risk_market_id: Option<String>,
+    /// Fee schedule for this market.
+    pub fee_schedule: Option<FeeSchedule>,
+    /// Game ID for sport markets.
+    /// Comes as a string from the API: <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>
+    #[serde(default, deserialize_with = "deserialize_optional_string_to_u64")]
+    pub game_id: Option<u64>,
+    /// Events linked to this gamma market.
+    pub events: Option<Vec<GammaEvent>>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeeSchedule {
+    pub exponent: f64,
+    pub rate: f64,
+    pub taker_only: bool,
+    pub rebate_rate: f64,
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -261,6 +280,9 @@ pub struct GammaEvent {
     pub neg_risk_market_id: Option<String>,
     /// Whether event is featured.
     pub featured: Option<bool>,
+    /// Game ID for sport markets.
+    /// Comes as an int from the API: <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>
+    pub game_id: Option<u64>,
 }
 
 /// A tag from the Gamma API `GET /tags`.
@@ -516,6 +538,22 @@ mod tests {
         assert_eq!(events[0].id, "evt-002");
         assert!(events[0].markets.is_empty());
         assert!(events[0].slug.is_none());
+    }
+
+    #[rstest]
+    fn test_sports_market_are_weird() {
+        let money_line: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let map_handicap: GammaMarket = load("gamma_market_sports_market_map_handicap.json");
+
+        // same event, same slug
+        assert_eq!(
+            money_line.events.as_ref().unwrap()[0].game_id,
+            map_handicap.events.as_ref().unwrap()[0].game_id
+        );
+
+        // one market has no game_id
+        assert!(map_handicap.game_id.is_none());
+        assert_eq!(money_line.game_id, Some(1_427_074));
     }
 
     #[rstest]

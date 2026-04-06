@@ -193,6 +193,21 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
     instruments
 }
 
+fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket> {
+    events
+        .into_iter()
+        .flat_map(|event| {
+            let event_game_id = event.game_id;
+            event.markets.into_iter().map(move |mut market| {
+                if market.game_id.is_none() {
+                    market.game_id = event_game_id;
+                }
+                market
+            })
+        })
+        .collect()
+}
+
 /// Provides a domain HTTP client for Polymarket instrument fetching.
 ///
 /// Wraps [`PolymarketGammaRawHttpClient`] with instrument parsing: fetch from
@@ -443,7 +458,7 @@ impl PolymarketGammaHttpClient {
 
         for result in results.into_iter().flatten() {
             let (slug, events) = result;
-            let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+            let markets = flatten_event_markets(events);
             if markets.is_empty() {
                 log::warn!("No markets found in event slug '{slug}'");
                 continue;
@@ -488,7 +503,7 @@ impl PolymarketGammaHttpClient {
         params: GetGammaMarketsParams,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let events = self.inner.get_gamma_events_by_slug(event_slug).await?;
-        let mut markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let mut markets = flatten_event_markets(events);
 
         if markets.is_empty() {
             log::warn!("No markets found in event slug '{event_slug}'");
@@ -610,7 +625,7 @@ impl PolymarketGammaHttpClient {
         let events = self.fetch_gamma_events_paginated(params).await?;
         let ts_init = self.clock.get_time_ns();
         let total_events = events.len();
-        let markets: Vec<GammaMarket> = events.into_iter().flat_map(|e| e.markets).collect();
+        let markets = flatten_event_markets(events);
         let total_markets = markets.len();
         let instruments = parse_markets_to_instruments(&markets, ts_init);
         log::info!(
@@ -635,8 +650,7 @@ impl PolymarketGammaHttpClient {
         }
 
         if let Some(events) = &response.events {
-            let event_markets: Vec<GammaMarket> =
-                events.iter().flat_map(|e| e.markets.clone()).collect();
+            let event_markets = flatten_event_markets(events.clone());
             instruments.extend(parse_markets_to_instruments(&event_markets, ts_init));
         }
 
