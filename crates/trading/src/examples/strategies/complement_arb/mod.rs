@@ -13,14 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example trading strategies for backtesting and demonstration.
+//! Complement arbitrage strategy for binary option markets.
+//!
+//! Binary options have a mathematical complement constraint: Yes + No = 1.0 at
+//! resolution. When market inefficiencies cause `yes_ask + no_ask < 1.0 - fees`,
+//! buying both sides locks in risk-free profit. When `yes_bid + no_bid > 1.0 + fees`,
+//! selling both does the same. This strategy continuously monitors all discovered
+//! complement pairs and logs when profitable opportunities appear.
 
-pub mod complement_arb;
-pub mod delta_neutral_vol;
-pub mod ema_cross;
-pub mod grid_mm;
+pub mod config;
+pub mod strategy;
 
-pub use complement_arb::{ComplementArb, ComplementArbConfig};
-pub use delta_neutral_vol::{DeltaNeutralVol, DeltaNeutralVolConfig};
-pub use ema_cross::EmaCross;
-pub use grid_mm::{GridMarketMaker, GridMarketMakerConfig};
+#[cfg(test)]
+mod tests;
+
+pub use config::ComplementArbConfig;
+pub use strategy::ComplementArb;

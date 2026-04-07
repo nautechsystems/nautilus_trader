@@ -91,6 +91,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
 rstest = { workspace = true }
@@ -143,4 +144,9 @@ doc = false
 [[example]]
 name = "polymarket-new-market-monitor"
 path = "examples/new_market_monitor.rs"
+doc = false
+
+[[example]]
+name = "polymarket-complement-arb"
+path = "examples/complement_arb.rs"
 doc = false
