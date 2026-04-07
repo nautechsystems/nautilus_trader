@@ -175,7 +175,6 @@ class DockerizedIBGateway:
             restart_policy={"Name": "always"},
             detach=True,
             ports=ports,
-            platform="amd64",
             environment={
                 "TWS_USERID": self.username,
                 "TWS_PASSWORD": self.password.get_value(),
