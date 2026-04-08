@@ -16,6 +16,7 @@
 //! Python bindings for Strategy with complete order and position management.
 
 use std::{
+    any::Any,
     cell::{RefCell, UnsafeCell},
     collections::HashMap,
     fmt::Debug,
@@ -620,6 +621,97 @@ impl PyStrategyInner {
         }
         Ok(())
     }
+
+    fn dispatch_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| py_self.call_method1(py, "on_historical_data", (data,)))?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_quotes: Vec<_> = quotes
+                    .into_iter()
+                    .map(|quote| quote.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_quotes", (py_quotes,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_trades: Vec<_> = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_trades", (py_trades,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_funding_rates(
+        &mut self,
+        funding_rates: Vec<FundingRateUpdate>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_funding_rates: Vec<_> = funding_rates
+                    .into_iter()
+                    .map(|rate| rate.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_funding_rates", (py_funding_rates,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_bars: Vec<_> = bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)).collect();
+                py_self.call_method1(py, "on_historical_bars", (py_bars,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_mark_prices(
+        &mut self,
+        mark_prices: Vec<MarkPriceUpdate>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_mark_prices: Vec<_> = mark_prices
+                    .into_iter()
+                    .map(|price| price.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_mark_prices", (py_mark_prices,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_historical_index_prices(
+        &mut self,
+        index_prices: Vec<IndexPriceUpdate>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_index_prices: Vec<_> = index_prices
+                    .into_iter()
+                    .map(|price| price.into_py_any_unwrap(py))
+                    .collect();
+                py_self.call_method1(py, "on_historical_index_prices", (py_index_prices,))
+            })?;
+        }
+        Ok(())
+    }
 }
 
 impl Deref for PyStrategyInner {
@@ -828,6 +920,59 @@ impl DataActor for PyStrategyInner {
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         self.dispatch_on_instrument_close(*update)
             .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+    }
+
+    fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        Python::attach(|py| {
+            let py_data: Py<PyAny> = if let Some(custom_data) = data.downcast_ref::<CustomData>() {
+                Py::new(py, custom_data.clone())?.into_any()
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Failed to convert historical data to Python: unsupported type"
+                ));
+            };
+            self.dispatch_on_historical_data(py_data)
+                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+        })
+    }
+
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        self.dispatch_on_historical_quotes(quotes.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+    }
+
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        self.dispatch_on_historical_trades(trades.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+    }
+
+    fn on_historical_funding_rates(
+        &mut self,
+        funding_rates: &[FundingRateUpdate],
+    ) -> anyhow::Result<()> {
+        self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        self.dispatch_on_historical_bars(bars.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+    }
+
+    fn on_historical_mark_prices(
+        &mut self,
+        mark_prices: &[MarkPriceUpdate],
+    ) -> anyhow::Result<()> {
+        self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+    }
+
+    fn on_historical_index_prices(
+        &mut self,
+        index_prices: &[IndexPriceUpdate],
+    ) -> anyhow::Result<()> {
+        self.dispatch_on_historical_index_prices(index_prices.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
@@ -1443,6 +1588,54 @@ impl PyStrategy {
     #[pyo3(name = "on_instrument_close")]
     fn py_on_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
         self.inner_mut().dispatch_on_instrument_close(close)
+    }
+
+    #[pyo3(name = "on_historical_data")]
+    fn py_on_historical_data(&mut self, py: Python<'_>, data: CustomData) -> PyResult<()> {
+        self.inner_mut()
+            .dispatch_on_historical_data(Py::new(py, data)?.into_any())
+    }
+
+    #[pyo3(name = "on_historical_quotes")]
+    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
+        self.inner_mut().dispatch_on_historical_quotes(quotes)
+    }
+
+    #[pyo3(name = "on_historical_trades")]
+    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
+        self.inner_mut().dispatch_on_historical_trades(trades)
+    }
+
+    #[pyo3(name = "on_historical_funding_rates")]
+    fn py_on_historical_funding_rates(
+        &mut self,
+        funding_rates: Vec<FundingRateUpdate>,
+    ) -> PyResult<()> {
+        self.inner_mut()
+            .dispatch_on_historical_funding_rates(funding_rates)
+    }
+
+    #[pyo3(name = "on_historical_bars")]
+    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
+        self.inner_mut().dispatch_on_historical_bars(bars)
+    }
+
+    #[pyo3(name = "on_historical_mark_prices")]
+    fn py_on_historical_mark_prices(
+        &mut self,
+        mark_prices: Vec<MarkPriceUpdate>,
+    ) -> PyResult<()> {
+        self.inner_mut()
+            .dispatch_on_historical_mark_prices(mark_prices)
+    }
+
+    #[pyo3(name = "on_historical_index_prices")]
+    fn py_on_historical_index_prices(
+        &mut self,
+        index_prices: Vec<IndexPriceUpdate>,
+    ) -> PyResult<()> {
+        self.inner_mut()
+            .dispatch_on_historical_index_prices(index_prices)
     }
 
     #[pyo3(name = "subscribe_data")]

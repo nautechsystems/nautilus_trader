@@ -1003,3 +1003,377 @@ fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option
         .ok()
         .and_then(|val| val.extract::<bool>().ok())
 }
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use std::{
+        any::Any,
+        cell::RefCell,
+        collections::HashMap,
+        ffi::CString,
+        fmt::Debug,
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    use async_trait::async_trait;
+    use nautilus_common::{
+        cache::Cache,
+        clients::DataClient,
+        clock::Clock,
+        enums::Environment,
+        live::runner::get_data_event_sender,
+        msgbus::get_message_bus,
+        messages::{
+            DataEvent, DataResponse,
+            data::{BarsResponse, RequestBars},
+        },
+    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        data::{Bar, BarType},
+        identifiers::{ClientId, TraderId, Venue},
+        types::{Price, Quantity},
+    };
+    use nautilus_system::factories::{ClientConfig, DataClientFactory};
+    use nautilus_trading::{ImportableStrategyConfig, python::strategy::PyStrategy};
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
+    };
+
+    use super::LiveNode;
+
+    #[derive(Debug, Default)]
+    struct TestDataClientConfig;
+
+    impl ClientConfig for TestDataClientConfig {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestHistoricalBarsDataClientFactory {
+        request_count: Arc<AtomicUsize>,
+        response_sent_count: Arc<AtomicUsize>,
+        handler_visible_count: Arc<AtomicUsize>,
+    }
+
+    impl TestHistoricalBarsDataClientFactory {
+        fn new(
+            request_count: Arc<AtomicUsize>,
+            response_sent_count: Arc<AtomicUsize>,
+            handler_visible_count: Arc<AtomicUsize>,
+        ) -> Self {
+            Self {
+                request_count,
+                response_sent_count,
+                handler_visible_count,
+            }
+        }
+    }
+
+    impl DataClientFactory for TestHistoricalBarsDataClientFactory {
+        fn create(
+            &self,
+            name: &str,
+            _config: &dyn ClientConfig,
+            _cache: Rc<RefCell<Cache>>,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(TestHistoricalBarsDataClient::new(
+                ClientId::from(name),
+                Venue::from("SIM"),
+                self.request_count.clone(),
+                self.response_sent_count.clone(),
+                self.handler_visible_count.clone(),
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "TEST_DATA"
+        }
+
+        fn config_type(&self) -> &'static str {
+            "TestDataClientConfig"
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestHistoricalBarsDataClient {
+        client_id: ClientId,
+        venue: Venue,
+        connected: Arc<AtomicBool>,
+        request_count: Arc<AtomicUsize>,
+        response_sent_count: Arc<AtomicUsize>,
+        handler_visible_count: Arc<AtomicUsize>,
+    }
+
+    impl TestHistoricalBarsDataClient {
+        fn new(
+            client_id: ClientId,
+            venue: Venue,
+            request_count: Arc<AtomicUsize>,
+            response_sent_count: Arc<AtomicUsize>,
+            handler_visible_count: Arc<AtomicUsize>,
+        ) -> Self {
+            Self {
+                client_id,
+                venue,
+                connected: Arc::new(AtomicBool::new(false)),
+                request_count,
+                response_sent_count,
+                handler_visible_count,
+            }
+        }
+
+        fn make_bar(bar_type: BarType) -> Bar {
+            Bar::new(
+                bar_type,
+                Price::from("1.0000"),
+                Price::from("1.1000"),
+                Price::from("0.9000"),
+                Price::from("1.0500"),
+                Quantity::from("1000"),
+                UnixNanos::from(1_700_000_000_000_000_000u64),
+                UnixNanos::from(1_700_000_000_000_000_001u64),
+            )
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for TestHistoricalBarsDataClient {
+        fn client_id(&self) -> ClientId {
+            self.client_id
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            Some(self.venue)
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            self.connected.load(Ordering::Relaxed)
+        }
+
+        fn is_disconnected(&self) -> bool {
+            !self.is_connected()
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.connected.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+
+        fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+            self.request_count.fetch_add(1, Ordering::Relaxed);
+            if get_message_bus()
+                .borrow()
+                .get_response_handler(&request.request_id)
+                .is_some()
+            {
+                self.handler_visible_count.fetch_add(1, Ordering::Relaxed);
+            }
+
+            let sender = get_data_event_sender();
+            let client_id = self.client_id;
+            let response_sent_count = self.response_sent_count.clone();
+            let response = BarsResponse::new(
+                request.request_id,
+                client_id,
+                request.bar_type,
+                vec![Self::make_bar(request.bar_type)],
+                None,
+                None,
+                UnixNanos::from(1_700_000_000_000_000_002u64),
+                None,
+            );
+
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                response_sent_count.fetch_add(1, Ordering::Relaxed);
+                sender
+                    .send(DataEvent::Response(DataResponse::Bars(response)))
+                    .expect("test bars response should send");
+            });
+
+            Ok(())
+        }
+    }
+
+    fn install_tracking_strategy_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+        module
+            .setattr("BarType", py.get_type::<BarType>())
+            .expect("BarType type should bind");
+        module
+            .setattr("RESULTS", PyDict::new(py))
+            .expect("RESULTS should bind");
+
+        let code = CString::new(
+            r#"
+RESULTS["on_start"] = 0
+RESULTS["on_historical_bars"] = 0
+RESULTS["historical_bar_count"] = 0
+RESULTS["last_request_id"] = ""
+
+class HistoricalBarsStrategy(Strategy):
+    def __init__(self):
+        super().__init__()
+        self.bar_type = BarType.from_str("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL")
+
+    def on_start(self):
+        RESULTS["on_start"] += 1
+        RESULTS["last_request_id"] = self.request_bars(self.bar_type)
+
+    def on_stop(self):
+        pass
+
+    def on_historical_bars(self, bars):
+        RESULTS["on_historical_bars"] += 1
+        RESULTS["historical_bar_count"] += len(bars)
+"#,
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test strategy code should execute");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test strategy module should register");
+    }
+
+    fn get_results(py: Python<'_>, module_name: &str) -> (usize, usize, usize) {
+        let module = py.import(module_name).expect("test strategy module should import");
+        let results_obj = module
+            .getattr("RESULTS")
+            .expect("RESULTS should exist");
+        let results = results_obj
+            .cast::<PyDict>()
+            .expect("RESULTS should be a dict");
+
+        let on_start = results
+            .get_item("on_start")
+            .expect("on_start key should exist")
+            .extract::<usize>()
+            .expect("on_start should extract");
+        let on_historical_bars = results
+            .get_item("on_historical_bars")
+            .expect("on_historical_bars key should exist")
+            .extract::<usize>()
+            .expect("on_historical_bars should extract");
+        let historical_bar_count = results
+            .get_item("historical_bar_count")
+            .expect("historical_bar_count key should exist")
+            .extract::<usize>()
+            .expect("historical_bar_count should extract");
+
+        (on_start, on_historical_bars, historical_bar_count)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_live_node_pystrategy_request_bars_dispatches_on_historical_bars() {
+        Python::initialize();
+
+        let module_name = "test_live_node_historical_bars_strategy";
+        Python::attach(|py| install_tracking_strategy_module(py, module_name));
+
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let response_sent_count = Arc::new(AtomicUsize::new(0));
+        let handler_visible_count = Arc::new(AtomicUsize::new(0));
+        let factory = TestHistoricalBarsDataClientFactory::new(
+            request_count.clone(),
+            response_sent_count.clone(),
+            handler_visible_count.clone(),
+        );
+        let config = TestDataClientConfig;
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .add_data_client(
+                Some("TEST_DATA".to_string()),
+                Box::new(factory),
+                Box::new(config),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:HistoricalBarsStrategy"),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        Python::attach(|py| {
+            node.py_add_strategy_from_config(py, importable)
+                .expect("strategy should register");
+        });
+
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let response_sent_count_for_stop = response_sent_count.clone();
+        tokio::spawn(async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                if response_sent_count_for_stop.load(Ordering::Relaxed) == 1
+                    || tokio::time::Instant::now() >= deadline
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            stop_handle.stop();
+        });
+
+        node.run().await.expect("node should run cleanly");
+
+        let (on_start, on_historical_bars, historical_bar_count) =
+            Python::attach(|py| get_results(py, module_name));
+
+        assert_eq!(request_count.load(Ordering::Relaxed), 1);
+        assert_eq!(handler_visible_count.load(Ordering::Relaxed), 1);
+        assert_eq!(response_sent_count.load(Ordering::Relaxed), 1);
+        assert_eq!(on_start, 1);
+        assert_eq!(on_historical_bars, 1);
+        assert_eq!(historical_bar_count, 1);
+    }
+}
