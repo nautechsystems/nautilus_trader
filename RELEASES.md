@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Fixed `OrderTriggered` ValueError on market-style stop orders (#3812), thanks for reporting @jindrichsirucek
 - Fixed Hyperliquid bracket order submission grouping (#3810), thanks for reporting @jindrichsirucek
 - Fixed OKX option greeks not forwarded due to inaccessible Cython `cdef` subscription attribute
+- Fixed PyO3 `LiveNode` `request_bars()` historical callbacks being dropped during strategy startup warmup
 
 ### Internal Improvements
 
