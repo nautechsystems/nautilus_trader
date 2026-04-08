@@ -1538,7 +1538,7 @@ cdef class TimeBarAggregator(BarAggregator):
                         f"next_close_ns={unix_nanos_to_dt(self.next_close_ns)}")
 
     cpdef void stop_timer(self):
-        cdef str timer_name = str(self.bar_type)
+        cdef str timer_name = self._timer_name
         if timer_name in self._clock.timer_names:
             self._clock.cancel_timer(timer_name)
 

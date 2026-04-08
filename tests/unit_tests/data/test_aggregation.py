@@ -3487,6 +3487,32 @@ class TestTimeBarAggregator:
         # Assert
         assert aggregator.next_close_ns == expected
 
+    def test_stop_timer_cancels_registered_timer_and_allows_restart(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(1)
+        handler = []
+        bar_type = BarType(
+            TestIdStubs.audusd_id(),
+            BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+        )
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type.standard(),
+            handler.append,
+            clock,
+        )
+        timer_name = f"time_bar_{bar_type.standard()}"
+
+        # Act
+        aggregator.start_timer()
+        aggregator.stop_timer()
+        assert timer_name not in clock.timer_names
+        aggregator.start_timer()
+
+        # Assert
+        assert timer_name in clock.timer_names
+
     def test_update_timer_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
         clock = TestClock()
