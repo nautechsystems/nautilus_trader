@@ -34,15 +34,15 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            RequestBookSnapshot, RequestInstrument, RequestInstruments, SubscribeBookDeltas,
-            SubscribeQuotes, SubscribeTrades,
+            RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades,
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::Data,
+    data::{BarType, Data},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
 };
@@ -167,6 +167,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                                 "market_trades" => load_json_str("ws_market_trades.json"),
                                 "ticker" => load_json_str("ws_ticker.json"),
                                 "level2" => load_json_str("ws_l2_data_snapshot.json"),
+                                "candles" => load_json_str("ws_candles.json"),
                                 _ => json!({"channel": channel}).to_string(),
                             };
 
@@ -639,6 +640,154 @@ async fn test_data_client_request_book_snapshot_with_depth() {
         }
         other => panic!("Expected Book response, was: {other:?}"),
     }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_bars() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    client.connect().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let bar_type = BarType::from("BTC-USD.COINBASE-1-HOUR-LAST-EXTERNAL");
+    let request = RequestBars::new(
+        bar_type,
+        None,
+        None,
+        None,
+        Some(ClientId::new("COINBASE")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_bars(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for bars response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::Bars(bars_response)) => {
+            assert_eq!(bars_response.bar_type, bar_type);
+            assert!(!bars_response.data.is_empty(), "should have bars");
+
+            // Bars should be sorted ascending by ts_event
+            let events: Vec<_> = bars_response.data.iter().map(|b| b.ts_event).collect();
+
+            for window in events.windows(2) {
+                assert!(window[0] <= window[1], "bars not sorted ascending");
+            }
+        }
+        other => panic!("Expected Bars response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_trades() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    client.connect().await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(ClientId::new("COINBASE")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_trades(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for trades response")
+        .expect("channel closed");
+
+    match event {
+        DataEvent::Response(DataResponse::Trades(trades_response)) => {
+            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert!(!trades_response.data.is_empty(), "should have trades");
+
+            // Trades should be sorted ascending by ts_event
+            let events: Vec<_> = trades_response.data.iter().map(|t| t.ts_event).collect();
+
+            for window in events.windows(2) {
+                assert!(window[0] <= window[1], "trades not sorted ascending");
+            }
+        }
+        other => panic!("Expected Trades response, was: {other:?}"),
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_subscribe_bars() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let bar_type = BarType::from("BTC-USD.COINBASE-5-MINUTE-LAST-EXTERNAL");
+    let cmd = SubscribeBars::new(
+        bar_type,
+        Some(ClientId::new("COINBASE")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.subscribe_bars(&cmd).unwrap();
+
+    wait_until_async(
+        || {
+            let found = loop {
+                match rx.try_recv() {
+                    Ok(DataEvent::Data(Data::Bar(_))) => break true,
+                    Ok(_) => {}
+                    Err(_) => break false,
+                }
+            };
+            async move { found }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
 }

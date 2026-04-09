@@ -97,6 +97,7 @@ name = "databento-sandbox"
 path = "bin/sandbox.rs"
 required-features = ["python"]
 doc = false
+test = false
 
 [[example]]
 name = "databento-data-tester"

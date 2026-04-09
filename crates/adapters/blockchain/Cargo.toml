@@ -91,6 +91,7 @@ name = "node_wallet"
 path = "bin/node_wallet.rs"
 required-features = ["hypersync"]
 doc = false
+test = false
 
 [[example]]
 name = "blockchain-data-tester"

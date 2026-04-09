@@ -136,3 +136,4 @@ pyo3-stub-gen = { workspace = true }
 name = "python-stub-gen"
 path = "bin/stub_gen.rs"
 doc = false
+test = false

@@ -101,23 +101,27 @@ rstest = { workspace = true }
 name = "tardis-csv"
 path = "bin/example_csv.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "tardis-http"
 path = "bin/example_http.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "tardis-replay"
 path = "bin/example_replay.rs"
 required-features = ["replay"]
 doc = false
+test = false
 
 # Run with `cargo run --bin stream_deltas_bench --profile bench`
 [[bin]]
 name = "stream_deltas_bench"
 path = "bin/stream_deltas_bench.rs"
 doc = false
+test = false
 
 # Run with `cargo run --example tardis-data-tester -p nautilus-tardis`
 [[example]]

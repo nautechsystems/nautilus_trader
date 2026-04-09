@@ -104,18 +104,21 @@ harness = false
 name = "deribit-http-public"
 path = "bin/http_public.rs"
 doc = false
+test = false
 
 # Run with `cargo run -p nautilus-deribit --bin deribit-http-private`
 [[bin]]
 name = "deribit-http-private"
 path = "bin/http_private.rs"
 doc = false
+test = false
 
 # Run with `cargo run -p nautilus-deribit --bin deribit-ws-data`
 [[bin]]
 name = "deribit-ws-data"
 path = "bin/ws_data.rs"
 doc = false
+test = false
 
 # Run with `cargo run -p nautilus-deribit --example deribit-data-tester`
 [[example]]

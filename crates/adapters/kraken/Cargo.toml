@@ -100,16 +100,19 @@ harness = false
 name = "kraken-http-spot-raw"
 path = "bin/http_spot_raw.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "kraken-http-spot-public"
 path = "bin/http_spot_public.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "kraken-ws-spot-data"
 path = "bin/ws_spot_data.rs"
 doc = false
+test = false
 
 # Run with `cargo run -p nautilus-kraken --example kraken-data-tester`
 [[example]]

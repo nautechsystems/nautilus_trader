@@ -100,31 +100,37 @@ rstest = { workspace = true }
 name = "polymarket-updown-markets"
 path = "bin/updown_markets.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "polymarket-trending-markets"
 path = "bin/trending_markets.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "polymarket-composite-filter"
 path = "bin/composite_filter.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "polymarket-search-markets"
 path = "bin/search_markets.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "polymarket-event-discovery"
 path = "bin/event_discovery.rs"
 doc = false
+test = false
 
 [[bin]]
 name = "polymarket-create-api-key"
 path = "bin/create_api_key.rs"
 doc = false
+test = false
 
 [[example]]
 name = "polymarket-data-tester"

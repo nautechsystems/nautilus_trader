@@ -107,9 +107,11 @@ name = "to_json"
 path = "bin/to_json.rs"
 required-features = ["python"]
 doc = false
+test = false
 
 [[bin]]
 name = "to_parquet"
 path = "bin/to_parquet.rs"
 required-features = ["python"]
 doc = false
+test = false
