@@ -86,8 +86,8 @@ use crate::common::{
     consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_VENUE},
     credential::{Credential, credential_env_vars},
     enums::{
-        BybitAccountType, BybitEnvironment, BybitMarginMode, BybitOpenOnly, BybitOrderFilter,
-        BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType,
+        BybitAccountType, BybitContractType, BybitEnvironment, BybitMarginMode, BybitOpenOnly,
+        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2818,7 +2818,15 @@ impl BybitHttpClient {
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let status = MarketStatusAction::from(def.status);
+                        if status == MarketStatusAction::Trading
+                            && def.contract_type == BybitContractType::LinearPerpetual
+                            && def.delivery_time != "0"
+                        {
+                            statuses.insert(id, MarketStatusAction::PreClose);
+                        } else {
+                            statuses.insert(id, status);
+                        }
                     }
                     cursor = response.result.next_page_cursor;
                 }
@@ -2828,7 +2836,15 @@ impl BybitHttpClient {
                     for def in &response.result.list {
                         let symbol = make_bybit_symbol(def.symbol, product_type);
                         let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let status = MarketStatusAction::from(def.status);
+                        if status == MarketStatusAction::Trading
+                            && def.contract_type == BybitContractType::InversePerpetual
+                            && def.delivery_time != "0"
+                        {
+                            statuses.insert(id, MarketStatusAction::PreClose);
+                        } else {
+                            statuses.insert(id, status);
+                        }
                     }
                     cursor = response.result.next_page_cursor;
                 }

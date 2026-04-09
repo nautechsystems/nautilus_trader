@@ -266,15 +266,10 @@ pub enum BybitInnovationFlag {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum BybitInstrumentStatus {
-    Trading,
-    Settled,
-    Delivering,
-    ListedOnly,
-    PendingListing,
     PreLaunch,
-    PreTrading,
+    Trading,
+    Delivering,
     Closed,
-    Suspended,
     #[serde(other)]
     Other,
 }

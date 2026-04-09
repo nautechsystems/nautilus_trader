@@ -27,15 +27,10 @@ use super::enums::BybitInstrumentStatus;
 impl From<BybitInstrumentStatus> for MarketStatusAction {
     fn from(status: BybitInstrumentStatus) -> Self {
         match status {
-            BybitInstrumentStatus::Trading => Self::Trading,
             BybitInstrumentStatus::PreLaunch => Self::PreOpen,
-            BybitInstrumentStatus::PreTrading => Self::PreOpen,
-            BybitInstrumentStatus::PendingListing => Self::PreOpen,
-            BybitInstrumentStatus::ListedOnly => Self::PreOpen,
+            BybitInstrumentStatus::Trading => Self::Trading,
             BybitInstrumentStatus::Delivering => Self::PreClose,
-            BybitInstrumentStatus::Settled => Self::Close,
             BybitInstrumentStatus::Closed => Self::Close,
-            BybitInstrumentStatus::Suspended => Self::Suspend,
             BybitInstrumentStatus::Other => Self::NotAvailableForTrading,
         }
     }
@@ -129,13 +124,8 @@ mod tests {
     #[rstest]
     #[case(BybitInstrumentStatus::Trading, MarketStatusAction::Trading)]
     #[case(BybitInstrumentStatus::PreLaunch, MarketStatusAction::PreOpen)]
-    #[case(BybitInstrumentStatus::PreTrading, MarketStatusAction::PreOpen)]
-    #[case(BybitInstrumentStatus::PendingListing, MarketStatusAction::PreOpen)]
-    #[case(BybitInstrumentStatus::ListedOnly, MarketStatusAction::PreOpen)]
     #[case(BybitInstrumentStatus::Delivering, MarketStatusAction::PreClose)]
-    #[case(BybitInstrumentStatus::Settled, MarketStatusAction::Close)]
     #[case(BybitInstrumentStatus::Closed, MarketStatusAction::Close)]
-    #[case(BybitInstrumentStatus::Suspended, MarketStatusAction::Suspend)]
     #[case(
         BybitInstrumentStatus::Other,
         MarketStatusAction::NotAvailableForTrading
