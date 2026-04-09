@@ -432,7 +432,7 @@ currently use `f64` for notional value and signed accumulation (these are being 
 fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
 overhead:
 
-- **Time bars** are the most efficient for high-throughput data. The aggregator simply accumulates
+- **Time bars** are the most efficient for high-throughput data. The aggregator accumulates
   OHLCV state per update; bar emission is driven by a timer rather than per-tick logic.
 - **Threshold bars** (tick, volume, value) add a lightweight counter or accumulator check per update.
   Volume and value bars may split a single large trade across multiple bars when it exceeds the

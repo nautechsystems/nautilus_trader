@@ -219,7 +219,7 @@ strategy.submit_order(order)
 | `GTC`         | ✓                     | Good Till Canceled.                               |
 | `FOK`         | ✓                     | Fill or Kill.                                     |
 | `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | ✗                     | *Not supported by OKX API.* |
+| `GTD`         | -                     | *Not supported by OKX API.*                       |
 
 :::note
 **GTD (Good Till Date) time in force**: OKX does not support native GTD functionality through their API.
