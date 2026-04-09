@@ -3614,6 +3614,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_time_bar_aggregator_stop_clears_timer_and_allows_restart(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let timer_name = bar_type.to_string();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            |_bar: Bar| {},
+            true,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            15,
+            false,
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        assert_eq!(clock.borrow().timer_names(), vec![timer_name.as_str()]);
+
+        rc.borrow_mut().stop();
+        assert!(clock.borrow().timer_names().is_empty());
+
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+        assert_eq!(clock.borrow().timer_names(), vec![timer_name.as_str()]);
+    }
+
+    #[rstest]
     fn test_time_bar_aggregator_left_open_interval(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
