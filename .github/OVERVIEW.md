@@ -26,7 +26,6 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
 - **coverage.yml**: coverage report generation for the `nightly` branch.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and native ARM runners.
-- **fork-pre-commit.yml**: fork-only pre-commit workflow for non-standard branch names not covered by the main CI branch filters. Mirrors the upstream pre-commit gate on branch pushes such as `stable-addons` and `codex/*`.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
 - **nightly-tests.yml**: extended test suites (turmoil network tests) that are too slow for PR builds.
