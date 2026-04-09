@@ -1,0 +1,58 @@
+name: fork-pre-commit
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  push:
+    branches-ignore:
+      - master
+      - nightly
+      - develop
+      - test-ci
+      - test-ci-v2
+      - test-pre-commit
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  EGRESS_POLICY: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'audit' }}
+
+jobs:
+  pre-commit:
+    if: github.repository_owner == 'BurnOutTrader'
+    runs-on: depot-ubuntu-22.04-8
+    steps:
+      - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Verify immutable CI inputs (post-checkout)
+        run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          build-type: "pre-commit"
+
+      - name: Run pre-commit
+        run: prek run --all-files
+
+      - name: Verify capnp schemas are up-to-date
+        run: make check-capnp-schemas
