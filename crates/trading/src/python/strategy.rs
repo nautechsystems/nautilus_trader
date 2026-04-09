@@ -674,7 +674,10 @@ impl PyStrategyInner {
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_bars: Vec<_> = bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)).collect();
+                let py_bars: Vec<_> = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any_unwrap(py))
+                    .collect();
                 py_self.call_method1(py, "on_historical_bars", (py_bars,))
             })?;
         }
@@ -927,9 +930,7 @@ impl DataActor for PyStrategyInner {
             let py_data: Py<PyAny> = if let Some(custom_data) = data.downcast_ref::<CustomData>() {
                 Py::new(py, custom_data.clone())?.into_any()
             } else {
-                return Err(anyhow::anyhow!(
-                    "Failed to convert historical data to Python: unsupported type"
-                ));
+                anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
             self.dispatch_on_historical_data(py_data)
                 .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
@@ -959,10 +960,7 @@ impl DataActor for PyStrategyInner {
             .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
     }
 
-    fn on_historical_mark_prices(
-        &mut self,
-        mark_prices: &[MarkPriceUpdate],
-    ) -> anyhow::Result<()> {
+    fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
     }
@@ -1621,10 +1619,7 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "on_historical_mark_prices")]
-    fn py_on_historical_mark_prices(
-        &mut self,
-        mark_prices: Vec<MarkPriceUpdate>,
-    ) -> PyResult<()> {
+    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) -> PyResult<()> {
         self.inner_mut()
             .dispatch_on_historical_mark_prices(mark_prices)
     }

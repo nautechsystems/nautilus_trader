@@ -1027,11 +1027,11 @@ mod tests {
         clock::Clock,
         enums::Environment,
         live::runner::get_data_event_sender,
-        msgbus::get_message_bus,
         messages::{
             DataEvent, DataResponse,
             data::{BarsResponse, RequestBars},
         },
+        msgbus::get_message_bus,
     };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -1192,6 +1192,7 @@ mod tests {
 
         fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
             self.request_count.fetch_add(1, Ordering::Relaxed);
+
             if get_message_bus()
                 .borrow()
                 .get_response_handler(&request.request_id)
@@ -1278,10 +1279,10 @@ class HistoricalBarsStrategy(Strategy):
     }
 
     fn get_results(py: Python<'_>, module_name: &str) -> (usize, usize, usize) {
-        let module = py.import(module_name).expect("test strategy module should import");
-        let results_obj = module
-            .getattr("RESULTS")
-            .expect("RESULTS should exist");
+        let module = py
+            .import(module_name)
+            .expect("test strategy module should import");
+        let results_obj = module.getattr("RESULTS").expect("RESULTS should exist");
         let results = results_obj
             .cast::<PyDict>()
             .expect("RESULTS should be a dict");
@@ -1350,8 +1351,10 @@ class HistoricalBarsStrategy(Strategy):
         let handle = node.handle();
         let stop_handle = handle.clone();
         let response_sent_count_for_stop = response_sent_count.clone();
+
         tokio::spawn(async move {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
             loop {
                 if response_sent_count_for_stop.load(Ordering::Relaxed) == 1
                     || tokio::time::Instant::now() >= deadline
