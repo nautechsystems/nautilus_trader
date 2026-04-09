@@ -36,6 +36,10 @@ You can find live example scripts [here](https://github.com/nautechsystems/nauti
 
 Before implementing your trading strategies, make sure that either TWS (Trader Workstation) or IB Gateway is running. You can log in to one of these standalone applications with your credentials, or connect programmatically via `DockerizedIBGateway`.
 
+:::warning
+Configure TWS or IB Gateway to return market data timestamps in UTC before connecting NautilusTrader. This setting must be enabled by the user in TWS/IB Gateway, as NautilusTrader is designed to work with UTC timestamps.
+:::
+
 ### Connection methods
 
 There are two primary ways to connect to Interactive Brokers:
