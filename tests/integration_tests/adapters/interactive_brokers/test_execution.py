@@ -26,11 +26,21 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
     InteractiveBrokersLiveExecClientFactory,
 )
 from nautilus_trader.execution.messages import QueryAccount
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.identifiers import new_generic_spread_id
+from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -82,6 +92,48 @@ def order_setup(
         raise ValueError(status)
     exec_client._cache.add_order(order, PositionId("1"))
     return order
+
+
+def make_option_contract(symbol_str: str, kind: OptionKind) -> OptionContract:
+    return OptionContract(
+        instrument_id=InstrumentId(Symbol(symbol_str), Venue("SMART")),
+        raw_symbol=Symbol(symbol_str),
+        asset_class=AssetClass.EQUITY,
+        currency=Currency.from_str("USD"),
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        multiplier=Quantity.from_int(100),
+        lot_size=Quantity.from_int(1),
+        underlying="SPY",
+        option_kind=kind,
+        activation_ns=0,
+        expiration_ns=1640995200000000000,
+        strike_price=Price.from_str("400.0")
+        if kind == OptionKind.CALL
+        else Price.from_str("390.0"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def make_option_spread(call: OptionContract, put: OptionContract) -> OptionSpread:
+    spread_id = new_generic_spread_id([(call.id, 1), (put.id, -1)])
+    return OptionSpread(
+        instrument_id=spread_id,
+        raw_symbol=spread_id.symbol,
+        asset_class=AssetClass.EQUITY,
+        currency=Currency.from_str("USD"),
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        multiplier=Quantity.from_int(100),
+        lot_size=Quantity.from_int(1),
+        underlying="SPY",
+        strategy_type="VERTICAL",
+        activation_ns=0,
+        expiration_ns=1640995200000000000,
+        ts_event=0,
+        ts_init=0,
+    )
 
 
 def account_summary_setup(client, **kwargs):
@@ -885,6 +937,217 @@ async def test_on_exec_details_uses_stored_avg_px(
     assert exec_client._order_avg_prices[
         cache.order(client_order_id).client_order_id
     ] == Price.from_str("99.75")
+
+
+@pytest.mark.asyncio
+async def test_spread_combo_fill_waits_for_order_status_avg_px(mocker, exec_client, cache):
+    call = make_option_contract("SPY C400", OptionKind.CALL)
+    put = make_option_contract("SPY P390", OptionKind.PUT)
+    spread = make_option_spread(call, put)
+
+    for instrument in [call, put, spread]:
+        exec_client.instrument_provider.add(instrument)
+        cache.add_instrument(instrument)
+
+    call_contract = IBTestContractStubs.create_contract(
+        conId=9001,
+        symbol="SPY",
+        secType="OPT",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="SPY C400",
+    )
+    exec_client.instrument_provider.contract_id_to_instrument_id[call_contract.conId] = call.id
+
+    client_order_id = ClientOrderId("O-SPREAD-001")
+    venue_order_id = VenueOrderId("7001")
+    order = TestExecStubs.limit_order(
+        instrument=spread,
+        client_order_id=client_order_id,
+        quantity=Quantity.from_int(1),
+        price=Price.from_str("1.00"),
+    )
+    order = TestExecStubs.make_accepted_order(order, venue_order_id=venue_order_id)
+    cache.add_order(order, None)
+    cache.add_venue_order_id(client_order_id, venue_order_id)
+
+    generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
+
+    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution.orderRef = str(client_order_id)
+    execution.execId = "combo-fill-1"
+    execution.shares = Decimal(1)
+    execution.price = 3.30
+
+    commission_report = IBTestExecStubs.commission()
+    commission_report.execId = execution.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution,
+        commission_report=commission_report,
+        contract=call_contract,
+    )
+
+    assert generate_order_filled.call_count == 1
+    leg_fill_call = generate_order_filled.call_args_list[0].kwargs
+    assert leg_fill_call["instrument_id"] == call.id
+    assert leg_fill_call["info"] is None
+    assert client_order_id in exec_client._pending_combo_fills
+
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Filled",
+        avg_fill_price=2.75,
+        filled=Decimal(1),
+        remaining=Decimal(0),
+        venue_order_id=venue_order_id,
+    )
+
+    assert generate_order_filled.call_count == 2
+    combo_fill_call = generate_order_filled.call_args_list[1].kwargs
+    assert combo_fill_call["instrument_id"] == spread.id
+    assert combo_fill_call["info"] == {"avg_px": Price.from_str("2.75")}
+    assert client_order_id not in exec_client._pending_combo_fills
+
+
+@pytest.mark.asyncio
+async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
+    mocker,
+    exec_client,
+    cache,
+):
+    call = make_option_contract("SPY C400", OptionKind.CALL)
+    put = make_option_contract("SPY P390", OptionKind.PUT)
+    spread = make_option_spread(call, put)
+
+    for instrument in [call, put, spread]:
+        exec_client.instrument_provider.add(instrument)
+        cache.add_instrument(instrument)
+
+    put_contract = IBTestContractStubs.create_contract(
+        conId=9002,
+        symbol="SPY",
+        secType="OPT",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="SPY P390",
+    )
+    call_contract = IBTestContractStubs.create_contract(
+        conId=9003,
+        symbol="SPY",
+        secType="OPT",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="SPY C400",
+    )
+    exec_client.instrument_provider.contract_id_to_instrument_id[put_contract.conId] = put.id
+    exec_client.instrument_provider.contract_id_to_instrument_id[call_contract.conId] = call.id
+
+    client_order_id = ClientOrderId("O-SPREAD-MULTI-001")
+    venue_order_id = VenueOrderId("7002")
+    order = TestExecStubs.limit_order(
+        instrument=spread,
+        client_order_id=client_order_id,
+        quantity=Quantity.from_int(3),
+        price=Price.from_str("1.00"),
+    )
+    order = TestExecStubs.make_accepted_order(order, venue_order_id=venue_order_id)
+    cache.add_order(order, None)
+    cache.add_venue_order_id(client_order_id, venue_order_id)
+
+    generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
+
+    execution1 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution1.orderRef = str(client_order_id)
+    execution1.execId = "combo-fill-1"
+    execution1.shares = Decimal(1)
+    execution1.price = 2.40
+
+    commission_report1 = IBTestExecStubs.commission()
+    commission_report1.execId = execution1.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution1,
+        commission_report=commission_report1,
+        contract=put_contract,
+    )
+    execution1_leg2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution1_leg2.orderRef = str(client_order_id)
+    execution1_leg2.execId = "combo-fill-1-leg-2"
+    execution1_leg2.shares = Decimal(1)
+    execution1_leg2.price = 2.60
+
+    commission_report1_leg2 = IBTestExecStubs.commission()
+    commission_report1_leg2.execId = execution1_leg2.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution1_leg2,
+        commission_report=commission_report1_leg2,
+        contract=call_contract,
+    )
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Submitted",
+        avg_fill_price=2.50,
+        filled=Decimal(1),
+        remaining=Decimal(2),
+        venue_order_id=venue_order_id,
+    )
+
+    execution2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution2.orderRef = str(client_order_id)
+    execution2.execId = "combo-fill-2"
+    execution2.shares = Decimal(2)
+    execution2.price = 3.20
+
+    commission_report2 = IBTestExecStubs.commission()
+    commission_report2.execId = execution2.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution2,
+        commission_report=commission_report2,
+        contract=put_contract,
+    )
+    execution2_leg2 = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution2_leg2.orderRef = str(client_order_id)
+    execution2_leg2.execId = "combo-fill-2-leg-2"
+    execution2_leg2.shares = Decimal(2)
+    execution2_leg2.price = 3.00
+
+    commission_report2_leg2 = IBTestExecStubs.commission()
+    commission_report2_leg2.execId = execution2_leg2.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution2_leg2,
+        commission_report=commission_report2_leg2,
+        contract=call_contract,
+    )
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Filled",
+        avg_fill_price=2.90,
+        filled=Decimal(3),
+        remaining=Decimal(0),
+        venue_order_id=venue_order_id,
+    )
+
+    combo_fill_calls = [
+        call.kwargs
+        for call in generate_order_filled.call_args_list
+        if call.kwargs["instrument_id"] == spread.id
+    ]
+
+    assert len(combo_fill_calls) == 2
+    assert combo_fill_calls[0]["last_qty"] == Quantity.from_int(1)
+    assert combo_fill_calls[0]["info"] == {"avg_px": Price.from_str("2.50")}
+    assert combo_fill_calls[1]["last_qty"] == Quantity.from_int(2)
+    assert combo_fill_calls[1]["info"] == {"avg_px": Price.from_str("3.10")}
+    assert client_order_id not in exec_client._pending_combo_fills
 
 
 @pytest.mark.asyncio

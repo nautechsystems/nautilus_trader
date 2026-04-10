@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+from collections import deque
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -239,8 +240,16 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Track processed fill IDs
         self._spread_fill_tracking: dict[ClientOrderId, set[str]] = {}
 
+        # Queue spread combo fills until orderStatus provides the matching avg fill price chunk.
+        self._pending_combo_fills: dict[
+            ClientOrderId,
+            deque[tuple[Order, Execution, IBContract, CommissionAndFeesReport, Decimal]],
+        ] = {}
+        self._pending_combo_fill_avgs: dict[ClientOrderId, deque[tuple[Decimal, Price]]] = {}
+
         # Track average fill prices for orders
         self._order_avg_prices: dict[ClientOrderId, Price] = {}
+        self._order_fill_progress: dict[ClientOrderId, tuple[Decimal, Decimal]] = {}
 
         # Track filled quantities from orderStatus callbacks (keyed by VenueOrderId)
         # This is needed because IB's openOrder callback doesn't include accurate filledQuantity
@@ -1656,6 +1665,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if filled_decimal > 0 and venue_order_id is not None:
             self._order_filled_qty[venue_order_id] = filled_decimal
 
+        ignore_order_event = False
+
         if order_status in ["ApiCancelled", "Cancelled"]:
             status = OrderStatus.CANCELED
         elif order_status == "PendingCancel":
@@ -1675,10 +1686,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if not reason:
                 reason = "Order inactive (IB)"
         elif order_status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
-            self._log.debug(
-                f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
-            )
-            return
+            ignore_order_event = True
+            status = OrderStatus.ACCEPTED
         else:
             self._log.warning(
                 f"Unknown {order_status=} received on `_on_order_status` for {order_ref=}",
@@ -1696,32 +1705,33 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 nautilus_order = self._cache.order(mapped_client_order_id)
 
         if nautilus_order:
-            # Update order with average fill price if provided and order is filled/partially filled
-            if avg_fill_price and avg_fill_price > 0 and status == OrderStatus.FILLED:
-                # Generate an order updated event with the average fill price
-                instrument = self._cache.instrument(nautilus_order.instrument_id)
-                if instrument:
-                    price_magnifier = self.instrument_provider.get_price_magnifier(
-                        nautilus_order.instrument_id,
-                    )
-                    converted_avg_price = ib_price_to_nautilus_price(
-                        avg_fill_price,
-                        price_magnifier,
-                    )
-                    avg_px = instrument.make_price(converted_avg_price)
-
-                    # Store the average price for later use in fill events
-                    self._order_avg_prices[nautilus_order.client_order_id] = avg_px
-
-                    self._log.debug(
-                        f"Updated order {nautilus_order.client_order_id} with avg_px={avg_px}",
-                    )
-
-            self._handle_order_event(
-                status=status,
-                order=nautilus_order,
-                reason=reason,
+            self._update_order_avg_price(
+                nautilus_order=nautilus_order,
+                avg_fill_price=avg_fill_price,
+                filled_decimal=filled_decimal,
             )
+
+            if ignore_order_event:
+                self._log.debug(
+                    f"Ignoring `_on_order_status` event for {order_status=} after caching fill progress",
+                )
+            else:
+                self._handle_order_event(
+                    status=status,
+                    order=nautilus_order,
+                    reason=reason,
+                )
+
+            if status in (
+                OrderStatus.FILLED,
+                OrderStatus.CANCELED,
+                OrderStatus.REJECTED,
+                OrderStatus.EXPIRED,
+            ):
+                self._flush_pending_combo_fills(nautilus_order.client_order_id)
+                self._pending_combo_fills.pop(nautilus_order.client_order_id, None)
+                self._pending_combo_fill_avgs.pop(nautilus_order.client_order_id, None)
+                self._order_fill_progress.pop(nautilus_order.client_order_id, None)
 
             if venue_order_id is not None and status in (
                 OrderStatus.FILLED,
@@ -1844,6 +1854,92 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return None
 
+    def _update_order_avg_price(
+        self,
+        nautilus_order: Order,
+        avg_fill_price: float,
+        filled_decimal: Decimal,
+    ) -> None:
+        if not avg_fill_price or avg_fill_price <= 0 or filled_decimal <= 0:
+            return
+
+        instrument = self._cache.instrument(nautilus_order.instrument_id)
+        if instrument is None:
+            return
+
+        price_magnifier = self.instrument_provider.get_price_magnifier(
+            nautilus_order.instrument_id,
+        )
+        converted_avg_price = ib_price_to_nautilus_price(
+            avg_fill_price,
+            price_magnifier,
+        )
+        avg_px = instrument.make_price(converted_avg_price)
+        client_order_id = nautilus_order.client_order_id
+
+        self._order_avg_prices[client_order_id] = avg_px
+        self._log.debug(f"Updated order {client_order_id} with avg_px={avg_px}")
+
+        previous_filled, previous_notional = self._order_fill_progress.get(
+            client_order_id,
+            (Decimal(0), Decimal(0)),
+        )
+        total_notional = filled_decimal * Decimal(str(converted_avg_price))
+        fill_delta = filled_decimal - previous_filled
+
+        self._order_fill_progress[client_order_id] = (filled_decimal, total_notional)
+
+        if fill_delta <= 0 or not is_generic_spread_id(nautilus_order.instrument_id):
+            return
+
+        notional_delta = total_notional - previous_notional
+        partial_avg_value = float(notional_delta / fill_delta)
+        partial_avg_px = instrument.make_price(partial_avg_value)
+
+        self._pending_combo_fill_avgs.setdefault(client_order_id, deque()).append(
+            (fill_delta, partial_avg_px),
+        )
+        self._flush_pending_combo_fills(client_order_id)
+
+    def _flush_pending_combo_fills(self, client_order_id: ClientOrderId) -> None:
+        pending_combo_fills = self._pending_combo_fills.get(client_order_id)
+        pending_avg_chunks = self._pending_combo_fill_avgs.get(client_order_id)
+
+        if not pending_combo_fills or not pending_avg_chunks:
+            return
+
+        while pending_combo_fills and pending_avg_chunks:
+            (
+                nautilus_order,
+                execution,
+                contract,
+                commission_report,
+                combo_quantity,
+            ) = pending_combo_fills[0]
+            avg_chunk_quantity, avg_px = pending_avg_chunks[0]
+
+            if combo_quantity > avg_chunk_quantity:
+                break
+
+            pending_combo_fills.popleft()
+            self._generate_combo_fill(
+                nautilus_order,
+                execution,
+                contract,
+                commission_report,
+                avg_px_override=avg_px,
+            )
+
+            if combo_quantity == avg_chunk_quantity:
+                pending_avg_chunks.popleft()
+            else:
+                pending_avg_chunks[0] = (avg_chunk_quantity - combo_quantity, avg_px)
+
+        if not pending_combo_fills:
+            self._pending_combo_fills.pop(client_order_id, None)
+        if not pending_avg_chunks:
+            self._pending_combo_fill_avgs.pop(client_order_id, None)
+
     def _handle_spread_execution(
         self,
         nautilus_order: Order,
@@ -1872,14 +1968,23 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             self._spread_fill_tracking[client_order_id].add(fill_id)
 
-            if len(self._spread_fill_tracking[client_order_id]) == 1:
-                # Combo fill for order management, generated only once per combo
-                self._generate_combo_fill(
-                    nautilus_order,
-                    execution,
-                    contract,
-                    commission_report,
+            spread_n_legs = generic_spread_id_n_legs(nautilus_order.instrument_id)
+
+            if (len(self._spread_fill_tracking[client_order_id]) - 1) % spread_n_legs == 0:
+                combo_quantity = self._calculate_combo_quantity(nautilus_order, execution, contract)
+                self._pending_combo_fills.setdefault(
+                    nautilus_order.client_order_id,
+                    deque(),
+                ).append(
+                    (
+                        nautilus_order,
+                        execution,
+                        contract,
+                        commission_report,
+                        combo_quantity,
+                    ),
                 )
+                self._flush_pending_combo_fills(nautilus_order.client_order_id)
 
             # Leg fill to update leg position in nautilus
             self._generate_leg_fill(
@@ -1897,6 +2002,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         execution: Execution,
         contract: IBContract,
         commission_report: CommissionAndFeesReport,
+        avg_px_override: Price | None = None,
     ) -> None:
         """
         Generate combo fill from leg fill for order management.
@@ -1920,10 +2026,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 precision=spread_instrument.price_precision,
             )
 
-            # Combo quantity
-            combo_quantity_value = execution.shares / abs(ratio)
             combo_quantity = Quantity(
-                combo_quantity_value,
+                self._calculate_combo_quantity(nautilus_order, execution, contract),
                 precision=spread_instrument.size_precision,
             )
 
@@ -1953,7 +2057,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Include avg_px in info if we have it stored
             info = {}
 
-            if nautilus_order.client_order_id in self._order_avg_prices:
+            if avg_px_override is not None:
+                info["avg_px"] = avg_px_override
+            elif nautilus_order.client_order_id in self._order_avg_prices:
                 info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
 
             self.generate_order_filled(
@@ -1975,6 +2081,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
         except Exception as e:
             self._log.error(f"Error generating combo fill: {e}")
+
+    def _calculate_combo_quantity(
+        self,
+        nautilus_order: Order,
+        execution: Execution,
+        contract: IBContract,
+    ) -> Decimal:
+        _leg_instrument_id, ratio = self._get_leg_instrument_id_and_ratio(
+            nautilus_order.instrument_id,
+            contract,
+        )
+        return Decimal(execution.shares) / Decimal(abs(ratio))
 
     def _generate_leg_fill(
         self,
