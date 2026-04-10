@@ -181,6 +181,13 @@ pub struct LiveExecEngineConfig {
     /// The queue size for the engine's internal queue buffers.
     #[builder(default = 100_000)]
     pub qsize: u32,
+    /// If order fills exceeding order quantity are allowed (logs warning instead of raising).
+    /// Useful when position reconciliation races with exchange fill events.
+    #[builder(default)]
+    pub allow_overfills: bool,
+    /// If the execution engine should maintain own/user order books based on commands and events.
+    #[builder(default)]
+    pub manage_own_order_books: bool,
 }
 
 impl Default for LiveExecEngineConfig {
@@ -202,6 +209,8 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             purge_account_events_interval_mins: config.purge_account_events_interval_mins,
             purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
             purge_from_database: config.purge_from_database,
+            manage_own_order_books: config.manage_own_order_books,
+            allow_overfills: config.allow_overfills,
             ..Self::default()
         }
     }
