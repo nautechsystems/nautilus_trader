@@ -31,9 +31,15 @@ from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
+from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
@@ -1244,5 +1250,90 @@ async def test_submit_order_list_converts_to_pyo3(
         assert isinstance(submitted[0], nautilus_pyo3.MarketOrder)
         assert isinstance(submitted[1], nautilus_pyo3.LimitOrder)
         assert isinstance(submitted[2], nautilus_pyo3.StopMarketOrder)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_modify_order_cancel_replace_emits_updated_not_canceled(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    """
+    Hyperliquid implements order modification as a cancel-replace: it cancels the
+    original order (old venue_order_id) and opens a replacement (new venue_order_id).
+    The adapter must emit OrderUpdated (not OrderCanceled) and keep the order live.
+    Regression test for GH-3827.
+    """
+    # Arrange
+    client, _, http_client, _ = exec_client_builder(monkeypatch)
+    await client._connect()
+
+    old_venue_id = VenueOrderId("375273671786")
+    new_venue_id = VenueOrderId("375273716474")
+    client_oid = ClientOrderId("O-20260409-080047-001-000-1")
+    account_id = AccountId("HYPERLIQUID-master")
+
+    order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=TestIdStubs.strategy_id(),
+        instrument_id=instrument.id,
+        client_order_id=client_oid,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00020"),
+        price=Price.from_str("56730.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    cache.add_order(order, None)
+
+    # Simulate order already accepted with old venue ID
+    client._accepted_orders.put(client_oid.value)
+
+    # Simulate a modify having been sent (pending cancel-replace from exchange)
+    client._pending_modify.add(client_oid.value)
+
+    client.generate_order_updated = MagicMock()
+    client.generate_order_canceled = MagicMock()
+
+    def make_report(venue_order_id, status, price_str):
+        return OrderStatusReport(
+            account_id=account_id,
+            instrument_id=instrument.id,
+            venue_order_id=venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=status,
+            quantity=Quantity.from_str("0.00020"),
+            filled_qty=Quantity.from_str("0.00000"),
+            price=Price.from_str(price_str),
+            report_id=TestIdStubs.uuid(),
+            ts_accepted=0,
+            ts_last=1775721653824999936,
+            ts_init=0,
+            client_order_id=client_oid,
+        )
+
+    try:
+        # Act — exchange sends ACCEPTED for new order, then CANCELED for old order
+        accepted_report = make_report(new_venue_id, OrderStatus.ACCEPTED, "53893.0")
+        client._handle_order_status_report(accepted_report)
+
+        canceled_report = make_report(old_venue_id, OrderStatus.CANCELED, "56730.0")
+        client._handle_order_status_report(canceled_report)
+
+        # Assert — order updated with new venue ID, no cancel emitted
+        client.generate_order_updated.assert_called_once()
+        call_kwargs = client.generate_order_updated.call_args.kwargs
+        assert call_kwargs["venue_order_id"] == new_venue_id
+        assert call_kwargs["client_order_id"] == client_oid
+
+        client.generate_order_canceled.assert_not_called()
+
+        # Order must not be in terminal state
+        assert client_oid.value not in client._terminal_orders
     finally:
         await client._disconnect()

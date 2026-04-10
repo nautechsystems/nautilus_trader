@@ -148,6 +148,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._accepted_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
+        # Hyperliquid implements order modification as a cancel-replace: the exchange
+        # cancels the original order and opens a new one with a new venue_order_id.
+        # Track in-flight modifies so we can emit OrderUpdated instead of OrderCanceled.
+        self._pending_modify: set[str] = set()  # client_order_id.value → modify sent
+        self._modify_cancel_skip: set[str] = set()  # client_order_id.value → updated, skip cancel
 
         self._fee_refresh_task: asyncio.Task | None = None
 
@@ -819,6 +824,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 client_order_id=pyo3_client_order_id,
             )
             self._log.info(f"Order modification requested for {command.client_order_id}")
+            self._pending_modify.add(command.client_order_id.value)
         except Exception as e:
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
@@ -1099,6 +1105,22 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         elif report.order_status == OrderStatus.ACCEPTED:
             key = report.client_order_id.value
             if key in self._accepted_orders or key in self._terminal_orders:
+                if key in self._pending_modify:
+                    # Exchange implemented the modification as a cancel-replace.
+                    # The new venue_order_id is in this ACCEPTED report; emit
+                    # OrderUpdated so the order stays live with the new ID.
+                    self._pending_modify.discard(key)
+                    self._modify_cancel_skip.add(key)
+                    self.generate_order_updated(
+                        strategy_id=order.strategy_id,
+                        instrument_id=report.instrument_id,
+                        client_order_id=report.client_order_id,
+                        venue_order_id=report.venue_order_id,
+                        quantity=report.quantity,
+                        price=report.price,
+                        trigger_price=report.trigger_price,
+                        ts_event=report.ts_last,
+                    )
                 return
             self._accepted_orders.add(key)
 
@@ -1123,6 +1145,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         elif report.order_status == OrderStatus.CANCELED:
             key = report.client_order_id.value
             if key in self._terminal_orders:
+                return
+
+            if key in self._modify_cancel_skip:
+                # This CANCELED is the old-order leg of a cancel-replace modification.
+                # The order was already updated via OrderUpdated; skip the cancel.
+                self._modify_cancel_skip.discard(key)
                 return
 
             self._terminal_orders.add(key)
