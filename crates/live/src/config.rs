@@ -26,7 +26,7 @@ use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::{
     enums::BarIntervalType,
-    identifiers::{ClientId, TraderId},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -189,6 +189,23 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
 
 impl LiveRiskEngineConfig {
     fn validate_live_path(&self) -> anyhow::Result<()> {
+        parse_rate_limit(&self.max_order_submit_rate)
+            .map_err(|e| anyhow::anyhow!("invalid `max_order_submit_rate`: {e}"))?;
+        parse_rate_limit(&self.max_order_modify_rate)
+            .map_err(|e| anyhow::anyhow!("invalid `max_order_modify_rate`: {e}"))?;
+
+        for (instrument_id, notional) in &self.max_notional_per_order {
+            instrument_id.parse::<InstrumentId>().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid `max_notional_per_order` instrument ID {instrument_id:?}: {e}"
+                )
+            })?;
+
+            Decimal::from_str(notional).map_err(|e| {
+                anyhow::anyhow!("invalid `max_notional_per_order` notional {notional:?}: {e}")
+            })?;
+        }
+
         let default = Self::default();
         let mut unsupported = Vec::new();
 
@@ -370,6 +387,26 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
 
 impl LiveExecEngineConfig {
     fn validate_live_path(&self) -> anyhow::Result<()> {
+        if let Some(instrument_ids) = &self.reconciliation_instrument_ids {
+            for instrument_id in instrument_ids {
+                instrument_id.parse::<InstrumentId>().map_err(|e| {
+                    anyhow::anyhow!(
+                        "invalid `reconciliation_instrument_ids` instrument ID {instrument_id:?}: {e}"
+                    )
+                })?;
+            }
+        }
+
+        if let Some(client_order_ids) = &self.filtered_client_order_ids {
+            for client_order_id in client_order_ids {
+                ClientOrderId::new_checked(client_order_id).map_err(|e| {
+                    anyhow::anyhow!(
+                        "invalid `filtered_client_order_ids` client order ID {client_order_id:?}: {e}"
+                    )
+                })?;
+            }
+        }
+
         let default = Self::default();
         let mut unsupported = Vec::new();
 
@@ -925,6 +962,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_live_risk_engine_config_rejects_invalid_supported_live_path_fields() {
+        let config = LiveRiskEngineConfig {
+            max_order_submit_rate: "bad-rate".to_string(),
+            ..Default::default()
+        };
+
+        let err = config.validate_live_path().unwrap_err().to_string();
+        assert!(err.contains("max_order_submit_rate"));
+    }
+
+    #[rstest]
     fn test_live_exec_engine_config_rejects_unsupported_live_path_fields() {
         let config = LiveExecEngineConfig {
             snapshot_orders: true,
@@ -941,6 +989,17 @@ mod tests {
         assert!(err.contains("purge_from_database"));
         assert!(err.contains("graceful_shutdown_on_error"));
         assert!(err.contains("qsize"));
+    }
+
+    #[rstest]
+    fn test_live_exec_engine_config_rejects_invalid_supported_live_path_fields() {
+        let config = LiveExecEngineConfig {
+            reconciliation_instrument_ids: Some(vec!["INVALID".to_string()]),
+            ..Default::default()
+        };
+
+        let err = config.validate_live_path().unwrap_err().to_string();
+        assert!(err.contains("reconciliation_instrument_ids"));
     }
 
     #[rstest]

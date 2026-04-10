@@ -6,6 +6,7 @@ from nautilus_trader import common
 from nautilus_trader import core
 from nautilus_trader import model
 from nautilus_trader import trading
+from nautilus_trader.portfolio import PortfolioConfig
 
 __all__ = [
     "InstrumentProviderConfig",
@@ -17,6 +18,7 @@ __all__ = [
     "LiveNodeBuilder",
     "LiveNodeConfig",
     "LiveRiskEngineConfig",
+    "PortfolioConfig",
     "RoutingConfig",
 ]
 
@@ -167,7 +169,48 @@ class LiveNodeBuilder:
     def build(self) -> LiveNode: ...
 
 @typing.final
-class LiveNodeConfig: ...
+class LiveNodeConfig:
+    @property
+    def environment(self) -> common.Environment: ...
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def load_state(self) -> bool: ...
+    @property
+    def save_state(self) -> bool: ...
+    @property
+    def timeout_connection_secs(self) -> float: ...
+    @property
+    def timeout_reconciliation_secs(self) -> float: ...
+    @property
+    def timeout_portfolio_secs(self) -> float: ...
+    @property
+    def timeout_disconnection_secs(self) -> float: ...
+    @property
+    def delay_post_stop_secs(self) -> float: ...
+    @property
+    def timeout_shutdown_secs(self) -> float: ...
+    def __new__(
+        cls,
+        environment: common.Environment | None = None,
+        trader_id: model.TraderId | None = None,
+        load_state: bool | None = None,
+        save_state: bool | None = None,
+        logging: common.LoggerConfig | None = None,
+        instance_id: core.UUID4 | None = None,
+        timeout_connection_secs: float | None = None,
+        timeout_reconciliation_secs: float | None = None,
+        timeout_portfolio_secs: float | None = None,
+        timeout_disconnection_secs: float | None = None,
+        delay_post_stop_secs: float | None = None,
+        timeout_shutdown_secs: float | None = None,
+        cache: common.CacheConfig | None = None,
+        msgbus: common.MessageBusConfig | None = None,
+        portfolio: PortfolioConfig | None = None,
+        data_engine: LiveDataEngineConfig | None = None,
+        risk_engine: LiveRiskEngineConfig | None = None,
+        exec_engine: LiveExecEngineConfig | None = None,
+    ) -> LiveNodeConfig: ...
 
 @typing.final
 class LiveRiskEngineConfig:

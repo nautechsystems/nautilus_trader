@@ -1852,6 +1852,36 @@ mod tests {
         assert!(node.config.exec_engine.manage_own_order_books);
     }
 
+    #[rstest]
+    fn test_builder_rejects_invalid_supported_risk_config_values() {
+        let err = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .with_risk_engine_config(LiveRiskEngineConfig {
+                max_order_submit_rate: "bad-rate".to_string(),
+                ..LiveRiskEngineConfig::default()
+            })
+            .build()
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("max_order_submit_rate"));
+    }
+
+    #[rstest]
+    fn test_builder_rejects_invalid_supported_exec_config_values() {
+        let err = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .with_exec_engine_config(LiveExecEngineConfig {
+                reconciliation_instrument_ids: Some(vec!["INVALID".to_string()]),
+                ..LiveExecEngineConfig::default()
+            })
+            .build()
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("reconciliation_instrument_ids"));
+    }
+
     #[cfg(feature = "python")]
     #[rstest]
     fn test_node_build_and_initial_state() {

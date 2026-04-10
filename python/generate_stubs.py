@@ -256,6 +256,7 @@ def generate_stubs() -> bool:
         relocate_classes_from_libnautilus(root)
         inject_module_constants(root, workspace_root)
         format_stub_files(root)
+        finalize_special_stubs(root)
 
     relative_root = dest_dir.relative_to(Path(__file__).parent)
     print(f"Type stubs written to {relative_root or Path('.')} ")
@@ -619,6 +620,100 @@ def rename_enum_variants(content: str, renamed_enums: set[str]) -> str:
         result.append(line)
 
     return "\n".join(result)
+
+
+LIVE_NODE_CONFIG_STUB = """\
+@typing.final
+class LiveNodeConfig:
+    @property
+    def environment(self) -> common.Environment: ...
+    @property
+    def trader_id(self) -> model.TraderId: ...
+    @property
+    def load_state(self) -> bool: ...
+    @property
+    def save_state(self) -> bool: ...
+    @property
+    def timeout_connection_secs(self) -> float: ...
+    @property
+    def timeout_reconciliation_secs(self) -> float: ...
+    @property
+    def timeout_portfolio_secs(self) -> float: ...
+    @property
+    def timeout_disconnection_secs(self) -> float: ...
+    @property
+    def delay_post_stop_secs(self) -> float: ...
+    @property
+    def timeout_shutdown_secs(self) -> float: ...
+    def __new__(
+        cls,
+        environment: common.Environment | None = None,
+        trader_id: model.TraderId | None = None,
+        load_state: bool | None = None,
+        save_state: bool | None = None,
+        logging: common.LoggerConfig | None = None,
+        instance_id: core.UUID4 | None = None,
+        timeout_connection_secs: float | None = None,
+        timeout_reconciliation_secs: float | None = None,
+        timeout_portfolio_secs: float | None = None,
+        timeout_disconnection_secs: float | None = None,
+        delay_post_stop_secs: float | None = None,
+        timeout_shutdown_secs: float | None = None,
+        cache: common.CacheConfig | None = None,
+        msgbus: common.MessageBusConfig | None = None,
+        portfolio: PortfolioConfig | None = None,
+        data_engine: LiveDataEngineConfig | None = None,
+        risk_engine: LiveRiskEngineConfig | None = None,
+        exec_engine: LiveExecEngineConfig | None = None,
+    ) -> LiveNodeConfig: ...
+"""
+
+LIVE_NODE_CONFIG_OPAQUE_RE = re.compile(
+    r"@typing\.final\nclass LiveNodeConfig: \.\.\.\n",
+    flags=re.MULTILINE,
+)
+
+
+def apply_live_module_fixups(content: str, relative_path: Path) -> str:
+    """
+    Patch live-module stubs that require cross-module aliases or manual signatures.
+    """
+    if relative_path != Path("live/__init__.pyi"):
+        return content
+
+    import_line = "from nautilus_trader.portfolio import PortfolioConfig"
+    if import_line not in content:
+        anchor = "from nautilus_trader import trading\n"
+        if anchor in content:
+            content = content.replace(anchor, f"{anchor}{import_line}\n", 1)
+        else:
+            content = content.replace("import typing\n", f"import typing\n\n{import_line}\n", 1)
+
+    content = _add_names_to_all(content, ["PortfolioConfig"])
+
+    if LIVE_NODE_CONFIG_OPAQUE_RE.search(content):
+        content = LIVE_NODE_CONFIG_OPAQUE_RE.sub(LIVE_NODE_CONFIG_STUB, content, count=1)
+
+    return content
+
+
+def finalize_special_stubs(root: Path) -> None:
+    """
+    Apply deterministic final-pass fixes after the normal stub pipeline.
+    """
+    live_stub = root / "live" / "__init__.pyi"
+    if not live_stub.exists():
+        return
+
+    content = live_stub.read_text()
+    updated = apply_live_module_fixups(content, Path("live/__init__.pyi"))
+    updated = normalize_stub_content(updated)
+
+    if updated == content:
+        return
+
+    live_stub.write_text(updated)
+    run_command(["ruff", "format", str(live_stub)])
 
 
 def fix_enum_defaults_in_signatures(content: str, renamed_enums: set[str]) -> str:

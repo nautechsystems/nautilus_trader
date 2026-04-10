@@ -20,6 +20,7 @@ from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
 from nautilus_trader.live import LiveExecClientConfig
 from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import RoutingConfig
@@ -132,6 +133,15 @@ def test_live_exec_engine_config_rejects_unsupported_args():
 
     with pytest.raises(TypeError, match="qsize"):
         LiveExecEngineConfig(qsize=1)
+
+
+def test_live_node_config_defaults():
+    config = LiveNodeConfig()
+
+    assert isinstance(config, LiveNodeConfig)
+    assert config.load_state is False
+    assert config.save_state is True
+    assert config.timeout_connection_secs > 0
 
 
 def test_live_risk_engine_config_defaults():
