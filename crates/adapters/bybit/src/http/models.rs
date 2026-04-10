@@ -1254,6 +1254,7 @@ pub struct BybitPosition {
     pub cur_realised_pnl: String,
     pub cum_realised_pnl: String,
     pub seq: i64,
+    #[serde(default)]
     pub is_reduce_only: bool,
     pub mmr_sys_updated_time: String,
     pub leverage_sys_updated_time: String,
