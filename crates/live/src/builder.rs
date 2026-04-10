@@ -28,7 +28,7 @@ use nautilus_system::{
 };
 
 use crate::{
-    config::LiveNodeConfig,
+    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
     manager::{ExecutionManager, ExecutionManagerConfig},
     node::LiveNode,
     runner::AsyncRunner,
@@ -179,6 +179,27 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Set the live data engine configuration.
+    #[must_use]
+    pub fn with_data_engine_config(mut self, config: LiveDataEngineConfig) -> Self {
+        self.config.data_engine = config;
+        self
+    }
+
+    /// Set the live risk engine configuration.
+    #[must_use]
+    pub fn with_risk_engine_config(mut self, config: LiveRiskEngineConfig) -> Self {
+        self.config.risk_engine = config;
+        self
+    }
+
+    /// Set the live execution engine configuration.
+    #[must_use]
+    pub fn with_exec_engine_config(mut self, config: LiveExecEngineConfig) -> Self {
+        self.config.exec_engine = config;
+        self
+    }
+
     /// Adds a data client factory with configuration.
     ///
     /// # Errors
@@ -239,6 +260,8 @@ impl LiveNodeBuilder {
             self.data_client_factories.len(),
             self.exec_client_factories.len()
         );
+
+        self.config.validate_live_path()?;
 
         let runner = AsyncRunner::new();
         runner.bind_senders();

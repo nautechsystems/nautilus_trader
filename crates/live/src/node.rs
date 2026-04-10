@@ -276,6 +276,8 @@ impl LiveNode {
             }
         }
 
+        config.validate_live_path()?;
+
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
@@ -348,6 +350,7 @@ impl LiveNode {
             return Ok(());
         }
 
+        self.await_startup_reconciliation_delay().await;
         self.perform_startup_reconciliation().await?;
 
         self.kernel.start_trader();
@@ -355,6 +358,17 @@ impl LiveNode {
         self.handle.set_state(NodeState::Running);
 
         Ok(())
+    }
+
+    async fn await_startup_reconciliation_delay(&self) {
+        let delay_secs = self.config.exec_engine.reconciliation_startup_delay_secs;
+        if !self.config.exec_engine.reconciliation || delay_secs <= 0.0 {
+            return;
+        }
+
+        let delay = Duration::from_secs_f64(delay_secs);
+        log::info!("Delaying startup reconciliation by {delay:?}");
+        tokio::time::sleep(delay).await;
     }
 
     /// Stop the live node.
@@ -697,6 +711,38 @@ impl LiveNode {
         );
 
         if engines_connected {
+            if self.config.exec_engine.reconciliation {
+                let delay_secs = self.config.exec_engine.reconciliation_startup_delay_secs;
+                if delay_secs > 0.0 {
+                    let delay = Duration::from_secs_f64(delay_secs);
+                    log::info!("Delaying startup reconciliation by {delay:?}");
+
+                    drive_with_event_buffering(
+                        tokio::time::sleep(delay),
+                        &mut pending,
+                        &mut time_evt_rx,
+                        &mut data_evt_rx,
+                        &mut data_cmd_rx,
+                        &mut exec_evt_rx,
+                        &mut exec_cmd_rx,
+                    )
+                    .await;
+
+                    flush_all_pending(
+                        &mut pending,
+                        &mut time_evt_rx,
+                        &mut data_evt_rx,
+                        &mut data_cmd_rx,
+                        &mut exec_evt_rx,
+                        &mut exec_cmd_rx,
+                    );
+                    debug_assert!(
+                        pending.is_empty(),
+                        "all startup events must be processed before reconciliation",
+                    );
+                }
+            }
+
             // Run reconciliation now that instruments are in cache and start trader
             self.perform_startup_reconciliation().await?;
             self.kernel.start_trader();
@@ -753,13 +799,7 @@ impl LiveNode {
             Duration::from_secs(1) // Unused, timer won't fire
         };
 
-        let startup_delay = if self.config.exec_engine.reconciliation {
-            Duration::from_secs_f64(exec_config.reconciliation_startup_delay_secs)
-        } else {
-            Duration::ZERO
-        };
-
-        let recon_start = tokio::time::Instant::now() + startup_delay;
+        let recon_start = tokio::time::Instant::now();
 
         let mut ts_last_inflight = self.exec_manager.generate_timestamp_ns();
         let mut ts_last_open = ts_last_inflight;
@@ -1612,6 +1652,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
+    use crate::config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveRiskEngineConfig};
 
     #[rstest]
     #[case(0, NodeState::Idle)]
@@ -1785,6 +1826,30 @@ mod tests {
             .with_delay_shutdown_secs(10);
 
         assert_eq!(builder.name(), "TestNode");
+    }
+
+    #[rstest]
+    fn test_builder_applies_engine_configs() {
+        let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .with_data_engine_config(LiveDataEngineConfig {
+                time_bars_build_with_no_updates: false,
+                ..LiveDataEngineConfig::default()
+            })
+            .with_risk_engine_config(LiveRiskEngineConfig {
+                bypass: true,
+                ..LiveRiskEngineConfig::default()
+            })
+            .with_exec_engine_config(LiveExecEngineConfig {
+                manage_own_order_books: true,
+                ..LiveExecEngineConfig::default()
+            })
+            .build()
+            .unwrap();
+
+        assert!(!node.config.data_engine.time_bars_build_with_no_updates);
+        assert!(node.config.risk_engine.bypass);
+        assert!(node.config.exec_engine.manage_own_order_books);
     }
 
     #[cfg(feature = "python")]

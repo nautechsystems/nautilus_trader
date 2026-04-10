@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.live import InstrumentProviderConfig
 from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
@@ -82,13 +84,18 @@ def test_live_data_client_config_explicit():
 def test_live_data_engine_config_defaults():
     config = LiveDataEngineConfig()
 
-    assert config.qsize == 100_000
+    assert isinstance(config, LiveDataEngineConfig)
 
 
 def test_live_data_engine_config_explicit():
-    config = LiveDataEngineConfig(qsize=50_000)
+    config = LiveDataEngineConfig(time_bars_build_with_no_updates=False)
 
-    assert config.qsize == 50_000
+    assert isinstance(config, LiveDataEngineConfig)
+
+
+def test_live_data_engine_config_rejects_unsupported_args():
+    with pytest.raises(TypeError, match="qsize"):
+        LiveDataEngineConfig(qsize=50_000)
 
 
 def test_live_exec_client_config_defaults():
@@ -113,16 +120,35 @@ def test_live_exec_engine_config_defaults():
     assert isinstance(config, LiveExecEngineConfig)
 
 
+def test_live_exec_engine_config_rejects_unsupported_args():
+    with pytest.raises(TypeError, match="snapshot_positions"):
+        LiveExecEngineConfig(snapshot_positions=True)
+
+    with pytest.raises(TypeError, match="purge_from_database"):
+        LiveExecEngineConfig(purge_from_database=True)
+
+    with pytest.raises(TypeError, match="graceful_shutdown_on_error"):
+        LiveExecEngineConfig(graceful_shutdown_on_error=True)
+
+    with pytest.raises(TypeError, match="qsize"):
+        LiveExecEngineConfig(qsize=1)
+
+
 def test_live_risk_engine_config_defaults():
     config = LiveRiskEngineConfig()
 
-    assert config.qsize == 100_000
+    assert isinstance(config, LiveRiskEngineConfig)
 
 
 def test_live_risk_engine_config_explicit():
-    config = LiveRiskEngineConfig(qsize=25_000)
+    config = LiveRiskEngineConfig(bypass=True)
 
-    assert config.qsize == 25_000
+    assert isinstance(config, LiveRiskEngineConfig)
+
+
+def test_live_risk_engine_config_rejects_unsupported_args():
+    with pytest.raises(TypeError, match="qsize"):
+        LiveRiskEngineConfig(qsize=25_000)
 
 
 def test_portfolio_config_defaults():

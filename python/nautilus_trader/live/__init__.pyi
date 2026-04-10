@@ -52,9 +52,18 @@ class LiveDataClientConfig:
 
 @typing.final
 class LiveDataEngineConfig:
-    @property
-    def qsize(self) -> int: ...
-    def __new__(cls, qsize: int | None = None) -> LiveDataEngineConfig: ...
+    def __new__(
+        cls,
+        time_bars_build_with_no_updates: bool | None = None,
+        time_bars_timestamp_on_close: bool | None = None,
+        time_bars_skip_first_non_full_bar: bool | None = None,
+        time_bars_interval_type: model.BarIntervalType | None = None,
+        time_bars_build_delay: int | None = None,
+        validate_data_sequence: bool | None = None,
+        buffer_deltas: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        debug: bool | None = None,
+    ) -> LiveDataEngineConfig: ...
 
 @typing.final
 class LiveExecClientConfig:
@@ -72,6 +81,9 @@ class LiveExecClientConfig:
 class LiveExecEngineConfig:
     def __new__(
         cls,
+        manage_own_order_books: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        allow_overfills: bool | None = None,
         reconciliation: bool | None = None,
         reconciliation_startup_delay_secs: float | None = None,
         reconciliation_lookback_mins: int | None = None,
@@ -100,10 +112,8 @@ class LiveExecEngineConfig:
         purge_closed_positions_buffer_mins: int | None = None,
         purge_account_events_interval_mins: int | None = None,
         purge_account_events_lookback_mins: int | None = None,
-        purge_from_database: bool | None = None,
+        debug: bool | None = None,
         own_books_audit_interval_secs: float | None = None,
-        graceful_shutdown_on_error: bool | None = None,
-        qsize: int | None = None,
     ) -> LiveExecEngineConfig: ...
 
 @typing.final
@@ -116,6 +126,8 @@ class LiveNode:
     def instance_id(self) -> core.UUID4: ...
     @property
     def is_running(self) -> bool: ...
+    @staticmethod
+    def build(name: str, config: LiveNodeConfig | None = None) -> LiveNode: ...
     @staticmethod
     def builder(
         name: str, trader_id: model.TraderId, environment: common.Environment
@@ -143,6 +155,9 @@ class LiveNodeBuilder:
     def with_reconciliation(self, reconciliation: bool) -> LiveNodeBuilder: ...
     def with_reconciliation_lookback_mins(self, mins: int) -> LiveNodeBuilder: ...
     def with_logging(self, logging: common.LoggerConfig) -> LiveNodeBuilder: ...
+    def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ...
+    def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ...
+    def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ...
     def add_data_client(
         self, name: str | None, factory: typing.Any, config: typing.Any
     ) -> LiveNodeBuilder: ...
@@ -156,9 +171,14 @@ class LiveNodeConfig: ...
 
 @typing.final
 class LiveRiskEngineConfig:
-    @property
-    def qsize(self) -> int: ...
-    def __new__(cls, qsize: int | None = None) -> LiveRiskEngineConfig: ...
+    def __new__(
+        cls,
+        bypass: bool | None = None,
+        max_order_submit_rate: str | None = None,
+        max_order_modify_rate: str | None = None,
+        max_notional_per_order: typing.Mapping[str, str] | None = None,
+        debug: bool | None = None,
+    ) -> LiveRiskEngineConfig: ...
 
 @typing.final
 class RoutingConfig:

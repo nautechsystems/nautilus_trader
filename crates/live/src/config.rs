@@ -15,19 +15,23 @@
 
 //! Configuration types for live Nautilus system nodes.
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
-    msgbus::database::MessageBusConfig,
+    msgbus::database::MessageBusConfig, throttler::RateLimit,
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{
+    enums::BarIntervalType,
+    identifiers::{ClientId, TraderId},
+};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for live data engines.
@@ -41,7 +45,35 @@ use serde::{Deserialize, Serialize};
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct LiveDataEngineConfig {
-    /// The queue size for the engine's internal queue buffers.
+    /// If time bar aggregators will build and emit bars with no new market updates.
+    #[builder(default = true)]
+    pub time_bars_build_with_no_updates: bool,
+    /// If time bar aggregators will timestamp `ts_event` on bar close.
+    #[builder(default = true)]
+    pub time_bars_timestamp_on_close: bool,
+    /// If time bar aggregators will skip emitting a bar if aggregation starts mid-interval.
+    #[builder(default)]
+    pub time_bars_skip_first_non_full_bar: bool,
+    /// Determines the interval semantics used for time aggregation.
+    #[builder(default = BarIntervalType::LeftOpen)]
+    pub time_bars_interval_type: BarIntervalType,
+    /// The build delay in microseconds before time bars are emitted.
+    #[builder(default)]
+    pub time_bars_build_delay: u64,
+    /// If data timestamp sequencing should be validated and handled.
+    #[builder(default)]
+    pub validate_data_sequence: bool,
+    /// If order book deltas should be buffered until the final delta flag is seen.
+    #[builder(default)]
+    pub buffer_deltas: bool,
+    /// Client IDs declared for external stream processing.
+    pub external_clients: Option<Vec<ClientId>>,
+    /// If debug mode is active (will provide extra debug logging).
+    #[builder(default)]
+    pub debug: bool,
+    /// Reserved for future queue sizing support.
+    ///
+    /// Not currently implemented on the current v2 live node path.
     #[builder(default = 100_000)]
     pub qsize: u32,
 }
@@ -53,8 +85,39 @@ impl Default for LiveDataEngineConfig {
 }
 
 impl From<LiveDataEngineConfig> for DataEngineConfig {
-    fn from(_config: LiveDataEngineConfig) -> Self {
-        Self::default()
+    fn from(config: LiveDataEngineConfig) -> Self {
+        Self {
+            time_bars_build_with_no_updates: config.time_bars_build_with_no_updates,
+            time_bars_timestamp_on_close: config.time_bars_timestamp_on_close,
+            time_bars_skip_first_non_full_bar: config.time_bars_skip_first_non_full_bar,
+            time_bars_interval_type: config.time_bars_interval_type,
+            time_bars_build_delay: config.time_bars_build_delay,
+            validate_data_sequence: config.validate_data_sequence,
+            buffer_deltas: config.buffer_deltas,
+            external_clients: config.external_clients,
+            debug: config.debug,
+            ..Self::default()
+        }
+    }
+}
+
+impl LiveDataEngineConfig {
+    fn validate_live_path(&self) -> anyhow::Result<()> {
+        let default = Self::default();
+        let mut unsupported = Vec::new();
+
+        if self.qsize != default.qsize {
+            unsupported.push("qsize");
+        }
+
+        if unsupported.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Unsupported LiveDataEngineConfig field(s) on the current v2 live node path: {}",
+                unsupported.join(", ")
+            );
+        }
     }
 }
 
@@ -69,7 +132,24 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
 )]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct LiveRiskEngineConfig {
-    /// The queue size for the engine's internal queue buffers.
+    /// If all pre-trade risk checks should be bypassed.
+    #[builder(default)]
+    pub bypass: bool,
+    /// The maximum submit order rate as `limit/HH:MM:SS`.
+    #[builder(default = "100/00:00:01".to_string())]
+    pub max_order_submit_rate: String,
+    /// The maximum modify order rate as `limit/HH:MM:SS`.
+    #[builder(default = "100/00:00:01".to_string())]
+    pub max_order_modify_rate: String,
+    /// The maximum notional per order keyed by instrument ID.
+    #[builder(default)]
+    pub max_notional_per_order: HashMap<String, String>,
+    /// If debug mode is active (will provide extra debug logging).
+    #[builder(default)]
+    pub debug: bool,
+    /// Reserved for future queue sizing support.
+    ///
+    /// Not currently implemented on the current v2 live node path.
     #[builder(default = 100_000)]
     pub qsize: u32,
 }
@@ -81,8 +161,49 @@ impl Default for LiveRiskEngineConfig {
 }
 
 impl From<LiveRiskEngineConfig> for RiskEngineConfig {
-    fn from(_config: LiveRiskEngineConfig) -> Self {
-        Self::default()
+    fn from(config: LiveRiskEngineConfig) -> Self {
+        let max_notional_per_order = config
+            .max_notional_per_order
+            .into_iter()
+            .map(|(instrument_id, notional)| {
+                let instrument_id = instrument_id
+                    .parse()
+                    .expect("LiveRiskEngineConfig instrument IDs must be validated before use");
+                let notional = Decimal::from_str(&notional)
+                    .expect("LiveRiskEngineConfig notionals must be validated before use");
+                (instrument_id, notional)
+            })
+            .collect();
+
+        Self {
+            bypass: config.bypass,
+            max_order_submit: parse_rate_limit(&config.max_order_submit_rate)
+                .expect("LiveRiskEngineConfig submit rate must be validated before use"),
+            max_order_modify: parse_rate_limit(&config.max_order_modify_rate)
+                .expect("LiveRiskEngineConfig modify rate must be validated before use"),
+            max_notional_per_order,
+            debug: config.debug,
+        }
+    }
+}
+
+impl LiveRiskEngineConfig {
+    fn validate_live_path(&self) -> anyhow::Result<()> {
+        let default = Self::default();
+        let mut unsupported = Vec::new();
+
+        if self.qsize != default.qsize {
+            unsupported.push("qsize");
+        }
+
+        if unsupported.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Unsupported LiveRiskEngineConfig field(s) on the current v2 live node path: {}",
+                unsupported.join(", ")
+            );
+        }
     }
 }
 
@@ -97,6 +218,26 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
 pub struct LiveExecEngineConfig {
+    /// If own order books should be maintained from commands and events.
+    #[builder(default)]
+    pub manage_own_order_books: bool,
+    /// Reserved for future snapshot persistence support.
+    ///
+    /// Not currently implemented on the current v2 live node path because the live kernel
+    /// does not yet wire a cache database adapter.
+    #[builder(default)]
+    pub snapshot_orders: bool,
+    /// Reserved for future snapshot persistence support.
+    ///
+    /// Not currently implemented on the current v2 live node path because the live kernel
+    /// does not yet wire a cache database adapter.
+    #[builder(default)]
+    pub snapshot_positions: bool,
+    /// If order fills exceeding order quantity are allowed.
+    #[builder(default)]
+    pub allow_overfills: bool,
+    /// Client IDs declared for external stream processing.
+    pub external_clients: Option<Vec<ClientId>>,
     /// If reconciliation is active at start-up.
     #[builder(default = true)]
     pub reconciliation: bool,
@@ -170,15 +311,24 @@ pub struct LiveExecEngineConfig {
     pub purge_account_events_interval_mins: Option<u32>,
     /// The time buffer (minutes) before account events can be purged.
     pub purge_account_events_lookback_mins: Option<u32>,
-    /// If purge operations should also delete from the backing database.
+    /// Reserved for future purge-to-database support.
+    ///
+    /// Not currently implemented on the current v2 live node path.
     #[builder(default)]
     pub purge_from_database: bool,
+    /// If debug mode is active (will provide extra debug logging).
+    #[builder(default)]
+    pub debug: bool,
     /// The interval (seconds) between auditing own books against public order books.
     pub own_books_audit_interval_secs: Option<f64>,
-    /// If the engine should gracefully shutdown when queue processing encounters unexpected errors.
+    /// Reserved for future graceful shutdown handling.
+    ///
+    /// Not currently implemented on the current v2 live node path.
     #[builder(default)]
     pub graceful_shutdown_on_error: bool,
-    /// The queue size for the engine's internal queue buffers.
+    /// Reserved for future queue sizing support.
+    ///
+    /// Not currently implemented on the current v2 live node path.
     #[builder(default = 100_000)]
     pub qsize: u32,
 }
@@ -194,7 +344,18 @@ impl Default for LiveExecEngineConfig {
 
 impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     fn from(config: LiveExecEngineConfig) -> Self {
+        let defaults = Self::default();
+
         Self {
+            // These engine knobs are intentionally pinned to defaults until the
+            // live kernel wires the remaining persistence/timer behavior.
+            load_cache: defaults.load_cache,
+            manage_own_order_books: config.manage_own_order_books,
+            snapshot_orders: config.snapshot_orders,
+            snapshot_positions: config.snapshot_positions,
+            snapshot_positions_interval_secs: defaults.snapshot_positions_interval_secs,
+            allow_overfills: config.allow_overfills,
+            external_clients: config.external_clients,
             purge_closed_orders_interval_mins: config.purge_closed_orders_interval_mins,
             purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
             purge_closed_positions_interval_mins: config.purge_closed_positions_interval_mins,
@@ -202,9 +363,84 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             purge_account_events_interval_mins: config.purge_account_events_interval_mins,
             purge_account_events_lookback_mins: config.purge_account_events_lookback_mins,
             purge_from_database: config.purge_from_database,
-            ..Self::default()
+            debug: config.debug,
         }
     }
+}
+
+impl LiveExecEngineConfig {
+    fn validate_live_path(&self) -> anyhow::Result<()> {
+        let default = Self::default();
+        let mut unsupported = Vec::new();
+
+        if self.snapshot_orders != default.snapshot_orders {
+            unsupported.push("snapshot_orders");
+        }
+
+        if self.snapshot_positions != default.snapshot_positions {
+            unsupported.push("snapshot_positions");
+        }
+
+        if self.purge_from_database != default.purge_from_database {
+            unsupported.push("purge_from_database");
+        }
+
+        if self.graceful_shutdown_on_error != default.graceful_shutdown_on_error {
+            unsupported.push("graceful_shutdown_on_error");
+        }
+
+        if self.qsize != default.qsize {
+            unsupported.push("qsize");
+        }
+
+        if unsupported.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Unsupported LiveExecEngineConfig field(s) on the current v2 live node path: {}",
+                unsupported.join(", ")
+            );
+        }
+    }
+}
+
+fn parse_rate_limit(input: &str) -> anyhow::Result<RateLimit> {
+    let (limit, interval) = input
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("invalid rate limit '{input}': missing '/' separator"))?;
+
+    let limit = limit
+        .parse::<usize>()
+        .map_err(|e| anyhow::anyhow!("invalid rate limit '{input}': {e}"))?;
+
+    let mut parts = interval.split(':');
+    let hours = parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("invalid rate limit '{input}': missing hours"))?
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("invalid rate limit '{input}': {e}"))?;
+    let minutes = parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("invalid rate limit '{input}': missing minutes"))?
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("invalid rate limit '{input}': {e}"))?;
+    let seconds = parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("invalid rate limit '{input}': missing seconds"))?
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("invalid rate limit '{input}': {e}"))?;
+
+    if parts.next().is_some() {
+        anyhow::bail!("invalid rate limit '{input}': expected HH:MM:SS interval");
+    }
+
+    let interval_ns = hours
+        .saturating_mul(3_600)
+        .saturating_add(minutes.saturating_mul(60))
+        .saturating_add(seconds)
+        .saturating_mul(1_000_000_000);
+
+    Ok(RateLimit::new(limit, interval_ns))
 }
 
 /// Configuration for live client message routing.
@@ -449,11 +685,36 @@ impl NautilusKernelConfig for LiveNodeConfig {
     }
 }
 
+impl LiveNodeConfig {
+    pub(crate) fn validate_live_path(&self) -> anyhow::Result<()> {
+        self.data_engine.validate_live_path()?;
+        self.risk_engine.validate_live_path()?;
+        self.exec_engine.validate_live_path()?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_live_data_engine_config_defaults() {
+        let config = LiveDataEngineConfig::default();
+
+        assert!(config.time_bars_build_with_no_updates);
+        assert!(config.time_bars_timestamp_on_close);
+        assert!(!config.time_bars_skip_first_non_full_bar);
+        assert_eq!(config.time_bars_interval_type, BarIntervalType::LeftOpen);
+        assert_eq!(config.time_bars_build_delay, 0);
+        assert!(!config.validate_data_sequence);
+        assert!(!config.buffer_deltas);
+        assert_eq!(config.external_clients, None);
+        assert!(!config.debug);
+        assert_eq!(config.qsize, 100_000);
+    }
 
     #[rstest]
     fn test_trading_node_config_default() {
@@ -484,9 +745,77 @@ mod tests {
     }
 
     #[rstest]
+    fn test_live_data_engine_config_converts_to_data_engine_config() {
+        let config = LiveDataEngineConfig {
+            time_bars_build_with_no_updates: false,
+            time_bars_timestamp_on_close: false,
+            time_bars_skip_first_non_full_bar: true,
+            time_bars_interval_type: BarIntervalType::RightOpen,
+            time_bars_build_delay: 1_500,
+            validate_data_sequence: true,
+            buffer_deltas: true,
+            external_clients: Some(vec![ClientId::from("EXTERNAL")]),
+            debug: true,
+            qsize: 7,
+        };
+
+        let converted: DataEngineConfig = config.into();
+
+        assert!(!converted.time_bars_build_with_no_updates);
+        assert!(!converted.time_bars_timestamp_on_close);
+        assert!(converted.time_bars_skip_first_non_full_bar);
+        assert_eq!(
+            converted.time_bars_interval_type,
+            BarIntervalType::RightOpen
+        );
+        assert_eq!(converted.time_bars_build_delay, 1_500);
+        assert!(converted.validate_data_sequence);
+        assert!(converted.buffer_deltas);
+        assert_eq!(
+            converted.external_clients,
+            Some(vec![ClientId::from("EXTERNAL")])
+        );
+        assert!(converted.debug);
+    }
+
+    #[rstest]
+    fn test_live_risk_engine_config_converts_to_risk_engine_config() {
+        let config = LiveRiskEngineConfig {
+            bypass: true,
+            max_order_submit_rate: "12/00:00:03".to_string(),
+            max_order_modify_rate: "7/00:00:05".to_string(),
+            max_notional_per_order: HashMap::from([(
+                "ETHUSDT.BINANCE".to_string(),
+                "1000.5".to_string(),
+            )]),
+            debug: true,
+            qsize: 99,
+        };
+
+        let converted: RiskEngineConfig = config.into();
+
+        assert!(converted.bypass);
+        assert_eq!(
+            converted.max_order_submit,
+            RateLimit::new(12, 3_000_000_000)
+        );
+        assert_eq!(converted.max_order_modify, RateLimit::new(7, 5_000_000_000));
+        assert_eq!(
+            converted.max_notional_per_order[&"ETHUSDT.BINANCE".parse().unwrap()],
+            Decimal::from_str("1000.5").unwrap(),
+        );
+        assert!(converted.debug);
+    }
+
+    #[rstest]
     fn test_live_exec_engine_config_defaults() {
         let config = LiveExecEngineConfig::default();
 
+        assert!(!config.manage_own_order_books);
+        assert!(!config.snapshot_orders);
+        assert!(!config.snapshot_positions);
+        assert_eq!(config.external_clients, None);
+        assert!(!config.allow_overfills);
         assert!(config.reconciliation);
         assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
         assert_eq!(config.reconciliation_lookback_mins, None);
@@ -504,9 +833,114 @@ mod tests {
         assert!(config.open_check_open_only);
         assert_eq!(config.position_check_retries, 3);
         assert!(!config.purge_from_database);
+        assert!(!config.debug);
         assert!(!config.graceful_shutdown_on_error);
         assert_eq!(config.qsize, 100_000);
         assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
+    }
+
+    #[rstest]
+    fn test_live_exec_engine_config_converts_to_execution_engine_config() {
+        let config = LiveExecEngineConfig {
+            manage_own_order_books: true,
+            snapshot_orders: true,
+            snapshot_positions: true,
+            allow_overfills: true,
+            external_clients: Some(vec![ClientId::from("EXT-EXEC")]),
+            reconciliation: false,
+            reconciliation_startup_delay_secs: 5.0,
+            reconciliation_lookback_mins: Some(30),
+            reconciliation_instrument_ids: None,
+            filter_unclaimed_external_orders: true,
+            filter_position_reports: true,
+            filtered_client_order_ids: Some(vec!["O-123".to_string()]),
+            generate_missing_orders: false,
+            inflight_check_interval_ms: 2_500,
+            inflight_check_threshold_ms: 7_500,
+            inflight_check_retries: 6,
+            open_check_interval_secs: Some(10.0),
+            open_check_lookback_mins: Some(30),
+            open_check_threshold_ms: 8_000,
+            open_check_missing_retries: 8,
+            open_check_open_only: false,
+            max_single_order_queries_per_cycle: 9,
+            single_order_query_delay_ms: 150,
+            position_check_interval_secs: Some(20.0),
+            position_check_lookback_mins: 45,
+            position_check_threshold_ms: 9_000,
+            position_check_retries: 4,
+            purge_closed_orders_interval_mins: Some(1),
+            purge_closed_orders_buffer_mins: Some(2),
+            purge_closed_positions_interval_mins: Some(3),
+            purge_closed_positions_buffer_mins: Some(4),
+            purge_account_events_interval_mins: Some(5),
+            purge_account_events_lookback_mins: Some(6),
+            purge_from_database: true,
+            debug: true,
+            own_books_audit_interval_secs: Some(30.0),
+            graceful_shutdown_on_error: true,
+            qsize: 11,
+        };
+
+        let converted: ExecutionEngineConfig = config.into();
+
+        assert!(converted.manage_own_order_books);
+        assert!(converted.snapshot_orders);
+        assert!(converted.snapshot_positions);
+        assert!(converted.allow_overfills);
+        assert_eq!(
+            converted.external_clients,
+            Some(vec![ClientId::from("EXT-EXEC")]),
+        );
+        assert_eq!(converted.purge_closed_orders_interval_mins, Some(1));
+        assert_eq!(converted.purge_closed_orders_buffer_mins, Some(2));
+        assert_eq!(converted.purge_closed_positions_interval_mins, Some(3));
+        assert_eq!(converted.purge_closed_positions_buffer_mins, Some(4));
+        assert_eq!(converted.purge_account_events_interval_mins, Some(5));
+        assert_eq!(converted.purge_account_events_lookback_mins, Some(6));
+        assert!(converted.purge_from_database);
+        assert!(converted.debug);
+    }
+
+    #[rstest]
+    fn test_live_data_engine_config_rejects_unsupported_live_path_fields() {
+        let config = LiveDataEngineConfig {
+            qsize: 1,
+            ..Default::default()
+        };
+
+        let err = config.validate_live_path().unwrap_err().to_string();
+        assert!(err.contains("qsize"));
+    }
+
+    #[rstest]
+    fn test_live_risk_engine_config_rejects_unsupported_live_path_fields() {
+        let config = LiveRiskEngineConfig {
+            qsize: 1,
+            ..Default::default()
+        };
+
+        let err = config.validate_live_path().unwrap_err().to_string();
+        assert!(err.contains("qsize"));
+    }
+
+    #[rstest]
+    fn test_live_exec_engine_config_rejects_unsupported_live_path_fields() {
+        let config = LiveExecEngineConfig {
+            snapshot_orders: true,
+            snapshot_positions: true,
+            purge_from_database: true,
+            graceful_shutdown_on_error: true,
+            qsize: 1,
+            ..Default::default()
+        };
+
+        let err = config.validate_live_path().unwrap_err().to_string();
+        assert!(err.contains("snapshot_orders"));
+        assert!(err.contains("snapshot_positions"));
+        assert!(err.contains("purge_from_database"));
+        assert!(err.contains("graceful_shutdown_on_error"));
+        assert!(err.contains("qsize"));
     }
 
     #[rstest]

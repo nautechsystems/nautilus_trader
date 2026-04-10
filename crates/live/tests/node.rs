@@ -229,6 +229,23 @@ mod serial_tests {
     }
 
     #[rstest]
+    fn test_live_node_build_rejects_unsupported_v2_live_fields() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                snapshot_positions: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let err = LiveNode::build("TestNode".to_string(), Some(config))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("snapshot_positions"));
+    }
+
+    #[rstest]
     fn test_add_actor() {
         let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
 

@@ -37,11 +37,22 @@ use pyo3::{
 };
 use serde_json;
 
-use crate::{builder::LiveNodeBuilder, node::LiveNode};
+use crate::{
+    builder::LiveNodeBuilder,
+    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    node::LiveNode,
+};
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveNode {
+    #[staticmethod]
+    #[pyo3(name = "build")]
+    #[pyo3(signature = (name, config=None))]
+    fn py_build(name: String, config: Option<LiveNodeConfig>) -> PyResult<Self> {
+        Self::build(name, config).map_err(to_pyruntime_err)
+    }
+
     #[staticmethod]
     #[pyo3(name = "builder")]
     fn py_builder(
@@ -793,6 +804,45 @@ impl LiveNodeBuilderPy {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             *inner_ref = Some(builder.with_logging(logging));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_data_engine_config")]
+    fn py_with_data_engine_config(&self, config: LiveDataEngineConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_data_engine_config(config));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_risk_engine_config")]
+    fn py_with_risk_engine_config(&self, config: LiveRiskEngineConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_risk_engine_config(config));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_exec_engine_config")]
+    fn py_with_exec_engine_config(&self, config: LiveExecEngineConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_exec_engine_config(config));
             Ok(Self {
                 inner: self.inner.clone(),
             })

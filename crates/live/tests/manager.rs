@@ -1336,7 +1336,6 @@ fn test_config_default_values() {
     let config = ExecutionManagerConfig::default();
 
     assert!(config.reconciliation);
-    assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
     assert_eq!(config.lookback_mins, Some(60));
     assert!(!config.filter_unclaimed_external);
     assert!(!config.filter_position_reports);

@@ -112,8 +112,6 @@ pub struct ExecutionManagerConfig {
     pub trader_id: TraderId,
     /// If reconciliation is active at start-up.
     pub reconciliation: bool,
-    /// The delay (seconds) before starting reconciliation at startup.
-    pub reconciliation_startup_delay_secs: f64,
     /// Number of minutes to look back during reconciliation.
     pub lookback_mins: Option<u64>,
     /// Instrument IDs to include during reconciliation (empty => all).
@@ -169,7 +167,6 @@ impl Default for ExecutionManagerConfig {
         Self {
             trader_id: TraderId::default(),
             reconciliation: true,
-            reconciliation_startup_delay_secs: 10.0,
             lookback_mins: Some(60),
             reconciliation_instrument_ids: AHashSet::new(),
             filter_unclaimed_external: false,
@@ -224,7 +221,6 @@ impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
         Self {
             trader_id: TraderId::default(), // Must be set separately via with_trader_id
             reconciliation: config.reconciliation,
-            reconciliation_startup_delay_secs: config.reconciliation_startup_delay_secs,
             lookback_mins: config.reconciliation_lookback_mins.map(|m| m as u64),
             reconciliation_instrument_ids,
             filter_unclaimed_external: config.filter_unclaimed_external_orders,

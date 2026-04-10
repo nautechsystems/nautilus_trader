@@ -13,32 +13,112 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
 use nautilus_core::{UUID4, python::to_pyvalue_err};
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{
+    enums::BarIntervalType,
+    identifiers::{ClientId, InstrumentId, TraderId},
+};
 use nautilus_portfolio::config::PortfolioConfig;
 use pyo3::{PyResult, pymethods};
+use rust_decimal::Decimal;
 
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
     LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, RoutingConfig,
 };
 
+fn validate_rate_limit(value: &str, name: &str) -> PyResult<()> {
+    let (limit, interval) = value
+        .split_once('/')
+        .ok_or_else(|| to_pyvalue_err(format!("invalid `{name}`: expected 'limit/HH:MM:SS'")))?;
+
+    limit
+        .parse::<usize>()
+        .map_err(|e| to_pyvalue_err(format!("invalid `{name}`: {e}")))?;
+
+    let mut parts = interval.split(':');
+    for label in ["hours", "minutes", "seconds"] {
+        parts
+            .next()
+            .ok_or_else(|| {
+                to_pyvalue_err(format!(
+                    "invalid `{name}`: expected 'limit/HH:MM:SS' interval",
+                ))
+            })?
+            .parse::<u64>()
+            .map_err(|e| to_pyvalue_err(format!("invalid `{name}` {label}: {e}")))?;
+    }
+
+    if parts.next().is_some() {
+        return Err(to_pyvalue_err(format!(
+            "invalid `{name}`: expected 'limit/HH:MM:SS'",
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_max_notional_per_order(
+    max_notional_per_order: &HashMap<String, String>,
+) -> PyResult<()> {
+    for (instrument_id, notional) in max_notional_per_order {
+        instrument_id.parse::<InstrumentId>().map_err(|e| {
+            to_pyvalue_err(format!(
+                "invalid `max_notional_per_order` instrument ID {instrument_id:?}: {e}",
+            ))
+        })?;
+
+        Decimal::from_str(notional).map_err(|e| {
+            to_pyvalue_err(format!(
+                "invalid `max_notional_per_order` notional {notional:?}: {e}",
+            ))
+        })?;
+    }
+
+    Ok(())
+}
+
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveDataEngineConfig {
     /// Configuration for live data engines.
     #[new]
-    #[pyo3(signature = (qsize=None))]
-    fn py_new(qsize: Option<u32>) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, validate_data_sequence=None, buffer_deltas=None, external_clients=None, debug=None))]
+    fn py_new(
+        time_bars_build_with_no_updates: Option<bool>,
+        time_bars_timestamp_on_close: Option<bool>,
+        time_bars_skip_first_non_full_bar: Option<bool>,
+        time_bars_interval_type: Option<BarIntervalType>,
+        time_bars_build_delay: Option<u64>,
+        validate_data_sequence: Option<bool>,
+        buffer_deltas: Option<bool>,
+        external_clients: Option<Vec<ClientId>>,
+        debug: Option<bool>,
+    ) -> Self {
         let default = Self::default();
         Self {
-            qsize: qsize.unwrap_or(default.qsize),
+            time_bars_build_with_no_updates: time_bars_build_with_no_updates
+                .unwrap_or(default.time_bars_build_with_no_updates),
+            time_bars_timestamp_on_close: time_bars_timestamp_on_close
+                .unwrap_or(default.time_bars_timestamp_on_close),
+            time_bars_skip_first_non_full_bar: time_bars_skip_first_non_full_bar
+                .unwrap_or(default.time_bars_skip_first_non_full_bar),
+            time_bars_interval_type: time_bars_interval_type
+                .unwrap_or(default.time_bars_interval_type),
+            time_bars_build_delay: time_bars_build_delay.unwrap_or(default.time_bars_build_delay),
+            validate_data_sequence: validate_data_sequence
+                .unwrap_or(default.validate_data_sequence),
+            buffer_deltas: buffer_deltas.unwrap_or(default.buffer_deltas),
+            external_clients,
+            debug: debug.unwrap_or(default.debug),
+            qsize: default.qsize,
         }
     }
 
@@ -48,11 +128,6 @@ impl LiveDataEngineConfig {
 
     fn __str__(&self) -> String {
         format!("{self:?}")
-    }
-
-    #[getter]
-    fn qsize(&self) -> u32 {
-        self.qsize
     }
 }
 
@@ -61,12 +136,33 @@ impl LiveDataEngineConfig {
 impl LiveRiskEngineConfig {
     /// Configuration for live risk engines.
     #[new]
-    #[pyo3(signature = (qsize=None))]
-    fn py_new(qsize: Option<u32>) -> Self {
+    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, debug=None))]
+    fn py_new(
+        bypass: Option<bool>,
+        max_order_submit_rate: Option<String>,
+        max_order_modify_rate: Option<String>,
+        max_notional_per_order: Option<HashMap<String, String>>,
+        debug: Option<bool>,
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
-            qsize: qsize.unwrap_or(default.qsize),
-        }
+        let max_order_submit_rate =
+            max_order_submit_rate.unwrap_or_else(|| default.max_order_submit_rate.clone());
+        let max_order_modify_rate =
+            max_order_modify_rate.unwrap_or_else(|| default.max_order_modify_rate.clone());
+        let max_notional_per_order = max_notional_per_order.unwrap_or_default();
+
+        validate_rate_limit(&max_order_submit_rate, "max_order_submit_rate")?;
+        validate_rate_limit(&max_order_modify_rate, "max_order_modify_rate")?;
+        validate_max_notional_per_order(&max_notional_per_order)?;
+
+        Ok(Self {
+            bypass: bypass.unwrap_or(default.bypass),
+            max_order_submit_rate,
+            max_order_modify_rate,
+            max_notional_per_order,
+            debug: debug.unwrap_or(default.debug),
+            qsize: default.qsize,
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -75,11 +171,6 @@ impl LiveRiskEngineConfig {
 
     fn __str__(&self) -> String {
         format!("{self:?}")
-    }
-
-    #[getter]
-    fn qsize(&self) -> u32 {
-        self.qsize
     }
 }
 
@@ -89,8 +180,11 @@ impl LiveExecEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, purge_from_database=None, own_books_audit_interval_secs=None, graceful_shutdown_on_error=None, qsize=None))]
+    #[pyo3(signature = (manage_own_order_books=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, debug=None, own_books_audit_interval_secs=None))]
     fn py_new(
+        manage_own_order_books: Option<bool>,
+        external_clients: Option<Vec<ClientId>>,
+        allow_overfills: Option<bool>,
         reconciliation: Option<bool>,
         reconciliation_startup_delay_secs: Option<f64>,
         reconciliation_lookback_mins: Option<u32>,
@@ -119,13 +213,17 @@ impl LiveExecEngineConfig {
         purge_closed_positions_buffer_mins: Option<u32>,
         purge_account_events_interval_mins: Option<u32>,
         purge_account_events_lookback_mins: Option<u32>,
-        purge_from_database: Option<bool>,
+        debug: Option<bool>,
         own_books_audit_interval_secs: Option<f64>,
-        graceful_shutdown_on_error: Option<bool>,
-        qsize: Option<u32>,
     ) -> Self {
         let default = Self::default();
         Self {
+            manage_own_order_books: manage_own_order_books
+                .unwrap_or(default.manage_own_order_books),
+            snapshot_orders: default.snapshot_orders,
+            snapshot_positions: default.snapshot_positions,
+            external_clients,
+            allow_overfills: allow_overfills.unwrap_or(default.allow_overfills),
             reconciliation: reconciliation.unwrap_or(default.reconciliation),
             reconciliation_startup_delay_secs: reconciliation_startup_delay_secs
                 .unwrap_or(default.reconciliation_startup_delay_secs),
@@ -168,11 +266,11 @@ impl LiveExecEngineConfig {
             purge_closed_positions_buffer_mins,
             purge_account_events_interval_mins,
             purge_account_events_lookback_mins,
-            purge_from_database: purge_from_database.unwrap_or(default.purge_from_database),
+            purge_from_database: default.purge_from_database,
+            debug: debug.unwrap_or(default.debug),
             own_books_audit_interval_secs,
-            graceful_shutdown_on_error: graceful_shutdown_on_error
-                .unwrap_or(default.graceful_shutdown_on_error),
-            qsize: qsize.unwrap_or(default.qsize),
+            graceful_shutdown_on_error: default.graceful_shutdown_on_error,
+            qsize: default.qsize,
         }
     }
 
