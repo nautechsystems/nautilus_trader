@@ -5,6 +5,7 @@ import typing
 from nautilus_trader import common
 from nautilus_trader import core
 from nautilus_trader import model
+from nautilus_trader import portfolio
 from nautilus_trader import trading
 from nautilus_trader.portfolio import PortfolioConfig
 
@@ -206,7 +207,7 @@ class LiveNodeConfig:
         timeout_shutdown_secs: float | None = None,
         cache: common.CacheConfig | None = None,
         msgbus: common.MessageBusConfig | None = None,
-        portfolio: PortfolioConfig | None = None,
+        portfolio: portfolio.PortfolioConfig | None = None,
         data_engine: LiveDataEngineConfig | None = None,
         risk_engine: LiveRiskEngineConfig | None = None,
         exec_engine: LiveExecEngineConfig | None = None,

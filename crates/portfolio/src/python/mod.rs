@@ -24,6 +24,7 @@ use pyo3::pymethods;
 
 use crate::config::PortfolioConfig;
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PortfolioConfig {
     /// Configuration for `Portfolio` instances.

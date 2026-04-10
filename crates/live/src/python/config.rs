@@ -435,6 +435,7 @@ impl LiveExecClientConfig {
     }
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.

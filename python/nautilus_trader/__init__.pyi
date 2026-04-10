@@ -27,6 +27,7 @@ from . import network
 from . import okx
 from . import persistence
 from . import polymarket
+from . import portfolio
 from . import sandbox
 from . import serialization
 from . import tardis
@@ -59,6 +60,7 @@ __all__ = [
     "okx",
     "persistence",
     "polymarket",
+    "portfolio",
     "sandbox",
     "serialization",
     "tardis",

@@ -140,8 +140,15 @@ def test_live_node_config_defaults():
 
     assert isinstance(config, LiveNodeConfig)
     assert config.load_state is False
-    assert config.save_state is True
+    assert config.save_state is False
     assert config.timeout_connection_secs > 0
+
+
+def test_live_node_config_accepts_portfolio_config_argument():
+    portfolio = PortfolioConfig()
+    config = LiveNodeConfig(portfolio=portfolio)
+
+    assert isinstance(config, LiveNodeConfig)
 
 
 def test_live_risk_engine_config_defaults():

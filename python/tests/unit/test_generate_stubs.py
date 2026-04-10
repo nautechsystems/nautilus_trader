@@ -730,6 +730,24 @@ def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
 SCREAMING_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*_?$")
 
 
+def test_live_stub_exposes_native_live_node_config_signature():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert "@typing.final\nclass LiveNodeConfig:" in live_stub
+    assert re.search(
+        r"portfolio:\s+(?:portfolio\.)?PortfolioConfig \| None = None",
+        live_stub,
+    )
+    assert '"PortfolioConfig"' in live_stub
+
+
+def test_package_stub_exports_portfolio_module():
+    package_stub = (STUB_ROOT / "__init__.pyi").read_text()
+
+    assert "from . import portfolio" in package_stub
+    assert '"portfolio"' in package_stub
+
+
 def test_stub_enum_variants_match_screaming_snake_case():
     """
     Verify every renamed enum in .pyi stubs uses SCREAMING_SNAKE_CASE variants.
