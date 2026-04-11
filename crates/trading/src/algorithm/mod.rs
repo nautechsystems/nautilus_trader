@@ -319,7 +319,7 @@ pub trait ExecutionAlgorithm: DataActor {
             UUID4::new(),
             ts_init,
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             primary.contingency_type(),
             primary.order_list_id(),
             primary.linked_order_ids().map(|ids| ids.to_vec()),
@@ -382,7 +382,7 @@ pub trait ExecutionAlgorithm: DataActor {
             expire_time,
             post_only,
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             display_qty,
             emulation_trigger,
             None, // trigger_instrument_id
@@ -447,7 +447,7 @@ pub trait ExecutionAlgorithm: DataActor {
             expire_time,
             false, // post_only
             reduce_only,
-            false, // quote_quantity
+            primary.is_quote_quantity(),
             display_qty,
             primary.contingency_type(),
             primary.order_list_id(),
