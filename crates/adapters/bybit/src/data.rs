@@ -66,7 +66,7 @@ use crate::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
         enums::BybitProductType,
         parse::{extract_raw_symbol, make_bybit_symbol},
-        status::diff_and_emit_statuses,
+        status::{diff_and_emit_statuses, emit_status},
         symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
@@ -1407,6 +1407,12 @@ impl DataClient for BybitDataClient {
             id = cmd.instrument_id,
         );
         self.instrument_status_subs.insert(cmd.instrument_id);
+
+        if let Some(action) = self.status_cache.load().get(&cmd.instrument_id) {
+            let ts = self.clock.get_time_ns();
+            emit_status(&self.data_sender, cmd.instrument_id, *action, ts, ts);
+        }
+
         Ok(())
     }
 
