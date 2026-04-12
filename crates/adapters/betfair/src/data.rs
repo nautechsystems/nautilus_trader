@@ -803,7 +803,7 @@ impl DataClient for BetfairDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
 
@@ -861,7 +861,7 @@ impl DataClient for BetfairDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         // Trades are included in market subscription via EX_TRADED
         log::debug!(
             "Trade data included in book subscription for {}",
@@ -880,7 +880,7 @@ impl DataClient for BetfairDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         // Instrument status is included in market subscription via EX_MARKET_DEF
         log::debug!(

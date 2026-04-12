@@ -962,9 +962,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("OKX-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    let result = client.query_account(&cmd);
+    let result = client.query_account(cmd);
     assert!(result.is_ok());
 
     wait_until_async(

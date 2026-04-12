@@ -333,11 +333,11 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order.clone()));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order.clone()));
 
     let order_submitted_event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
     execution_engine.process(&order_submitted_event);
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     assert!(
         execution_engine
@@ -421,7 +421,7 @@ fn test_submit_order_for_random_venue_logs(mut execution_engine: ExecutionEngine
         ts_init: UnixNanos::default(),
     };
     // This should find the client by venue routing since instrument is AUD/USD.SIM
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     let cache = execution_engine.cache().borrow();
     assert!(
         cache.order_exists(&order.client_order_id()),
@@ -605,7 +605,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
             .unwrap();
     }
 
-    execution_engine.execute(&TradingCommand::SubmitOrderList(submit_order_list.clone()));
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list.clone()));
     let entry_submitted = TestOrderEventStubs::submitted(&entry, AccountId::test_default());
     execution_engine.process(&entry_submitted);
 
@@ -631,7 +631,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         .expect("Take profit order should exist")
         .clone();
     drop(cache);
-    execution_engine.execute(&TradingCommand::SubmitOrderList(submit_order_list));
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
     assert_eq!(
         entry_updated.status(),
         OrderStatus::Submitted,
@@ -718,7 +718,7 @@ fn test_submit_order_successfully_processes_and_caches_order(
         instrument_id: instrument.id,
         exec_algorithm_id: None,
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     let cache = execution_engine.cache().borrow();
     assert!(
         cache.order_exists(&order.client_order_id()),
@@ -810,7 +810,7 @@ fn test_submit_order_with_cleared_cache_logs_error(mut execution_engine: Executi
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     assert!(
         execution_engine
             .cache()
@@ -901,7 +901,7 @@ fn test_when_applying_event_to_order_with_invalid_state_trigger_logs(
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
     assert!(
         execution_engine
             .cache()
@@ -1051,7 +1051,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
     };
 
     // Submit and process order through full lifecycle to FILLED status
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let order_submitted_event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
     execution_engine.process(&order_submitted_event);
@@ -1109,7 +1109,7 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
         params: None,
     };
 
-    execution_engine.execute(&TradingCommand::CancelOrder(cancel_order));
+    execution_engine.execute(TradingCommand::CancelOrder(cancel_order));
     let order_status_after_cancel = {
         let cache = execution_engine.cache().borrow();
         let cached_order_after_cancel = cache
@@ -1573,7 +1573,7 @@ fn test_modify_order_for_already_closed_order_logs_and_does_nothing(
         ts_init: UnixNanos::default(),
         params: None,
     };
-    execution_engine.execute(&TradingCommand::ModifyOrder(modify_order));
+    execution_engine.execute(TradingCommand::ModifyOrder(modify_order));
     let cache = execution_engine.cache().borrow();
     let order_after = cache
         .order(&order.client_order_id())
@@ -4767,7 +4767,7 @@ fn test_submit_market_should_not_add_to_own_book() {
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
     let own_order_book = cache.own_order_book(&order.instrument_id());
@@ -4846,7 +4846,7 @@ fn test_submit_ioc_fok_should_not_add_to_own_book(#[case] time_in_force: TimeInF
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
     let own_order_book = cache.own_order_book(&order.instrument_id());
@@ -4922,7 +4922,7 @@ fn test_submit_order_adds_to_own_book_bid() {
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
@@ -5069,7 +5069,7 @@ fn test_submit_order_adds_to_own_book_ask() {
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
     let own_book = cache
@@ -5247,8 +5247,8 @@ fn test_cancel_order_removes_from_own_book() {
     };
 
     // Submit orders to create own order books
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_bid));
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_ask));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_bid));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_ask));
     let order_submitted_bid = TestOrderEventStubs::submitted(&order_bid, account_id);
     let order_submitted_ask = TestOrderEventStubs::submitted(&order_ask, account_id);
     execution_engine.process(&order_submitted_bid);
@@ -5285,8 +5285,8 @@ fn test_cancel_order_removes_from_own_book() {
         params: None,
     };
 
-    execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_bid));
-    execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_ask));
+    execution_engine.execute(TradingCommand::CancelOrder(cancel_order_bid));
+    execution_engine.execute(TradingCommand::CancelOrder(cancel_order_ask));
 
     let order_canceled_bid =
         TestOrderEventStubs::canceled(&order_bid, account_id, Some(VenueOrderId::from("V-001")));
@@ -5411,8 +5411,8 @@ fn test_own_book_status_filtering() {
     };
 
     // Submit orders to create own order books
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_bid));
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_ask));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_bid));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_ask));
     let order_submitted_bid = TestOrderEventStubs::submitted(&order_bid, account_id);
     let order_submitted_ask = TestOrderEventStubs::submitted(&order_ask, account_id);
     execution_engine.process(&order_submitted_bid);
@@ -5449,8 +5449,8 @@ fn test_own_book_status_filtering() {
         params: None,
     };
 
-    execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_bid));
-    execution_engine.execute(&TradingCommand::CancelOrder(cancel_order_ask));
+    execution_engine.execute(TradingCommand::CancelOrder(cancel_order_bid));
+    execution_engine.execute(TradingCommand::CancelOrder(cancel_order_ask));
 
     let order_canceled_bid =
         TestOrderEventStubs::canceled(&order_bid, account_id, Some(VenueOrderId::from("V-001")));
@@ -5613,8 +5613,8 @@ fn test_filled_order_removes_from_own_book() {
     };
 
     // Submit orders to create own order books
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_bid));
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_ask));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_bid));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_ask));
     let order_submitted_bid = TestOrderEventStubs::submitted(&order_bid, account_id);
     let order_submitted_ask = TestOrderEventStubs::submitted(&order_ask, account_id);
     execution_engine.process(&order_submitted_bid);
@@ -5813,8 +5813,8 @@ fn test_order_updates_in_own_book() {
     };
 
     // Submit orders to create own order books
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_bid));
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order_ask));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_bid));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order_ask));
     let order_submitted_bid = TestOrderEventStubs::submitted(&order_bid, account_id);
     let order_submitted_ask = TestOrderEventStubs::submitted(&order_ask, account_id);
     execution_engine.process(&order_submitted_bid);
@@ -6023,7 +6023,7 @@ fn test_position_flip_with_own_order_book() {
     };
 
     // Submit buy order to create own order book
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_buy_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_buy_order));
 
     let order_submitted_buy = TestOrderEventStubs::submitted(&buy_order, account_id);
     let order_accepted_buy =
@@ -6113,7 +6113,7 @@ fn test_position_flip_with_own_order_book() {
         ts_init: UnixNanos::default(),
     };
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_sell_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_sell_order));
 
     let order_submitted_sell = TestOrderEventStubs::submitted(&sell_order, account_id);
     let order_accepted_sell =
@@ -6293,8 +6293,8 @@ fn test_own_book_with_crossed_orders() {
     };
 
     // Submit orders to create own order books
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_buy_order));
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_sell_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_buy_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_sell_order));
     let order_submitted_buy = TestOrderEventStubs::submitted(&buy_order, account_id);
     let order_submitted_sell = TestOrderEventStubs::submitted(&sell_order, account_id);
     execution_engine.process(&order_submitted_buy);
@@ -6483,10 +6483,10 @@ fn test_own_book_with_contingent_orders() {
         .add_order(sl_order.clone(), None, Some(ClientId::from("STUB")), true)
         .unwrap();
 
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_entry_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_entry_order));
 
     // Submit TP order (in a real bracket, this would be contingent but for testing we submit it)
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_tp_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_tp_order));
 
     let entry_submitted_event = TestOrderEventStubs::submitted(&entry_order, account_id);
     execution_engine.process(&entry_submitted_event);
@@ -6559,7 +6559,7 @@ fn test_own_book_with_contingent_orders() {
     execution_engine.process(&entry_filled_event);
 
     // Submit and process SL order after entry is filled
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_sl_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_sl_order));
 
     let sl_submitted_event = TestOrderEventStubs::submitted(&sl_order, account_id);
     execution_engine.process(&sl_submitted_event);
@@ -6691,7 +6691,7 @@ fn test_own_book_order_status_filtering_parameterized(
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     for step in process_steps {
         match step {
@@ -6932,7 +6932,7 @@ fn test_own_book_combined_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_initialized));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_initialized));
 
     // 2. Submit and process submitted_order (becomes SUBMITTED)
     let submit_submitted = SubmitOrder {
@@ -6948,7 +6948,7 @@ fn test_own_book_combined_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_submitted));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_submitted));
     let submitted_event = TestOrderEventStubs::submitted(&submitted_order, account_id);
     execution_engine.process(&submitted_event);
 
@@ -6966,7 +6966,7 @@ fn test_own_book_combined_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_accepted));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_accepted));
     let accepted_submitted_event = TestOrderEventStubs::submitted(&accepted_order, account_id);
     execution_engine.process(&accepted_submitted_event);
     let accepted_accepted_event =
@@ -6987,7 +6987,7 @@ fn test_own_book_combined_status_filtering() {
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
     };
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_partial));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_partial));
     let partial_submitted_event =
         TestOrderEventStubs::submitted(&partially_filled_order, account_id);
     execution_engine.process(&partial_submitted_event);
@@ -7164,7 +7164,7 @@ fn test_own_book_status_integrity_during_transitions() {
             command_id: UUID4::new(),
             ts_init: UnixNanos::default(),
         };
-        execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+        execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
         let submitted_event = TestOrderEventStubs::submitted(&order, account_id);
         execution_engine.process(&submitted_event);
@@ -8585,7 +8585,7 @@ fn test_submit_order_with_no_client_denies_order(execution_engine: ExecutionEngi
     };
 
     // No clients registered, no default client: should deny the order
-    execution_engine.execute(&TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let cache = execution_engine.cache().borrow();
     let cached_order = cache.order(&order.client_order_id()).unwrap();
@@ -8687,7 +8687,7 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
     };
 
     // No clients registered: all child orders should be denied
-    execution_engine.execute(&TradingCommand::SubmitOrderList(submit_order_list));
+    execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
 
     let cache = execution_engine.cache().borrow();
     let cached_entry = cache.order(&entry.client_order_id()).unwrap();

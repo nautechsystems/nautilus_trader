@@ -819,7 +819,7 @@ impl DataClient for BybitDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Bybit only supports L2_MBP order book deltas");
         }
@@ -858,7 +858,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
@@ -904,7 +904,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
@@ -928,7 +928,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
@@ -963,7 +963,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
@@ -998,7 +998,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
@@ -1033,7 +1033,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let bar_type = cmd.bar_type;
         let instrument_id = bar_type.instrument_id();
         let product_type = self
@@ -1332,7 +1332,7 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.option_greeks_subs.insert(instrument_id);
 
@@ -1408,7 +1408,7 @@ impl DataClient for BybitDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         log::debug!(
             "subscribe_instrument_status: {id} (status changes detected via periodic instrument info polling)",

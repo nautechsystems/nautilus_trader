@@ -343,7 +343,7 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     while rx.try_recv().is_ok() {}
 
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -386,7 +386,7 @@ async fn test_cancel_order_instruction_failure_emits_rejected() {
     while rx.try_recv().is_ok() {}
 
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-002", "1");
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -440,7 +440,7 @@ async fn test_cancel_order_result_failure_no_instructions_emits_rejected() {
     while rx.try_recv().is_ok() {}
 
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003", "1");
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -490,7 +490,7 @@ async fn test_cancel_order_success_no_rejected_event() {
     while rx.try_recv().is_ok() {}
 
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-004", "1");
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -561,7 +561,7 @@ async fn test_submit_order_success_emits_accepted() {
     add_order_to_cache(&cache, order.clone());
 
     let cmd = make_submit_order_cmd(&order);
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // First event should be OrderSubmitted (emitted synchronously)
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -623,7 +623,7 @@ async fn test_submit_order_error_emits_rejected() {
     add_order_to_cache(&cache, order.clone());
 
     let cmd = make_submit_order_cmd(&order);
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let _ = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -692,7 +692,7 @@ async fn test_modify_order_price_and_quantity_rejects() {
         UnixNanos::default(),
         None,
     );
-    client.modify_order(&cmd).unwrap();
+    client.modify_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -752,7 +752,7 @@ async fn test_modify_order_no_effective_change_rejects() {
         UnixNanos::default(),
         None,
     );
-    client.modify_order(&cmd).unwrap();
+    client.modify_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -802,7 +802,7 @@ async fn test_cancel_all_orders_sends_request() {
         UnixNanos::default(),
         None,
     );
-    client.cancel_all_orders(&cmd).unwrap();
+    client.cancel_all_orders(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -1126,7 +1126,7 @@ async fn test_submit_order_registers_customer_order_ref() {
     add_order_to_cache(&cache, order.clone());
 
     let cmd = make_submit_order_cmd(&order);
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Wait for submitted + accepted
     let _ = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;

@@ -908,13 +908,21 @@ pub trait Strategy: DataActor {
         &mut self,
         account_id: AccountId,
         client_id: Option<ClientId>,
+        params: Option<Params>,
     ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
         let trader_id = core.trader_id().expect("Trader ID not set");
         let ts_init = core.clock().timestamp_ns();
 
-        let command = QueryAccount::new(trader_id, client_id, account_id, UUID4::new(), ts_init);
+        let command = QueryAccount::new(
+            trader_id,
+            client_id,
+            account_id,
+            UUID4::new(),
+            ts_init,
+            params,
+        );
 
         core.order_manager()
             .send_exec_command(TradingCommand::QueryAccount(command));
@@ -929,7 +937,12 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if the strategy is not registered.
-    fn query_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+    fn query_order(
+        &mut self,
+        order: &OrderAny,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> anyhow::Result<()> {
         let core = self.core_mut();
 
         let trader_id = core.trader_id().expect("Trader ID not set");
@@ -945,6 +958,7 @@ pub trait Strategy: DataActor {
             order.venue_order_id(),
             UUID4::new(),
             ts_init,
+            params,
         );
 
         core.order_manager()
@@ -2123,7 +2137,7 @@ mod tests {
 
         let account_id = AccountId::from("ACC-001");
 
-        let result = strategy.query_account(account_id, None);
+        let result = strategy.query_account(account_id, None, None);
 
         assert!(result.is_ok());
     }
@@ -2136,7 +2150,7 @@ mod tests {
         let account_id = AccountId::from("ACC-001");
         let client_id = ClientId::from("BINANCE");
 
-        let result = strategy.query_account(account_id, Some(client_id));
+        let result = strategy.query_account(account_id, Some(client_id), None);
 
         assert!(result.is_ok());
     }
@@ -2148,7 +2162,7 @@ mod tests {
 
         let order = OrderAny::Market(MarketOrder::test_default());
 
-        let result = strategy.query_order(&order, None);
+        let result = strategy.query_order(&order, None, None);
 
         assert!(result.is_ok());
     }
@@ -2161,7 +2175,7 @@ mod tests {
         let order = OrderAny::Market(MarketOrder::test_default());
         let client_id = ClientId::from("BINANCE");
 
-        let result = strategy.query_order(&order, Some(client_id));
+        let result = strategy.query_order(&order, Some(client_id), None);
 
         assert!(result.is_ok());
     }

@@ -1376,6 +1376,7 @@ pub trait DataActor:
         strike_range: StrikeRange,
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
+        params: Option<Params>,
     ) where
         Self: 'static + Debug + Sized,
     {
@@ -1398,6 +1399,7 @@ pub trait DataActor:
             strike_range,
             snapshot_interval_ms,
             client_id,
+            params,
         );
     }
 
@@ -3399,6 +3401,7 @@ impl DataActorCore {
     }
 
     /// Helper method for subscribing to option chain snapshots from the trait.
+    #[allow(clippy::too_many_arguments)]
     pub fn subscribe_option_chain(
         &mut self,
         topic: MStr<Topic>,
@@ -3407,6 +3410,7 @@ impl DataActorCore {
         strike_range: StrikeRange,
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
+        params: Option<Params>,
     ) {
         self.check_registered();
 
@@ -3420,6 +3424,7 @@ impl DataActorCore {
             self.timestamp_ns(),
             client_id,
             Some(series_id.venue),
+            params,
         ));
 
         self.send_data_cmd(DataCommand::Subscribe(command));

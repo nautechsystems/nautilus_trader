@@ -508,7 +508,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
         // Extract kind and currency from params, defaulting to "any.any" (all instruments)
         let kind = cmd
             .params
@@ -540,7 +540,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
         // Check if instrument is in cache (should be from connect())
@@ -573,7 +573,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Deribit only supports L2_MBP order book deltas");
         }
@@ -633,7 +633,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Deribit only supports L2_MBP order book depth");
         }
@@ -672,7 +672,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -691,7 +691,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -715,7 +715,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -742,7 +742,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -769,7 +769,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()
@@ -787,7 +787,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
         // Validate instrument is a perpetual - funding rates only apply to perpetual contracts
@@ -831,7 +831,7 @@ impl DataClient for DeribitDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         let (kind, currency) = parse_instrument_kind_currency(&instrument_id);
@@ -853,7 +853,7 @@ impl DataClient for DeribitDataClient {
         Ok(())
     }
 
-    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
         let ws = self
             .ws_client
             .as_ref()

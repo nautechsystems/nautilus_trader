@@ -16,7 +16,7 @@
 use std::fmt::Display;
 
 use derive_builder::Builder;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::identifiers::{
     AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
 };
@@ -30,6 +30,7 @@ pub struct QueryAccount {
     pub account_id: AccountId,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<Params>,
 }
 
 impl QueryAccount {
@@ -41,6 +42,7 @@ impl QueryAccount {
         account_id: AccountId,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<Params>,
     ) -> Self {
         Self {
             trader_id,
@@ -48,6 +50,7 @@ impl QueryAccount {
             account_id,
             command_id,
             ts_init,
+            params,
         }
     }
 }
@@ -73,6 +76,7 @@ pub struct QueryOrder {
     pub venue_order_id: Option<VenueOrderId>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+    pub params: Option<Params>,
 }
 
 impl QueryOrder {
@@ -88,6 +92,7 @@ impl QueryOrder {
         venue_order_id: Option<VenueOrderId>,
         command_id: UUID4,
         ts_init: UnixNanos,
+        params: Option<Params>,
     ) -> Self {
         Self {
             trader_id,
@@ -98,6 +103,7 @@ impl QueryOrder {
             venue_order_id,
             command_id,
             ts_init,
+            params,
         }
     }
 }

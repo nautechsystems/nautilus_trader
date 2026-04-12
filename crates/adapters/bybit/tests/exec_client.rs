@@ -726,9 +726,10 @@ async fn test_exec_client_query_order() {
         None,
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    client.query_order(&cmd).unwrap();
+    client.query_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -774,9 +775,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("BYBIT-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    client.query_account(&cmd).unwrap();
+    client.query_account(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -939,7 +941,7 @@ async fn test_exec_client_submit_order_list_demo() {
         UnixNanos::default(),
     );
 
-    client.submit_order_list(&cmd).unwrap();
+    client.submit_order_list(cmd).unwrap();
 
     let mut submitted_count = 0;
 
@@ -1119,7 +1121,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         UnixNanos::default(),
     );
 
-    client.submit_order_list(&cmd).unwrap();
+    client.submit_order_list(cmd).unwrap();
 
     // Both orders should be denied (not just the invalid one)
     let mut denied_count = 0;

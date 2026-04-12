@@ -894,7 +894,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let account_id = self.core.account_id;
@@ -910,7 +910,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let client_order_id = Some(cmd.client_order_id);
@@ -931,7 +931,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let submit_tries = cmd
             .params
             .as_ref()
@@ -960,7 +960,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         if cmd.order_list.client_order_ids.is_empty() {
             log::debug!("submit_order_list called with empty order list");
             return Ok(());
@@ -996,7 +996,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
@@ -1028,7 +1028,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
@@ -1059,7 +1059,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
@@ -1097,7 +1097,7 @@ impl ExecutionClient for BitmexExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         let canceller = self._canceller.clone_for_async();
         let emitter = self.emitter.clone();
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);

@@ -602,6 +602,7 @@ mod tests {
             .venue_order_id(None)
             .command_id(command_id)
             .ts_init(ts_init)
+            .params(None)
             .build()
             .unwrap();
 
@@ -630,6 +631,7 @@ mod tests {
             .account_id(AccountId::new("ACC-001"))
             .command_id(command_id)
             .ts_init(ts_init)
+            .params(None)
             .build()
             .unwrap();
 

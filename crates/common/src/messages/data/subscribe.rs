@@ -584,10 +584,12 @@ pub struct SubscribeOptionChain {
     pub ts_init: UnixNanos,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
+    pub params: Option<Params>,
 }
 
 impl SubscribeOptionChain {
     /// Creates a new [`SubscribeOptionChain`] instance.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         series_id: OptionSeriesId,
         strike_range: StrikeRange,
@@ -596,6 +598,7 @@ impl SubscribeOptionChain {
         ts_init: UnixNanos,
         client_id: Option<ClientId>,
         venue: Option<Venue>,
+        params: Option<Params>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -606,6 +609,7 @@ impl SubscribeOptionChain {
             ts_init,
             client_id,
             venue,
+            params,
         }
     }
 }

@@ -167,7 +167,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
         None,
         None,
     );
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -255,8 +255,8 @@ async fn test_data_client_deduplicates_same_market_subscription() {
         None,
     );
 
-    client.subscribe_book_deltas(&first_cmd).unwrap();
-    client.subscribe_book_deltas(&second_cmd).unwrap();
+    client.subscribe_book_deltas(first_cmd).unwrap();
+    client.subscribe_book_deltas(second_cmd).unwrap();
 
     let (first_msg, saw_second_message) = server.await.unwrap();
     let json: Value = serde_json::from_str(&first_msg).unwrap();

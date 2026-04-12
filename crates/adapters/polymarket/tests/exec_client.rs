@@ -615,7 +615,7 @@ async fn test_modify_order_emits_rejection() {
         params: None,
     };
 
-    client.modify_order(&cmd).unwrap();
+    client.modify_order(cmd).unwrap();
 
     // Should receive an order modify rejected event
     let event = rx.try_recv().unwrap();
@@ -683,7 +683,7 @@ async fn test_submit_market_order_denied_buy_without_quote_quantity() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
     assert_order_event(event, "Denied");
@@ -742,7 +742,7 @@ async fn test_submit_market_order_denied_sell_with_quote_quantity() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
     assert_order_event(event, "Denied");
@@ -795,7 +795,7 @@ async fn test_submit_market_order_buy_accepted() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Market orders: Submitted comes from the async task (after book fetch)
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -843,7 +843,7 @@ async fn test_submit_market_order_buy_quote_to_base_conversion() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -898,7 +898,7 @@ async fn test_submit_market_order_sell_no_updated_event() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -935,7 +935,7 @@ async fn test_submit_market_order_rejected_empty_book() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Empty book should cause rejection
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -997,7 +997,7 @@ async fn test_fok_deferred_check_emits_rejected_for_unmatched() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -1189,7 +1189,7 @@ async fn test_submit_order_denied_for_reduce_only() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
     assert_order_event(event, "Denied");
@@ -1219,7 +1219,7 @@ async fn test_submit_order_denied_for_quote_quantity() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
     assert_order_event(event, "Denied");
@@ -1249,7 +1249,7 @@ async fn test_submit_order_denied_for_post_only_with_ioc() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
     assert_order_event(event, "Denied");
@@ -1281,7 +1281,7 @@ async fn test_submit_order_post_only_with_gtc_allowed() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // First event should be Submitted (not Denied)
     let event = rx.try_recv().unwrap();
@@ -1314,7 +1314,7 @@ async fn test_submit_order_accepted_on_http_success() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted event
     let event = rx.try_recv().unwrap();
@@ -1355,7 +1355,7 @@ async fn test_submit_order_rejected_on_http_failure_response() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted
     let event = rx.try_recv().unwrap();
@@ -1397,7 +1397,7 @@ async fn test_submit_order_rejected_on_http_error() {
         .unwrap();
     let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Submitted
     let event = rx.try_recv().unwrap();
@@ -1437,7 +1437,7 @@ async fn test_cancel_order_skips_non_open_order() {
         .unwrap();
 
     let cmd = make_cancel_cmd("O-CANCEL-INIT", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // CancelRejected is emitted synchronously for non-open orders
     let event = rx.try_recv().expect("Expected CancelRejected event");
@@ -1470,7 +1470,7 @@ async fn test_cancel_order_success_no_rejection_event() {
     submit_and_accept_order(&cache, &mut order, "0xvenue-cancel-ok");
 
     let cmd = make_cancel_cmd("O-CANCEL-OK", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // Wait briefly and verify no rejection event is emitted for a successful cancel
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1504,7 +1504,7 @@ async fn test_cancel_order_already_done_suppresses_rejection() {
     submit_and_accept_order(&cache, &mut order, "0xvenue-cancel-done");
 
     let cmd = make_cancel_cmd("O-CANCEL-DONE", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // CANCEL_ALREADY_DONE should suppress the rejection event
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1540,7 +1540,7 @@ async fn test_cancel_order_other_reason_emits_cancel_rejected() {
     submit_and_accept_order(&cache, &mut order, "0xvenue-cancel-fail");
 
     let cmd = make_cancel_cmd("O-CANCEL-FAIL", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -1636,7 +1636,7 @@ async fn test_batch_cancel_orders_with_partial_failure() {
         None,
     );
 
-    client.batch_cancel_orders(&cmd).unwrap();
+    client.batch_cancel_orders(cmd).unwrap();
 
     // Order 3 has CANCEL_ALREADY_DONE, so it should be suppressed.
     // No CancelRejected events expected.
@@ -1699,7 +1699,7 @@ async fn test_cancel_order_deferred_when_no_venue_order_id() {
 
     // Cancel should be deferred (no venue_order_id available)
     let cmd = make_cancel_cmd("O-DEFERRED-CANCEL", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // No events emitted yet
     assert!(rx.try_recv().is_err());
@@ -1707,7 +1707,7 @@ async fn test_cancel_order_deferred_when_no_venue_order_id() {
     // Submit the order, triggering the HTTP response with a venue_order_id.
     // handle_order_response detects the pending cancel and issues the deferred cancel.
     let submit_cmd = make_submit_cmd(&order, instrument_id);
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     // Submitted event (sync)
     let event = rx.try_recv().unwrap();
@@ -1757,10 +1757,10 @@ async fn test_cancel_order_deferred_with_already_done_response() {
     submit_and_pending_cancel(&cache, &mut order);
 
     let cmd = make_cancel_cmd("O-DEFERRED-DONE", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     let submit_cmd = make_submit_cmd(&order, instrument_id);
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     // Submitted
     let event = rx.try_recv().unwrap();
@@ -1811,10 +1811,10 @@ async fn test_cancel_order_deferred_with_rejection_response() {
     submit_and_pending_cancel(&cache, &mut order);
 
     let cmd = make_cancel_cmd("O-DEFERRED-REJECT", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     let submit_cmd = make_submit_cmd(&order, instrument_id);
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     // Submitted
     let event = rx.try_recv().unwrap();
@@ -1879,7 +1879,7 @@ async fn test_cancel_order_uses_cache_index_fallback() {
     // cancel_order should find the venue_order_id in the cache index
     // and send the cancel HTTP request directly (no deferred mechanism)
     let cmd = make_cancel_cmd("O-CACHE-FALLBACK", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // A successful cancel via the mock server produces no rejection event
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -1925,7 +1925,7 @@ async fn test_cancel_order_cache_fallback_with_rejection() {
         .unwrap();
 
     let cmd = make_cancel_cmd("O-CACHE-REJECT", instrument_id);
-    client.cancel_order(&cmd).unwrap();
+    client.cancel_order(cmd).unwrap();
 
     // The cancel hit the venue, received "order not found", emits CancelRejected
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -1957,10 +1957,11 @@ async fn test_query_order_does_not_block_within_runtime() {
         )),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     // This must not panic with "Cannot start a runtime from within a runtime"
-    client.query_order(&cmd).unwrap();
+    client.query_order(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -1983,10 +1984,11 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("POLYMARKET-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     // This must not panic with "Cannot start a runtime from within a runtime"
-    client.query_account(&cmd).unwrap();
+    client.query_account(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await

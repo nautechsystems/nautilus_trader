@@ -194,7 +194,8 @@ impl DataClientAdapter {
     }
 
     #[inline]
-    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) {
+    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) {
+        let cmd_debug = format!("{cmd:?}");
         if let Err(e) = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
@@ -213,7 +214,7 @@ impl DataClientAdapter {
             SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         } {
-            log_command_error(&cmd, &e);
+            log_command_error(&cmd_debug, &e);
         }
     }
 
@@ -248,7 +249,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    pub fn subscribe(&mut self, cmd: &SubscribeCustomData) -> anyhow::Result<()> {
+    pub fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
         if !self.subscriptions_custom.contains(&cmd.data_type) {
             self.subscriptions_custom.insert(cmd.data_type.clone());
             self.client.subscribe(cmd)?;
@@ -274,7 +275,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
         if !self.subscriptions_instrument_venue.contains(&cmd.venue) {
             self.subscriptions_instrument_venue.insert(cmd.venue);
             self.client.subscribe_instruments(cmd)?;
@@ -302,7 +303,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         if !self.subscriptions_instrument.contains(&cmd.instrument_id) {
             self.subscriptions_instrument.insert(cmd.instrument_id);
             self.client.subscribe_instrument(cmd)?;
@@ -330,7 +331,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         if !self.subscriptions_book_deltas.contains(&cmd.instrument_id) {
             self.subscriptions_book_deltas.insert(cmd.instrument_id);
             self.client.subscribe_book_deltas(cmd)?;
@@ -358,7 +359,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
         if !self.subscriptions_book_depth10.contains(&cmd.instrument_id) {
             self.subscriptions_book_depth10.insert(cmd.instrument_id);
             self.client.subscribe_book_depth10(cmd)?;
@@ -386,7 +387,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         if !self.subscriptions_quotes.contains(&cmd.instrument_id) {
             self.subscriptions_quotes.insert(cmd.instrument_id);
             self.client.subscribe_quotes(cmd)?;
@@ -412,7 +413,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         if !self.subscriptions_trades.contains(&cmd.instrument_id) {
             self.subscriptions_trades.insert(cmd.instrument_id);
             self.client.subscribe_trades(cmd)?;
@@ -438,7 +439,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         if !self.subscriptions_bars.contains(&cmd.bar_type) {
             self.subscriptions_bars.insert(cmd.bar_type);
             self.client.subscribe_bars(cmd)?;
@@ -464,7 +465,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         if !self.subscriptions_mark_prices.contains(&cmd.instrument_id) {
             self.subscriptions_mark_prices.insert(cmd.instrument_id);
             self.client.subscribe_mark_prices(cmd)?;
@@ -490,7 +491,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         if !self.subscriptions_index_prices.contains(&cmd.instrument_id) {
             self.subscriptions_index_prices.insert(cmd.instrument_id);
             self.client.subscribe_index_prices(cmd)?;
@@ -516,7 +517,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         if !self
             .subscriptions_funding_rates
             .contains(&cmd.instrument_id)
@@ -550,7 +551,7 @@ impl DataClientAdapter {
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         if !self
             .subscriptions_instrument_status
@@ -588,7 +589,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
         if !self
             .subscriptions_instrument_close
             .contains(&cmd.instrument_id)
@@ -625,7 +626,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
         if !self
             .subscriptions_option_greeks
             .contains(&cmd.instrument_id)

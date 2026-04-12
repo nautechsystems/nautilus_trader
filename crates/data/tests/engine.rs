@@ -4490,6 +4490,7 @@ fn make_subscribe_option_chain(
         UnixNanos::default(),
         client_id,
         venue,
+        None,
     )))
 }
 
@@ -4898,6 +4899,7 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
         UnixNanos::default(),
         Some(client_id),
         Some(venue),
+        None,
     )));
     data_engine.borrow_mut().execute(cmd);
 

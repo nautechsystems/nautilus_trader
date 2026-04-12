@@ -651,16 +651,16 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         self.update_account_state();
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("query_order: client_order_id={}", cmd.client_order_id);
 
         let http_client = self.http_client.clone();
-        let command = cmd.clone();
+        let command = cmd;
         let event_emitter = self.emitter.clone();
         let account_id = self.core.account_id;
 
@@ -899,7 +899,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -916,10 +916,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        self.submit_order_internal(cmd)
+        self.submit_order_internal(&cmd)
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
             "submit_order_list not yet implemented for Binance Spot execution client (got {} orders)",
             cmd.order_list.client_order_ids.len()
@@ -927,7 +927,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         // Binance Spot uses cancel-replace for order modification, which requires
         // the full order specification (side, type, time_in_force). Since ModifyOrder
         // doesn't include these fields, we need to look up the original order from cache.
@@ -958,7 +958,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             return Ok(());
         };
 
-        let command = cmd.clone();
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
@@ -970,6 +969,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         let quantity = cmd.quantity.unwrap_or_else(|| order.quantity());
 
         if self.ws_trading_active() {
+            let command = cmd;
             let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
             let dispatch_state = self.dispatch_state.clone();
             let params = build_cancel_replace_params(&command, &order, quantity)?;
@@ -1011,6 +1011,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 Ok(())
             });
         } else {
+            let command = cmd;
             let http_client = self.http_client.clone();
             log::debug!("WS trading not active, falling back to HTTP for modify_order");
 
@@ -1081,13 +1082,12 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_internal(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.cancel_order_internal(&cmd);
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        let command = cmd.clone();
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
@@ -1121,6 +1121,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 .collect()
         };
 
+        let command = cmd;
         self.spawn_task("cancel_all_orders_http", async move {
             let canceled_orders = http_client.cancel_all_orders(command.instrument_id).await?;
 
@@ -1152,7 +1153,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         const BATCH_SIZE: usize = 5;
 
         if cmd.cancels.is_empty() {
@@ -1160,7 +1161,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         }
 
         let http_client = self.http_client.clone();
-        let command = cmd.clone();
+        let command = cmd;
 
         let event_emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;

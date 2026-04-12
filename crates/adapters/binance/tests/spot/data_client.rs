@@ -516,7 +516,7 @@ async fn test_subscribe_trades() {
         None,
     );
 
-    client.subscribe_trades(&cmd).unwrap();
+    client.subscribe_trades(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -564,7 +564,7 @@ async fn test_subscribe_quotes() {
         None,
     );
 
-    client.subscribe_quotes(&cmd).unwrap();
+    client.subscribe_quotes(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -615,7 +615,7 @@ async fn test_subscribe_book_deltas() {
         None,
     );
 
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -664,7 +664,7 @@ async fn test_unsubscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(&sub_cmd).unwrap();
+    client.subscribe_trades(sub_cmd).unwrap();
 
     // Wait for data to arrive
     wait_until_async(
@@ -729,7 +729,7 @@ async fn test_unsubscribe_quotes() {
         None,
         None,
     );
-    client.subscribe_quotes(&sub_cmd).unwrap();
+    client.subscribe_quotes(sub_cmd).unwrap();
 
     // Wait for data to arrive
     wait_until_async(
@@ -848,8 +848,8 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
         None,
     );
 
-    client.subscribe_trades(&trades_cmd).unwrap();
-    client.subscribe_quotes(&quotes_cmd).unwrap();
+    client.subscribe_trades(trades_cmd).unwrap();
+    client.subscribe_quotes(quotes_cmd).unwrap();
 
     // Should receive data events for both subscriptions
     let mut data_count = 0;

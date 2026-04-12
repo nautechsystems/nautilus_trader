@@ -517,12 +517,12 @@ impl ExecutionClient for AxExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         self.update_account_state();
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
         let client_order_id = cmd.client_order_id;
@@ -609,7 +609,7 @@ impl ExecutionClient for AxExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         {
             let cache = self.core.cache();
             let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
@@ -649,10 +649,10 @@ impl ExecutionClient for AxExecutionClient {
             self.emitter.emit_order_submitted(order);
         }
 
-        self.submit_order_internal(cmd)
+        self.submit_order_internal(&cmd)
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         for (client_order_id, order_init) in cmd
             .order_list
             .client_order_ids
@@ -672,12 +672,12 @@ impl ExecutionClient for AxExecutionClient {
                 UUID4::new(),
                 cmd.ts_init,
             );
-            self.submit_order(&submit_cmd)?;
+            self.submit_order(submit_cmd)?;
         }
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let venue_order_id = match cmd.venue_order_id {
             Some(ref voi) => *voi,
             None => {
@@ -756,12 +756,12 @@ impl ExecutionClient for AxExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_internal(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.cancel_order_internal(&cmd);
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -834,7 +834,7 @@ impl ExecutionClient for AxExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         for cancel in &cmd.cancels {
             self.cancel_order_internal(cancel);
         }

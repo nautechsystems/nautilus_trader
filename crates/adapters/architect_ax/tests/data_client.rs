@@ -256,7 +256,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
         params: None,
     };
     client
-        .subscribe_quotes(&subscribe_cmd)
+        .subscribe_quotes(subscribe_cmd)
         .expect("Subscribe failed");
 
     // Wait for quote event (skip instrument events emitted during connect)
@@ -314,7 +314,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
         params: None,
     };
     client
-        .subscribe_trades(&subscribe_cmd)
+        .subscribe_trades(subscribe_cmd)
         .expect("Subscribe failed");
 
     // Collect events - mock server sends book then trade
@@ -436,7 +436,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
         None,
     );
     client
-        .subscribe_book_deltas(&subscribe_cmd)
+        .subscribe_book_deltas(subscribe_cmd)
         .expect("Subscribe failed");
 
     // Wait for a Deltas event (skip instrument events from connect)
@@ -491,7 +491,7 @@ async fn test_data_client_subscribe_bars_via_channel() {
         None,
     );
     client
-        .subscribe_bars(&subscribe_cmd)
+        .subscribe_bars(subscribe_cmd)
         .expect("Subscribe failed");
 
     // Wait for a Bar event (mock server sends 2 candles with different

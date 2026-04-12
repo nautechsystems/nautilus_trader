@@ -369,7 +369,7 @@ async fn test_data_client_subscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(&cmd).unwrap();
+    client.subscribe_trades(cmd).unwrap();
 
     wait_until_async(
         || {
@@ -413,7 +413,7 @@ async fn test_data_client_subscribe_quotes() {
         None,
         None,
     );
-    client.subscribe_quotes(&cmd).unwrap();
+    client.subscribe_quotes(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -455,7 +455,7 @@ async fn test_data_client_subscribe_book_deltas() {
         None,
         None,
     );
-    client.subscribe_book_deltas(&cmd).unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
@@ -772,7 +772,7 @@ async fn test_data_client_subscribe_bars() {
         None,
         None,
     );
-    client.subscribe_bars(&cmd).unwrap();
+    client.subscribe_bars(cmd).unwrap();
 
     wait_until_async(
         || {

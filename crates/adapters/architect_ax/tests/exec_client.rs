@@ -268,10 +268,11 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("AX-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
     client
-        .query_account(&cmd)
+        .query_account(cmd)
         .expect("query_account should not panic with nested runtime");
 
     let event = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
@@ -378,7 +379,7 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
     };
 
     client
-        .cancel_all_orders(&cmd)
+        .cancel_all_orders(cmd)
         .expect("cancel_all_orders should not error");
 
     // Allow spawned task to complete
@@ -441,7 +442,7 @@ async fn test_batch_cancel_orders_does_not_error() {
 
     // AX has no batch cancel endpoint; delegates to individual WS cancels
     client
-        .batch_cancel_orders(&cmd)
+        .batch_cancel_orders(cmd)
         .expect("batch_cancel_orders should not error");
 
     client.disconnect().await.expect("Failed to disconnect");

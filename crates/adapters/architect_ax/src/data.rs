@@ -462,19 +462,19 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
         // AX does not have a real-time instruments channel; instruments are fetched via HTTP
         log::debug!("Instruments subscription not applicable for AX (use request_instruments)");
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
         // AX does not have a real-time instrument channel; instruments are fetched via HTTP
         log::debug!("Instrument subscription not applicable for AX (use request_instrument)");
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         let symbol = cmd.instrument_id.symbol.to_string();
         let level = Self::map_book_type_to_market_data_level(cmd.book_type);
         if cmd.book_type == BookType::L1_MBP {
@@ -497,7 +497,7 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         self.ws_symbol_op(
             cmd.instrument_id,
             |ws, s| async move { ws.subscribe_quotes(&s).await },
@@ -505,7 +505,7 @@ impl DataClient for AxDataClient {
         )
     }
 
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         self.ws_symbol_op(
             cmd.instrument_id,
             |ws, s| async move { ws.subscribe_trades(&s).await },
@@ -513,7 +513,7 @@ impl DataClient for AxDataClient {
         )
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         self.ws_symbol_op(
             cmd.instrument_id,
             |ws, s| async move { ws.subscribe_mark_prices(&s).await },
@@ -521,12 +521,12 @@ impl DataClient for AxDataClient {
         )
     }
 
-    fn subscribe_index_prices(&mut self, _cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         log::warn!("Index prices not supported by AX Exchange");
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         let bar_type = cmd.bar_type;
         let symbol = bar_type.instrument_id().symbol.to_string();
         let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
@@ -545,7 +545,7 @@ impl DataClient for AxDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let poll_interval_mins = self.config.funding_rate_poll_interval_mins.max(1);
 
         // Use 7-day lookback to capture latest rate across weekends/holidays
@@ -628,7 +628,7 @@ impl DataClient for AxDataClient {
 
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         self.ws_symbol_op(
             cmd.instrument_id,
@@ -637,10 +637,7 @@ impl DataClient for AxDataClient {
         )
     }
 
-    fn subscribe_instrument_close(
-        &mut self,
-        _cmd: &SubscribeInstrumentClose,
-    ) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
         log::warn!("Instrument close not supported by AX Exchange");
         Ok(())
     }

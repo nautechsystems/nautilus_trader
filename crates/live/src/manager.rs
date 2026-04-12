@@ -881,6 +881,7 @@ impl ExecutionManager {
                         order.venue_order_id(),
                         UUID4::new(),
                         current_time,
+                        None,
                     ));
                     result.queries.push(query);
                 }

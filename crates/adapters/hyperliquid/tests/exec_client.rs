@@ -806,9 +806,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("HYPERLIQUID-001"),
         UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    let result = client.query_account(&cmd);
+    let result = client.query_account(cmd);
     assert!(result.is_ok());
 
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -896,7 +897,7 @@ async fn test_submit_order_inner_error_cleans_up_dispatch_state() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&cmd).unwrap();
+    client.submit_order(cmd).unwrap();
 
     // Identity is registered synchronously inside submit_order before the
     // spawn_task fires.
@@ -961,7 +962,7 @@ async fn test_modify_order_success_marks_pending_modify() {
         None,
     );
 
-    client.modify_order(&cmd).unwrap();
+    client.modify_order(cmd).unwrap();
 
     let dispatch = client.ws_dispatch_state().clone();
     let cid = order.client_order_id();
@@ -1018,7 +1019,7 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
         None,
     );
 
-    client.modify_order(&cmd).unwrap();
+    client.modify_order(cmd).unwrap();
 
     // Wait for the spawn task to drain fully so we know the HTTP round-trip
     // AND the client's response-handling continuation have both run. Only

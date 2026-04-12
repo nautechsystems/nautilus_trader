@@ -151,7 +151,7 @@ impl ExecutionEngine {
             MessagingSwitchboard::exec_engine_execute(),
             TypedIntoHandler::from(move |cmd: TradingCommand| {
                 if let Some(rc) = weak1.upgrade() {
-                    rc.borrow().execute(&cmd);
+                    rc.borrow().execute(cmd);
                 }
             }),
         );
@@ -1233,7 +1233,7 @@ impl ExecutionEngine {
     }
 
     /// Executes a trading command by routing it to the appropriate execution client.
-    pub fn execute(&self, command: &TradingCommand) {
+    pub fn execute(&self, command: TradingCommand) {
         self.execute_command(command);
     }
 
@@ -1270,7 +1270,7 @@ impl ExecutionEngine {
         log::info!("Disposed");
     }
 
-    fn execute_command(&self, command: &TradingCommand) {
+    fn execute_command(&self, command: TradingCommand) {
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
         }
@@ -1321,7 +1321,7 @@ impl ExecutionEngine {
                     let orders: Vec<OrderAny> = self
                         .cache
                         .borrow()
-                        .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+                        .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
 
                     for order in &orders {
                         self.deny_order(order, &reason);
@@ -1345,7 +1345,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: &SubmitOrder) {
+    fn handle_submit_order(&self, client: &dyn ExecutionClient, cmd: SubmitOrder) {
         let client_order_id = cmd.client_order_id;
 
         let order = {
@@ -1397,11 +1397,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: &SubmitOrderList) {
+    fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
         let orders: Vec<OrderAny> = self
             .cache
             .borrow()
-            .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+            .orders_for_ids(&cmd.order_list.client_order_ids, &cmd);
 
         if orders.len() != cmd.order_list.client_order_ids.len() {
             for order in &orders {
@@ -1463,37 +1463,37 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: &ModifyOrder) {
+    fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: ModifyOrder) {
         if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: &CancelOrder) {
+    fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: CancelOrder) {
         if let Err(e) = client.cancel_order(cmd) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: &CancelAllOrders) {
+    fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(cmd) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: &BatchCancelOrders) {
+    fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: BatchCancelOrders) {
         if let Err(e) = client.batch_cancel_orders(cmd) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: &QueryAccount) {
+    fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: QueryAccount) {
         if let Err(e) = client.query_account(cmd) {
             log::error!("Error querying account: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: &QueryOrder) {
+    fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: QueryOrder) {
         if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
         }

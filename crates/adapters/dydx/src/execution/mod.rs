@@ -1062,7 +1062,7 @@ impl ExecutionClient for DydxExecutionClient {
     ///
     /// Validates synchronously, generates OrderSubmitted event, then spawns async task for
     /// gRPC submission to avoid blocking. Unsupported order types generate OrderRejected.
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         // Check connection status first (doesn't need order)
         if !self.is_connected() {
             let reason = "Cannot submit order: execution client not connected";
@@ -1398,7 +1398,7 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
         let order_count = orders.len();
 
@@ -1480,7 +1480,7 @@ impl ExecutionClient for DydxExecutionClient {
                     cmd.ts_init,
                 );
 
-                if let Err(e) = self.submit_order(&submit_cmd) {
+                if let Err(e) = self.submit_order(submit_cmd) {
                     log::error!(
                         "Failed to submit order {} from order list: {e}",
                         order.client_order_id()
@@ -1750,7 +1750,7 @@ impl ExecutionClient for DydxExecutionClient {
     /// dYdX does not support native order modification.
     ///
     /// Strategies should handle `OrderModifyRejected` by canceling and resubmitting.
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let reason = "dYdX does not support order modification. Use cancel and resubmit instead.";
         log::error!("{reason}");
 
@@ -1782,7 +1782,7 @@ impl ExecutionClient for DydxExecutionClient {
     ///
     /// - `OrderCanceled` - Generated when WebSocket confirms cancellation.
     /// - `OrderCancelRejected` - Generated if exchange rejects cancellation.
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         if !self.is_connected() {
             anyhow::bail!("Cannot cancel order: not connected");
         }
@@ -1938,7 +1938,7 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         if !self.is_connected() {
             anyhow::bail!("Cannot cancel orders: not connected");
         }
@@ -2045,7 +2045,7 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         if cmd.cancels.is_empty() {
             return Ok(());
         }
@@ -2115,7 +2115,7 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let wallet_address = self.wallet_address.clone();
         let subaccount_number = self.subaccount_number;
@@ -2140,7 +2140,7 @@ impl ExecutionClient for DydxExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
 
         let http_client = self.http_client.clone();

@@ -1008,12 +1008,12 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         self.update_account_state();
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!(
             "query_order not implemented for OKX execution client (client_order_id={})",
             cmd.client_order_id
@@ -1390,7 +1390,7 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order_type = {
             let cache = self.core.cache();
             let order = cache
@@ -1423,13 +1423,13 @@ impl ExecutionClient for OKXExecutionClient {
         };
 
         if self.is_conditional_order(order_type) {
-            self.submit_conditional_order(cmd)
+            self.submit_conditional_order(&cmd)
         } else {
-            self.submit_regular_order(cmd)
+            self.submit_regular_order(&cmd)
         }
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
 
         // Validate all orders before emitting any submitted events
@@ -1494,7 +1494,7 @@ impl ExecutionClient for OKXExecutionClient {
         let clock = self.clock;
         let instrument_id = cmd.instrument_id;
         let strategy_id = cmd.strategy_id;
-        let client_order_ids: Vec<_> = cmd.order_list.client_order_ids.clone();
+        let client_order_ids: Vec<_> = cmd.order_list.client_order_ids;
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
 
         self.spawn_task("batch_submit_orders", async move {
@@ -1526,7 +1526,7 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
 
         let ws_private = self.ws_private.clone();
@@ -1573,7 +1573,7 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let cache = self.core.cache();
         let is_pending_algo = cache.order(&cmd.client_order_id).is_some_and(|o| {
             self.is_conditional_order(o.order_type()) && o.is_triggered() != Some(true)
@@ -1581,14 +1581,14 @@ impl ExecutionClient for OKXExecutionClient {
         drop(cache);
 
         if is_pending_algo {
-            self.cancel_algo_order(cmd);
+            self.cancel_algo_order(&cmd);
         } else {
-            self.cancel_ws_order(cmd);
+            self.cancel_ws_order(&cmd);
         }
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         if self.config.use_mm_mass_cancel {
             // Use OKX's mass-cancel endpoint (requires market maker permissions)
             self.mass_cancel_instrument(cmd.instrument_id);
@@ -1717,7 +1717,7 @@ impl ExecutionClient for OKXExecutionClient {
         }
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
 
         let mut regular_payload = Vec::new();

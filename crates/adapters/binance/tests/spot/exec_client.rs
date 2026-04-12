@@ -745,7 +745,7 @@ async fn test_submit_order_generates_submitted_and_accepted_events() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     wait_until_async(
         || {
@@ -784,7 +784,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
         None,
     );
 
-    client.cancel_all_orders(&cancel_all_cmd).unwrap();
+    client.cancel_all_orders(cancel_all_cmd).unwrap();
 
     wait_until_async(
         || {
@@ -862,7 +862,7 @@ async fn test_cancel_order_generates_canceled_event() {
         None,
     );
 
-    client.cancel_order(&cancel_cmd).unwrap();
+    client.cancel_order(cancel_cmd).unwrap();
 
     wait_until_async(
         || {
@@ -943,7 +943,7 @@ async fn test_modify_order_generates_events() {
     );
 
     // Modify uses cancel-replace on Binance Spot, which generates cancel + new events
-    let result = client.modify_order(&modify_cmd);
+    let result = client.modify_order(modify_cmd);
     assert!(result.is_ok());
 
     // Should get at least one execution event (cancel or accepted for the replacement)
@@ -997,9 +997,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("BINANCE-001"),
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    let result = client.query_account(&query_cmd);
+    let result = client.query_account(query_cmd);
     assert!(result.is_ok());
 
     wait_until_async(

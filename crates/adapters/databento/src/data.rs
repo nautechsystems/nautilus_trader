@@ -480,7 +480,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         log::debug!("Subscribe instrument: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -515,7 +515,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         log::debug!("Subscribe quotes: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -550,7 +550,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         log::debug!("Subscribe trades: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -585,7 +585,7 @@ impl DataClient for DatabentoDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription request fails.
-    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         log::debug!("Subscribe book deltas: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
@@ -622,7 +622,7 @@ impl DataClient for DatabentoDataClient {
     /// Returns an error if the subscription request fails.
     fn subscribe_instrument_status(
         &mut self,
-        cmd: &SubscribeInstrumentStatus,
+        cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         log::debug!("Subscribe instrument status: {cmd:?}");
 

@@ -460,7 +460,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -613,7 +613,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         log::debug!(
             "Submitting order list with {} orders",
             cmd.order_list.client_order_ids.len()
@@ -786,7 +786,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         log::debug!("Modifying order: {cmd:?}");
 
         let venue_order_id = match cmd.venue_order_id {
@@ -950,7 +950,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         log::debug!("Cancelling order: {cmd:?}");
 
         let http_client = self.http_client.clone();
@@ -1029,7 +1029,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         log::debug!("Cancelling all orders: {cmd:?}");
 
         let cache = self.core.cache();
@@ -1086,7 +1086,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         log::debug!("Batch cancelling orders: {cmd:?}");
 
         if cmd.cancels.is_empty() {
@@ -1143,7 +1143,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let account_address = self.get_account_address()?;
         let emitter = self.emitter.clone();
@@ -1173,7 +1173,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: {cmd:?}");
 
         let cache = self.core.cache();

@@ -100,8 +100,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if submission fails.
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -110,8 +110,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if submission fails.
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -120,8 +120,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if modification fails.
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -130,8 +130,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if cancellation fails.
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -140,8 +140,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if cancellation fails.
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -150,8 +150,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if batch cancellation fails.
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -160,8 +160,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -170,8 +170,8 @@ pub trait ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
-        log_not_implemented(cmd);
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 

@@ -1569,16 +1569,16 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         self.update_account_state();
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("query_order: client_order_id={}", cmd.client_order_id);
 
         let http_client = self.http_client.clone();
-        let command = cmd.clone();
+        let command = cmd;
         let emitter = self.emitter.clone();
         let account_id = self.core.account_id;
         let clock = self.clock;
@@ -1711,7 +1711,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -1778,10 +1778,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        self.submit_order_internal(cmd)
+        self.submit_order_internal(&cmd)
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
             "submit_order_list not yet implemented for Binance Futures (got {} orders)",
             cmd.order_list.client_order_ids.len()
@@ -1789,7 +1789,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let order = {
             let cache = self.core.cache();
             cache.order(&cmd.client_order_id).cloned()
@@ -1821,16 +1821,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let http_client = self.http_client.clone();
-        let command = cmd.clone();
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
-        let instrument_id = command.instrument_id;
-        let venue_order_id = command.venue_order_id;
-        let client_order_id = Some(command.client_order_id);
+        let instrument_id = cmd.instrument_id;
+        let venue_order_id = cmd.venue_order_id;
+        let client_order_id = Some(cmd.client_order_id);
         let order_side = order.order_side();
-        let quantity = command.quantity.unwrap_or_else(|| order.quantity());
-        let price = command.price.or_else(|| order.price());
+        let quantity = cmd.quantity.unwrap_or_else(|| order.quantity());
+        let price = cmd.price.or_else(|| order.price());
 
         let Some(price) = price else {
             log::warn!(
@@ -1856,6 +1855,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
             return Ok(());
         };
+        let command = cmd;
         let clock = self.clock;
 
         if self.ws_trading_active() {
@@ -1993,12 +1993,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_order_internal(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.cancel_order_internal(&cmd);
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
         let ws_active = self.ws_trading_active();
@@ -2045,7 +2045,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         const BATCH_SIZE: usize = 5;
 
         if cmd.cancels.is_empty() {
@@ -2053,7 +2053,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         let http_client = self.http_client.clone();
-        let command = cmd.clone();
+        let command = cmd;
 
         let emitter = self.emitter.clone();
         let trader_id = self.core.trader_id;

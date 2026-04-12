@@ -1966,6 +1966,7 @@ mod tests {
             AccountId::from("TEST-001"),
             UUID4::new(),
             UnixNanos::default(),
+            None,
         ))
     }
 

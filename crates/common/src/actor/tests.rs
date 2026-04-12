@@ -1331,7 +1331,7 @@ fn test_subscribe_and_receive_option_chain(
         strikes_above: 5,
         strikes_below: 5,
     };
-    actor.subscribe_option_chain(series_id, strike_range, None, None);
+    actor.subscribe_option_chain(series_id, strike_range, None, None, None);
 
     let slice = OptionChainSlice {
         series_id,
@@ -1660,7 +1660,7 @@ fn test_unsubscribe_option_chain(
         strikes_above: 5,
         strikes_below: 5,
     };
-    actor.subscribe_option_chain(series_id, strike_range, None, None);
+    actor.subscribe_option_chain(series_id, strike_range, None, None, None);
 
     let slice = OptionChainSlice {
         series_id,

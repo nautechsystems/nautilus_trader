@@ -118,7 +118,7 @@ impl DataEngine {
     ///
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
-    pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_defi_subscribe(&mut self, cmd: DefiSubscribeCommand) -> anyhow::Result<()> {
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
@@ -130,7 +130,7 @@ impl DataEngine {
 
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             log::info!("Forwarding subscription to client {}", client.client_id);
-            client.execute_defi_subscribe(cmd);
+            client.execute_defi_subscribe(cmd.clone());
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",

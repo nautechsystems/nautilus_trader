@@ -851,7 +851,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
         let instruments = self.instruments.load();
         if let Some(instrument) = instruments.get(&cmd.instrument_id) {
             if let Err(e) = self
@@ -866,7 +866,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, subscription: &SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
         log::debug!("Subscribing to trades: {}", subscription.instrument_id);
 
         let ws = self.ws_client.clone();
@@ -899,7 +899,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, subscription: &SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
         log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
 
         if subscription.book_type != BookType::L2_MBP {
@@ -939,7 +939,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, subscription: &SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
         log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
 
         let ws = self.ws_client.clone();
@@ -972,7 +972,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -998,7 +998,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1024,7 +1024,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
 
@@ -1050,7 +1050,7 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, subscription: &SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
         log::debug!("Subscribing to bars: {}", subscription.bar_type);
 
         let instrument_id = subscription.bar_type.instrument_id();

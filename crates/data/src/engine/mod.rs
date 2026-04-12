@@ -737,13 +737,13 @@ impl DataEngine {
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
         if let Err(e) = match cmd {
-            DataCommand::Subscribe(c) => self.execute_subscribe(&c),
+            DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(&c),
             DataCommand::Request(c) => self.execute_request(c),
             #[cfg(feature = "defi")]
             DataCommand::DefiRequest(c) => self.execute_defi_request(c),
             #[cfg(feature = "defi")]
-            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(&c),
+            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
             #[cfg(feature = "defi")]
             DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(&c),
             _ => {
@@ -761,7 +761,7 @@ impl DataEngine {
     ///
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
-    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
@@ -1278,7 +1278,7 @@ impl DataEngine {
                     DeferredCommand::Subscribe(sub) => {
                         let client = self.get_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {
-                            client.execute_subscribe(&sub);
+                            client.execute_subscribe(sub);
                         }
                     }
                     DeferredCommand::Unsubscribe(unsub) => {
@@ -1396,7 +1396,7 @@ impl DataEngine {
                 "Calling client.execute_subscribe for BookDeltas: {}",
                 cmd.instrument_id
             );
-            client.execute_subscribe(&SubscribeCommand::BookDeltas(deltas_cmd));
+            client.execute_subscribe(SubscribeCommand::BookDeltas(deltas_cmd));
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",

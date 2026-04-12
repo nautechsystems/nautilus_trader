@@ -744,7 +744,7 @@ async fn test_submit_order_generates_submitted_event() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     // Futures HTTP submit emits OrderSubmitted synchronously;
     // OrderAccepted arrives via the WS user data stream
@@ -829,7 +829,7 @@ async fn test_submit_trailing_stop_order_uses_activate_price_and_precise_callbac
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     wait_until_async(
         || {
@@ -875,7 +875,7 @@ async fn test_cancel_all_orders_completes() {
     );
 
     // Futures cancel_all returns success code via HTTP; cancel events arrive through WS
-    let result = client.cancel_all_orders(&cancel_all_cmd);
+    let result = client.cancel_all_orders(cancel_all_cmd);
     assert!(result.is_ok());
 }
 
@@ -946,7 +946,7 @@ async fn test_cancel_order_completes() {
     // Futures cancel queues an async HTTP task. The actual OrderCanceled event
     // arrives via the WS user data stream, which this mock does not simulate.
     // We verify the command is accepted and the HTTP request completes without error.
-    let result = client.cancel_order(&cancel_cmd);
+    let result = client.cancel_order(cancel_cmd);
     assert!(result.is_ok());
 }
 
@@ -1017,7 +1017,7 @@ async fn test_modify_order_completes() {
         None,
     );
 
-    client.modify_order(&modify_cmd).unwrap();
+    client.modify_order(modify_cmd).unwrap();
 
     // Futures modify_order HTTP path emits OrderUpdated on success
     wait_until_async(
@@ -1103,7 +1103,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     let cancel_cmd = CancelOrder::new(
         trader_id,
@@ -1117,7 +1117,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
         None,
     );
 
-    client.cancel_order(&cancel_cmd).unwrap();
+    client.cancel_order(cancel_cmd).unwrap();
 
     match recv_until(&mut rx, |event| {
         matches!(
@@ -1206,7 +1206,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     let modify_cmd = ModifyOrder::new(
         trader_id,
@@ -1223,7 +1223,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
         None,
     );
 
-    client.modify_order(&modify_cmd).unwrap();
+    client.modify_order(modify_cmd).unwrap();
 
     match recv_until(&mut rx, |event| {
         matches!(
@@ -1334,7 +1334,7 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
         UnixNanos::default(),
     );
 
-    client.submit_order(&submit_cmd).unwrap();
+    client.submit_order(submit_cmd).unwrap();
 
     wait_until_async(
         || {
@@ -1601,9 +1601,10 @@ async fn test_query_account_does_not_block_within_runtime() {
         AccountId::from("BINANCE-001"),
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
+        None,
     );
 
-    let result = client.query_account(&cmd);
+    let result = client.query_account(cmd);
     assert!(result.is_ok());
 
     match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Account(_))).await {

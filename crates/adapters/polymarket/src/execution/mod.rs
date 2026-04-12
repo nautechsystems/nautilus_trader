@@ -734,7 +734,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -765,7 +765,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         for (i, order_init) in cmd.order_inits.iter().enumerate() {
             let submit = SubmitOrder::new(
                 cmd.trader_id,
@@ -781,7 +781,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                 self.clock.get_time_ns(),
             );
 
-            if let Err(e) = self.submit_order(&submit) {
+            if let Err(e) = self.submit_order(submit) {
                 log::warn!(
                     "Failed to submit order {} from list: {e}",
                     order_init.client_order_id
@@ -791,7 +791,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let order = self.core.cache().order(&cmd.client_order_id).cloned();
         if let Some(order) = order {
             let venue_order_id = order.venue_order_id();
@@ -806,7 +806,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let order = self.core.cache().order(&cmd.client_order_id).cloned();
         let order_ref = match &order {
             Some(o) => o,
@@ -894,7 +894,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
@@ -945,7 +945,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         if cmd.cancels.is_empty() {
             return Ok(());
         }
@@ -989,7 +989,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn query_account(&self, _cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -1001,7 +1001,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: client_order_id={}", cmd.client_order_id);
 
         let venue_order_id = match &cmd.venue_order_id {

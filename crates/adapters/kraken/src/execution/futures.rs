@@ -762,7 +762,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(Some(mass_status))
     }
 
-    fn query_account(&self, cmd: &QueryAccount) -> anyhow::Result<()> {
+    fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
         log::debug!("Querying account: {cmd:?}");
 
         let account_id = self.core.account_id;
@@ -783,7 +783,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(())
     }
 
-    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()> {
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("Querying order: {cmd:?}");
 
         let venue_order_id = cmd
@@ -811,7 +811,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(())
     }
 
-    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self
             .core
             .cache()
@@ -822,7 +822,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(())
     }
 
-    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()> {
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
         log::info!(
@@ -937,17 +937,17 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(())
     }
 
-    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()> {
-        self.modify_single_order(cmd);
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        self.modify_single_order(&cmd);
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()> {
-        self.cancel_single_order(cmd);
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        self.cancel_single_order(&cmd);
         Ok(())
     }
 
-    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
         if cmd.order_side == OrderSide::NoOrderSide {
@@ -1025,7 +1025,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         Ok(())
     }
 
-    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()> {
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
         log::info!(
             "Batch canceling orders: instrument_id={}, count={}",
             cmd.instrument_id,

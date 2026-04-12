@@ -1364,21 +1364,26 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "subscribe_option_chain")]
-    #[pyo3(signature = (series_id, strike_range, snapshot_interval_ms=None, client_id=None))]
+    #[pyo3(signature = (series_id, strike_range, snapshot_interval_ms=None, client_id=None, params=None))]
     fn py_subscribe_option_chain(
         &mut self,
+        py: Python<'_>,
         series_id: OptionSeriesId,
         strike_range: PyStrikeRange,
         snapshot_interval_ms: Option<u64>,
         client_id: Option<ClientId>,
-    ) {
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
         DataActor::subscribe_option_chain(
             self.inner_mut(),
             series_id,
             strike_range.inner,
             snapshot_interval_ms,
             client_id,
+            params,
         );
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_order_fills")]

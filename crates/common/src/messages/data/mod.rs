@@ -17,7 +17,7 @@
 
 use std::{any::Any, sync::Arc};
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::BarType,
     identifiers::{ClientId, Venue},
@@ -209,6 +209,27 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+        }
+    }
+
+    pub fn params(&self) -> Option<&Params> {
+        match self {
+            Self::Data(cmd) => cmd.params.as_ref(),
+            Self::Instrument(cmd) => cmd.params.as_ref(),
+            Self::Instruments(cmd) => cmd.params.as_ref(),
+            Self::BookDeltas(cmd) => cmd.params.as_ref(),
+            Self::BookDepth10(cmd) => cmd.params.as_ref(),
+            Self::BookSnapshots(cmd) => cmd.params.as_ref(),
+            Self::Quotes(cmd) => cmd.params.as_ref(),
+            Self::Trades(cmd) => cmd.params.as_ref(),
+            Self::Bars(cmd) => cmd.params.as_ref(),
+            Self::MarkPrices(cmd) => cmd.params.as_ref(),
+            Self::IndexPrices(cmd) => cmd.params.as_ref(),
+            Self::FundingRates(cmd) => cmd.params.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.params.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.params.as_ref(),
+            Self::OptionGreeks(cmd) => cmd.params.as_ref(),
+            Self::OptionChain(cmd) => cmd.params.as_ref(),
         }
     }
 }
