@@ -749,10 +749,6 @@ def test_live_stub_exposes_builder_engine_config_methods():
         in live_stub
     )
     assert (
-        "def with_msgbus_config(self, config: common.MessageBusConfig) -> LiveNodeBuilder: ..."
-        in live_stub
-    )
-    assert (
         "def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )

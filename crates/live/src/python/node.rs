@@ -19,8 +19,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig, cache::CacheConfig, enums::Environment,
-    live::get_runtime, logging::logger::LoggerConfig, msgbus::database::MessageBusConfig,
-    python::actor::PyDataActor,
+    live::get_runtime, logging::logger::LoggerConfig, python::actor::PyDataActor,
 };
 use nautilus_core::{
     UUID4,
@@ -814,19 +813,6 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    #[pyo3(name = "with_msgbus_config")]
-    fn py_with_msgbus_config(&self, config: MessageBusConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_msgbus_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
-    }
-
     #[pyo3(name = "with_portfolio_config")]
     fn py_with_portfolio_config(&self, config: PortfolioConfig) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
@@ -1138,7 +1124,6 @@ mod tests {
     };
 
     use super::LiveNode;
-
     #[derive(Debug, Default)]
     struct TestDataClientConfig;
 
