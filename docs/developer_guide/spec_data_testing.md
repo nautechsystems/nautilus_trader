@@ -26,16 +26,28 @@ Before running data tests:
   for that environment. Demo and production API keys are typically separate and not
   interchangeable; using the wrong credentials produces authentication errors (e.g. HTTP 401).
 
-**Python node setup** (reference: `examples/live/{adapter}/{adapter}_data_tester.py`):
+**Python node setup**:
+
+Legacy examples still use `nautilus_trader.live.node.TradingNode`, but new Rust-backed
+PyO3 adapters should prefer `nautilus_trader.live.LiveNode`. Use `LiveNode.builder(...)`
+when you need to register adapter client factories before the node is built.
 
 ```python
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.test_kit.strategies.tester_data import DataTester, DataTesterConfig
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveDataEngineConfig, LiveNode
+from nautilus_trader.model import TraderId
 
-node = TradingNode(config=config_node)
-tester = DataTester(config=config_tester)
-node.trader.add_actor(tester)
-# Register adapter factories, build, and run
+node = (
+    LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
+    .with_data_engine_config(
+        LiveDataEngineConfig(time_bars_build_with_no_updates=False)
+    )
+    .add_data_client(None, adapter_data_client_factory, data_client_config)
+    .build()
+)
+
+node.add_actor_from_config(importable_actor_config)
+# Register remaining components, then start or run
 ```
 
 **Rust node setup** (reference: `crates/adapters/{adapter}/examples/node_data_tester.rs`):

@@ -741,6 +741,35 @@ def test_live_stub_exposes_native_live_node_config_signature():
     assert '"PortfolioConfig"' in live_stub
 
 
+def test_live_stub_exposes_builder_engine_config_methods():
+    live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
+
+    assert (
+        "def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_msgbus_config(self, config: common.MessageBusConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+
+
 def test_package_stub_exports_portfolio_module():
     package_stub = (STUB_ROOT / "__init__.pyi").read_text()
 

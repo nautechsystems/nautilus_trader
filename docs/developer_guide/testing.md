@@ -58,6 +58,10 @@ The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3
 package. It requires a built extension module (`make build-debug-v2`) and uses its
 own virtualenv under `python/.venv/`.
 
+For new live adapter examples and docs in the v2 path, prefer
+`nautilus_trader.live.LiveNode`. `nautilus_trader.live.node.TradingNode` remains the
+legacy v1/Cython runtime used by the root-level `tests/` suite and older examples.
+
 ```bash
 make pytest-v2
 ```

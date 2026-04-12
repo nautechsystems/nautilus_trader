@@ -15,9 +15,15 @@
 
 import pytest
 
+from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.common import MessageBusConfig
+from nautilus_trader.live import LiveDataEngineConfig
+from nautilus_trader.live import LiveExecEngineConfig
 from nautilus_trader.live import LiveNode
+from nautilus_trader.live import LiveRiskEngineConfig
+from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.model import TraderId
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
@@ -85,6 +91,47 @@ def test_importable_exec_algorithm_config_empty():
 
     assert config.exec_algorithm_path == "module:Class"
     assert config.config == {}
+
+
+def test_builder_accepts_supported_runtime_configs():
+    trader_id = TraderId("TESTER-002")
+    cache_config = CacheConfig(
+        None,
+        False,
+        None,
+        None,
+        True,
+        False,
+        False,
+        True,
+        10000,
+        10000,
+        True,
+    )
+
+    node = (
+        LiveNode.builder("TEST", trader_id, Environment.SANDBOX)
+        .with_cache_config(cache_config)
+        .with_portfolio_config(PortfolioConfig())
+        .with_data_engine_config(LiveDataEngineConfig(time_bars_build_with_no_updates=False))
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_exec_engine_config(LiveExecEngineConfig(reconciliation=False))
+        .build()
+    )
+
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.SANDBOX
+
+
+def test_builder_rejects_unsupported_msgbus_config():
+    trader_id = TraderId("TESTER-003")
+
+    with pytest.raises(RuntimeError, match=r"LiveNodeConfig\.msgbus"):
+        (
+            LiveNode.builder("TEST", trader_id, Environment.SANDBOX)
+            .with_msgbus_config(MessageBusConfig())
+            .build()
+        )
 
 
 def test_add_actor_from_config_registers(live_node):
