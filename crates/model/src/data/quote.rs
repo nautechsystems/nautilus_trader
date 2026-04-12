@@ -33,6 +33,8 @@ use crate::{
     types::{
         Price, Quantity,
         fixed::{FIXED_PRECISION, FIXED_SIZE_BINARY},
+        price::PriceRaw,
+        quantity::QuantityRaw,
     },
 };
 
@@ -179,7 +181,7 @@ impl QuoteTick {
                 // Calculate mid avoiding overflow
                 let a = self.bid_price.raw;
                 let b = self.ask_price.raw;
-                let mid_raw = (a / 2) + (b / 2) + i128::midpoint(a % 2, b % 2);
+                let mid_raw = (a / 2) + (b / 2) + PriceRaw::midpoint(a % 2, b % 2);
                 Price::from_raw(
                     mid_raw,
                     cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
@@ -203,7 +205,7 @@ impl QuoteTick {
                 // Calculate mid avoiding overflow
                 let a = self.bid_size.raw;
                 let b = self.ask_size.raw;
-                let mid_raw = (a / 2) + (b / 2) + u128::midpoint(a % 2, b % 2);
+                let mid_raw = (a / 2) + (b / 2) + QuantityRaw::midpoint(a % 2, b % 2);
                 Quantity::from_raw(
                     mid_raw,
                     cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
@@ -248,7 +250,7 @@ mod tests {
         data::{HasTsInit, QuoteTick, stubs::quote_ethusdt_binance},
         enums::PriceType,
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
     };
 
     fn create_test_quote() -> QuoteTick {
@@ -542,6 +544,42 @@ mod tests {
 
         assert_eq!(mid_price, Price::from("1.010"));
         assert_eq!(mid_size, Quantity::from("100.000"));
+    }
+
+    #[rstest]
+    fn test_extract_mid_price_uses_raw_midpoint_for_odd_negative_values() {
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from_raw(-3, FIXED_PRECISION),
+            Price::from_raw(-2, FIXED_PRECISION),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+
+        let mid_price = quote.extract_price(PriceType::Mid);
+
+        assert_eq!(mid_price.raw, PriceRaw::midpoint(-3, -2));
+        assert_eq!(mid_price.precision, FIXED_PRECISION);
+    }
+
+    #[rstest]
+    fn test_extract_mid_size_uses_raw_midpoint_for_odd_values() {
+        let quote = QuoteTick::new(
+            InstrumentId::from("TEST.SIM"),
+            Price::from("1"),
+            Price::from("1"),
+            Quantity::from_raw(1, FIXED_PRECISION),
+            Quantity::from_raw(2, FIXED_PRECISION),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+
+        let mid_size = quote.extract_size(PriceType::Mid);
+
+        assert_eq!(mid_size.raw, QuantityRaw::midpoint(1, 2));
+        assert_eq!(mid_size.precision, FIXED_PRECISION);
     }
 
     #[rstest]
