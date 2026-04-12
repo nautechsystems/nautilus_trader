@@ -49,8 +49,8 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
@@ -82,6 +82,7 @@ pub struct Cache {
     general: AHashMap<String, Bytes>,
     currencies: AHashMap<Ustr, Currency>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instrument_statuses: AHashMap<InstrumentId, InstrumentStatus>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
@@ -112,6 +113,7 @@ impl Debug for Cache {
             .field("general", &self.general)
             .field("currencies", &self.currencies)
             .field("instruments", &self.instruments)
+            .field("instrument_statuses", &self.instrument_statuses)
             .field("synthetics", &self.synthetics)
             .field("books", &self.books)
             .field("own_books", &self.own_books)
@@ -158,6 +160,7 @@ impl Cache {
             general: AHashMap::new(),
             currencies: AHashMap::new(),
             instruments: AHashMap::new(),
+            instrument_statuses: AHashMap::new(),
             synthetics: AHashMap::new(),
             books: AHashMap::new(),
             own_books: AHashMap::new(),
@@ -1274,6 +1277,7 @@ impl Cache {
         self.general.clear();
         self.currencies.clear();
         self.instruments.clear();
+        self.instrument_statuses.clear();
         self.synthetics.clear();
         self.books.clear();
         self.own_books.clear();
@@ -1734,6 +1738,25 @@ impl Cache {
         }
 
         self.instruments.insert(instrument.id(), instrument);
+        Ok(())
+    }
+
+    /// Adds the `instrument status` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Currently infallible, but returns `Result` to allow for future error propagation.
+    pub fn add_instrument_status(
+        &mut self,
+        instrument_status: InstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Adding `InstrumentStatus` {}",
+            instrument_status.instrument_id
+        );
+
+        self.instrument_statuses
+            .insert(instrument_status.instrument_id, instrument_status);
         Ok(())
     }
 
@@ -3702,6 +3725,12 @@ impl Cache {
     #[must_use]
     pub fn instrument(&self, instrument_id: &InstrumentId) -> Option<&InstrumentAny> {
         self.instruments.get(instrument_id)
+    }
+
+    /// Returns a reference to the instrument status for the `instrument_id` (if found).
+    #[must_use]
+    pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<&InstrumentStatus> {
+        self.instrument_statuses.get(instrument_id)
     }
 
     /// Returns references to all instrument IDs for the `venue`.

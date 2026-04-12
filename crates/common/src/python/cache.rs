@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, InstrumentStatus, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -271,6 +271,11 @@ impl PyCache {
             Some(instrument) => Ok(Some(instrument_any_to_pyobject(py, instrument.clone())?)),
             None => Ok(None),
         }
+    }
+
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.0.borrow().instrument_status(&instrument_id).copied()
     }
 
     #[pyo3(name = "instrument_ids", signature = (venue=None))]
@@ -1285,6 +1290,12 @@ impl Cache {
             Some(instrument) => Ok(Some(instrument_any_to_pyobject(py, instrument.clone())?)),
             None => Ok(None),
         }
+    }
+
+    /// Returns the instrument status for the `instrument_id` (if found).
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.instrument_status(&instrument_id).copied()
     }
 
     /// Returns references to all instrument IDs for the `venue`.
