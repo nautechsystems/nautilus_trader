@@ -19,7 +19,7 @@ import itertools
 import os
 import platform
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from collections.abc import Generator
 from itertools import groupby
 from os import PathLike
@@ -1103,25 +1103,49 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "all files in the consolidation range must have contiguous timestamps."
             )
 
+        
         # Group intervals into contiguous groups to preserve holes between groups
         # but allow consolidation within each contiguous group
-        contiguous_groups = []
-        current_group = [filtered_intervals[0]]
 
+        # Pass 1 - infer dominant rhythm from all interval gaps
+        gaps = []
         for i in range(1, len(filtered_intervals)):
-            prev_interval = filtered_intervals[i - 1]
-            curr_interval = filtered_intervals[i]
+            gap = filtered_intervals[i][0] - filtered_intervals[i - 1][0]
+            gaps.append(gap)
 
-            # Check if current interval is contiguous with previous (end + 1 == start)
-            if prev_interval[1] + 1 == curr_interval[0]:
-                current_group.append(curr_interval)
-            else:
-                # Gap found, start new group
-                contiguous_groups.append(current_group)
-                current_group = [curr_interval]
+        if not gaps:
+            # single interval, nothing to group
+            contiguous_groups = [filtered_intervals]
+        else:
+            gap_counts = Counter(gaps)
+            dominant_gap, dominant_count = gap_counts.most_common(1)[0]
+            total_gaps = len(gaps)
+            dominant_pct = (dominant_count / total_gaps) * 100
 
-        # Add the last group
-        contiguous_groups.append(current_group)
+            rhythm_confidence_threshold = 85.0
+            print(f"[consolidate] standard gap detected: {pd.Timedelta(dominant_gap)} "
+                f"({dominant_pct:.1f}% dominance) — gaps larger than 1.5x standard will start a new group"
+                + (" WARNING: low confidence" if dominant_pct < rhythm_confidence_threshold else ""))
+            
+
+            # Pass 2 - group files into contiguous blocks, splitting only on genuine data holes.
+            # Uses 1.5x dominant gap as threshold to tolerate clock jitter and minor timestamp irregularities
+            gap_threshold = dominant_gap * 1.5
+            contiguous_groups = []
+            current_group = [filtered_intervals[0]]
+
+            for i in range(1, len(filtered_intervals)):
+                prev_interval = filtered_intervals[i - 1]
+                curr_interval = filtered_intervals[i]
+                gap = curr_interval[0] - prev_interval[0]
+
+                if gap > gap_threshold:
+                    contiguous_groups.append(current_group)
+                    current_group = [curr_interval]
+                else:
+                    current_group.append(curr_interval)
+
+            contiguous_groups.append(current_group)
 
         # Convert period to nanoseconds for calculations
         period_in_ns = period.value

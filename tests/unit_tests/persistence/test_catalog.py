@@ -1467,6 +1467,60 @@ class TestConsolidateDataByPeriod:
         with pytest.raises(ValueError, match="conflicting metadata"):
             self.catalog.consolidate_catalog(ensure_contiguous_files=False)
 
+    def test_consolidate_fragment_per_flush_hourly_to_daily(self):
+        """
+        Regression test: fragment-per-flush catalogs (one bar per file) must consolidate
+        correctly into period-sized files without pairwise merging or data loss.
+        """
+        # Arrange - 168 hourly bars written one-per-file (fragment-per-flush pattern)
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.MID)
+        bar_type = BarType(instrument.id, bar_spec)
+        bar_type_str = str(bar_type)
+
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        hour_ns = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+        for i in range(168):
+            ts = start_ns + i * hour_ns
+            bar = Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00000"),
+                high=Price.from_str("1.00010"),
+                low=Price.from_str("0.99990"),
+                close=Price.from_str("1.00005"),
+                volume=Quantity.from_str("1000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            self.catalog.write_data([bar], skip_disjoint_check=True)
+
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 168
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            data_cls=Bar,
+            identifier=bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - should produce exactly 7 daily files, not 84 pairwise merges
+        final_intervals = self.catalog.get_intervals(Bar, bar_type_str)
+        assert len(final_intervals) == 7, (
+            f"Expected 7 daily files, got {len(final_intervals)} — "
+            f"pairwise merging bug may have regressed"
+        )
+
+        # Verify all 168 bars are preserved
+        all_bars = self.catalog.bars(bar_types=[bar_type_str])
+        assert len(all_bars) == 168
+
+        # Verify one file per day
+        for iv in final_intervals:
+            start_day = pd.Timestamp(iv[0], unit="ns", tz="UTC").date()
+            end_day = pd.Timestamp(iv[1], unit="ns", tz="UTC").date()
+            assert start_day == end_day
 
 def test_consolidate_catalog_by_period(catalog: ParquetDataCatalog) -> None:
     # Arrange
