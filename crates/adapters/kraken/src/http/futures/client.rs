@@ -2571,13 +2571,14 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Vec<Ac
             .and_then(|aux| aux.af)
             .unwrap_or(amount)
             .min(amount);
-        let locked = amount - available;
+        // Derive `free` from `total - locked` in fixed-point Money arithmetic so
+        // the `AccountBalance` invariant (`total == locked + free`) holds exactly
+        // regardless of f64 rounding at the currency precision. Mirrors the
+        // `parse_multi_collateral_balances` derivation.
+        let locked = Money::new((amount - available).max(0.0), currency);
+        let free = total - locked;
 
-        balances.push(AccountBalance::new(
-            total,
-            Money::new(locked, currency),
-            Money::new(available, currency),
-        ));
+        balances.push(AccountBalance::new(total, locked, free));
     }
 }
 
@@ -2803,6 +2804,55 @@ mod tests {
 
         // BTC balance + USD portfolio balance
         assert_eq!(balances.len(), 2);
+    }
+
+    #[rstest]
+    fn test_parse_margin_account_balances_free_is_derived_from_total_minus_locked() {
+        // Regression: `free` must be derived via Money fixed-point subtraction so
+        // the `AccountBalance` invariant `total == locked + free` holds exactly,
+        // rather than using the raw Kraken `af` (available funds) value which
+        // can drift at the currency precision and violate the invariant in
+        // `AccountBalance::new_checked`.
+        let mut bals = AHashMap::new();
+        // Values chosen so that Kraken's raw `af` rounds independently from
+        // `amount - af` at currency precision 8, producing a drifted sum when
+        // `free` is set directly from `af` instead of derived from `total - locked`.
+        // With these f64 values (constructed via arithmetic to hit precise bit
+        // patterns): round(amount * 1e8) = 1_000_000_003, round(af * 1e8) = 4,
+        // and round((amount - af) * 1e8) = 1_000_000_000, so 4 + 1_000_000_000
+        // != 1_000_000_003 and the old parse path violates the invariant.
+        let af_f = 35.0_f64 * 1e-9;
+        let amount_f = 10.0_f64 + af_f;
+        bals.insert("XBT".to_string(), amount_f);
+
+        let account = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            balances: bals,
+            currencies: AHashMap::new(),
+            auxiliary: Some(FuturesAuxiliary {
+                usd: None,
+                pv: None,
+                pnl: None,
+                af: Some(af_f),
+                funding: None,
+            }),
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            pnl: None,
+        };
+
+        let mut balances = Vec::new();
+        parse_margin_account_balances(&account, &mut balances);
+
+        assert_eq!(balances.len(), 1);
+        let balance = &balances[0];
+        // Invariant: total == locked + free (enforced by AccountBalance::new_checked,
+        // but assert here to pin the derivation property at the parse site).
+        assert_eq!(balance.total, balance.locked + balance.free);
+        // Free is the derived side (total - locked), not the raw `af` value.
+        assert_eq!(balance.free, balance.total - balance.locked);
     }
 
     #[rstest]
