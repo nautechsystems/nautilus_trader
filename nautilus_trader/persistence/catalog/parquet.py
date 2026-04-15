@@ -960,6 +960,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Track files to remove and maintain existing_files list
         files_to_remove = set()
         existing_files = list(existing_files)  # Make it mutable
+        any_write_happened = False
 
         # Phase 2: Execute queries, write, and delete
         file_start_ns = None  # Track contiguity across periods
@@ -1016,6 +1017,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
             # Clear the data from memory immediately
+            any_write_happened = True
             del period_data
 
             # Identify files that are completely covered by this period
@@ -1033,8 +1035,9 @@ class ParquetDataCatalog(BaseDataCatalog):
                     files_to_remove.remove(file)
 
         # Remove any remaining files that weren't removed in the loop
-        for file in existing_files:
-            self.fs.rm(file)
+        if any_write_happened:
+            for file in existing_files:
+                self.fs.rm(file)
 
     def _prepare_consolidation_queries(  # noqa: C901
         self,
