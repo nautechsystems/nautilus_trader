@@ -665,7 +665,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
         // Match by venue_order_id or client_order_id (comparing truncated form
         // since Kraken stores the truncated cl_ord_id for long IDs)
-        Ok(reports.into_iter().find(|r| {
+        let matched = reports.into_iter().find(|r| {
             cmd.venue_order_id
                 .is_some_and(|id| r.venue_order_id.as_str() == id.as_str())
                 || cmd.client_order_id.is_some_and(|id| {
@@ -673,7 +673,26 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                         .as_ref()
                         .is_some_and(|r_id| r_id.as_str() == truncate_cl_ord_id(&id))
                 })
-        }))
+        });
+
+        if matched.is_some() {
+            return Ok(matched);
+        }
+
+        // Fall back to `/fills`: a market order that filled in under ~200ms may
+        // no longer appear in `/openorders` by the time the deferred-fill
+        // reconciliation loop first queries it. Kraken's fills endpoint still
+        // carries the execution, so we synthesise a `Filled` status report from
+        // any matching fill in the last 5 minutes. See upstream issue for the
+        // race's details.
+        let now = Utc::now();
+        let start = now - Duration::from_secs(5 * 60);
+        let fills = self
+            .http
+            .request_fill_reports(account_id, None, Some(start), Some(now))
+            .await?;
+
+        Ok(synthesize_order_status_from_fill(cmd, &fills))
     }
 
     async fn generate_order_status_reports(
@@ -1037,5 +1056,200 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         }
 
         Ok(())
+    }
+}
+
+/// Synthesises a `Filled` [`OrderStatusReport`] from a matching [`FillReport`]
+/// when the `/openorders` endpoint has no record of the order.
+///
+/// This covers the race where a Kraken Futures market order fills before the
+/// deferred-fill reconciliation loop first queries `/openorders`: filled orders
+/// disappear from `/openorders`, so the loop would otherwise receive `None` and
+/// eventually resolve the order as rejected.
+///
+/// Match order:
+/// 1. `venue_order_id` (always populated in Kraken fills).
+/// 2. `client_order_id`, comparing against the truncated form that Kraken
+///    stores server-side (see [`truncate_cl_ord_id`]).
+/// 3. `instrument_id` — unambiguous for single-order-per-rebalance strategies
+///    because the caller has already bounded the fill query to a short window.
+///
+/// Returns `None` when no fill matches.
+fn synthesize_order_status_from_fill(
+    cmd: &GenerateOrderStatusReport,
+    fills: &[FillReport],
+) -> Option<OrderStatusReport> {
+    let truncated_cl_ord_id = cmd.client_order_id.map(|id| truncate_cl_ord_id(&id));
+
+    let matched = fills.iter().find(|fill| {
+        if let Some(cmd_venue_id) = cmd.venue_order_id
+            && fill.venue_order_id == cmd_venue_id
+        {
+            return true;
+        }
+        if let (Some(truncated), Some(fill_cl_ord_id)) =
+            (truncated_cl_ord_id.as_ref(), fill.client_order_id.as_ref())
+            && fill_cl_ord_id.as_str() == truncated.as_str()
+        {
+            return true;
+        }
+        if let Some(cmd_instrument) = cmd.instrument_id
+            && fill.instrument_id == cmd_instrument
+        {
+            return true;
+        }
+        false
+    })?;
+
+    let client_order_id = matched.client_order_id.or(cmd.client_order_id);
+    let mut report = OrderStatusReport::new(
+        matched.account_id,
+        matched.instrument_id,
+        client_order_id,
+        matched.venue_order_id,
+        matched.order_side,
+        OrderType::Market,
+        nautilus_model::enums::TimeInForce::Gtc,
+        nautilus_model::enums::OrderStatus::Filled,
+        matched.last_qty,
+        matched.last_qty,
+        matched.ts_event,
+        matched.ts_event,
+        matched.ts_init,
+        None,
+    );
+    report.avg_px = Some(matched.last_px.as_decimal());
+    report.venue_position_id = matched.venue_position_id;
+    Some(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+        reports::FillReport,
+        types::{Currency, Money, Price, Quantity},
+    };
+
+    use super::*;
+
+    fn make_fill(
+        venue_order_id: &str,
+        client_order_id: Option<&str>,
+        instrument: &str,
+    ) -> FillReport {
+        FillReport::new(
+            AccountId::from("KRAKEN-001"),
+            InstrumentId::from(instrument),
+            VenueOrderId::from(venue_order_id),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            Quantity::from("0.0005"),
+            Price::from("30000.0"),
+            Money::new(0.01, Currency::USD()),
+            LiquiditySide::Taker,
+            client_order_id.map(ClientOrderId::from),
+            None,
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000u64),
+            None,
+        )
+    }
+
+    fn make_cmd(
+        instrument_id: Option<&str>,
+        client_order_id: Option<&str>,
+        venue_order_id: Option<&str>,
+    ) -> GenerateOrderStatusReport {
+        GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            instrument_id.map(InstrumentId::from),
+            client_order_id.map(ClientOrderId::from),
+            venue_order_id.map(VenueOrderId::from),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn test_fill_fallback_matches_on_venue_order_id() {
+        let fills = vec![
+            make_fill("unrelated-1", None, "PF_ETHUSD.KRAKEN"),
+            make_fill(
+                "9e30258b-5a98-4002-968a-5b0e149bcfbf",
+                None,
+                "PF_XBTUSD.KRAKEN",
+            ),
+        ];
+        let cmd = make_cmd(
+            Some("PF_XBTUSD.KRAKEN"),
+            None,
+            Some("9e30258b-5a98-4002-968a-5b0e149bcfbf"),
+        );
+
+        let report = synthesize_order_status_from_fill(&cmd, &fills)
+            .expect("expected a synthesised Filled report for matching venue_order_id");
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.order_type, OrderType::Market);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("9e30258b-5a98-4002-968a-5b0e149bcfbf"),
+        );
+        assert_eq!(report.instrument_id, InstrumentId::from("PF_XBTUSD.KRAKEN"));
+        assert_eq!(report.filled_qty, Quantity::from("0.0005"));
+        assert_eq!(report.quantity, Quantity::from("0.0005"));
+    }
+
+    #[test]
+    fn test_fill_fallback_matches_on_client_order_id_truncated() {
+        // A long cli_ord_id that Kraken truncates server-side.
+        let long_cl_ord_id = "O-20250101-000000-001-001-000000001";
+        let truncated = truncate_cl_ord_id(&ClientOrderId::from(long_cl_ord_id));
+        assert_ne!(
+            truncated.as_str(),
+            long_cl_ord_id,
+            "test prerequisite: id must actually truncate",
+        );
+
+        let fills = vec![make_fill("v-1", Some(&truncated), "PF_XBTUSD.KRAKEN")];
+        let cmd = make_cmd(Some("PF_XBTUSD.KRAKEN"), Some(long_cl_ord_id), None);
+
+        let report = synthesize_order_status_from_fill(&cmd, &fills)
+            .expect("expected match on truncated client_order_id");
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("v-1"));
+    }
+
+    #[test]
+    fn test_fill_fallback_matches_on_instrument_id_last() {
+        // No cli_ord_id in fill (Kraken omits it), venue_order_id not in command.
+        let fills = vec![make_fill("v-only", None, "PF_XBTUSD.KRAKEN")];
+        let cmd = make_cmd(Some("PF_XBTUSD.KRAKEN"), Some("cli-absent"), None);
+
+        let report = synthesize_order_status_from_fill(&cmd, &fills)
+            .expect("expected instrument-scoped fallback match");
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("v-only"));
+    }
+
+    #[test]
+    fn test_fill_fallback_returns_none_when_no_match() {
+        let fills = vec![make_fill("v-other", None, "PF_ETHUSD.KRAKEN")];
+        let cmd = make_cmd(Some("PF_XBTUSD.KRAKEN"), Some("cli-1"), Some("v-expected"));
+
+        assert!(synthesize_order_status_from_fill(&cmd, &fills).is_none());
+    }
+
+    #[test]
+    fn test_fill_fallback_returns_none_on_empty_fills() {
+        let cmd = make_cmd(Some("PF_XBTUSD.KRAKEN"), Some("cli-1"), Some("v-1"));
+        assert!(synthesize_order_status_from_fill(&cmd, &[]).is_none());
     }
 }

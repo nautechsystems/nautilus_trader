@@ -41,6 +41,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid modify cancel-replace emitting stale `OrderCanceled` (#3827), thanks for reporting @P1YU5H-50N1
 - Fixed IB Gateway Docker image failing on ARM64 hosts (#3813), thanks for reporting @Baki-0501
 - Fixed Kraken Futures limit order `OrderUpdated` panic from wire `stop_price: 0.0` treated as trigger price
+- Fixed Kraken Futures `generate_order_status_report` resolving fast-fill market orders as rejected by falling back to `/fills` when `/openorders` misses the execution
 - Fixed Kraken Spot quote-quantity orders never reaching terminal state from base/quote size mismatch
 - Fixed Kraken trade dedup clearing the entire set at capacity instead of evicting the oldest entry
 - Fixed OKX option greeks not forwarded due to inaccessible Cython `cdef` subscription attribute
