@@ -41,6 +41,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RoutingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -53,6 +54,10 @@ from nautilus_trader.model.identifiers import generic_spread_id_to_list
 from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.trading.config import StrategyConfig
 from nautilus_trader.trading.strategy import Strategy
+
+
+# %%
+IB_HOST, IB_PORT = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
 
 
 # %%
@@ -415,14 +420,16 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
         IB: InteractiveBrokersDataClientConfig(
-            ibg_port=7497,
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
             instrument_provider=instrument_provider,
             market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
         ),
     },
     exec_clients={
         IB: InteractiveBrokersExecClientConfig(
-            ibg_port=7497,
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
             instrument_provider=instrument_provider,
             routing=RoutingConfig(default=True),
             account_id=os.environ.get("TWS_ACCOUNT"),

@@ -108,6 +108,11 @@ impl ExecutionClientCore {
         self.cache.borrow()
     }
 
+    /// Returns a mutable borrow of the cache.
+    pub fn cache_mut(&self) -> std::cell::RefMut<'_, Cache> {
+        self.cache.borrow_mut()
+    }
+
     /// Returns the order for the given `client_order_id` from the cache.
     ///
     /// # Errors

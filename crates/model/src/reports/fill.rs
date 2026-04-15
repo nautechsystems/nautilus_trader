@@ -16,6 +16,7 @@
 use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -54,6 +55,8 @@ pub struct FillReport {
     pub commission: Money,
     /// The liquidity side of the execution.
     pub liquidity_side: LiquiditySide,
+    /// The cumulative or chunk average execution price when provided by the venue.
+    pub avg_px: Option<Decimal>,
     /// The unique identifier for the event.
     pub report_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
@@ -96,6 +99,7 @@ impl FillReport {
             last_px,
             commission,
             liquidity_side,
+            avg_px: None,
             report_id: report_id.unwrap_or_default(),
             ts_event,
             ts_init,

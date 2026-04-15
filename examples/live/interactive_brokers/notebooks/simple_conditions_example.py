@@ -20,7 +20,10 @@
 # %%
 import datetime
 import os
+import threading
+import time
 
+from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
@@ -40,10 +43,10 @@ from nautilus_trader.adapters.interactive_brokers.factories import (
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.config import RoutingConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model import BarType
 from nautilus_trader.model import TraderId
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -54,60 +57,43 @@ from nautilus_trader.trading.config import StrategyConfig
 
 
 # %%
+IB_HOST, IB_PORT = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
+
+
+# %%
 class SimpleConditionsConfig(StrategyConfig, frozen=True):
-    tradable_instrument_id: str | None = "ESZ5.CME"
+    tradable_instrument_id: str | None = "ESM6.CME"
 
 
 class SimpleConditionsStrategy(Strategy):
     def __init__(self, config: SimpleConditionsConfig) -> None:
         super().__init__(config)
-        self.bar_type_m1: dict[InstrumentId, BarType] = {}
         self.tradable_instrument_id = config.tradable_instrument_id
-        self.order_count = 0
+        self.exec_client = None
+
+    def on_order_canceled(self, event):
+        self.log.info(f"Order canceled: {event}")
+
+    def on_order_pending_cancel(self, event):
+        self.log.info(f"Order pending cancel: {event}")
 
     def on_start(self) -> None:
-        self.log.info(f"instrument_id in cache : {self.cache.instrument_ids()}")
-        self.log.info(f"instruments in cache : {self.cache.instruments()}")
-
         for instrument in self.cache.instruments():
             if str(instrument.id) == self.tradable_instrument_id:
-                self.log.info(
-                    f"instrument {instrument.info['contract']['tradingClass']}: \n{instrument}",
-                )
-
-                # Test all condition types
-                self.test_volume_condition_order(instrument)
                 self.test_time_condition_order(instrument)
-                self.test_execution_condition_order(instrument)
-                self.test_margin_condition_order(instrument)
-                self.test_percent_change_condition_order(instrument)
                 self.test_price_condition_order(instrument)
 
     def test_price_condition_order(self, instrument):
-        """
-        Test a simple limit order with price condition.
-        """
-        self.order_count += 1
-
-        # Get the actual contract ID from the instrument
-        contract_id = instrument.info.get("contract", {}).get("conId", 495512563)
-
-        # Price condition: trigger when ES goes above 6000
+        contract_id = instrument.info.get("contract", {}).get("conId", 0)
         price_condition = {
-            "type": "price",
-            "conId": contract_id,  # Use actual ES contract ID
+            "type": "price",  # Use actual ES contract ID
+            "conId": contract_id,
             "exchange": "CME",
             "isMore": True,
             "price": 6000.0,
             "triggerMethod": 0,
             "conjunction": "and",
         }
-
-        order_tags = IBOrderTags(
-            conditions=[price_condition],
-            conditionsCancelOrder=False,  # Transmit order when condition is met
-        )
-
         order = LimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -115,44 +101,24 @@ class SimpleConditionsStrategy(Strategy):
             client_order_id=self.order_factory.generate_client_order_id(),
             order_side=OrderSide.BUY,
             quantity=instrument.make_qty(1),
-            price=instrument.make_price(5950),  # Below current market
+            price=instrument.make_price(5950),
             init_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
+            tags=[IBOrderTags(conditions=[price_condition]).value],
         )
-
-        self.log.info(f"Submitting PRICE CONDITION order: {order}")
         self.submit_order(order)
 
     def test_time_condition_order(self, instrument):
-        """
-        Test a simple limit order with time condition.
-        """
-        self.order_count += 1
-
-        # Time condition: trigger 5 minutes from now
-        # IB accepts two formats:
-        # 1. "yyyymmdd hh:mm:ss US/Eastern" (with timezone)
-        # 2. "yyyymmddd-hh:mm:ss" (UTC with dash)
-        future_time = datetime.datetime.now() + datetime.timedelta(minutes=5)
-
-        # Try UTC format with dash (as mentioned in IB error message)
-        time_str = future_time.strftime("%Y%m%d-%H:%M:%S")
-        self.log.info(f"Time condition string (UTC format): '{time_str}'")
-
+        time_str = (datetime.datetime.now() + datetime.timedelta(minutes=5)).strftime(
+            "%Y%m%d-%H:%M:%S",
+        )
         time_condition = {
             "type": "time",
             "time": time_str,
             "isMore": True,
             "conjunction": "and",
         }
-
-        order_tags = IBOrderTags(
-            conditions=[time_condition],
-            conditionsCancelOrder=False,
-        )
-
         order = LimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.id,
@@ -160,197 +126,55 @@ class SimpleConditionsStrategy(Strategy):
             client_order_id=self.order_factory.generate_client_order_id(),
             order_side=OrderSide.SELL,
             quantity=instrument.make_qty(1),
-            price=instrument.make_price(6100),  # Above current market
+            price=instrument.make_price(6100),
             init_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
+            tags=[IBOrderTags(conditions=[time_condition]).value],
         )
-
-        self.log.info(f"Submitting TIME CONDITION order (triggers at {time_str}): {order}")
         self.submit_order(order)
 
-    def test_volume_condition_order(self, instrument):
-        """
-        Test a simple limit order with volume condition.
-        """
-        self.order_count += 1
+    def _cancel_all_cached_orders(self, reason: str) -> None:
+        instrument_id = InstrumentId.from_str(self.tradable_instrument_id)
+        orders_open = self.cache.orders_open(instrument_id=instrument_id)
+        orders_inflight = self.cache.orders_inflight(instrument_id=instrument_id)
+        total_orders = len(orders_open) + len(orders_inflight)
+        if total_orders == 0:
+            return
 
-        # Get the actual contract ID from the instrument
-        contract_id = instrument.info.get("contract", {}).get("conId", 495512563)
+        if self.exec_client is None:
+            self.log.warning("No execution client is bound for cancel-all handling")
+            return
 
-        # Volume condition: trigger when volume exceeds 100,000
-        volume_condition = {
-            "type": "volume",
-            "conId": contract_id,  # Use actual ES contract ID
-            "exchange": "CME",
-            "isMore": True,
-            "volume": 100000,
-            "conjunction": "and",
-        }
-
-        order_tags = IBOrderTags(
-            conditions=[volume_condition],
-            conditionsCancelOrder=True,  # Cancel order when condition is met
-        )
-
-        order = LimitOrder(
+        self.log.info(f"Canceling {total_orders} cached orders for {reason}")
+        command = CancelAllOrders(
             trader_id=self.trader_id,
             strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.BUY,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(5900),  # Below current market
-            init_id=UUID4(),
+            instrument_id=instrument_id,
+            order_side=OrderSide.NO_ORDER_SIDE,
+            command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
         )
+        self.exec_client.cancel_all_orders(command)
 
-        self.log.info(f"Submitting VOLUME CONDITION order: {order}")
-        self.submit_order(order)
-
-    def test_execution_condition_order(self, instrument):
-        """
-        Test a simple limit order with execution condition.
-        """
-        self.order_count += 1
-
-        # Execution condition: trigger when another symbol executes
-        execution_condition = {
-            "type": "execution",
-            "symbol": "SPY",
-            "secType": "STK",
-            "exchange": "SMART",
-            "conjunction": "and",
-        }
-
-        order_tags = IBOrderTags(
-            conditions=[execution_condition],
-            conditionsCancelOrder=False,
+    def _has_pending_cached_orders(self) -> bool:
+        instrument_id = InstrumentId.from_str(self.tradable_instrument_id)
+        return bool(
+            self.cache.orders_open(instrument_id=instrument_id)
+            or self.cache.orders_inflight(instrument_id=instrument_id),
         )
-
-        order = LimitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.BUY,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(5800),  # Below current market
-            init_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
-        )
-
-        self.log.info(f"Submitting EXECUTION CONDITION order: {order}")
-        self.submit_order(order)
-
-    def test_margin_condition_order(self, instrument):
-        """
-        Test a simple limit order with margin condition.
-        """
-        self.order_count += 1
-
-        # Margin condition: trigger when margin cushion is greater than 75%
-        margin_condition = {
-            "type": "margin",
-            "percent": 75,
-            "isMore": True,
-            "conjunction": "and",
-        }
-
-        order_tags = IBOrderTags(
-            conditions=[margin_condition],
-            conditionsCancelOrder=False,
-        )
-
-        order = LimitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.BUY,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(5700),  # Below current market
-            init_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
-        )
-
-        self.log.info(f"Submitting MARGIN CONDITION order: {order}")
-        self.submit_order(order)
-
-    def test_percent_change_condition_order(self, instrument):
-        """
-        Test a simple limit order with percent change condition.
-        """
-        self.order_count += 1
-
-        # Get contract ID from instrument
-        contract_id = instrument.info.get("contract", {}).get("conId", 495512563)
-
-        # Percent change condition: trigger when contract increases by 5%
-        percent_change_condition = {
-            "type": "percent_change",
-            "conId": contract_id,
-            "exchange": "CME",
-            "changePercent": 5.0,
-            "isMore": True,
-            "conjunction": "and",
-        }
-
-        order_tags = IBOrderTags(
-            conditions=[percent_change_condition],
-            conditionsCancelOrder=False,
-        )
-
-        order = LimitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.BUY,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(5600),  # Below current market
-            init_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[order_tags.value],
-        )
-
-        self.log.info(f"Submitting PERCENT CHANGE CONDITION order: {order}")
-        self.submit_order(order)
-
-    def on_order_submitted(self, event):
-        self.log.info(f"Order submitted: {event}")
-
-    def on_order_accepted(self, event):
-        self.log.info(f"Order accepted: {event}")
-
-    def on_order_rejected(self, event):
-        self.log.error(f"Order rejected: {event}")
-
-    def on_order_canceled(self, event):
-        self.log.info(f"Order canceled: {event}")
-
-    def on_order_filled(self, event):
-        self.log.info(f"Order filled: {event}")
 
 
 # %%
 es_contract = IBContract(
     secType="FUT",
     exchange="CME",
-    localSymbol="ESZ5",
-    lastTradeDateOrContractMonth="20251219",
+    localSymbol="ESM6",
+    lastTradeDateOrContractMonth="20260618",
 )
 
 contracts = [es_contract]
-tradable_instrument_id = "ESZ5.CME"
+tradable_instrument_id = "ESM6.CME"
 
 
 # Configure the trading node
@@ -374,9 +198,9 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         IB: InteractiveBrokersDataClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=7497,
-            ibg_client_id=9005,  # Different client ID
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
+            ibg_client_id=int(os.getenv("IB_EXAMPLE_DATA_CLIENT_ID", "1251")),
             market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
             instrument_provider=instrument_provider,
             use_regular_trading_hours=False,
@@ -384,9 +208,9 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         IB: InteractiveBrokersExecClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=7497,
-            ibg_client_id=9005,  # Different client ID
+            ibg_host=IB_HOST,
+            ibg_port=IB_PORT,
+            ibg_client_id=int(os.getenv("IB_EXAMPLE_EXEC_CLIENT_ID", "1252")),
             account_id=os.environ.get("TWS_ACCOUNT"),
             instrument_provider=instrument_provider,
             routing=RoutingConfig(
@@ -399,9 +223,20 @@ config_node = TradingNodeConfig(
         validate_data_sequence=True,
         time_bars_build_with_no_updates=False,
     ),
+    timeout_connection=90.0,
+    timeout_reconciliation=5.0,
+    timeout_portfolio=5.0,
+    timeout_disconnection=5.0,
+    timeout_post_stop=10.0,
 )
 
-strat_config = SimpleConditionsConfig(tradable_instrument_id=tradable_instrument_id)
+strat_config = SimpleConditionsConfig(
+    tradable_instrument_id=tradable_instrument_id,
+    manage_stop=True,
+    market_exit_max_attempts=400,
+    market_exit_time_in_force=TimeInForce.DAY,
+    market_exit_reduce_only=False,
+)
 strategy = SimpleConditionsStrategy(config=strat_config)
 
 # Instantiate the node with a configuration
@@ -415,13 +250,29 @@ node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 
-# %%
-node.run()
+exec_engine = node.kernel.exec_engine
+default_client_id = exec_engine.default_client
+if default_client_id is None:
+    raise RuntimeError("Expected an Interactive Brokers execution client to be registered")
+strategy.exec_client = exec_engine._clients[default_client_id]
 
-# %%
-# node.stop()
+if __name__ == "__main__":
+    auto_stop_seconds = int(os.getenv("IB_EXAMPLE_AUTO_STOP_SECONDS", "20"))
 
-# %%
-# node.dispose()
+    def stop_after_delay() -> None:
+        time.sleep(auto_stop_seconds)
+        strategy._cancel_all_cached_orders("scheduled shutdown")
+        deadline = time.time() + 45
+        while time.time() < deadline:
+            if not strategy._has_pending_cached_orders():
+                break
+            time.sleep(0.25)
+        node.stop()
 
-# %%
+    if auto_stop_seconds > 0:
+        threading.Thread(target=stop_after_delay, daemon=True).start()
+
+    try:
+        node.run()
+    finally:
+        node.dispose()

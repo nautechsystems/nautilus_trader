@@ -15,6 +15,7 @@ members = [
   "crates/adapters/hyperliquid",
   "crates/adapters/kraken",
   "crates/adapters/polymarket",
+  "crates/adapters/interactive_brokers",
   "crates/adapters/okx",
   "crates/adapters/sandbox",
   "crates/adapters/tardis",
@@ -101,6 +102,7 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.56.0", d
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.56.0", default-features = false }
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.56.0", default-features = false }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.56.0", default-features = false }
+nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.56.0" }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.56.0", default-features = false }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.56.0", default-features = false }
 nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.56.0", default-features = false }
@@ -308,6 +310,10 @@ alloy = { version = "1.8.3", default-features = false, features = [
   "signer-local",
 ] }
 arc-swap = "1.9.1"
+bollard = { version = "0.18.0", default-features = false, features = [
+  "http",
+  "pipe",
+] }
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
@@ -320,6 +326,7 @@ fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.9"
 hypersync-client = { version = "1.1.4" }
 hypersync-schema = { version = "0.4.0" }
+ibapi = "2.11.0"
 itoa = "1.0.18"
 prost = { version = "0.13.5", default-features = false, features = ["std"] }
 ryu = "1.0.23"
@@ -357,6 +364,7 @@ pretty_assertions = "1.4.1"
 proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 rstest = "0.26.1"
 tempfile = "3.27.0"
+tracing-test = "0.2.6"
 turmoil = "0.7.1"
 
 # -----------------------------------------------------------------------------

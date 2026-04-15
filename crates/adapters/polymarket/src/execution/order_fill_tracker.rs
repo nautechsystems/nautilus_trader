@@ -211,6 +211,7 @@ impl OrderFillTrackerMap {
                 last_px: fill_px,
                 commission: Money::new(0.0, currency),
                 liquidity_side: LiquiditySide::NoLiquiditySide,
+                avg_px: None,
                 report_id: UUID4::new(),
                 ts_event,
                 ts_init,

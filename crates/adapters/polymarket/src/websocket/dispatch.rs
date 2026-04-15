@@ -465,6 +465,7 @@ fn build_ws_taker_fill_report(
         last_px,
         commission: Money::new(commission_value, usdc),
         liquidity_side,
+        avg_px: None,
         report_id: UUID4::new(),
         ts_event,
         ts_init,

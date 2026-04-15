@@ -641,6 +641,8 @@ class FillReport(ExecutionReport):
         If no commission then use a zero `Money` amount of the commission currency.
     liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
+    avg_px : Decimal, optional
+        The reported average fill price associated with the trade or fill chunk.
     report_id : UUID4
         The report ID.
     ts_event : int
@@ -676,6 +678,7 @@ class FillReport(ExecutionReport):
         report_id: UUID4,
         ts_event: int,
         ts_init: int,
+        avg_px: Decimal | None = None,
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         venue_position_id: PositionId | None = None,
     ) -> None:
@@ -696,6 +699,7 @@ class FillReport(ExecutionReport):
         self.last_px = last_px
         self.commission = commission
         self.liquidity_side = liquidity_side
+        self.avg_px = avg_px
         self.ts_event = ts_event
 
     def __eq__(self, other: object) -> bool:
@@ -727,6 +731,7 @@ class FillReport(ExecutionReport):
             f"last_px={self.last_px.to_formatted_str()}, "
             f"commission={self.commission.to_formatted_str() if self.commission is not None else None}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
+            f"avg_px={self.avg_px}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
@@ -752,6 +757,7 @@ class FillReport(ExecutionReport):
             "last_px": str(self.last_px),
             "commission": str(self.commission),
             "liquidity_side": self.liquidity_side.value,
+            "avg_px": str(self.avg_px) if self.avg_px is not None else None,
             "report_id": self.id.value,
             "ts_event": self.ts_event,
             "ts_init": self.ts_init,
@@ -784,6 +790,7 @@ class FillReport(ExecutionReport):
             last_px=Price.from_str(values["last_px"]),
             commission=Money.from_str(values["commission"]),
             liquidity_side=LiquiditySide(values["liquidity_side"]),
+            avg_px=Decimal(values["avg_px"]) if values.get("avg_px") else None,
             report_id=UUID4.from_str(values["report_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],

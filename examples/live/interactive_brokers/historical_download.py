@@ -23,6 +23,7 @@ from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGate
 from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
 from nautilus_trader.adapters.interactive_brokers.historical import HistoricInteractiveBrokersClient
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
@@ -41,6 +42,9 @@ async def main(
         port = gateway.port
     else:
         gateway = None
+        default_host, default_port = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
+        host = host or default_host
+        port = port or default_port
         PyCondition.not_none(
             host,
             "Please provide the `host` IP address for the IB TWS or Gateway.",
@@ -102,12 +106,17 @@ async def main(
 
 
 if __name__ == "__main__":
-    gateway_config = DockerizedIBGatewayConfig(
-        username=os.environ["TWS_USERNAME"],
-        password=os.environ["TWS_PASSWORD"],
-        trading_mode="paper",
-    )
-    asyncio.run(main(dockerized_gateway=gateway_config))
+    use_dockerized_gateway = os.getenv("IB_EXAMPLE_USE_DOCKERIZED_GATEWAY", "0") == "1"
+
+    if use_dockerized_gateway and os.getenv("TWS_USERNAME") and os.getenv("TWS_PASSWORD"):
+        gateway_config = DockerizedIBGatewayConfig(
+            username=os.environ["TWS_USERNAME"],
+            password=os.environ["TWS_PASSWORD"],
+            trading_mode="paper",
+        )
+        asyncio.run(main(dockerized_gateway=gateway_config))
+    else:
+        asyncio.run(main())
 
     # To connect to an existing TWS or Gateway instance without the use of automated dockerized gateway,
     # follow this format:

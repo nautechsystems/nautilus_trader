@@ -403,6 +403,10 @@ def create_order_filled_event(
     OrderFilled
 
     """
+    info = None
+    if report.avg_px is not None:
+        info = {"avg_px": instrument.make_price(report.avg_px)}
+
     return OrderFilled(
         trader_id=order.trader_id,
         strategy_id=order.strategy_id,
@@ -423,6 +427,7 @@ def create_order_filled_event(
         ts_event=report.ts_event,
         ts_init=ts_now,
         reconciliation=True,
+        info=info,
     )
 
 

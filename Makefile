@@ -200,6 +200,21 @@ build-dry-run:  #-- Show build commands without executing them
 .PHONY: clean
 clean: clean-build-artifacts clean-caches clean-builds  #-- Clean all build artifacts, caches, and builds
 
+.PHONY: ib-stop
+ib-stop:  #-- Stop local TWS/IBC processes and Docker IB Gateway containers
+	@echo "Stopping local TWS/IBC processes..."
+	@pkill -TERM -f "Trader Workstation" || true
+	@pkill -TERM -f "ibcstart.sh" || true
+	@pkill -TERM -f "displaybannerandlaunch.sh" || true
+	@echo "Stopping Docker IB Gateway containers..."
+	@docker ps --format '{{.Names}} {{.Image}}' | awk '/ib-gateway|ibgateway|Trader Workstation|tws/ {print $$1}' | xargs -r docker stop >/dev/null 2>&1 || true
+	@sleep 2
+	@pkill -KILL -f "Trader Workstation" || true
+	@pkill -KILL -f "ibcstart.sh" || true
+	@pkill -KILL -f "displaybannerandlaunch.sh" || true
+	@docker ps --format '{{.Names}} {{.Image}}' | awk '/ib-gateway|ibgateway|Trader Workstation|tws/ {print $$1}' | xargs -r docker kill >/dev/null 2>&1 || true
+	@echo "Done."
+
 .PHONY: clean-builds
 clean-builds:  #-- Clean distribution and target directories
 	$Q rm -rf dist target target-v2 2>/dev/null || true

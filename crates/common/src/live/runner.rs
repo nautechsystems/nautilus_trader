@@ -37,6 +37,15 @@ pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> 
     })
 }
 
+/// Attempts to get the global data event sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in Python/v1 bridge environments
+/// before a runner or adapter bridge has registered a sender).
+#[must_use]
+pub fn try_get_data_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<DataEvent>> {
+    DATA_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
+}
+
 /// Sets the global data event sender.
 ///
 /// Can only be called once per thread.

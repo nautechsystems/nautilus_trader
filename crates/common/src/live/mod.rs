@@ -29,7 +29,7 @@ pub use clock::{LiveClock, TimeEventStream};
 pub use listener::MessageBusListener;
 pub use runner::{
     get_data_event_sender, get_exec_event_sender, set_data_event_sender, set_exec_event_sender,
-    try_get_exec_event_sender,
+    try_get_data_event_sender, try_get_exec_event_sender,
 };
 pub use runtime::{get_runtime, shutdown_runtime};
 pub use timer::LiveTimer;

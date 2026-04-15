@@ -130,6 +130,8 @@ include_trailing_comma = true
 lines_after_imports = 2
 use_parentheses = true
 filter_files = true
+# Use Black-style output (mode 3) to match add-trailing-comma's closing paren style
+multi_line_output = 3
 
 [tool.docformatter]
 wrap-summaries = 88
@@ -195,7 +197,9 @@ select = [
   "RUF", # Ruff-specific rules
 ]
 
+# Let isort be the single source of truth for import order; ruff must not reorder imports (avoids isort/ruff conflict).
 ignore = [
+  "I",
   "D100", # Missing docstring in public module  **fix**
   "D101",
   "D102", # Missing docstring in public method  **fix**

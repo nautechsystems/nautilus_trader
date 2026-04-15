@@ -46,6 +46,7 @@ impl FillReport {
         ts_init,
         client_order_id=None,
         venue_position_id=None,
+        avg_px=None,
         report_id=None,
     ))]
     fn py_new(
@@ -62,9 +63,10 @@ impl FillReport {
         ts_init: u64,
         client_order_id: Option<ClientOrderId>,
         venue_position_id: Option<PositionId>,
+        avg_px: Option<rust_decimal::Decimal>,
         report_id: Option<UUID4>,
     ) -> Self {
-        Self::new(
+        let mut report = Self::new(
             account_id,
             instrument_id,
             venue_order_id,
@@ -79,7 +81,9 @@ impl FillReport {
             ts_event.into(),
             ts_init.into(),
             report_id,
-        )
+        );
+        report.avg_px = avg_px;
+        report
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -153,6 +157,12 @@ impl FillReport {
     }
 
     #[getter]
+    #[pyo3(name = "avg_px")]
+    fn py_avg_px(&self) -> Option<rust_decimal::Decimal> {
+        self.avg_px
+    }
+
+    #[getter]
     #[pyo3(name = "report_id")]
     const fn py_report_id(&self) -> UUID4 {
         self.report_id
@@ -211,6 +221,10 @@ impl FillReport {
         dict.set_item("last_px", self.last_px.to_string())?;
         dict.set_item("commission", self.commission.to_string())?;
         dict.set_item("liquidity_side", self.liquidity_side.to_string())?;
+        match &self.avg_px {
+            Some(avg_px) => dict.set_item("avg_px", avg_px)?,
+            None => dict.set_item("avg_px", py.None())?,
+        }
         dict.set_item("report_id", self.report_id.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
