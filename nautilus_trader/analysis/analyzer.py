@@ -24,6 +24,7 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
@@ -39,8 +40,9 @@ class PortfolioAnalyzer:
     metrics and statistics.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, cache: Any | None = None) -> None:
         self._statistics: dict[str, PortfolioStatistic] = {}
+        self._cache = cache
 
         # Data
         self._account_balances_starting: dict[Currency, Money] = {}
@@ -50,6 +52,7 @@ class PortfolioAnalyzer:
         self._position_returns: pd.Series = self._empty_returns()
         self._portfolio_returns: pd.Series = self._empty_returns()
         self._returns: pd.Series = self._empty_returns()
+        self._venue = None
 
     def register_statistic(self, statistic: PortfolioStatistic) -> None:
         """
@@ -91,6 +94,7 @@ class PortfolioAnalyzer:
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
+        self._venue = None
 
     def _get_max_length_name(self) -> int:
         max_length = 0
@@ -177,6 +181,7 @@ class PortfolioAnalyzer:
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
+        self._venue = positions[0].instrument_id.venue if positions else None
 
         self.add_positions(positions)
         self._position_returns = self._position_returns.sort_index()
@@ -336,6 +341,10 @@ class PortfolioAnalyzer:
         if account_balance is None:
             return 0.0
 
+        balance_difference = self._calculate_balance_difference(currency)
+        if balance_difference is not None:
+            return balance_difference + self._effective_unrealized_pnl(currency, unrealized_pnl)
+
         unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
         return float(account_balance - account_balance_starting) + unrealized_pnl_f64
 
@@ -387,6 +396,14 @@ class PortfolioAnalyzer:
         if account_balance is None:
             return 0.0
 
+        starting_equity = self._calculate_portfolio_value(self._account_balances_starting, currency)
+        if starting_equity is not None:
+            if starting_equity == 0:
+                return 0.0
+
+            difference = self.total_pnl(currency, unrealized_pnl)
+            return float((difference / starting_equity) * 100)
+
         if account_balance_starting.as_decimal() == 0:
             # Protect divide by zero
             return 0.0
@@ -399,6 +416,160 @@ class PortfolioAnalyzer:
         difference = current - starting
 
         return float((difference / starting) * 100)
+
+    def _calculate_balance_difference(self, currency: Currency) -> float | None:
+        ending_equity = self._calculate_portfolio_value(self._account_balances, currency)
+        if ending_equity is None:
+            return None
+
+        starting_equity = self._calculate_portfolio_value(self._account_balances_starting, currency)
+        if starting_equity is None:
+            return None
+
+        return ending_equity - starting_equity
+
+    def _calculate_portfolio_value(
+        self,
+        balances: dict[Currency, Money],
+        target_currency: Currency,
+    ) -> float | None:
+        if not balances:
+            return 0.0
+        if self._cache is None:
+            return None
+
+        total = 0.0
+
+        for money in balances.values():
+            converted = self._convert_money(money, target_currency)
+            if converted is None:
+                return None
+            total += converted
+
+        return total
+
+    def _effective_unrealized_pnl(
+        self,
+        currency: Currency,
+        unrealized_pnl: Money | None,
+    ) -> float:
+        calculated = self._calculate_open_unrealized_pnl(currency, only_off_balance=True)
+        if calculated is not None:
+            return calculated
+
+        return 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+
+    def _calculate_open_unrealized_pnl(
+        self,
+        currency: Currency,
+        *,
+        only_off_balance: bool,
+    ) -> float | None:
+        if self._cache is None:
+            return None
+
+        total = 0.0
+
+        for position in self._positions:
+            if not position.is_open:
+                continue
+            if only_off_balance and self._position_is_balance_backed(position):
+                continue
+
+            price = self._position_price(position)
+            if price is None:
+                return None
+
+            unrealized = position.unrealized_pnl(price)
+            converted = self._convert_money(unrealized, currency)
+            if converted is None:
+                return None
+
+            total += converted
+
+        return total
+
+    def _position_is_balance_backed(self, position: Position) -> bool:
+        return (
+            position.base_currency is not None and position.base_currency in self._account_balances
+        )
+
+    def _position_price(self, position: Position):
+        if self._cache is None:
+            return None
+
+        if position.is_long:
+            price_type = PriceType.BID
+        elif position.is_short:
+            price_type = PriceType.ASK
+        else:
+            price_type = PriceType.LAST
+
+        price = self._cache.price(position.instrument_id, price_type)
+        if price is not None:
+            return price
+
+        return self._cache.price(position.instrument_id, PriceType.LAST) or self._cache.price(
+            position.instrument_id,
+            PriceType.MID,
+        )
+
+    def _convert_money(self, money: Money, target_currency: Currency) -> float | None:
+        if money.currency == target_currency:
+            return money.as_double()
+        if self._cache is None:
+            return None
+
+        venue = self._resolve_conversion_venue(money.currency, target_currency)
+        if venue is None:
+            return None
+
+        xrate = self._cache.get_xrate(
+            venue=venue,
+            from_currency=money.currency,
+            to_currency=target_currency,
+            price_type=PriceType.MID,
+        )
+
+        if xrate is None or xrate <= 0:
+            return None
+
+        return money.as_double() * xrate
+
+    def _resolve_conversion_venue(self, from_currency: Currency, to_currency: Currency):
+        if self._venue is not None:
+            return self._venue
+        if self._cache is None:
+            return None
+
+        for position in self._positions:
+            if (
+                position.quote_currency == from_currency
+                or position.quote_currency == to_currency
+                or position.base_currency == from_currency
+                or position.base_currency == to_currency
+                or position.settlement_currency == from_currency
+                or position.settlement_currency == to_currency
+            ):
+                return position.instrument_id.venue
+
+        for instrument in self._cache.instruments():
+            base_currency = instrument.get_base_currency()
+            if (
+                (base_currency == from_currency and instrument.quote_currency == to_currency)
+                or (base_currency == to_currency and instrument.quote_currency == from_currency)
+                or (
+                    instrument.quote_currency == from_currency
+                    and instrument.get_settlement_currency() == to_currency
+                )
+                or (
+                    instrument.quote_currency == to_currency
+                    and instrument.get_settlement_currency() == from_currency
+                )
+            ):
+                return instrument.id.venue
+
+        return None
 
     def get_performance_stats_pnls(
         self,

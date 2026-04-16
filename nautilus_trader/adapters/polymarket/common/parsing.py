@@ -27,7 +27,9 @@ from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_ins
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.model.currencies import USDC_POS
+from nautilus_trader.model.currencies import register_currency
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -36,6 +38,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -149,6 +152,28 @@ def parse_order_status(order_status: PolymarketOrderStatus) -> OrderStatus:
             return OrderStatus.FILLED
 
 
+def get_polymarket_share_currency(
+    token_id: str,
+    *,
+    slug: str | None = None,
+    outcome: str | None = None,
+) -> Currency:
+    slug_part = slug.strip() if slug is not None and slug.strip() else "null"
+    outcome_part = outcome.strip() if outcome is not None and outcome.strip() else "null"
+    code = f"Polymarket-{token_id}"
+    name = f"Polymarket-{slug_part}-{outcome_part}-{token_id}"
+
+    currency = Currency(
+        code=code,
+        precision=6,
+        iso4217=0,
+        name=name,
+        currency_type=CurrencyType.CRYPTO,
+    )
+    register_currency(currency, overwrite=False)
+    return currency
+
+
 def parse_polymarket_instrument(
     market_info: dict[str, Any],
     token_id: str,
@@ -175,6 +200,11 @@ def parse_polymarket_instrument(
         expiration_ns = (pd.Timestamp.now(tz="UTC") + pd.DateOffset(years=10)).value
 
     maker_fee, taker_fee = extract_fee_rates(market_info)
+    base_currency = get_polymarket_share_currency(
+        token_id,
+        slug=market_info.get("market_slug"),
+        outcome=outcome,
+    )
 
     ts_init = ts_init if ts_init is not None else time.time_ns()
 
@@ -185,6 +215,7 @@ def parse_polymarket_instrument(
         description=description,
         asset_class=AssetClass.ALTERNATIVE,
         currency=USDC_POS,
+        base_currency=base_currency,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=size_increment,
@@ -215,6 +246,7 @@ def update_instrument(
         description=instrument.description,
         asset_class=AssetClass.ALTERNATIVE,
         currency=USDC_POS,
+        base_currency=instrument.get_base_currency(),
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=instrument.size_increment,

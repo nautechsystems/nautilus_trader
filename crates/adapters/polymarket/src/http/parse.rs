@@ -184,6 +184,11 @@ pub fn create_instrument_from_def(
     let venue = *POLYMARKET_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
     let raw_symbol = Symbol::new(def.token_id);
+    let base_currency = get_share_currency(
+        def.token_id.as_str(),
+        def.market_slug.as_deref(),
+        Some(def.outcome.inner().as_str()),
+    );
     let currency = get_currency(USDC);
 
     let price_increment = Price::from(def.tick_size.to_string());
@@ -213,6 +218,7 @@ pub fn create_instrument_from_def(
         instrument_id,
         raw_symbol,
         AssetClass::Alternative,
+        Some(base_currency),
         currency,
         activation_ns,
         expiration_ns,
@@ -279,6 +285,7 @@ pub fn rebuild_instrument_with_tick_size(
         bo.id,
         bo.raw_symbol,
         bo.asset_class,
+        bo.base_currency,
         bo.currency,
         bo.activation_ns,
         bo.expiration_ns,
@@ -358,6 +365,26 @@ fn get_currency(code: &str) -> Currency {
         let currency = Currency::new(code, 6, 0, code, CurrencyType::Crypto);
         if let Err(e) = Currency::register(currency, false) {
             log::error!("Failed to register currency '{code}': {e}");
+        }
+        currency
+    })
+}
+
+fn get_share_currency(token_id: &str, slug: Option<&str>, outcome: Option<&str>) -> Currency {
+    let code = format!("Polymarket-{token_id}");
+    Currency::try_from_str(&code).unwrap_or_else(|| {
+        let slug = slug
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("null");
+        let outcome = outcome
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("null");
+        let name = format!("Polymarket-{slug}-{outcome}-{token_id}");
+        let currency = Currency::new(code.as_str(), 6, 0, name.as_str(), CurrencyType::Crypto);
+        if let Err(e) = Currency::register(currency, false) {
+            log::error!("Failed to register Polymarket share currency '{code}': {e}");
         }
         currency
     })

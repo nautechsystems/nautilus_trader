@@ -53,6 +53,8 @@ cdef class BinaryOption(Instrument):
         The option contract asset class.
     currency : Currency
         The option contract currency.
+    base_currency : Currency, optional
+        The base/share currency for the outcome token.
     price_precision : int
         The price decimal precision.
     size_precision : int
@@ -121,6 +123,7 @@ cdef class BinaryOption(Instrument):
         str description = None,
         str tick_scheme_name = None,
         dict info = None,
+        Currency base_currency = None,
     ) -> None:
         if description is not None:
             Condition.valid_string(description, "description")
@@ -157,6 +160,7 @@ cdef class BinaryOption(Instrument):
         self.description = description
         self.activation_ns = activation_ns
         self.expiration_ns = expiration_ns
+        self.base_currency = base_currency
 
     @property
     def activation_utc(self) -> pd.Timestamp:
@@ -210,6 +214,9 @@ cdef class BinaryOption(Instrument):
             min_quantity=Quantity.from_str(min_q) if min_q is not None else None,
             tick_scheme_name=values.get("tick_scheme_name"),
             info=values.get("info"),
+            base_currency=Currency.from_str_c(values["base_currency"])
+            if values.get("base_currency") is not None
+            else None,
         )
 
     @staticmethod
@@ -223,6 +230,7 @@ cdef class BinaryOption(Instrument):
             "description": obj.description,
             "asset_class": asset_class_to_str(obj.asset_class),
             "currency": obj.quote_currency.code,
+            "base_currency": obj.base_currency.code if obj.base_currency is not None else None,
             "price_precision": obj.price_precision,
             "size_precision": obj.size_precision,
             "price_increment": str(obj.price_increment),
@@ -269,3 +277,14 @@ cdef class BinaryOption(Instrument):
 
         """
         return BinaryOption.to_dict_c(obj)
+
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base/share currency (if applicable).
+
+        Returns
+        -------
+        Currency or ``None``
+
+        """
+        return self.base_currency

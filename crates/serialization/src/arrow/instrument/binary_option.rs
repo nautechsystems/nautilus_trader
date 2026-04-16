@@ -78,6 +78,7 @@ impl ArrowSchemaProvider for BinaryOption {
             Field::new("id", DataType::Utf8, false),
             Field::new("raw_symbol", DataType::Utf8, false),
             Field::new("asset_class", DataType::Utf8, false),
+            Field::new("base_currency", DataType::Utf8, true),
             Field::new("currency", DataType::Utf8, false),
             Field::new("price_precision", DataType::UInt8, false),
             Field::new("size_precision", DataType::UInt8, false),
@@ -115,6 +116,7 @@ impl EncodeToRecordBatch for BinaryOption {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut asset_class_builder = StringBuilder::new();
+        let mut base_currency_builder = StringBuilder::new();
         let mut currency_builder = StringBuilder::new();
         let mut price_precision_builder = UInt8Array::builder(data.len());
         let mut size_precision_builder = UInt8Array::builder(data.len());
@@ -136,6 +138,11 @@ impl EncodeToRecordBatch for BinaryOption {
             id_builder.append_value(bo.id.to_string());
             raw_symbol_builder.append_value(bo.raw_symbol);
             asset_class_builder.append_value(asset_class_to_string(bo.asset_class));
+            if let Some(base_currency) = bo.base_currency {
+                base_currency_builder.append_value(base_currency.to_string());
+            } else {
+                base_currency_builder.append_null();
+            }
             currency_builder.append_value(bo.currency.to_string());
             price_precision_builder.append_value(bo.price_precision);
             size_precision_builder.append_value(bo.size_precision);
@@ -199,6 +206,7 @@ impl EncodeToRecordBatch for BinaryOption {
                 Arc::new(id_builder.finish()),
                 Arc::new(raw_symbol_builder.finish()),
                 Arc::new(asset_class_builder.finish()),
+                Arc::new(base_currency_builder.finish()),
                 Arc::new(currency_builder.finish()),
                 Arc::new(price_precision_builder.finish()),
                 Arc::new(size_precision_builder.finish()),
@@ -250,38 +258,41 @@ pub fn decode_binary_option_batch(
     let id_values = extract_column::<StringArray>(cols, "id", 0, DataType::Utf8)?;
     let raw_symbol_values = extract_column::<StringArray>(cols, "raw_symbol", 1, DataType::Utf8)?;
     let asset_class_values = extract_column::<StringArray>(cols, "asset_class", 2, DataType::Utf8)?;
-    let currency_values = extract_column::<StringArray>(cols, "currency", 3, DataType::Utf8)?;
+    let base_currency_values = cols
+        .get(3)
+        .ok_or_else(|| EncodingError::MissingColumn("base_currency", 3))?;
+    let currency_values = extract_column::<StringArray>(cols, "currency", 4, DataType::Utf8)?;
     let price_precision_values =
-        extract_column::<UInt8Array>(cols, "price_precision", 4, DataType::UInt8)?;
+        extract_column::<UInt8Array>(cols, "price_precision", 5, DataType::UInt8)?;
     let size_precision_values =
-        extract_column::<UInt8Array>(cols, "size_precision", 5, DataType::UInt8)?;
+        extract_column::<UInt8Array>(cols, "size_precision", 6, DataType::UInt8)?;
     let price_increment_values =
-        extract_column::<StringArray>(cols, "price_increment", 6, DataType::Utf8)?;
+        extract_column::<StringArray>(cols, "price_increment", 7, DataType::Utf8)?;
     let size_increment_values =
-        extract_column::<StringArray>(cols, "size_increment", 7, DataType::Utf8)?;
+        extract_column::<StringArray>(cols, "size_increment", 8, DataType::Utf8)?;
     let activation_ns_values =
-        extract_column::<UInt64Array>(cols, "activation_ns", 8, DataType::UInt64)?;
+        extract_column::<UInt64Array>(cols, "activation_ns", 9, DataType::UInt64)?;
     let expiration_ns_values =
-        extract_column::<UInt64Array>(cols, "expiration_ns", 9, DataType::UInt64)?;
-    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 10, DataType::Utf8)?;
-    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 11, DataType::Utf8)?;
+        extract_column::<UInt64Array>(cols, "expiration_ns", 10, DataType::UInt64)?;
+    let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 11, DataType::Utf8)?;
+    let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 12, DataType::Utf8)?;
     let max_quantity_values = cols
-        .get(12)
-        .ok_or_else(|| EncodingError::MissingColumn("max_quantity", 12))?;
-    let min_quantity_values = cols
         .get(13)
-        .ok_or_else(|| EncodingError::MissingColumn("min_quantity", 13))?;
-    let outcome_values = cols
+        .ok_or_else(|| EncodingError::MissingColumn("max_quantity", 13))?;
+    let min_quantity_values = cols
         .get(14)
-        .ok_or_else(|| EncodingError::MissingColumn("outcome", 14))?;
-    let description_values = cols
+        .ok_or_else(|| EncodingError::MissingColumn("min_quantity", 14))?;
+    let outcome_values = cols
         .get(15)
-        .ok_or_else(|| EncodingError::MissingColumn("description", 15))?;
-    let info_values = cols
+        .ok_or_else(|| EncodingError::MissingColumn("outcome", 15))?;
+    let description_values = cols
         .get(16)
-        .ok_or_else(|| EncodingError::MissingColumn("info", 16))?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 17, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 18, DataType::UInt64)?;
+        .ok_or_else(|| EncodingError::MissingColumn("description", 16))?;
+    let info_values = cols
+        .get(17)
+        .ok_or_else(|| EncodingError::MissingColumn("info", 17))?;
+    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 18, DataType::UInt64)?;
+    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 19, DataType::UInt64)?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -290,6 +301,21 @@ pub fn decode_binary_option_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let asset_class = asset_class_from_str(asset_class_values.value(i))?;
+        let base_currency =
+            if base_currency_values.is_null(i) {
+                None
+            } else {
+                let base_currency_str = base_currency_values
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(|| {
+                        EncodingError::ParseError("base_currency", format!("row {i}: invalid type"))
+                    })?
+                    .value(i);
+                Some(Currency::from_str(base_currency_str).map_err(|e| {
+                    EncodingError::ParseError("base_currency", format!("row {i}: {e}"))
+                })?)
+            };
         let currency = Currency::from_str(currency_values.value(i))
             .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
         let price_prec = price_precision_values.value(i);
@@ -394,6 +420,7 @@ pub fn decode_binary_option_batch(
             id,
             raw_symbol,
             asset_class,
+            base_currency,
             currency,
             activation_ns,
             expiration_ns,

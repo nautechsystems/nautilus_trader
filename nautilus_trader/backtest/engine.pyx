@@ -2133,8 +2133,6 @@ cdef class BacktestEngine:
                 if position.instrument_id.venue == venue.id:
                     venue_positions.append(position)
                     venue_currencies.add(position.quote_currency)
-                    if position.base_currency is not None:
-                        venue_currencies.add(position.base_currency)
 
             # Calculate statistics
             self._kernel.portfolio.analyzer.calculate_statistics(account, venue_positions)

@@ -166,7 +166,7 @@ cdef class Portfolio(PortfolioFacade):
         self._bar_close_prices: dict[InstrumentId, Price] = {}
         self._last_account_state_log_ts: dict[AccountId, uint64_t] = {}
 
-        self.analyzer = PortfolioAnalyzer()
+        self.analyzer = PortfolioAnalyzer(cache=cache)
 
         # Register default statistics
         self.analyzer.register_statistic(MaxWinner())

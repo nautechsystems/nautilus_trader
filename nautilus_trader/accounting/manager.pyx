@@ -147,7 +147,14 @@ cdef class AccountsManager:
 
         # Calculate final PnL including commissions
         cdef Money pnl
-        if account.base_currency is not None:
+        cdef bint can_use_single_currency = account.base_currency is not None
+        if can_use_single_currency:
+            for pnl in pnls:
+                if pnl.currency != account.base_currency:
+                    can_use_single_currency = False
+                    break
+
+        if can_use_single_currency:
             self._update_balance_single_currency(
                 account=account,
                 fill=fill,

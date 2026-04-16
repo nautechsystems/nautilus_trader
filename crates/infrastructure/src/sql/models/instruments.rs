@@ -302,6 +302,10 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
         let asset_class = row
             .try_get::<AssetClassModel, _>("asset_class")
             .map(|res| res.0)?;
+        let base_currency = row
+            .try_get::<Option<String>, _>("base_currency")
+            .ok()
+            .and_then(|res| res.map(Currency::from));
         let currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
@@ -370,6 +374,7 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             id,
             raw_symbol,
             asset_class,
+            base_currency,
             currency,
             activation_ns,
             expiration_ns,

@@ -447,6 +447,10 @@ class PolymarketInstrumentProvider(InstrumentProvider):
         if market_info["end_date_iso"] is None:
             self._log.warning(f"{instrument.id} expiration is missing, assuming it is still active")
 
+        base_currency = instrument.get_base_currency()
+        if base_currency is not None:
+            self.add_currency(base_currency)
+        self.add_currency(instrument.quote_currency)
         self.add(instrument)
         return instrument
 

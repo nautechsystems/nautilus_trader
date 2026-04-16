@@ -39,7 +39,7 @@ impl BinaryOption {
     /// Represents a generic binary option instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, outcome=None, description=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, outcome=None, description=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, info=None, base_currency=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -66,6 +66,7 @@ impl BinaryOption {
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
         info: Option<Py<PyDict>>,
+        base_currency: Option<Currency>,
     ) -> PyResult<Self> {
         // Convert Python dict to Params
         let info_map = if let Some(info_dict) = info {
@@ -78,6 +79,7 @@ impl BinaryOption {
             instrument_id,
             raw_symbol,
             asset_class,
+            base_currency,
             currency,
             activation_ns.into(),
             expiration_ns.into(),
@@ -139,6 +141,12 @@ impl BinaryOption {
     #[pyo3(name = "asset_class")]
     fn py_asset_class(&self) -> AssetClass {
         self.asset_class
+    }
+
+    #[getter]
+    #[pyo3(name = "base_currency")]
+    fn py_base_currency(&self) -> Option<Currency> {
+        self.base_currency
     }
 
     #[getter]
@@ -307,6 +315,10 @@ impl BinaryOption {
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("currency", self.currency.code.to_string())?;
+        match self.base_currency {
+            Some(value) => dict.set_item("base_currency", value.code.to_string())?,
+            None => dict.set_item("base_currency", py.None())?,
+        }
         dict.set_item("activation_ns", self.activation_ns.as_u64())?;
         dict.set_item("expiration_ns", self.expiration_ns.as_u64())?;
         dict.set_item("price_precision", self.price_precision)?;

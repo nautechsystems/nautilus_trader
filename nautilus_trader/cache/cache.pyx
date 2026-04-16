@@ -66,6 +66,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.binary_option cimport BinaryOption
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
@@ -1931,9 +1932,12 @@ cdef class Cache(CacheFacade):
 
         self._instruments[instrument.id] = instrument
 
-        if isinstance(instrument, (CurrencyPair, CryptoPerpetual)):
+        if base_currency is not None and isinstance(
+            instrument,
+            (CurrencyPair, CryptoPerpetual, BinaryOption),
+        ):
             self._xrate_symbols[instrument.id] = (
-                f"{instrument.base_currency}/{instrument.quote_currency}"
+                f"{base_currency}/{instrument.quote_currency}"
             )
 
         self._log.debug(f"Added instrument {instrument.id}")

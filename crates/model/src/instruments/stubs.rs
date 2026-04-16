@@ -870,6 +870,7 @@ pub fn binary_option() -> BinaryOption {
         InstrumentId::from("{raw_symbol}.POLYMARKET"),
         raw_symbol,
         AssetClass::Alternative,
+        None,
         Currency::USDC(),
         UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
         UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),

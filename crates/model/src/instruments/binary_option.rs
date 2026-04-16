@@ -53,6 +53,8 @@ pub struct BinaryOption {
     pub raw_symbol: Symbol,
     /// The binary option asset class.
     pub asset_class: AssetClass,
+    /// The base/share currency for the outcome token.
+    pub base_currency: Option<Currency>,
     /// The binary option contract currency.
     pub currency: Currency,
     /// UNIX timestamp (nanoseconds) for contract activation.
@@ -113,6 +115,7 @@ impl BinaryOption {
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
+        base_currency: Option<Currency>,
         currency: Currency,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
@@ -155,6 +158,7 @@ impl BinaryOption {
             id: instrument_id,
             raw_symbol,
             asset_class,
+            base_currency,
             currency,
             activation_ns,
             expiration_ns,
@@ -191,6 +195,7 @@ impl BinaryOption {
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
+        base_currency: Option<Currency>,
         currency: Currency,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
@@ -218,6 +223,7 @@ impl BinaryOption {
             instrument_id,
             raw_symbol,
             asset_class,
+            base_currency,
             currency,
             activation_ns,
             expiration_ns,
@@ -285,7 +291,7 @@ impl Instrument for BinaryOption {
     }
 
     fn base_currency(&self) -> Option<Currency> {
-        None
+        self.base_currency
     }
 
     fn quote_currency(&self) -> Currency {

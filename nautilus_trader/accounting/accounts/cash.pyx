@@ -466,12 +466,12 @@ cdef class CashAccount(Account):
             quote_pnl = instrument.notional_value(fill.last_qty, fill.last_px)
 
         if fill.order_side == OrderSide.BUY:
-            if base_currency and not self.base_currency:
+            if base_currency is not None:
                 pnls[base_currency] = Money(fill_qty, base_currency)
 
             pnls[quote_currency] = Money(-quote_pnl.as_decimal(), quote_currency)
         elif fill.order_side == OrderSide.SELL:
-            if base_currency and not self.base_currency:
+            if base_currency is not None:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
 
             pnls[quote_currency] = Money(quote_pnl.as_decimal(), quote_currency)

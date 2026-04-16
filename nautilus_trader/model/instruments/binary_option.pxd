@@ -16,10 +16,13 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Price
 
 
 cdef class BinaryOption(Instrument):
+    cdef readonly Currency base_currency
+    """The base/share currency for the outcome token.\n\n:returns: `Currency` or ``None``"""
     cdef readonly str outcome
     """The binary outcome of the market.\n\n:returns: `str` or ``None``"""
     cdef readonly str description

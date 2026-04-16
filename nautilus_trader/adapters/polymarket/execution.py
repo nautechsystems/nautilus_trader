@@ -45,6 +45,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStatus
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
+from nautilus_trader.adapters.polymarket.common.parsing import get_polymarket_share_currency
 from nautilus_trader.adapters.polymarket.common.parsing import make_composite_trade_id
 from nautilus_trader.adapters.polymarket.common.parsing import validate_ethereum_address
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
@@ -295,14 +296,50 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params,
         )
         total = usdce_from_units(int(response["balance"]))
-        account_balance = AccountBalance(
-            total=total,
-            locked=Money.from_raw(0, USDC_POS),
-            free=total,
-        )
+        balances = [
+            AccountBalance(
+                total=total,
+                locked=Money.from_raw(0, USDC_POS),
+                free=total,
+            ),
+        ]
+
+        positions = await self._fetch_user_positions(limit=100, size_threshold=0)
+        for position in positions:
+            asset_id = str(position.get("asset", "")).strip()
+            condition_id = str(position.get("conditionId", "")).strip()
+            if not asset_id or not condition_id:
+                continue
+
+            try:
+                size = float(position.get("size", 0) or 0)
+            except (TypeError, ValueError):
+                self._log.warning(
+                    f"Skipping position with invalid size for asset {asset_id}: {position.get('size')!r}",
+                )
+                continue
+
+            if size <= 0:
+                continue
+
+            instrument_id = get_polymarket_instrument_id(condition_id, asset_id)
+            instrument = self._cache.instrument(instrument_id)
+            share_currency = (
+                instrument.get_base_currency()
+                if instrument is not None and instrument.get_base_currency() is not None
+                else get_polymarket_share_currency(asset_id)
+            )
+            share_balance = Money(size, share_currency)
+            balances.append(
+                AccountBalance(
+                    total=share_balance,
+                    locked=Money.from_raw(0, share_currency),
+                    free=share_balance,
+                ),
+            )
 
         self.generate_account_state(
-            balances=[account_balance],
+            balances=balances,
             margins=[],  # N/A
             reported=True,
             ts_event=self._clock.timestamp_ns(),

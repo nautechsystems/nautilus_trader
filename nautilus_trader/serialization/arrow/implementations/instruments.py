@@ -70,6 +70,7 @@ SCHEMAS = {
             "id": pa.dictionary(pa.int64(), pa.string()),
             "raw_symbol": pa.string(),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
+            "base_currency": pa.dictionary(pa.int16(), pa.string()),
             "currency": pa.dictionary(pa.int16(), pa.string()),
             "price_precision": pa.uint8(),
             "size_precision": pa.uint8(),
