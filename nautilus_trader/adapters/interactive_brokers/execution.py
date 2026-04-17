@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+import math
 from collections import deque
 from datetime import timedelta
 from decimal import Decimal
@@ -1860,7 +1861,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         avg_fill_price: float,
         filled_decimal: Decimal,
     ) -> None:
-        if not avg_fill_price or avg_fill_price <= 0 or filled_decimal <= 0:
+        is_spread_order = is_generic_spread_id(nautilus_order.instrument_id)
+
+        if (
+            filled_decimal <= 0
+            or not math.isfinite(avg_fill_price)
+            or avg_fill_price == UNSET_DOUBLE
+            or avg_fill_price == 0
+            or (avg_fill_price < 0 and not is_spread_order)
+        ):
             return
 
         instrument = self._cache.instrument(nautilus_order.instrument_id)
@@ -1889,7 +1898,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._order_fill_progress[client_order_id] = (filled_decimal, total_notional)
 
-        if fill_delta <= 0 or not is_generic_spread_id(nautilus_order.instrument_id):
+        if fill_delta <= 0 or not is_spread_order:
             return
 
         notional_delta = total_notional - previous_notional

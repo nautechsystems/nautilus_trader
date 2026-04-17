@@ -1012,6 +1012,80 @@ async def test_spread_combo_fill_waits_for_order_status_avg_px(mocker, exec_clie
 
 
 @pytest.mark.asyncio
+async def test_spread_combo_fill_allows_negative_avg_px_credit(
+    mocker,
+    exec_client,
+    cache,
+):
+    call = make_option_contract("SPY C400", OptionKind.CALL)
+    put = make_option_contract("SPY P390", OptionKind.PUT)
+    spread = make_option_spread(call, put)
+
+    for instrument in [call, put, spread]:
+        exec_client.instrument_provider.add(instrument)
+        cache.add_instrument(instrument)
+
+    call_contract = IBTestContractStubs.create_contract(
+        conId=9011,
+        symbol="SPY",
+        secType="OPT",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="SPY C400",
+    )
+    exec_client.instrument_provider.contract_id_to_instrument_id[call_contract.conId] = call.id
+
+    client_order_id = ClientOrderId("O-SPREAD-CREDIT-001")
+    venue_order_id = VenueOrderId("7011")
+    order = TestExecStubs.limit_order(
+        instrument=spread,
+        client_order_id=client_order_id,
+        quantity=Quantity.from_int(1),
+        price=Price.from_str("-1.00"),
+    )
+    order = TestExecStubs.make_accepted_order(order, venue_order_id=venue_order_id)
+    cache.add_order(order, None)
+    cache.add_venue_order_id(client_order_id, venue_order_id)
+
+    generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
+
+    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution.orderRef = str(client_order_id)
+    execution.execId = "combo-credit-fill-1"
+    execution.shares = Decimal(1)
+    execution.price = 1.25
+
+    commission_report = IBTestExecStubs.commission()
+    commission_report.execId = execution.execId
+
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution,
+        commission_report=commission_report,
+        contract=call_contract,
+    )
+
+    assert generate_order_filled.call_count == 1
+    assert client_order_id in exec_client._pending_combo_fills
+
+    exec_client._on_order_status(
+        order_ref=str(client_order_id),
+        order_status="Filled",
+        avg_fill_price=-2.75,
+        filled=Decimal(1),
+        remaining=Decimal(0),
+        venue_order_id=venue_order_id,
+    )
+
+    assert generate_order_filled.call_count == 2
+    combo_fill_call = generate_order_filled.call_args_list[1].kwargs
+    assert combo_fill_call["instrument_id"] == spread.id
+    assert combo_fill_call["info"] == {"avg_px": Price.from_str("-2.75")}
+    assert exec_client._order_avg_prices[client_order_id] == Price.from_str("-2.75")
+    assert client_order_id not in exec_client._pending_combo_fills
+
+
+@pytest.mark.asyncio
 async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
     mocker,
     exec_client,
