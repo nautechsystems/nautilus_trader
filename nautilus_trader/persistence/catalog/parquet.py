@@ -1022,8 +1022,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 interval = _parse_filename_timestamps(file)
 
                 if interval and (
-                    interval[1] <= query_info["query_end"] and
-                    interval[0] >= queries_to_execute[0]["query_start"]
+                    interval[1] <= query_info["query_end"]
+                    and interval[0] >= queries_to_execute[0]["query_start"]
                 ):
                     existing_files.remove(file)
                     self.fs.rm(file)
