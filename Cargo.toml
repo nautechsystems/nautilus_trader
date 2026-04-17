@@ -177,7 +177,6 @@ log = { version = "0.4.29", features = [
   "release_max_level_debug",
 ] }
 madsim = "0.2.34"
-memchr = "2.8.0"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
