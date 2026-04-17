@@ -46,6 +46,12 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
     instrument_id_to_ib_contract,
 )
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    ib_price_to_nautilus_price,
+)
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import (
+    nautilus_price_to_ib_price,
+)
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import OptionContract
@@ -598,3 +604,42 @@ def test_parse_instrument_option_on_index_has_caret_prefix():
     # Assert
     assert isinstance(instrument, OptionContract)
     assert instrument.underlying == "^SPX"
+
+
+class TestIbPriceToNautilusPrice:
+    @pytest.mark.parametrize(
+        ("ib_price", "price_magnifier", "expected"),
+        [
+            (100.0, 1, 100.0),
+            (100.0, 10, 10.0),
+            (100.0, 100, 1.0),
+        ],
+    )
+    def test_valid_magnifier(self, ib_price: float, price_magnifier: int, expected: float) -> None:
+        assert ib_price_to_nautilus_price(ib_price, price_magnifier) == expected
+
+    @pytest.mark.parametrize("price_magnifier", [None, 0, -1])
+    def test_invalid_magnifier_returns_original(self, price_magnifier: int | None) -> None:
+        assert ib_price_to_nautilus_price(50.0, price_magnifier) == 50.0
+
+
+class TestNautilusPriceToIbPrice:
+    @pytest.mark.parametrize(
+        ("nautilus_price", "price_magnifier", "expected"),
+        [
+            (10.0, 1, 10.0),
+            (10.0, 10, 100.0),
+            (1.0, 100, 100.0),
+        ],
+    )
+    def test_valid_magnifier(
+        self,
+        nautilus_price: float,
+        price_magnifier: int,
+        expected: float,
+    ) -> None:
+        assert nautilus_price_to_ib_price(nautilus_price, price_magnifier) == expected
+
+    @pytest.mark.parametrize("price_magnifier", [None, 0, -1])
+    def test_invalid_magnifier_returns_original(self, price_magnifier: int | None) -> None:
+        assert nautilus_price_to_ib_price(50.0, price_magnifier) == 50.0

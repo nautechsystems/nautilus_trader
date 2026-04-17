@@ -24,7 +24,7 @@ price. All prices sent to IB need to be multiplied by the price magnifier.
 from nautilus_trader.model.identifiers import InstrumentId
 
 
-def ib_price_to_nautilus_price(ib_price: float, price_magnifier: int) -> float:
+def ib_price_to_nautilus_price(ib_price: float, price_magnifier: int | None) -> float:
     """
     Convert an Interactive Brokers price to a Nautilus price.
 
@@ -41,13 +41,13 @@ def ib_price_to_nautilus_price(ib_price: float, price_magnifier: int) -> float:
         The real price for use in Nautilus.
 
     """
-    if price_magnifier <= 0:
+    if not price_magnifier or price_magnifier <= 0:
         return ib_price
 
     return ib_price / price_magnifier
 
 
-def nautilus_price_to_ib_price(nautilus_price: float, price_magnifier: int) -> float:
+def nautilus_price_to_ib_price(nautilus_price: float, price_magnifier: int | None) -> float:
     """
     Convert a Nautilus price to an Interactive Brokers price.
 
@@ -64,7 +64,7 @@ def nautilus_price_to_ib_price(nautilus_price: float, price_magnifier: int) -> f
         The scaled price for sending to Interactive Brokers.
 
     """
-    if price_magnifier <= 0:
+    if not price_magnifier or price_magnifier <= 0:
         return nautilus_price
 
     return nautilus_price * price_magnifier

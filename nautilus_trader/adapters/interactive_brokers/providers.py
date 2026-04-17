@@ -242,7 +242,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     def get_price_magnifier(self, instrument_id: InstrumentId) -> int:
         contract_details = self.contract_details.get(instrument_id)
         if contract_details:
-            return contract_details.priceMagnifier
+            return contract_details.priceMagnifier or 1
 
         return 1
 
