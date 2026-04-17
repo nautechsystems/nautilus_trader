@@ -93,11 +93,8 @@ nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
-criterion = { workspace = true }
-indexmap = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
-url = { workspace = true }
 
 [[bin]]
 name = "dydx-http-public"

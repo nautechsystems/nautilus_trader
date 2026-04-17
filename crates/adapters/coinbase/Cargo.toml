@@ -38,7 +38,6 @@ python = [
   "nautilus-network/python",
   "nautilus-system/python",
   "pyo3",
-  "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
@@ -54,7 +53,6 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
-nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -64,12 +62,9 @@ aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
-dashmap = { workspace = true }
-derive_builder = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
 pem = { workspace = true }
-rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -81,18 +76,15 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 url = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 
 axum = { workspace = true }
-criterion = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }

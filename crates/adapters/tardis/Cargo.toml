@@ -93,7 +93,6 @@ pyo3-stub-gen = { workspace = true, optional = true }
 axum = { workspace = true }
 dotenvy = { workspace = true }
 nautilus-live = { workspace = true }
-nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
 

@@ -39,7 +39,6 @@ python = [
   "nautilus-serialization/python",
   "nautilus-system/python",
   "pyo3",
-  "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
 
@@ -84,7 +83,6 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -95,7 +93,6 @@ criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
-url = { workspace = true }
 
 # Run with `cargo bench -p nautilus-binance --bench encoder`
 [[bench]]

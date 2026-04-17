@@ -71,7 +71,6 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
-indexmap = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
@@ -93,7 +92,6 @@ rust_decimal = { workspace = true }
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 proptest = { workspace = true }
-rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 

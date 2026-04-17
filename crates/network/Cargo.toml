@@ -52,7 +52,6 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-memchr = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }

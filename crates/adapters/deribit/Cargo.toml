@@ -66,7 +66,6 @@ chrono = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
-indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 serde = { workspace = true }
@@ -89,10 +88,8 @@ nautilus-testkit = { workspace = true }
 axum = { workspace = true }
 criterion = { workspace = true }
 dashmap = { workspace = true }
-iai = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
-url = { workspace = true }
 
 # Run with `cargo bench -p nautilus-deribit --bench websocket`
 [[bench]]

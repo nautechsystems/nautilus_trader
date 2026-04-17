@@ -52,7 +52,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
-criterion = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }

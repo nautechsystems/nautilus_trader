@@ -61,11 +61,9 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
-derive_builder = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
-thiserror = { workspace = true }
 ustr = { workspace = true }
 
 nautilus-databento = { workspace = true, features = ["live"], optional = true }

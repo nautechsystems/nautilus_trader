@@ -65,7 +65,6 @@ chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
-indexmap = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -89,10 +88,8 @@ nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true, features = ["examples"] }
 
 axum = { workspace = true }
-criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
-url = { workspace = true }
 
 [[bin]]
 name = "bitmex-http"

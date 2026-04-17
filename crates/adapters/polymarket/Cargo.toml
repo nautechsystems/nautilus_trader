@@ -37,7 +37,6 @@ python = [
   "nautilus-network/python",
   "nautilus-system/python",
   "pyo3",
-  "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
@@ -59,7 +58,6 @@ ahash = { workspace = true }
 alloy = { workspace = true, features = ["provider-http", "network", "reqwest"] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
-arc-swap = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
@@ -86,7 +84,6 @@ uuid = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
