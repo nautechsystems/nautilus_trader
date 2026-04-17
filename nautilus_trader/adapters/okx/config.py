@@ -18,6 +18,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
+from nautilus_trader.core.nautilus_pyo3 import OKXGreeksType
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXVipLevel
@@ -73,6 +74,9 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         The account VIP level to determine book subscriptions.
         - Only VIP4 and above in trading fee tier are allowed to subscribe to "books50-l2-tbt" 50 depth channels (10 ms updates).
         - Only VIP5 and above in trading fee tier are allowed to subscribe to "books-l2-tbt" 400 depth channels (10 ms updates).
+    greeks_type : OKXGreeksType, optional
+        The greeks convention used when parsing option summary updates.
+        If ``None`` then defaults to ``OKXGreeksType.BS``.
 
     """
 
@@ -94,6 +98,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     retry_delay_max_ms: PositiveInt | None = 10_000
     update_instruments_interval_mins: PositiveInt | None = 60
     vip_level: OKXVipLevel | None = None
+    greeks_type: OKXGreeksType | None = None
 
 
 class OKXExecClientConfig(LiveExecClientConfig, frozen=True):

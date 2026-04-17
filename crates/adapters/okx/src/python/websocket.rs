@@ -300,6 +300,19 @@ impl OKXWebSocketClient {
         self.vip_level()
     }
 
+    /// Sets the greeks convention used for option summary parsing.
+    #[pyo3(name = "set_greeks_type")]
+    fn py_set_greeks_type(&self, greeks_type: OKXGreeksType) {
+        self.set_greeks_type(greeks_type);
+    }
+
+    /// Gets the current greeks convention.
+    #[pyo3(name = "greeks_type")]
+    #[getter]
+    fn py_greeks_type(&self) -> OKXGreeksType {
+        self.greeks_type()
+    }
+
     #[pyo3(name = "connect")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -357,6 +370,7 @@ impl OKXWebSocketClient {
                             data,
                         } => {
                             let greeks_guard = option_greeks_subs_arc.load();
+                            let greeks_type = client.greeks_type();
                             handle_channel_data(
                                 &channel,
                                 inst_id,
@@ -365,6 +379,7 @@ impl OKXWebSocketClient {
                                 &mut quote_cache,
                                 &mut funding_cache,
                                 &greeks_guard,
+                                greeks_type,
                                 clock,
                                 &call_soon,
                                 &callback,
@@ -1469,6 +1484,7 @@ fn handle_channel_data(
     quote_cache: &mut QuoteCache,
     funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
     option_greeks_subs: &AHashSet<InstrumentId>,
+    greeks_type: OKXGreeksType,
     clock: &AtomicTime,
     call_soon: &Py<PyAny>,
     callback: &Py<PyAny>,
@@ -1487,12 +1503,7 @@ fn handle_channel_data(
                         continue;
                     }
 
-                    match parse_option_summary_greeks(
-                        msg,
-                        &instrument_id,
-                        OKXGreeksType::Bs,
-                        ts_init,
-                    ) {
+                    match parse_option_summary_greeks(msg, &instrument_id, greeks_type, ts_init) {
                         Ok(greeks) => {
                             Python::attach(|py| match greeks.into_py_any(py) {
                                 Ok(py_obj) => {

@@ -764,6 +764,7 @@ impl DataClient for OKXDataClient {
             let insts = self.instruments.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
+            let greeks_type = self.config.greeks_type;
             let cancel = self.cancellation_token.clone();
             let clock = self.clock;
 
@@ -789,7 +790,7 @@ impl DataClient for OKXDataClient {
                                 &mut funding_cache,
                                 &idx_map,
                                 &greeks_subs,
-                                OKXGreeksType::Bs,
+                                greeks_type,
                                 clock,
                             );
                         }
@@ -828,6 +829,7 @@ impl DataClient for OKXDataClient {
             let insts = self.instruments.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
+            let greeks_type = self.config.greeks_type;
             let cancel = self.cancellation_token.clone();
             let clock = self.clock;
 
@@ -853,7 +855,7 @@ impl DataClient for OKXDataClient {
                                 &mut funding_cache,
                                 &idx_map,
                                 &greeks_subs,
-                                OKXGreeksType::Bs,
+                                greeks_type,
                                 clock,
                             );
                         }

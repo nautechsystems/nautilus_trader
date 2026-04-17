@@ -19,7 +19,7 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
 
 use crate::{
-    common::enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
+    common::enums::{OKXEnvironment, OKXGreeksType, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
     config::{OKXDataClientConfig, OKXExecClientConfig},
 };
 
@@ -44,6 +44,7 @@ impl OKXDataClientConfig {
         retry_delay_max_ms = None,
         update_instruments_interval_mins = None,
         vip_level = None,
+        greeks_type = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -62,6 +63,7 @@ impl OKXDataClientConfig {
         retry_delay_max_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         vip_level: Option<OKXVipLevel>,
+        greeks_type: Option<OKXGreeksType>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -85,6 +87,7 @@ impl OKXDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             vip_level,
+            greeks_type: greeks_type.unwrap_or(defaults.greeks_type),
         }
     }
 

@@ -139,6 +139,7 @@ class OKXDataClient(LiveMarketDataClient):
             if config.environment is not None
             else (OKXEnvironment.DEMO if config.is_demo else OKXEnvironment.LIVE)
         )
+        greeks_type = config.greeks_type or nautilus_pyo3.OKXGreeksType.BS
 
         # Configuration
         self._config = config
@@ -152,6 +153,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.vip_level=}", LogColor.BLUE)
+        self._log.info(f"{greeks_type=}", LogColor.BLUE)
         self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
 
@@ -169,6 +171,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_passphrase=None,
             heartbeat=20,
         )
+        self._ws_client.set_greeks_type(greeks_type)
         self._ws_client_futures: set[asyncio.Future] = set()
         self._option_summary_family_subs: dict[str, int] = {}
         self._option_greeks_instrument_ids: set[InstrumentId] = set()

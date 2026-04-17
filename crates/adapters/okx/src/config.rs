@@ -19,7 +19,10 @@ use nautilus_model::identifiers::{AccountId, TraderId};
 
 use crate::common::{
     credential::credential_env_vars,
-    enums::{OKXContractType, OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXVipLevel},
+    enums::{
+        OKXContractType, OKXEnvironment, OKXGreeksType, OKXInstrumentType, OKXMarginMode,
+        OKXVipLevel,
+    },
     urls::{
         get_http_base_url, get_ws_base_url_business, get_ws_base_url_private,
         get_ws_base_url_public,
@@ -84,6 +87,9 @@ pub struct OKXDataClientConfig {
     pub update_instruments_interval_mins: u64,
     /// Optional VIP level that unlocks additional subscriptions.
     pub vip_level: Option<OKXVipLevel>,
+    /// Option greeks convention used when parsing option summary updates.
+    #[builder(default)]
+    pub greeks_type: OKXGreeksType,
 }
 
 impl Default for OKXDataClientConfig {

@@ -82,8 +82,9 @@ use crate::common::{
     },
     credential::Credential,
     enums::{
-        OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXTargetCurrency, OKXTradeMode,
-        OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type, is_conditional_order,
+        OKXGreeksType, OKXInstrumentType, OKXOrderType, OKXPositionSide, OKXTargetCurrency,
+        OKXTradeMode, OKXTriggerType, OKXVipLevel, conditional_order_to_algo_type,
+        is_conditional_order,
     },
     parse::{
         bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
@@ -165,6 +166,7 @@ pub struct OKXWebSocketClient {
     #[allow(dead_code)] // Read by Python bindings
     pub(crate) account_id: AccountId,
     vip_level: Arc<AtomicU8>,
+    greeks_type: Arc<AtomicU8>,
     credential: Option<Credential>,
     heartbeat: Option<u64>,
     auth_timeout_secs: u64,
@@ -256,6 +258,7 @@ impl OKXWebSocketClient {
             url,
             account_id,
             vip_level: Arc::new(AtomicU8::new(0)),
+            greeks_type: Arc::new(AtomicU8::new(OKXGreeksType::default() as u8)),
             credential,
             heartbeat,
             auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
@@ -445,6 +448,17 @@ impl OKXWebSocketClient {
     pub fn vip_level(&self) -> OKXVipLevel {
         let level = self.vip_level.load(Ordering::Relaxed);
         OKXVipLevel::from(level)
+    }
+
+    /// Sets the greeks convention used for option summary parsing.
+    pub fn set_greeks_type(&self, greeks_type: OKXGreeksType) {
+        self.greeks_type.store(greeks_type as u8, Ordering::Relaxed);
+    }
+
+    /// Gets the current greeks convention.
+    pub fn greeks_type(&self) -> OKXGreeksType {
+        let greeks_type = self.greeks_type.load(Ordering::Relaxed);
+        OKXGreeksType::from(greeks_type)
     }
 
     /// Connect to the OKX WebSocket server.
@@ -2957,8 +2971,8 @@ mod tests {
         common::{
             consts::OKX_POST_ONLY_CANCEL_SOURCE,
             enums::{
-                OKXExecType, OKXOrderCategory, OKXOrderStatus, OKXPriceType, OKXQuickMarginType,
-                OKXSelfTradePreventionMode, OKXSide,
+                OKXExecType, OKXGreeksType, OKXOrderCategory, OKXOrderStatus, OKXPriceType,
+                OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSide,
             },
         },
         websocket::{
@@ -3046,6 +3060,17 @@ mod tests {
 
         assert!(client_with_heartbeat.heartbeat.is_some());
         assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+    }
+
+    #[rstest]
+    fn test_greeks_type_defaults_and_updates() {
+        let client = OKXWebSocketClient::default();
+
+        assert_eq!(client.greeks_type(), OKXGreeksType::Bs);
+
+        client.set_greeks_type(OKXGreeksType::Pa);
+
+        assert_eq!(client.greeks_type(), OKXGreeksType::Pa);
     }
 
     #[rstest]
