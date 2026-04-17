@@ -163,6 +163,7 @@ impl DataActor for OptionChainTester {
             strike_range,
             snapshot_interval_ms,
             Some(client_id),
+            None,
         );
 
         self.series_id = Some(series_id);
