@@ -336,11 +336,20 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	[ $$outdated_count -eq 0 ] && printf "$(GREEN)  All tools up to date ✓$(RESET)\n"
 
 .PHONY: update
-update: cargo-update  #-- Update all dependencies (cargo and uv)
-	uv self update $(UV_VERSION) && uv lock --upgrade
+update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
+	uv lock --upgrade
+
+.PHONY: update-uv
+update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
+	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
+	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
+		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
+	else \
+		curl -LsSf https://astral.sh/uv/$(UV_VERSION)/install.sh | sh; \
+	fi
 
 .PHONY: install-tools
-install-tools: check-binstall-installed  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
+install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-machete --version $(CARGO_MACHETE_VERSION) --locked \
@@ -350,7 +359,6 @@ install-tools: check-binstall-installed  #-- Install required development tools 
 	&& cargo install cargo-vet --version $(CARGO_VET_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
 	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked \
-	&& uv self update $(UV_VERSION) \
 	&& bash scripts/install-osv-scanner.sh
 
 #== Security
