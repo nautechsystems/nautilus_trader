@@ -251,13 +251,13 @@ positive backing imbalance of +0.29 throughout the market lifetime.
 
 ```bash
 # Debug build
-cargo run -p nautilus-betfair --example betfair-backtest
+cargo run -p nautilus-betfair --features examples --example betfair-backtest
 
 # Release build (recommended)
-cargo run -p nautilus-betfair --release --example betfair-backtest
+cargo run -p nautilus-betfair --features examples --release --example betfair-backtest
 
 # Custom data file
-cargo run -p nautilus-betfair --release --example betfair-backtest -- path/to/file.gz
+cargo run -p nautilus-betfair --features examples --release --example betfair-backtest -- path/to/file.gz
 ```
 
 ## Complete source

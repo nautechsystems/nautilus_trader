@@ -380,7 +380,7 @@ sizing `max_position` and `trade_size`.
 ### Run the example
 
 ```bash
-cargo run --example bitmex-grid-mm --package nautilus-bitmex
+cargo run --example bitmex-grid-mm --package nautilus-bitmex --features examples
 ```
 
 ### Graceful shutdown

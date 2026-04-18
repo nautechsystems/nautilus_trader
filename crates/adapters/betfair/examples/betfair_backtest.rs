@@ -24,10 +24,10 @@
 //! The actor computes a running bid/ask quoted volume imbalance per runner.
 //! In Betfair terms: bids = "back" orders, asks = "lay" orders.
 //!
-//! Run with: `cargo run -p nautilus-betfair --example betfair-backtest`
+//! Run with: `cargo run -p nautilus-betfair --features examples --example betfair-backtest`
 //!
 //! Or pass a custom file path:
-//!   `cargo run -p nautilus-betfair --example betfair-backtest -- path/to/file.gz`
+//!   `cargo run -p nautilus-betfair --features examples --example betfair-backtest -- path/to/file.gz`
 
 use std::path::PathBuf;
 

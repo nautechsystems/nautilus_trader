@@ -236,7 +236,7 @@ the strangle and hedge requires manual action or a separate exit strategy.
 ## Running the example
 
 ```bash
-cargo run --example bybit-delta-neutral --package nautilus-bybit
+cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples
 ```
 
 The example runs with `enter_strangle: false` by default, so it does not

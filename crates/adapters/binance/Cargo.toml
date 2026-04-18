@@ -54,7 +54,6 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["sbe", "arrow"] }
 nautilus-system = { workspace = true }
-nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -87,6 +86,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }

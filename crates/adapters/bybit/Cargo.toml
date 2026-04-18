@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["high-precision"]
+examples = ["nautilus-trading/examples"]
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
@@ -53,7 +54,6 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
-nautilus-trading = { workspace = true, features = ["examples"] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -87,6 +87,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 criterion = { workspace = true }
@@ -140,9 +141,9 @@ path = "examples/node_option_chain.rs"
 required-features = []
 doc = false
 
-# Run with `cargo run --example bybit-delta-neutral --package nautilus-bybit`.
+# Run with `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`.
 [[example]]
 name = "bybit-delta-neutral"
 path = "examples/node_delta_neutral.rs"
-required-features = []
+required-features = ["examples"]
 doc = false

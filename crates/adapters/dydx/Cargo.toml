@@ -22,6 +22,7 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["high-precision"]
+examples = ["nautilus-trading/examples"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -90,7 +91,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-nautilus-trading = { workspace = true, features = ["examples"] }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 rstest = { workspace = true }
@@ -140,9 +141,9 @@ path = "examples/node_exec_tester.rs"
 required-features = []
 doc = false
 
-# Run with `cargo run --example dydx-grid-mm --package nautilus-dydx`
+# Run with `cargo run --example dydx-grid-mm --package nautilus-dydx --features examples`
 [[example]]
 name = "dydx-grid-mm"
 path = "examples/node_grid_mm.rs"
-required-features = []
+required-features = ["examples"]
 doc = false

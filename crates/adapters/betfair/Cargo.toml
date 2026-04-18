@@ -21,6 +21,7 @@ name = "nautilus_betfair"
 crate-type = ["rlib"]
 
 [features]
+examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
 python = [
   "nautilus-core/python",
@@ -73,7 +74,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 nautilus-backtest = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-testkit = { workspace = true }
-nautilus-trading = { workspace = true, features = ["examples"] }
+nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 dotenvy = { workspace = true }
@@ -98,8 +99,9 @@ name = "betfair-load-file"
 path = "examples/load_betfair_file.rs"
 doc = false
 
-# Run with `cargo run -p nautilus-betfair --example betfair-backtest`
+# Run with `cargo run -p nautilus-betfair --features examples --example betfair-backtest`
 [[example]]
 name = "betfair-backtest"
 path = "examples/betfair_backtest.rs"
+required-features = ["examples"]
 doc = false

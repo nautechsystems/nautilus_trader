@@ -219,7 +219,7 @@ DYDX_WALLET_ADDRESS=dydx1...
 ### Run the example
 
 ```bash
-cargo run --example dydx-grid-mm --package nautilus-dydx
+cargo run --example dydx-grid-mm --package nautilus-dydx --features examples
 ```
 
 ### Graceful shutdown

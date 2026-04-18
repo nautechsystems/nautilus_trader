@@ -19,7 +19,7 @@
 //! - Set `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
 //! - Optionally set `DYDX_WALLET_ADDRESS` (or `DYDX_TESTNET_WALLET_ADDRESS` for testnet)
 //!
-//! Run with: `cargo run --example dydx-grid-mm --package nautilus-dydx`
+//! Run with: `cargo run --example dydx-grid-mm --package nautilus-dydx --features examples`
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
