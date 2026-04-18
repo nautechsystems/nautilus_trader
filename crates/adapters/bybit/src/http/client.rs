@@ -56,16 +56,19 @@ use ustr::Ustr;
 use super::{
     error::BybitHttpError,
     models::{
-        BybitAccountDetailsResponse, BybitBorrowResponse, BybitFeeRate, BybitFeeRateResponse,
-        BybitFundingResponse, BybitInstrumentInverse, BybitInstrumentInverseResponse,
-        BybitInstrumentLinear, BybitInstrumentLinearResponse, BybitInstrumentOption,
-        BybitInstrumentOptionResponse, BybitInstrumentSpot, BybitInstrumentSpotResponse,
-        BybitKlinesResponse, BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
+        BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
+        BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
+        BybitInstrumentInverse, BybitInstrumentInverseResponse, BybitInstrumentLinear,
+        BybitInstrumentLinearResponse, BybitInstrumentOption, BybitInstrumentOptionResponse,
+        BybitInstrumentSpot, BybitInstrumentSpotResponse, BybitKlinesResponse,
+        BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
-        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSwitchModeResponse,
+        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSubApiKeysResponse,
+        BybitSubMembersPagedResponse, BybitSubMembersResponse, BybitSwitchModeResponse,
         BybitTickerData, BybitTickerOption, BybitTickersOptionResponse, BybitTradeHistoryResponse,
-        BybitTradesResponse, BybitWalletBalanceResponse,
+        BybitTradesResponse, BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse,
+        BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -77,9 +80,10 @@ use super::{
         BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
         BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
         BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
-        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSwitchModeParamsBuilder,
-        BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
-        BybitWalletBalanceParams,
+        BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSubApiKeysParams,
+        BybitSubMembersPageParams, BybitSwitchModeParamsBuilder, BybitTickersParams,
+        BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
+        BybitUpdateMasterApiParams, BybitUpdateSubApiParams, BybitWalletBalanceParams,
     },
 };
 use crate::common::{
@@ -873,6 +877,20 @@ impl BybitRawHttpClient {
         .await
     }
 
+    /// Fetches account information (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/account-info>
+    pub async fn get_account_info(&self) -> Result<BybitAccountInfoResponse, BybitHttpError> {
+        self.send_request::<_, ()>(Method::GET, "/v5/account/info", None, None, true)
+            .await
+    }
+
     /// Fetches account details (requires authentication).
     ///
     /// # Errors
@@ -885,6 +903,125 @@ impl BybitRawHttpClient {
     pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
         self.send_request::<_, ()>(Method::GET, "/v5/user/query-api", None, None, true)
             .await
+    }
+
+    /// Modifies a sub-account API key (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
+    pub async fn update_sub_api_key(
+        &self,
+        params: &BybitUpdateSubApiParams,
+    ) -> Result<BybitUpdateSubApiResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/user/update-sub-api",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
+    /// Modifies the master API key that issued the request (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+    pub async fn update_master_api_key(
+        &self,
+        params: &BybitUpdateMasterApiParams,
+    ) -> Result<BybitUpdateMasterApiResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        self.send_request::<_, ()>(Method::POST, "/v5/user/update-api", None, Some(body), true)
+            .await
+    }
+
+    /// Fetches the sub-account list (up to 1000 rows, non-paginated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/subuid-list>
+    pub async fn get_sub_members(&self) -> Result<BybitSubMembersResponse, BybitHttpError> {
+        self.send_request::<_, ()>(Method::GET, "/v5/user/query-sub-members", None, None, true)
+            .await
+    }
+
+    /// Fetches a cursor-paginated sub-account list (`/v5/user/submembers`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/page-subuid>
+    pub async fn get_sub_members_paged(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitSubMembersPagedResponse, BybitHttpError> {
+        self.send_request(Method::GET, "/v5/user/submembers", Some(params), None, true)
+            .await
+    }
+
+    /// Fetches fund-custodial sub-accounts (`/v5/user/escrow_sub_members`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/fund-subuid-list>
+    pub async fn get_escrow_sub_members(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitEscrowSubMembersResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/user/escrow_sub_members",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches all API keys belonging to a given sub-account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
+    pub async fn get_sub_api_keys(
+        &self,
+        params: &BybitSubApiKeysParams,
+    ) -> Result<BybitSubApiKeysResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/user/sub-apikeys",
+            Some(params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Fetches trading fee rates for symbols.
@@ -1688,6 +1825,21 @@ impl BybitHttpClient {
         self.inner.get_wallet_balance(params).await
     }
 
+    /// Fetches account information (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/account-info>
+    pub async fn get_account_info(&self) -> Result<BybitAccountInfoResponse, BybitHttpError> {
+        self.inner.get_account_info().await
+    }
+
     /// Fetches API key information including account details (requires authentication).
     ///
     /// # Errors
@@ -1701,6 +1853,111 @@ impl BybitHttpClient {
     /// - <https://bybit-exchange.github.io/docs/v5/user/apikey-info>
     pub async fn get_account_details(&self) -> Result<BybitAccountDetailsResponse, BybitHttpError> {
         self.inner.get_account_details().await
+    }
+
+    /// Modifies a sub-account API key (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
+    pub async fn update_sub_api_key(
+        &self,
+        params: &BybitUpdateSubApiParams,
+    ) -> Result<BybitUpdateSubApiResponse, BybitHttpError> {
+        self.inner.update_sub_api_key(params).await
+    }
+
+    /// Modifies the master API key that issued the request (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+    pub async fn update_master_api_key(
+        &self,
+        params: &BybitUpdateMasterApiParams,
+    ) -> Result<BybitUpdateMasterApiResponse, BybitHttpError> {
+        self.inner.update_master_api_key(params).await
+    }
+
+    /// Fetches the sub-account list (up to 1000 rows, non-paginated).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/subuid-list>
+    pub async fn get_sub_members(&self) -> Result<BybitSubMembersResponse, BybitHttpError> {
+        self.inner.get_sub_members().await
+    }
+
+    /// Fetches a cursor-paginated sub-account list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/page-subuid>
+    pub async fn get_sub_members_paged(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitSubMembersPagedResponse, BybitHttpError> {
+        self.inner.get_sub_members_paged(params).await
+    }
+
+    /// Fetches fund-custodial sub-accounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/fund-subuid-list>
+    pub async fn get_escrow_sub_members(
+        &self,
+        params: &BybitSubMembersPageParams,
+    ) -> Result<BybitEscrowSubMembersResponse, BybitHttpError> {
+        self.inner.get_escrow_sub_members(params).await
+    }
+
+    /// Fetches all API keys belonging to a given sub-account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
+    pub async fn get_sub_api_keys(
+        &self,
+        params: &BybitSubApiKeysParams,
+    ) -> Result<BybitSubApiKeysResponse, BybitHttpError> {
+        self.inner.get_sub_api_keys(params).await
     }
 
     /// Fetches position information (requires authentication).

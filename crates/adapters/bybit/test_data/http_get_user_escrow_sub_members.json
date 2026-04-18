@@ -1,0 +1,27 @@
+{
+  "retCode": 0,
+  "retMsg": "",
+  "result": {
+    "subMembers": [
+      {
+        "uid": "104274894",
+        "username": "Private_Wealth_Management",
+        "memberType": 12,
+        "status": 1,
+        "remark": "earn fund",
+        "accountMode": 3
+      },
+      {
+        "uid": "104274884",
+        "username": "Private_Wealth_Management",
+        "memberType": 12,
+        "status": 1,
+        "remark": "earn fund",
+        "accountMode": 3
+      }
+    ],
+    "nextCursor": "344"
+  },
+  "retExtInfo": {},
+  "time": 1739763788699
+}

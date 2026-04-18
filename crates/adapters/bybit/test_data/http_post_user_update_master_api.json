@@ -1,0 +1,46 @@
+{
+  "retCode": 0,
+  "retMsg": "",
+  "result": {
+    "id": "13770661",
+    "note": "xxxxx",
+    "apiKey": "xxxxx",
+    "readOnly": 0,
+    "secret": "",
+    "permissions": {
+      "ContractTrade": [
+        "Order",
+        "Position"
+      ],
+      "Spot": [
+        "SpotTrade"
+      ],
+      "Wallet": [
+        "AccountTransfer",
+        "SubMemberTransfer"
+      ],
+      "Options": [
+        "OptionsTrade"
+      ],
+      "Derivatives": [
+        "DerivativesTrade"
+      ],
+      "CopyTrading": [
+        "CopyTrading"
+      ],
+      "BlockTrade": [],
+      "Exchange": [
+        "ExchangeHistory"
+      ],
+      "Earn": [],
+      "NFT": [
+        "NFTQueryProductList"
+      ]
+    },
+    "ips": [
+      "*"
+    ]
+  },
+  "retExtInfo": {},
+  "time": 1676431265427
+}

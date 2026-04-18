@@ -26,7 +26,7 @@ use axum::{
 };
 use chrono::Utc;
 use nautilus_bybit::{
-    common::enums::{BybitAccountType, BybitProductType},
+    common::enums::{BybitAccountType, BybitMarginMode, BybitProductType},
     http::{
         client::BybitHttpClient,
         query::{
@@ -469,6 +469,30 @@ async fn handle_get_wallet_balance(headers: axum::http::HeaderMap) -> Response {
 }
 
 #[allow(dead_code)]
+async fn handle_get_account_info(headers: axum::http::HeaderMap) -> Response {
+    // Check for authentication headers
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let account_info = load_test_data("http_get_account_info.json");
+    Json(account_info).into_response()
+}
+
+#[allow(dead_code)]
 async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::Bytes) -> Response {
     // Check for authentication headers
     if !headers.contains_key("X-BAPI-API-KEY")
@@ -864,6 +888,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
+        .route("/v5/account/info", get(handle_get_account_info))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/account/fee-rate", get(handle_get_fee_rate))
         .route(
@@ -1371,6 +1396,48 @@ async fn test_get_fee_rate_with_credentials() {
 
     assert_eq!(response.ret_code, 0);
     assert!(!response.result.list.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_account_info_requires_credentials() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::new(Some(base_url), 60, 3, 1000, 10_000, 5_000, None).unwrap();
+
+    let result = client.get_account_info().await;
+    assert!(result.is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_account_info_with_credentials() {
+    use nautilus_bybit::http::models::BybitAccountInfoResponse;
+
+    let (addr, _state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let response: BybitAccountInfoResponse = client.get_account_info().await.unwrap();
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.result.margin_mode, BybitMarginMode::RegularMargin);
+    assert_eq!(response.result.unified_margin_status, 4);
+    assert!(!response.result.is_master_trader);
+    assert_eq!(response.result.spot_hedging_status, "OFF");
 }
 // Create router with separate handlers for reconciliation testing
 #[allow(dead_code)]
@@ -3343,4 +3410,420 @@ async fn test_request_order_status_reports_tp_sl_orders() {
     assert_eq!(sl_report.price, Some(Price::from("47500.00")));
     assert_eq!(sl_report.trigger_type, Some(TriggerType::LastPrice));
     assert!(sl_report.reduce_only);
+}
+
+// -------------------------------------------------------------------------------------------------
+// User API endpoints (/v5/user/*) wire-up tests
+//
+// These tests verify the client-layer wiring of the user-management endpoints:
+//   - the request hits the expected route,
+//   - authentication headers are attached,
+//   - query strings and request bodies carry the expected fields,
+//   - responses decode into the typed DTOs.
+// Deserialization details are covered by the unit tests in
+// `src/http/models.rs` and are not duplicated here.
+// -------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+struct UserApiCapture {
+    last_query: Arc<tokio::sync::Mutex<Option<String>>>,
+    last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+}
+
+/// Rejects requests lacking Bybit signed auth headers with 401.
+fn require_bybit_auth(headers: &axum::http::HeaderMap) -> Option<Response> {
+    if !headers.contains_key("X-BAPI-API-KEY")
+        || !headers.contains_key("X-BAPI-SIGN")
+        || !headers.contains_key("X-BAPI-TIMESTAMP")
+    {
+        return Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "retCode": 10003,
+                    "retMsg": "Invalid API key",
+                    "result": {},
+                    "retExtInfo": {},
+                    "time": 1700000000000i64
+                })),
+            )
+                .into_response(),
+        );
+    }
+    None
+}
+
+async fn user_handle_sub_members(headers: axum::http::HeaderMap) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    Json(load_test_data("http_get_user_sub_members.json")).into_response()
+}
+
+async fn user_handle_sub_members_paged(
+    State(cap): State<UserApiCapture>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    *cap.last_query.lock().await = uri.query().map(str::to_owned);
+    Json(load_test_data("http_get_user_sub_members_paged.json")).into_response()
+}
+
+async fn user_handle_escrow_sub_members(
+    State(cap): State<UserApiCapture>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    *cap.last_query.lock().await = uri.query().map(str::to_owned);
+    Json(load_test_data("http_get_user_escrow_sub_members.json")).into_response()
+}
+
+async fn user_handle_sub_apikeys(
+    State(cap): State<UserApiCapture>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    *cap.last_query.lock().await = uri.query().map(str::to_owned);
+    Json(load_test_data("http_get_user_sub_apikeys.json")).into_response()
+}
+
+async fn user_handle_update_sub_api(
+    State(cap): State<UserApiCapture>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        *cap.last_body.lock().await = Some(value);
+    }
+    Json(load_test_data("http_post_user_update_sub_api.json")).into_response()
+}
+
+async fn user_handle_update_master_api(
+    State(cap): State<UserApiCapture>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        *cap.last_body.lock().await = Some(value);
+    }
+    Json(load_test_data("http_post_user_update_master_api.json")).into_response()
+}
+
+fn create_user_api_router(cap: UserApiCapture) -> Router {
+    Router::new()
+        .route("/v5/user/query-sub-members", get(user_handle_sub_members))
+        .route("/v5/user/submembers", get(user_handle_sub_members_paged))
+        .route(
+            "/v5/user/escrow_sub_members",
+            get(user_handle_escrow_sub_members),
+        )
+        .route("/v5/user/sub-apikeys", get(user_handle_sub_apikeys))
+        .route("/v5/user/update-sub-api", post(user_handle_update_sub_api))
+        .route("/v5/user/update-api", post(user_handle_update_master_api))
+        // Exposed so the readiness probe can reach a known endpoint.
+        .route("/v5/market/time", get(handle_get_server_time))
+        .with_state(cap)
+}
+
+async fn start_user_api_server()
+-> Result<(SocketAddr, UserApiCapture), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let cap = UserApiCapture::default();
+    let router = create_user_api_router(cap.clone());
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v5/market/time").await;
+    Ok((addr, cap))
+}
+
+fn user_test_client(base_url: String) -> BybitHttpClient {
+    BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_sub_members_no_params() {
+    use nautilus_bybit::http::models::BybitSubMembersResponse;
+
+    let (addr, _cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let response: BybitSubMembersResponse = client.get_sub_members().await.unwrap();
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.result.sub_members.len(), 2);
+    assert_eq!(response.result.sub_members[0].uid, "106314365");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_sub_members_paged_sends_cursor_and_size() {
+    use nautilus_bybit::http::query::BybitSubMembersPageParamsBuilder;
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let params = BybitSubMembersPageParamsBuilder::default()
+        .page_size(50u32)
+        .next_cursor("page-token-xyz".to_string())
+        .build()
+        .unwrap();
+
+    let response = client.get_sub_members_paged(&params).await.unwrap();
+    assert_eq!(response.result.sub_members.len(), 2);
+    assert_eq!(response.result.next_cursor.as_deref(), Some("0"));
+
+    let q = cap.last_query.lock().await.clone().expect("query captured");
+    assert!(
+        q.contains("pageSize=50"),
+        "query should carry pageSize: {q}"
+    );
+    assert!(
+        q.contains("nextCursor=page-token-xyz"),
+        "query should carry nextCursor: {q}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_escrow_sub_members_hits_escrow_route() {
+    use nautilus_bybit::http::query::BybitSubMembersPageParamsBuilder;
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let params = BybitSubMembersPageParamsBuilder::default()
+        .page_size(20u32)
+        .build()
+        .unwrap();
+
+    let response = client.get_escrow_sub_members(&params).await.unwrap();
+    assert_eq!(response.result.sub_members[0].member_type, 12);
+    // A non-`"0"` cursor indicates more pages remain to be fetched.
+    assert_eq!(response.result.next_cursor.as_deref(), Some("344"));
+
+    let q = cap.last_query.lock().await.clone().expect("query captured");
+    assert!(
+        q.contains("pageSize=20"),
+        "query should carry pageSize: {q}"
+    );
+    assert!(
+        !q.contains("nextCursor"),
+        "nextCursor should be omitted when None: {q}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_sub_api_keys_sends_required_params() {
+    use nautilus_bybit::http::query::BybitSubApiKeysParamsBuilder;
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let params = BybitSubApiKeysParamsBuilder::default()
+        .sub_member_id("533285".to_string())
+        .limit(10u32)
+        .cursor("next-token".to_string())
+        .build()
+        .unwrap();
+
+    let response = client.get_sub_api_keys(&params).await.unwrap();
+    assert_eq!(response.result.keys.len(), 1);
+    assert!(!response.result.keys[0].read_only);
+    assert_eq!(response.result.keys[0].secret, "******");
+
+    let q = cap.last_query.lock().await.clone().expect("query captured");
+    assert!(q.contains("subMemberId=533285"), "query: {q}");
+    assert!(q.contains("limit=10"), "query: {q}");
+    assert!(q.contains("cursor=next-token"), "query: {q}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_update_sub_api_key_omits_none_permissions() {
+    use nautilus_bybit::http::query::BybitUpdateSubApiParamsBuilder;
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let params = BybitUpdateSubApiParamsBuilder::default()
+        .read_only(1i32)
+        .build()
+        .unwrap();
+
+    let response = client.update_sub_api_key(&params).await.unwrap();
+    assert_eq!(response.result.read_only, 0);
+
+    let body = cap.last_body.lock().await.clone().expect("body captured");
+    let obj = body.as_object().expect("json object");
+    assert_eq!(obj.get("readOnly").and_then(Value::as_i64), Some(1));
+    assert!(
+        !obj.contains_key("permissions"),
+        "permissions must be skipped when None: {body}"
+    );
+    assert!(
+        !obj.contains_key("apiKey"),
+        "apiKey must be skipped when None: {body}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_update_sub_api_key_serializes_permissions_pascal_case() {
+    use nautilus_bybit::http::query::{
+        BybitApiKeyPermissionUpdateBuilder, BybitUpdateSubApiParamsBuilder,
+    };
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let permissions = BybitApiKeyPermissionUpdateBuilder::default()
+        .spot(vec!["SpotTrade".to_string()])
+        .wallet(vec!["AccountTransfer".to_string()])
+        .build()
+        .unwrap();
+
+    let params = BybitUpdateSubApiParamsBuilder::default()
+        .api_key("sub-key-id".to_string())
+        .permissions(permissions)
+        .build()
+        .unwrap();
+
+    client.update_sub_api_key(&params).await.unwrap();
+
+    let body = cap.last_body.lock().await.clone().expect("body captured");
+    let perms = body
+        .get("permissions")
+        .and_then(Value::as_object)
+        .expect("permissions object");
+    // Permission keys must be serialised in PascalCase and must contain only
+    // the buckets that were explicitly set on the builder.
+    assert!(perms.contains_key("Spot"));
+    assert!(perms.contains_key("Wallet"));
+    assert!(
+        !perms.contains_key("ContractTrade"),
+        "unset permission keys must be skipped: {body}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_update_master_api_key_emits_renamed_permission_keys() {
+    // Regression guard: `NFT`, `FiatP2P` and `ByXPost` carry non-standard
+    // casing that the struct-level `rename_all = "PascalCase"` rule would
+    // otherwise mangle into `Nft`, `FiatP2p`, `ByxPost` — which Bybit would
+    // silently ignore.
+    use nautilus_bybit::http::query::{
+        BybitApiKeyPermissionUpdateBuilder, BybitUpdateMasterApiParamsBuilder,
+    };
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let permissions = BybitApiKeyPermissionUpdateBuilder::default()
+        .nft(vec!["NFTQueryProductList".to_string()])
+        .fiat_p2p(vec!["P2PDeposit".to_string()])
+        .byx_post(vec!["PostContent".to_string()])
+        .build()
+        .unwrap();
+
+    let params = BybitUpdateMasterApiParamsBuilder::default()
+        .permissions(permissions)
+        .build()
+        .unwrap();
+
+    client.update_master_api_key(&params).await.unwrap();
+
+    let body = cap.last_body.lock().await.clone().expect("body captured");
+    let perms = body
+        .get("permissions")
+        .and_then(Value::as_object)
+        .expect("permissions object");
+    assert!(perms.contains_key("NFT"), "expected key `NFT`: {body}");
+    assert!(
+        perms.contains_key("FiatP2P"),
+        "expected key `FiatP2P`: {body}"
+    );
+    assert!(
+        perms.contains_key("ByXPost"),
+        "expected key `ByXPost`: {body}"
+    );
+    assert!(
+        !perms.contains_key("Nft")
+            && !perms.contains_key("FiatP2p")
+            && !perms.contains_key("ByxPost"),
+        "default PascalCase casing must not leak through: {body}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_update_master_api_key_body_has_no_ips() {
+    // Regression guard: the Bybit docs explicitly exclude `ips` from the
+    // `update-api` request parameters, even though it appears in the response.
+    use nautilus_bybit::http::query::{
+        BybitApiKeyPermissionUpdateBuilder, BybitUpdateMasterApiParamsBuilder,
+    };
+
+    let (addr, cap) = start_user_api_server().await.unwrap();
+    let client = user_test_client(format!("http://{addr}"));
+
+    let permissions = BybitApiKeyPermissionUpdateBuilder::default()
+        .contract_trade(vec!["Order".to_string(), "Position".to_string()])
+        .build()
+        .unwrap();
+
+    let params = BybitUpdateMasterApiParamsBuilder::default()
+        .read_only(0i32)
+        .permissions(permissions)
+        .build()
+        .unwrap();
+
+    let response = client.update_master_api_key(&params).await.unwrap();
+    // `nft` exercises the explicit `#[serde(rename = "NFT")]` on the response
+    // side; the fixture carries a non-empty value so a rename regression
+    // surfaces as a length mismatch rather than a silent empty `Vec`.
+    assert_eq!(response.result.permissions.nft, vec!["NFTQueryProductList"]);
+
+    let body = cap.last_body.lock().await.clone().expect("body captured");
+    let obj = body.as_object().expect("json object");
+    assert!(
+        !obj.contains_key("ips"),
+        "update-api must not send ips: {body}"
+    );
+    assert!(
+        !obj.contains_key("apiKey"),
+        "update-api has no apiKey: {body}"
+    );
+    assert_eq!(obj.get("readOnly").and_then(Value::as_i64), Some(0));
 }
