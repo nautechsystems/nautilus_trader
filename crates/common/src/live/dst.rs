@@ -15,17 +15,43 @@
 
 //! Deterministic simulation testing (DST) re-export module.
 //!
-//! Provides feature-switched re-exports that route to either real tokio (production)
-//! or madsim (simulation) for the modules that need deterministic behavior:
-//! `time`, `task`, `runtime`, and `signal`.
+//! Feature-switched re-exports of the tokio primitives that need deterministic
+//! behavior under simulation: `time`, `task`, `runtime`, and `signal`. Code on
+//! the DST path imports async primitives from here rather than directly from
+//! `tokio`, so that toggling the `simulation` feature switches the whole
+//! runtime in one place.
+//!
+//! # Feature-switched behavior
 //!
 //! The switch requires both the `simulation` Cargo feature (which enables the
 //! `madsim` dependency) and `RUSTFLAGS="--cfg madsim"` (which activates the
-//! simulation re-exports). Without both, all paths route to tokio.
+//! simulation re-exports). Without both, all paths route to real tokio.
 //!
-//! All other tokio modules (`sync`, `io`, `select!`, `fs`, `net`) use real tokio
-//! unconditionally. Transitive crates (tokio-tungstenite, reqwest, etc.) are
-//! unaffected.
+//! Only four submodules switch: `time`, `task`, `runtime`, and `signal`. All
+//! other tokio modules (`sync`, `io`, `select!`, `fs`, `net`) use real tokio
+//! unconditionally. Transitive crates (`tokio-tungstenite`, `reqwest`, ...)
+//! are unaffected.
+//!
+//! # Surface
+//!
+//! The submodules re-export the following items. A compile-time probe at the
+//! bottom of this file keeps the list and the signatures of the non-generic
+//! free functions consistent across the tokio and madsim routes, and fires on
+//! `cargo build` (not only `cargo test`) so breakage surfaces upstream.
+//!
+//! - `time`: `Duration`, `Instant`, `Interval`, `MissedTickBehavior`, `Sleep`,
+//!   `error` (submodule), `interval`, `interval_at`, `sleep`, `sleep_until`,
+//!   `timeout`
+//! - `task`: `JoinHandle`, `spawn`, `spawn_local`, `yield_now`
+//! - `runtime`: `Builder`, `Handle`, `Runtime`
+//! - `signal`: `ctrl_c`
+//!
+//! # Related seam
+//!
+//! Monotonic time (`Instant`) goes through this module. Wall-clock time
+//! (`SystemTime` / Unix epoch) is a separate seam: see
+//! `nautilus_core::time::wall_clock_now`. Collapsing the two would lose epoch
+//! information and break order and fill timestamps.
 
 /// Deterministic time: virtual time under simulation, real time in production.
 ///
@@ -126,6 +152,39 @@ pub mod signal {
     pub use madsim::signal::ctrl_c;
     #[cfg(not(all(feature = "simulation", madsim)))]
     pub use tokio::signal::ctrl_c;
+}
+
+/// Compile-time probe of the DST re-export surface.
+///
+/// Names every item listed in the module-level "Surface" section and pins the
+/// signatures of the non-generic free functions via function pointer coercion.
+/// Removing, renaming, cfg-gating, or changing the signature of any of them on
+/// either the tokio or madsim route causes this module to fail to compile, so
+/// both routes stay in sync. Compiled unconditionally so plain `cargo build`
+/// fires it, not only `cargo test`.
+///
+/// Generic free functions (`timeout`, `spawn`, `spawn_local`) and `async fn`s
+/// (`yield_now`, `ctrl_c`) cannot be written as concrete function pointers
+/// here, so their `use` binding only locks the name, not the signature.
+///
+/// Visibility narrowing (e.g. `pub` -> `pub(crate)`) cannot be detected from
+/// inside the defining crate; that gap is structurally outside this probe.
+///
+/// Shape check only, not a behavior test.
+#[allow(unused_imports)]
+mod surface {
+    use super::runtime::{Builder, Handle, Runtime};
+    use super::signal::ctrl_c;
+    use super::task::{JoinHandle, spawn, spawn_local, yield_now};
+    use super::time::{
+        Duration, Instant, Interval, MissedTickBehavior, Sleep, error, interval, interval_at,
+        sleep, sleep_until, timeout,
+    };
+
+    const _: fn(Duration) -> Sleep = sleep;
+    const _: fn(Instant) -> Sleep = sleep_until;
+    const _: fn(Duration) -> Interval = interval;
+    const _: fn(Instant, Duration) -> Interval = interval_at;
 }
 
 #[cfg(test)]
