@@ -4,9 +4,11 @@ permissions: # Principle of least privilege
   contents: read
   actions: read
 
+# Paused: coverage runs were consuming runner resources without producing useful output
+# (test step commented due to OOM/shutdown signal on the runner). Re-enable the `push`
+# trigger once scripts/test-coverage.sh is stable.
 on:
-  push:
-    branches: [nightly]
+  workflow_dispatch:
 
 jobs:
   build:

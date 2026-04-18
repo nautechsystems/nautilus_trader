@@ -17,7 +17,7 @@ Continuous CI coverage comes from the GitHub Actions runners we build on:
 
 - `Linux (Ubuntu)` builds currently pin to `ubuntu-22.04` to keep glibc 2.35 compatibility even as `ubuntu-latest` moves ahead.
 - `macOS (ARM64)` builds run on `macos-latest`, so support tracks that runner image as it moves ahead.
-- `Windows (x86_64)` builds run on `windows-latest`, so support tracks that runner image as it moves ahead.
+- `Windows (x86_64)` builds currently pin to `windows-2022` to keep the toolchain stable.
 
 On Linux, confirm your glibc version with `ldd --version` and ensure it reports 2.35 or newer before proceeding.
 
@@ -94,10 +94,10 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
 | `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | ✓       |
+| `Windows (x86_64)` | ✓       | -       |
 
-**Note**: Development wheels from the `develop` branch publish for Linux x86_64 and Windows only.
-macOS and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
+**Note**: Development wheels from the `develop` branch publish for Linux x86_64 only.
+Windows, macOS, and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.

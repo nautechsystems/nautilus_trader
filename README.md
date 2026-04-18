@@ -260,10 +260,10 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 | `Linux (x86_64)`   | ✓       | ✓       |
 | `Linux (ARM64)`    | ✓       | -       |
 | `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | ✓       |
+| `Windows (x86_64)` | ✓       | -       |
 
-**Note**: Development wheels from the `develop` branch publish for Linux x86_64 and Windows only.
-macOS and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
+**Note**: Development wheels from the `develop` branch publish for Linux x86_64 only.
+Windows, macOS, and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
 
 > [!WARNING]
 >

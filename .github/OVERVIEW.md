@@ -24,11 +24,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs and via cron.
 - **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
-- **coverage.yml**: coverage report generation for the `nightly` branch.
+- **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`) using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended test suites (turmoil network tests) that are too slow for PR builds.
+- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge` at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny, cargo-vet, osv-scanner).
 - **trigger-reindexing.yml**: triggers documentation reindexing for search.
