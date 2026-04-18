@@ -159,15 +159,21 @@ jobs:
       run:
         shell: bash
     # Ubuntu 22.04 (glibc 2.35) wider runtime range than 24.04/glibc 2.39
-    # Push events (develop/nightly/master) use 8-core runners for faster builds
+    # Pushes to develop route to the self-hosted build pool; PRs and other
+    # branches route to Depot.
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
-    runs-on: depot-ubuntu-22.04-8
+    runs-on: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'build' || 'depot-ubuntu-22.04-8' }}
     needs:
       - plan
       - pre-commit
     env:
       BUILD_MODE: release
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-x86
+      # Self-hosted develop pushes keep Rust artifacts outside the workspace so
+      # they survive actions/checkout's git clean -ffdx between runs.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event_name == 'push' && github.ref_name == 'develop'
+        && format('/home/runner/.cache/cargo-target/build-linux-x86/py{0}', matrix.python-version)
+        || format('{0}/target/build-linux-x86', github.workspace) }}
       RUST_BACKTRACE: 1
     # yamllint disable rule:line-length
     services:
@@ -214,6 +220,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR on the self-hosted build pool replaces
+          # Swatinem/rust-cache for develop push builds.
+          rust-cache-enabled: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'false' || 'true' }}
           rust-cache-key: build-linux-x86
           rust-cache-workspaces: . -> target/build-linux-x86
           rust-cache-save-if: ${{ github.event_name == 'push' }}
