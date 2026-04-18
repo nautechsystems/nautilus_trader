@@ -2239,3 +2239,354 @@ async fn test_get_historical_funding_empty() {
 
     assert!(result.historical_funding.is_empty());
 }
+
+fn orderbook_snapshot_payload(bid_levels: &[(f64, f64)], ask_levels: &[(f64, f64)]) -> Value {
+    let bids: Vec<Value> = bid_levels
+        .iter()
+        .map(|(p, s)| json!({"price": p.to_string(), "size": s.to_string()}))
+        .collect();
+    let asks: Vec<Value> = ask_levels
+        .iter()
+        .map(|(p, s)| json!({"price": p.to_string(), "size": s.to_string()}))
+        .collect();
+    json!({"bids": bids, "asks": asks})
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_orderbook_snapshot_sets_snapshot_flags() {
+    use nautilus_model::enums::{BookAction, RecordFlag};
+
+    let bid_levels = vec![(43240.0, 1.5), (43235.0, 2.3)];
+    let ask_levels = vec![(43250.0, 1.2), (43255.0, 2.0)];
+
+    let router = Router::new()
+        .route(
+            "/v4/orderbooks/perpetualMarket/{ticker}",
+            get(move || {
+                let payload = orderbook_snapshot_payload(&bid_levels, &ask_levels);
+                async move { Json(payload) }
+            }),
+        )
+        .route("/v4/perpetualMarkets", get(mock_markets_pagination));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+
+    let base_url = format!("http://{addr}");
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
+
+    // request_orderbook_snapshot reads from the instrument cache, so populate it first.
+    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    client.cache_instruments(instruments);
+
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let deltas = client
+        .request_orderbook_snapshot(instrument_id)
+        .await
+        .unwrap();
+
+    // 1 Clear + 2 bids + 2 asks = 5 deltas
+    assert_eq!(deltas.deltas.len(), 5);
+
+    let snapshot = RecordFlag::F_SNAPSHOT as u8;
+    let last_flag = RecordFlag::F_LAST as u8;
+
+    // Clear delta carries F_SNAPSHOT (not last).
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(deltas.deltas[0].flags, snapshot);
+
+    // Intermediate add deltas carry F_SNAPSHOT only.
+    for delta in &deltas.deltas[1..deltas.deltas.len() - 1] {
+        assert_eq!(delta.action, BookAction::Add);
+        assert_eq!(delta.flags, snapshot);
+    }
+
+    // Terminator carries F_SNAPSHOT | F_LAST.
+    let terminator = deltas.deltas.last().unwrap();
+    assert_eq!(terminator.flags, snapshot | last_flag);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_orderbook_snapshot_empty_book() {
+    use nautilus_model::enums::{BookAction, RecordFlag};
+
+    let router = Router::new()
+        .route(
+            "/v4/orderbooks/perpetualMarket/{ticker}",
+            get(|| async { Json(orderbook_snapshot_payload(&[], &[])) }),
+        )
+        .route("/v4/perpetualMarkets", get(mock_markets_pagination));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+
+    let base_url = format!("http://{addr}");
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
+
+    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    client.cache_instruments(instruments);
+
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let deltas = client
+        .request_orderbook_snapshot(instrument_id)
+        .await
+        .unwrap();
+
+    // Empty book: one Clear carrying F_SNAPSHOT | F_LAST so buffered subscribers flush.
+    assert_eq!(deltas.deltas.len(), 1);
+    assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+    assert_eq!(
+        deltas.deltas[0].flags,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+    );
+}
+
+/// Builds a trade fixture. `duplicate_id_from_previous_page` stashes a trade id the
+/// tests can assert cross-page dedup behavior against.
+fn make_trade(id: &str, height: u64, created_at: &str, price: &str, size: &str) -> Value {
+    json!({
+        "id": id,
+        "side": "BUY",
+        "size": size,
+        "price": price,
+        "type": "LIMIT",
+        "createdAt": created_at,
+        "createdAtHeight": height.to_string(),
+    })
+}
+
+/// Generates a synthetic trade at `height` with id `t-{height}`.
+fn gen_trade(height: u64) -> Value {
+    let ts_secs = height % 60;
+    let ts_mins = (height / 60) % 60;
+    let ts = format!("2024-01-01T00:{ts_mins:02}:{ts_secs:02}.000Z");
+    let id = format!("t-{height}");
+    make_trade(&id, height, &ts, "43250.0", "0.5")
+}
+
+/// Returns a full page worth of unique trades (exactly `page_size`) starting at the
+/// given cursor height (inclusive, newest first), plus the height of the oldest
+/// trade emitted.
+fn gen_full_page(cursor_height: u64, page_size: usize) -> (Vec<Value>, u64) {
+    let mut page = Vec::with_capacity(page_size);
+    let mut h = cursor_height;
+    for _ in 0..page_size {
+        page.push(gen_trade(h));
+        if h == 0 {
+            break;
+        }
+        h -= 1;
+    }
+    let oldest = h;
+    (page, oldest)
+}
+
+#[derive(Clone, Default)]
+struct PaginatedTradeState {
+    calls: Arc<tokio::sync::Mutex<Vec<Option<u64>>>>,
+}
+
+/// Paginator mock that produces exactly `limit` trades on every call (saturating the
+/// client's page_limit) down to a configurable floor, then empty. Satisfies the
+/// paginator's "don't break on partial page" criterion so multi-page behavior is
+/// exercised end-to-end.
+async fn handle_saturating_trades(
+    State(state): State<PaginatedTradeState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    const FLOOR: u64 = 900; // return empty once cursor falls below this
+    let cursor: Option<u64> = params
+        .get("createdBeforeOrAtHeight")
+        .and_then(|v| v.parse::<u64>().ok());
+    state.calls.lock().await.push(cursor);
+
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1000);
+    let start_height = cursor.unwrap_or(2000);
+
+    if start_height < FLOOR {
+        return Json(json!({"trades": Vec::<Value>::new()}));
+    }
+
+    let (page, _oldest) = gen_full_page(start_height, limit);
+    Json(json!({"trades": page}))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_paginates_across_blocks() {
+    // Full-page responses keep the paginator iterating until the cursor drops below
+    // the mock's floor, producing >1 HTTP call and a unique, chronologically-ordered
+    // trade set.
+    let state = PaginatedTradeState::default();
+    let router = Router::new()
+        .route(
+            "/v4/trades/perpetualMarket/{ticker}",
+            get(handle_saturating_trades),
+        )
+        .route("/v4/perpetualMarkets", get(mock_markets_pagination))
+        .route(
+            "/v4/height",
+            get(|| async { Json(json!({"height": "2000", "time": "2024-01-01T00:33:20.000Z"})) }),
+        )
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+
+    let base_url = format!("http://{addr}");
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
+    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    client.cache_instruments(instruments);
+
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let ticks = client
+        .request_trade_ticks(instrument_id, None, None, None)
+        .await
+        .unwrap();
+
+    // Unique trade ids -- dedup must remove the single-cursor overlap at block
+    // boundaries. Pool spans heights 2000..900 = ~1100 unique trades.
+    let unique_ids: std::collections::HashSet<_> =
+        ticks.iter().map(|t| t.trade_id.to_string()).collect();
+    assert_eq!(unique_ids.len(), ticks.len(), "duplicate trade ids leaked");
+    assert!(
+        ticks.len() >= 1000,
+        "expected multi-page output (>=1000 trades), found {}",
+        ticks.len()
+    );
+
+    // Chronological order: oldest first.
+    for pair in ticks.windows(2) {
+        assert!(
+            pair[0].ts_event <= pair[1].ts_event,
+            "ticks must be in chronological order",
+        );
+    }
+
+    let calls = state.calls.lock().await.clone();
+    assert!(
+        calls.len() >= 2,
+        "expected multi-page pagination, found {} HTTP calls",
+        calls.len()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_dedups_cross_page_overlap() {
+    // Force the boundary trade `t-{cursor}` to reappear on consecutive pages (mirrors
+    // how `createdBeforeOrAtHeight` produces overlap at block boundaries). The HashSet
+    // dedup must drop the duplicate so the final vec contains each id at most once.
+    let state = PaginatedTradeState::default();
+    let router = Router::new()
+        .route(
+            "/v4/trades/perpetualMarket/{ticker}",
+            get(handle_saturating_trades),
+        )
+        .route("/v4/perpetualMarkets", get(mock_markets_pagination))
+        .route(
+            "/v4/height",
+            get(|| async { Json(json!({"height": "2000", "time": "2024-01-01T00:33:20.000Z"})) }),
+        )
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+
+    let base_url = format!("http://{addr}");
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
+    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    client.cache_instruments(instruments);
+
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let ticks = client
+        .request_trade_ticks(instrument_id, None, None, None)
+        .await
+        .unwrap();
+
+    // The saturating mock advances cursor by `oldest_height.saturating_sub(1)` each
+    // page; with no cursor-state on the server, the boundary trade (t-{oldest}) would
+    // be emitted again on the next page. The client's HashSet must dedup it.
+    let ids: Vec<_> = ticks.iter().map(|t| t.trade_id.to_string()).collect();
+    let unique: std::collections::HashSet<_> = ids.iter().collect();
+    assert_eq!(
+        unique.len(),
+        ids.len(),
+        "duplicate ids slipped through dedup (server overlap at block boundaries)",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trade_ticks_respects_start_boundary() {
+    // Return trades spanning 00:01:40 -> 00:01:50. With start=00:01:45, only trades
+    // at or after 00:01:45 must appear and pagination must stop once the page's
+    // oldest trade crosses the boundary.
+    async fn handle_bounded_trades() -> impl IntoResponse {
+        let page = vec![
+            make_trade("t-1", 110, "2024-01-01T00:01:50.000Z", "1.0", "0.1"),
+            make_trade("t-2", 109, "2024-01-01T00:01:48.000Z", "1.0", "0.1"),
+            make_trade("t-3", 108, "2024-01-01T00:01:46.000Z", "1.0", "0.1"),
+            make_trade("t-4", 107, "2024-01-01T00:01:44.000Z", "1.0", "0.1"),
+            make_trade("t-5", 106, "2024-01-01T00:01:42.000Z", "1.0", "0.1"),
+        ];
+        Json(json!({"trades": page}))
+    }
+
+    let router = Router::new()
+        .route(
+            "/v4/trades/perpetualMarket/{ticker}",
+            get(handle_bounded_trades),
+        )
+        .route("/v4/perpetualMarkets", get(mock_markets_pagination));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v4/perpetualMarkets").await;
+
+    let base_url = format!("http://{addr}");
+    let client = DydxHttpClient::new(Some(base_url), 30, None, DydxNetwork::Mainnet, None).unwrap();
+    let instruments = client.request_instruments(None, None, None).await.unwrap();
+    client.cache_instruments(instruments);
+
+    let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), Venue::new("DYDX"));
+    let start = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:01:45.000Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let ticks = client
+        .request_trade_ticks(instrument_id, Some(start), None, None)
+        .await
+        .unwrap();
+
+    // Trades at 01:44 and 01:42 are before the start boundary and must be filtered out.
+    let ids: Vec<_> = ticks.iter().map(|t| t.trade_id.to_string()).collect();
+    assert!(ids.contains(&"t-1".to_string()));
+    assert!(ids.contains(&"t-2".to_string()));
+    assert!(ids.contains(&"t-3".to_string()));
+    assert!(!ids.contains(&"t-4".to_string()));
+    assert!(!ids.contains(&"t-5".to_string()));
+}

@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 - Added missing config values to `LiveExecEngineConfig` (#3841), thanks @Javdu10
 - Added `calculate_commission` to `ExecutionClient` for venue-specific reconciliation fills
+- Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 
 ### Breaking Changes
 - Replaced `is_sandbox: bool` with `environment: AxEnvironment` on `AxDataClientConfig` and `AxExecClientConfig` (Rust and Python), aligning with the Binance/Bybit/Kraken adapter pattern. Default is `Sandbox`.
@@ -48,6 +49,7 @@ Released on TBD (UTC).
 - Fixed PyO3 crypto instrument `from_dict` for unregistered base/underlying codes (#3882), thanks for reporting @volemont
 - Fixed execution engine ignoring user-supplied `position_id` from `submit_order` (Rust)
 - Fixed reconciliation IDs non-deterministic across restarts (#3878), thanks for reporting @peanut-copilot
+- Fixed reconciliation synthetic `OrderStatusReport` now propagates fill price to `avg_px` for downstream inferred fills
 - Fixed Betfair event order: `Instrument` now emits before `InstrumentStatus`/`InstrumentClose` within each MCM
 - Fixed Betfair scratched runners (`Removed`/`RemovedVacant`) emitting close only at market close; now fire immediately
 - Fixed Betfair non-snapshot book deltas emitting inline; now tailed after trades/tickers to match Python semantics
@@ -62,6 +64,14 @@ Released on TBD (UTC).
 - Fixed Bybit `InstrumentStatus` messages silently dropped instead of forwarded to the data engine
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin
+- Fixed dYdX `generate_order_status_report` fetching only the first order and missing later matches in the response
+- Fixed dYdX orderbook snapshots missing `F_SNAPSHOT` flag on deltas; empty-book Clear now emits `F_SNAPSHOT | F_LAST`
+- Fixed dYdX crossed-book resolution stripping `F_SNAPSHOT` from synthetic uncrossing deltas and the terminator
+- Fixed dYdX trade-tick pagination dedup missing non-adjacent duplicates across page boundaries
+- Fixed dYdX trade-tick pagination overshooting target `end` block from fixed block-time estimate
+- Fixed dYdX crossed-book size arithmetic using `f64` subtraction; now uses `Decimal` at full precision
+- Fixed dYdX position reports overriding venue `side` from `size` sign; venue side now preserved end-to-end
+- Fixed dYdX `DydxAdapterConfig` defaulting to mainnet URLs regardless of `network`; added `for_network` helper
 - Fixed Hyperliquid bracket order submission grouping (#3810), thanks for reporting @jindrichsirucek
 - Fixed Hyperliquid modify cancel-replace emitting stale `OrderCanceled` (#3827), thanks for reporting @P1YU5H-50N1
 - Fixed Hyperliquid order status query for closed orders (#3879), thanks for reporting @pusteckiy
@@ -116,12 +126,14 @@ Released on TBD (UTC).
 - Upgraded `msgspec` to v0.21.1
 - Upgraded `tokio` crate to v1.52.1
 - Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
+- Added debug logging to dYdX `generate_order_status_report` showing filter scope and `page_full` on `None` results
 
 ### Documentation Updates
 - Added Polymarket Python and Rust adapter config tables and updated rate limits
 - Added ID determinism invariant to the reconciliation live and execution concept guides
 - Refined docs to follow style guide for symbols and filler words (#3830), thanks @JKDasondee
 - Refined Interactive Brokers documentation regarding UTC timestamps (#3826), thanks @faysou
+- Refined dYdX integration guide config tables to match the Python API (`environment`, `subaccount`, `base_url_grpc`)
 - Updated the configuration concept guide to define unknown-field rejection as the config standard in Python and Rust
 
 ### Deprecations

@@ -2454,6 +2454,37 @@ fn test_create_synthetic_trade_id_is_deterministic() {
     assert_eq!(first, second);
 }
 
+/// Regression guard: `create_synthetic_order_report` must propagate `fill.px` to
+/// `avg_px` on the resulting report. Without this, downstream
+/// `create_inferred_fill` calls on the synthetic order see both `avg_px` and
+/// `price` as `None` and emit "no avg_px or price available" warnings, producing
+/// no reconciliation fill for the position gap.
+#[rstest]
+fn test_create_synthetic_order_report_populates_avg_px() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fill = FillSnapshot::new(
+        1_000_000,
+        OrderSide::Sell,
+        dec!(0.042),
+        dec!(2355.8),
+        venue_order_id,
+    );
+
+    let report = create_synthetic_order_report(
+        &fill,
+        AccountId::from("ETHUSDT-PERP-001"),
+        instrument.id(),
+        &instrument,
+        venue_order_id,
+    )
+    .expect("synthetic report creation should succeed");
+
+    assert_eq!(report.avg_px, Some(dec!(2355.8)));
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty.as_decimal(), dec!(0.042));
+}
+
 #[rstest]
 fn test_create_inferred_reconciliation_trade_id_differs_across_instruments() {
     let first = create_inferred_reconciliation_trade_id(

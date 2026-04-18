@@ -27,6 +27,10 @@ use crate::{
 };
 
 /// Configuration for the dYdX adapter.
+///
+/// URL fields (`base_url`, `ws_url`, `grpc_url`, `grpc_urls`) default to mainnet in the
+/// builder. Use [`DydxAdapterConfig::for_network`] to build a config whose URLs and chain
+/// ID match the target network, or override each URL explicitly.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 pub struct DydxAdapterConfig {
@@ -139,7 +143,7 @@ fn default_grpc_rate_limit_per_second() -> Option<u32> {
     Some(4)
 }
 
-fn default_http_timeout_secs() -> u64 {
+fn default_data_http_timeout_secs() -> u64 {
     60
 }
 
@@ -156,6 +160,31 @@ fn default_data_retry_delay_max_ms() -> u64 {
 }
 
 impl DydxAdapterConfig {
+    /// Creates a config with URLs and chain ID resolved for the given network.
+    ///
+    /// Use this instead of `Default::default()` when constructing a testnet config
+    /// without explicit URL overrides. Retains the non-URL defaults from
+    /// [`Default::default`] (retries, timeouts, gRPC rate limit).
+    #[must_use]
+    pub fn for_network(network: DydxNetwork) -> Self {
+        let chain_id = match network {
+            DydxNetwork::Mainnet => crate::common::consts::DYDX_CHAIN_ID,
+            DydxNetwork::Testnet => crate::common::consts::DYDX_TESTNET_CHAIN_ID,
+        };
+        Self {
+            network,
+            base_url: urls::http_base_url(network).to_string(),
+            ws_url: urls::ws_url(network).to_string(),
+            grpc_url: urls::grpc_urls(network)[0].to_string(),
+            grpc_urls: urls::grpc_urls(network)
+                .iter()
+                .map(|&s| s.to_string())
+                .collect(),
+            chain_id: chain_id.to_string(),
+            ..Self::default()
+        }
+    }
+
     /// Get the list of gRPC URLs to use for connection with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise falls back to a single-element
@@ -218,7 +247,7 @@ pub struct DydxDataClientConfig {
     /// Base URL for the WebSocket API.
     pub base_url_ws: Option<String>,
     /// HTTP request timeout in seconds.
-    #[serde(default = "default_http_timeout_secs")]
+    #[serde(default = "default_data_http_timeout_secs")]
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for failed HTTP requests.
@@ -475,5 +504,54 @@ mod tests {
         assert_eq!(urls.len(), 2);
         assert_eq!(urls[0], "https://fallback1.example.com");
         assert_eq!(urls[1], "https://fallback2.example.com");
+    }
+
+    #[rstest]
+    fn test_for_network_mainnet_resolves_urls_and_chain_id() {
+        let config = DydxAdapterConfig::for_network(DydxNetwork::Mainnet);
+
+        assert_eq!(config.network, DydxNetwork::Mainnet);
+        assert_eq!(config.base_url, urls::http_base_url(DydxNetwork::Mainnet));
+        assert_eq!(config.ws_url, urls::ws_url(DydxNetwork::Mainnet));
+        assert_eq!(config.grpc_url, urls::grpc_urls(DydxNetwork::Mainnet)[0]);
+        let expected_grpc: Vec<String> = urls::grpc_urls(DydxNetwork::Mainnet)
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(config.grpc_urls, expected_grpc);
+        assert_eq!(config.chain_id, crate::common::consts::DYDX_CHAIN_ID);
+        assert_eq!(config.get_chain_id(), ChainId::Mainnet1);
+    }
+
+    #[rstest]
+    fn test_for_network_testnet_resolves_urls_and_chain_id() {
+        let config = DydxAdapterConfig::for_network(DydxNetwork::Testnet);
+
+        assert_eq!(config.network, DydxNetwork::Testnet);
+        assert_eq!(config.base_url, urls::http_base_url(DydxNetwork::Testnet));
+        assert_eq!(config.ws_url, urls::ws_url(DydxNetwork::Testnet));
+        assert_eq!(config.grpc_url, urls::grpc_urls(DydxNetwork::Testnet)[0]);
+        let expected_grpc: Vec<String> = urls::grpc_urls(DydxNetwork::Testnet)
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(config.grpc_urls, expected_grpc);
+        assert_eq!(
+            config.chain_id,
+            crate::common::consts::DYDX_TESTNET_CHAIN_ID,
+        );
+        assert_eq!(config.get_chain_id(), ChainId::Testnet4);
+    }
+
+    #[rstest]
+    #[case(DydxNetwork::Mainnet)]
+    #[case(DydxNetwork::Testnet)]
+    fn test_for_network_preserves_grpc_rate_limit_default(#[case] network: DydxNetwork) {
+        // Regression guard: earlier implementations spread `..Self::builder().build()`,
+        // which returned `None` and silently disabled gRPC throttling. The helper must
+        // retain the `Some(4)` default from `Default::default()`.
+        let config = DydxAdapterConfig::for_network(network);
+        assert_eq!(config.grpc_rate_limit_per_second, Some(4));
+        assert!(config.grpc_quota().is_some());
     }
 }

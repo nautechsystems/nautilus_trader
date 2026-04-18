@@ -375,7 +375,7 @@ ante handler skips Cosmos SDK sequence checking for short-term messages, so:
 Long-term and conditional orders require proper Cosmos SDK sequence management:
 
 - **Semaphore** with 1 permit serializes all long-term broadcasts
-- **Exponential backoff**: 500ms → 1s → 2s → 4s (max 5 retries)
+- **Exponential backoff**: 500ms -> 1s -> 2s -> 4s (max 5 retries)
 - **10-second total budget** prevents indefinite retry loops
 - On sequence mismatch, the sequence is **resynced from chain** before retry
 
@@ -402,8 +402,8 @@ These errors during short-term cancel operations are treated as **success**:
 
 When cancelling multiple orders, the adapter partitions them by lifetime:
 
-1. **Short-term orders** → Single `MsgBatchCancel` via `broadcast_short_term()`
-2. **Long-term orders** → Batched `MsgCancelOrder` messages via `broadcast_with_retry()`
+1. **Short-term orders**: single `MsgBatchCancel` via `broadcast_short_term()`
+2. **Long-term orders**: batched `MsgCancelOrder` messages via `broadcast_with_retry()`
 
 This ensures each group uses the appropriate broadcast strategy.
 
@@ -438,14 +438,18 @@ The default of 4 req/s is conservative and works across all public providers.
 
 ### Multiple gRPC URL fallback
 
-The adapter supports configuring multiple gRPC URLs for failover:
+Use `base_url_grpc` to override the primary gRPC endpoint:
 
 ```python
 exec_config = DydxExecClientConfig(
-    base_url_grpc="https://primary-grpc.example.com:443,https://fallback-grpc.example.com:443",
+    base_url_grpc="https://primary-grpc.example.com:443",
     # ...
 )
 ```
+
+When `base_url_grpc` is unset, the adapter uses the default public nodes for the
+selected network with built-in fallback across the public validator list. Explicit
+multi-URL fallback via user config is not currently exposed on the Python config.
 
 ## Price and size quantization
 
@@ -540,7 +544,7 @@ clients for different subaccounts to implement strategy segregation or risk isol
 
 The dYdX testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
 without risking real funds. All default testnet endpoints are resolved automatically when
-`is_testnet=True`.
+`environment=DydxNetwork.TESTNET`.
 
 ### 1. Create a testnet wallet
 
@@ -588,25 +592,27 @@ export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
 
 ### 4. Configure the trading node
 
-Set `is_testnet=True` on both data and execution clients:
+Set `environment=DydxNetwork.TESTNET` on both data and execution clients:
 
 ```python
+from nautilus_trader.adapters.dydx import DydxNetwork
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
         DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,
+            environment=DydxNetwork.TESTNET,
         ),
     },
     exec_clients={
         DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
-            private_key=None,  # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
+            private_key=None,     # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
             subaccount=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=True,
+            environment=DydxNetwork.TESTNET,
         ),
     },
 )
@@ -614,7 +620,8 @@ config = TradingNodeConfig(
 
 ### Testnet endpoints
 
-Default testnet endpoints are used automatically. Override with `base_url_*` config options if needed.
+Default testnet endpoints are used automatically. Override via `base_url_http`,
+`base_url_ws`, or `base_url_grpc` (execution only) on the respective config if needed.
 
 | Service   | Default URL                                          |
 |-----------|------------------------------------------------------|
@@ -626,8 +633,8 @@ Default testnet endpoints are used automatically. Override with `base_url_*` con
 
 ### Mainnet endpoints
 
-Default mainnet endpoints are used automatically. Override with `base_url_*`
-config options if needed.
+Default mainnet endpoints are used automatically. Override via `base_url_http`,
+`base_url_ws`, or `base_url_grpc` (execution only) on the respective config if needed.
 
 | Service   | Default URL                                         |
 |-----------|-----------------------------------------------------|
@@ -642,33 +649,35 @@ clients support environment variable fallbacks for credentials and network-speci
 
 ### Data client configuration options
 
-| Option                    | Default | Description                                                                              |
-|---------------------------|---------|------------------------------------------------------------------------------------------|
-| `wallet_address`          | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
-| `is_testnet`              | `False` | Connect to dYdX testnet when `True`.                                                     |
-| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event` timestamps. Set `False` to use venue‑native open time. |
-| `base_url_http`           | `None`  | HTTP API endpoint override.                                                              |
-| `base_url_ws`             | `None`  | WebSocket endpoint override.                                                             |
-| `max_retries`             | `3`     | Maximum retry attempts for REST/WebSocket recovery.                                      |
-| `retry_delay_initial_ms`  | `1,000`  | Initial delay (milliseconds) between retries.                                            |
-| `retry_delay_max_ms`      | `10,000` | Maximum delay (milliseconds) between retries.                                            |
+| Option                    | Default   | Description                                                                                        |
+|---------------------------|-----------|----------------------------------------------------------------------------------------------------|
+| `wallet_address`          | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
+| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set.       |
+| `is_testnet`              | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                             |
+| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.        |
+| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.                   |
+| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.                  |
+| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                              |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
 
 ### Execution client configuration options
 
-| Option                         | Default | Description                                                                                        |
-|--------------------------------|---------|----------------------------------------------------------------------------------------------------|
-| `wallet_address`               | `None`  | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var. |
-| `subaccount`                   | `0`     | Subaccount number (0-127). Subaccount 0 is the default.                                            |
-| `private_key`                  | `None`  | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY` env var. |
-| `authenticator_ids`            | `None`  | List of authenticator IDs for permissioned key trading (institutional setups).                      |
-| `is_testnet`                   | `False` | Connect to dYdX testnet when `True`.                                                               |
-| `base_url_http`                | `None`  | HTTP client custom endpoint override.                                                              |
-| `base_url_ws`                  | `None`  | WebSocket client custom endpoint override.                                                         |
-| `base_url_grpc`                | `None`  | gRPC client custom endpoint override. Supports fallback with multiple URLs.                        |
-| `max_retries`                  | `3`     | Maximum retry attempts for order operations.                                                       |
-| `retry_delay_initial_ms`       | `1,000`  | Initial delay (milliseconds) between retries.                                                      |
-| `retry_delay_max_ms`           | `10,000` | Maximum delay (milliseconds) between retries.                                                      |
-| `grpc_rate_limit_per_second`   | `4`     | Maximum gRPC requests per second. Set to `None` to disable.                                        |
+| Option                         | Default   | Description                                                                                        |
+|--------------------------------|-----------|----------------------------------------------------------------------------------------------------|
+| `wallet_address`               | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
+| `subaccount`                   | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
+| `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
+| `authenticator_ids`            | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                     |
+| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`. Takes precedence over `is_testnet` when set.       |
+| `is_testnet`                   | `False`   | Legacy flag. Prefer `environment=DydxNetwork.TESTNET`.                                             |
+| `base_url_http`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
+| `base_url_ws`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
+| `base_url_grpc`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
+| `max_retries`                  | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                  |
+| `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
+| `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
+| `grpc_rate_limit_per_second`   | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                        |
 
 ### Basic setup
 
@@ -677,6 +686,7 @@ Configure a live `TradingNode` to include dYdX data and execution clients:
 ```python
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
 from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -687,16 +697,16 @@ config = TradingNodeConfig(
         DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,
+            environment=DydxNetwork.MAINNET,
         ),
     },
     exec_clients={
         DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to env var
-            private_key=None,  # Falls back to env var
+            private_key=None,     # Falls back to env var
             subaccount=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            is_testnet=False,
+            environment=DydxNetwork.MAINNET,
         ),
     },
 )
@@ -747,7 +757,7 @@ cross-margin account, but cannot withdraw funds or transfer assets.
 
 #### Creating an API key
 
-1. In the dYdX web app, navigate to **More → API Trading Keys**
+1. In the dYdX web app, navigate to **More > API Trading Keys**
 2. Click **Generate New API Key**
 3. Save the **API Wallet Address** and **Private Key** (shown once, not stored by dYdX)
 4. Click **Authorize API Key** (this registers the key on-chain as an authenticator)

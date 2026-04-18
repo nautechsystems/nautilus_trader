@@ -1218,13 +1218,14 @@ pub fn parse_position_status_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
-    // Determine position side based on size (negative for short)
-    let position_side = if position.size.is_zero() {
+    // Trust the venue-supplied `side` for open positions; fall back to Flat only
+    // when size is zero or the position is closed/liquidated. The prior logic
+    // derived the side from `size.is_sign_positive()`, which silently overrode the
+    // venue side for edge cases (e.g. an explicit Short reported with zero size).
+    let position_side = if position.status.is_closed() || position.size.is_zero() {
         PositionSide::Flat
-    } else if position.size.is_sign_positive() {
-        PositionSide::Long
     } else {
-        PositionSide::Short
+        PositionSide::from(position.side)
     };
 
     // Create quantity (always positive)

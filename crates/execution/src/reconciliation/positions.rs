@@ -468,6 +468,10 @@ pub fn adjust_fills_for_partial_window(
 
 /// Create a synthetic `OrderStatusReport` from a `FillSnapshot`.
 ///
+/// Populates `avg_px` from the fill's price so downstream reconciliation paths
+/// (e.g. [`crate::reconciliation::orders::create_inferred_fill`]) can resolve a
+/// fill price without falling back to the "no avg_px or price available" warning.
+///
 /// # Errors
 ///
 /// Returns an error if the fill quantity cannot be converted to f64.
@@ -480,7 +484,7 @@ pub fn create_synthetic_order_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let order_qty = Quantity::from_decimal_dp(fill.qty, instrument.size_precision())?;
 
-    Ok(OrderStatusReport::new(
+    let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
         None, // client_order_id
@@ -495,7 +499,9 @@ pub fn create_synthetic_order_report(
         UnixNanos::from(fill.ts_event),
         UnixNanos::from(fill.ts_event),
         None, // report_id
-    ))
+    );
+    report.avg_px = Some(fill.px);
+    Ok(report)
 }
 
 /// Create a synthetic `FillReport` from a `FillSnapshot`.

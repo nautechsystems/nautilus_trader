@@ -26,6 +26,7 @@ Usage:
     from nautilus_trader.adapters.dydx import DydxExecClientConfig
     from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
     from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
+    from nautilus_trader.adapters.dydx import DydxNetwork
 
 """
 
@@ -39,6 +40,7 @@ from nautilus_trader.adapters.dydx.execution import DydxExecutionClient
 from nautilus_trader.adapters.dydx.factories import DydxLiveDataClientFactory
 from nautilus_trader.adapters.dydx.factories import DydxLiveExecClientFactory
 from nautilus_trader.adapters.dydx.providers import DydxInstrumentProvider
+from nautilus_trader.core.nautilus_pyo3 import DydxNetwork
 
 
 __all__ = [
@@ -52,4 +54,5 @@ __all__ = [
     "DydxInstrumentProvider",
     "DydxLiveDataClientFactory",
     "DydxLiveExecClientFactory",
+    "DydxNetwork",
 ]

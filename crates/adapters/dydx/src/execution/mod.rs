@@ -121,12 +121,6 @@ pub mod wallet;
 
 use block_time::BlockTimeMonitor;
 
-/// Maximum client order ID value for dYdX (informational).
-///
-/// dYdX protocol accepts u32 client IDs. The `ClientOrderIdEncoder` uses sequential
-/// allocation starting from 1, with overflow protection near `u32::MAX - 1000`.
-pub const MAX_CLIENT_ID: u32 = u32::MAX;
-
 fn apply_avg_px_from_fills(order_reports: &mut [OrderStatusReport], fill_reports: &[FillReport]) {
     let mut totals: AHashMap<VenueOrderId, (Decimal, Decimal)> = AHashMap::new();
     for fill in fill_reports {
@@ -2353,73 +2347,71 @@ impl ExecutionClient for DydxExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        // Query single order from dYdX API
+        // dYdX Indexer `/v4/orders` caps at `limit` and has no offset cursor, so we
+        // request the maximum page (1000) to maximise the chance of finding a match
+        // on active subaccounts. Callers looking for older orders should prefer
+        // `generate_mass_status` or narrow via `instrument_id`.
+        const ORDER_LOOKUP_LIMIT: u32 = 1_000;
+
+        // Fetch orders, narrowing by market when an instrument filter is provided
+        let market = cmd
+            .instrument_id
+            .map(|id| id.symbol.as_str().trim_end_matches("-PERP").to_string());
+
         let response = self
             .http_client
             .inner
             .get_orders(
                 &self.wallet_address,
                 self.subaccount_number,
-                None,    // market filter
-                Some(1), // limit to 1 result
+                market.as_deref(),
+                Some(ORDER_LOOKUP_LIMIT),
             )
             .await
             .context("failed to fetch order from dYdX API")?;
 
         if response.is_empty() {
+            log::debug!(
+                "No orders returned for {}/subaccount={} (market_filter={:?})",
+                self.wallet_address,
+                self.subaccount_number,
+                market,
+            );
             return Ok(None);
         }
 
-        let order = &response[0];
         let ts_init = UnixNanos::default();
+        let scanned_count = response.len();
 
-        let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
-            Some(inst) => inst,
-            None => return Ok(None),
-        };
+        let report = find_matching_order_report(
+            &response,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            cmd.venue_order_id,
+            |clob_pair_id| self.get_instrument_by_clob_pair_id(clob_pair_id),
+            &self.encoder,
+            self.core.account_id,
+            ts_init,
+        )?;
 
-        let mut report =
-            parse_order_status_report(order, &instrument, self.core.account_id, ts_init)
-                .context("failed to parse order status report")?;
-
-        if !order.client_id.is_empty()
-            && let Ok(client_id_u32) = order.client_id.parse::<u32>()
-        {
-            self.encoder.register_known_client_id(client_id_u32);
-
-            if let Some(decoded) = self
-                .encoder
-                .decode_if_known(client_id_u32, order.client_metadata)
-            {
-                log::debug!(
-                    "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
-                    client_id_u32,
-                    order.client_metadata,
-                    decoded,
-                );
-                report.client_order_id = Some(decoded);
-            }
+        if report.is_none() {
+            // The target order was not in the fetched page. Surface the scope so
+            // callers can tell whether the order is older than the page or the
+            // filters simply didn't match any returned order.
+            let page_full = scanned_count == ORDER_LOOKUP_LIMIT as usize;
+            log::debug!(
+                "No order matched filters for {}/subaccount={} \
+                 (client_order_id={:?}, venue_order_id={:?}, instrument_id={:?}, \
+                 scanned={scanned_count}, page_full={page_full}, limit={ORDER_LOOKUP_LIMIT})",
+                self.wallet_address,
+                self.subaccount_number,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                cmd.instrument_id,
+            );
         }
 
-        if let Some(client_order_id) = cmd.client_order_id
-            && report.client_order_id != Some(client_order_id)
-        {
-            return Ok(None);
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id
-            && report.venue_order_id.as_str() != venue_order_id.as_str()
-        {
-            return Ok(None);
-        }
-
-        if let Some(instrument_id) = cmd.instrument_id
-            && report.instrument_id != instrument_id
-        {
-            return Ok(None);
-        }
-
-        Ok(Some(report))
+        Ok(report)
     }
 
     async fn generate_order_status_reports(
@@ -2771,5 +2763,273 @@ impl ExecutionClient for DydxExecutionClient {
         mass_status.add_fill_reports(fill_reports);
 
         Ok(Some(mass_status))
+    }
+}
+
+/// Iterates `orders` and returns the first report whose parsed fields match every active
+/// filter. Extracted from `generate_order_status_report` so the matching loop can be
+/// exercised in isolation.
+#[allow(clippy::too_many_arguments)]
+fn find_matching_order_report<F>(
+    orders: &[crate::http::models::Order],
+    instrument_filter: Option<InstrumentId>,
+    client_order_id_filter: Option<ClientOrderId>,
+    venue_order_id_filter: Option<VenueOrderId>,
+    lookup_instrument: F,
+    encoder: &ClientOrderIdEncoder,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<OrderStatusReport>>
+where
+    F: Fn(u32) -> Option<InstrumentAny>,
+{
+    for order in orders {
+        let instrument = match lookup_instrument(order.clob_pair_id) {
+            Some(inst) => inst,
+            None => continue,
+        };
+
+        if let Some(filter_id) = instrument_filter
+            && instrument.id() != filter_id
+        {
+            continue;
+        }
+
+        let mut report = parse_order_status_report(order, &instrument, account_id, ts_init)
+            .context("failed to parse order status report")?;
+
+        if !order.client_id.is_empty()
+            && let Ok(client_id_u32) = order.client_id.parse::<u32>()
+        {
+            encoder.register_known_client_id(client_id_u32);
+
+            if let Some(decoded) = encoder.decode_if_known(client_id_u32, order.client_metadata) {
+                log::debug!(
+                    "Decoded order: dYdX client_id={} meta={:#x} -> '{}'",
+                    client_id_u32,
+                    order.client_metadata,
+                    decoded,
+                );
+                report.client_order_id = Some(decoded);
+            }
+        }
+
+        if let Some(client_order_id) = client_order_id_filter
+            && report.client_order_id != Some(client_order_id)
+        {
+            continue;
+        }
+
+        if let Some(venue_order_id) = venue_order_id_filter
+            && report.venue_order_id.as_str() != venue_order_id.as_str()
+        {
+            continue;
+        }
+
+        return Ok(Some(report));
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        enums::OrderSide as NautilusOrderSide,
+        identifiers::Symbol,
+        instruments::{CryptoPerpetual, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use super::*;
+    use crate::{
+        common::enums::{DydxOrderStatus, DydxOrderType, DydxTimeInForce},
+        http::models::Order,
+    };
+
+    fn test_instrument(symbol: &str, venue: &str) -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new(venue));
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            instrument_id,
+            instrument_id.symbol,
+            Currency::BTC(),
+            Currency::USD(),
+            Currency::USD(),
+            false,
+            2,
+            3,
+            Price::new(0.01, 2),
+            Quantity::new(0.001, 3),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn test_order(id: &str, clob_pair_id: u32, client_id: &str) -> Order {
+        Order {
+            id: id.to_string(),
+            subaccount_id: "sub-1".to_string(),
+            client_id: client_id.to_string(),
+            clob_pair_id,
+            side: NautilusOrderSide::Buy,
+            size: dec!(1.0),
+            total_filled: dec!(0),
+            price: dec!(50000),
+            status: DydxOrderStatus::Open,
+            order_type: DydxOrderType::Limit,
+            time_in_force: DydxTimeInForce::Gtt,
+            reduce_only: false,
+            post_only: false,
+            order_flags: 64,
+            good_til_block: None,
+            good_til_block_time: None,
+            created_at_height: Some(100),
+            client_metadata: 4,
+            trigger_price: None,
+            condition_type: None,
+            conditional_order_trigger_subticks: None,
+            execution: None,
+            updated_at: None,
+            updated_at_height: None,
+            ticker: None,
+            subaccount_number: 0,
+            order_router_address: None,
+        }
+    }
+
+    #[rstest]
+    fn test_find_matching_order_report_returns_later_match() {
+        // Regression guard: earlier implementation fetched limit=1 and returned None
+        // when the first order didn't match the filter. The fixed iteration logic must
+        // scan the whole response and return the matching entry.
+        let btc_inst = test_instrument("BTC-USD-PERP", "DYDX");
+        let eth_inst = test_instrument("ETH-USD-PERP", "DYDX");
+
+        // Response ordered so the non-matching order comes first.
+        let orders = vec![
+            test_order("order-eth", 1, "22222"),
+            test_order("order-btc", 0, "11111"),
+        ];
+
+        let encoder = ClientOrderIdEncoder::new();
+        let report = find_matching_order_report(
+            &orders,
+            Some(btc_inst.id()),
+            None,
+            None,
+            |clob_pair_id| match clob_pair_id {
+                0 => Some(btc_inst.clone()),
+                1 => Some(eth_inst.clone()),
+                _ => None,
+            },
+            &encoder,
+            AccountId::new("DYDX-001"),
+            UnixNanos::default(),
+        )
+        .expect("lookup should succeed");
+
+        let report = report.expect("matching order should be found");
+        assert_eq!(report.instrument_id, btc_inst.id());
+        assert_eq!(report.venue_order_id.as_str(), "order-btc");
+    }
+
+    #[rstest]
+    fn test_find_matching_order_report_returns_none_when_no_match() {
+        let btc_inst = test_instrument("BTC-USD-PERP", "DYDX");
+        let eth_inst = test_instrument("ETH-USD-PERP", "DYDX");
+
+        let orders = vec![
+            test_order("order-eth-1", 1, "22222"),
+            test_order("order-eth-2", 1, "33333"),
+        ];
+
+        let encoder = ClientOrderIdEncoder::new();
+        let report = find_matching_order_report(
+            &orders,
+            Some(btc_inst.id()),
+            None,
+            None,
+            |clob_pair_id| match clob_pair_id {
+                0 => Some(btc_inst.clone()),
+                1 => Some(eth_inst.clone()),
+                _ => None,
+            },
+            &encoder,
+            AccountId::new("DYDX-001"),
+            UnixNanos::default(),
+        )
+        .expect("lookup should succeed");
+
+        assert!(report.is_none());
+    }
+
+    #[rstest]
+    fn test_find_matching_order_report_filters_by_venue_order_id() {
+        let btc_inst = test_instrument("BTC-USD-PERP", "DYDX");
+
+        let orders = vec![
+            test_order("order-a", 0, "11111"),
+            test_order("order-b", 0, "22222"),
+            test_order("order-c", 0, "33333"),
+        ];
+
+        let encoder = ClientOrderIdEncoder::new();
+        let target = VenueOrderId::new("order-b");
+        let report = find_matching_order_report(
+            &orders,
+            None,
+            None,
+            Some(target),
+            |_| Some(btc_inst.clone()),
+            &encoder,
+            AccountId::new("DYDX-001"),
+            UnixNanos::default(),
+        )
+        .expect("lookup should succeed")
+        .expect("matching order should be found");
+
+        assert_eq!(report.venue_order_id.as_str(), "order-b");
+    }
+
+    #[rstest]
+    fn test_find_matching_order_report_skips_orders_without_cached_instrument() {
+        let btc_inst = test_instrument("BTC-USD-PERP", "DYDX");
+
+        let orders = vec![
+            // First order's clob_pair_id does not resolve -- must be skipped.
+            test_order("order-unknown", 99, "11111"),
+            test_order("order-btc", 0, "22222"),
+        ];
+
+        let encoder = ClientOrderIdEncoder::new();
+        let report = find_matching_order_report(
+            &orders,
+            Some(btc_inst.id()),
+            None,
+            None,
+            |clob_pair_id| (clob_pair_id == 0).then(|| btc_inst.clone()),
+            &encoder,
+            AccountId::new("DYDX-001"),
+            UnixNanos::default(),
+        )
+        .expect("lookup should succeed")
+        .expect("matching order should be found");
+
+        assert_eq!(report.venue_order_id.as_str(), "order-btc");
     }
 }
