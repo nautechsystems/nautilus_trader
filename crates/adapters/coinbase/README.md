@@ -10,6 +10,28 @@ The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket), data
 models and helper utilities that wrap the official **Coinbase Advanced Trade API**
 for spot, futures, and perpetual markets.
 
+Components:
+
+- `CoinbaseHttpClient`: Low-level HTTP API connectivity with ES256 JWT signing.
+- `CoinbaseWebSocketClient`: Low-level WebSocket connectivity (market data and
+  authenticated user channels).
+- `CoinbaseInstrumentProvider`: Instrument loading and parsing.
+- `CoinbaseDataClient`: Market data feed manager.
+- `CoinbaseDataClientFactory`: Data client factory.
+
+Pending (tracked for follow-up work):
+
+- `CoinbaseExecutionClient` and `CoinbaseExecutionClientFactory`.
+
+The adapter is consumed by the v2 system. Configurations and enums are exported
+through PyO3 (`nautilus_pyo3.coinbase`); there is no legacy Python `TradingNode`
+integration.
+
+See the
+[integration guide](https://nautilustrader.io/docs/nightly/integrations/coinbase)
+for capabilities, symbology, configuration tables, and the current adapter
+status.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

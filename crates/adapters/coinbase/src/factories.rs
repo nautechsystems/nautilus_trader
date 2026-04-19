@@ -21,9 +21,18 @@ use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
 use nautilus_model::identifiers::ClientId;
 use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
-use crate::{config::CoinbaseDataClientConfig, data::CoinbaseDataClient};
+use crate::{
+    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    data::CoinbaseDataClient,
+};
 
 impl ClientConfig for CoinbaseDataClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl ClientConfig for CoinbaseExecClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -109,6 +118,16 @@ mod tests {
         let factory = CoinbaseDataClientFactory::new();
         assert_eq!(factory.name(), "COINBASE");
         assert_eq!(factory.config_type(), "CoinbaseDataClientConfig");
+    }
+
+    #[rstest]
+    fn test_coinbase_exec_client_config_implements_client_config() {
+        let config = CoinbaseExecClientConfig::default();
+        let boxed_config: Box<dyn ClientConfig> = Box::new(config);
+        let downcasted = boxed_config
+            .as_any()
+            .downcast_ref::<CoinbaseExecClientConfig>();
+        assert!(downcasted.is_some());
     }
 
     #[rstest]

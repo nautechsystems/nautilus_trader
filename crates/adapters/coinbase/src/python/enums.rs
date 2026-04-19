@@ -13,29 +13,45 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
-
-pub mod config;
-pub mod enums;
+//! Coinbase enumerations Python bindings.
 
 use pyo3::prelude::*;
 
-use crate::{
-    common::consts::COINBASE,
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
-};
+use crate::common::enums::CoinbaseEnvironment;
 
-/// Loaded as `nautilus_pyo3.coinbase`.
-///
-/// # Errors
-///
-/// Returns an error if any bindings fail to register with the Python module.
-#[pymodule]
-pub fn coinbase(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add(stringify!(COINBASE), COINBASE)?;
-    m.add_class::<crate::common::enums::CoinbaseEnvironment>()?;
-    m.add_class::<CoinbaseDataClientConfig>()?;
-    m.add_class::<CoinbaseExecClientConfig>()?;
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CoinbaseEnvironment {
+    /// Coinbase environment selection (live vs sandbox).
+    #[new]
+    fn py_new() -> Self {
+        Self::default()
+    }
 
-    Ok(())
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> &'static str {
+        match self {
+            Self::Live => "LIVE",
+            Self::Sandbox => "SANDBOX",
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("CoinbaseEnvironment.{}", self.__str__())
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.__str__().to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
 }
