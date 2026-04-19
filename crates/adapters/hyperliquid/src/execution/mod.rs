@@ -58,7 +58,7 @@ use crate::{
             clamp_price_to_precision, client_order_id_to_cancel_request_with_asset,
             derive_limit_from_trigger, derive_market_order_price, extract_error_message,
             extract_inner_error, extract_inner_errors, normalize_price,
-            order_to_hyperliquid_request_with_asset, parse_account_balances_and_margins,
+            order_to_hyperliquid_request_with_asset, parse_combined_account_balances_and_margins,
             round_to_sig_figs,
         },
     },
@@ -68,6 +68,7 @@ use crate::{
         models::{
             ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecBuilderFee,
             HyperliquidExecGrouping, HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
+            SpotClearinghouseState,
         },
     },
     websocket::{
@@ -277,38 +278,52 @@ impl HyperliquidExecutionClient {
     async fn refresh_account_state(&self) -> anyhow::Result<()> {
         let account_address = self.get_account_address()?;
 
-        let clearinghouse_state = self
-            .http_client
-            .info_clearinghouse_state(&account_address)
-            .await
-            .context("failed to fetch clearinghouse state")?;
-
-        // Deserialize the response
-        let state: ClearinghouseState = serde_json::from_value(clearinghouse_state)
-            .context("failed to deserialize clearinghouse state")?;
+        let (perp_state, spot_state) = self
+            .fetch_combined_clearinghouse_state(&account_address)
+            .await?;
 
         log::debug!(
-            "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}",
-            state.cross_margin_summary,
-            state.asset_positions.len()
+            "Received clearinghouse state: cross_margin_summary={:?}, asset_positions={}, spot_balances={}",
+            perp_state.cross_margin_summary,
+            perp_state.asset_positions.len(),
+            spot_state.balances.len(),
         );
 
-        // Parse balances and margins from clearinghouse state
-        if state.cross_margin_summary.is_some() {
-            let (balances, margins) = parse_account_balances_and_margins(&state)
-                .context("failed to parse account balances and margins")?;
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+                .context("failed to parse combined account balances and margins")?;
 
-            // Generate account state event
-            let ts_event = self.clock.get_time_ns();
-            self.emitter
-                .emit_account_state(balances, margins, true, ts_event);
+        // Emit even when both sides are empty so the account registers for
+        // await_account_registered on unfunded wallets.
+        let ts_event = self.clock.get_time_ns();
+        self.emitter
+            .emit_account_state(balances, margins, true, ts_event);
 
-            log::info!("Account state updated successfully");
-        } else {
-            log::warn!("No cross margin summary in clearinghouse state");
-        }
-
+        log::info!("Account state updated successfully");
         Ok(())
+    }
+
+    async fn fetch_combined_clearinghouse_state(
+        &self,
+        account_address: &str,
+    ) -> anyhow::Result<(ClearinghouseState, SpotClearinghouseState)> {
+        let perp_json = self
+            .http_client
+            .info_clearinghouse_state(account_address)
+            .await
+            .context("failed to fetch clearinghouse state")?;
+        let perp_state: ClearinghouseState = serde_json::from_value(perp_json)
+            .context("failed to deserialize clearinghouse state")?;
+
+        let spot_json = self
+            .http_client
+            .info_spot_clearinghouse_state(account_address)
+            .await
+            .context("failed to fetch spot clearinghouse state")?;
+        let spot_state: SpotClearinghouseState = serde_json::from_value(spot_json)
+            .context("failed to deserialize spot clearinghouse state")?;
+
+        Ok((perp_state, spot_state))
     }
 
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
@@ -1222,22 +1237,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let clock = self.clock;
 
         self.spawn_task("query_account", async move {
-            let clearinghouse_state = http_client
+            let perp_json = http_client
                 .info_clearinghouse_state(&account_address)
                 .await
                 .context("failed to fetch clearinghouse state")?;
 
-            let state: ClearinghouseState = serde_json::from_value(clearinghouse_state)
+            let perp_state: ClearinghouseState = serde_json::from_value(perp_json)
                 .context("failed to deserialize clearinghouse state")?;
 
-            if state.cross_margin_summary.is_some() {
-                let (balances, margins) = parse_account_balances_and_margins(&state)
-                    .context("failed to parse account balances and margins")?;
-                let ts_event = clock.get_time_ns();
-                emitter.emit_account_state(balances, margins, true, ts_event);
-            } else {
-                log::warn!("No cross margin summary in clearinghouse state");
-            }
+            let spot_json = http_client
+                .info_spot_clearinghouse_state(&account_address)
+                .await
+                .context("failed to fetch spot clearinghouse state")?;
+            let spot_state: SpotClearinghouseState = serde_json::from_value(spot_json)
+                .context("failed to deserialize spot clearinghouse state")?;
+
+            let (balances, margins) =
+                parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+                    .context("failed to parse combined account balances and margins")?;
+            let ts_event = clock.get_time_ns();
+            emitter.emit_account_state(balances, margins, true, ts_event);
 
             Ok(())
         });
@@ -1510,6 +1529,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let account_address = self.get_account_address()?;
 
+        // request_position_status_reports already merges spot holdings
         let reports = self
             .http_client
             .request_position_status_reports(&account_address, cmd.instrument_id)

@@ -29,7 +29,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotMeta};
+use super::models::{AssetPosition, HyperliquidFill, PerpMeta, SpotBalance, SpotMeta};
 use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
@@ -213,6 +213,16 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
 
         defs.push(def);
     }
+
+    // Canonical pairs must be cached first so the base-token alias (e.g.
+    // "PURR" -> PURR-USDC-SPOT) resolves to the canonical instrument when
+    // non-canonical pairs share the same base. Secondary key keeps the
+    // order stable within each bucket.
+    defs.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then(a.asset_index.cmp(&b.asset_index))
+    });
 
     Ok(defs)
 }
@@ -612,6 +622,43 @@ pub fn parse_position_status_report(
     ))
 }
 
+/// Parse a spot token balance into a [`PositionStatusReport`] against the spot instrument.
+///
+/// Spot holdings are always Long (Hyperliquid spot has no short exposure). The average
+/// entry price is derived from `entry_ntl / total` when both are non-zero; otherwise it
+/// is omitted.
+///
+/// # Errors
+///
+/// Returns an error if the quantity cannot be constructed at the instrument's precision.
+pub fn parse_spot_position_status_report(
+    balance: &SpotBalance,
+    instrument: &dyn Instrument,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
+    let (position_side, quantity_value) = if balance.total.is_zero() {
+        (PositionSideSpecified::Flat, Decimal::ZERO)
+    } else {
+        (PositionSideSpecified::Long, balance.total)
+    };
+
+    let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
+        .context("failed to create spot quantity from decimal")?;
+
+    Ok(PositionStatusReport::new(
+        account_id,
+        instrument.id(),
+        position_side,
+        quantity,
+        ts_init,
+        ts_init,
+        Some(UUID4::new()),
+        None,
+        balance.avg_entry_px(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -815,6 +862,64 @@ mod tests {
         assert_eq!(alias.symbol, "PURR-USDC-SPOT");
         assert_eq!(alias.base, "PURR");
         assert!(!alias.active); // Non-canonical pairs are marked as inactive
+    }
+
+    #[rstest]
+    fn test_parse_spot_instruments_sorts_canonical_before_non_canonical() {
+        // Non-canonical pair uses a lower pair index than the canonical one;
+        // the sort must still put canonical first so the base-token alias in
+        // cache_instrument resolves to the canonical instrument.
+        let tokens = vec![
+            SpotToken {
+                name: "USDC".to_string(),
+                sz_decimals: 6,
+                wei_decimals: 6,
+                index: 0,
+                token_id: "0x1".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+            SpotToken {
+                name: "HYPE".to_string(),
+                sz_decimals: 2,
+                wei_decimals: 8,
+                index: 150,
+                token_id: "0x2".to_string(),
+                is_canonical: true,
+                evm_contract: None,
+                full_name: None,
+                deployer_trading_fee_share: None,
+            },
+        ];
+
+        let pairs = vec![
+            SpotPair {
+                name: "HYPE_OLD".to_string(),
+                tokens: [150, 0],
+                index: 3,
+                is_canonical: false,
+            },
+            SpotPair {
+                name: "HYPE".to_string(),
+                tokens: [150, 0],
+                index: 107,
+                is_canonical: true,
+            },
+        ];
+
+        let defs = parse_spot_instruments(&SpotMeta {
+            tokens,
+            universe: pairs,
+        })
+        .unwrap();
+
+        assert_eq!(defs.len(), 2);
+        assert!(defs[0].active, "canonical must sort first");
+        assert_eq!(defs[0].asset_index, 10000 + 107);
+        assert!(!defs[1].active);
+        assert_eq!(defs[1].asset_index, 10000 + 3);
     }
 
     #[rstest]

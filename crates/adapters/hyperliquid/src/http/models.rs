@@ -659,6 +659,51 @@ mod tests {
     }
 
     #[rstest]
+    fn test_spot_clearinghouse_state_deserialization() {
+        let json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "14.625485", "hold": "0.0", "entryNtl": "0.0"},
+                {"coin": "PURR", "token": 1, "total": "2000", "hold": "100", "entryNtl": "1234.56"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+
+        assert_eq!(state.balances.len(), 2);
+        let usdc = &state.balances[0];
+        assert_eq!(usdc.coin.as_str(), "USDC");
+        assert_eq!(usdc.token, 0);
+        assert_eq!(usdc.total.to_string(), "14.625485");
+        assert_eq!(usdc.hold, rust_decimal::Decimal::ZERO);
+        assert_eq!(usdc.free().to_string(), "14.625485");
+        assert_eq!(usdc.avg_entry_px(), None);
+
+        let purr = &state.balances[1];
+        assert_eq!(purr.coin.as_str(), "PURR");
+        assert_eq!(purr.token, 1);
+        assert_eq!(purr.free().to_string(), "1900");
+        assert_eq!(
+            purr.avg_entry_px().unwrap(),
+            rust_decimal_macros::dec!(0.61728)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_clearinghouse_state_empty() {
+        let json = r#"{"balances": []}"#;
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        assert!(state.balances.is_empty());
+    }
+
+    #[rstest]
+    fn test_spot_balance_handles_missing_entry_ntl() {
+        let json = r#"{"coin": "HYPE", "token": 150, "total": "5", "hold": "0"}"#;
+        let balance: SpotBalance = serde_json::from_str(json).unwrap();
+        assert_eq!(balance.entry_ntl, None);
+        assert_eq!(balance.avg_entry_px(), None);
+    }
+
+    #[rstest]
     fn test_msgpack_serialization_matches_python() {
         // Test that msgpack serialization includes the "type" tag properly.
         // Python SDK serializes: {"type": "order", "orders": [...], "grouping": "na"}
@@ -1309,6 +1354,68 @@ pub struct PositionData {
         deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
     )]
     pub unrealized_pnl: Decimal,
+}
+
+/// Complete spot clearinghouse state response from `POST /info`
+/// with `{ "type": "spotClearinghouseState", "user": "address" }`.
+///
+/// Provides per-token spot balances for the queried address. Under unified or
+/// portfolio margin accounts this is the source of truth for spot holdings.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotClearinghouseState {
+    /// Per-token spot balances.
+    #[serde(default)]
+    pub balances: Vec<SpotBalance>,
+}
+
+/// A single token balance entry from `spotClearinghouseState.balances`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpotBalance {
+    /// Token name (e.g., "USDC", "PURR").
+    pub coin: Ustr,
+    /// Token index matching `spotMeta.tokens[*].index`.
+    pub token: u32,
+    /// Total token balance (on-hold plus available).
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub total: Decimal,
+    /// Portion currently reserved for resting orders.
+    #[serde(
+        serialize_with = "crate::common::parse::serialize_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_decimal_from_str"
+    )]
+    pub hold: Decimal,
+    /// Entry notional value (position cost basis in USDC).
+    #[serde(
+        default,
+        serialize_with = "crate::common::parse::serialize_optional_decimal_as_str",
+        deserialize_with = "crate::common::parse::deserialize_optional_decimal_from_str"
+    )]
+    pub entry_ntl: Option<Decimal>,
+}
+
+impl SpotBalance {
+    /// Returns the balance freely available to trade or withdraw (`total - hold`).
+    #[must_use]
+    pub fn free(&self) -> Decimal {
+        (self.total - self.hold).max(Decimal::ZERO)
+    }
+
+    /// Returns the average entry price derived from `entry_ntl / total`, if both are non-zero.
+    #[must_use]
+    pub fn avg_entry_px(&self) -> Option<Decimal> {
+        let entry_ntl = self.entry_ntl?;
+
+        if entry_ntl.is_zero() || self.total.is_zero() {
+            return None;
+        }
+
+        Some(entry_ntl / self.total)
+    }
 }
 
 /// Cross margin summary information.

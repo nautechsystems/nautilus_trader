@@ -88,6 +88,7 @@ use crate::{
         HyperliquidExecLimitParams, HyperliquidExecModifyStatus, HyperliquidExecOrderKind,
         HyperliquidExecOrderStatus, HyperliquidExecPlaceOrderRequest, HyperliquidExecResponseData,
         HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams, RESPONSE_STATUS_OK,
+        SpotClearinghouseState,
     },
     websocket::messages::TrailingOffsetType,
 };
@@ -816,6 +817,67 @@ pub fn parse_account_balances_and_margins(
     }
 
     Ok((balances, margins))
+}
+
+/// Merges perp clearinghouse balances with spot balances into a unified set.
+///
+/// The perp parser already reflects combined USDC (its `withdrawable` may include
+/// spot buckets). To avoid double-counting, this helper appends only non-USDC
+/// spot tokens onto the perp-derived balances. If the perp state has no margin
+/// summary, the full spot balance set is used verbatim.
+///
+/// # Errors
+///
+/// Returns an error if any balance conversion fails.
+pub fn parse_combined_account_balances_and_margins(
+    perp_state: &ClearinghouseState,
+    spot_state: &SpotClearinghouseState,
+) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>)> {
+    let (mut balances, margins) = parse_account_balances_and_margins(perp_state)?;
+
+    let has_perp_summary = perp_state.cross_margin_summary.is_some();
+    let spot_balances = parse_spot_account_balances(spot_state)?;
+
+    for balance in spot_balances {
+        let is_usdc = balance.currency.code.as_str() == "USDC";
+        if has_perp_summary && is_usdc {
+            continue;
+        }
+        balances.push(balance);
+    }
+
+    Ok((balances, margins))
+}
+
+/// Parses Hyperliquid spot clearinghouse state into Nautilus account balances.
+///
+/// Emits one [`AccountBalance`] per non-zero spot token, deriving free from
+/// `total - hold`. Tokens unknown to the global currency registry are registered
+/// on the fly with 8-decimal precision (matches Hyperliquid's `sz_decimals` cap).
+///
+/// # Errors
+///
+/// Returns an error if any balance cannot be converted to a Nautilus `Money`.
+pub fn parse_spot_account_balances(
+    state: &SpotClearinghouseState,
+) -> anyhow::Result<Vec<AccountBalance>> {
+    let mut balances = Vec::with_capacity(state.balances.len());
+
+    for balance in &state.balances {
+        if balance.total.is_zero() {
+            continue;
+        }
+
+        let currency = crate::http::parse::get_currency(balance.coin.as_str());
+
+        let total = balance.total.max(Decimal::ZERO);
+        let locked = balance.hold.max(Decimal::ZERO).min(total);
+        let free = (total - locked).max(Decimal::ZERO);
+
+        balances.push(AccountBalance::from_total_and_free(total, free, currency)?);
+    }
+
+    Ok(balances)
 }
 
 /// Determine the Hyperliquid grouping strategy for an order list.
@@ -1724,5 +1786,111 @@ mod tests {
         let (balances, margins) = parse_account_balances_and_margins(&state).unwrap();
         assert!(balances.is_empty());
         assert!(margins.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_emits_one_per_token() {
+        let json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "100.25", "hold": "10", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "50", "hold": "0", "entryNtl": "25"},
+                {"coin": "DUST", "token": 2, "total": "0", "hold": "0", "entryNtl": "0"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        let balances = parse_spot_account_balances(&state).unwrap();
+
+        assert_eq!(balances.len(), 2);
+
+        let usdc = &balances[0];
+        assert_eq!(usdc.currency.code.as_str(), "USDC");
+        assert_eq!(usdc.total.as_decimal(), dec!(100.25));
+        assert_eq!(usdc.free.as_decimal(), dec!(90.25));
+        assert_eq!(usdc.locked.as_decimal(), dec!(10));
+
+        let purr = &balances[1];
+        assert_eq!(purr.currency.code.as_str(), "PURR");
+        assert_eq!(purr.total.as_decimal(), dec!(50));
+        assert_eq!(purr.free.as_decimal(), dec!(50));
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_clamps_hold_to_total() {
+        let json = r#"{
+            "balances": [
+                {"coin": "HYPE", "token": 5, "total": "5", "hold": "10", "entryNtl": "0"}
+            ]
+        }"#;
+
+        let state: SpotClearinghouseState = serde_json::from_str(json).unwrap();
+        let balances = parse_spot_account_balances(&state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        let hype = &balances[0];
+        assert_eq!(hype.total.as_decimal(), dec!(5));
+        assert_eq!(hype.free.as_decimal(), dec!(0));
+        assert_eq!(hype.locked.as_decimal(), dec!(5));
+    }
+
+    #[rstest]
+    fn test_parse_spot_account_balances_empty() {
+        let state = SpotClearinghouseState::default();
+        let balances = parse_spot_account_balances(&state).unwrap();
+        assert!(balances.is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_combined_deduplicates_usdc_when_perp_summary_present() {
+        let perp_json = r#"{
+            "assetPositions": [],
+            "crossMarginSummary": {
+                "accountValue": "500",
+                "totalNtlPos": "0",
+                "totalRawUsd": "500",
+                "totalMarginUsed": "0",
+                "withdrawable": "500"
+            },
+            "withdrawable": "500"
+        }"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "123", "hold": "0", "entryNtl": "0"},
+                {"coin": "PURR", "token": 1, "total": "10", "hold": "0", "entryNtl": "5"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert!(margins.is_empty());
+        assert_eq!(balances.len(), 2);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(500));
+        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].total.as_decimal(), dec!(10));
+    }
+
+    #[rstest]
+    fn test_parse_combined_uses_spot_usdc_when_perp_summary_missing() {
+        let perp_json = r#"{"assetPositions": []}"#;
+        let perp_state: ClearinghouseState = serde_json::from_str(perp_json).unwrap();
+
+        let spot_json = r#"{
+            "balances": [
+                {"coin": "USDC", "token": 0, "total": "50", "hold": "0", "entryNtl": "0"}
+            ]
+        }"#;
+        let spot_state: SpotClearinghouseState = serde_json::from_str(spot_json).unwrap();
+
+        let (balances, _) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
+
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].total.as_decimal(), dec!(50));
     }
 }

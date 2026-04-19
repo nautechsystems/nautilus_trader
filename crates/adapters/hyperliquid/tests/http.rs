@@ -46,7 +46,7 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    enums::OrderStatus,
+    enums::{OrderStatus, PositionSideSpecified},
     identifiers::{AccountId, ClientOrderId},
 };
 use nautilus_network::http::{HttpClient, Method};
@@ -60,6 +60,7 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    spot_fails: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for TestServerState {
@@ -70,6 +71,7 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }
@@ -186,6 +188,17 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             "assetPositions": []
         }))
         .into_response(),
+        "spotClearinghouseState" => {
+            if state.spot_fails.load(Ordering::Relaxed) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "spot endpoint unavailable"})),
+                )
+                    .into_response();
+            }
+            let spot = load_json("http_spot_clearinghouse_state.json");
+            Json(spot).into_response()
+        }
         "candleSnapshot" => Json(json!([
             {
                 "t": 1703875200000u64,
@@ -416,6 +429,453 @@ async fn test_info_clearinghouse_state_returns_account_state() {
 
 #[rstest]
 #[tokio::test]
+async fn test_info_spot_clearinghouse_state_returns_balances() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client
+        .info_spot_clearinghouse_state("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    let balances = result.get("balances").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(balances.len(), 3);
+    assert_eq!(balances[0].get("coin").unwrap().as_str().unwrap(), "USDC");
+
+    let last_request = state.last_request_body.lock().await;
+    let body = last_request.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState"
+    );
+    assert_eq!(
+        body.get("user").unwrap().as_str().unwrap(),
+        "0x1234567890123456789012345678901234567890"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_dedupes_usdc_with_perp_summary() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    let usdc_balances: Vec<_> = account_state
+        .balances
+        .iter()
+        .filter(|b| b.currency.code.as_str() == "USDC")
+        .collect();
+    assert_eq!(usdc_balances.len(), 1, "USDC must not be duplicated");
+    assert_eq!(usdc_balances[0].total.as_f64(), 10000.0);
+
+    let non_usdc: Vec<_> = account_state
+        .balances
+        .iter()
+        .filter(|b| b.currency.code.as_str() != "USDC")
+        .map(|b| b.currency.code.as_str())
+        .collect();
+    assert!(non_usdc.contains(&"PURR"));
+    assert!(non_usdc.contains(&"HYPE"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_balances_emits_one_per_non_zero_token() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let balances = client
+        .request_spot_balances("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    assert_eq!(balances.len(), 3);
+
+    let usdc = balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "USDC")
+        .expect("USDC balance");
+    assert_eq!(usdc.total.as_f64(), 14.625485);
+    assert_eq!(usdc.free.as_f64(), 14.625485);
+
+    let purr = balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "PURR")
+        .expect("PURR balance");
+    assert_eq!(purr.total.as_f64(), 2000.0);
+    assert_eq!(purr.locked.as_f64(), 100.0);
+    assert_eq!(purr.free.as_f64(), 1900.0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_spot_fetch_for_perp_filter() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    // Perp filter must not trigger a spotClearinghouseState request
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("BTC-USD-PERP.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert!(reports.is_empty());
+
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "clearinghouseState",
+        "filtered perp query must not reach spotClearinghouseState"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_skips_when_instrument_missing() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    // No spot instruments are cached, so reports are skipped (non-fatal)
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_emits_for_cached_instrument() {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let instrument = CurrencyPair::new(
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
+        Symbol::new("PURR/USDC"),
+        purr,
+        usdc,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
+
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+    assert_eq!(report.quantity.as_f64(), 2000.0);
+    // Spot holdings are always Long on Hyperliquid (no spot shorting)
+    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    // entryNtl=1234.56 / total=2000 = 0.61728
+    assert_eq!(
+        report.avg_px_open.unwrap(),
+        rust_decimal_macros::dec!(0.61728),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_skips_usdc() {
+    // USDC is the universal spot quote and has no `USDC-*-SPOT` instrument,
+    // so the loop must skip it to avoid a misleading cache-miss WARN. Cache a
+    // PURR/USDC instrument so the test observes the skip (USDC continues past
+    // the early return) while PURR still resolves normally.
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let instrument = CurrencyPair::new(
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
+        Symbol::new("PURR/USDC"),
+        purr,
+        usdc,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
+
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1, "only PURR should emit a position report");
+    assert!(
+        reports[0]
+            .instrument_id
+            .symbol
+            .as_str()
+            .starts_with("PURR-")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+
+    // Cache PURR/USDC (fixture contains total=2000)
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let purr_inst = CurrencyPair::new(
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
+        Symbol::new("PURR/USDC"),
+        purr,
+        usdc,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::CurrencyPair(purr_inst));
+
+    // Cache HYPE/USDC (fixture contains total=5.2)
+    let hype = Currency::new("HYPE", 8, 0, "HYPE", CurrencyType::Crypto);
+    let hype_inst = CurrencyPair::new(
+        InstrumentId::from("HYPE-USDC-SPOT.HYPERLIQUID"),
+        Symbol::new("@150"),
+        hype,
+        usdc,
+        5,
+        2,
+        Price::from("0.00001"),
+        Quantity::from("0.01"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::CurrencyPair(hype_inst));
+
+    let reports = client
+        .request_spot_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("PURR-USDC-SPOT.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_propagates_spot_endpoint_failure() {
+    let state = TestServerState::default();
+    state
+        .spot_fails
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let result = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await;
+
+    let err = result.expect_err("spot endpoint failure must propagate");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("spot") || msg.contains("clearinghouse") || msg.contains("http"),
+        "error must reference the failing spot fetch; got: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter() {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let instrument = CurrencyPair::new(
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
+        Symbol::new("PURR/USDC"),
+        purr,
+        usdc,
+        5,
+        0,
+        Price::from("0.00001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        ts,
+        ts,
+    );
+    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
+
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("PURR-USDC-SPOT.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    // PURR is cached and fixture has total=2000, so the spot report emerges
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+
+    // Last request must be the spot endpoint; perp clearinghouseState
+    // must not be called for spot-filtered queries
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState",
+        "spot-filtered query must not reach clearinghouseState"
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_rate_limit_triggers_429_response() {
     let state = TestServerState::default();
     state.rate_limit_after.store(2, Ordering::Relaxed);
@@ -571,6 +1031,11 @@ impl TestHttpClient {
 
     async fn info_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
         let request = InfoRequest::clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    async fn info_spot_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
+        let request = InfoRequest::spot_clearinghouse_state(user);
         self.send_info_request(&request).await
     }
 

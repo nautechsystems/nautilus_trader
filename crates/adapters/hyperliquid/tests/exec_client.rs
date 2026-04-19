@@ -98,6 +98,9 @@ struct TestServerState {
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `orderStatus` info responses.
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    /// Optional override for `spotClearinghouseState` info responses;
+    /// defaults to `{"balances": []}` when unset.
+    spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
 }
 
@@ -113,6 +116,7 @@ impl Default for TestServerState {
             fail_frontend_open_orders_count: Arc::new(AtomicUsize::new(0)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
         }
     }
@@ -225,6 +229,13 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             "assetPositions": []
         }))
         .into_response(),
+        "spotClearinghouseState" => {
+            if let Some(body) = state.spot_clearinghouse_response.lock().await.clone() {
+                Json(body).into_response()
+            } else {
+                Json(json!({"balances": []})).into_response()
+            }
+        }
         _ => Json(json!({})).into_response(),
     }
 }
@@ -878,6 +889,107 @@ async fn test_query_account_does_not_block_within_runtime() {
         .expect("channel closed without event");
 
     assert!(matches!(event, ExecutionEvent::Account(_)));
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_account_emits_spot_balances() {
+    let state = TestServerState::default();
+    // Populate spot response with non-USDC holdings that the execution client
+    // must surface on the emitted AccountState.
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": [
+            {"coin": "USDC", "token": 0, "total": "150", "hold": "0", "entryNtl": "0"},
+            {"coin": "PURR", "token": 1, "total": "2000", "hold": "100", "entryNtl": "1234.56"},
+            {"coin": "HYPE", "token": 150, "total": "5.2", "hold": "0", "entryNtl": "75.4"}
+        ]
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("HYPERLIQUID")),
+        AccountId::from("HYPERLIQUID-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.query_account(cmd).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for account event")
+        .expect("channel closed without event");
+
+    let ExecutionEvent::Account(account_state) = event else {
+        panic!("expected ExecutionEvent::Account, was {event:?}");
+    };
+
+    let codes: Vec<&str> = account_state
+        .balances
+        .iter()
+        .map(|b| b.currency.code.as_str())
+        .collect();
+
+    // Perp summary is present (10000 USDC) so spot USDC must be skipped,
+    // but non-USDC spot tokens must appear
+    assert!(codes.contains(&"USDC"), "USDC missing, found: {codes:?}");
+    assert!(codes.contains(&"PURR"), "PURR missing, found: {codes:?}");
+    assert!(codes.contains(&"HYPE"), "HYPE missing, found: {codes:?}");
+
+    let purr = account_state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "PURR")
+        .unwrap();
+    assert_eq!(purr.total.as_f64(), 2000.0);
+    assert_eq!(purr.locked.as_f64(), 100.0);
+    assert_eq!(purr.free.as_f64(), 1900.0);
+
+    let usdc_count = codes.iter().filter(|c| **c == "USDC").count();
+    assert_eq!(usdc_count, 1, "USDC must not be duplicated");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_account_propagates_spot_endpoint_failure() {
+    // Force spotClearinghouseState to return a shape-mismatched payload.
+    // serde_json::from_value fails in the execution client's task, and
+    // the spawned future should bail out before emitting an AccountState.
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": "this-should-be-an-array"
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+
+    let cmd = QueryAccount::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("HYPERLIQUID")),
+        AccountId::from("HYPERLIQUID-001"),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.query_account(cmd).unwrap();
+
+    // With the spot payload malformed, the spawned task should log and
+    // bail out before emitting an AccountState. Allow a short window for
+    // any stray event to arrive; none should.
+    let event = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+
+    assert!(
+        event.is_err(),
+        "no AccountState must be emitted when spot state fails to parse; got {event:?}",
+    );
 }
 
 const HYPERLIQUID_TEST_INSTRUMENT: &str = "BTC-USD-PERP.HYPERLIQUID";

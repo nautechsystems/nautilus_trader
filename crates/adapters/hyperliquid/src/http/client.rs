@@ -67,8 +67,8 @@ use crate::{
         parse::{
             bar_type_to_interval, clamp_price_to_precision, derive_limit_from_trigger,
             determine_order_list_grouping, extract_inner_error, normalize_price,
-            order_to_hyperliquid_request_with_asset, round_to_sig_figs,
-            time_in_force_to_hyperliquid_tif,
+            order_to_hyperliquid_request_with_asset, parse_combined_account_balances_and_margins,
+            parse_spot_account_balances, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -82,13 +82,14 @@ use crate::{
             HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
             HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidL2Book, HyperliquidMeta,
-            HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotMeta,
-            SpotMetaAndCtxs,
+            HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
+            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
             parse_order_status_report_from_basic, parse_perp_instruments,
             parse_position_status_report, parse_spot_instruments,
+            parse_spot_position_status_report,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -393,6 +394,12 @@ impl HyperliquidRawHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    /// Get spot clearinghouse state (per-token spot balances) for a user.
+    pub async fn info_spot_clearinghouse_state(&self, user: &str) -> Result<Value> {
+        let request = InfoRequest::spot_clearinghouse_state(user);
         self.send_info_request(&request).await
     }
 
@@ -1053,15 +1060,22 @@ impl HyperliquidHttpClient {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
 
-                // Spot raw_symbols use @{pair_index} format (e.g., "@107") but
-                // callers often extract the base currency from the symbol (e.g.,
-                // "HYPE" from "HYPE-USDC-SPOT"), so also index by base name
-                if coin.as_str().starts_with('@')
+                // Spot raw_symbols are either `@{pair_index}` or slash format
+                // (e.g., "PURR/USDC"); callers looking up by base token need the
+                // base indexed separately so spot balance/position reconciliation
+                // can map token names (e.g., "PURR") to instruments.
+                //
+                // First-write-wins guards against non-canonical spot pairs that
+                // share a base token overwriting the canonical instrument; the
+                // spot loader sorts canonical pairs first so the alias resolves
+                // to the canonical one.
+                if product_type == HyperliquidProductType::Spot
                     && let Some(base) = full_symbol.as_str().split('-').next()
                 {
                     let base_ustr = Ustr::from(base);
-                    if base_ustr != coin {
-                        m.insert((base_ustr, product_type), instrument.clone());
+                    let key = (base_ustr, product_type);
+                    if base_ustr != coin && !m.contains_key(&key) {
+                        m.insert(key, instrument.clone());
                     }
                 }
             });
@@ -1367,6 +1381,11 @@ impl HyperliquidHttpClient {
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
+    }
+
+    /// Get spot clearinghouse state (per-token spot balances) for a user.
+    pub async fn info_spot_clearinghouse_state(&self, user: &str) -> Result<Value> {
+        self.inner.info_spot_clearinghouse_state(user).await
     }
 
     /// Get user fee schedule and effective rates.
@@ -1923,15 +1942,23 @@ impl HyperliquidHttpClient {
 
     /// Request position status reports for a user.
     ///
-    /// Fetches clearinghouse state via `info_clearinghouse_state` and parses positions into PositionStatusReports.
-    /// This method requires instruments to be added to the client cache via `cache_instrument()`.
+    /// Fetches perp clearinghouse state and spot clearinghouse state, then returns
+    /// the union of perp asset positions (short/long with PnL) and spot holdings
+    /// (long only). This method requires instruments to be added to the client
+    /// cache via `cache_instrument()`.
     ///
-    /// For vault tokens (starting with "vntls:") that are not in the cache, synthetic instruments
-    /// will be created automatically.
+    /// When `instrument_id` resolves to a specific product type, the opposite
+    /// product's endpoint is skipped to avoid wasted round trips and make
+    /// filtered queries independent of the unused endpoint's availability.
+    ///
+    /// For vault tokens (starting with "vntls:") that are not in the cache,
+    /// synthetic instruments will be created automatically. Spot balances whose
+    /// base token has no cached instrument are skipped with a debug log.
     ///
     /// # Errors
     ///
-    /// Returns an error if the API request fails or parsing fails.
+    /// Returns an error if either clearinghouse request fails (when that
+    /// product is in scope) or parsing fails.
     ///
     /// Returns an error if `account_id` has not been set on the client.
     pub async fn request_position_status_reports(
@@ -1942,6 +1969,23 @@ impl HyperliquidHttpClient {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+
+        let filter_product = instrument_id
+            .and_then(|id| HyperliquidProductType::from_symbol(id.symbol.as_str()).ok());
+        let fetch_perp = filter_product != Some(HyperliquidProductType::Spot);
+        let fetch_spot = filter_product != Some(HyperliquidProductType::Perp);
+
+        let mut reports = Vec::new();
+        let ts_init = self.clock.get_time_ns();
+
+        if !fetch_perp {
+            let spot_reports = self
+                .request_spot_position_status_reports(user, instrument_id)
+                .await?;
+            reports.extend(spot_reports);
+            return Ok(reports);
+        }
+
         let state_response = self.info_clearinghouse_state(user).await?;
 
         // Extract asset positions from the clearinghouse state
@@ -1950,9 +1994,6 @@ impl HyperliquidHttpClient {
             .and_then(|v| v.as_array())
             .ok_or_else(|| Error::bad_request("assetPositions not found in clearinghouse state"))?
             .clone();
-
-        let mut reports = Vec::new();
-        let ts_init = self.clock.get_time_ns();
 
         for position_value in asset_positions {
             // Extract coin from position data
@@ -1983,16 +2024,30 @@ impl HyperliquidHttpClient {
             }
         }
 
+        // Spot positions are part of the report truth; propagate fetch errors
+        // rather than silently omitting spot holdings from reconciliation.
+        if fetch_spot {
+            let spot_reports = self
+                .request_spot_position_status_reports(user, instrument_id)
+                .await?;
+            reports.extend(spot_reports);
+        }
+
         Ok(reports)
     }
 
     /// Request account state (balances and margins) for a user.
     ///
-    /// Fetches clearinghouse state from Hyperliquid API and converts it to `AccountState`.
+    /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
+    /// into a single [`AccountState`]. USDC is taken from the perp margin summary
+    /// when present (to avoid double-counting combined `withdrawable`); non-USDC
+    /// tokens are appended from the spot balances.
     ///
     /// # Errors
     ///
-    /// Returns an error if `account_id` is not set or the API request fails.
+    /// Returns an error if `account_id` is not set, or if either the perp or
+    /// spot clearinghouse request fails. Spot failures are propagated so the
+    /// caller sees real API errors instead of a silently truncated snapshot.
     pub async fn request_account_state(&self, user: &str) -> Result<AccountState> {
         let account_id = self
             .account_id
@@ -2002,44 +2057,26 @@ impl HyperliquidHttpClient {
 
         log::trace!("Clearinghouse state response: {state_response}");
 
-        // Parse clearinghouse state
-        let state: ClearinghouseState =
-            serde_json::from_value(state_response.clone()).map_err(|e| {
+        let perp_state: ClearinghouseState = serde_json::from_value(state_response.clone())
+            .map_err(|e| {
                 log::error!("Failed to parse clearinghouse state: {e}");
                 log::debug!("Raw response: {state_response}");
                 Error::bad_request(format!("Failed to parse clearinghouse state: {e}"))
             })?;
 
-        // Create USDC currency for balances
-        let usdc = Currency::new("USDC", 6, 0, "0.000001", CurrencyType::Crypto);
+        // Spot must not be silently dropped: a 429 or parse error would
+        // otherwise make non-USDC holdings look like they vanished.
+        let spot_response = self.info_spot_clearinghouse_state(user).await?;
+        let spot_state: SpotClearinghouseState = serde_json::from_value(spot_response.clone())
+            .map_err(|e| {
+                log::error!("Failed to parse spot clearinghouse state: {e}");
+                log::debug!("Raw spot response: {spot_response}");
+                Error::bad_request(format!("Failed to parse spot clearinghouse state: {e}"))
+            })?;
 
-        // Build balances using Decimal arithmetic for precision
-        let balances = if let Some(margin) = &state.cross_margin_summary {
-            let mut total = margin.total_raw_usd.max(Decimal::ZERO);
-            let free = state.withdrawable.unwrap_or(total).max(Decimal::ZERO);
-
-            // Ensure total >= free (withdrawable may include spot balances not in total_raw_usd)
-            if free > total {
-                log::debug!("Adjusting total ({total}) to match withdrawable ({free})");
-                total = free;
-            }
-
-            vec![
-                AccountBalance::from_total_and_free(total, free, usdc)
-                    .map_err(|e| Error::decode(e.to_string()))?,
-            ]
-        } else {
-            // No margin summary, use withdrawable if available
-            let free = state
-                .withdrawable
-                .unwrap_or(Decimal::ZERO)
-                .max(Decimal::ZERO);
-
-            vec![
-                AccountBalance::from_total_and_free(free, free, usdc)
-                    .map_err(|e| Error::decode(e.to_string()))?,
-            ]
-        };
+        let (balances, _margins) =
+            parse_combined_account_balances_and_margins(&perp_state, &spot_state)
+                .map_err(|e| Error::decode(e.to_string()))?;
 
         Ok(AccountState::new(
             account_id,
@@ -2052,6 +2089,98 @@ impl HyperliquidHttpClient {
             ts_init,
             None,
         ))
+    }
+
+    /// Request spot token balances for a user.
+    ///
+    /// Fetches `spotClearinghouseState` and returns one [`AccountBalance`] per
+    /// non-zero token. USDC is included as a separate balance entry when present;
+    /// callers that also report perp margin state must dedupe currencies before
+    /// emitting an [`AccountState`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or the response cannot be parsed.
+    pub async fn request_spot_balances(&self, user: &str) -> Result<Vec<AccountBalance>> {
+        let response = self.info_spot_clearinghouse_state(user).await?;
+
+        log::trace!("Spot clearinghouse state response: {response}");
+
+        let state: SpotClearinghouseState =
+            serde_json::from_value(response.clone()).map_err(|e| {
+                log::error!("Failed to parse spot clearinghouse state: {e}");
+                log::debug!("Raw response: {response}");
+                Error::bad_request(format!("Failed to parse spot clearinghouse state: {e}"))
+            })?;
+
+        parse_spot_account_balances(&state).map_err(|e| Error::decode(e.to_string()))
+    }
+
+    /// Request spot position status reports for a user.
+    ///
+    /// Each non-zero spot balance is reported as a Long position against its
+    /// `{BASE}-{QUOTE}-SPOT` instrument. Balances whose base token has no
+    /// matching instrument in the cache are skipped with a debug log (callers
+    /// should ensure [`request_instruments`](Self::request_instruments) has run
+    /// first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `account_id` has not been set or the API request fails.
+    pub async fn request_spot_position_status_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<PositionStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+        let response = self.info_spot_clearinghouse_state(user).await?;
+
+        let state: SpotClearinghouseState = serde_json::from_value(response).map_err(|e| {
+            log::error!("Failed to parse spot clearinghouse state: {e}");
+            Error::bad_request(format!("Failed to parse spot clearinghouse state: {e}"))
+        })?;
+
+        let ts_init = self.clock.get_time_ns();
+        let mut reports = Vec::with_capacity(state.balances.len());
+
+        for balance in &state.balances {
+            if balance.total.is_zero() {
+                continue;
+            }
+
+            // USDC is the universal quote for Hyperliquid spot: it funds every
+            // pair and has no `USDC-*-SPOT` instrument. Skip it so the loop
+            // does not trigger a misleading cache-miss WARN. Revisit if
+            // Hyperliquid ever introduces a USDC-base spot pair.
+            if balance.coin.as_str() == "USDC" {
+                continue;
+            }
+
+            let instrument = match self
+                .get_or_create_instrument(&balance.coin, Some(HyperliquidProductType::Spot))
+            {
+                Some(inst) => inst,
+                None => continue,
+            };
+
+            if let Some(filter_id) = instrument_id
+                && instrument.id() != filter_id
+            {
+                continue;
+            }
+
+            match parse_spot_position_status_report(balance, &instrument, account_id, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => log::error!(
+                    "Failed to parse spot position status report for {}: {e}",
+                    balance.coin,
+                ),
+            }
+        }
+
+        Ok(reports)
     }
 
     /// Request historical bars for an instrument.
@@ -2812,5 +2941,84 @@ mod tests {
             client.get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), None);
         assert!(retrieved_without_type.is_some());
         assert_eq!(retrieved_without_type.unwrap().id(), instrument.id());
+    }
+
+    #[rstest]
+    fn test_cache_instrument_base_alias_first_write_wins_for_spot() {
+        // Two spot pairs share the base token "HYPE": the canonical pair is
+        // cached first; a subsequent non-canonical pair must not overwrite the
+        // base-token alias so lookups by "HYPE" keep resolving to the canonical
+        // instrument.
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        let hype = Currency::new("HYPE", 8, 0, "HYPE", CurrencyType::Crypto);
+        let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns();
+
+        let canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
+            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
+            Symbol::new("@107"),
+            hype,
+            usdc,
+            5,
+            2,
+            Price::from("0.00001"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts,
+            ts,
+        ));
+
+        let non_canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
+            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
+            Symbol::new("@999"),
+            hype,
+            usdc,
+            5,
+            2,
+            Price::from("0.00001"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts,
+            ts,
+        ));
+
+        client.cache_instrument(&canonical);
+        client.cache_instrument(&non_canonical);
+
+        let instruments_by_coin = client.instruments_by_coin.load();
+        let by_base = instruments_by_coin
+            .get(&(Ustr::from("HYPE"), HyperliquidProductType::Spot))
+            .expect("base alias must resolve");
+        assert_eq!(
+            by_base.raw_symbol().inner().as_str(),
+            "@107",
+            "base alias must point to the canonical pair, not the one cached later",
+        );
     }
 }

@@ -125,6 +125,12 @@ pub struct ClearinghouseStateParams {
     pub user: String,
 }
 
+/// Parameters for spot clearinghouse state request.
+#[derive(Debug, Clone, Serialize)]
+pub struct SpotClearinghouseStateParams {
+    pub user: String,
+}
+
 /// Parameters for candle snapshot request.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +156,7 @@ pub enum InfoRequestParams {
     OrderStatus(OrderStatusParams),
     OpenOrders(OpenOrdersParams),
     ClearinghouseState(ClearinghouseStateParams),
+    SpotClearinghouseState(SpotClearinghouseStateParams),
     CandleSnapshot(CandleSnapshotParams),
     None,
 }
@@ -260,6 +267,16 @@ impl InfoRequest {
         Self {
             request_type: HyperliquidInfoRequestType::ClearinghouseState,
             params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
+    /// Creates a request to get spot clearinghouse state (per-token spot balances).
+    pub fn spot_clearinghouse_state(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::SpotClearinghouseState,
+            params: InfoRequestParams::SpotClearinghouseState(SpotClearinghouseStateParams {
                 user: user.to_string(),
             }),
         }
@@ -427,6 +444,19 @@ mod tests {
         assert_eq!(req.request_type, HyperliquidInfoRequestType::L2Book);
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"coin\":\"BTC\""));
+    }
+
+    #[rstest]
+    fn test_info_request_spot_clearinghouse_state() {
+        let req = InfoRequest::spot_clearinghouse_state("0xabc");
+
+        assert_eq!(
+            req.request_type,
+            HyperliquidInfoRequestType::SpotClearinghouseState
+        );
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""type":"spotClearinghouseState""#));
+        assert!(json.contains(r#""user":"0xabc""#));
     }
 
     #[rstest]
