@@ -78,6 +78,21 @@ impl UUID4 {
 
         value[36] = 0; // Add the null terminator
 
+        debug_assert!(
+            value[14] == b'4',
+            "Invariant: UUID version digit must be '4' (got {})",
+            value[14] as char
+        );
+        debug_assert!(
+            matches!(value[19], b'8' | b'9' | b'a' | b'b'),
+            "Invariant: UUID variant byte must be RFC 4122 (got {})",
+            value[19] as char
+        );
+        debug_assert!(
+            value[36] == 0,
+            "Invariant: UUID null terminator must be at index 36"
+        );
+
         Self { value }
     }
 
