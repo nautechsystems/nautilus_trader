@@ -6,4 +6,5 @@ self-hosted-runner:
     - depot-macos-14
     - depot-macos-15
     - self-hosted-linux-x86
-    - nautilus-v2
+    - build
+    - build-v2

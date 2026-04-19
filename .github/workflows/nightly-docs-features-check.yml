@@ -18,7 +18,11 @@ on:
 jobs:
   docsrs-check:
     name: docsrs-check
-    runs-on: depot-ubuntu-22.04-8
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    env:
+      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
+      # giving us persistent on-disk Rust artifact reuse between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/docsrs-check
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
@@ -32,16 +36,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get Rust toolchain version
-        shell: bash
-        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
-
-      # https://github.com/actions-rust-lang/setup-rust-toolchain
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
-          toolchain: ${{ env.TOOLCHAIN }}
-          override: true
+          python-version: "3.13"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
+          free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
 
       - name: Install Rust nightly
         run: rustup toolchain install nightly
@@ -57,7 +59,11 @@ jobs:
 
   check-features:
     name: check-features
-    runs-on: depot-ubuntu-22.04-8
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    env:
+      # Outside the workspace so it survives actions/checkout's git clean -ffdx,
+      # giving us persistent on-disk Rust artifact reuse between runs.
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/check-features
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
@@ -71,19 +77,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Get Rust toolchain version
-        shell: bash
-        run: echo "TOOLCHAIN=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_ENV"
-
-      # https://github.com/actions-rust-lang/setup-rust-toolchain
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+      - name: Common setup
+        uses: ./.github/actions/common-setup
         with:
-          toolchain: ${{ env.TOOLCHAIN }}
-          override: true
-
-      - name: Install Cap'n Proto
-        uses: ./.github/actions/install-capnp
+          python-version: "3.13"
+          # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
+          free-disk-space: "true"
+          # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
+          rust-cache-enabled: "false"
 
       # https://github.com/taiki-e/install-action
       - name: Install cargo-hack

@@ -51,7 +51,7 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    runs-on: [self-hosted, Linux, X64, nautilus-v2]
+    runs-on: [self-hosted, Linux, X64, build-v2]
     env:
       # prek runs cargo clippy/doc hooks; persist target dir outside the
       # workspace so it survives actions/checkout's git clean -ffdx.
@@ -97,7 +97,7 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-    runs-on: [self-hosted, Linux, X64, nautilus-v2]
+    runs-on: [self-hosted, Linux, X64, build-v2]
     defaults:
       run:
         shell: bash
@@ -183,6 +183,11 @@ jobs:
       - name: Run Rust tests (adapters)
         run: make cargo-test-adapters HYPERSYNC=true NEXTEST_PROFILE=ci
 
+      - name: Clean Rust test artifacts
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          df -h .
+
   build:
     if: >
       always() &&
@@ -200,7 +205,7 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
-    runs-on: [self-hosted, Linux, X64, nautilus-v2]
+    runs-on: [self-hosted, Linux, X64, build-v2]
     defaults:
       run:
         shell: bash
