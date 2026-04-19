@@ -123,6 +123,7 @@ Released on TBD (UTC).
 - Refined make cargo-test to not include binaries for test harness builds (#3828), thanks @faysou
 - Refined Interactive Brokers combo fill average price calculation (#3834), thanks @faysou
 - Refined Kraken WebSocket execution dispatch to emit typed events for tracked orders via per-product modules
+- Refined Kraken Spot WS auth via `AuthTracker` with `is_authenticated`/`wait_until_authenticated` Python APIs
 - Optimized Hyperliquid L1 signing by caching `PrivateKeySigner` and EIP-712 domain (#3851)
 - Upgraded Rust (MSRV) to 1.95.0
 - Upgraded Cap'n Proto to v1.4.0

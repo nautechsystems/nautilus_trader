@@ -450,6 +450,30 @@ impl KrakenSpotWebSocketClient {
         })
     }
 
+    /// Returns true if the WebSocket is authenticated for private subscriptions.
+    #[pyo3(name = "is_authenticated")]
+    fn py_is_authenticated(&self) -> bool {
+        self.is_authenticated()
+    }
+
+    /// Waits until the WebSocket is authenticated or the timeout elapses.
+    #[pyo3(name = "wait_until_authenticated")]
+    fn py_wait_until_authenticated<'py>(
+        &self,
+        py: Python<'py>,
+        timeout_secs: f64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .wait_until_authenticated(timeout_secs)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Disconnects from the WebSocket server.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
