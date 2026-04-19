@@ -436,7 +436,7 @@ Use the `new()` vs `new_checked()` convention consistently:
 /// # Notes
 ///
 /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+pub fn new_checked<T: AsRef<str>>(value: T) -> CorrectnessResult<Self> {
     // Implementation
 }
 
@@ -446,14 +446,15 @@ pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
 ///
 /// Panics if `value` is not a valid string.
 pub fn new<T: AsRef<str>>(value: T) -> Self {
-    Self::new_checked(value).expect(FAILED)
+    Self::new_checked(value).expect_display(FAILED)
 }
 ```
 
-Always use the `FAILED` constant for `.expect()` messages related to correctness checks:
+Always use the `FAILED` constant for `.expect_display()` messages on
+`CorrectnessResult`, and import the trait that provides it:
 
 ```rust
-use nautilus_core::correctness::FAILED;
+use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
 ```
 
 ### Type conversion patterns
@@ -1047,6 +1048,59 @@ The `clone_py_object()` function:
 - **Maintains thread safety** through proper GIL management.
 
 This approach allows both Rust and Python garbage collectors to work correctly, eliminating memory leaks from reference cycles.
+
+## Design by contract
+
+Design by contract states the obligations between a function and its callers:
+
+- **Preconditions**: what the function requires from callers.
+- **Postconditions**: what the function guarantees in return.
+- **Invariants**: what properties its type maintains across calls.
+
+Prefer the type system first. Ownership, lifetimes, `Send`/`Sync`, `Result`/`Option`,
+exhaustive matching, newtypes, and visibility encode most contracts at compile time
+and cost nothing at runtime. Use runtime checks only where the type system cannot.
+
+For most preconditions, use the `nautilus_core::correctness` module: it is the
+project's design-by-contract mechanism and should be the default. `check_*`
+functions (`check_predicate_true`, `check_valid_string_ascii`,
+`check_positive_u64`, `check_in_range_inclusive_f64`, `check_equal_usize`,
+`check_key_in_map`, ...) return a typed `CorrectnessResult<()>` whose
+`CorrectnessError` variants name each kind of violation. Pair `new_checked()` (fallible, returns
+`CorrectnessResult`) with a `new()` wrapper that panics via
+`.expect_display(FAILED)` for validated types; this is the
+[Constructor patterns](#constructor-patterns) convention and produces panic
+messages prefixed with `Condition failed: ...`.
+
+Use `debug_assert!` (and `debug_assert_eq!`/`_ne!`) for *internal* invariants the
+correctness module does not model: field relationships, monotonic sequences, CAS
+postconditions, encode/decode round-trips, provably in-range indices, and
+preconditions on internal helpers that trusted upstream validation. Release builds
+strip the check, so never use `debug_assert!` for public API input. For `unsafe`
+code, use always-on `assert!` for soundness-critical preconditions (null,
+alignment, provenance) and reserve `debug_assert!` for hot-path preconditions
+upheld by design.
+
+Choosing a mechanism:
+
+| Situation                                                          | Use                                               |
+|--------------------------------------------------------------------|---------------------------------------------------|
+| Public API input against named preconditions                       | `check_*` from `nautilus_core::correctness`       |
+| Validated constructors (fallible + panic pair)                     | `new_checked()` / `new()`                         |
+| Recoverable non‑validation errors (I/O, parse, network)            | `Result<T, DomainError>`                          |
+| Internal invariant the compiler cannot prove                       | `debug_assert!`                                   |
+| Always‑on internal invariant without a matching `CorrectnessError` | `assert!`                                         |
+| Soundness‑critical `unsafe` precondition                           | `assert!` (always on)                             |
+| Hot‑path `unsafe` precondition upheld by design                    | `debug_assert!` plus a documented `Safety` clause |
+
+Style:
+
+- Prefix `debug_assert!` messages with `Invariant:` and state the positive rule,
+  not the failure: `debug_assert!(next > last, "Invariant: time is strictly monotonic across CAS")`.
+- `Condition failed: ...` (from the `FAILED` constant) marks a caller-supplied
+  input violation; `Invariant: ...` marks an internal contract bug.
+- Place assertions where the invariant is first assumed. When an invariant holds
+  across a hot loop, assert once at the boundary rather than inside the loop.
 
 ## Common anti-patterns
 

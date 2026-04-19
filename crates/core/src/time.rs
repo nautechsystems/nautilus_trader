@@ -260,7 +260,7 @@ impl AtomicTime {
 
         debug_assert!(
             !self.realtime.load(Ordering::SeqCst),
-            "Invariant violated: mode switched to realtime during set_time"
+            "Invariant: clock must remain in static mode across `set_time`"
         );
     }
 
@@ -299,7 +299,7 @@ impl AtomicTime {
 
         debug_assert!(
             !self.realtime.load(Ordering::SeqCst),
-            "Invariant violated: mode switched to realtime during increment_time"
+            "Invariant: clock must remain in static mode across `increment_time`"
         );
 
         Ok(UnixNanos::from(previous + delta))

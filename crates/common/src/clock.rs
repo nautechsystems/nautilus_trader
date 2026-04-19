@@ -450,7 +450,7 @@ impl TestClock {
 
         assert!(
             to_time_ns >= from_time_ns,
-            "Invariant violated: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
+            "Invariant: time must be non-decreasing, `to_time_ns` {to_time_ns} < `from_time_ns` {from_time_ns}"
         );
 
         if set_time {
