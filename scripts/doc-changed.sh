@@ -120,5 +120,7 @@ if [ -n "$feat_seen" ]; then
 fi
 
 echo "Running doc check on: ${seen_list[*]}"
-cargo doc "${pkg_args[@]}" --no-deps --quiet "${feat_args[@]}" \
+# `${feat_args[@]+...}` guards the expansion: bash 3.2 (macOS default) treats an
+# empty array as unbound under `set -u`, which fires when no features are needed.
+cargo doc "${pkg_args[@]}" --no-deps --quiet ${feat_args[@]+"${feat_args[@]}"} \
   --profile "$PROFILE"

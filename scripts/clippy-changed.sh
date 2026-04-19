@@ -120,5 +120,7 @@ if [ -n "$feat_seen" ]; then
 fi
 
 echo "Running clippy on: ${seen_list[*]}"
-cargo clippy "${pkg_args[@]}" --lib --tests "${feat_args[@]}" \
+# `${feat_args[@]+...}` guards the expansion: bash 3.2 (macOS default) treats an
+# empty array as unbound under `set -u`, which fires when no features are needed.
+cargo clippy "${pkg_args[@]}" --lib --tests ${feat_args[@]+"${feat_args[@]}"} \
   --profile "$PROFILE" -- -D warnings
