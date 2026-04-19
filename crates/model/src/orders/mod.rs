@@ -864,6 +864,28 @@ impl OrderCore {
         }
 
         self.set_avg_px(event.last_qty, event.last_px);
+
+        debug_assert!(
+            matches!(
+                self.status,
+                OrderStatus::PartiallyFilled | OrderStatus::Filled
+            ),
+            "Invariant: status must be PartiallyFilled or Filled after fill handler (status={:?})",
+            self.status
+        );
+        debug_assert!(
+            self.venue_order_id.is_some()
+                && self.last_trade_id.is_some()
+                && !self.trade_ids.is_empty(),
+            "Invariant: venue_order_id, last_trade_id and trade_ids must be set after fill"
+        );
+        debug_assert!(
+            self.filled_qty.raw.saturating_add(self.leaves_qty.raw) >= self.quantity.raw,
+            "Invariant: filled_qty + leaves_qty >= quantity (filled={}, leaves={}, quantity={})",
+            self.filled_qty,
+            self.leaves_qty,
+            self.quantity
+        );
     }
 
     fn set_avg_px(&mut self, last_qty: Quantity, last_px: Price) {
@@ -876,6 +898,11 @@ impl OrderCore {
         let prev_filled_qty = (self.filled_qty - last_qty).as_f64();
         let last_qty_f64 = last_qty.as_f64();
         let total_qty = prev_filled_qty + last_qty_f64;
+
+        debug_assert!(
+            total_qty > 0.0,
+            "Invariant: avg_px calc requires positive total_qty (prev={prev_filled_qty}, last={last_qty_f64})"
+        );
 
         let avg_px = self
             .avg_px
@@ -1094,6 +1121,43 @@ mod tests {
         assert!(order.is_closed());
         assert_eq!(order.commission(&Currency::USD()), None);
         assert_eq!(order.commissions(), &IndexMap::new());
+    }
+
+    #[rstest]
+    fn test_order_life_cycle_fills_with_negative_prices() {
+        // Options and spreads can legitimately trade at negative prices. The
+        // weighted average-price update must not panic when `last_px` or the
+        // prior `avg_px` is below zero.
+        let init = OrderInitializedBuilder::default()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let fill1 = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .last_px(Price::from("-5.00000"))
+            .trade_id(TradeId::from("TRADE-1"))
+            .build()
+            .unwrap();
+        let fill2 = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .last_px(Price::from("-7.00000"))
+            .trade_id(TradeId::from("TRADE-2"))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(fill1)).unwrap();
+        order.apply(OrderEventAny::Filled(fill2)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        // Weighted avg: (50_000 * -5.0 + 50_000 * -7.0) / 100_000 = -6.0
+        assert_eq!(order.avg_px(), Some(-6.0));
     }
 
     #[rstest]

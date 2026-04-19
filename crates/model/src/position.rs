@@ -380,6 +380,24 @@ impl Position {
         }
 
         self.ts_last = fill.ts_event;
+
+        debug_assert!(
+            match self.side {
+                PositionSide::Long => self.signed_qty > 0.0,
+                PositionSide::Short => self.signed_qty < 0.0,
+                PositionSide::Flat => self.signed_qty == 0.0,
+                PositionSide::NoPositionSide => false,
+            },
+            "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
+            self.side,
+            self.signed_qty,
+        );
+        debug_assert!(
+            self.peak_qty >= self.quantity,
+            "Invariant: peak_qty must not be less than current quantity (peak={}, quantity={})",
+            self.peak_qty,
+            self.quantity,
+        );
     }
 
     fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
@@ -541,6 +559,24 @@ impl Position {
 
         self.adjustments.push(adjustment);
         self.ts_last = adjustment.ts_event;
+
+        debug_assert!(
+            match self.side {
+                PositionSide::Long => self.signed_qty > 0.0,
+                PositionSide::Short => self.signed_qty < 0.0,
+                PositionSide::Flat => self.signed_qty == 0.0,
+                PositionSide::NoPositionSide => false,
+            },
+            "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
+            self.side,
+            self.signed_qty,
+        );
+        debug_assert!(
+            self.peak_qty >= self.quantity,
+            "Invariant: peak_qty must not be less than current quantity (peak={}, quantity={})",
+            self.peak_qty,
+            self.quantity,
+        );
     }
 
     /// Calculates the average price using f64 arithmetic.
@@ -591,6 +627,14 @@ impl Position {
         last_px: f64,
         last_qty: f64,
     ) -> anyhow::Result<f64> {
+        // Prices can be negative for options and spreads, so only quantities
+        // are checked for non-negativity here.
+        debug_assert!(
+            qty >= 0.0 && last_qty >= 0.0,
+            "Invariant: average price calc requires non-negative quantities \
+             (qty={qty}, last_qty={last_qty})"
+        );
+
         if qty == 0.0 && last_qty == 0.0 {
             anyhow::bail!("Cannot calculate average price: both quantities are zero");
         }
@@ -1001,6 +1045,51 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
         position.apply(&fill2.into());
+    }
+
+    #[rstest]
+    fn test_position_applies_fills_with_negative_prices(audusd_sim: CurrencyPair) {
+        // Options and spreads can trade at negative prices; position average
+        // price updates must not panic when the stored average or incoming
+        // fill price is below zero.
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let fill1 = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("-5.00000")),
+            Some(Quantity::from(50_000)),
+            None,
+            None,
+            None,
+            None,
+        );
+        let fill2 = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from("-7.00000")),
+            Some(Quantity::from(50_000)),
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, fill1.into());
+        position.apply(&fill2.into());
+
+        assert_eq!(position.quantity, Quantity::from(100_000));
+        assert_eq!(position.signed_qty, 100_000.0);
+        assert_eq!(position.side, PositionSide::Long);
+        // Weighted avg_px_open: (50_000 * -5 + 50_000 * -7) / 100_000 = -6.0
+        assert_eq!(position.avg_px_open, -6.0);
     }
 
     #[rstest]
