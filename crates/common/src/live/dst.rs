@@ -173,12 +173,14 @@ pub mod signal {
 /// Shape check only, not a behavior test.
 #[allow(unused_imports)]
 mod surface {
-    use super::runtime::{Builder, Handle, Runtime};
-    use super::signal::ctrl_c;
-    use super::task::{JoinHandle, spawn, spawn_local, yield_now};
-    use super::time::{
-        Duration, Instant, Interval, MissedTickBehavior, Sleep, error, interval, interval_at,
-        sleep, sleep_until, timeout,
+    use super::{
+        runtime::{Builder, Handle, Runtime},
+        signal::ctrl_c,
+        task::{JoinHandle, spawn, spawn_local, yield_now},
+        time::{
+            Duration, Instant, Interval, MissedTickBehavior, Sleep, error, interval, interval_at,
+            sleep, sleep_until, timeout,
+        },
     };
 
     const _: fn(Duration) -> Sleep = sleep;

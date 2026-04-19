@@ -829,9 +829,9 @@ impl ParquetDataCatalog {
         let mut existing_files = self.list_parquet_files(&directory)?;
         existing_files.sort();
 
-        // Track files to remove and maintain existing_files list
-        let mut files_to_remove = AHashSet::new();
-        let original_files_count = existing_files.len();
+        // Capture the overall window's left bound before the loop consumes queries_to_execute,
+        // a source file is only deleted when its interval is fully consumed by the consolidation.
+        let overall_query_start = queries_to_execute[0].query_start;
 
         // Phase 2: Execute queries, write, and delete
         let mut file_start_ns: Option<u64> = None; // Track contiguity across periods
@@ -896,36 +896,19 @@ impl ParquetDataCatalog {
             let end_ts = UnixNanos::from(final_end_ns);
             self.write_to_parquet(period_data, Some(start_ts), Some(end_ts), Some(true))?;
 
-            // Identify files that are completely covered by this period
-            // Only remove files AFTER successfully writing a new file
-            // Use slice copy to avoid modification during iteration (match Python logic)
+            // Delete files fully consumed by this period; keep straddlers so no data is lost
             for file in existing_files.clone() {
                 if let Some(interval) = parse_filename_timestamps(&file)
                     && interval.1 <= query_info.query_end
+                    && interval.0 >= overall_query_start
                 {
-                    files_to_remove.insert(file.clone());
                     existing_files.retain(|f| f != &file);
-                }
-            }
-
-            // Remove files as soon as we have some to remove
-            if !files_to_remove.is_empty() {
-                for file in files_to_remove.drain() {
                     self.delete_file(&file)?;
                 }
             }
+
             // Reset so next period starts a new contiguous segment
             file_start_ns = None;
-        }
-
-        // Remove any remaining files that weren't removed in the loop
-        // This matches the Python implementation's final cleanup step
-        // Only remove files if any consolidation actually happened (i.e., files were processed)
-        let files_were_processed = existing_files.len() < original_files_count;
-        if files_were_processed {
-            for file in existing_files {
-                self.delete_file(&file)?;
-            }
         }
 
         Ok(())
@@ -988,9 +971,9 @@ impl ParquetDataCatalog {
         let mut existing_files = self.list_parquet_files(&directory)?;
         existing_files.sort();
 
-        // Track files to remove and maintain existing_files list
-        let mut files_to_remove = AHashSet::new();
-        let original_files_count = existing_files.len();
+        // Capture the overall window's left bound before the loop consumes queries_to_execute,
+        // a source file is only deleted when its interval is fully consumed by the consolidation.
+        let overall_query_start = queries_to_execute[0].query_start;
 
         // Phase 2: Execute queries, write, and delete
         let mut file_start_ns: Option<u64> = None; // Track contiguity across periods
@@ -1067,33 +1050,19 @@ impl ParquetDataCatalog {
                 self.write_custom_data_batch(items, Some(start_ts), Some(end_ts), Some(true))?;
             }
 
-            // Identify files that are completely covered by this period
-            // Only remove files AFTER successfully writing a new file
+            // Delete files fully consumed by this period; keep straddlers so no data is lost
             for file in existing_files.clone() {
                 if let Some(interval) = parse_filename_timestamps(&file)
                     && interval.1 <= query_info.query_end
+                    && interval.0 >= overall_query_start
                 {
-                    files_to_remove.insert(file.clone());
                     existing_files.retain(|f| f != &file);
-                }
-            }
-
-            // Remove files as soon as we have some to remove
-            if !files_to_remove.is_empty() {
-                for file in files_to_remove.drain() {
                     self.delete_file(&file)?;
                 }
             }
+
             // Reset so next period starts a new contiguous segment
             file_start_ns = None;
-        }
-
-        // Remove any remaining files that weren't removed in the loop
-        let files_were_processed = existing_files.len() < original_files_count;
-        if files_were_processed {
-            for file in existing_files {
-                self.delete_file(&file)?;
-            }
         }
 
         Ok(())
