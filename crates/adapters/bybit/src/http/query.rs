@@ -741,7 +741,73 @@ pub struct BybitTradeHistoryParams {
     pub cursor: Option<String>,
 }
 
+/// Request-side permission patch for API-key update endpoints (`PascalCase`).
+///
+/// Kept separate from the response-side
+/// [`crate::http::models::BybitApiKeyPermissions`]: every field here is
+/// `Option<Vec<String>>` with `skip_serializing_if`, so an unset bucket is
+/// omitted from the request body entirely rather than being serialised as an
+/// explicit empty array (which the venue treats as "clear all permissions").
+///
+/// The field set is the superset of the master and sub-account permission
+/// tables. Buckets that only appear for master-account keys (`FiatP2P`,
+/// `FiatBybitPay`, `FiatBitPay`, `FiatConvertBroker`, `BitCard`, `ByXPost`)
+/// must not be set when calling `POST /v5/user/update-sub-api`; callers are
+/// expected to only populate the buckets documented for the endpoint being
+/// invoked.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
+/// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[serde(rename_all = "PascalCase")]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+pub struct BybitApiKeyPermissionUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contract_trade: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spot: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wallet: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub derivatives: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earn: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affiliate: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_trade: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copy_trading: Option<Vec<String>>,
+    // Bybit ships this key uppercase (`"NFT"`); the struct-level PascalCase
+    // rule would otherwise emit `"Nft"` and the venue would ignore the field.
+    #[serde(rename = "NFT", skip_serializing_if = "Option::is_none")]
+    pub nft: Option<Vec<String>>,
+    // Bybit uses `"FiatP2P"` — PascalCase rename would emit `"FiatP2p"`.
+    #[serde(rename = "FiatP2P", skip_serializing_if = "Option::is_none")]
+    pub fiat_p2p: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiat_bybit_pay: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiat_bit_pay: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fiat_convert_broker: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit_card: Option<Vec<String>>,
+    // Bybit uses `"ByXPost"` — PascalCase rename would emit `"ByxPost"`.
+    #[serde(rename = "ByXPost", skip_serializing_if = "Option::is_none")]
+    pub byx_post: Option<Vec<String>>,
+}
+
 /// Body parameters for `POST /v5/user/update-sub-api`.
+///
+/// `api_key` is only required when a master key is editing a sub-account key;
+/// it is omitted when a sub key edits itself.
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
@@ -759,4 +825,75 @@ pub struct BybitUpdateSubApiParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub ips: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub permissions: Option<BybitApiKeyPermissionUpdate>,
+}
+
+/// Body parameters for `POST /v5/user/update-api`.
+///
+/// Can only modify the caller's own master key.
+///
+/// The official request parameter table lists only `readOnly` and
+/// `permissions`; `ips` appears in the response but is not a request field,
+/// so it is deliberately excluded here.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/user/modify-master-apikey>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(default)]
+#[builder(setter(into))]
+pub struct BybitUpdateMasterApiParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub read_only: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub permissions: Option<BybitApiKeyPermissionUpdate>,
+}
+
+/// Query parameters for cursor-paginated sub-account listings.
+///
+/// Shared by `GET /v5/user/submembers` and `GET /v5/user/escrow_sub_members`,
+/// which take the same pagination shape (`pageSize` up to 100 plus
+/// `nextCursor`). Bybit documents `pageSize` as a string, but the URL encoder
+/// serialises any numeric value as text anyway, so `u32` is used on the Rust
+/// side for compile-time type safety.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/user/page-subuid>
+/// - <https://bybit-exchange.github.io/docs/v5/user/fund-subuid-list>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(default)]
+#[builder(setter(into))]
+pub struct BybitSubMembersPageParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub page_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub next_cursor: Option<String>,
+}
+
+/// Query parameters for `GET /v5/user/sub-apikeys`.
+///
+/// `sub_member_id` is required, so this struct intentionally does not carry
+/// `#[builder(default)]`; the generated builder returns `Err` when the field
+/// is missing, matching the convention used by `BybitBorrowParams`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
+#[derive(Clone, Debug, Deserialize, Serialize, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(setter(into))]
+pub struct BybitSubApiKeysParams {
+    pub sub_member_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
+    pub cursor: Option<String>,
 }
