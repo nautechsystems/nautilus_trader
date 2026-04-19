@@ -959,7 +959,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         existing_files = sorted(self.fs.glob(os.path.join(directory, "*.parquet")))
 
         # Track files to remove and maintain existing_files list
-        files_to_remove = set()
         existing_files = list(existing_files)  # Make it mutable
 
         # Phase 2: Execute queries, write, and delete
@@ -1023,19 +1022,12 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in existing_files[:]:  # Use slice copy to avoid modification during iteration
                 interval = _parse_filename_timestamps(file)
 
-                if interval and interval[1] <= query_info["query_end"]:
-                    files_to_remove.add(file)
+                if interval and (
+                    interval[1] <= query_info["query_end"]
+                    and interval[0] >= queries_to_execute[0]["query_start"]
+                ):
                     existing_files.remove(file)
-
-            # Remove files as soon as we have some to remove
-            if files_to_remove:
-                for file in list(files_to_remove):  # Copy to avoid modification during iteration
                     self.fs.rm(file)
-                    files_to_remove.remove(file)
-
-        # Remove any remaining files that weren't removed in the loop
-        for file in existing_files:
-            self.fs.rm(file)
 
     def _prepare_consolidation_queries(  # noqa: C901
         self,

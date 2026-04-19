@@ -1520,6 +1520,240 @@ class TestConsolidateDataByPeriod:
             end_day = pd.Timestamp(iv[1], unit="ns", tz="UTC").date()
             assert start_day == end_day
 
+    def test_consolidate_data_by_period_idempotent(self):
+        # Arrange - 48 hourly bars written one-per-file
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.MID)
+        bar_type = BarType(instrument.id, bar_spec)
+        bar_type_str = str(bar_type)
+
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        hour_ns = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+        for i in range(48):
+            ts = start_ns + i * hour_ns
+            bar = Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00000"),
+                high=Price.from_str("1.00010"),
+                low=Price.from_str("0.99990"),
+                close=Price.from_str("1.00005"),
+                volume=Quantity.from_str("1000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            self.catalog.write_data([bar], skip_disjoint_check=True)
+
+        # Act
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+        files_after_first = len(self.catalog.get_intervals(Bar, bar_type_str))
+        bars_after_first = len(self.catalog.bars(bar_types=[bar_type_str]))
+
+        self.catalog.consolidate_data_by_period(
+            Bar,
+            bar_type_str,
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # Assert - second run must not destroy data
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == files_after_first
+        assert len(self.catalog.bars(bar_types=[bar_type_str])) == bars_after_first
+
+    def test_consolidate_predicate_exact_boundary_cases(self):
+        """
+        Validates deletion predicate handles exact boundary timestamps correctly. Each
+        case is isolated by resetting the catalog between runs.
+
+        The predicate deletes a source file only when its interval is fully consumed
+        by the consolidation query:
+
+        interval[0] >= queries_to_execute[0]["query_start"]  (left bound, inclusive)
+        interval[1] <= query_info["query_end"]               (right bound, inclusive)
+
+        query range: |-------------------|
+        case A:           |-|                single bar fully inside         -> DELETE
+        case B:     |----|                   starting 1ns before range       -> KEEP
+        case C:                      |----|  ending 1ns after range          -> KEEP
+        case D:      |                       exact query_start single bar    -> DELETE
+        case E:                          |   exact query_end single bar      -> DELETE
+        case F:                  |-------|   starts inside, ends exact end   -> DELETE
+        case G:      |-------|               starts exact start, ends inside -> DELETE
+        case H:         |__ __ __ __|        multi-bar spans middle          -> DELETE
+
+        """
+        import shutil
+
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+        bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.MID)
+        bar_type = BarType(instrument.id, bar_spec)
+        bar_type_str = str(bar_type)
+
+        base = dt_to_unix_nanos(pd.Timestamp("2024-01-01", tz="UTC"))
+        hour = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+        day_ns = int(pd.Timedelta(days=1).total_seconds() * 1e9)
+        query_start = base
+        query_end = base + day_ns - 1
+
+        def make_bar(ts):
+            return Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.00000"),
+                high=Price.from_str("1.00010"),
+                low=Price.from_str("0.99990"),
+                close=Price.from_str("1.00005"),
+                volume=Quantity.from_str("1000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+
+        def reset():
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            self.temp_dir = tempfile.mkdtemp()
+            self.catalog = ParquetDataCatalog(path=self.temp_dir)
+
+        def consolidate():
+            self.catalog.consolidate_data_by_period(
+                data_cls=Bar,
+                identifier=bar_type_str,
+                period=pd.Timedelta(days=1),
+                start=pd.Timestamp(query_start, unit="ns", tz="UTC"),
+                end=pd.Timestamp(query_end, unit="ns", tz="UTC"),
+                ensure_contiguous_files=False,
+            )
+
+        # --- case A: single bar fully inside -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_start + 6 * hour)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case A: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start + 6 * hour in retrieved, "case A: inside bar data was lost"
+        assert query_start - 1 in retrieved, "case A: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case A: keep_after was deleted"
+
+        reset()
+
+        # --- case B: straddle-left file (starts 1ns before range) -> SPLIT: original kept + consolidated written ---
+        self.catalog.write_data([make_bar(query_start - 2)], skip_disjoint_check=True)
+        self.catalog.write_data(
+            [make_bar(query_start - 1), make_bar(query_start + 3 * hour)],
+            skip_disjoint_check=True,
+        )
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 4, "case B: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start - 2 in retrieved, "case B: keep_before was deleted"
+        assert query_start - 1 in retrieved, "case B: straddle outside bar was lost"
+        assert query_start + 3 * hour in retrieved, "case B: straddle inside bar was lost"
+        assert query_end + 1 in retrieved, "case B: keep_after was deleted"
+
+        reset()
+
+        # --- case C: straddle-right file (ends 1ns after range) -> SPLIT: original kept + consolidated written ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data(
+            [make_bar(query_start + 20 * hour), make_bar(query_end + 1)],
+            skip_disjoint_check=True,
+        )
+        self.catalog.write_data([make_bar(query_end + 2)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 4, "case C: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start - 1 in retrieved, "case C: keep_before was deleted"
+        assert query_start + 20 * hour in retrieved, "case C: straddle inside bar was lost"
+        assert query_end + 1 in retrieved, "case C: straddle outside bar was lost"
+        assert query_end + 2 in retrieved, "case C: keep_after was deleted"
+
+        reset()
+
+        # --- case D: exact query_start single bar -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_start)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case D: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start in retrieved, "case D: exact start bar data was lost"
+        assert query_start - 1 in retrieved, "case D: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case D: keep_after was deleted"
+
+        reset()
+
+        # --- case E: exact query_end single bar -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_end)], skip_disjoint_check=True)
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case E: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_end in retrieved, "case E: exact end bar data was lost"
+        assert query_start - 1 in retrieved, "case E: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case E: keep_after was deleted"
+
+        reset()
+
+        # --- case F: starts inside, ends exact query_end -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data(
+            [make_bar(query_start + 20 * hour), make_bar(query_end)],
+            skip_disjoint_check=True,
+        )
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case F: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start + 20 * hour in retrieved, "case F: inside bar data was lost"
+        assert query_end in retrieved, "case F: exact end bar data was lost"
+        assert query_start - 1 in retrieved, "case F: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case F: keep_after was deleted"
+
+        reset()
+
+        # --- case G: starts exact query_start, ends inside -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data(
+            [make_bar(query_start), make_bar(query_start + 2 * hour)],
+            skip_disjoint_check=True,
+        )
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case G: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start in retrieved, "case G: exact start bar data was lost"
+        assert query_start + 2 * hour in retrieved, "case G: inside bar data was lost"
+        assert query_start - 1 in retrieved, "case G: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case G: keep_after was deleted"
+
+        reset()
+
+        # --- case H: multi-bar spans middle -> DELETE ---
+        self.catalog.write_data([make_bar(query_start - 1)], skip_disjoint_check=True)
+        self.catalog.write_data(
+            [
+                make_bar(query_start + 7 * hour),
+                make_bar(query_start + 9 * hour),
+                make_bar(query_start + 11 * hour),
+            ],
+            skip_disjoint_check=True,
+        )
+        self.catalog.write_data([make_bar(query_end + 1)], skip_disjoint_check=True)
+        consolidate()
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 3, "case H: file count wrong"
+        retrieved = [b.ts_init for b in self.catalog.bars(bar_types=[bar_type_str])]
+        assert query_start + 7 * hour in retrieved, "case H: bar 1 data was lost"
+        assert query_start + 9 * hour in retrieved, "case H: bar 2 data was lost"
+        assert query_start + 11 * hour in retrieved, "case H: bar 3 data was lost"
+        assert query_start - 1 in retrieved, "case H: keep_before was deleted"
+        assert query_end + 1 in retrieved, "case H: keep_after was deleted"
+
 
 def test_consolidate_catalog_by_period(catalog: ParquetDataCatalog) -> None:
     # Arrange
