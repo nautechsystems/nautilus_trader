@@ -41,17 +41,6 @@ pub struct DexPoolFilters {
     pub remove_pools_with_empty_erc20fields: bool,
 }
 
-impl DexPoolFilters {
-    /// Creates a new [`DexPoolFilters`] instance.
-    #[must_use]
-    pub fn new(remove_pools_with_empty_erc20fields: Option<bool>) -> Self {
-        Self {
-            remove_pools_with_empty_erc20fields: remove_pools_with_empty_erc20fields
-                .unwrap_or(true),
-        }
-    }
-}
-
 impl Default for DexPoolFilters {
     fn default() -> Self {
         Self::builder().build()
@@ -105,39 +94,6 @@ pub struct BlockchainDataClientConfig {
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
 }
 
-impl BlockchainDataClientConfig {
-    /// Creates a new [`BlockchainDataClientConfig`] instance.
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        chain: SharedChain,
-        dex_ids: Vec<DexType>,
-        http_rpc_url: String,
-        rpc_requests_per_second: Option<u32>,
-        multicall_calls_per_rpc_request: Option<u32>,
-        wss_rpc_url: Option<String>,
-        use_hypersync_for_live_data: bool,
-        from_block: Option<u64>,
-        pools_filters: Option<DexPoolFilters>,
-        postgres_cache_database_config: Option<PostgresConnectOptions>,
-    ) -> Self {
-        Self {
-            chain,
-            dex_ids,
-            use_hypersync_for_live_data,
-            http_rpc_url,
-            rpc_requests_per_second,
-            multicall_calls_per_rpc_request: multicall_calls_per_rpc_request.unwrap_or(200),
-            wss_rpc_url,
-            http_proxy_url: None,
-            ws_proxy_url: None,
-            from_block,
-            pool_filters: pools_filters.unwrap_or_default(),
-            postgres_cache_database_config,
-        }
-    }
-}
-
 #[derive(Debug, Clone, bon::Builder)]
 pub struct BlockchainExecutionClientConfig {
     /// The trader ID for the client.
@@ -154,28 +110,6 @@ pub struct BlockchainExecutionClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
-}
-
-impl BlockchainExecutionClientConfig {
-    pub fn new(
-        trader_id: TraderId,
-        client_id: AccountId,
-        chain: Chain,
-        wallet_address: String,
-        tokens: Option<Vec<String>>,
-        http_rpc_url: String,
-        rpc_requests_per_second: Option<u32>,
-    ) -> Self {
-        Self {
-            trader_id,
-            client_id,
-            chain,
-            wallet_address,
-            tokens,
-            http_rpc_url,
-            rpc_requests_per_second,
-        }
-    }
 }
 
 impl ClientConfig for BlockchainExecutionClientConfig {

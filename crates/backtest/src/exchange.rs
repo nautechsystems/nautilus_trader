@@ -339,22 +339,22 @@ impl SimulatedExchange {
             Some(self.price_protection_points)
         };
 
-        let matching_engine_config = OrderMatchingEngineConfig::new(
-            self.bar_execution,
-            self.bar_adaptive_high_low_ordering,
-            self.trade_execution,
-            self.liquidity_consumption,
-            self.reject_stop_orders,
-            self.support_gtd_orders,
-            self.support_contingent_orders,
-            self.use_position_ids,
-            self.use_random_ids,
-            self.use_reduce_only,
-            self.use_market_order_acks,
-            self.queue_position,
-            self.oto_full_trigger,
-        )
-        .with_price_protection_points(price_protection);
+        let matching_engine_config = OrderMatchingEngineConfig::builder()
+            .bar_execution(self.bar_execution)
+            .bar_adaptive_high_low_ordering(self.bar_adaptive_high_low_ordering)
+            .trade_execution(self.trade_execution)
+            .liquidity_consumption(self.liquidity_consumption)
+            .reject_stop_orders(self.reject_stop_orders)
+            .support_gtd_orders(self.support_gtd_orders)
+            .support_contingent_orders(self.support_contingent_orders)
+            .use_position_ids(self.use_position_ids)
+            .use_random_ids(self.use_random_ids)
+            .use_reduce_only(self.use_reduce_only)
+            .use_market_order_acks(self.use_market_order_acks)
+            .queue_position(self.queue_position)
+            .oto_full_trigger(self.oto_full_trigger)
+            .maybe_price_protection_points(price_protection)
+            .build();
         let instrument_id = instrument.id();
         let matching_engine = OrderMatchingEngine::new(
             instrument,

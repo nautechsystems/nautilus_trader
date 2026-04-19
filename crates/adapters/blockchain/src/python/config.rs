@@ -30,7 +30,9 @@ impl DexPoolFilters {
     #[new]
     #[must_use]
     pub fn py_new(remove_pools_with_empty_erc20_fields: Option<bool>) -> Self {
-        Self::new(remove_pools_with_empty_erc20_fields)
+        Self::builder()
+            .maybe_remove_pools_with_empty_erc20fields(remove_pools_with_empty_erc20_fields)
+            .build()
     }
 }
 
@@ -71,18 +73,18 @@ impl BlockchainDataClientConfig {
         )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
     ) -> Self {
-        Self::new(
-            Arc::new(chain.clone()),
-            dex_ids,
-            http_rpc_url,
-            rpc_requests_per_second,
-            multicall_calls_per_rpc_request,
-            wss_rpc_url,
-            use_hypersync_for_live_data,
-            from_block,
-            pool_filters,
-            postgres_cache_database_config,
-        )
+        Self::builder()
+            .chain(Arc::new(chain.clone()))
+            .dex_ids(dex_ids)
+            .http_rpc_url(http_rpc_url)
+            .maybe_rpc_requests_per_second(rpc_requests_per_second)
+            .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
+            .maybe_wss_rpc_url(wss_rpc_url)
+            .use_hypersync_for_live_data(use_hypersync_for_live_data)
+            .maybe_from_block(from_block)
+            .maybe_pool_filters(pool_filters)
+            .maybe_postgres_cache_database_config(postgres_cache_database_config)
+            .build()
     }
 
     /// Returns the chain configuration.

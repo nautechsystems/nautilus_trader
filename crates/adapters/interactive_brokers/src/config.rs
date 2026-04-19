@@ -56,7 +56,8 @@ impl From<MarketDataType> for ibapi::market_data::MarketDataType {
 }
 
 /// Configuration for Interactive Brokers data client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -67,67 +68,48 @@ impl From<MarketDataType> for ibapi::market_data::MarketDataType {
 )]
 pub struct InteractiveBrokersDataClientConfig {
     /// Host for IB Gateway/TWS.
+    #[builder(default = DEFAULT_HOST.to_string())]
     pub host: String,
     /// Port for IB Gateway/TWS.
+    #[builder(default = DEFAULT_PORT)]
     pub port: u16,
     /// Client ID.
+    #[builder(default = DEFAULT_CLIENT_ID)]
     pub client_id: i32,
     /// Whether to use regular trading hours only (RTH filtering).
-    #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub use_regular_trading_hours: bool,
     /// Market data type (realtime, delayed, frozen).
-    #[serde(default)]
+    #[builder(default)]
     pub market_data_type: MarketDataType,
     /// Whether to ignore quote tick size updates (filters size-only updates).
-    #[serde(default)]
+    #[builder(default)]
     pub ignore_quote_tick_size_updates: bool,
     /// Connection timeout in seconds.
-    #[serde(default = "default_connection_timeout")]
+    #[builder(default = 300)]
     pub connection_timeout: u64,
     /// Request timeout in seconds. Applied to IB API requests (open orders, executions, positions,
     /// account summary, order update stream, next order id). See execution/core.rs and
     /// execution/account.rs for call sites.
-    #[serde(default = "default_request_timeout")]
+    #[builder(default = 60)]
     pub request_timeout: u64,
     /// Whether to handle revised bars.
-    #[serde(default)]
+    #[builder(default)]
     pub handle_revised_bars: bool,
     /// Whether to use batch quotes (reqMktData) by default instead of tick-by-tick.
-    #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub batch_quotes: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_connection_timeout() -> u64 {
-    300
-}
-
-fn default_request_timeout() -> u64 {
-    60
 }
 
 impl Default for InteractiveBrokersDataClientConfig {
     fn default() -> Self {
-        Self {
-            host: DEFAULT_HOST.to_string(),
-            port: DEFAULT_PORT,
-            client_id: DEFAULT_CLIENT_ID,
-            use_regular_trading_hours: true,
-            market_data_type: MarketDataType::Realtime,
-            ignore_quote_tick_size_updates: false,
-            connection_timeout: 300,
-            request_timeout: 60,
-            handle_revised_bars: false,
-            batch_quotes: true,
-        }
+        Self::builder().build()
     }
 }
 
 /// Configuration for Interactive Brokers execution client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -138,40 +120,33 @@ impl Default for InteractiveBrokersDataClientConfig {
 )]
 pub struct InteractiveBrokersExecClientConfig {
     /// Host for IB Gateway/TWS.
+    #[builder(default = DEFAULT_HOST.to_string())]
     pub host: String,
     /// Port for IB Gateway/TWS.
+    #[builder(default = DEFAULT_PORT)]
     pub port: u16,
     /// Client ID.
+    #[builder(default = DEFAULT_CLIENT_ID)]
     pub client_id: i32,
     /// Account ID.
-    #[serde(default)]
     pub account_id: Option<String>,
     /// Connection timeout in seconds.
-    #[serde(default = "default_connection_timeout")]
+    #[builder(default = 300)]
     pub connection_timeout: u64,
     /// Request timeout in seconds for IB API requests (open orders, executions, positions, etc.).
-    #[serde(default = "default_request_timeout")]
+    #[builder(default = 60)]
     pub request_timeout: u64,
     /// Whether to fetch all open orders (reqAllOpenOrders vs reqOpenOrders).
-    #[serde(default)]
+    #[builder(default)]
     pub fetch_all_open_orders: bool,
     /// Whether to track option exercise from position updates.
-    #[serde(default)]
+    #[builder(default)]
     pub track_option_exercise_from_position_update: bool,
 }
 
 impl Default for InteractiveBrokersExecClientConfig {
     fn default() -> Self {
-        Self {
-            host: DEFAULT_HOST.to_string(),
-            port: DEFAULT_PORT,
-            client_id: DEFAULT_CLIENT_ID,
-            account_id: None,
-            connection_timeout: 300,
-            request_timeout: 60,
-            fetch_all_open_orders: false,
-            track_option_exercise_from_position_update: false,
-        }
+        Self::builder().build()
     }
 }
 
@@ -196,7 +171,8 @@ pub enum SymbologyMethod {
 }
 
 /// Configuration for Interactive Brokers instrument provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -207,12 +183,13 @@ pub enum SymbologyMethod {
 )]
 pub struct InteractiveBrokersInstrumentProviderConfig {
     /// Symbology method to use for instrument ID conversion.
+    #[builder(default)]
     pub symbology_method: SymbologyMethod,
     /// Instrument IDs to load on startup.
-    #[serde(default)]
+    #[builder(default)]
     pub load_ids: HashSet<InstrumentId>,
     /// IB contracts to load on startup.
-    #[serde(default)]
+    #[builder(default)]
     pub load_contracts: Vec<serde_json::Value>,
     /// Minimum expiry days for options and futures chains.
     pub min_expiry_days: Option<u32>,
@@ -225,11 +202,13 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     /// Cache validity in days (None means no caching).
     pub cache_validity_days: Option<u32>,
     /// Whether to convert IB exchanges to MIC venues.
+    #[builder(default)]
     pub convert_exchange_to_mic_venue: bool,
     /// Symbol to MIC venue mapping override.
-    #[serde(default)]
+    #[builder(default)]
     pub symbol_to_mic_venue: HashMap<String, String>,
     /// Security types to filter out.
+    #[builder(default)]
     pub filter_sec_types: HashSet<String>,
     /// Path to cache file for persistent instrument caching (equivalent to pickle_path in Python).
     /// If provided, instruments will be cached to disk and loaded from cache if still valid.
@@ -238,20 +217,7 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
 
 impl Default for InteractiveBrokersInstrumentProviderConfig {
     fn default() -> Self {
-        Self {
-            symbology_method: SymbologyMethod::Simplified,
-            load_ids: HashSet::new(),
-            load_contracts: Vec::new(),
-            min_expiry_days: None,
-            max_expiry_days: None,
-            build_options_chain: None,
-            build_futures_chain: None,
-            cache_validity_days: None,
-            convert_exchange_to_mic_venue: false,
-            symbol_to_mic_venue: HashMap::new(),
-            filter_sec_types: HashSet::new(),
-            cache_path: None,
-        }
+        Self::builder().build()
     }
 }
 
@@ -279,7 +245,8 @@ pub enum TradingMode {
 ///
 /// This configuration is for managing containerized IB Gateway instances.
 /// It supports environment variable loading and sensitive data masking.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[serde(default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
@@ -289,49 +256,27 @@ pub enum TradingMode {
     )
 )]
 pub struct DockerizedIBGatewayConfig {
-    /// Username for IB account (can be loaded from TWS_USERNAME env var).
+    /// Username for IB account (falls back to `TWS_USERNAME` env var via [`Default`]).
     pub username: Option<String>,
-    /// Password for IB account (can be loaded from TWS_PASSWORD env var).
+    /// Password for IB account (falls back to `TWS_PASSWORD` env var via [`Default`]).
     pub password: Option<String>,
     /// Trading mode (paper or live).
+    #[builder(default)]
     pub trading_mode: TradingMode,
     /// Whether to enable read-only API mode.
+    #[builder(default = true)]
     pub read_only_api: bool,
     /// Timeout in seconds for container startup.
+    #[builder(default = 300)]
     pub timeout: u64,
     /// Container image reference.
+    #[builder(default = "ghcr.io/gnzsnz/ib-gateway:stable".to_string())]
     pub container_image: String,
     /// VNC port for remote desktop access (None to disable).
     pub vnc_port: Option<u16>,
 }
 
 impl DockerizedIBGatewayConfig {
-    /// Create a new config with values from environment variables.
-    ///
-    /// Loads username from TWS_USERNAME and password from TWS_PASSWORD if not provided.
-    pub fn from_env_or_defaults(
-        username: Option<String>,
-        password: Option<String>,
-        trading_mode: TradingMode,
-        read_only_api: bool,
-        timeout: u64,
-        container_image: String,
-        vnc_port: Option<u16>,
-    ) -> Self {
-        let username = username.or_else(|| std::env::var("TWS_USERNAME").ok());
-        let password = password.or_else(|| std::env::var("TWS_PASSWORD").ok());
-
-        Self {
-            username,
-            password,
-            trading_mode,
-            read_only_api,
-            timeout,
-            container_image,
-            vnc_port,
-        }
-    }
-
     /// Mask sensitive information for display.
     pub fn mask_sensitive_info(value: &str) -> String {
         if value.len() <= 2 {
@@ -372,14 +317,9 @@ impl DockerizedIBGatewayConfig {
 
 impl Default for DockerizedIBGatewayConfig {
     fn default() -> Self {
-        Self {
-            username: std::env::var("TWS_USERNAME").ok(),
-            password: std::env::var("TWS_PASSWORD").ok(),
-            trading_mode: TradingMode::Paper,
-            read_only_api: true,
-            timeout: 300,
-            container_image: "ghcr.io/gnzsnz/ib-gateway:stable".to_string(),
-            vnc_port: None,
-        }
+        Self::builder()
+            .maybe_username(std::env::var("TWS_USERNAME").ok())
+            .maybe_password(std::env::var("TWS_PASSWORD").ok())
+            .build()
     }
 }

@@ -17,10 +17,15 @@ Released on TBD (UTC).
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 
 ### Breaking Changes
+- Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
+- Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead
+- Removed `BlockchainDataClientConfig::new`, `BlockchainExecutionClientConfig::new`, and `DexPoolFilters::new` (Rust); use the corresponding `::builder()` instead
+- Removed `DeribitExecClientConfig::new` and `HyperliquidExecClientConfig::new` convenience constructors (Rust); use the `::builder()` instead
 - Replaced `is_sandbox: bool` with `environment: AxEnvironment` on `AxDataClientConfig` and `AxExecClientConfig` (Rust and Python), aligning with the Binance/Bybit/Kraken adapter pattern. Default is `Sandbox`.
 - Changed `BacktestEngine::add_venue` and `SimulatedExchange::new` (Rust) to take `SimulatedVenueConfig` (bon builder)
+- Changed Interactive Brokers Rust configs to use bon builders: `InteractiveBrokersDataClientConfig`, `InteractiveBrokersExecClientConfig`, `InteractiveBrokersInstrumentProviderConfig`, and `DockerizedIBGatewayConfig`
 - Changed `get_cached_bybit_http_client` signature: replaced `demo`/`testnet` bools with `environment: BybitEnvironment`
-- Changed Rust `UnsubscribeBookSnapshots` to require `interval_ms` for exact snapshot interval unsubscribe
+- Changed `UnsubscribeBookSnapshots` to require `interval_ms` for exact snapshot interval unsubscribe (Rust)
 - Changed `OrderError::Invariant` variant to wrap `CorrectnessError` instead of `anyhow::Error` (Rust)
 - Changed `HyperliquidEip712Signer::new()` to return `Result` and take `&EvmPrivateKey` (Rust)
 - Changed `HyperliquidExchangeRequest::new/with_vault` to accept `HyperliquidSignature` directly (Rust)
@@ -39,7 +44,7 @@ Released on TBD (UTC).
 - Fixed `BacktestNode` streaming with mixed built-in and custom data types (#3853), thanks for reporting @GianC0
 - Fixed `DataBackendSession` chunked streaming memory leak causing RSS growth (#3889), thanks for reporting @GianC0
 - Fixed PyO3 `InstrumentStatus` persistence and backtest streaming through `ParquetDataCatalog` (#3855)
-- Fixed Rust book snapshot subscriptions to preserve exact `(instrument_id, interval_ms)` semantics for shared intervals and exact unsubscribe handling (#3823), thanks for reporting @dwolfesberger
+- Fixed book snapshot subscriptions to preserve exact `(instrument_id, interval_ms)` semantics for shared intervals and exact unsubscribe handling (Rust) (#3823), thanks for reporting @dwolfesberger
 - Fixed WebSocket auth state during reconnection for Bybit, OKX, and Deribit (#3820), thanks for reporting @KaizynX
 - Fixed `TradingNodeConfig.parse` dropping importable live client config `path` and `factory` fields during raw config decoding
 - Fixed `OrderTriggered` ValueError on market-style stop orders (#3812), thanks for reporting @jindrichsirucek

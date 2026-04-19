@@ -902,11 +902,10 @@ fn test_market_order_with_protection_and_acks_generates_accepted_then_filled(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    let config = OrderMatchingEngineConfig {
-        use_market_order_acks: true,
-        ..Default::default()
-    }
-    .with_price_protection_points(Some(600));
+    let config = OrderMatchingEngineConfig::builder()
+        .use_market_order_acks(true)
+        .price_protection_points(600u32)
+        .build();
 
     let mut engine =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
@@ -2792,10 +2791,10 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    let config = OrderMatchingEngineConfig::new(
-        false, false, false, false, false, false, false, false, false, false, false, false, false,
-    )
-    .with_price_protection_points(Some(600));
+    let config = OrderMatchingEngineConfig::builder()
+        .trade_execution(false)
+        .price_protection_points(600u32)
+        .build();
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
@@ -2861,10 +2860,10 @@ fn test_process_stop_orders_with_protection_both_accepted(
 ) {
     // With trigger-time semantics, stop orders don't require bid/ask at submission
     // Protection is computed when the stop triggers
-    let config = OrderMatchingEngineConfig::new(
-        false, false, false, false, false, false, false, false, false, false, false, false, false,
-    )
-    .with_price_protection_points(Some(600));
+    let config = OrderMatchingEngineConfig::builder()
+        .trade_execution(false)
+        .price_protection_points(600u32)
+        .build();
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);
@@ -5542,7 +5541,9 @@ fn test_price_protection_exact_boundary_fills(
 ) {
     // Protection of 100 points on ETHUSDT (price_increment=0.01) means
     // max BUY price = ask + 100 * 0.01 = ask + 1.00
-    let config = OrderMatchingEngineConfig::default().with_price_protection_points(Some(100));
+    let config = OrderMatchingEngineConfig::builder()
+        .price_protection_points(100u32)
+        .build();
 
     let mut engine_l2 =
         get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, Some(config), None);

@@ -194,18 +194,10 @@ mod tests {
     #[rstest]
     fn test_blockchain_data_client_config_creation() {
         let chain = Arc::new(chains::ETHEREUM.clone());
-        let config = BlockchainDataClientConfig::new(
-            chain,
-            vec![],
-            "https://eth-mainnet.example.com".to_string(),
-            None,
-            None,
-            None,
-            false,
-            None,
-            None,
-            None,
-        );
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain)
+            .http_rpc_url("https://eth-mainnet.example.com".to_string())
+            .build();
 
         assert_eq!(config.chain.name, Blockchain::Ethereum);
         assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");

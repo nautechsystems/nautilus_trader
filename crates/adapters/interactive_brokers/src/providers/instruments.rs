@@ -1977,11 +1977,10 @@ mod tests {
             .unwrap()
             .to_string();
 
-        let config = InteractiveBrokersInstrumentProviderConfig {
-            cache_path: Some(cache_path),
-            cache_validity_days: Some(7),
-            ..Default::default()
-        };
+        let config = InteractiveBrokersInstrumentProviderConfig::builder()
+            .cache_path(cache_path)
+            .cache_validity_days(7u32)
+            .build();
 
         let provider = InteractiveBrokersInstrumentProvider::new(config);
         (provider, temp_dir)
@@ -2078,11 +2077,10 @@ mod tests {
         provider.save_cache(&cache_path).await.unwrap();
 
         // Create a new provider and load the cache
-        let new_config = InteractiveBrokersInstrumentProviderConfig {
-            cache_path: Some(cache_path.clone()),
-            cache_validity_days: Some(7),
-            ..Default::default()
-        };
+        let new_config = InteractiveBrokersInstrumentProviderConfig::builder()
+            .cache_path(cache_path.clone())
+            .cache_validity_days(7u32)
+            .build();
 
         let new_provider = InteractiveBrokersInstrumentProvider::new(new_config);
 

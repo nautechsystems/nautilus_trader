@@ -162,16 +162,6 @@ impl Default for DeribitExecClientConfig {
 }
 
 impl DeribitExecClientConfig {
-    /// Creates a new configuration with default settings.
-    #[must_use]
-    pub fn new(trader_id: TraderId, account_id: AccountId) -> Self {
-        Self {
-            trader_id,
-            account_id,
-            ..Default::default()
-        }
-    }
-
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {

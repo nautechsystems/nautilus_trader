@@ -571,12 +571,13 @@ mod tests {
     #[case(TradingMode::Paper, 4002)]
     #[case(TradingMode::Live, 4001)]
     fn new_reports_the_host_api_port(#[case] trading_mode: TradingMode, #[case] expected: u16) {
-        let gateway = DockerizedIBGateway::new(crate::config::DockerizedIBGatewayConfig {
-            username: Some("test-user".to_string()),
-            password: Some("test-password".to_string()),
-            trading_mode,
-            ..Default::default()
-        })
+        let gateway = DockerizedIBGateway::new(
+            crate::config::DockerizedIBGatewayConfig::builder()
+                .username("test-user".to_string())
+                .password("test-password".to_string())
+                .trading_mode(trading_mode)
+                .build(),
+        )
         .unwrap();
 
         assert_eq!(gateway.port(), expected);

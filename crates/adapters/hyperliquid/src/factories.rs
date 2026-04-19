@@ -270,7 +270,9 @@ mod tests {
         let config = HyperliquidExecFactoryConfig {
             trader_id: TraderId::from("TRADER-001"),
             account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::new(Some("test_private_key".to_string())),
+            config: HyperliquidExecClientConfig::builder()
+                .private_key("test_private_key".to_string())
+                .build(),
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -287,7 +289,9 @@ mod tests {
         let wrong_config = HyperliquidExecFactoryConfig {
             trader_id: TraderId::from("TRADER-001"),
             account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::new(Some("test_private_key".to_string())),
+            config: HyperliquidExecClientConfig::builder()
+                .private_key("test_private_key".to_string())
+                .build(),
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));

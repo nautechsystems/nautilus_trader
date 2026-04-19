@@ -166,15 +166,6 @@ impl Default for HyperliquidExecClientConfig {
 }
 
 impl HyperliquidExecClientConfig {
-    /// Creates a new configuration with the provided private key.
-    #[must_use]
-    pub fn new(private_key: Option<String>) -> Self {
-        Self {
-            private_key,
-            ..Self::default()
-        }
-    }
-
     /// Returns `true` when private key is populated and non-empty.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
