@@ -8,6 +8,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use super::*;
+use crate::execution::parse;
 
 impl InteractiveBrokersExecutionClient {
     /// Starts the order update subscription stream.
@@ -650,7 +651,8 @@ impl InteractiveBrokersExecutionClient {
         pending_combo_fill_avgs: &Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
     ) -> anyhow::Result<()> {
-        if avg_fill_price <= 0.0 || filled <= 0.0 {
+        let is_spread_order = is_spread_instrument_id(instrument_id);
+        if filled <= 0.0 || !parse::should_use_avg_fill_price(avg_fill_price, instrument_id) {
             return Ok(());
         }
 
@@ -684,7 +686,7 @@ impl InteractiveBrokersExecutionClient {
         drop(progress);
 
         let fill_delta = filled_decimal - previous_filled;
-        if fill_delta <= Decimal::ZERO || !is_spread_instrument_id(instrument_id) {
+        if fill_delta <= Decimal::ZERO || !is_spread_order {
             return Ok(());
         }
 

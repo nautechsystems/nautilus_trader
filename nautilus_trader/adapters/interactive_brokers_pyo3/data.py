@@ -405,7 +405,16 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        self._rust_client.subscribe_bars(_to_pyo3_bar_type(command.bar_type))
+        params = None
+        command_params = getattr(command, "params", None)
+        if command_params:
+            params = {key: str(value) for key, value in command_params.items() if value is not None}
+
+        pyo3_bar_type = _to_pyo3_bar_type(command.bar_type)
+        if params is None:
+            self._rust_client.subscribe_bars(pyo3_bar_type)
+        else:
+            self._rust_client.subscribe_bars(pyo3_bar_type, params)
 
     async def _subscribe_instrument_status(self, command: Any) -> None:
         """

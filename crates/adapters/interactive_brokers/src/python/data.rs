@@ -862,9 +862,13 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if the subscription fails.
-    #[pyo3(name = "subscribe_bars")]
-    fn py_subscribe_bars(&mut self, bar_type: BarType) -> PyResult<()> {
-        self.subscribe_bars_for_python(bar_type)
+    #[pyo3(name = "subscribe_bars", signature = (bar_type, params=None))]
+    fn py_subscribe_bars(
+        &mut self,
+        bar_type: BarType,
+        params: Option<std::collections::HashMap<String, String>>,
+    ) -> PyResult<()> {
+        self.subscribe_bars_for_python(bar_type, params)
             .map_err(to_pyruntime_err)
     }
 

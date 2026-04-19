@@ -18,7 +18,10 @@
 #[cfg(test)]
 mod tests {
     use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
-    use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue};
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol as NautilusSymbol, Venue},
+        instruments::{Instrument, InstrumentAny, stubs::equity_aapl},
+    };
     use rstest::rstest;
 
     use crate::{
@@ -104,6 +107,17 @@ mod tests {
         let method = provider.symbology_method();
         // Default should be Simplified
         assert!(matches!(method, crate::config::SymbologyMethod::Simplified));
+    }
+
+    #[rstest]
+    fn test_get_price_magnifier_defaults_zero_to_one() {
+        let provider = create_test_provider();
+        let instrument = equity_aapl();
+        let instrument_id = instrument.id();
+
+        provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 0);
+
+        assert_eq!(provider.get_price_magnifier(&instrument_id), 1);
     }
 
     #[rstest]

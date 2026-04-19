@@ -625,6 +625,54 @@ fn test_flush_pending_combo_fills_emits_report_with_exact_avg_px() {
 }
 
 #[rstest]
+fn test_update_order_avg_price_allows_negative_spread_avg_fill_price() {
+    let instrument_provider = create_test_instrument_provider();
+    let spread = create_test_option_spread();
+    let spread_instrument_id = spread.id;
+    let client_order_id = ClientOrderId::from("O-COMBO-NEG-001");
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+
+    instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
+
+    InteractiveBrokersExecutionClient::update_order_avg_price(
+        client_order_id,
+        &spread_instrument_id,
+        -2.25,
+        3.0,
+        &instrument_provider,
+        &order_avg_prices,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+    )
+    .unwrap();
+
+    let avg_px = order_avg_prices
+        .lock()
+        .unwrap()
+        .get(&client_order_id)
+        .copied()
+        .unwrap();
+    assert_eq!(avg_px, Price::from("-2.25"));
+
+    let avg_chunks = pending_combo_fill_avgs.lock().unwrap();
+    let (fill_delta, partial_avg_px) = avg_chunks
+        .get(&client_order_id)
+        .unwrap()
+        .front()
+        .copied()
+        .unwrap();
+    assert_eq!(fill_delta, Decimal::from(3));
+    assert_eq!(partial_avg_px, Price::from("-2.25"));
+
+    let fill_progress = order_fill_progress.lock().unwrap();
+    let (filled, total_notional) = fill_progress.get(&client_order_id).copied().unwrap();
+    assert_eq!(filled, Decimal::from(3));
+    assert_eq!(total_notional, Decimal::from_str("-6.75").unwrap());
+}
+
+#[rstest]
 fn test_flush_pending_combo_fills_retains_partial_avg_chunk_remainder() {
     let client_order_id = ClientOrderId::from("O-COMBO-002");
     let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));

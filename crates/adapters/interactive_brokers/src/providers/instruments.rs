@@ -287,12 +287,12 @@ impl InteractiveBrokersInstrumentProvider {
     pub fn get_price_magnifier(&self, instrument_id: &InstrumentId) -> i32 {
         // First try dedicated price magnifier cache for fast lookup
         if let Some(magnifier) = self.price_magnifiers.get(instrument_id) {
-            return *magnifier.value();
+            return normalize_price_magnifier(*magnifier.value());
         }
 
         // Fall back to contract details lookup
         if let Some(details) = self.contract_details.get(instrument_id) {
-            let magnifier = details.value().price_magnifier;
+            let magnifier = normalize_price_magnifier(details.value().price_magnifier);
             // Cache it for future fast lookups
             self.price_magnifiers.insert(*instrument_id, magnifier);
             return magnifier;
@@ -932,6 +932,14 @@ impl InteractiveBrokersInstrumentProvider {
         }
 
         Ok(loaded_ids)
+    }
+}
+
+fn normalize_price_magnifier(price_magnifier: i32) -> i32 {
+    if price_magnifier > 0 {
+        price_magnifier
+    } else {
+        1
     }
 }
 

@@ -7,7 +7,7 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use anyhow::Context;
@@ -15,7 +15,10 @@ use ibapi::{
     contracts::tick_types::TickType,
     market_data::{
         TradingHours,
-        historical::Bar as HistoricalBar,
+        historical::{
+            Bar as HistoricalBar, BarSize as HistoricalBarSize, HistoricalBarUpdate,
+            WhatToShow as HistoricalWhatToShow,
+        },
         realtime::{
             Bar as RealtimeBar, BarSize as RealtimeBarSize, MarketDepths, TickGeneric, TickPrice,
             TickPriceSize, TickSize, TickTypes, WhatToShow as RealtimeWhatToShow,
@@ -26,7 +29,7 @@ use ibapi::{
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_model::{
-    data::{BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
+    data::{Bar, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
@@ -45,6 +48,200 @@ use crate::data::{
 enum StreamAction {
     Continue,
     Stop,
+}
+
+const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
+const HISTORICAL_BAR_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+pub(super) fn resolve_historical_bar_start_ns(
+    start_ns: Option<UnixNanos>,
+    now_ns: UnixNanos,
+) -> UnixNanos {
+    start_ns.unwrap_or(now_ns)
+}
+
+pub(super) fn resolve_historical_bar_replay_start_ns(
+    first_start_ns: UnixNanos,
+    last_disconnection_ns: Option<UnixNanos>,
+) -> UnixNanos {
+    match last_disconnection_ns {
+        Some(last_disconnection_ns) if last_disconnection_ns > first_start_ns => {
+            last_disconnection_ns
+        }
+        _ => first_start_ns,
+    }
+}
+
+pub(super) fn calculate_historical_bar_subscription_duration(
+    bar_type: BarType,
+    start_ns: UnixNanos,
+    now_ns: UnixNanos,
+) -> ibapi::market_data::historical::Duration {
+    use ibapi::market_data::historical::ToDuration;
+
+    let bar_seconds = bar_type.spec().timedelta().num_seconds().max(1);
+    let requested_seconds =
+        ((now_ns.as_u64().saturating_sub(start_ns.as_u64())) / 1_000_000_000) as i64;
+    let minimum_seconds = bar_seconds.saturating_mul(HISTORICAL_BAR_MIN_COUNT);
+    let duration_seconds = requested_seconds.max(minimum_seconds).max(bar_seconds);
+
+    if duration_seconds >= 86_400 {
+        let duration_days = ((duration_seconds + 86_399) / 86_400).min(i32::MAX as i64) as i32;
+        duration_days.days()
+    } else {
+        let duration_seconds = duration_seconds.min(i32::MAX as i64) as i32;
+        duration_seconds.seconds()
+    }
+}
+
+fn should_emit_historical_bar(bar: &Bar, start_ns: UnixNanos) -> bool {
+    bar.ts_init >= start_ns
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn handle_historical_bars_subscription(
+    client: Arc<ibapi::Client>,
+    contract: ibapi::contracts::Contract,
+    bar_type: BarType,
+    what_to_show: HistoricalWhatToShow,
+    price_precision: u8,
+    size_precision: u8,
+    use_rth: bool,
+    start_ns: Option<UnixNanos>,
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    _handle_revised_bars: bool,
+    clock: &'static AtomicTime,
+    cancellation_token: CancellationToken,
+) -> anyhow::Result<()> {
+    tracing::debug!("Starting historical bars subscription for {}", bar_type);
+
+    let first_start_ns = resolve_historical_bar_start_ns(start_ns, clock.get_time_ns());
+    let mut last_disconnection_ns = None;
+
+    loop {
+        if cancellation_token.is_cancelled() {
+            break;
+        }
+
+        while !client.is_connected() {
+            if cancellation_token.is_cancelled() {
+                tracing::debug!("Historical bars subscription cancelled for {}", bar_type);
+                return Ok(());
+            }
+            tokio::time::sleep(HISTORICAL_BAR_RETRY_DELAY).await;
+        }
+
+        let replay_start_ns =
+            resolve_historical_bar_replay_start_ns(first_start_ns, last_disconnection_ns);
+        let request_duration = calculate_historical_bar_subscription_duration(
+            bar_type,
+            replay_start_ns,
+            clock.get_time_ns(),
+        );
+        let trading_hours = if use_rth {
+            TradingHours::Regular
+        } else {
+            TradingHours::Extended
+        };
+        let mut subscription = match client
+            .historical_data_streaming(
+                &contract,
+                request_duration,
+                bar_type_to_historical_bar_size(bar_type)?,
+                Some(what_to_show),
+                trading_hours,
+                true,
+            )
+            .await
+        {
+            Ok(subscription) => subscription,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to create historical bars subscription for {}: {:?}",
+                    bar_type,
+                    e
+                );
+                last_disconnection_ns = Some(clock.get_time_ns());
+                tokio::time::sleep(HISTORICAL_BAR_RETRY_DELAY).await;
+                continue;
+            }
+        };
+
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    tracing::debug!("Historical bars subscription cancelled for {}", bar_type);
+                    subscription.cancel().await;
+                    return Ok(());
+                }
+                update = subscription.next() => {
+                    match update {
+                        Some(HistoricalBarUpdate::Historical(data)) => {
+                            for ib_bar in &data.bars {
+                                let bar = ib_bar_to_nautilus_bar(
+                                    ib_bar,
+                                    bar_type,
+                                    price_precision,
+                                    size_precision,
+                                )?;
+
+                                if should_emit_historical_bar(&bar, replay_start_ns)
+                                    && data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err()
+                                {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        Some(HistoricalBarUpdate::Update(ib_bar)) => {
+                            let bar = ib_bar_to_nautilus_bar(
+                                &ib_bar,
+                                bar_type,
+                                price_precision,
+                                size_precision,
+                            )?;
+
+                            if should_emit_historical_bar(&bar, replay_start_ns)
+                                && data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err()
+                            {
+                                return Ok(());
+                            }
+                        }
+                        Some(HistoricalBarUpdate::End { .. }) => {}
+                        None => {
+                            if cancellation_token.is_cancelled() {
+                                return Ok(());
+                            }
+
+                            if let Some(error) = subscription.error() {
+                                tracing::warn!(
+                                    "Historical bars subscription ended for {}: {:?}",
+                                    bar_type,
+                                    error
+                                );
+                            } else {
+                                tracing::warn!(
+                                    "Historical bars subscription ended unexpectedly for {}",
+                                    bar_type
+                                );
+                            }
+
+                            last_disconnection_ns = Some(clock.get_time_ns());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        tokio::time::sleep(HISTORICAL_BAR_RETRY_DELAY).await;
+    }
+
+    tracing::debug!("Historical bars subscription ended for {}", bar_type);
+    Ok(())
+}
+
+fn bar_type_to_historical_bar_size(bar_type: BarType) -> anyhow::Result<HistoricalBarSize> {
+    crate::data::convert::bar_type_to_ib_bar_size(&bar_type)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1051,7 +1248,7 @@ mod tests {
         subscriptions::Subscription,
     };
     use nautilus_common::messages::DataEvent;
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::{BarType, Data},
         identifiers::{InstrumentId, Symbol, Venue},
@@ -1068,6 +1265,45 @@ mod tests {
 
     fn instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("SPX"), Venue::from("CBOE"))
+    }
+
+    fn minute_bar_type() -> BarType {
+        BarType::from("SPX.CBOE-1-MINUTE-LAST-EXTERNAL")
+    }
+
+    #[rstest]
+    fn test_resolve_historical_bar_start_ns_uses_current_time_when_missing() {
+        let now_ns = UnixNanos::from(2_000);
+
+        let start_ns = super::resolve_historical_bar_start_ns(None, now_ns);
+
+        assert_eq!(start_ns, now_ns);
+    }
+
+    #[rstest]
+    fn test_resolve_historical_bar_replay_start_ns_uses_last_disconnect_when_later() {
+        let first_start_ns = UnixNanos::from(1_000);
+        let last_disconnection_ns = UnixNanos::from(1_500);
+
+        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
+            first_start_ns,
+            Some(last_disconnection_ns),
+        );
+
+        assert_eq!(replay_start_ns, last_disconnection_ns);
+    }
+
+    #[rstest]
+    fn test_calculate_historical_bar_subscription_duration_requests_at_least_300_bars() {
+        use ibapi::market_data::historical::ToDuration;
+
+        let duration = super::calculate_historical_bar_subscription_duration(
+            minute_bar_type(),
+            UnixNanos::from(9_000_000_000),
+            UnixNanos::from(10_000_000_000),
+        );
+
+        assert_eq!(duration, 18_000.seconds());
     }
 
     #[tokio::test]

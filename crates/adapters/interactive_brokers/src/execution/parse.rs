@@ -33,7 +33,17 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use time::{PrimitiveDateTime, macros::format_description};
 
-use crate::providers::instruments::InteractiveBrokersInstrumentProvider;
+use crate::{
+    common::parse::is_spread_instrument_id,
+    providers::instruments::InteractiveBrokersInstrumentProvider,
+};
+
+pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &InstrumentId) -> bool {
+    avg_fill_price.is_finite()
+        && avg_fill_price != f64::MAX
+        && avg_fill_price != 0.0
+        && (avg_fill_price > 0.0 || is_spread_instrument_id(instrument_id))
+}
 
 /// Parse an IB execution to a Nautilus FillReport.
 ///
@@ -207,7 +217,8 @@ pub fn parse_order_status_to_report(
     let filled_qty = Quantity::new(order_status.filled, size_precision);
 
     // Get average price
-    let avg_px_value = if order_status.average_fill_price > 0.0 {
+    let include_avg_px = should_use_avg_fill_price(order_status.average_fill_price, &instrument_id);
+    let avg_px_value = if include_avg_px {
         order_status.average_fill_price * price_magnifier
     } else {
         0.0
@@ -298,7 +309,7 @@ pub fn parse_order_status_to_report(
         }
     }
 
-    if avg_px_value > 0.0 {
+    if include_avg_px {
         report = report.with_avg_px(avg_px_value)?;
     }
 
@@ -605,6 +616,42 @@ mod tests {
                 error_msg
             );
         }
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_spread_allows_negative_avg_fill_price() {
+        let instrument_provider = create_test_instrument_provider();
+        let instrument_id = InstrumentId::new(
+            Symbol::from("(1)SPY C400_((1))SPY C410"),
+            Venue::from("SMART"),
+        );
+        let account_id = AccountId::from("IB-001");
+
+        let order_status = OrderStatus {
+            order_id: 12345,
+            status: String::from("Filled"),
+            filled: 1.0,
+            remaining: 0.0,
+            average_fill_price: -2.25,
+            perm_id: 0,
+            parent_id: 0,
+            last_fill_price: -2.25,
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: 0.0,
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            None,
+            instrument_id,
+            account_id,
+            &instrument_provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px, Some(Decimal::from_str("-2.25").unwrap()));
     }
 
     #[rstest]

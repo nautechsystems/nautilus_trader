@@ -66,8 +66,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use self::streams::{
-    handle_index_price_subscription, handle_market_depth_subscription,
-    handle_option_greeks_subscription, handle_quote_subscription,
+    handle_historical_bars_subscription, handle_index_price_subscription,
+    handle_market_depth_subscription, handle_option_greeks_subscription, handle_quote_subscription,
     handle_realtime_bars_subscription, handle_tick_by_tick_quote_subscription,
     handle_trade_subscription,
 };
@@ -197,6 +197,17 @@ fn u64_to_nonzero_usize(value: u64) -> Option<std::num::NonZeroUsize> {
 #[cfg(feature = "python")]
 fn u16_to_nonzero_usize(value: u16) -> Option<std::num::NonZeroUsize> {
     std::num::NonZeroUsize::new(value as usize)
+}
+
+fn parse_start_ns(params: Option<&nautilus_core::Params>) -> Option<UnixNanos> {
+    params
+        .and_then(|params| params.get_u64("start_ns"))
+        .or_else(|| {
+            params
+                .and_then(|params| params.get_str("start_ns"))
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .map(UnixNanos::from)
 }
 
 #[cfg(feature = "python")]
@@ -462,7 +473,11 @@ impl InteractiveBrokersDataClient {
     }
 
     #[cfg(feature = "python")]
-    pub(crate) fn subscribe_bars_for_python(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+    pub(crate) fn subscribe_bars_for_python(
+        &mut self,
+        bar_type: BarType,
+        params: Option<std::collections::HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
         let cmd = SubscribeBars {
             bar_type,
             client_id: Some(self.client_id()),
@@ -470,7 +485,7 @@ impl InteractiveBrokersDataClient {
             command_id: UUID4::new(),
             ts_init: self.clock.get_time_ns(),
             correlation_id: None,
-            params: None,
+            params: string_hash_map_to_params(params),
         };
         DataClient::subscribe_bars(self, cmd)
     }
@@ -1594,6 +1609,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let last_bars = Arc::clone(&self.last_bars);
         let bar_timeout_tasks = Arc::clone(&self.bar_timeout_tasks);
         let handle_revised_bars = self.config.handle_revised_bars;
+        let use_rth = self.config.use_regular_trading_hours;
+        let start_ns = parse_start_ns(cmd.params.as_ref());
 
         // Create subscription-specific cancellation token
         let subscription_token = CancellationToken::new();
@@ -1603,28 +1620,43 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token_clone = subscription_token.clone();
 
         let task = get_runtime().spawn(async move {
-            if let Err(e) = handle_realtime_bars_subscription(
-                client_clone,
-                contract,
-                bar_type,
-                bar_type_str,
-                instrument_id,
-                price_precision,
-                size_precision,
-                data_sender,
-                clock,
-                last_bars,
-                bar_timeout_tasks,
-                handle_revised_bars,
-                subscription_token_clone,
-            )
-            .await
-            {
-                tracing::error!(
-                    "Real-time bars subscription error for {}: {:?}",
+            let result = if bar_type.spec().timedelta().num_seconds() == 5 {
+                handle_realtime_bars_subscription(
+                    client_clone,
+                    contract,
                     bar_type,
-                    e
-                );
+                    bar_type_str,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    data_sender,
+                    clock,
+                    last_bars,
+                    bar_timeout_tasks,
+                    handle_revised_bars,
+                    subscription_token_clone,
+                )
+                .await
+            } else {
+                handle_historical_bars_subscription(
+                    client_clone,
+                    contract,
+                    bar_type,
+                    price_type_to_ib_what_to_show(bar_type.spec().price_type),
+                    price_precision,
+                    size_precision,
+                    use_rth,
+                    start_ns,
+                    data_sender,
+                    handle_revised_bars,
+                    clock,
+                    subscription_token_clone,
+                )
+                .await
+            };
+
+            if let Err(e) = result {
+                tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
             }
         });
 
