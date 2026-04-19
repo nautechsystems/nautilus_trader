@@ -70,6 +70,42 @@ use crate::{
     },
 };
 
+/// Returns `true` when `raw_symbol` would panic `MStr<Topic>`'s wildcard
+/// validator in `nautilus-common`. That validator (see
+/// `nautilus-common::msgbus::mstr::check_no_wildcards`) rejects any
+/// string containing `*` or `?`.
+///
+/// Hyperliquid's HIP-3 stream emits symbols such as
+/// `dex:STREAMABCD****-USD-PERP` whose `*` characters trigger the panic
+/// during `bootstrap_instruments`. We filter those out at the
+/// data-client boundary so the kernel thread survives. The `:` prefix
+/// itself is *not* rejected by the msgbus — it's purely incidental to
+/// the HIP-3 naming convention.
+///
+/// Local patch applied by the hyper-agent vendor fork (see
+/// `crates/third_party/nautilus-hyperliquid/HIP3_PATCH.md`).
+fn is_msgbus_incompatible_symbol(raw_symbol: &str) -> bool {
+    raw_symbol.contains('*') || raw_symbol.contains('?')
+}
+
+/// Drops instruments whose raw symbols would panic the msgbus topic validator.
+/// Logs the filtered count at info level for observability.
+fn filter_msgbus_incompatible(instruments: Vec<InstrumentAny>) -> Vec<InstrumentAny> {
+    let before = instruments.len();
+    let filtered: Vec<InstrumentAny> = instruments
+        .into_iter()
+        .filter(|inst| !is_msgbus_incompatible_symbol(inst.raw_symbol().as_str()))
+        .collect();
+    let dropped = before - filtered.len();
+    if dropped > 0 {
+        log::info!(
+            "Filtered {dropped} instrument(s) with msgbus-incompatible symbols (HIP-3); kept {}",
+            filtered.len()
+        );
+    }
+    filtered
+}
+
 #[derive(Debug)]
 pub struct HyperliquidDataClient {
     client_id: ClientId,
@@ -154,6 +190,9 @@ impl HyperliquidDataClient {
             .request_instruments()
             .await
             .context("failed to fetch instruments during bootstrap")?;
+
+        // Drop HIP-3 symbols that would panic the msgbus topic validator.
+        let instruments = filter_msgbus_incompatible(instruments);
 
         self.instruments.rcu(|m| {
             for instrument in &instruments {
@@ -569,6 +608,8 @@ impl DataClient for HyperliquidDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments().await {
                 Ok(instruments) => {
+                    // Drop HIP-3 symbols that would panic the msgbus topic validator.
+                    let instruments = filter_msgbus_incompatible(instruments);
                     instruments_cache.rcu(|instruments_map| {
                         coin_map.rcu(|coin_to_id| {
                             for instrument in &instruments {
@@ -624,6 +665,16 @@ impl DataClient for HyperliquidDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments().await {
                 Ok(all_instruments) => {
+                    // Drop HIP-3 symbols that would panic the msgbus topic
+                    // validator before they enter the caches. Downstream
+                    // code (e.g. ws_instruments iteration for subscription
+                    // publishing) assumes every cached symbol is a legal
+                    // `MStr<Topic>`; without this filter, a single
+                    // `request_instrument` call from a strategy would
+                    // re-pollute the caches the two bulk paths already
+                    // sanitise.
+                    let all_instruments = filter_msgbus_incompatible(all_instruments);
+
                     instruments_cache.rcu(|instruments_map| {
                         coin_map.rcu(|coin_to_id| {
                             for instrument in &all_instruments {
@@ -1179,4 +1230,139 @@ async fn request_bars_from_http(
 
     log::debug!("Fetched {} bars for {}", bars.len(), bar_type);
     Ok(bars)
+}
+
+#[cfg(test)]
+mod hip3_filter_tests {
+    use nautilus_core::nanos::UnixNanos;
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol, Venue},
+        instruments::{CryptoPerpetual, Instrument, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    use super::{filter_msgbus_incompatible, is_msgbus_incompatible_symbol};
+
+    // ---- predicate-level tests ---------------------------------------
+
+    #[test]
+    fn canonical_perp_symbols_accepted() {
+        assert!(!is_msgbus_incompatible_symbol("BTC"));
+        assert!(!is_msgbus_incompatible_symbol("ETH"));
+        assert!(!is_msgbus_incompatible_symbol("SOL"));
+        assert!(!is_msgbus_incompatible_symbol("kPEPE"));
+    }
+
+    #[test]
+    fn hip3_wildcard_symbol_rejected() {
+        // The real HIP-3 payload: `****` are what trip the msgbus validator.
+        assert!(is_msgbus_incompatible_symbol("dex:STREAMABCD****-USD-PERP"));
+    }
+
+    #[test]
+    fn colon_without_wildcard_accepted() {
+        // `:` is NOT rejected by MStr<Topic> — only `*` and `?` are. A
+        // hypothetical `dex:ANY` without wildcards must pass through.
+        assert!(!is_msgbus_incompatible_symbol("dex:ANY"));
+        assert!(!is_msgbus_incompatible_symbol("foo:bar:baz"));
+    }
+
+    #[test]
+    fn question_mark_rejected() {
+        // `?` is a wildcard per check_no_wildcards — must be filtered.
+        assert!(is_msgbus_incompatible_symbol("WHAT?"));
+        assert!(is_msgbus_incompatible_symbol("a?b"));
+    }
+
+    #[test]
+    fn spot_at_index_accepted() {
+        // @107 format contains no wildcards; should NOT be filtered.
+        assert!(!is_msgbus_incompatible_symbol("@107"));
+    }
+
+    #[test]
+    fn spot_pair_accepted() {
+        // PURR/USDC spot pair — slash is fine for MStr<Topic>.
+        assert!(!is_msgbus_incompatible_symbol("PURR/USDC"));
+    }
+
+    #[test]
+    fn stray_asterisk_rejected() {
+        assert!(is_msgbus_incompatible_symbol("WEIRD****"));
+    }
+
+    // ---- integration: filter_msgbus_incompatible on InstrumentAny ----
+
+    /// Build a throwaway `CryptoPerpetual` `InstrumentAny` with the given
+    /// `raw_symbol` so we can exercise the filter with real instrument
+    /// values (not just the predicate). Prices/quantities are arbitrary
+    /// — the filter only looks at `raw_symbol()`.
+    fn make_perp(raw_symbol: &str) -> InstrumentAny {
+        let venue = Venue::new("HYPERLIQUID");
+        let symbol = Symbol::new(raw_symbol);
+        let instrument_id = InstrumentId::new(symbol, venue);
+        let usd = Currency::USD();
+        let btc = Currency::BTC();
+        let ts = UnixNanos::default();
+        let perp = CryptoPerpetual::new(
+            instrument_id,
+            symbol,
+            btc,
+            usd,
+            usd,
+            false,
+            2,
+            8,
+            Price::new(0.01, 2),
+            Quantity::new(0.00000001, 8),
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            None, // info
+            ts,   // ts_event
+            ts,   // ts_init
+        );
+        InstrumentAny::CryptoPerpetual(perp)
+    }
+
+    #[test]
+    fn filter_drops_wildcard_symbols_end_to_end() {
+        let kept = make_perp("BTC");
+        let dropped_star = make_perp("dex:STREAMABCD****-USD-PERP");
+        let dropped_question = make_perp("a?b");
+        let kept_colon = make_perp("dex:ANY");
+
+        let result =
+            filter_msgbus_incompatible(vec![kept, dropped_star, dropped_question, kept_colon]);
+
+        assert_eq!(result.len(), 2);
+        let surviving: Vec<String> = result
+            .iter()
+            .map(|i| i.raw_symbol().as_str().to_string())
+            .collect();
+        assert!(surviving.iter().any(|s| s == "BTC"));
+        assert!(surviving.iter().any(|s| s == "dex:ANY"));
+    }
+
+    #[test]
+    fn filter_is_noop_on_all_accepted() {
+        let input = vec![make_perp("BTC"), make_perp("ETH"), make_perp("@107")];
+        let result = filter_msgbus_incompatible(input);
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn filter_empty_input() {
+        let result = filter_msgbus_incompatible(vec![]);
+        assert!(result.is_empty());
+    }
 }
