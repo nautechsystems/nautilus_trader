@@ -72,6 +72,16 @@ impl WsSubscriptionHandle {
             .send(HandlerCommand::UnsubscribeMarket(asset_ids))
             .map_err(|e| anyhow::anyhow!("Failed to send UnsubscribeMarket: {e}"))
     }
+
+    // Constructs a handle around a raw command sender. Test-only: lets unit
+    // tests observe the commands the handle emits without spinning up the real
+    // feed handler.
+    #[cfg(test)]
+    pub(crate) fn from_sender(sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>) -> Self {
+        Self {
+            cmd_tx: Arc::new(tokio::sync::RwLock::new(sender)),
+        }
+    }
 }
 
 /// Provides a WebSocket client for the Polymarket CLOB API.

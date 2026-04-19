@@ -56,6 +56,14 @@ pub struct PolymarketDataClientConfig {
     /// Whether to subscribe to new market discovery events via WebSocket.
     #[builder(default)]
     pub subscribe_new_markets: bool,
+    /// Whether subscribe and request commands referencing an unknown instrument should
+    /// trigger an ad-hoc load via the instrument provider. Concurrent misses within
+    /// `auto_load_debounce_ms` are coalesced into a single batched request.
+    #[builder(default = true)]
+    pub auto_load_missing_instruments: bool,
+    /// The window (milliseconds) over which concurrent auto-load requests are batched.
+    #[builder(default = 100)]
+    pub auto_load_debounce_ms: u64,
     /// Instrument filters applied to all instruments during loading and discovery.
     #[builder(default)]
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
@@ -75,6 +83,8 @@ impl Clone for PolymarketDataClientConfig {
             ws_max_subscriptions: self.ws_max_subscriptions,
             update_instruments_interval_mins: self.update_instruments_interval_mins,
             subscribe_new_markets: self.subscribe_new_markets,
+            auto_load_missing_instruments: self.auto_load_missing_instruments,
+            auto_load_debounce_ms: self.auto_load_debounce_ms,
             filters: self.filters.clone(),
             new_market_filter: self.new_market_filter.clone(),
         }
@@ -96,6 +106,11 @@ impl Debug for PolymarketDataClientConfig {
                 &self.update_instruments_interval_mins,
             )
             .field("subscribe_new_markets", &self.subscribe_new_markets)
+            .field(
+                "auto_load_missing_instruments",
+                &self.auto_load_missing_instruments,
+            )
+            .field("auto_load_debounce_ms", &self.auto_load_debounce_ms)
             .field("filters", &self.filters)
             .field("new_market_filter", &self.new_market_filter)
             .finish()

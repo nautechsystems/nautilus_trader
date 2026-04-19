@@ -125,6 +125,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._log.info(f"{config.ws_max_subscriptions_per_connection=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.compute_effective_deltas=}", LogColor.BLUE)
+        self._log.info(f"{config.auto_load_missing_instruments=}", LogColor.BLUE)
+        self._log.info(f"{config.auto_load_debounce_ms=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = http_client
@@ -144,12 +146,20 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Tasks
         self._update_instruments_task: asyncio.Task | None = None
         self._ws_connect_task: asyncio.Task | None = None
+        self._auto_load_task: asyncio.Task | None = None
+        self._auto_load_tasks: set[asyncio.Task] = set()
 
         # Hot caches
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._local_books: dict[InstrumentId, OrderBook] = {}
 
+        # Auto-load coordination
+        self._pending_instrument_loads: dict[InstrumentId, asyncio.Future[None]] = {}
+        self._disconnecting: bool = False
+
     async def _connect(self) -> None:
+        self._disconnecting = False
+
         self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
         self._send_all_instruments_to_data_engine()
@@ -160,6 +170,8 @@ class PolymarketDataClient(LiveMarketDataClient):
             )
 
     async def _disconnect(self) -> None:
+        self._disconnecting = True
+
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
@@ -167,6 +179,19 @@ class PolymarketDataClient(LiveMarketDataClient):
         if self._ws_connect_task:
             self._ws_connect_task.cancel()
             self._ws_connect_task = None
+
+        # Cancel every spawned flush task, not just the most recent one; a
+        # previous iteration may still be awaiting `load_ids_async` and could
+        # otherwise reopen WS subscriptions during shutdown.
+        self._auto_load_task = None
+        for task in list(self._auto_load_tasks):
+            task.cancel()
+        self._auto_load_tasks.clear()
+
+        for future in self._pending_instrument_loads.values():
+            if not future.done():
+                future.cancel()
+        self._pending_instrument_loads.clear()
 
         await self._ws_client.disconnect()
         self._cleanup_expired_books()
@@ -215,6 +240,77 @@ class PolymarketDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    async def _ensure_instrument_loaded(self, instrument_id: InstrumentId) -> bool:
+        if self._cache.instrument(instrument_id) is not None:
+            return True
+
+        if not self._config.auto_load_missing_instruments:
+            self._log.error(
+                f"Cannot find instrument for {instrument_id}, "
+                "and `auto_load_missing_instruments` is disabled",
+            )
+            return False
+
+        if self._disconnecting:
+            return False
+
+        future = self._pending_instrument_loads.get(instrument_id)
+        if future is None:
+            future = self._loop.create_future()
+            self._pending_instrument_loads[instrument_id] = future
+
+        if self._auto_load_task is None or self._auto_load_task.done():
+            task = self.create_task(self._flush_pending_loads())
+            if task is not None:
+                self._auto_load_tasks.add(task)
+                task.add_done_callback(self._auto_load_tasks.discard)
+                self._auto_load_task = task
+
+        try:
+            await future
+        except asyncio.CancelledError:
+            return False
+        except Exception as e:
+            self._log.error(f"Auto-load failed for {instrument_id}: {e}")
+            return False
+
+        return self._cache.instrument(instrument_id) is not None
+
+    async def _flush_pending_loads(self) -> None:
+        await asyncio.sleep(self._config.auto_load_debounce_ms / 1000)
+
+        pending = self._pending_instrument_loads
+        self._pending_instrument_loads = {}
+        # Clear the task handle so misses arriving during the async load below
+        # can spawn a fresh flush rather than deadlock on the in-flight task.
+        self._auto_load_task = None
+
+        if not pending:
+            return
+
+        instrument_ids = list(pending.keys())
+        self._log.info(
+            f"Auto-loading {len(instrument_ids)} missing instrument(s): {instrument_ids}",
+            LogColor.BLUE,
+        )
+
+        try:
+            await self._instrument_provider.load_ids_async(instrument_ids)
+        except Exception as e:
+            self._log.error(f"Auto-load batch failed: {e}")
+
+            for future in pending.values():
+                if not future.done():
+                    future.set_exception(e)
+            return
+
+        for instrument_id, future in pending.items():
+            instrument = self._instrument_provider.find(instrument_id)
+            if instrument is not None:
+                self._handle_data(instrument)
+            if not future.done():
+                future.set_result(None)
+
     async def _update_instruments(self, interval_mins: int) -> None:
         try:
             while True:
@@ -236,6 +332,12 @@ class PolymarketDataClient(LiveMarketDataClient):
             )
             return
 
+        if not await self._ensure_instrument_loaded(command.instrument_id):
+            return
+
+        if command.instrument_id not in self.subscribed_order_book_deltas():
+            return
+
         if command.instrument_id not in self._local_books:
             self._create_local_book(command.instrument_id)
 
@@ -248,6 +350,12 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._schedule_delayed_connect()
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        if not await self._ensure_instrument_loaded(command.instrument_id):
+            return
+
+        if command.instrument_id not in self.subscribed_quote_ticks():
+            return
+
         if command.instrument_id not in self._local_books:
             self._create_local_book(command.instrument_id)
 
@@ -260,6 +368,12 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._schedule_delayed_connect()
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
+        if not await self._ensure_instrument_loaded(command.instrument_id):
+            return
+
+        if command.instrument_id not in self.subscribed_trade_ticks():
+            return
+
         token_id = get_polymarket_token_id(command.instrument_id)
 
         if self._ws_client.is_connected():
@@ -302,6 +416,14 @@ class PolymarketDataClient(LiveMarketDataClient):
             )
 
         instrument: BinaryOption | None = self._instrument_provider.find(request.instrument_id)
+
+        if (
+            instrument is None
+            and self._config.auto_load_missing_instruments
+            and await self._ensure_instrument_loaded(request.instrument_id)
+        ):
+            instrument = self._instrument_provider.find(request.instrument_id)
+
         if instrument is None:
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return

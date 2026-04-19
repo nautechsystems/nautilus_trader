@@ -217,6 +217,12 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
   - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
+- `auto_load_missing_instruments` (default `True`): Controls whether subscribe and
+  request commands for an instrument that is not already in the cache trigger an
+  ad-hoc load via the Gamma API. When disabled, subscribing to an uncached
+  instrument returns an error. See [Runtime instrument loading](#runtime-instrument-loading).
+- `auto_load_debounce_ms` (default `100`): The window (milliseconds) over which
+  concurrent auto-load requests are coalesced into a single batched Gamma call.
 
 :::tip
 We recommend using environment variables to manage your credentials.
@@ -418,6 +424,25 @@ The data adapter buffers the initial `market` subscriptions during the connectio
 subscribes dynamically as new instruments are requested.
 The client manages multiple WebSocket connections internally when the subscription count grows past
 the configured per-connection cap.
+
+### Runtime instrument loading
+
+Polymarket lists thousands of active markets and new markets appear throughout the day, so preloading
+the full universe at startup is rarely practical. The data adapter auto-loads missing instruments on
+demand so that strategies can subscribe to markets that are not in the cache:
+
+- When a strategy issues `subscribe_quote_ticks`, `subscribe_trade_ticks`, `subscribe_order_book_deltas`,
+  or `request_instrument` for an instrument that is not cached, the adapter registers the request and
+  waits `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
+- It then issues a single batched Gamma API call. Batches larger than the Gamma `condition_ids`
+  query ceiling (about 100) are split across multiple calls and merged.
+- Once the instruments are loaded, they are published to the data engine (populating the cache)
+  and the deferred subscriptions open their WebSocket subscriptions atomically. A strategy that
+  unsubscribes while the auto-load is in flight does not see a spurious subscription opened.
+
+The feature is enabled by default. Disable it by setting `auto_load_missing_instruments=False` on
+`PolymarketDataClientConfig`. To preload a known set of markets at startup instead, supply
+`load_ids` or `event_slug_builder` on `PolymarketInstrumentProviderConfig`.
 
 ### Execution
 

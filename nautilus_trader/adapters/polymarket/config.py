@@ -70,6 +70,13 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     drop_quotes_missing_side : bool, default True
         If True, drops QuoteTick messages when bid or ask prices are missing (can occur near market resolution).
         If False, uses boundary prices (0.001/0.999) with zero volume for missing sides.
+    auto_load_missing_instruments : bool, default True
+        If True, subscribe and request commands that reference an instrument not already
+        in the cache will trigger an ad-hoc load via the instrument provider before
+        proceeding. Concurrent misses within `auto_load_debounce_ms` are coalesced into
+        a single batched `load_ids_async` call.
+    auto_load_debounce_ms : PositiveInt, default 100
+        The window (milliseconds) over which concurrent auto-load requests are batched.
 
     """
 
@@ -89,6 +96,8 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     update_instruments_interval_mins: PositiveInt | None = 60
     compute_effective_deltas: bool = False
     drop_quotes_missing_side: bool = True
+    auto_load_missing_instruments: bool = True
+    auto_load_debounce_ms: PositiveInt = 100
 
 
 class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
