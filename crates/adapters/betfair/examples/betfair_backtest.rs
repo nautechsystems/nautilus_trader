@@ -32,9 +32,11 @@
 use std::path::PathBuf;
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_betfair::loader::{BetfairDataItem, BetfairDataLoader};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_model::{
     data::{Data, OrderBookDeltas_API},
     enums::{AccountType, BookType, OmsType},
@@ -135,37 +137,13 @@ fn main() -> anyhow::Result<()> {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
     engine.add_venue(
-        Venue::from("BETFAIR"),
-        OmsType::Netting,
-        AccountType::Cash,
-        BookType::L2_MBP,
-        vec![Money::from("1_000_000 GBP")],
-        None,            // base_currency
-        None,            // default_leverage
-        AHashMap::new(), // per-instrument leverages
-        None,            // margin_model
-        vec![],          // simulation modules
-        FillModelAny::default(),
-        FeeModelAny::default(),
-        None, // latency_model
-        None, // routing
-        None, // reject_stop_orders
-        None, // support_gtd_orders
-        None, // support_contingent_orders
-        None, // use_position_ids
-        None, // use_random_ids
-        None, // use_reduce_only
-        None, // use_message_queue
-        None, // use_market_order_acks
-        None, // bar_execution
-        None, // bar_adaptive_high_low_ordering
-        None, // trade_execution
-        None, // liquidity_consumption
-        None, // allow_cash_borrowing
-        None, // frozen_account
-        None, // queue_position
-        None, // oto_full_trigger
-        None, // price_protection_points
+        SimulatedVenueConfig::builder()
+            .venue(Venue::from("BETFAIR"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Cash)
+            .book_type(BookType::L2_MBP)
+            .starting_balances(vec![Money::from("1_000_000 GBP")])
+            .build(),
     )?;
 
     for instrument in instruments.values() {

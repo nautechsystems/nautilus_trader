@@ -15,9 +15,10 @@
 
 #![cfg(feature = "examples")]
 
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_model::{
     data::{Data, QuoteTick},
     enums::{AccountType, BookType, OmsType},
@@ -33,37 +34,13 @@ fn create_engine() -> BacktestEngine {
     let mut engine = BacktestEngine::new(config).unwrap();
     engine
         .add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USDT")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BINANCE"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .build(),
         )
         .unwrap();
     engine

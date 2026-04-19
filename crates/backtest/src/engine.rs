@@ -38,26 +38,28 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
 use nautilus_data::client::DataClientAdapter;
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel};
+use nautilus_execution::models::fill::FillModelAny;
 use nautilus_model::{
-    accounts::{Account, AccountAny, margin_model::MarginModelAny},
+    accounts::{Account, AccountAny},
     data::{Data, HasTsInit},
-    enums::{AccountType, BookType, OmsType},
+    enums::AccountType,
     identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     position::Position,
-    types::{Currency, Money, Price},
+    types::Price,
 };
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
-use rust_decimal::Decimal;
 
 use crate::{
-    accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
-    data_client::BacktestDataClient, data_iterator::BacktestDataIterator,
-    exchange::SimulatedExchange, execution_client::BacktestExecutionClient,
-    modules::SimulationModule, result::BacktestResult,
+    accumulator::TimeEventAccumulator,
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    data_client::BacktestDataClient,
+    data_iterator::BacktestDataIterator,
+    exchange::SimulatedExchange,
+    execution_client::BacktestExecutionClient,
+    result::BacktestResult,
 };
 
 /// Core backtesting engine for running event-driven strategy backtests on historical data.
@@ -183,83 +185,15 @@ impl BacktestEngine {
     /// # Errors
     ///
     /// Returns an error if initializing the simulated exchange for the venue fails.
-    #[expect(clippy::too_many_arguments)]
-    pub fn add_venue(
-        &mut self,
-        venue: Venue,
-        oms_type: OmsType,
-        account_type: AccountType,
-        book_type: BookType,
-        starting_balances: Vec<Money>,
-        base_currency: Option<Currency>,
-        default_leverage: Option<Decimal>,
-        leverages: AHashMap<InstrumentId, Decimal>,
-        margin_model: Option<MarginModelAny>,
-        modules: Vec<Box<dyn SimulationModule>>,
-        fill_model: FillModelAny,
-        fee_model: FeeModelAny,
-        latency_model: Option<Box<dyn LatencyModel>>,
-        routing: Option<bool>,
-        reject_stop_orders: Option<bool>,
-        support_gtd_orders: Option<bool>,
-        support_contingent_orders: Option<bool>,
-        use_position_ids: Option<bool>,
-        use_random_ids: Option<bool>,
-        use_reduce_only: Option<bool>,
-        use_message_queue: Option<bool>,
-        use_market_order_acks: Option<bool>,
-        bar_execution: Option<bool>,
-        bar_adaptive_high_low_ordering: Option<bool>,
-        trade_execution: Option<bool>,
-        liquidity_consumption: Option<bool>,
-        allow_cash_borrowing: Option<bool>,
-        frozen_account: Option<bool>,
-        queue_position: Option<bool>,
-        oto_full_trigger: Option<bool>,
-        price_protection_points: Option<u32>,
-    ) -> anyhow::Result<()> {
-        let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
-            if account_type == AccountType::Margin {
-                Decimal::from(10)
-            } else {
-                Decimal::from(1)
-            }
-        });
+    pub fn add_venue(&mut self, config: SimulatedVenueConfig) -> anyhow::Result<()> {
+        // `routing` and `frozen_account` flow to the exec client, so capture
+        // them before the config is consumed by the exchange constructor.
+        let venue = config.venue;
+        let routing = Some(config.routing);
+        let frozen_account = Some(config.frozen_account);
 
-        let exchange = SimulatedExchange::new(
-            venue,
-            oms_type,
-            account_type,
-            starting_balances,
-            base_currency,
-            default_leverage,
-            leverages,
-            margin_model,
-            modules,
-            self.kernel.cache.clone(),
-            self.kernel.clock.clone(),
-            fill_model,
-            fee_model,
-            book_type,
-            latency_model,
-            bar_execution,
-            bar_adaptive_high_low_ordering,
-            trade_execution,
-            liquidity_consumption,
-            reject_stop_orders,
-            support_gtd_orders,
-            support_contingent_orders,
-            use_position_ids,
-            use_random_ids,
-            use_reduce_only,
-            use_message_queue,
-            use_market_order_acks,
-            allow_cash_borrowing,
-            frozen_account,
-            queue_position,
-            oto_full_trigger,
-            price_protection_points,
-        )?;
+        let exchange =
+            SimulatedExchange::new(config, self.kernel.cache.clone(), self.kernel.clock.clone())?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
 
@@ -1384,7 +1318,6 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
-    use ahash::AHashMap;
     use nautilus_model::{
         data::{Data, InstrumentStatus},
         enums::{AccountType, BookType, MarketStatus, MarketStatusAction, OmsType},
@@ -1400,41 +1333,14 @@ mod tests {
 
     fn create_engine() -> BacktestEngine {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
-        engine
-            .add_venue(
-                Venue::from("BINANCE"),
-                OmsType::Netting,
-                AccountType::Margin,
-                BookType::L1_MBP,
-                vec![Money::from("1_000_000 USDT")],
-                None,
-                None,
-                AHashMap::new(),
-                None,
-                vec![],
-                FillModelAny::default(),
-                FeeModelAny::default(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .build();
+        engine.add_venue(venue_config).unwrap();
         engine
     }
 

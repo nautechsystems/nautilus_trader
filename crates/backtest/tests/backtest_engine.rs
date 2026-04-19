@@ -19,8 +19,10 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_common::{
     actor::{
         DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
@@ -31,7 +33,6 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_core::UnixNanos;
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -437,41 +438,14 @@ fn test_add_strategy_while_running_registers_strategy_and_market_exit_control() 
 fn create_engine() -> BacktestEngine {
     let config = BacktestEngineConfig::default();
     let mut engine = BacktestEngine::new(config).unwrap();
-    engine
-        .add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USDT")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .build();
+    engine.add_venue(venue_config).unwrap();
     engine
 }
 
@@ -964,77 +938,27 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let config = BacktestEngineConfig::default();
     let mut engine = BacktestEngine::new(config).unwrap();
 
-    // Add BINANCE venue
     engine
         .add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USDT")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BINANCE"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .build(),
         )
         .unwrap();
 
-    // Add BITMEX venue
     engine
         .add_venue(
-            Venue::from("BITMEX"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USD")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BITMEX"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build(),
         )
         .unwrap();
 
@@ -1638,73 +1562,25 @@ fn test_list_venues_multiple() {
 
     engine
         .add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USDT")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BINANCE"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .build(),
         )
         .unwrap();
 
     engine
         .add_venue(
-            Venue::from("BITMEX"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USD")],
-            None,
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("BITMEX"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build(),
         )
         .unwrap();
 
@@ -1741,37 +1617,14 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
     let mut engine = BacktestEngine::new(config).unwrap();
 
     let result = engine.add_venue(
-        Venue::from("BINANCE"),
-        OmsType::Netting,
-        AccountType::Margin,
-        BookType::L1_MBP,
-        vec![Money::from("1_000_000 USDT")],
-        None,
-        None,
-        AHashMap::new(),
-        None,
-        vec![],
-        FillModelAny::default(),
-        FeeModelAny::default(),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(true), // queue_position
-        None,
-        None,
+        SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .queue_position(true)
+            .build(),
     );
     assert!(result.is_ok());
 
@@ -1791,37 +1644,14 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
     let mut engine = BacktestEngine::new(config).unwrap();
 
     let result = engine.add_venue(
-        Venue::from("BINANCE"),
-        OmsType::Netting,
-        AccountType::Margin,
-        BookType::L1_MBP,
-        vec![Money::from("1_000_000 USDT")],
-        None,
-        None,
-        AHashMap::new(),
-        None,
-        vec![],
-        FillModelAny::default(),
-        FeeModelAny::default(),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(true), // oto_full_trigger
-        None,
+        SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .oto_full_trigger(true)
+            .build(),
     );
     assert!(result.is_ok());
 

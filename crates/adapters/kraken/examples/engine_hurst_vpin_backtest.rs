@@ -40,9 +40,10 @@
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 // *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_model::{
     data::{BarType, Data},
     enums::{AccountType, BookType, OmsType},
@@ -98,37 +99,13 @@ fn main() -> anyhow::Result<()> {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
     engine.add_venue(
-        Venue::from("KRAKEN"),
-        OmsType::Netting,
-        AccountType::Margin,
-        BookType::L1_MBP,
-        vec![Money::from("100_000 USD")],
-        None,
-        None,
-        AHashMap::new(),
-        None,
-        vec![],
-        FillModelAny::default(),
-        FeeModelAny::default(),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+        SimulatedVenueConfig::builder()
+            .venue(Venue::from("KRAKEN"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("100_000 USD")])
+            .build(),
     )?;
 
     engine.add_instrument(&InstrumentAny::CryptoPerpetual(instrument))?;

@@ -26,14 +26,18 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
+    models::{
+        fee::FeeModelAny,
+        fill::FillModelAny,
+        latency::{LatencyModel, LatencyModelAny},
+    },
 };
 use nautilus_model::{
     accounts::margin_model::MarginModelAny,
     data::{BarSpecification, BarType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
-    identifiers::{ClientId, InstrumentId, TraderId},
-    types::Currency,
+    identifiers::{ClientId, InstrumentId, TraderId, Venue},
+    types::{Currency, Money},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -41,7 +45,7 @@ use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::modules::SimulationModuleAny;
+use crate::modules::{SimulationModule, SimulationModuleAny};
 
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -236,6 +240,74 @@ impl Default for BacktestEngineConfig {
     fn default() -> Self {
         Self::builder().build()
     }
+}
+
+/// Imperative-API configuration for registering a simulated venue on
+/// [`crate::engine::BacktestEngine`].
+///
+/// Constructed via [`bon::Builder`] so callers only specify what differs from
+/// the documented defaults. Field types mirror the internal
+/// `SimulatedExchange` shapes (trait objects for modules/latency, typed
+/// `Money` balances), which is why this is distinct from the YAML-friendly
+/// [`BacktestVenueConfig`] used by `BacktestNode`.
+#[derive(bon::Builder)]
+#[allow(missing_debug_implementations)]
+pub struct SimulatedVenueConfig {
+    pub venue: Venue,
+    pub oms_type: OmsType,
+    pub account_type: AccountType,
+    pub book_type: BookType,
+    pub starting_balances: Vec<Money>,
+    pub base_currency: Option<Currency>,
+    // Left optional so the engine can fall back to an account-type-appropriate
+    // default (10x for margin, 1x otherwise) when the caller has no preference.
+    pub default_leverage: Option<Decimal>,
+    #[builder(default)]
+    pub leverages: AHashMap<InstrumentId, Decimal>,
+    pub margin_model: Option<MarginModelAny>,
+    #[builder(default)]
+    pub modules: Vec<Box<dyn SimulationModule>>,
+    #[builder(default)]
+    pub fill_model: FillModelAny,
+    #[builder(default)]
+    pub fee_model: FeeModelAny,
+    pub latency_model: Option<Box<dyn LatencyModel>>,
+    #[builder(default = false)]
+    pub routing: bool,
+    #[builder(default = true)]
+    pub reject_stop_orders: bool,
+    #[builder(default = true)]
+    pub support_gtd_orders: bool,
+    #[builder(default = true)]
+    pub support_contingent_orders: bool,
+    #[builder(default = true)]
+    pub use_position_ids: bool,
+    #[builder(default = false)]
+    pub use_random_ids: bool,
+    #[builder(default = true)]
+    pub use_reduce_only: bool,
+    #[builder(default = true)]
+    pub use_message_queue: bool,
+    #[builder(default = false)]
+    pub use_market_order_acks: bool,
+    #[builder(default = true)]
+    pub bar_execution: bool,
+    #[builder(default = false)]
+    pub bar_adaptive_high_low_ordering: bool,
+    #[builder(default = true)]
+    pub trade_execution: bool,
+    #[builder(default = false)]
+    pub liquidity_consumption: bool,
+    #[builder(default = false)]
+    pub allow_cash_borrowing: bool,
+    #[builder(default = false)]
+    pub frozen_account: bool,
+    #[builder(default = false)]
+    pub queue_position: bool,
+    #[builder(default = false)]
+    pub oto_full_trigger: bool,
+    #[builder(default = 0)]
+    pub price_protection_points: u32,
 }
 
 /// Represents a venue configuration for one specific backtest engine.

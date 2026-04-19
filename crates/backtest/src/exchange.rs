@@ -53,7 +53,10 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
-use crate::modules::{ExchangeContext, SimulationModule};
+use crate::{
+    config::SimulatedVenueConfig,
+    modules::{ExchangeContext, SimulationModule},
+};
 
 /// Represents commands with simulated network latency in a min-heap priority queue.
 /// The commands are ordered by timestamp for FIFO processing, with the
@@ -162,95 +165,74 @@ impl Debug for SimulatedExchange {
 }
 
 impl SimulatedExchange {
-    /// Creates a new [`SimulatedExchange`] instance.
+    /// Creates a new [`SimulatedExchange`] instance from a venue configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - `starting_balances` is empty.
     /// - `base_currency` is `Some` but `starting_balances` contains multiple currencies.
-    #[expect(clippy::too_many_arguments)]
     pub fn new(
-        venue: Venue,
-        oms_type: OmsType,
-        account_type: AccountType,
-        starting_balances: Vec<Money>,
-        base_currency: Option<Currency>,
-        default_leverage: Decimal,
-        leverages: AHashMap<InstrumentId, Decimal>,
-        margin_model: Option<MarginModelAny>,
-        modules: Vec<Box<dyn SimulationModule>>,
+        config: SimulatedVenueConfig,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
-        fill_model: FillModelAny,
-        fee_model: FeeModelAny,
-        book_type: BookType,
-        latency_model: Option<Box<dyn LatencyModel>>,
-        bar_execution: Option<bool>,
-        bar_adaptive_high_low_ordering: Option<bool>,
-        trade_execution: Option<bool>,
-        liquidity_consumption: Option<bool>,
-        reject_stop_orders: Option<bool>,
-        support_gtd_orders: Option<bool>,
-        support_contingent_orders: Option<bool>,
-        use_position_ids: Option<bool>,
-        use_random_ids: Option<bool>,
-        use_reduce_only: Option<bool>,
-        use_message_queue: Option<bool>,
-        use_market_order_acks: Option<bool>,
-        allow_cash_borrowing: Option<bool>,
-        frozen_account: Option<bool>,
-        queue_position: Option<bool>,
-        oto_full_trigger: Option<bool>,
-        price_protection_points: Option<u32>,
     ) -> anyhow::Result<Self> {
-        if starting_balances.is_empty() {
+        if config.starting_balances.is_empty() {
             anyhow::bail!("Starting balances must be provided")
         }
 
-        if base_currency.is_some() && starting_balances.len() > 1 {
+        if config.base_currency.is_some() && config.starting_balances.len() > 1 {
             anyhow::bail!("single-currency account has multiple starting currencies")
         }
+
+        let default_leverage = config.default_leverage.unwrap_or_else(|| {
+            if config.account_type == AccountType::Margin {
+                Decimal::from(10)
+            } else {
+                Decimal::from(1)
+            }
+        });
+
         Ok(Self {
-            id: venue,
-            oms_type,
-            account_type,
-            base_currency,
-            starting_balances,
-            book_type,
+            id: config.venue,
+            oms_type: config.oms_type,
+            account_type: config.account_type,
+            base_currency: config.base_currency,
+            starting_balances: config.starting_balances,
+            book_type: config.book_type,
             default_leverage,
             exec_client: None,
-            fee_model,
-            fill_model,
-            latency_model,
+            fee_model: config.fee_model,
+            fill_model: config.fill_model,
+            latency_model: config.latency_model,
             instruments: AHashMap::new(),
             matching_engines: AHashMap::new(),
             settlement_prices: AHashMap::new(),
-            leverages,
-            margin_model,
-            modules,
+            leverages: config.leverages,
+            margin_model: config.margin_model,
+            modules: config.modules,
             clock,
             cache,
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
             inflight_counter: AHashMap::new(),
-            bar_execution: bar_execution.unwrap_or(true),
-            bar_adaptive_high_low_ordering: bar_adaptive_high_low_ordering.unwrap_or(false),
-            trade_execution: trade_execution.unwrap_or(true),
-            liquidity_consumption: liquidity_consumption.unwrap_or(false),
-            reject_stop_orders: reject_stop_orders.unwrap_or(true),
-            support_gtd_orders: support_gtd_orders.unwrap_or(true),
-            support_contingent_orders: support_contingent_orders.unwrap_or(true),
-            use_position_ids: use_position_ids.unwrap_or(true),
-            use_random_ids: use_random_ids.unwrap_or(false),
-            use_reduce_only: use_reduce_only.unwrap_or(true),
-            use_message_queue: use_message_queue.unwrap_or(true),
-            use_market_order_acks: use_market_order_acks.unwrap_or(false),
-            _allow_cash_borrowing: allow_cash_borrowing.unwrap_or(false),
-            frozen_account: frozen_account.unwrap_or(false),
-            queue_position: queue_position.unwrap_or(false),
-            oto_full_trigger: oto_full_trigger.unwrap_or(false),
-            price_protection_points: price_protection_points.unwrap_or(0),
+            bar_execution: config.bar_execution,
+            bar_adaptive_high_low_ordering: config.bar_adaptive_high_low_ordering,
+            trade_execution: config.trade_execution,
+            liquidity_consumption: config.liquidity_consumption,
+            reject_stop_orders: config.reject_stop_orders,
+            support_gtd_orders: config.support_gtd_orders,
+            support_contingent_orders: config.support_contingent_orders,
+            use_position_ids: config.use_position_ids,
+            use_random_ids: config.use_random_ids,
+            use_reduce_only: config.use_reduce_only,
+            use_message_queue: config.use_message_queue,
+            use_market_order_acks: config.use_market_order_acks,
+            _allow_cash_borrowing: config.allow_cash_borrowing,
+            frozen_account: config.frozen_account,
+            queue_position: config.queue_position,
+            oto_full_trigger: config.oto_full_trigger,
+            price_protection_points: config.price_protection_points,
         })
     }
 
@@ -1064,7 +1046,6 @@ mod tests {
         rc::Rc,
     };
 
-    use ahash::AHashMap;
     use nautilus_common::{
         cache::Cache,
         clock::TestClock,
@@ -1074,7 +1055,6 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::models::{
         fee::{FeeModelAny, MakerTakerFeeModel},
-        fill::FillModelAny,
         latency::StaticLatencyModel,
     };
     use nautilus_model::{
@@ -1099,8 +1079,10 @@ mod tests {
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
+        config::SimulatedVenueConfig,
         exchange::{InflightCommand, SimulatedExchange},
         execution_client::BacktestExecutionClient,
         modules::{ExchangeContext, SimulationModule},
@@ -1114,42 +1096,17 @@ mod tests {
     ) -> Rc<RefCell<SimulatedExchange>> {
         let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
         let clock = Rc::new(RefCell::new(TestClock::new()));
+        let config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(account_type)
+            .book_type(book_type)
+            .starting_balances(vec![Money::new(1000.0, Currency::USD())])
+            .default_leverage(Decimal::ONE)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+            .build();
         let exchange = Rc::new(RefCell::new(
-            SimulatedExchange::new(
-                venue,
-                OmsType::Netting,
-                account_type,
-                vec![Money::new(1000.0, Currency::USD())],
-                None,
-                1.into(),
-                AHashMap::new(),
-                None, // margin_model
-                vec![],
-                cache.clone(),
-                clock,
-                FillModelAny::default(),
-                FeeModelAny::MakerTaker(MakerTakerFeeModel),
-                book_type,
-                None, // latency_model
-                None, // bar_execution
-                None, // bar_adaptive_high_low_ordering
-                None, // trade_execution
-                None, // liquidity_consumption
-                None, // reject_stop_orders
-                None, // support_gtd_orders
-                None, // support_contingent_orders
-                None, // use_position_ids
-                None, // use_random_ids
-                None, // use_reduce_only
-                None, // use_message_queue
-                None, // use_market_order_acks
-                None, // allow_cash_borrowing
-                None, // frozen_account
-                None, // queue_position
-                None, // oto_full_trigger
-                None, // price_protection_points
-            )
-            .unwrap(),
+            SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
         ));
 
         let clock = TestClock::new();
@@ -1905,42 +1862,18 @@ mod tests {
         let modules: Vec<Box<dyn SimulationModule>> =
             vec![Box::new(MockSimulationModule::new(counts))];
 
+        let config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::new(1000.0, Currency::USD())])
+            .default_leverage(Decimal::ONE)
+            .modules(modules)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+            .build();
         let exchange = Rc::new(RefCell::new(
-            SimulatedExchange::new(
-                venue,
-                OmsType::Netting,
-                AccountType::Margin,
-                vec![Money::new(1000.0, Currency::USD())],
-                None,
-                1.into(),
-                AHashMap::new(),
-                None, // margin_model
-                modules,
-                cache.clone(),
-                clock,
-                FillModelAny::default(),
-                FeeModelAny::MakerTaker(MakerTakerFeeModel),
-                BookType::L1_MBP,
-                None, // latency_model
-                None, // bar_execution
-                None, // bar_adaptive_high_low_ordering
-                None, // trade_execution
-                None, // liquidity_consumption
-                None, // reject_stop_orders
-                None, // support_gtd_orders
-                None, // support_contingent_orders
-                None, // use_position_ids
-                None, // use_random_ids
-                None, // use_reduce_only
-                None, // use_message_queue
-                None, // use_market_order_acks
-                None, // allow_cash_borrowing
-                None, // frozen_account
-                None, // queue_position
-                None, // oto_full_trigger
-                None, // price_protection_points
-            )
-            .unwrap(),
+            SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
         ));
 
         let exec_clock = TestClock::new();

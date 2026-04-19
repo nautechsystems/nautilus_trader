@@ -20,10 +20,11 @@
 
 #![cfg(all(feature = "high-precision", feature = "examples"))]
 
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_common::throttler::RateLimit;
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
 use nautilus_model::{
     data::{Data, OrderBookDelta},
     enums::{AccountType, BookType, OmsType},
@@ -57,37 +58,14 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
     let mut engine = BacktestEngine::new(config).unwrap();
     engine
         .add_venue(
-            Venue::from("XNAS"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L1_MBP,
-            vec![Money::from("1_000_000 USD")],
-            Some(Currency::from("USD")),
-            None,
-            AHashMap::new(),
-            None,
-            vec![],
-            FillModelAny::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            SimulatedVenueConfig::builder()
+                .venue(Venue::from("XNAS"))
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .base_currency(Currency::from("USD"))
+                .build(),
         )
         .unwrap();
     engine.add_instrument(instrument).unwrap();

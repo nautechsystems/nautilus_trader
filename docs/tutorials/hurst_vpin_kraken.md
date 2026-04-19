@@ -266,9 +266,10 @@ signals but risk too few samples in a single-day backtest.
 Configure a `BacktestEngine` with a Kraken venue and a USD starting balance:
 
 ```rust
-use ahash::AHashMap;
-use nautilus_backtest::{config::BacktestEngineConfig, engine::BacktestEngine};
-use nautilus_execution::models::{fee::FeeModelAny, fill::FillModelAny};
+use nautilus_backtest::{
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
+    engine::BacktestEngine,
+};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
@@ -280,20 +281,13 @@ use nautilus_model::{
 let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
 engine.add_venue(
-    Venue::from("KRAKEN"),
-    OmsType::Netting,
-    AccountType::Margin,
-    BookType::L1_MBP,
-    vec![Money::from("100_000 USD")],
-    None,            // base_currency
-    None,            // default_leverage
-    AHashMap::new(), // per-instrument leverages
-    None,            // margin_model
-    vec![],          // simulation modules
-    FillModelAny::default(),
-    FeeModelAny::default(),
-    None, None, None, None, None, None, None, None, None, None, None, None,
-    None, None, None, None, None, None, None,
+    SimulatedVenueConfig::builder()
+        .venue(Venue::from("KRAKEN"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("100_000 USD")])
+        .build(),
 )?;
 
 engine.add_instrument(&InstrumentAny::CryptoPerpetual(instrument))?;

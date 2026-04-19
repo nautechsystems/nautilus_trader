@@ -175,19 +175,13 @@ L2 order book data:
 let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
 engine.add_venue(
-    Venue::from("BETFAIR"),
-    OmsType::Netting,
-    AccountType::Cash,
-    BookType::L2_MBP,
-    vec![Money::from("1_000_000 GBP")],
-    None,            // base_currency
-    None,            // default_leverage
-    AHashMap::new(), // per-instrument leverages
-    None,            // margin_model
-    vec![],          // simulation modules
-    FillModelAny::default(),
-    FeeModelAny::default(),
-    // ... remaining options default to None
+    SimulatedVenueConfig::builder()
+        .venue(Venue::from("BETFAIR"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Cash)
+        .book_type(BookType::L2_MBP)
+        .starting_balances(vec![Money::from("1_000_000 GBP")])
+        .build(),
 )?;
 ```
 

@@ -54,7 +54,7 @@ use rust_decimal::Decimal;
 
 use super::node::create_config_instance;
 use crate::{
-    config::BacktestEngineConfig,
+    config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
     modules::{FXRolloverInterestModule, SimulationModuleAny},
     result::BacktestResult,
@@ -191,41 +191,41 @@ impl PyBacktestEngine {
             .map(Into::into)
             .collect();
 
-        self.0
-            .add_venue(
-                venue,
-                oms_type,
-                account_type,
-                book_type,
-                starting_balances,
-                base_currency,
-                default_leverage,
-                leverages,
-                margin_model,
-                modules,
-                fill_model,
-                fee_model,
-                latency_model,
-                Some(routing),
-                Some(reject_stop_orders),
-                Some(support_gtd_orders),
-                Some(support_contingent_orders),
-                Some(use_position_ids),
-                Some(use_random_ids),
-                Some(use_reduce_only),
-                Some(use_message_queue),
-                Some(use_market_order_acks),
-                Some(bar_execution),
-                Some(bar_adaptive_high_low_ordering),
-                Some(trade_execution),
-                Some(liquidity_consumption),
-                Some(allow_cash_borrowing),
-                Some(frozen_account),
-                Some(queue_position),
-                Some(oto_trigger_mode == OtoTriggerMode::Full),
-                price_protection_points,
-            )
-            .map_err(to_pyruntime_err)?;
+        let sim_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(oms_type)
+            .account_type(account_type)
+            .book_type(book_type)
+            .starting_balances(starting_balances)
+            .maybe_base_currency(base_currency)
+            .maybe_default_leverage(default_leverage)
+            .leverages(leverages)
+            .maybe_margin_model(margin_model)
+            .modules(modules)
+            .fill_model(fill_model)
+            .fee_model(fee_model)
+            .maybe_latency_model(latency_model)
+            .routing(routing)
+            .reject_stop_orders(reject_stop_orders)
+            .support_gtd_orders(support_gtd_orders)
+            .support_contingent_orders(support_contingent_orders)
+            .use_position_ids(use_position_ids)
+            .use_random_ids(use_random_ids)
+            .use_reduce_only(use_reduce_only)
+            .use_message_queue(use_message_queue)
+            .use_market_order_acks(use_market_order_acks)
+            .bar_execution(bar_execution)
+            .bar_adaptive_high_low_ordering(bar_adaptive_high_low_ordering)
+            .trade_execution(trade_execution)
+            .liquidity_consumption(liquidity_consumption)
+            .allow_cash_borrowing(allow_cash_borrowing)
+            .frozen_account(frozen_account)
+            .queue_position(queue_position)
+            .oto_full_trigger(oto_trigger_mode == OtoTriggerMode::Full)
+            .maybe_price_protection_points(price_protection_points)
+            .build();
+
+        self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
 
         for (instrument_id, price) in settlement_prices {
             self.0

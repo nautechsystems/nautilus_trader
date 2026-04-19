@@ -18,6 +18,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Replaced `is_sandbox: bool` with `environment: AxEnvironment` on `AxDataClientConfig` and `AxExecClientConfig` (Rust and Python), aligning with the Binance/Bybit/Kraken adapter pattern. Default is `Sandbox`.
+- Changed `BacktestEngine::add_venue` and `SimulatedExchange::new` (Rust) to take `SimulatedVenueConfig` (bon builder)
 - Changed `get_cached_bybit_http_client` signature: replaced `demo`/`testnet` bools with `environment: BybitEnvironment`
 - Changed Rust `UnsubscribeBookSnapshots` to require `interval_ms` for exact snapshot interval unsubscribe
 - Changed `OrderError::Invariant` variant to wrap `CorrectnessError` instead of `anyhow::Error` (Rust)
