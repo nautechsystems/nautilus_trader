@@ -38,13 +38,15 @@ use axum::{
     extract::State,
     http::Uri,
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
 };
 use chrono::{TimeZone, Utc};
 use nautilus_coinbase::{common::enums::CoinbaseEnvironment, http::client::CoinbaseHttpClient};
 use nautilus_model::{
+    enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::InstrumentAny,
+    types::{Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -80,6 +82,7 @@ fn test_api_key() -> String {
 struct RequestRecord {
     path: String,
     raw_query: String,
+    body: Option<Value>,
 }
 
 #[derive(Default)]
@@ -109,6 +112,21 @@ impl TestState {
         state.requests.push(RequestRecord {
             path: path.to_string(),
             raw_query,
+            body: None,
+        });
+        state
+            .queues
+            .get_mut(path)
+            .and_then(|q| q.pop_front())
+            .unwrap_or_else(|| json!({}))
+    }
+
+    fn next_response_with_body(&self, path: &str, body: Value) -> Value {
+        let mut state = self.inner.lock().unwrap();
+        state.requests.push(RequestRecord {
+            path: path.to_string(),
+            raw_query: String::new(),
+            body: Some(body),
         });
         state
             .queues
@@ -196,6 +214,30 @@ async fn handle_product(
     }
 }
 
+async fn handle_create_order(
+    State(state): State<TestState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let response = state.next_response_with_body("/orders", body);
+    Json(response)
+}
+
+async fn handle_cancel_orders(
+    State(state): State<TestState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let response = state.next_response_with_body("/orders/batch_cancel", body);
+    Json(response)
+}
+
+async fn handle_edit_order(
+    State(state): State<TestState>,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
+    let response = state.next_response_with_body("/orders/edit", body);
+    Json(response)
+}
+
 const API_PREFIX: &str = "/api/v3/brokerage";
 
 fn create_router(state: TestState) -> Router {
@@ -220,6 +262,15 @@ fn create_router(state: TestState) -> Router {
         .route(
             &format!("{API_PREFIX}/market/products/{{product_id}}"),
             get(handle_product),
+        )
+        .route(&format!("{API_PREFIX}/orders"), post(handle_create_order))
+        .route(
+            &format!("{API_PREFIX}/orders/batch_cancel"),
+            post(handle_cancel_orders),
+        )
+        .route(
+            &format!("{API_PREFIX}/orders/edit"),
+            post(handle_edit_order),
         )
         .with_state(state)
 }
@@ -792,5 +843,313 @@ async fn test_exec_client_get_or_fetch_instrument_lazy_fetches_missing_product()
         state.requests_for("/market/products/BTC-USD").len(),
         1,
         "cached instrument must not trigger a second /products fetch"
+    );
+}
+
+fn create_order_success_response(order_id: &str, client_order_id: &str) -> Value {
+    json!({
+        "success": true,
+        "failure_reason": "",
+        "order_id": order_id,
+        "success_response": {
+            "order_id": order_id,
+            "product_id": "BTC-USD",
+            "side": "BUY",
+            "client_order_id": client_order_id,
+        }
+    })
+}
+
+fn create_order_failure_response() -> Value {
+    json!({
+        "success": false,
+        "failure_reason": "INSUFFICIENT_FUND",
+        "order_id": "",
+        "error_response": {
+            "error": "INSUFFICIENT_FUND",
+            "message": "Insufficient balance",
+            "error_details": "available=0",
+            "preview_failure_reason": "",
+            "new_order_failure_reason": "",
+        }
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_limit_gtc_serializes_typed_body() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders",
+        create_order_success_response("venue-100", "client-100"),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .submit_order(
+            ClientOrderId::new("client-100"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.5"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            true, // post_only
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert!(response.success);
+    assert_eq!(response.order_id, "venue-100");
+
+    // Verify the typed body was serialized correctly to limit_limit_gtc shape.
+    let requests = state.requests_for("/orders");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().expect("POST body captured");
+    assert_eq!(body["client_order_id"], "client-100");
+    assert_eq!(body["product_id"], "BTC-USD");
+    assert_eq!(body["side"], "BUY");
+    let cfg = &body["order_configuration"]["limit_limit_gtc"];
+    assert_eq!(cfg["base_size"], "0.5");
+    assert_eq!(cfg["limit_price"], "50000.00");
+    assert_eq!(cfg["post_only"], true);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_market_uses_base_size_when_not_quote_qty() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders",
+        create_order_success_response("venue-200", "client-200"),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let _ = client
+        .submit_order(
+            ClientOrderId::new("client-200"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("0.001"),
+            TimeInForce::Ioc,
+            None,
+            None,
+            None,
+            false,
+            false, // is_quote_quantity = false → base_size
+        )
+        .await
+        .unwrap();
+
+    let requests = state.requests_for("/orders");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().unwrap();
+    let cfg = &body["order_configuration"]["market_market_ioc"];
+    assert_eq!(cfg["base_size"], "0.001");
+    assert!(cfg.get("quote_size").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_returns_failure_response() {
+    let state = TestState::default();
+    state.enqueue("/orders", create_order_failure_response());
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .submit_order(
+            ClientOrderId::new("client-300"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.5"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+
+    assert!(!response.success);
+    let err = response
+        .error_response
+        .as_ref()
+        .expect("error_response set");
+    assert_eq!(err.error, "INSUFFICIENT_FUND");
+    assert_eq!(err.message, "Insufficient balance");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_rejects_unsupported_market_tif() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    // FOK on MARKET is unsupported; should fail before HTTP.
+    let result = client
+        .submit_order(
+            ClientOrderId::new("client-400"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("0.001"),
+            TimeInForce::Fok,
+            None,
+            None,
+            None,
+            false,
+            false,
+        )
+        .await;
+
+    assert!(result.is_err());
+    assert!(
+        state.requests_for("/orders").is_empty(),
+        "no HTTP call made"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_cancel_orders_serializes_order_ids_and_returns_results() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders/batch_cancel",
+        json!({
+            "results": [
+                {"success": true, "failure_reason": "", "order_id": "venue-1"},
+                {"success": false, "failure_reason": "UNKNOWN_CANCEL_FAILURE_REASON", "order_id": "venue-2"},
+            ]
+        }),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .cancel_orders(&[VenueOrderId::new("venue-1"), VenueOrderId::new("venue-2")])
+        .await
+        .unwrap();
+
+    assert_eq!(response.results.len(), 2);
+    assert!(response.results[0].success);
+    assert!(!response.results[1].success);
+    assert_eq!(
+        response.results[1].failure_reason,
+        "UNKNOWN_CANCEL_FAILURE_REASON"
+    );
+
+    let requests = state.requests_for("/orders/batch_cancel");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().unwrap();
+    assert_eq!(body["order_ids"][0], "venue-1");
+    assert_eq!(body["order_ids"][1], "venue-2");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_modify_order_forwards_price_size_and_stop_price() {
+    let state = TestState::default();
+    state.enqueue("/orders/edit", json!({"success": true, "errors": []}));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .modify_order(
+            VenueOrderId::new("venue-99"),
+            Some(Price::from("55000.00")),
+            Some(Quantity::from("0.75")),
+            Some(Price::from("54000.00")),
+        )
+        .await
+        .unwrap();
+
+    assert!(response.success);
+    let requests = state.requests_for("/orders/edit");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().unwrap();
+    assert_eq!(body["order_id"], "venue-99");
+    assert_eq!(body["price"], "55000.00");
+    assert_eq!(body["size"], "0.75");
+    assert_eq!(body["stop_price"], "54000.00");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_modify_order_omits_unset_fields() {
+    let state = TestState::default();
+    state.enqueue("/orders/edit", json!({"success": true, "errors": []}));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let _ = client
+        .modify_order(
+            VenueOrderId::new("venue-99"),
+            Some(Price::from("55000.00")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let body = state.requests_for("/orders/edit")[0]
+        .body
+        .as_ref()
+        .unwrap()
+        .clone();
+    assert_eq!(body["price"], "55000.00");
+    assert!(body.get("size").is_none());
+    assert!(body.get("stop_price").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_modify_order_returns_typed_failure_reason() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders/edit",
+        json!({
+            "success": false,
+            "errors": [{
+                "edit_failure_reason": "ORDER_ALREADY_FILLED",
+                "preview_failure_reason": "",
+            }]
+        }),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .modify_order(
+            VenueOrderId::new("venue-99"),
+            Some(Price::from("55000.00")),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert!(!response.success);
+    assert_eq!(response.errors.len(), 1);
+    assert_eq!(
+        response.errors[0].edit_failure_reason,
+        "ORDER_ALREADY_FILLED"
     );
 }

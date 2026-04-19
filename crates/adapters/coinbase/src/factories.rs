@@ -17,13 +17,23 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
-use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
+use nautilus_common::{
+    cache::Cache,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+};
+use nautilus_live::ExecutionClientCore;
+use nautilus_model::{
+    enums::{AccountType, OmsType},
+    identifiers::{AccountId, ClientId, TraderId},
+};
+use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
+    common::consts::COINBASE_VENUE,
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
     data::CoinbaseDataClient,
+    execution::CoinbaseExecutionClient,
 };
 
 impl ClientConfig for CoinbaseDataClientConfig {
@@ -93,6 +103,81 @@ impl DataClientFactory for CoinbaseDataClientFactory {
 
     fn config_type(&self) -> &'static str {
         "CoinbaseDataClientConfig"
+    }
+}
+
+/// Factory for creating Coinbase execution clients.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+)]
+pub struct CoinbaseExecutionClientFactory {
+    trader_id: TraderId,
+    account_id: AccountId,
+}
+
+impl CoinbaseExecutionClientFactory {
+    /// Creates a new [`CoinbaseExecutionClientFactory`] instance.
+    #[must_use]
+    pub const fn new(trader_id: TraderId, account_id: AccountId) -> Self {
+        Self {
+            trader_id,
+            account_id,
+        }
+    }
+}
+
+impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        let coinbase_config = config
+            .as_any()
+            .downcast_ref::<CoinbaseExecClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for CoinbaseExecutionClientFactory. Expected CoinbaseExecClientConfig, was {config:?}",
+                )
+            })?
+            .clone();
+
+        // Coinbase spot accounts are cash; derivatives (perpetuals, futures)
+        // settle on a margin account. Without explicit product-type config
+        // on the exec client, default to Cash + Netting and let the engine
+        // handle margin reconciliation when derivatives trades arrive.
+        let account_type = AccountType::Cash;
+        let oms_type = OmsType::Netting;
+
+        let core = ExecutionClientCore::new(
+            self.trader_id,
+            ClientId::from(name),
+            *COINBASE_VENUE,
+            oms_type,
+            self.account_id,
+            account_type,
+            None,
+            cache,
+        );
+
+        let client = CoinbaseExecutionClient::new(core, coinbase_config)?;
+
+        Ok(Box::new(client))
+    }
+
+    fn name(&self) -> &'static str {
+        "COINBASE"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "CoinbaseExecClientConfig"
     }
 }
 
@@ -183,6 +268,79 @@ mod tests {
         );
         assert!(
             msg.contains("CoinbaseDataClientConfig"),
+            "error should name the expected config type, was: {msg}"
+        );
+    }
+
+    fn make_test_exec_config() -> CoinbaseExecClientConfig {
+        CoinbaseExecClientConfig {
+            api_key: Some("organizations/test-org/apiKeys/test-key".to_string()),
+            api_secret: Some("test-pem-placeholder".to_string()),
+            ..CoinbaseExecClientConfig::default()
+        }
+    }
+
+    fn setup_exec_test_env() {
+        use nautilus_common::{live::runner::replace_exec_event_sender, messages::ExecutionEvent};
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        replace_exec_event_sender(sender);
+    }
+
+    #[rstest]
+    fn test_coinbase_execution_client_factory_creation() {
+        let factory = CoinbaseExecutionClientFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+        );
+        assert_eq!(factory.name(), "COINBASE");
+        assert_eq!(factory.config_type(), "CoinbaseExecClientConfig");
+    }
+
+    #[rstest]
+    fn test_coinbase_execution_client_factory_creates_client() {
+        setup_exec_test_env();
+
+        let factory = CoinbaseExecutionClientFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+        );
+        let config = make_test_exec_config();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create("COINBASE-TEST", &config, cache)
+            .expect("factory should create exec client with valid config");
+
+        assert_eq!(client.client_id(), ClientId::from("COINBASE-TEST"));
+        assert_eq!(client.account_id(), AccountId::from("COINBASE-001"));
+        assert_eq!(client.venue(), *COINBASE_VENUE);
+        // Spot / Cash account, Netting OMS per the factory's hardcoded contract.
+        assert_eq!(client.oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    fn test_coinbase_execution_client_factory_rejects_wrong_config_type() {
+        setup_exec_test_env();
+
+        let factory = CoinbaseExecutionClientFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+        );
+        let wrong_config = CoinbaseDataClientConfig::default();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = factory.create("COINBASE-TEST", &wrong_config, cache);
+        let err = match result {
+            Ok(_) => panic!("wrong config type should be rejected"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("CoinbaseExecutionClientFactory"),
+            "error should name the factory, was: {msg}"
+        );
+        assert!(
+            msg.contains("CoinbaseExecClientConfig"),
             "error should name the expected config type, was: {msg}"
         );
     }

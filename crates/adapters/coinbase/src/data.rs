@@ -264,6 +264,10 @@ fn dispatch_ws_message(
         NautilusWsMessage::Error(e) => {
             log::error!("WebSocket error: {e}");
         }
+        NautilusWsMessage::UserOrder(_) => {
+            // User-channel execution reports are consumed by the execution client
+            log::debug!("Dropping user-channel update received on the data client");
+        }
     }
 }
 

@@ -24,8 +24,9 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, OrderBookDeltas, QuoteTick, TradeTick},
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
+    reports::OrderStatusReport,
 };
 use nautilus_network::websocket::WebSocketClient;
 use tokio_tungstenite::tungstenite::Message;
@@ -33,10 +34,10 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::{
     common::consts::COINBASE,
     websocket::{
-        messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType},
+        messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
         parse::{
             parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_ticker,
-            parse_ws_trade,
+            parse_ws_trade, parse_ws_user_event_to_order_status_report,
         },
     },
 };
@@ -63,6 +64,8 @@ pub enum HandlerCommand {
     AddBarType { key: String, bar_type: BarType },
     /// Removes a bar type registration.
     RemoveBarType { key: String },
+    /// Sets the account ID used when emitting user-channel execution reports.
+    SetAccountId(AccountId),
 }
 
 impl Debug for HandlerCommand {
@@ -76,8 +79,30 @@ impl Debug for HandlerCommand {
             Self::UpdateInstrument(i) => write!(f, "UpdateInstrument({})", i.id()),
             Self::AddBarType { key, .. } => write!(f, "AddBarType({key})"),
             Self::RemoveBarType { key } => write!(f, "RemoveBarType({key})"),
+            Self::SetAccountId(id) => write!(f, "SetAccountId({id})"),
         }
     }
+}
+
+/// Carrier for a single user-channel order update.
+///
+/// Pairs the parsed [`OrderStatusReport`] with the resolved instrument and
+/// the raw venue payload so downstream consumers (e.g. the execution client)
+/// can diff cumulative quantity and fees against their own tracked state.
+///
+/// `is_snapshot` is true when the wrapping `WsUserEvent` was a `snapshot`
+/// type. Snapshots restate the current cumulative state of every open order
+/// and must NOT be interpreted as fresh fills, otherwise a cold start (or
+/// any state-clearing reconnect) would synthesize phantom fills covering the
+/// entire pre-existing cumulative quantity.
+#[derive(Debug, Clone)]
+pub struct UserOrderUpdate {
+    pub report: Box<OrderStatusReport>,
+    pub update: Box<WsOrderUpdate>,
+    pub instrument: InstrumentAny,
+    pub is_snapshot: bool,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
 
 /// Nautilus-typed messages produced by the feed handler.
@@ -91,6 +116,8 @@ pub enum NautilusWsMessage {
     Deltas(OrderBookDeltas),
     /// Bar from candles channel.
     Bar(Bar),
+    /// Order status update from the user channel.
+    UserOrder(Box<UserOrderUpdate>),
     /// The connection was re-established after a drop.
     Reconnected,
     /// An error occurred during message processing.
@@ -107,6 +134,7 @@ pub struct FeedHandler {
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     bar_types: AHashMap<String, BarType>,
+    account_id: Option<AccountId>,
     buffer: Vec<NautilusWsMessage>,
 }
 
@@ -125,8 +153,14 @@ impl FeedHandler {
             raw_rx,
             instruments: AHashMap::new(),
             bar_types: AHashMap::new(),
+            account_id: None,
             buffer: Vec::new(),
         }
+    }
+
+    /// Sets the account ID used to stamp user-channel execution reports.
+    pub fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
     }
 
     /// Polls for the next output message, processing commands and raw messages.
@@ -182,6 +216,9 @@ impl FeedHandler {
                         }
                         HandlerCommand::RemoveBarType { key } => {
                             self.bar_types.remove(&key);
+                        }
+                        HandlerCommand::SetAccountId(account_id) => {
+                            self.account_id = Some(account_id);
                         }
                     }
                 }
@@ -259,13 +296,9 @@ impl FeedHandler {
                 log::debug!("Subscription confirmed: {events:?}");
                 None
             }
-            CoinbaseWsMessage::User { events, .. } => {
-                log::debug!(
-                    "Ignoring {} user events until Coinbase execution support lands",
-                    events.len()
-                );
-                None
-            }
+            CoinbaseWsMessage::User {
+                timestamp, events, ..
+            } => self.handle_user_events(&events, &timestamp, ts_init),
             CoinbaseWsMessage::FuturesBalanceSummary { events, .. } => {
                 log::debug!(
                     "Ignoring {} futures balance summary events until account-state handling lands",
@@ -440,6 +473,97 @@ impl FeedHandler {
         first
     }
 
+    fn handle_user_events(
+        &mut self,
+        events: &[crate::websocket::messages::WsUserEvent],
+        timestamp: &str,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let Some(account_id) = self.account_id else {
+            log::debug!(
+                "Dropping user event: account_id not set (call SetAccountId after connect)"
+            );
+            return None;
+        };
+
+        let ts_event = match crate::http::parse::parse_rfc3339_timestamp(timestamp) {
+            Ok(ts) => ts,
+            Err(e) => {
+                log::warn!("Failed to parse user message timestamp {timestamp}: {e}");
+                ts_init
+            }
+        };
+
+        let mut first: Option<NautilusWsMessage> = None;
+
+        for event in events {
+            let is_snapshot = matches!(event.event_type, WsEventType::Snapshot);
+
+            for order in &event.orders {
+                let instrument_id = instrument_id_from_product(&order.product_id);
+                let instrument = match self.instruments.get(&instrument_id).cloned() {
+                    Some(inst) => inst,
+                    None => {
+                        log::warn!("No instrument cached for {instrument_id}");
+                        continue;
+                    }
+                };
+
+                self.emit_user_event_messages(
+                    order,
+                    &instrument,
+                    account_id,
+                    is_snapshot,
+                    ts_event,
+                    ts_init,
+                    &mut first,
+                );
+            }
+        }
+
+        if first.is_some() {
+            self.buffer.reverse();
+        }
+        first
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_user_event_messages(
+        &mut self,
+        order: &WsOrderUpdate,
+        instrument: &InstrumentAny,
+        account_id: AccountId,
+        is_snapshot: bool,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        first: &mut Option<NautilusWsMessage>,
+    ) {
+        let report = match parse_ws_user_event_to_order_status_report(
+            order, instrument, account_id, ts_event, ts_init,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("Failed to parse user order update: {e}");
+                return;
+            }
+        };
+
+        let msg = NautilusWsMessage::UserOrder(Box::new(UserOrderUpdate {
+            report: Box::new(report),
+            update: Box::new(order.clone()),
+            instrument: instrument.clone(),
+            is_snapshot,
+            ts_event,
+            ts_init,
+        }));
+
+        if first.is_none() {
+            *first = Some(msg);
+        } else {
+            self.buffer.push(msg);
+        }
+    }
+
     fn handle_candles(
         &mut self,
         events: &[crate::websocket::messages::WsCandlesEvent],
@@ -543,12 +667,66 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_text_ignores_user_channel_until_execution_support() {
+    fn test_handle_text_drops_user_channel_when_account_id_unset() {
         let json = load_test_fixture("ws_user.json");
         let mut handler = test_handler();
 
+        // account_id is intentionally left unset; events should be dropped
         assert!(handler.handle_text(&json).is_none());
         assert!(handler.buffer.is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_user_event_emits_user_order_update() {
+        use nautilus_model::{
+            enums::{OrderSide, OrderStatus},
+            identifiers::AccountId,
+            types::Quantity,
+        };
+
+        use crate::common::enums::CoinbaseProductType;
+
+        let json = load_test_fixture("ws_user.json");
+        let mut handler = test_handler();
+        handler.set_account_id(AccountId::new("COINBASE-001"));
+        handler
+            .instruments
+            .insert(btc_usd_instrument().id(), btc_usd_instrument());
+
+        let msg = handler
+            .handle_text(&json)
+            .expect("handler should emit a user-channel update");
+
+        match msg {
+            NautilusWsMessage::UserOrder(carrier) => {
+                // Status report fields.
+                assert_eq!(carrier.report.account_id.as_str(), "COINBASE-001");
+                assert_eq!(carrier.report.instrument_id, btc_usd_instrument().id());
+                assert_eq!(
+                    carrier.report.venue_order_id.as_str(),
+                    "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                );
+                assert_eq!(
+                    carrier.report.client_order_id.unwrap().as_str(),
+                    "11111-000000-000001"
+                );
+                assert_eq!(carrier.report.order_side, OrderSide::Buy);
+                assert_eq!(carrier.report.order_status, OrderStatus::Accepted);
+                assert_eq!(carrier.report.filled_qty, Quantity::from("0.00000000"));
+                assert_eq!(carrier.report.quantity, Quantity::from("0.00100000"));
+
+                // Raw venue update fields.
+                assert_eq!(carrier.update.product_id, "BTC-USD");
+                assert_eq!(carrier.update.product_type, CoinbaseProductType::Spot);
+                assert_eq!(carrier.update.cumulative_quantity, "0");
+                assert_eq!(carrier.update.leaves_quantity, "0.001");
+
+                // Carrier metadata.
+                assert_eq!(carrier.instrument.id(), btc_usd_instrument().id());
+                assert!(carrier.ts_event.as_u64() > 0);
+            }
+            other => panic!("expected UserOrder, was {other:?}"),
+        }
     }
 
     #[rstest]

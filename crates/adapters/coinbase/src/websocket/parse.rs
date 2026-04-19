@@ -15,21 +15,26 @@
 
 //! Parsing functions for converting Coinbase WebSocket messages to Nautilus domain types.
 
+use anyhow::Context;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{BookAction, OrderSide, RecordFlag},
-    identifiers::{InstrumentId, TradeId},
+    enums::{BookAction, LiquiditySide, OrderSide, OrderStatus, RecordFlag},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    types::Quantity,
+    reports::{FillReport, OrderStatusReport},
+    types::{Money, Price, Quantity},
 };
 
 use crate::{
     http::parse::{
-        coinbase_side_to_aggressor, parse_epoch_secs_timestamp, parse_price, parse_quantity,
-        parse_rfc3339_timestamp,
+        coinbase_side_to_aggressor, parse_epoch_secs_timestamp, parse_order_side,
+        parse_order_status, parse_order_type, parse_price, parse_quantity, parse_rfc3339_timestamp,
+        parse_time_in_force,
     },
-    websocket::messages::{WsBookSide, WsCandle, WsL2DataEvent, WsL2Update, WsTicker, WsTrade},
+    websocket::messages::{
+        WsBookSide, WsCandle, WsL2DataEvent, WsL2Update, WsOrderUpdate, WsTicker, WsTrade,
+    },
 };
 
 /// Parses a WebSocket trade into a [`TradeTick`].
@@ -217,8 +222,145 @@ fn ws_book_side_to_order_side(side: WsBookSide) -> OrderSide {
     }
 }
 
+/// Parses a Coinbase user channel [`WsOrderUpdate`] into an [`OrderStatusReport`].
+///
+/// Derives the total quantity as `cumulative_quantity + leaves_quantity` and
+/// promotes the `Accepted` status to `PartiallyFilled` when the cumulative
+/// fill is positive but below the total quantity, mirroring the REST parser.
+///
+/// # Errors
+///
+/// Returns an error when any numeric field cannot be parsed against the
+/// instrument precision.
+pub fn parse_ws_user_event_to_order_status_report(
+    update: &WsOrderUpdate,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+
+    let order_side = parse_order_side(&update.order_side);
+    let order_type = parse_order_type(update.order_type);
+    let time_in_force = parse_time_in_force(Some(update.time_in_force));
+    let mut order_status = parse_order_status(update.status);
+
+    let venue_order_id = VenueOrderId::new(&update.order_id);
+    let client_order_id = if update.client_order_id.is_empty() {
+        None
+    } else {
+        Some(ClientOrderId::new(&update.client_order_id))
+    };
+
+    let filled_qty = if update.cumulative_quantity.is_empty() {
+        Quantity::zero(size_precision)
+    } else {
+        parse_quantity(&update.cumulative_quantity, size_precision)
+            .context("failed to parse cumulative_quantity")?
+    };
+    let leaves_qty = if update.leaves_quantity.is_empty() {
+        Quantity::zero(size_precision)
+    } else {
+        parse_quantity(&update.leaves_quantity, size_precision)
+            .context("failed to parse leaves_quantity")?
+    };
+
+    let quantity = filled_qty + leaves_qty;
+
+    if order_status == OrderStatus::Accepted && filled_qty.is_positive() && filled_qty < quantity {
+        order_status = OrderStatus::PartiallyFilled;
+    }
+
+    let ts_accepted = if update.creation_time.is_empty() {
+        ts_event
+    } else {
+        parse_rfc3339_timestamp(&update.creation_time).unwrap_or(ts_event)
+    };
+
+    let mut report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        order_side,
+        order_type,
+        time_in_force,
+        order_status,
+        quantity,
+        filled_qty,
+        ts_accepted,
+        ts_event,
+        ts_init,
+        None,
+    );
+
+    if !update.avg_price.is_empty()
+        && let Ok(avg_px) = update.avg_price.parse::<f64>()
+        && avg_px > 0.0
+    {
+        report = report.with_avg_px(avg_px)?;
+    }
+
+    Ok(report)
+}
+
+/// Parses a Coinbase user channel [`WsOrderUpdate`] into a [`FillReport`].
+///
+/// Coinbase's user channel reports cumulative totals rather than per-trade
+/// fills, so the caller must supply:
+/// - `last_qty`: the quantity delta since the previous cumulative state
+/// - `last_px`: the price of the new fill, derived by the caller from the
+///   cumulative notional delta (Coinbase's `avg_price` is the *cumulative*
+///   weighted average and is not safe to use as the new fill's price for
+///   multi-fill orders)
+/// - `commission`: the commission delta since the previous cumulative state
+/// - `trade_id`: synthesized from the order ID plus the new cumulative total
+#[allow(clippy::too_many_arguments)]
+pub fn parse_ws_user_event_to_fill_report(
+    update: &WsOrderUpdate,
+    last_qty: Quantity,
+    last_px: Price,
+    commission: Money,
+    trade_id: TradeId,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> FillReport {
+    let instrument_id = instrument.id();
+
+    let venue_order_id = VenueOrderId::new(&update.order_id);
+    let client_order_id = if update.client_order_id.is_empty() {
+        None
+    } else {
+        Some(ClientOrderId::new(&update.client_order_id))
+    };
+    let order_side = parse_order_side(&update.order_side);
+
+    FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        LiquiditySide::NoLiquiditySide,
+        client_order_id,
+        None,
+        ts_event,
+        ts_init,
+        None,
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::{
         data::bar::BarSpecification,
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
@@ -482,5 +624,139 @@ mod tests {
             ws_book_side_to_order_side(WsBookSide::Offer),
             OrderSide::Sell
         );
+    }
+
+    #[rstest]
+    fn test_parse_ws_user_event_to_order_status_report_open() {
+        let json = load_test_fixture("ws_user.json");
+        let msg: CoinbaseWsMessage = serde_json::from_str(&json).unwrap();
+        let instrument = test_instrument();
+        let account_id = AccountId::new("COINBASE-001");
+        let ts_event = UnixNanos::from(1_705_314_600_000_000_000u64);
+        let ts_init = UnixNanos::from(1_705_314_700_000_000_000u64);
+
+        let order = match msg {
+            CoinbaseWsMessage::User { events, .. } => events[0].orders[0].clone(),
+            other => panic!("expected User, was {other:?}"),
+        };
+
+        let report = parse_ws_user_event_to_order_status_report(
+            &order,
+            &instrument,
+            account_id,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.venue_order_id.as_str(),
+            "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        );
+        assert_eq!(
+            report.client_order_id.unwrap().as_str(),
+            "11111-000000-000001"
+        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.filled_qty, Quantity::from("0.00000000"));
+        assert_eq!(report.quantity, Quantity::from("0.00100000"));
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_ws_user_event_to_order_status_report_promotes_partial_fill() {
+        let mut update = WsOrderUpdate {
+            order_id: "venue-1".to_string(),
+            client_order_id: "client-1".to_string(),
+            contract_expiry_type: crate::common::enums::CoinbaseContractExpiryType::Unknown,
+            cumulative_quantity: "0.5".to_string(),
+            leaves_quantity: "0.5".to_string(),
+            avg_price: "100.00".to_string(),
+            total_fees: "0.05".to_string(),
+            status: crate::common::enums::CoinbaseOrderStatus::Open,
+            product_id: ustr::Ustr::from("BTC-USD"),
+            product_type: crate::common::enums::CoinbaseProductType::Spot,
+            creation_time: String::new(),
+            order_side: crate::common::enums::CoinbaseOrderSide::Buy,
+            order_type: crate::common::enums::CoinbaseOrderType::Limit,
+            risk_managed_by: crate::common::enums::CoinbaseRiskManagedBy::Unknown,
+            time_in_force: crate::common::enums::CoinbaseTimeInForce::GoodUntilCancelled,
+            trigger_status: crate::common::enums::CoinbaseTriggerStatus::InvalidOrderType,
+            cancel_reason: String::new(),
+            reject_reason: String::new(),
+            total_value_after_fees: String::new(),
+        };
+        update.creation_time = String::new();
+
+        let instrument = test_instrument();
+        let report = parse_ws_user_event_to_order_status_report(
+            &update,
+            &instrument,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        // Coinbase Open + positive cumulative + leaves > 0 should promote to PartiallyFilled.
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.filled_qty, Quantity::from("0.50000000"));
+        assert_eq!(report.quantity, Quantity::from("1.00000000"));
+    }
+
+    #[rstest]
+    fn test_parse_ws_user_event_to_fill_report_uses_supplied_last_px_and_commission() {
+        let update = WsOrderUpdate {
+            order_id: "venue-1".to_string(),
+            client_order_id: "client-1".to_string(),
+            contract_expiry_type: crate::common::enums::CoinbaseContractExpiryType::Unknown,
+            cumulative_quantity: "0.5".to_string(),
+            leaves_quantity: "0.5".to_string(),
+            avg_price: "100.00".to_string(),
+            total_fees: "0.05".to_string(),
+            status: crate::common::enums::CoinbaseOrderStatus::Open,
+            product_id: ustr::Ustr::from("BTC-USD"),
+            product_type: crate::common::enums::CoinbaseProductType::Spot,
+            creation_time: String::new(),
+            order_side: crate::common::enums::CoinbaseOrderSide::Sell,
+            order_type: crate::common::enums::CoinbaseOrderType::Limit,
+            risk_managed_by: crate::common::enums::CoinbaseRiskManagedBy::Unknown,
+            time_in_force: crate::common::enums::CoinbaseTimeInForce::GoodUntilCancelled,
+            trigger_status: crate::common::enums::CoinbaseTriggerStatus::InvalidOrderType,
+            cancel_reason: String::new(),
+            reject_reason: String::new(),
+            total_value_after_fees: String::new(),
+        };
+
+        let instrument = test_instrument();
+        let usd = Currency::USD();
+        let last_px = Price::from("120.00");
+        let commission =
+            Money::from_decimal(rust_decimal::Decimal::from_str("0.10").unwrap(), usd).unwrap();
+        let trade_id = TradeId::new("venue-1-0.5");
+
+        let report = parse_ws_user_event_to_fill_report(
+            &update,
+            Quantity::from("0.50000000"),
+            last_px,
+            commission,
+            trade_id,
+            &instrument,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(report.venue_order_id.as_str(), "venue-1");
+        assert_eq!(report.client_order_id.unwrap().as_str(), "client-1");
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty, Quantity::from("0.50000000"));
+        assert_eq!(report.last_px, Price::from("120.00"));
+        assert_eq!(report.commission, commission);
+        assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
+        assert_eq!(report.trade_id, trade_id);
     }
 }

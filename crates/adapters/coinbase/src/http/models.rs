@@ -16,7 +16,7 @@
 //! HTTP response model types for the Coinbase Advanced Trade REST API.
 
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use ustr::Ustr;
 
 use crate::common::{
@@ -25,13 +25,12 @@ use crate::common::{
         CoinbaseFcmTradingSessionState, CoinbaseFillTradeType, CoinbaseFuturesAssetType,
         CoinbaseLiquidityIndicator, CoinbaseMarginType, CoinbaseOrderPlacementSource,
         CoinbaseOrderSide, CoinbaseOrderStatus, CoinbaseOrderType, CoinbaseProductStatus,
-        CoinbaseProductType, CoinbaseProductVenue, CoinbaseRiskManagedBy, CoinbaseStopDirection,
-        CoinbaseTimeInForce, CoinbaseTriggerStatus,
+        CoinbaseProductType, CoinbaseProductVenue, CoinbaseRiskManagedBy, CoinbaseTimeInForce,
+        CoinbaseTriggerStatus,
     },
     parse::{
         deserialize_decimal_from_str, deserialize_empty_string_to_none,
-        deserialize_optional_decimal_from_str, deserialize_product_type_or_unknown,
-        deserialize_string_to_u64, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+        deserialize_product_type_or_unknown, deserialize_string_to_u64,
     },
 };
 
@@ -297,189 +296,6 @@ pub struct Balance {
     pub currency: Ustr,
 }
 
-/// Request body for creating an order.
-#[derive(Debug, Clone, Serialize)]
-pub struct CreateOrderRequest {
-    pub client_order_id: String,
-    pub product_id: Ustr,
-    pub side: CoinbaseOrderSide,
-    pub order_configuration: OrderConfiguration,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub self_trade_prevention_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub leverage: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub margin_type: Option<CoinbaseMarginType>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retail_portfolio_id: Option<String>,
-}
-
-/// Order configuration for different order types.
-///
-/// Uses `#[serde(untagged)]` because Coinbase wraps each order type in a
-/// uniquely-named key (e.g. `market_market_ioc`, `limit_limit_gtc`), which
-/// serde matches by attempting each variant in declaration order. Error
-/// messages on deserialization failure are opaque; prefer constructing
-/// variants directly rather than deserializing from untrusted JSON.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum OrderConfiguration {
-    MarketIoc(MarketIoc),
-    LimitGtc(LimitGtc),
-    LimitGtd(LimitGtd),
-    LimitFok(LimitFok),
-    StopLimitGtc(StopLimitGtc),
-    StopLimitGtd(StopLimitGtd),
-}
-
-/// Market order with IOC fill.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketIoc {
-    pub market_market_ioc: MarketIocParams,
-}
-
-/// Market order parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketIocParams {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_optional_decimal_from_str",
-        serialize_with = "serialize_optional_decimal_as_str"
-    )]
-    pub quote_size: Option<Decimal>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_optional_decimal_from_str",
-        serialize_with = "serialize_optional_decimal_as_str"
-    )]
-    pub base_size: Option<Decimal>,
-}
-
-/// Limit GTC order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitGtc {
-    pub limit_limit_gtc: LimitGtcParams,
-}
-
-/// Limit GTC parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitGtcParams {
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub base_size: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub limit_price: Decimal,
-    #[serde(default)]
-    pub post_only: bool,
-}
-
-/// Limit GTD order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitGtd {
-    pub limit_limit_gtd: LimitGtdParams,
-}
-
-/// Limit GTD parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitGtdParams {
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub base_size: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub limit_price: Decimal,
-    pub end_time: String,
-    #[serde(default)]
-    pub post_only: bool,
-}
-
-/// Limit FOK order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitFok {
-    pub limit_limit_fok: LimitFokParams,
-}
-
-/// Limit FOK parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LimitFokParams {
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub base_size: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub limit_price: Decimal,
-}
-
-/// Stop-limit GTC order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopLimitGtc {
-    pub stop_limit_stop_limit_gtc: StopLimitGtcParams,
-}
-
-/// Stop-limit GTC parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopLimitGtcParams {
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub base_size: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub limit_price: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub stop_price: Decimal,
-    pub stop_direction: CoinbaseStopDirection,
-}
-
-/// Stop-limit GTD order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopLimitGtd {
-    pub stop_limit_stop_limit_gtd: StopLimitGtdParams,
-}
-
-/// Stop-limit GTD parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopLimitGtdParams {
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub base_size: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub limit_price: Decimal,
-    #[serde(
-        serialize_with = "serialize_decimal_as_str",
-        deserialize_with = "deserialize_decimal_from_str"
-    )]
-    pub stop_price: Decimal,
-    pub stop_direction: CoinbaseStopDirection,
-    pub end_time: String,
-}
-
 /// Response for creating an order.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateOrderResponse {
@@ -521,6 +337,23 @@ pub struct CancelOrdersResponse {
     pub results: Vec<CancelResult>,
 }
 
+/// Response for editing an order via `/orders/edit`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EditOrderResponse {
+    pub success: bool,
+    #[serde(default)]
+    pub errors: Vec<EditOrderError>,
+}
+
+/// A single edit error entry returned by `/orders/edit`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EditOrderError {
+    #[serde(default)]
+    pub edit_failure_reason: String,
+    #[serde(default)]
+    pub preview_failure_reason: String,
+}
+
 /// Result for a single order cancellation.
 #[derive(Debug, Clone, Deserialize)]
 pub struct CancelResult {
@@ -554,9 +387,10 @@ pub struct OrdersListResponse {
 /// a wider set of config shapes on history responses than on submit (bracket
 /// orders, TWAP, trigger variants, and new shapes Coinbase may ship without
 /// bumping the API version). Consumers that need typed access can try to
-/// deserialize the inner value into [`OrderConfiguration`] and tolerate
-/// failures. Keeping the wire shape permissive prevents a single unknown
-/// variant from failing the entire batch response.
+/// deserialize the inner value into
+/// [`crate::http::query::OrderConfiguration`] and tolerate failures. Keeping
+/// the wire shape permissive prevents a single unknown variant from failing
+/// the entire batch response.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Order {
     pub order_id: String,
@@ -664,13 +498,7 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::common::{
-        consts::{
-            ORDER_CONFIG_BASE_SIZE, ORDER_CONFIG_LIMIT_GTC, ORDER_CONFIG_LIMIT_PRICE,
-            ORDER_CONFIG_MARKET_IOC, ORDER_CONFIG_QUOTE_SIZE,
-        },
-        testing::load_test_fixture,
-    };
+    use crate::common::{consts::ORDER_CONFIG_LIMIT_GTC, testing::load_test_fixture};
 
     #[rstest]
     fn test_deserialize_product() {
@@ -752,65 +580,6 @@ mod tests {
         let bid = &response.pricebook.bids[0];
         assert!(!bid.price.is_empty());
         assert!(!bid.size.is_empty());
-    }
-
-    #[rstest]
-    fn test_serialize_market_order() {
-        let order = CreateOrderRequest {
-            client_order_id: "test-123".to_string(),
-            product_id: Ustr::from("BTC-USD"),
-            side: CoinbaseOrderSide::Buy,
-            order_configuration: OrderConfiguration::MarketIoc(MarketIoc {
-                market_market_ioc: MarketIocParams {
-                    quote_size: Some(Decimal::from_str("100").unwrap()),
-                    base_size: None,
-                },
-            }),
-            self_trade_prevention_id: None,
-            leverage: None,
-            margin_type: None,
-            retail_portfolio_id: None,
-        };
-
-        let json = serde_json::to_value(&order).unwrap();
-        assert_eq!(json["client_order_id"], "test-123");
-        assert_eq!(json["product_id"], "BTC-USD");
-        assert_eq!(json["side"], "BUY");
-        assert_eq!(
-            json["order_configuration"][ORDER_CONFIG_MARKET_IOC][ORDER_CONFIG_QUOTE_SIZE],
-            "100"
-        );
-    }
-
-    #[rstest]
-    fn test_serialize_limit_gtc_order() {
-        let order = CreateOrderRequest {
-            client_order_id: "test-456".to_string(),
-            product_id: Ustr::from("ETH-USD"),
-            side: CoinbaseOrderSide::Sell,
-            order_configuration: OrderConfiguration::LimitGtc(LimitGtc {
-                limit_limit_gtc: LimitGtcParams {
-                    base_size: Decimal::from_str("1.5").unwrap(),
-                    limit_price: Decimal::from_str("3500.00").unwrap(),
-                    post_only: true,
-                },
-            }),
-            self_trade_prevention_id: None,
-            leverage: None,
-            margin_type: None,
-            retail_portfolio_id: None,
-        };
-
-        let json = serde_json::to_value(&order).unwrap();
-        assert_eq!(json["side"], "SELL");
-        assert_eq!(
-            json["order_configuration"][ORDER_CONFIG_LIMIT_GTC][ORDER_CONFIG_BASE_SIZE],
-            "1.5"
-        );
-        assert_eq!(
-            json["order_configuration"][ORDER_CONFIG_LIMIT_GTC][ORDER_CONFIG_LIMIT_PRICE],
-            "3500.00"
-        );
     }
 
     #[rstest]
@@ -991,5 +760,58 @@ mod tests {
         assert!(!details.contract_code.is_empty());
         assert!(!details.contract_size.is_empty());
         assert_eq!(details.risk_managed_by, CoinbaseRiskManagedBy::ManagedByFcm);
+    }
+
+    #[rstest]
+    fn test_deserialize_edit_order_response_success() {
+        let json = r#"{"success": true, "errors": []}"#;
+        let resp: EditOrderResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.success);
+        assert!(resp.errors.is_empty());
+    }
+
+    #[rstest]
+    fn test_deserialize_edit_order_response_failure() {
+        let json = r#"{
+            "success": false,
+            "errors": [
+                {
+                    "edit_failure_reason": "ORDER_NOT_FOUND",
+                    "preview_failure_reason": ""
+                }
+            ]
+        }"#;
+        let resp: EditOrderResponse = serde_json::from_str(json).unwrap();
+        assert!(!resp.success);
+        assert_eq!(resp.errors.len(), 1);
+        assert_eq!(resp.errors[0].edit_failure_reason, "ORDER_NOT_FOUND");
+        assert_eq!(resp.errors[0].preview_failure_reason, "");
+    }
+
+    #[rstest]
+    fn test_deserialize_edit_order_response_preview_failure() {
+        let json = r#"{
+            "success": false,
+            "errors": [
+                {
+                    "edit_failure_reason": "",
+                    "preview_failure_reason": "PREVIEW_INSUFFICIENT_FUNDS"
+                }
+            ]
+        }"#;
+        let resp: EditOrderResponse = serde_json::from_str(json).unwrap();
+        assert!(!resp.success);
+        assert_eq!(
+            resp.errors[0].preview_failure_reason,
+            "PREVIEW_INSUFFICIENT_FUNDS"
+        );
+    }
+
+    #[rstest]
+    fn test_deserialize_edit_order_response_omitted_errors_defaults_empty() {
+        let json = r#"{"success": true}"#;
+        let resp: EditOrderResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.success);
+        assert!(resp.errors.is_empty());
     }
 }

@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use nautilus_core::UnixNanos;
 pub use nautilus_core::serialization::{
     deserialize_decimal_from_str, deserialize_optional_decimal_from_str, deserialize_string_to_u64,
     serialize_decimal_as_str, serialize_optional_decimal_as_str,
@@ -65,6 +66,20 @@ where
 {
     let value = String::deserialize(deserializer)?;
     Ok(CoinbaseProductType::from_str(&value).unwrap_or(CoinbaseProductType::Unknown))
+}
+
+/// Converts a [`UnixNanos`] timestamp to an RFC 3339 string in UTC.
+///
+/// # Errors
+///
+/// Returns an error when the nanosecond value is outside the range
+/// representable by [`chrono::DateTime::<chrono::Utc>::from_timestamp`].
+pub fn format_rfc3339_from_nanos(ts: UnixNanos) -> anyhow::Result<String> {
+    let secs = (ts.as_u64() / 1_000_000_000) as i64;
+    let nanos = (ts.as_u64() % 1_000_000_000) as u32;
+    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
+        .map(|dt| dt.to_rfc3339())
+        .ok_or_else(|| anyhow::anyhow!("UnixNanos {ts} is out of range for chrono::DateTime"))
 }
 
 /// Converts a Nautilus [`BarType`] to a [`CoinbaseGranularity`].
@@ -147,5 +162,21 @@ mod tests {
     fn test_bar_type_to_granularity_unsupported(#[case] bar_type_str: &str) {
         let bar_type = BarType::from(bar_type_str);
         assert!(bar_type_to_granularity(&bar_type).is_err());
+    }
+
+    #[rstest]
+    fn test_format_rfc3339_from_nanos_round_trip() {
+        // 2024-01-15T10:30:00.000000000Z
+        let ts = UnixNanos::from(1_705_314_600_000_000_000u64);
+        let s = format_rfc3339_from_nanos(ts).unwrap();
+        assert_eq!(s, "2024-01-15T10:30:00+00:00");
+    }
+
+    #[rstest]
+    fn test_format_rfc3339_from_nanos_preserves_subsecond_precision() {
+        // 2024-01-15T10:30:00.123456789Z
+        let ts = UnixNanos::from(1_705_314_600_123_456_789u64);
+        let s = format_rfc3339_from_nanos(ts).unwrap();
+        assert_eq!(s, "2024-01-15T10:30:00.123456789+00:00");
     }
 }

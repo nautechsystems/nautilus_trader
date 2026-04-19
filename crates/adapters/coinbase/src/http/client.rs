@@ -28,10 +28,12 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
+    enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
+    types::{Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
@@ -45,17 +47,27 @@ use crate::{
     common::{
         consts::REST_API_PATH,
         credential::CoinbaseCredential,
-        enums::{CoinbaseEnvironment, CoinbaseProductType},
+        enums::{
+            CoinbaseEnvironment, CoinbaseOrderSide, CoinbaseProductType, CoinbaseStopDirection,
+        },
+        parse::format_rfc3339_from_nanos,
         urls,
     },
     http::{
         error::{Error, Result},
         models::{
-            AccountsResponse, Fill, FillsResponse, Order, OrderResponse, OrdersListResponse,
+            Account, AccountsResponse, CancelOrdersResponse, CreateOrderResponse,
+            EditOrderResponse, Fill, FillsResponse, Order, OrderResponse, OrdersListResponse,
             ProductsResponse,
         },
         parse::{
             parse_account_state, parse_fill_report, parse_instrument, parse_order_status_report,
+        },
+        query::{
+            CancelOrdersRequest, CreateOrderRequest, EditOrderRequest, FillListQuery, LimitFok,
+            LimitFokParams, LimitGtc, LimitGtcParams, LimitGtd, LimitGtdParams, MarketIoc,
+            MarketIocParams, OrderConfiguration, OrderListQuery, StopLimitGtc, StopLimitGtcParams,
+            StopLimitGtd, StopLimitGtdParams,
         },
     },
 };
@@ -63,17 +75,6 @@ use crate::{
 // Coinbase Advanced Trade rate limit: 30 requests per second
 fn default_quota() -> Option<Quota> {
     Quota::per_second(NonZeroU32::new(30).unwrap()) // Infallible: 30 is non-zero
-}
-
-// Query parameters for `request_order_status_reports_internal`.
-struct OrderStatusQuery {
-    account_id: AccountId,
-    product_id: Option<String>,
-    client_order_id_filter: Option<String>,
-    open_only: bool,
-    start: Option<DateTime<Utc>>,
-    end: Option<DateTime<Utc>>,
-    limit: Option<u32>,
 }
 
 // Builds a query string from `(key, value)` pairs, percent-encoding both
@@ -424,17 +425,6 @@ impl CoinbaseRawHttpClient {
         self.get(&format!("/accounts/{account_id}")).await
     }
 
-    /// Creates a new order.
-    pub async fn create_order(&self, order: &Value) -> Result<Value> {
-        self.post("/orders", order).await
-    }
-
-    /// Cancels orders by order IDs.
-    pub async fn cancel_orders(&self, order_ids: &[String]) -> Result<Value> {
-        let body = serde_json::json!({ "order_ids": order_ids });
-        self.post("/orders/batch_cancel", &body).await
-    }
-
     /// Gets historical orders.
     pub async fn get_orders(&self, query: &str) -> Result<Value> {
         self.get_with_query("/orders/historical/batch", query).await
@@ -453,6 +443,207 @@ impl CoinbaseRawHttpClient {
     /// Gets fee transaction summary.
     pub async fn get_transaction_summary(&self) -> Result<Value> {
         self.get("/transaction_summary").await
+    }
+
+    /// Fetches every account, following Coinbase's cursor pagination.
+    ///
+    /// Returns the deserialized [`Account`] vector. Domain callers compose
+    /// this with [`parse_account_state`] to build a Nautilus [`AccountState`].
+    pub async fn fetch_all_accounts(&self) -> Result<Vec<Account>> {
+        let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let mut pairs: Vec<(&str, &str)> = vec![("limit", "250")];
+            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
+                pairs.push(("cursor", c));
+            }
+            let query_str = encode_query(&pairs);
+
+            let json = self.get_accounts_with_query(&query_str).await?;
+            let response: AccountsResponse = serde_json::from_value(json).map_err(Error::Serde)?;
+
+            all.extend(response.accounts);
+
+            if !response.has_next || response.cursor.is_empty() {
+                break;
+            }
+            cursor = Some(response.cursor);
+        }
+
+        Ok(all)
+    }
+
+    /// Fetches every order matching the query, following cursor pagination.
+    ///
+    /// Honors `OrderListQuery::client_order_id_filter` as a client-side
+    /// filter applied to each page (the venue endpoint does not accept that
+    /// parameter directly). Stops once the configured `limit` is reached.
+    pub async fn fetch_all_orders(&self, query: &OrderListQuery) -> Result<Vec<Order>> {
+        let mut collected: Vec<Order> = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let start_str = query.start.map(|s| s.to_rfc3339());
+            let end_str = query.end.map(|e| e.to_rfc3339());
+            let limit_str = query.limit.map(|l| l.to_string());
+
+            let mut pairs: Vec<(&str, &str)> = Vec::new();
+
+            // Coinbase accepts `product_ids` as a repeated array parameter on
+            // `/orders/historical/batch`; the singular form is silently ignored.
+            if let Some(pid) = query.product_id.as_deref() {
+                pairs.push(("product_ids", pid));
+            }
+
+            if query.open_only {
+                pairs.push(("order_status", "OPEN"));
+            }
+
+            if let Some(s) = start_str.as_deref() {
+                pairs.push(("start_date", s));
+            }
+
+            if let Some(e) = end_str.as_deref() {
+                pairs.push(("end_date", e));
+            }
+
+            if let Some(l) = limit_str.as_deref() {
+                pairs.push(("limit", l));
+            }
+
+            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
+                pairs.push(("cursor", c));
+            }
+
+            let query_str = encode_query(&pairs);
+            let json = self.get_orders(&query_str).await?;
+            let response: OrdersListResponse =
+                serde_json::from_value(json).map_err(Error::Serde)?;
+
+            for order in response.orders {
+                if let Some(cid) = query.client_order_id_filter.as_deref()
+                    && order.client_order_id != cid
+                {
+                    continue;
+                }
+                collected.push(order);
+            }
+
+            if let Some(limit) = query.limit
+                && collected.len() >= limit as usize
+            {
+                collected.truncate(limit as usize);
+                break;
+            }
+
+            if !response.has_next || response.cursor.is_empty() {
+                break;
+            }
+            cursor = Some(response.cursor);
+        }
+
+        Ok(collected)
+    }
+
+    /// Fetches every fill matching the query, following cursor pagination.
+    pub async fn fetch_all_fills(&self, query: &FillListQuery) -> Result<Vec<Fill>> {
+        let mut collected: Vec<Fill> = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let start_str = query.start.map(|s| s.to_rfc3339());
+            let end_str = query.end.map(|e| e.to_rfc3339());
+            let limit_str = query.limit.map(|l| l.to_string());
+
+            let mut pairs: Vec<(&str, &str)> = Vec::new();
+
+            // `/orders/historical/fills` takes repeated array filters for
+            // product and order IDs. Singular keys are accepted by the server
+            // but silently ignored, which would scan the full fill history.
+            if let Some(pid) = query.product_id.as_deref() {
+                pairs.push(("product_ids", pid));
+            }
+
+            if let Some(vid) = query.venue_order_id.as_deref() {
+                pairs.push(("order_ids", vid));
+            }
+
+            if let Some(s) = start_str.as_deref() {
+                pairs.push(("start_sequence_timestamp", s));
+            }
+
+            if let Some(e) = end_str.as_deref() {
+                pairs.push(("end_sequence_timestamp", e));
+            }
+
+            if let Some(l) = limit_str.as_deref() {
+                pairs.push(("limit", l));
+            }
+
+            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
+                pairs.push(("cursor", c));
+            }
+
+            let query_str = encode_query(&pairs);
+            let json = self.get_fills(&query_str).await?;
+            let response: FillsResponse = serde_json::from_value(json).map_err(Error::Serde)?;
+
+            collected.extend(response.fills);
+
+            if let Some(limit) = query.limit
+                && collected.len() >= limit as usize
+            {
+                collected.truncate(limit as usize);
+                break;
+            }
+
+            if response.cursor.is_empty() {
+                break;
+            }
+            cursor = Some(response.cursor);
+        }
+
+        Ok(collected)
+    }
+
+    /// Creates a new order via `POST /orders`.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/create-order>
+    pub async fn create_order(&self, request: &CreateOrderRequest) -> Result<CreateOrderResponse> {
+        let body = serde_json::to_value(request).map_err(Error::Serde)?;
+        let json = self.post("/orders", &body).await?;
+        serde_json::from_value(json).map_err(Error::Serde)
+    }
+
+    /// Cancels one or more orders via `POST /orders/batch_cancel`.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/cancel-order>
+    pub async fn cancel_orders(
+        &self,
+        request: &CancelOrdersRequest,
+    ) -> Result<CancelOrdersResponse> {
+        let body = serde_json::to_value(request).map_err(Error::Serde)?;
+        let json = self.post("/orders/batch_cancel", &body).await?;
+        serde_json::from_value(json).map_err(Error::Serde)
+    }
+
+    /// Edits an existing order via `POST /orders/edit`.
+    ///
+    /// Coinbase restricts edits to GTC orders (LIMIT, STOP_LIMIT, Bracket);
+    /// other order types require cancel-and-replace.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/orders/edit-order>
+    pub async fn edit_order(&self, request: &EditOrderRequest) -> Result<EditOrderResponse> {
+        let body = serde_json::to_value(request).map_err(Error::Serde)?;
+        let json = self.post("/orders/edit", &body).await?;
+        serde_json::from_value(json).map_err(Error::Serde)
     }
 }
 
@@ -641,16 +832,6 @@ impl CoinbaseHttpClient {
         self.inner.get_account(account_id).await
     }
 
-    /// Creates a new order.
-    pub async fn create_order(&self, order: &Value) -> Result<Value> {
-        self.inner.create_order(order).await
-    }
-
-    /// Cancels orders by order IDs.
-    pub async fn cancel_orders(&self, order_ids: &[String]) -> Result<Value> {
-        self.inner.cancel_orders(order_ids).await
-    }
-
     /// Gets historical orders.
     pub async fn get_orders(&self, query: &str) -> Result<Value> {
         self.inner.get_orders(query).await
@@ -755,39 +936,13 @@ impl CoinbaseHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let accounts = self.fetch_all_accounts().await?;
+        let accounts = self
+            .inner
+            .fetch_all_accounts()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch accounts: {e}"))?;
         let ts_event = self.ts_now();
         parse_account_state(&accounts, account_id, true, ts_event, ts_event)
-    }
-
-    async fn fetch_all_accounts(&self) -> anyhow::Result<Vec<crate::http::models::Account>> {
-        let mut all = Vec::new();
-        let mut cursor: Option<String> = None;
-
-        loop {
-            let mut pairs: Vec<(&str, &str)> = vec![("limit", "250")];
-            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
-            }
-            let query_str = encode_query(&pairs);
-
-            let json = self
-                .inner
-                .get_accounts_with_query(&query_str)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch accounts: {e}"))?;
-            let response: AccountsResponse =
-                serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))?;
-
-            all.extend(response.accounts);
-
-            if !response.has_next || response.cursor.is_empty() {
-                break;
-            }
-            cursor = Some(response.cursor);
-        }
-
-        Ok(all)
     }
 
     /// Requests a single order status report by venue or client order ID.
@@ -810,21 +965,22 @@ impl CoinbaseHttpClient {
             (Some(vid), _) => vid,
             (None, Some(cid)) => {
                 // Fall back to batched query when only the client order ID is known
-                let reports = self
-                    .request_order_status_reports_internal(OrderStatusQuery {
-                        account_id,
-                        product_id: None,
-                        client_order_id_filter: Some(cid.as_str().to_string()),
-                        open_only: false,
-                        start: None,
-                        end: None,
-                        limit: None,
-                    })
-                    .await?;
-                return reports
+                let query = OrderListQuery {
+                    client_order_id_filter: Some(cid.as_str().to_string()),
+                    ..Default::default()
+                };
+                let orders = self
+                    .inner
+                    .fetch_all_orders(&query)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to fetch orders: {e}"))?;
+                let order = orders
                     .into_iter()
                     .next()
-                    .ok_or_else(|| anyhow::anyhow!("No order found for client_order_id={cid}"));
+                    .ok_or_else(|| anyhow::anyhow!("No order found for client_order_id={cid}"))?;
+                let instrument = self.get_or_fetch_instrument(order.product_id).await?;
+                let ts_init = self.ts_now();
+                return parse_order_status_report(&order, &instrument, account_id, ts_init);
             }
             (None, None) => {
                 anyhow::bail!("Either client_order_id or venue_order_id is required")
@@ -861,43 +1017,20 @@ impl CoinbaseHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let product_id = instrument_id.map(|id| id.symbol.as_str().to_string());
-        self.request_order_status_reports_internal(OrderStatusQuery {
-            account_id,
-            product_id,
+        let query = OrderListQuery {
+            product_id: instrument_id.map(|id| id.symbol.as_str().to_string()),
+            open_only,
+            start,
+            end,
+            limit,
             client_order_id_filter: None,
-            open_only,
-            start,
-            end,
-            limit,
-        })
-        .await
-    }
-
-    async fn request_order_status_reports_internal(
-        &self,
-        query_params: OrderStatusQuery,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let OrderStatusQuery {
-            account_id,
-            product_id,
-            client_order_id_filter,
-            open_only,
-            start,
-            end,
-            limit,
-        } = query_params;
+        };
 
         let orders = self
-            .fetch_all_orders(
-                product_id.as_deref(),
-                open_only,
-                start,
-                end,
-                limit,
-                client_order_id_filter.as_deref(),
-            )
-            .await?;
+            .inner
+            .fetch_all_orders(&query)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch orders: {e}"))?;
 
         let ts_init = self.ts_now();
         let mut reports = Vec::with_capacity(orders.len());
@@ -920,87 +1053,6 @@ impl CoinbaseHttpClient {
         Ok(reports)
     }
 
-    async fn fetch_all_orders(
-        &self,
-        product_id: Option<&str>,
-        open_only: bool,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u32>,
-        client_order_id_filter: Option<&str>,
-    ) -> anyhow::Result<Vec<Order>> {
-        let mut collected: Vec<Order> = Vec::new();
-        let mut cursor: Option<String> = None;
-
-        loop {
-            let start_str = start.map(|s| s.to_rfc3339());
-            let end_str = end.map(|e| e.to_rfc3339());
-            let limit_str = limit.map(|l| l.to_string());
-
-            let mut pairs: Vec<(&str, &str)> = Vec::new();
-
-            // Coinbase accepts `product_ids` as a repeated array parameter on
-            // `/orders/historical/batch`; the singular form is silently ignored.
-            if let Some(pid) = product_id {
-                pairs.push(("product_ids", pid));
-            }
-
-            if open_only {
-                pairs.push(("order_status", "OPEN"));
-            }
-
-            if let Some(s) = start_str.as_deref() {
-                pairs.push(("start_date", s));
-            }
-
-            if let Some(e) = end_str.as_deref() {
-                pairs.push(("end_date", e));
-            }
-
-            if let Some(l) = limit_str.as_deref() {
-                pairs.push(("limit", l));
-            }
-
-            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
-            }
-
-            let query_str = encode_query(&pairs);
-
-            let json = self
-                .inner
-                .get_orders(&query_str)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch orders: {e}"))?;
-            let response: OrdersListResponse =
-                serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))?;
-
-            for order in response.orders {
-                if let Some(cid) = client_order_id_filter
-                    && order.client_order_id != cid
-                {
-                    continue;
-                }
-                collected.push(order);
-            }
-
-            // Stop when the caller wants a hard cap and we've reached it.
-            if let Some(limit) = limit
-                && collected.len() >= limit as usize
-            {
-                collected.truncate(limit as usize);
-                break;
-            }
-
-            if !response.has_next || response.cursor.is_empty() {
-                break;
-            }
-            cursor = Some(response.cursor);
-        }
-
-        Ok(collected)
-    }
-
     /// Requests fill reports, optionally filtered by instrument, venue order ID,
     /// and time window.
     ///
@@ -1017,15 +1069,19 @@ impl CoinbaseHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let query = FillListQuery {
+            product_id: instrument_id.map(|id| id.symbol.as_str().to_string()),
+            venue_order_id: venue_order_id.map(|id| id.as_str().to_string()),
+            start,
+            end,
+            limit,
+        };
+
         let fills = self
-            .fetch_all_fills(
-                instrument_id.map(|id| id.symbol.as_str().to_string()),
-                venue_order_id.map(|id| id.as_str().to_string()),
-                start,
-                end,
-                limit,
-            )
-            .await?;
+            .inner
+            .fetch_all_fills(&query)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch fills: {e}"))?;
 
         let ts_init = self.ts_now();
         let mut reports = Vec::with_capacity(fills.len());
@@ -1046,79 +1102,6 @@ impl CoinbaseHttpClient {
         }
 
         Ok(reports)
-    }
-
-    async fn fetch_all_fills(
-        &self,
-        product_id: Option<String>,
-        venue_order_id: Option<String>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
-        limit: Option<u32>,
-    ) -> anyhow::Result<Vec<Fill>> {
-        let mut collected: Vec<Fill> = Vec::new();
-        let mut cursor: Option<String> = None;
-
-        loop {
-            let start_str = start.map(|s| s.to_rfc3339());
-            let end_str = end.map(|e| e.to_rfc3339());
-            let limit_str = limit.map(|l| l.to_string());
-
-            let mut pairs: Vec<(&str, &str)> = Vec::new();
-
-            // `/orders/historical/fills` takes repeated array filters for
-            // product and order IDs. Singular keys are accepted by the server
-            // but silently ignored, which would scan the full fill history.
-            if let Some(pid) = product_id.as_deref() {
-                pairs.push(("product_ids", pid));
-            }
-
-            if let Some(vid) = venue_order_id.as_deref() {
-                pairs.push(("order_ids", vid));
-            }
-
-            if let Some(s) = start_str.as_deref() {
-                pairs.push(("start_sequence_timestamp", s));
-            }
-
-            if let Some(e) = end_str.as_deref() {
-                pairs.push(("end_sequence_timestamp", e));
-            }
-
-            if let Some(l) = limit_str.as_deref() {
-                pairs.push(("limit", l));
-            }
-
-            if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
-                pairs.push(("cursor", c));
-            }
-
-            let query_str = encode_query(&pairs);
-
-            let json = self
-                .inner
-                .get_fills(&query_str)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch fills: {e}"))?;
-            let response: FillsResponse =
-                serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))?;
-
-            collected.extend(response.fills);
-
-            if let Some(limit) = limit
-                && collected.len() >= limit as usize
-            {
-                collected.truncate(limit as usize);
-                break;
-            }
-
-            if response.cursor.is_empty() {
-                break;
-            }
-            cursor = Some(response.cursor);
-        }
-
-        Ok(collected)
     }
 
     /// Caches an instrument in the shared instrument map.
@@ -1157,47 +1140,260 @@ impl CoinbaseHttpClient {
         self.request_instrument(product_id.as_str()).await
     }
 
-    /// Wraps a submitted order: generates a fresh client order ID if none is
-    /// provided and returns the venue order ID upon success. Phase 1 exposes a
-    /// minimal raw path; Phase 4 will layer typed Nautilus Order conversion.
+    /// Submits a new order built from Nautilus domain types.
+    ///
+    /// Maps the order side, order type, and time-in-force to Coinbase's
+    /// `order_configuration` shape and posts to `/orders`. Returns the
+    /// venue's create-order response; callers inspect `success` and the
+    /// success/error response variants.
     ///
     /// # Errors
     ///
-    /// Returns an error when the HTTP request fails or the venue rejects the
-    /// order.
-    pub async fn submit_order_raw(
+    /// Returns an error when the order parameters cannot be mapped to a
+    /// supported Coinbase configuration, when the HTTP request fails, or
+    /// when the response cannot be parsed.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn submit_order(
         &self,
-        request: &crate::http::models::CreateOrderRequest,
-    ) -> anyhow::Result<crate::http::models::CreateOrderResponse> {
-        let body = serde_json::to_value(request).map_err(|e| anyhow::anyhow!(e))?;
-        let json = self
-            .inner
-            .create_order(&body)
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        is_quote_quantity: bool,
+    ) -> anyhow::Result<CreateOrderResponse> {
+        let coinbase_side = map_order_side(side)?;
+        let order_config = build_order_configuration(
+            order_type,
+            side,
+            quantity,
+            price,
+            trigger_price,
+            time_in_force,
+            expire_time,
+            post_only,
+            is_quote_quantity,
+        )?;
+
+        let request = CreateOrderRequest {
+            client_order_id: client_order_id.to_string(),
+            product_id: instrument_id.symbol.inner(),
+            side: coinbase_side,
+            order_configuration: order_config,
+            self_trade_prevention_id: None,
+            leverage: None,
+            margin_type: None,
+            retail_portfolio_id: None,
+        };
+
+        self.inner
+            .create_order(&request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to submit order: {e}"))?;
-        serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))
+            .map_err(|e| anyhow::anyhow!("Failed to submit order: {e}"))
     }
 
-    /// Cancels a batch of orders by venue order ID.
+    /// Cancels one or more orders by venue order ID via batch_cancel.
     ///
     /// # Errors
     ///
-    /// Returns an error when the HTTP request fails or the response cannot be
-    /// parsed.
-    pub async fn cancel_orders_raw(
+    /// Returns an error when the HTTP request fails or the response cannot
+    /// be parsed.
+    pub async fn cancel_orders(
         &self,
         venue_order_ids: &[VenueOrderId],
-    ) -> anyhow::Result<crate::http::models::CancelOrdersResponse> {
-        let ids: Vec<String> = venue_order_ids
-            .iter()
-            .map(|id| id.as_str().to_string())
-            .collect();
-        let json = self
-            .inner
-            .cancel_orders(&ids)
+    ) -> anyhow::Result<CancelOrdersResponse> {
+        let request = CancelOrdersRequest {
+            order_ids: venue_order_ids
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+        };
+        self.inner
+            .cancel_orders(&request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to cancel orders: {e}"))?;
-        serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))
+            .map_err(|e| anyhow::anyhow!("Failed to cancel orders: {e}"))
+    }
+
+    /// Modifies an existing GTC order's price, size, or stop price.
+    ///
+    /// Coinbase's `/orders/edit` endpoint is documented to accept edits on
+    /// these fields for supported order configurations (primarily LIMIT
+    /// GTC). At least one of `price`, `quantity`, or `trigger_price` must
+    /// be supplied.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP request fails or the response cannot
+    /// be deserialized.
+    pub async fn modify_order(
+        &self,
+        venue_order_id: VenueOrderId,
+        price: Option<Price>,
+        quantity: Option<Quantity>,
+        trigger_price: Option<Price>,
+    ) -> anyhow::Result<EditOrderResponse> {
+        let request = EditOrderRequest {
+            order_id: venue_order_id.as_str().to_string(),
+            price: price.map(|p| p.to_string()),
+            size: quantity.map(|q| q.to_string()),
+            stop_price: trigger_price.map(|p| p.to_string()),
+        };
+        self.inner
+            .edit_order(&request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to edit order: {e}"))
+    }
+}
+
+/// Maps a Nautilus [`OrderSide`] to Coinbase's wire enum.
+///
+/// # Errors
+///
+/// Returns an error when the side is [`OrderSide::NoOrderSide`].
+pub fn map_order_side(side: OrderSide) -> anyhow::Result<CoinbaseOrderSide> {
+    match side {
+        OrderSide::Buy => Ok(CoinbaseOrderSide::Buy),
+        OrderSide::Sell => Ok(CoinbaseOrderSide::Sell),
+        OrderSide::NoOrderSide => anyhow::bail!("NoOrderSide is not a valid Coinbase side"),
+    }
+}
+
+/// Builds the Coinbase [`OrderConfiguration`] payload from Nautilus order
+/// parameters.
+///
+/// Caller supplies the order type, side, quantity, optional price/trigger,
+/// time-in-force, optional expire time (required for GTD), `post_only`
+/// flag, and whether the quantity is denominated in the quote currency
+/// (only meaningful for MARKET orders).
+///
+/// # Errors
+///
+/// Returns an error when the requested combination is not supported by
+/// Coinbase (e.g. STOP_MARKET, IOC LIMIT, missing required field).
+#[allow(clippy::too_many_arguments)]
+pub fn build_order_configuration(
+    order_type: OrderType,
+    side: OrderSide,
+    quantity: Quantity,
+    price: Option<Price>,
+    trigger_price: Option<Price>,
+    time_in_force: TimeInForce,
+    expire_time: Option<UnixNanos>,
+    post_only: bool,
+    is_quote_quantity: bool,
+) -> anyhow::Result<OrderConfiguration> {
+    let qty = quantity.as_decimal();
+    let price = price.map(|p| p.as_decimal());
+    let trigger = trigger_price.map(|p| p.as_decimal());
+
+    match order_type {
+        OrderType::Market => {
+            // Coinbase's `market_market_ioc` is the only documented MARKET
+            // wrapper. Accept Nautilus' default GTC (treated as IOC at the
+            // venue, mirroring the Bybit adapter pattern) and explicit IOC;
+            // reject FOK / DAY / GTD so callers do not silently get IOC
+            // semantics when they asked for an explicit non-IOC TIF.
+            //
+            // Note: a MARKET order built with TIF=GTC will execute as IOC at
+            // Coinbase. Backtest replays of the same order through the
+            // matching engine treat it differently. Strategies that need
+            // strict backtest/live parity should construct MarketOrders with
+            // TIF=IOC explicitly.
+            if !matches!(time_in_force, TimeInForce::Ioc | TimeInForce::Gtc) {
+                anyhow::bail!("Unsupported TIF {time_in_force} for MARKET on Coinbase (use IOC)");
+            }
+            let params = if is_quote_quantity {
+                MarketIocParams {
+                    quote_size: Some(qty),
+                    base_size: None,
+                }
+            } else {
+                MarketIocParams {
+                    quote_size: None,
+                    base_size: Some(qty),
+                }
+            };
+            Ok(OrderConfiguration::MarketIoc(MarketIoc {
+                market_market_ioc: params,
+            }))
+        }
+        OrderType::Limit => {
+            let limit_price =
+                price.ok_or_else(|| anyhow::anyhow!("LIMIT order requires a price"))?;
+
+            match time_in_force {
+                TimeInForce::Gtc => Ok(OrderConfiguration::LimitGtc(LimitGtc {
+                    limit_limit_gtc: LimitGtcParams {
+                        base_size: qty,
+                        limit_price,
+                        post_only,
+                    },
+                })),
+                TimeInForce::Gtd => {
+                    let expire = expire_time
+                        .ok_or_else(|| anyhow::anyhow!("GTD LIMIT requires expire_time"))?;
+                    Ok(OrderConfiguration::LimitGtd(LimitGtd {
+                        limit_limit_gtd: LimitGtdParams {
+                            base_size: qty,
+                            limit_price,
+                            end_time: format_rfc3339_from_nanos(expire)?,
+                            post_only,
+                        },
+                    }))
+                }
+                TimeInForce::Fok => Ok(OrderConfiguration::LimitFok(LimitFok {
+                    limit_limit_fok: LimitFokParams {
+                        base_size: qty,
+                        limit_price,
+                    },
+                })),
+                _ => anyhow::bail!("Unsupported TIF {time_in_force} for LIMIT on Coinbase"),
+            }
+        }
+        OrderType::StopLimit => {
+            let limit_price =
+                price.ok_or_else(|| anyhow::anyhow!("STOP_LIMIT order requires a price"))?;
+            let stop_price = trigger
+                .ok_or_else(|| anyhow::anyhow!("STOP_LIMIT order requires trigger_price"))?;
+            let direction = match side {
+                OrderSide::Buy => CoinbaseStopDirection::StopUp,
+                OrderSide::Sell => CoinbaseStopDirection::StopDown,
+                OrderSide::NoOrderSide => {
+                    anyhow::bail!("STOP_LIMIT requires a defined side")
+                }
+            };
+
+            match time_in_force {
+                TimeInForce::Gtc => Ok(OrderConfiguration::StopLimitGtc(StopLimitGtc {
+                    stop_limit_stop_limit_gtc: StopLimitGtcParams {
+                        base_size: qty,
+                        limit_price,
+                        stop_price,
+                        stop_direction: direction,
+                    },
+                })),
+                TimeInForce::Gtd => {
+                    let expire = expire_time
+                        .ok_or_else(|| anyhow::anyhow!("GTD STOP_LIMIT requires expire_time"))?;
+                    Ok(OrderConfiguration::StopLimitGtd(StopLimitGtd {
+                        stop_limit_stop_limit_gtd: StopLimitGtdParams {
+                            base_size: qty,
+                            limit_price,
+                            stop_price,
+                            stop_direction: direction,
+                            end_time: format_rfc3339_from_nanos(expire)?,
+                        },
+                    }))
+                }
+                _ => anyhow::bail!("Unsupported TIF {time_in_force} for STOP_LIMIT on Coinbase"),
+            }
+        }
+        other => anyhow::bail!("Unsupported order type for Coinbase: {other}"),
     }
 }
 
@@ -1307,5 +1503,199 @@ mod tests {
     fn test_encode_query_joins_pairs_with_ampersand() {
         let query = encode_query(&[("product_id", "BTC-USD"), ("limit", "50")]);
         assert_eq!(query, "product_id=BTC-USD&limit=50");
+    }
+
+    #[rstest]
+    fn test_map_order_side_rejects_no_side() {
+        assert!(matches!(
+            map_order_side(OrderSide::Buy).unwrap(),
+            CoinbaseOrderSide::Buy
+        ));
+        assert!(matches!(
+            map_order_side(OrderSide::Sell).unwrap(),
+            CoinbaseOrderSide::Sell
+        ));
+        assert!(map_order_side(OrderSide::NoOrderSide).is_err());
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_market_base_size() {
+        let cfg = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("1.5"),
+            None,
+            None,
+            TimeInForce::Ioc,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+
+        match cfg {
+            OrderConfiguration::MarketIoc(m) => {
+                assert!(m.market_market_ioc.base_size.is_some());
+                assert!(m.market_market_ioc.quote_size.is_none());
+            }
+            other => panic!("expected MarketIoc, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_market_quote_size() {
+        let cfg = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("100"),
+            None,
+            None,
+            TimeInForce::Ioc,
+            None,
+            false,
+            true, // is_quote_quantity
+        )
+        .unwrap();
+
+        match cfg {
+            OrderConfiguration::MarketIoc(m) => {
+                assert!(m.market_market_ioc.quote_size.is_some());
+                assert!(m.market_market_ioc.base_size.is_none());
+            }
+            other => panic!("expected MarketIoc, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_limit_gtc_post_only() {
+        let cfg = build_order_configuration(
+            OrderType::Limit,
+            OrderSide::Sell,
+            Quantity::from("0.5"),
+            Some(Price::from("50000.00")),
+            None,
+            TimeInForce::Gtc,
+            None,
+            true,
+            false,
+        )
+        .unwrap();
+
+        match cfg {
+            OrderConfiguration::LimitGtc(l) => assert!(l.limit_limit_gtc.post_only),
+            other => panic!("expected LimitGtc, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_limit_gtd_requires_expire_time() {
+        let result = build_order_configuration(
+            OrderType::Limit,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Some(Price::from("100.00")),
+            None,
+            TimeInForce::Gtd,
+            None,
+            false,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_stop_limit_uses_correct_direction() {
+        let buy_cfg = build_order_configuration(
+            OrderType::StopLimit,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            Some(Price::from("100.00")),
+            Some(Price::from("99.00")),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+
+        match buy_cfg {
+            OrderConfiguration::StopLimitGtc(s) => assert_eq!(
+                s.stop_limit_stop_limit_gtc.stop_direction,
+                CoinbaseStopDirection::StopUp
+            ),
+            other => panic!("expected StopLimitGtc, was {other:?}"),
+        }
+
+        let sell_cfg = build_order_configuration(
+            OrderType::StopLimit,
+            OrderSide::Sell,
+            Quantity::from("1"),
+            Some(Price::from("100.00")),
+            Some(Price::from("99.00")),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+
+        match sell_cfg {
+            OrderConfiguration::StopLimitGtc(s) => assert_eq!(
+                s.stop_limit_stop_limit_gtc.stop_direction,
+                CoinbaseStopDirection::StopDown
+            ),
+            other => panic!("expected StopLimitGtc, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_market_rejects_fok() {
+        let result = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+            TimeInForce::Fok,
+            None,
+            false,
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_market_accepts_default_gtc() {
+        // Nautilus orders default to GTC; coerce to MARKET IOC silently for
+        // the default case but not for any explicit non-IOC TIF.
+        let cfg = build_order_configuration(
+            OrderType::Market,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(matches!(cfg, OrderConfiguration::MarketIoc(_)));
+    }
+
+    #[rstest]
+    fn test_build_order_configuration_rejects_stop_market() {
+        let result = build_order_configuration(
+            OrderType::StopMarket,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            Some(Price::from("100.00")),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+        );
+        assert!(result.is_err());
     }
 }

@@ -32,7 +32,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
 use nautilus_model::{
     data::BarType,
-    identifiers::InstrumentId,
+    identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
@@ -72,6 +72,7 @@ pub struct CoinbaseWebSocketClient {
     bar_types: ahash::AHashMap<String, BarType>,
     subscriptions: SubscriptionState,
     credential: Option<CoinbaseCredential>,
+    account_id: Option<AccountId>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -87,6 +88,7 @@ impl Clone for CoinbaseWebSocketClient {
             bar_types: self.bar_types.clone(),
             subscriptions: self.subscriptions.clone(),
             credential: self.credential.clone(),
+            account_id: self.account_id,
             task_handle: None,
         }
     }
@@ -109,6 +111,7 @@ impl CoinbaseWebSocketClient {
             bar_types: ahash::AHashMap::new(),
             subscriptions: SubscriptionState::new('|'),
             credential: None,
+            account_id: None,
             task_handle: None,
         }
     }
@@ -118,6 +121,36 @@ impl CoinbaseWebSocketClient {
         let mut client = Self::new(url);
         client.credential = Some(credential);
         client
+    }
+
+    /// Sets the account ID used when emitting user-channel execution reports.
+    ///
+    /// Propagates to the feed handler when the connection is active so that
+    /// subsequent user events carry the correct account identifier.
+    pub async fn set_account_id(&mut self, account_id: AccountId) {
+        self.account_id = Some(account_id);
+
+        let cmd_tx = self.cmd_tx.read().await;
+        if let Err(e) = cmd_tx.send(HandlerCommand::SetAccountId(account_id)) {
+            log::debug!("Failed to send SetAccountId: {e}");
+        }
+    }
+
+    /// Bulk-populates the instrument cache.
+    ///
+    /// Safe to call before or after [`Self::connect`]. When called before
+    /// connect, instruments are picked up by the initial `InitializeInstruments`
+    /// command the client sends to the handler; when called after, a fresh
+    /// `InitializeInstruments` command is sent to refresh the handler's cache.
+    pub async fn initialize_instruments(&self, instruments: Vec<InstrumentAny>) {
+        for instrument in &instruments {
+            self.instruments.insert(instrument.id(), instrument.clone());
+        }
+
+        let cmd_tx = self.cmd_tx.read().await;
+        if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments)) {
+            log::debug!("Failed to send InitializeInstruments: {e}");
+        }
     }
 
     /// Establishes the WebSocket connection and spawns the feed handler.
@@ -177,6 +210,12 @@ impl CoinbaseWebSocketClient {
             }) {
                 log::error!("Failed to restore bar type {key}: {e}");
             }
+        }
+
+        if let Some(account_id) = self.account_id
+            && let Err(e) = cmd_tx.send(HandlerCommand::SetAccountId(account_id))
+        {
+            log::error!("Failed to restore account_id: {e}");
         }
 
         // Replay retained subscriptions from previous session
