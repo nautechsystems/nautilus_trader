@@ -1255,7 +1255,7 @@ pub fn decode_futures_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    FuturesContract::new_checked(
+    Ok(FuturesContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1279,7 +1279,7 @@ pub fn decode_futures_contract(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into a `FuturesSpread` instrument.
@@ -1303,7 +1303,7 @@ pub fn decode_futures_spread(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    FuturesSpread::new_checked(
+    Ok(FuturesSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1328,7 +1328,7 @@ pub fn decode_futures_spread(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into an `OptionContract` instrument.
@@ -1363,7 +1363,7 @@ pub fn decode_option_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    OptionContract::new_checked(
+    Ok(OptionContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1389,7 +1389,7 @@ pub fn decode_option_contract(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento instrument definition message into an `OptionSpread` instrument.
@@ -1418,7 +1418,7 @@ pub fn decode_option_spread(
     let ts_event = msg.ts_recv.into(); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    OptionSpread::new_checked(
+    Ok(OptionSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1443,7 +1443,7 @@ pub fn decode_option_spread(
         None, // info
         ts_event,
         ts_init,
-    )
+    )?)
 }
 
 /// Decodes a Databento imbalance message into a `DatabentoImbalance` event.

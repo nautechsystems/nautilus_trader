@@ -17,7 +17,10 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{FAILED, check_equal_u8, check_valid_string_ascii_optional},
+    correctness::{
+        CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8,
+        check_valid_string_ascii_optional,
+    },
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -140,7 +143,7 @@ impl TokenizedAsset {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_valid_string_ascii_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
         check_equal_u8(
             price_precision,
@@ -247,7 +250,7 @@ impl TokenizedAsset {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 

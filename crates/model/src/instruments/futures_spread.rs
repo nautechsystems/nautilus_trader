@@ -18,7 +18,8 @@ use std::hash::{Hash, Hasher};
 use nautilus_core::{
     Params, UnixNanos,
     correctness::{
-        FAILED, check_equal_u8, check_valid_string_ascii, check_valid_string_ascii_optional,
+        CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8, check_valid_string_ascii,
+        check_valid_string_ascii_optional,
     },
 };
 use rust_decimal::Decimal;
@@ -138,7 +139,7 @@ impl FuturesSpread {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(exchange))?;
         check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
@@ -240,7 +241,7 @@ impl FuturesSpread {
             ts_event,
             ts_init,
         )
-        .expect(FAILED)
+        .expect_display(FAILED)
     }
 }
 

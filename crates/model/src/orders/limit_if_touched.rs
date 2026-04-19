@@ -19,7 +19,10 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{CorrectnessError, FAILED},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -99,17 +102,25 @@ impl LimitIfTouchedOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, OrderError> {
         check_positive_quantity(quantity, stringify!(quantity))?;
         check_display_qty(display_qty, quantity)?;
         check_time_in_force(time_in_force, expire_time)?;
 
         match order_side {
             OrderSide::Buy if trigger_price > price => {
-                anyhow::bail!("BUY Limit-If-Touched must have `trigger_price` <= `price`")
+                return Err(CorrectnessError::PredicateViolation {
+                    message: "BUY Limit-If-Touched must have `trigger_price` <= `price`"
+                        .to_string(),
+                }
+                .into());
             }
             OrderSide::Sell if trigger_price < price => {
-                anyhow::bail!("SELL Limit-If-Touched must have `trigger_price` >= `price`")
+                return Err(CorrectnessError::PredicateViolation {
+                    message: "SELL Limit-If-Touched must have `trigger_price` >= `price`"
+                        .to_string(),
+                }
+                .into());
             }
             _ => {}
         }
@@ -229,7 +240,7 @@ impl LimitIfTouchedOrder {
             init_id,
             ts_init,
         )
-        .expect(FAILED)
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 }
 

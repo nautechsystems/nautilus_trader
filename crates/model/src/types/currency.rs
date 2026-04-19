@@ -23,7 +23,9 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string_utf8};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_nonempty_string, check_valid_string_utf8,
+};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -82,7 +84,7 @@ impl Currency {
         iso4217: u16,
         name: T,
         currency_type: CurrencyType,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         let code = code.as_ref();
         let name = name.as_ref();
         check_valid_string_utf8(code, "code")?;
@@ -109,7 +111,7 @@ impl Currency {
         name: T,
         currency_type: CurrencyType,
     ) -> Self {
-        Self::new_checked(code, precision, iso4217, name, currency_type).expect(FAILED)
+        Self::new_checked(code, precision, iso4217, name, currency_type).expect_display(FAILED)
     }
 
     /// Register the given `currency` in the internal currency map.

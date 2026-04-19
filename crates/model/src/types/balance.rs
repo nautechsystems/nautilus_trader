@@ -17,7 +17,9 @@
 
 use std::fmt::{Debug, Display};
 
-use nautilus_core::correctness::{FAILED, check_predicate_true};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +64,7 @@ impl AccountBalance {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
-    pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
+    pub fn new_checked(total: Money, locked: Money, free: Money) -> CorrectnessResult<Self> {
         check_predicate_true(
             total.currency == locked.currency,
             &format!(
@@ -96,7 +98,7 @@ impl AccountBalance {
     /// Panics if a correctness check fails. See [`AccountBalance::new_checked`] for more details.
     #[must_use]
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
-        Self::new_checked(total, locked, free).expect(FAILED)
+        Self::new_checked(total, locked, free).expect_display(FAILED)
     }
 
     /// Creates a new [`AccountBalance`] from `total` and `locked` decimal amounts,
@@ -221,7 +223,7 @@ impl MarginBalance {
         initial: Money,
         maintenance: Money,
         instrument_id: InstrumentId,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         check_predicate_true(
             initial.currency == maintenance.currency,
             &format!(
@@ -244,7 +246,7 @@ impl MarginBalance {
     /// Panics if `initial` and `maintenance` have different currencies.
     #[must_use]
     pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
-        Self::new_checked(initial, maintenance, instrument_id).expect(FAILED)
+        Self::new_checked(initial, maintenance, instrument_id).expect_display(FAILED)
     }
 }
 
@@ -310,6 +312,30 @@ mod tests {
         let expected =
             "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)";
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_account_balance_new_checked_with_currency_mismatch_returns_error() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let result = AccountBalance::new_checked(
+            Money::new(1000.0, usd),
+            Money::new(250.0, eur),
+            Money::new(750.0, usd),
+        );
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`total` currency (USD) != `locked` currency (EUR)")]
+    fn test_account_balance_new_with_currency_mismatch_panics() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let _ = AccountBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(250.0, eur),
+            Money::new(750.0, usd),
+        );
     }
 
     fn parse_dec(s: &str) -> Decimal {

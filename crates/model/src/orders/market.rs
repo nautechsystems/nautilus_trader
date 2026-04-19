@@ -85,7 +85,7 @@ impl MarketOrder {
         exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, OrderError> {
         check_positive_quantity(quantity, stringify!(quantity))?;
         check_predicate_false(
             time_in_force == TimeInForce::Gtd,
@@ -183,7 +183,7 @@ impl MarketOrder {
             exec_spawn_id,
             tags,
         )
-        .expect(FAILED)
+        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
     }
 }
 

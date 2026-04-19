@@ -748,7 +748,7 @@ pub fn parse_futures_spread_instrument_id(
     let price_increment = Price::new(first_details.min_tick, price_precision);
     let timestamp = timestamp_ns.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
 
-    FuturesSpread::new_checked(
+    Ok(FuturesSpread::new_checked(
         instrument_id,
         Symbol::from(instrument_id.symbol.as_str()),
         AssetClass::Index,
@@ -773,7 +773,7 @@ pub fn parse_futures_spread_instrument_id(
         bag_contract.map(ib_contract_info_for_contract),
         timestamp,
         timestamp,
-    )
+    )?)
 }
 
 pub fn parse_spread_instrument_any(

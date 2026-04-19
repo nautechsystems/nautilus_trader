@@ -43,7 +43,9 @@ use std::{fmt::Display, str::FromStr};
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
-    correctness::{check_equal_u8, check_positive_decimal, check_predicate_true},
+    correctness::{
+        CorrectnessResult, check_equal_u8, check_positive_decimal, check_predicate_true,
+    },
     parsing::min_increment_precision_from_str,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -96,7 +98,7 @@ pub fn validate_instrument_common(
     min_notional: Option<Money>,
     max_price: Option<Price>,
     min_price: Option<Price>,
-) -> anyhow::Result<()> {
+) -> CorrectnessResult<()> {
     check_positive_quantity(size_increment, "size_increment")?;
     check_equal_u8(
         size_increment.precision,
@@ -462,6 +464,7 @@ price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_mai
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::{CorrectnessResultExt, FAILED};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::*};
@@ -610,7 +613,7 @@ mod tests {
             None,           // max_price
             None,           // min_price
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -635,7 +638,7 @@ mod tests {
             None,           // max_price
             None,           // min_price
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -658,7 +661,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -717,7 +720,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -743,7 +746,7 @@ mod tests {
             Some(max_price),
             Some(min_price),
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -786,7 +789,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -892,7 +895,7 @@ mod tests {
             Some(max_price),
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -917,7 +920,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -943,7 +946,7 @@ mod tests {
             None,
             Some(min_price),
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
@@ -969,7 +972,7 @@ mod tests {
             None,
             None,
         )
-        .unwrap();
+        .expect_display(FAILED);
     }
 
     #[rstest]
