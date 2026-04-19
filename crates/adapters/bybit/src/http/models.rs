@@ -21,11 +21,12 @@ use ustr::Ustr;
 
 use crate::common::{
     enums::{
-        BybitAccountType, BybitCancelType, BybitContractType, BybitCreateType, BybitExecType,
-        BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode, BybitMarginTrading,
-        BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-        BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
-        BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        BybitAccountType, BybitApiKeyType, BybitCancelType, BybitContractType, BybitCreateType,
+        BybitExecType, BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode,
+        BybitMarginTrading, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
+        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
+        BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+        BybitTriggerType, BybitUnifiedMarginStatus,
     },
     models::{
         BybitCursorList, BybitCursorListResponse, BybitListResponse, BybitResponse, LeverageFilter,
@@ -33,7 +34,8 @@ use crate::common::{
         SpotPriceFilter,
     },
     parse::{
-        deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero, deserialize_string_to_u8,
+        bool_or_int, deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
+        deserialize_string_to_u8, masked_secret, on_off_bool,
     },
 };
 
@@ -822,13 +824,16 @@ pub type BybitWalletBalanceResponse = BybitListResponse<BybitWalletBalance>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitAccountInfo {
-    pub unified_margin_status: i32,
+    pub unified_margin_status: BybitUnifiedMarginStatus,
     pub margin_mode: BybitMarginMode,
     pub is_master_trader: bool,
-    pub spot_hedging_status: String,
+    #[serde(with = "on_off_bool")]
+    pub spot_hedging_status: bool,
     pub updated_time: String,
-    #[serde(default)]
-    pub dcp_status: String,
+    // `dcp_status`, `time_window`, and `smp_group` are absent from responses
+    // for accounts that predate the disconnection-protection feature.
+    #[serde(default, with = "on_off_bool")]
+    pub dcp_status: bool,
     #[serde(default)]
     pub time_window: i32,
     #[serde(default)]
@@ -1669,6 +1674,28 @@ pub struct BybitSubMembersPagedResult {
     pub next_cursor: Option<String>,
 }
 
+impl BybitSubMembersPagedResult {
+    /// Returns the cursor to use for the next page, or `None` when the final
+    /// page has been fetched.
+    ///
+    /// Bybit signals end-of-pages either by omitting the cursor or returning
+    /// `"0"`/`""`; both cases collapse to `None` here so callers can treat any
+    /// non-`None` return value as a live cursor.
+    #[must_use]
+    pub fn continuation_cursor(&self) -> Option<&str> {
+        match self.next_cursor.as_deref() {
+            None | Some("" | "0") => None,
+            Some(cursor) => Some(cursor),
+        }
+    }
+
+    /// Returns `true` when the result has more pages to fetch.
+    #[must_use]
+    pub fn has_more_pages(&self) -> bool {
+        self.continuation_cursor().is_some()
+    }
+}
+
 /// Response alias for paginated sub-UID list (`/v5/user/submembers`).
 ///
 /// # References
@@ -1686,10 +1713,8 @@ pub type BybitEscrowSubMembersResponse = BybitResponse<BybitSubMembersPagedResul
 
 /// Information about a single sub-account API key.
 ///
-/// Deliberately not shared with [`BybitAccountDetails`]: `read_only` is a bool
-/// here (per the Bybit docs) rather than an integer, `secret` is always the
-/// masked literal `"******"`, and master-level fields such as `is_master`,
-/// `parent_uid`, `uta`, and the KYC block are absent.
+/// Deliberately not shared with [`BybitAccountDetails`]: master-level fields
+/// such as `is_master`, `parent_uid`, `uta`, and the KYC block are absent.
 ///
 /// # References
 ///
@@ -1708,8 +1733,10 @@ pub struct BybitSubApiKeyInfo {
     pub expired_at: Option<String>,
     pub created_at: String,
     #[serde(rename = "type")]
-    pub key_type: u8,
-    pub secret: String,
+    pub key_type: BybitApiKeyType,
+    #[serde(with = "masked_secret")]
+    pub secret: Option<String>,
+    #[serde(with = "bool_or_int")]
     pub read_only: bool,
     #[serde(default)]
     pub deadline_day: Option<i64>,
@@ -1732,6 +1759,27 @@ pub struct BybitSubApiKeysResult {
     pub next_page_cursor: Option<String>,
 }
 
+impl BybitSubApiKeysResult {
+    /// Returns the cursor to use for the next page, or `None` when the final
+    /// page has been fetched.
+    ///
+    /// The end-of-pages sentinel on this endpoint is an empty string rather
+    /// than `"0"`; both that and a missing cursor collapse to `None`.
+    #[must_use]
+    pub fn continuation_cursor(&self) -> Option<&str> {
+        match self.next_page_cursor.as_deref() {
+            None | Some("") => None,
+            Some(cursor) => Some(cursor),
+        }
+    }
+
+    /// Returns `true` when the result has more pages to fetch.
+    #[must_use]
+    pub fn has_more_pages(&self) -> bool {
+        self.continuation_cursor().is_some()
+    }
+}
+
 /// Response alias for sub-account API keys list.
 ///
 /// # References
@@ -1752,8 +1800,10 @@ pub struct BybitApiKeyUpdateResult {
     #[serde(default)]
     pub note: String,
     pub api_key: String,
-    pub read_only: u8,
-    pub secret: String,
+    #[serde(with = "bool_or_int")]
+    pub read_only: bool,
+    #[serde(with = "masked_secret")]
+    pub secret: Option<String>,
     pub permissions: BybitApiKeyPermissions,
     #[serde(default)]
     pub ips: Vec<String>,
@@ -1811,10 +1861,13 @@ mod tests {
         let response: BybitAccountInfoResponse = serde_json::from_str(&json).unwrap();
 
         assert_eq!(response.result.margin_mode, BybitMarginMode::RegularMargin);
-        assert_eq!(response.result.unified_margin_status, 4);
+        assert_eq!(
+            response.result.unified_margin_status,
+            BybitUnifiedMarginStatus::UnifiedTradingAccount10Pro
+        );
         assert!(!response.result.is_master_trader);
-        assert_eq!(response.result.spot_hedging_status, "OFF");
-        assert_eq!(response.result.dcp_status, "OFF");
+        assert!(!response.result.spot_hedging_status);
+        assert!(!response.result.dcp_status);
         assert_eq!(response.result.time_window, 10);
         assert_eq!(response.result.smp_group, 0);
     }
@@ -1838,10 +1891,13 @@ mod tests {
             response.result.margin_mode,
             BybitMarginMode::PortfolioMargin
         );
-        assert_eq!(response.result.unified_margin_status, 5);
+        assert_eq!(
+            response.result.unified_margin_status,
+            BybitUnifiedMarginStatus::UnifiedTradingAccount20
+        );
         assert!(response.result.is_master_trader);
-        assert_eq!(response.result.spot_hedging_status, "ON");
-        assert_eq!(response.result.dcp_status, "");
+        assert!(response.result.spot_hedging_status);
+        assert!(!response.result.dcp_status);
         assert_eq!(response.result.time_window, 0);
         assert_eq!(response.result.smp_group, 0);
     }
@@ -2117,13 +2173,15 @@ mod tests {
 
     #[rstest]
     fn deserialize_sub_members_paged_response() {
-        // The final-page sentinel is `"0"`; both `"0"` and `None` signal that
-        // no further pages remain.
+        // The final-page sentinel is `"0"`; both `"0"` and `None` collapse to
+        // `continuation_cursor() == None` via the helper.
         let json = load_test_json("http_get_user_sub_members_paged.json");
         let response: BybitSubMembersPagedResponse =
             serde_json::from_str(&json).expect("parse paged sub members");
         assert_eq!(response.result.sub_members.len(), 2);
         assert_eq!(response.result.next_cursor.as_deref(), Some("0"));
+        assert!(!response.result.has_more_pages());
+        assert_eq!(response.result.continuation_cursor(), None);
     }
 
     #[rstest]
@@ -2137,25 +2195,29 @@ mod tests {
         assert_eq!(response.result.sub_members[0].member_type, 12);
         assert_eq!(response.result.sub_members[0].remark, "earn fund");
         assert_eq!(response.result.next_cursor.as_deref(), Some("344"));
+        assert!(response.result.has_more_pages());
+        assert_eq!(response.result.continuation_cursor(), Some("344"));
     }
 
     #[rstest]
     fn deserialize_sub_api_keys_response() {
-        // Covers the two shape differences from master key responses:
-        // `readOnly` is a bool here and `secret` is the masked literal.
+        // `readOnly` arrives as a bool here; the masked `"******"` secret
+        // collapses to `None` through the `masked_secret` helper.
         let json = load_test_json("http_get_user_sub_apikeys.json");
         let response: BybitSubApiKeysResponse =
             serde_json::from_str(&json).expect("parse sub apikeys");
         assert_eq!(response.result.keys.len(), 1);
         let key = &response.result.keys[0];
         assert!(!key.read_only);
-        assert_eq!(key.secret, "******");
+        assert_eq!(key.secret, None);
+        assert_eq!(key.key_type, BybitApiKeyType::Hmac);
         assert_eq!(key.flag, "hmac");
         assert_eq!(key.deadline_day, Some(21));
         assert_eq!(key.permissions.contract_trade, vec!["Order", "Position"]);
         assert_eq!(key.permissions.spot, vec!["SpotTrade"]);
         assert!(key.permissions.earn.is_empty());
         assert_eq!(response.result.next_page_cursor.as_deref(), Some(""));
+        assert!(!response.result.has_more_pages());
     }
 
     #[rstest]
@@ -2163,8 +2225,8 @@ mod tests {
         let json = load_test_json("http_post_user_update_sub_api.json");
         let response: BybitUpdateSubApiResponse =
             serde_json::from_str(&json).expect("parse update sub api");
-        assert_eq!(response.result.read_only, 0);
-        assert_eq!(response.result.secret, "");
+        assert!(!response.result.read_only);
+        assert_eq!(response.result.secret, None);
         assert_eq!(response.result.ips, vec!["*"]);
         assert_eq!(response.result.permissions.spot, vec!["SpotTrade"]);
         assert_eq!(response.result.permissions.wallet, vec!["AccountTransfer"]);
@@ -2179,7 +2241,7 @@ mod tests {
         let json = load_test_json("http_post_user_update_master_api.json");
         let response: BybitUpdateMasterApiResponse =
             serde_json::from_str(&json).expect("parse update master api");
-        assert_eq!(response.result.read_only, 0);
+        assert!(!response.result.read_only);
         assert_eq!(response.result.ips, vec!["*"]);
         let perms = &response.result.permissions;
         assert_eq!(perms.contract_trade, vec!["Order", "Position"]);

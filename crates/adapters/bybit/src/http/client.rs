@@ -64,11 +64,11 @@ use super::{
         BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
         BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
         BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
-        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSubApiKeysResponse,
-        BybitSubMembersPagedResponse, BybitSubMembersResponse, BybitSwitchModeResponse,
-        BybitTickerData, BybitTickerOption, BybitTickersOptionResponse, BybitTradeHistoryResponse,
-        BybitTradesResponse, BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse,
-        BybitWalletBalanceResponse,
+        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSubApiKeyInfo,
+        BybitSubApiKeysResponse, BybitSubMember, BybitSubMembersPagedResponse,
+        BybitSubMembersResponse, BybitSwitchModeResponse, BybitTickerData, BybitTickerOption,
+        BybitTickersOptionResponse, BybitTradeHistoryResponse, BybitTradesResponse,
+        BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse, BybitWalletBalanceResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -1022,6 +1022,104 @@ impl BybitRawHttpClient {
             true,
         )
         .await
+    }
+
+    /// Fetches every sub-account page via `/v5/user/submembers` and returns the
+    /// flattened list. Walks the cursor until Bybit signals end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_sub_members_paged(
+        &self,
+        page_size: Option<u32>,
+    ) -> Result<Vec<BybitSubMember>, BybitHttpError> {
+        let mut members = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubMembersPageParams {
+                page_size,
+                next_cursor: cursor.take(),
+            };
+            let mut page = self.get_sub_members_paged(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            members.append(&mut page.result.sub_members);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(members)
+    }
+
+    /// Fetches every fund-custodial page via `/v5/user/escrow_sub_members` and
+    /// returns the flattened list. Walks the cursor until Bybit signals
+    /// end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_escrow_sub_members(
+        &self,
+        page_size: Option<u32>,
+    ) -> Result<Vec<BybitSubMember>, BybitHttpError> {
+        let mut members = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubMembersPageParams {
+                page_size,
+                next_cursor: cursor.take(),
+            };
+            let mut page = self.get_escrow_sub_members(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            members.append(&mut page.result.sub_members);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(members)
+    }
+
+    /// Fetches every page of sub-account API keys for `sub_member_id` and
+    /// returns the flattened list. Walks the cursor until Bybit signals
+    /// end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_sub_api_keys(
+        &self,
+        sub_member_id: impl Into<String>,
+        limit: Option<u32>,
+    ) -> Result<Vec<BybitSubApiKeyInfo>, BybitHttpError> {
+        let sub_member_id = sub_member_id.into();
+        let mut keys = Vec::new();
+        let mut cursor: Option<String> = None;
+
+        loop {
+            let params = BybitSubApiKeysParams {
+                sub_member_id: sub_member_id.clone(),
+                limit,
+                cursor: cursor.take(),
+            };
+            let mut page = self.get_sub_api_keys(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            keys.append(&mut page.result.keys);
+
+            match next {
+                Some(c) => cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(keys)
     }
 
     /// Fetches trading fee rates for symbols.

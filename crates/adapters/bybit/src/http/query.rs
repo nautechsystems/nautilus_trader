@@ -18,12 +18,15 @@
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::common::enums::{
-    BybitAccountType, BybitExecType, BybitInstrumentStatus, BybitKlineInterval, BybitMarginMode,
-    BybitMarketUnit, BybitOpenOnly, BybitOptionType, BybitOrderFilter, BybitOrderSide,
-    BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType,
-    BybitSmpType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
-    BybitTriggerType,
+use crate::common::{
+    enums::{
+        BybitAccountType, BybitExecType, BybitInstrumentStatus, BybitKlineInterval,
+        BybitMarginMode, BybitMarketUnit, BybitOpenOnly, BybitOptionType, BybitOrderFilter,
+        BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode,
+        BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
+        BybitTriggerDirection, BybitTriggerType,
+    },
+    parse::opt_bool_as_int,
 };
 
 /// Query parameters for `GET /v5/market/instruments-info`.
@@ -819,9 +822,11 @@ pub struct BybitUpdateSubApiParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub api_key: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // Bybit accepts `readOnly` as a 0/1 integer on the wire; the builder takes
+    // a `bool` and `opt_bool_as_int` serialises it to match.
+    #[serde(skip_serializing_if = "Option::is_none", with = "opt_bool_as_int")]
     #[builder(setter(strip_option))]
-    pub read_only: Option<i32>,
+    pub read_only: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub ips: Option<String>,
@@ -845,9 +850,9 @@ pub struct BybitUpdateSubApiParams {
 #[builder(default)]
 #[builder(setter(into))]
 pub struct BybitUpdateMasterApiParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", with = "opt_bool_as_int")]
     #[builder(setter(strip_option))]
-    pub read_only: Option<i32>,
+    pub read_only: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub permissions: Option<BybitApiKeyPermissionUpdate>,

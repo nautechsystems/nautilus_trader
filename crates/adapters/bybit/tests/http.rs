@@ -26,9 +26,11 @@ use axum::{
 };
 use chrono::Utc;
 use nautilus_bybit::{
-    common::enums::{BybitAccountType, BybitMarginMode, BybitProductType},
+    common::enums::{
+        BybitAccountType, BybitMarginMode, BybitProductType, BybitUnifiedMarginStatus,
+    },
     http::{
-        client::BybitHttpClient,
+        client::{BybitHttpClient, BybitRawHttpClient},
         query::{
             BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitPositionListParamsBuilder,
             BybitWalletBalanceParams,
@@ -1435,9 +1437,12 @@ async fn test_get_account_info_with_credentials() {
 
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.result.margin_mode, BybitMarginMode::RegularMargin);
-    assert_eq!(response.result.unified_margin_status, 4);
+    assert_eq!(
+        response.result.unified_margin_status,
+        BybitUnifiedMarginStatus::UnifiedTradingAccount10Pro
+    );
     assert!(!response.result.is_master_trader);
-    assert_eq!(response.result.spot_hedging_status, "OFF");
+    assert!(!response.result.spot_hedging_status);
 }
 // Create router with separate handlers for reconciliation testing
 #[allow(dead_code)]
@@ -3570,6 +3575,21 @@ fn user_test_client(base_url: String) -> BybitHttpClient {
     .unwrap()
 }
 
+fn user_raw_test_client(base_url: String) -> BybitRawHttpClient {
+    BybitRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap()
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_get_sub_members_no_params() {
@@ -3660,7 +3680,7 @@ async fn test_get_sub_api_keys_sends_required_params() {
     let response = client.get_sub_api_keys(&params).await.unwrap();
     assert_eq!(response.result.keys.len(), 1);
     assert!(!response.result.keys[0].read_only);
-    assert_eq!(response.result.keys[0].secret, "******");
+    assert_eq!(response.result.keys[0].secret, None);
 
     let q = cap.last_query.lock().await.clone().expect("query captured");
     assert!(q.contains("subMemberId=533285"), "query: {q}");
@@ -3677,12 +3697,12 @@ async fn test_update_sub_api_key_omits_none_permissions() {
     let client = user_test_client(format!("http://{addr}"));
 
     let params = BybitUpdateSubApiParamsBuilder::default()
-        .read_only(1i32)
+        .read_only(true)
         .build()
         .unwrap();
 
     let response = client.update_sub_api_key(&params).await.unwrap();
-    assert_eq!(response.result.read_only, 0);
+    assert!(!response.result.read_only);
 
     let body = cap.last_body.lock().await.clone().expect("body captured");
     let obj = body.as_object().expect("json object");
@@ -3804,7 +3824,7 @@ async fn test_update_master_api_key_body_has_no_ips() {
         .unwrap();
 
     let params = BybitUpdateMasterApiParamsBuilder::default()
-        .read_only(0i32)
+        .read_only(false)
         .permissions(permissions)
         .build()
         .unwrap();
@@ -3826,4 +3846,260 @@ async fn test_update_master_api_key_body_has_no_ips() {
         "update-api has no apiKey: {body}"
     );
     assert_eq!(obj.get("readOnly").and_then(Value::as_i64), Some(0));
+}
+
+async fn paged_sub_members_handler(
+    State(calls): State<Arc<tokio::sync::Mutex<Vec<String>>>>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    let query = uri.query().unwrap_or_default().to_string();
+    let mut log = calls.lock().await;
+    log.push(query.clone());
+
+    // First request has no cursor, second carries `nextCursor=page-2`,
+    // final page uses the `"0"` end-of-pages sentinel.
+    let body = if query.contains("nextCursor=page-2") {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "subMembers": [{
+                    "uid": "300",
+                    "username": "third",
+                    "memberType": 1,
+                    "status": 1,
+                    "accountMode": 5
+                }],
+                "nextCursor": "0"
+            },
+            "retExtInfo": {},
+            "time": 1760388041006i64
+        })
+    } else {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "subMembers": [
+                    {"uid": "100", "username": "first", "memberType": 1, "status": 1, "accountMode": 5},
+                    {"uid": "200", "username": "second", "memberType": 1, "status": 1, "accountMode": 6}
+                ],
+                "nextCursor": "page-2"
+            },
+            "retExtInfo": {},
+            "time": 1760388041006i64
+        })
+    };
+    Json(body).into_response()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_all_sub_members_paged_walks_cursor() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let calls: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+    let router = Router::new()
+        .route("/v5/user/submembers", get(paged_sub_members_handler))
+        .route("/v5/market/time", get(handle_get_server_time))
+        .with_state(calls.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v5/market/time").await;
+
+    let client = user_raw_test_client(format!("http://{addr}"));
+    let members = client.fetch_all_sub_members_paged(Some(2)).await.unwrap();
+
+    assert_eq!(members.len(), 3);
+    assert_eq!(members[0].uid, "100");
+    assert_eq!(members[2].uid, "300");
+
+    let log = calls.lock().await.clone();
+    assert_eq!(log.len(), 2, "expected exactly two page requests: {log:?}");
+    assert!(
+        !log[0].contains("nextCursor"),
+        "first page must not carry a cursor: {log:?}"
+    );
+    assert!(
+        log[1].contains("nextCursor=page-2"),
+        "second page must carry cursor: {log:?}"
+    );
+}
+
+async fn paged_escrow_sub_members_handler(
+    State(calls): State<Arc<tokio::sync::Mutex<Vec<String>>>>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    let query = uri.query().unwrap_or_default().to_string();
+    calls.lock().await.push(query.clone());
+
+    let body = if query.contains("nextCursor=escrow-2") {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "subMembers": [{
+                    "uid": "777",
+                    "username": "Fund3",
+                    "memberType": 12,
+                    "status": 1,
+                    "remark": "earn fund",
+                    "accountMode": 3
+                }],
+                "nextCursor": "0"
+            },
+            "retExtInfo": {},
+            "time": 1760388041006i64
+        })
+    } else {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "subMembers": [
+                    {"uid": "555", "username": "Fund1", "memberType": 12, "status": 1, "remark": "earn fund", "accountMode": 3},
+                    {"uid": "666", "username": "Fund2", "memberType": 12, "status": 1, "remark": "earn fund", "accountMode": 3}
+                ],
+                "nextCursor": "escrow-2"
+            },
+            "retExtInfo": {},
+            "time": 1760388041006i64
+        })
+    };
+    Json(body).into_response()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_all_escrow_sub_members_walks_cursor() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let calls: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+    let router = Router::new()
+        .route(
+            "/v5/user/escrow_sub_members",
+            get(paged_escrow_sub_members_handler),
+        )
+        .route("/v5/market/time", get(handle_get_server_time))
+        .with_state(calls.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v5/market/time").await;
+
+    let client = user_raw_test_client(format!("http://{addr}"));
+    let members = client.fetch_all_escrow_sub_members(Some(50)).await.unwrap();
+
+    assert_eq!(members.len(), 3);
+    assert_eq!(members[0].uid, "555");
+    assert_eq!(members[2].uid, "777");
+    assert_eq!(members[2].member_type, 12);
+
+    let log = calls.lock().await.clone();
+    assert_eq!(log.len(), 2, "expected exactly two page requests: {log:?}");
+    assert!(
+        log[1].contains("nextCursor=escrow-2"),
+        "second page must carry cursor: {log:?}"
+    );
+}
+
+async fn paged_sub_apikeys_handler(
+    State(calls): State<Arc<tokio::sync::Mutex<Vec<String>>>>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    let query = uri.query().unwrap_or_default().to_string();
+    calls.lock().await.push(query.clone());
+
+    // Final-page sentinel on this endpoint is `""`, not `"0"`.
+    let body = if query.contains("cursor=keys-2") {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "result": [{
+                    "id": "33", "ips": ["*"], "apiKey": "K3", "note": "",
+                    "status": 1, "createdAt": "2026-01-01T00:00:00Z",
+                    "type": 1, "permissions": {}, "secret": "******",
+                    "readOnly": true, "flag": "hmac"
+                }],
+                "nextPageCursor": ""
+            },
+            "retExtInfo": {},
+            "time": 1699515251698i64
+        })
+    } else {
+        json!({
+            "retCode": 0,
+            "retMsg": "",
+            "result": {
+                "result": [
+                    {"id": "11", "ips": ["*"], "apiKey": "K1", "note": "", "status": 1, "createdAt": "2026-01-01T00:00:00Z", "type": 1, "permissions": {}, "secret": "******", "readOnly": false, "flag": "hmac"},
+                    {"id": "22", "ips": ["*"], "apiKey": "K2", "note": "", "status": 1, "createdAt": "2026-01-01T00:00:00Z", "type": 1, "permissions": {}, "secret": "******", "readOnly": false, "flag": "hmac"}
+                ],
+                "nextPageCursor": "keys-2"
+            },
+            "retExtInfo": {},
+            "time": 1699515251698i64
+        })
+    };
+    Json(body).into_response()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_fetch_all_sub_api_keys_walks_cursor() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let calls: Arc<tokio::sync::Mutex<Vec<String>>> = Arc::default();
+    let router = Router::new()
+        .route("/v5/user/sub-apikeys", get(paged_sub_apikeys_handler))
+        .route("/v5/market/time", get(handle_get_server_time))
+        .with_state(calls.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    wait_for_server(addr, "/v5/market/time").await;
+
+    let client = user_raw_test_client(format!("http://{addr}"));
+    let keys = client
+        .fetch_all_sub_api_keys("533285", Some(10))
+        .await
+        .unwrap();
+
+    assert_eq!(keys.len(), 3);
+    assert_eq!(keys[0].id, "11");
+    assert_eq!(keys[2].id, "33");
+    assert!(keys[2].read_only);
+
+    let log = calls.lock().await.clone();
+    assert_eq!(log.len(), 2, "expected exactly two page requests: {log:?}");
+    assert!(
+        log[0].contains("subMemberId=533285"),
+        "subMemberId must be sent: {log:?}"
+    );
+    assert!(log[0].contains("limit=10"), "limit must be sent: {log:?}");
+    assert!(
+        !log[0].contains("cursor="),
+        "first page must not carry a cursor: {log:?}"
+    );
+    assert!(
+        log[1].contains("cursor=keys-2"),
+        "second page must carry cursor: {log:?}"
+    );
 }
