@@ -355,6 +355,10 @@ impl AtomicTime {
                 .compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
+                debug_assert!(
+                    next > last,
+                    "Invariant: time is strictly monotonic across CAS"
+                );
                 return UnixNanos::from(next);
             }
         }
