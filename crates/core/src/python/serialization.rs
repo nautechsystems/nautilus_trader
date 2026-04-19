@@ -32,9 +32,13 @@ pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
 where
     T: DeserializeOwned,
 {
-    // Extract to JSON bytes
+    // `ensure_ascii=False` keeps non-ASCII characters as raw UTF-8 in the JSON output.
+    // Without this, `\uXXXX` escapes force `serde_json` onto the owned-string path,
+    // which `visit_str`-only visitors like `ustr::Ustr` reject as "expected a borrowed string".
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("ensure_ascii", false)?;
     let json_str: String = PyModule::import(py, "json")?
-        .call_method("dumps", (values,), None)?
+        .call_method("dumps", (values,), Some(&kwargs))?
         .extract()?;
 
     // Deserialize to object
