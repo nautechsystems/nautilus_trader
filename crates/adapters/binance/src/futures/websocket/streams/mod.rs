@@ -25,4 +25,7 @@ pub mod messages;
 pub mod parse_data;
 pub mod parse_exec;
 
+pub(crate) mod dispatch;
+pub(crate) mod recovery;
+
 pub use client::BinanceFuturesWebSocketClient;

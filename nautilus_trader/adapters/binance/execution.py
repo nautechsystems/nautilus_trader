@@ -254,6 +254,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             is_ed25519=is_ed25519,
             http_client=http_client_for_ws,
             account_type=account_type_for_ws,
+            on_resubscribe=self._reconcile_after_resubscribe,
         )
 
         self._submit_order_method: dict[
@@ -1545,6 +1546,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     )
             finally:
                 await self._retry_manager_pool.release(retry_manager)
+
+    async def _reconcile_after_resubscribe(self) -> None:
+        # Listen key rotation leaves a brief window where Binance may have sent
+        # events into a stream with no active subscriber. Request a full mass
+        # status (no lookback cap) so resting GTC orders older than any cap
+        # still reconcile if they were canceled or filled during the gap.
+        mass_status = await self.generate_mass_status(lookback_mins=None)
+        if mass_status is not None:
+            self._send_mass_status_report(mass_status)
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # Implement in child class

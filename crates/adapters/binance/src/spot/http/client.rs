@@ -298,7 +298,7 @@ impl BinanceRawSpotHttpClient {
                 query.push_str(&format!("&recvWindow={recv_window}"));
             }
 
-            let signature = cred.sign(&query);
+            let signature = Self::percent_encode(&cred.sign(&query));
             query.push_str(&format!("&signature={signature}"));
             headers.insert(
                 BINANCE_API_KEY_HEADER.to_string(),
@@ -748,7 +748,7 @@ impl BinanceRawSpotHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         // Build SAPI URL (different from regular API path)
@@ -905,7 +905,7 @@ impl BinanceRawSpotHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         let url = self.build_url(path, &query);

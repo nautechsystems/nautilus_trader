@@ -58,7 +58,10 @@ Released on TBD (UTC).
 - Fixed Betfair order rejection reason dropping instruction-level `errorMessage` detail
 - Fixed Betfair `query_order` to emit status reports via `customer_order_ref` and `bet_id` lookups (Rust)
 - Fixed Binance user data stream not recovering after keepalive failure (#3861), thanks for reporting @KaizynX
+- Fixed Binance Futures user data stream event loss during listen key rotation (#3861), thanks for reporting @KaizynX
 - Fixed Binance Futures WebSocket trades by forcing `@aggTrade` (#3861), thanks for reporting @KaizynX
+- Fixed Binance Ed25519 detector silently accepting base64 HMAC secrets as Ed25519 keys (Rust)
+- Fixed Binance HTTP request Ed25519 signature URL-encoding in query strings (Rust)
 - Fixed Bybit position deserialization for closed positions (#3836), thanks for reporting @pusteckiy
 - Fixed Bybit perpetual instrument status to emit `PreClose` when scheduled for delisting (#3829), thanks @dxwil
 - Fixed Bybit `load_all_async` dropping `base_coin` filter for options (#3865), thanks for reporting @Baerenstein
@@ -127,6 +130,7 @@ Released on TBD (UTC).
 - Upgraded `msgspec` to v0.21.1
 - Upgraded `tokio` crate to v1.52.1
 - Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
+- Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
 - Added debug logging to dYdX `generate_order_status_report` showing filter scope and `page_full` on `None` results
 
 ### Documentation Updates

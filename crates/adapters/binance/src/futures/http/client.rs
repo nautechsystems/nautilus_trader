@@ -307,7 +307,7 @@ impl BinanceRawFuturesHttpClient {
             query.push_str(&format!("&recvWindow={recv_window}"));
         }
 
-        let signature = cred.sign(&query);
+        let signature = Self::percent_encode(&cred.sign(&query));
         query.push_str(&format!("&signature={signature}"));
 
         let url = self.build_url(path, &query);
@@ -396,7 +396,10 @@ impl BinanceRawFuturesHttpClient {
                 query.push_str(&format!("&recvWindow={recv_window}"));
             }
 
-            let signature = cred.sign(&query);
+            // Percent-encode the signature: Ed25519 signatures are base64 and
+            // contain `+`, `/`, `=` which are not URL-safe. HMAC hex is
+            // already safe but percent-encoding it is a no-op.
+            let signature = Self::percent_encode(&cred.sign(&query));
             query.push_str(&format!("&signature={signature}"));
             headers.insert(
                 BINANCE_API_KEY_HEADER.to_string(),

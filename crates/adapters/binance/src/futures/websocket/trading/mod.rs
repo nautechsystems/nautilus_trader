@@ -40,6 +40,8 @@ pub mod error;
 pub mod handler;
 pub mod messages;
 
+pub(crate) mod dispatch;
+
 pub use client::BinanceFuturesWsTradingClient;
 pub use error::{BinanceFuturesWsApiError, BinanceFuturesWsApiResult};
 pub use handler::BinanceFuturesWsTradingHandler;
