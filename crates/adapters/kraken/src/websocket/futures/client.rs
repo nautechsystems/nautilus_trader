@@ -198,49 +198,50 @@ impl KrakenFuturesWebSocketClient {
         Ok(())
     }
 
+    /// Returns true if the WebSocket is authenticated for private feeds.
+    #[must_use]
+    pub fn is_authenticated(&self) -> bool {
+        self.auth_tracker.is_authenticated()
+    }
+
+    /// Waits until the WebSocket is authenticated or the timeout elapses.
+    ///
+    /// Returns an error on timeout or explicit auth failure.
+    pub async fn wait_until_authenticated(&self, timeout_secs: f64) -> Result<(), KrakenWsError> {
+        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+        if self.auth_tracker.wait_for_authenticated(timeout).await {
+            Ok(())
+        } else {
+            Err(KrakenWsError::AuthenticationError(format!(
+                "Authentication not completed within {timeout_secs} seconds"
+            )))
+        }
+    }
+
     /// Authenticates the WebSocket connection for private feeds.
     ///
-    /// This sends a challenge request, waits for the response, signs it,
-    /// and stores the credentials for use in private subscriptions.
+    /// Sends a challenge request and waits for the handler to parse the response,
+    /// sign it, and mark the `AuthTracker` successful. Private subscriptions gate
+    /// on the stored challenge / signed-challenge pair.
     pub async fn authenticate(&self) -> Result<(), KrakenWsError> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             KrakenWsError::AuthenticationError("API credentials required".to_string())
         })?;
 
-        let api_key = credential.api_key().to_string();
-        let challenge_request = KrakenFuturesChallengeRequest {
-            event: KrakenFuturesEvent::Challenge,
-            api_key: api_key.clone(),
-        };
-        let payload = serde_json::to_string(&challenge_request)
+        let payload = build_challenge_payload(credential)
             .map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let receiver = self.auth_tracker.begin();
 
         self.cmd_tx
             .read()
             .await
-            .send(FuturesHandlerCommand::RequestChallenge {
-                payload,
-                response_tx: tx,
-            })
+            .send(FuturesHandlerCommand::RequestChallenge { payload })
             .map_err(|e| KrakenWsError::ChannelError(e.to_string()))?;
 
-        let challenge = tokio::time::timeout(tokio::time::Duration::from_secs(10), rx)
-            .await
-            .map_err(|_| {
-                KrakenWsError::AuthenticationError("Timeout waiting for challenge".to_string())
-            })?
-            .map_err(|_| {
-                KrakenWsError::AuthenticationError("Challenge channel closed".to_string())
-            })?;
-
-        let signed_challenge = credential.sign_ws_challenge(&challenge).map_err(|e| {
-            KrakenWsError::AuthenticationError(format!("Failed to sign challenge: {e}"))
-        })?;
-
-        *self.original_challenge.write().await = Some(challenge);
-        *self.signed_challenge.write().await = Some(signed_challenge);
+        self.auth_tracker
+            .wait_for_result::<KrakenWsError>(tokio::time::Duration::from_secs(10), receiver)
+            .await?;
 
         log::debug!("Futures WebSocket authentication successful");
         Ok(())
@@ -295,10 +296,12 @@ impl KrakenFuturesWebSocketClient {
         let credential_for_reconnect = self.credential.clone();
         let original_challenge_for_reconnect = self.original_challenge.clone();
         let signed_challenge_for_reconnect = self.signed_challenge.clone();
+        let auth_tracker_for_reconnect = self.auth_tracker.clone();
 
         let stream_handle = get_runtime().spawn(async move {
             let mut handler =
                 FuturesFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
+            let mut pending_resubscribe = false;
 
             loop {
                 match handler.next().await {
@@ -306,140 +309,92 @@ impl KrakenFuturesWebSocketClient {
                         if signal.load(Ordering::Relaxed) {
                             continue;
                         }
-                        log::info!("WebSocket reconnected, resubscribing");
+                        log::info!("WebSocket reconnected");
 
                         let confirmed_topics = subscriptions.all_topics();
                         for topic in &confirmed_topics {
                             subscriptions.mark_failure(topic);
                         }
 
-                        let payloads = subscription_payloads.read().await;
-                        if payloads.is_empty() {
-                            log::debug!("No subscriptions to restore after reconnection");
-                        } else {
-                            let has_private =
-                                payloads.keys().any(|k| k == "open_orders" || k == "fills");
+                        auth_tracker_for_reconnect.invalidate();
+                        *original_challenge_for_reconnect.write().await = None;
+                        *signed_challenge_for_reconnect.write().await = None;
 
-                            if has_private {
-                                if let Some(ref cred) = credential_for_reconnect {
-                                    let challenge_request = KrakenFuturesChallengeRequest {
-                                        event: KrakenFuturesEvent::Challenge,
-                                        api_key: cred.api_key().to_string(),
-                                    };
-                                    let challenge_payload =
-                                        serde_json::to_string(&challenge_request)
-                                            .unwrap_or_default();
+                        let payloads = subscription_payloads.read().await.clone();
 
-                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                        // Resubscribe public topics straight away; they don't depend on auth,
+                        // so don't tie their restoration to the challenge outcome.
+                        resubscribe_public(&cmd_tx_for_reconnect, &subscriptions, &payloads);
 
-                                    if let Err(e) = cmd_tx_for_reconnect.send(
-                                        FuturesHandlerCommand::RequestChallenge {
-                                            payload: challenge_payload,
-                                            response_tx: tx,
-                                        },
-                                    ) {
-                                        log::error!(
-                                            "Failed to request challenge for reconnect: {e}"
-                                        );
-                                    } else {
-                                        match tokio::time::timeout(
-                                            tokio::time::Duration::from_secs(10),
-                                            rx,
-                                        )
-                                        .await
-                                        {
-                                            Ok(Ok(challenge)) => {
-                                                match cred.sign_ws_challenge(&challenge) {
-                                                    Ok(signed) => {
-                                                        *original_challenge_for_reconnect
-                                                            .write()
-                                                            .await = Some(challenge);
-                                                        *signed_challenge_for_reconnect
-                                                            .write()
-                                                            .await = Some(signed);
-                                                        log::debug!(
-                                                            "Re-authenticated after reconnect"
-                                                        );
-                                                    }
-                                                    Err(e) => {
-                                                        log::error!(
-                                                            "Failed to sign challenge: {e}"
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            Ok(Err(_)) => {
-                                                log::error!(
-                                                    "Challenge channel closed during reconnect"
-                                                );
-                                            }
-                                            Err(_) => {
-                                                log::error!(
-                                                    "Timeout waiting for challenge during reconnect"
-                                                );
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    log::warn!(
-                                        "Private subscriptions exist but no credentials available"
-                                    );
-                                }
-                            }
+                        let has_private =
+                            payloads.keys().any(|k| k == "open_orders" || k == "fills");
 
-                            log::info!(
-                                "Resubscribing after reconnection: count={}",
-                                payloads.len()
-                            );
+                        pending_resubscribe = false;
 
-                            let orig = original_challenge_for_reconnect.read().await;
-                            let signed = signed_challenge_for_reconnect.read().await;
+                        if has_private {
+                            if let Some(ref cred) = credential_for_reconnect {
+                                match build_challenge_payload(cred) {
+                                    Ok(payload) => {
+                                        let _rx = auth_tracker_for_reconnect.begin();
 
-                            for (key, payload) in payloads.iter() {
-                                let send_payload = if key == "open_orders" || key == "fills" {
-                                    if let (Some(o), Some(s)) = (orig.as_deref(), signed.as_deref())
-                                    {
-                                        if let Some(ref cred) = credential_for_reconnect {
-                                            match update_private_payload_credentials(
-                                                payload,
-                                                cred.api_key(),
-                                                o,
-                                                s,
-                                            ) {
-                                                Some(updated) => updated,
-                                                None => {
-                                                    log::error!("Failed to update private payload");
-                                                    continue;
-                                                }
-                                            }
+                                        if let Err(e) = cmd_tx_for_reconnect.send(
+                                            FuturesHandlerCommand::RequestChallenge { payload },
+                                        ) {
+                                            log::error!("Failed to queue reconnect challenge: {e}");
                                         } else {
-                                            continue;
+                                            pending_resubscribe = true;
                                         }
-                                    } else {
-                                        log::warn!("Cannot resubscribe to {key}: no credentials");
-                                        continue;
                                     }
-                                } else {
-                                    payload.clone()
-                                };
-
-                                if let Err(e) =
-                                    cmd_tx_for_reconnect.send(FuturesHandlerCommand::Subscribe {
-                                        payload: send_payload,
-                                    })
-                                {
-                                    log::error!(
-                                        "Failed to send resubscribe: error={e}, topic={key}"
-                                    );
+                                    Err(e) => {
+                                        log::error!("Failed to serialize reconnect challenge: {e}");
+                                    }
                                 }
-
-                                subscriptions.mark_subscribe(key);
+                            } else {
+                                log::warn!(
+                                    "Private subscriptions exist but no credentials available"
+                                );
                             }
                         }
 
                         if let Err(e) = out_tx.send(KrakenFuturesWsMessage::Reconnected) {
                             log::debug!("Output channel closed: {e}");
                             break;
+                        }
+                    }
+                    Some(KrakenFuturesWsMessage::Challenge(challenge)) => {
+                        let Some(ref cred) = credential_for_reconnect else {
+                            log::warn!("Challenge received but no credentials configured");
+                            auth_tracker_for_reconnect.fail("no credentials");
+                            continue;
+                        };
+
+                        match cred.sign_ws_challenge(&challenge) {
+                            Ok(signed) => {
+                                *original_challenge_for_reconnect.write().await =
+                                    Some(challenge.clone());
+                                *signed_challenge_for_reconnect.write().await =
+                                    Some(signed.clone());
+                                auth_tracker_for_reconnect.succeed();
+                                log::debug!("Signed WebSocket challenge");
+
+                                if pending_resubscribe {
+                                    let payloads = subscription_payloads.read().await;
+                                    resubscribe_private(
+                                        &cmd_tx_for_reconnect,
+                                        &subscriptions,
+                                        &payloads,
+                                        cred,
+                                        challenge.as_str(),
+                                        signed.as_str(),
+                                    );
+                                    pending_resubscribe = false;
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to sign challenge: {e}");
+                                auth_tracker_for_reconnect.fail(e.to_string());
+                                pending_resubscribe = false;
+                            }
                         }
                     }
                     Some(msg) => {
@@ -806,6 +761,7 @@ impl KrakenFuturesWebSocketClient {
 
         *self.original_challenge.write().await = Some(original_challenge);
         *self.signed_challenge.write().await = Some(signed_challenge);
+        self.auth_tracker.succeed();
 
         Ok(())
     }
@@ -1070,4 +1026,335 @@ fn update_private_payload_credentials(
         serde_json::Value::String(signed_challenge.to_string()),
     );
     serde_json::to_string(&value).ok()
+}
+
+fn build_challenge_payload(credential: &KrakenCredential) -> serde_json::Result<String> {
+    let request = KrakenFuturesChallengeRequest {
+        event: KrakenFuturesEvent::Challenge,
+        api_key: credential.api_key().to_string(),
+    };
+    serde_json::to_string(&request)
+}
+
+fn is_private_feed_key(key: &str) -> bool {
+    key == "open_orders" || key == "fills"
+}
+
+fn resubscribe_public(
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
+    subscriptions: &SubscriptionState,
+    payloads: &HashMap<String, String>,
+) {
+    for (key, payload) in payloads {
+        if is_private_feed_key(key) {
+            continue;
+        }
+
+        if let Err(e) = cmd_tx.send(FuturesHandlerCommand::Subscribe {
+            payload: payload.clone(),
+        }) {
+            log::error!("Failed to send resubscribe: error={e}, topic={key}");
+            continue;
+        }
+
+        subscriptions.mark_subscribe(key);
+    }
+}
+
+fn resubscribe_private(
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
+    subscriptions: &SubscriptionState,
+    payloads: &HashMap<String, String>,
+    credential: &KrakenCredential,
+    original_challenge: &str,
+    signed_challenge: &str,
+) {
+    for (key, payload) in payloads {
+        if !is_private_feed_key(key) {
+            continue;
+        }
+
+        let Some(updated) = update_private_payload_credentials(
+            payload,
+            credential.api_key(),
+            original_challenge,
+            signed_challenge,
+        ) else {
+            log::error!("Failed to update private payload for {key}");
+            continue;
+        };
+
+        if let Err(e) = cmd_tx.send(FuturesHandlerCommand::Subscribe { payload: updated }) {
+            log::error!("Failed to send resubscribe: error={e}, topic={key}");
+            continue;
+        }
+
+        subscriptions.mark_subscribe(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use nautilus_network::websocket::AuthTracker;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn test_credential() -> KrakenCredential {
+        let secret = STANDARD.encode(b"test_secret_key_24bytes!");
+        KrakenCredential::new("test_key", secret)
+    }
+
+    #[rstest]
+    fn test_build_challenge_payload_emits_expected_event() {
+        let credential = test_credential();
+        let payload = build_challenge_payload(&credential).expect("serializes");
+        assert!(payload.contains(r#""event":"challenge""#));
+        assert!(payload.contains(r#""api_key":"test_key""#));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_resubscribe_public_skips_private_feeds() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
+        let subscriptions = SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER);
+
+        let mut payloads = HashMap::new();
+        payloads.insert(
+            "trades:PI_XBTUSD".to_string(),
+            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+        );
+        payloads.insert(
+            "open_orders".to_string(),
+            r#"{"event":"subscribe","feed":"open_orders"}"#.to_string(),
+        );
+
+        resubscribe_public(&cmd_tx, &subscriptions, &payloads);
+
+        let mut subscribed = Vec::new();
+        while let Ok(FuturesHandlerCommand::Subscribe { payload }) = cmd_rx.try_recv() {
+            subscribed.push(payload);
+        }
+
+        assert_eq!(
+            subscribed.len(),
+            1,
+            "only the public feed should resubscribe"
+        );
+        assert!(subscribed[0].contains("PI_XBTUSD"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_resubscribe_public_restores_publics_even_with_credentialed_client() {
+        // The reconnect path runs resubscribe_public() unconditionally, so a
+        // credentialed client's public feeds keep flowing even if re-auth fails.
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
+        let subscriptions = SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER);
+
+        let mut payloads = HashMap::new();
+        payloads.insert(
+            "trades:PI_XBTUSD".to_string(),
+            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+        );
+
+        resubscribe_public(&cmd_tx, &subscriptions, &payloads);
+
+        match cmd_rx.try_recv().expect("public subscribe expected") {
+            FuturesHandlerCommand::Subscribe { payload } => {
+                assert!(payload.contains("PI_XBTUSD"));
+            }
+            other => panic!("expected Subscribe, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_resubscribe_private_patches_credentials() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
+        let subscriptions = SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER);
+        let credential = test_credential();
+
+        let mut payloads = HashMap::new();
+        payloads.insert(
+            "open_orders".to_string(),
+            r#"{"event":"subscribe","feed":"open_orders","api_key":"","original_challenge":"","signed_challenge":""}"#.to_string(),
+        );
+        payloads.insert(
+            "trades:PI_XBTUSD".to_string(),
+            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+        );
+
+        resubscribe_private(
+            &cmd_tx,
+            &subscriptions,
+            &payloads,
+            &credential,
+            "server-challenge",
+            "signed-value",
+        );
+
+        let mut subscribed = Vec::new();
+        while let Ok(FuturesHandlerCommand::Subscribe { payload }) = cmd_rx.try_recv() {
+            subscribed.push(payload);
+        }
+
+        assert_eq!(
+            subscribed.len(),
+            1,
+            "only the private feed should resubscribe"
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&subscribed[0]).expect("payload is valid JSON");
+        assert_eq!(value["event"], "subscribe");
+        assert_eq!(value["feed"], "open_orders");
+        assert_eq!(value["api_key"], "test_key");
+        assert_eq!(value["original_challenge"], "server-challenge");
+        assert_eq!(value["signed_challenge"], "signed-value");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_auth_tracker_succeed_completes_wait_for_result() {
+        let tracker = AuthTracker::new();
+        let receiver = tracker.begin();
+
+        let tracker_for_responder = tracker.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+            tracker_for_responder.succeed();
+        });
+
+        tracker
+            .wait_for_result::<KrakenWsError>(tokio::time::Duration::from_secs(1), receiver)
+            .await
+            .expect("auth should succeed");
+
+        assert!(tracker.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_auth_tracker_wait_for_result_times_out() {
+        let tracker = AuthTracker::new();
+        let receiver = tracker.begin();
+
+        let err = tracker
+            .wait_for_result::<KrakenWsError>(tokio::time::Duration::from_millis(20), receiver)
+            .await
+            .expect_err("should time out");
+
+        assert!(matches!(err, KrakenWsError::AuthenticationError(_)));
+        assert!(!tracker.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_authenticate_without_credentials_errors() {
+        let client =
+            KrakenFuturesWebSocketClient::new("wss://futures.kraken.com/ws/v1".to_string(), 60);
+
+        let err = client.authenticate().await.expect_err("should fail");
+        assert!(
+            matches!(err, KrakenWsError::AuthenticationError(ref msg) if msg.contains("API credentials required")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_set_auth_credentials_marks_tracker_authenticated() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            Some(test_credential()),
+        );
+
+        assert!(!client.is_authenticated());
+
+        client
+            .set_auth_credentials("orig-challenge".to_string(), "signed-challenge".to_string())
+            .await
+            .expect("should succeed");
+
+        assert!(client.is_authenticated());
+        client
+            .wait_until_authenticated(0.05)
+            .await
+            .expect("should return immediately");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_set_auth_credentials_without_credentials_errors() {
+        let client =
+            KrakenFuturesWebSocketClient::new("wss://futures.kraken.com/ws/v1".to_string(), 60);
+
+        let err = client
+            .set_auth_credentials("orig".to_string(), "signed".to_string())
+            .await
+            .expect_err("should fail");
+        assert!(matches!(err, KrakenWsError::AuthenticationError(_)));
+        assert!(!client.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_authenticate_with_challenge_updates_state() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            Some(test_credential()),
+        );
+
+        client
+            .authenticate_with_challenge("server-challenge")
+            .await
+            .expect("should succeed");
+
+        assert!(client.is_authenticated());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_wait_until_authenticated_resolves_after_success() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            Some(test_credential()),
+        );
+
+        let client_for_responder = client.clone();
+
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+            client_for_responder
+                .set_auth_credentials("orig".to_string(), "signed".to_string())
+                .await
+                .expect("succeeds");
+        });
+
+        client
+            .wait_until_authenticated(1.0)
+            .await
+            .expect("should resolve once credentials are set");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_wait_until_authenticated_times_out() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            Some(test_credential()),
+        );
+
+        let err = client
+            .wait_until_authenticated(0.05)
+            .await
+            .expect_err("should time out");
+        assert!(matches!(err, KrakenWsError::AuthenticationError(_)));
+    }
 }

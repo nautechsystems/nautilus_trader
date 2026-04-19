@@ -91,6 +91,7 @@ Released on TBD (UTC).
 - Fixed Kraken Spot quote-quantity orders never reaching terminal state from base/quote size mismatch
 - Fixed Kraken trade dedup clearing the entire set at capacity instead of evicting the oldest entry
 - Fixed Kraken Futures `AccountBalance` invariant panic on margin parse, thanks @Stamppot82
+- Fixed Kraken Futures WebSocket re-authentication deadlock on reconnect (#3871), thanks for reporting @Stamppot82
 - Fixed OKX option greeks not forwarded due to inaccessible Cython `cdef` subscription attribute
 - Fixed OKX option greeks emitting `BlackScholes` convention regardless of subscribed greeks type
 - Fixed OKX order identity registration race during concurrent order submission (Rust)
