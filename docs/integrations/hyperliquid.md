@@ -251,6 +251,37 @@ For full protocol details, see the Hyperliquid docs:
 - [Asset IDs](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids)
 - [Fees](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/fees)
 
+### Wildcard character sanitization
+
+Some HIP-3 dexes deploy assets whose venue names contain `*` or `?` bytes
+(for example `dex:STREAMABCD****-USD-PERP`). Those bytes collide with the
+Nautilus message bus pattern syntax (`*` = zero-or-more, `?` = one-char) and
+would corrupt subscription routing if embedded in topic strings unchanged.
+
+The Hyperliquid adapter substitutes both bytes with `x` when constructing the
+`InstrumentId.symbol`, so a HIP-3 asset named `dex:STREAMABCD****` is exposed
+to strategies as:
+
+```python
+InstrumentId.from_str("dex:STREAMABCDxxxx-USD-PERP.HYPERLIQUID")
+```
+
+The substitution applies only to the Nautilus-internal symbol used in topics,
+caches, logs, and config. The venue-official name is preserved on the
+instrument's `raw_symbol` field for HTTP and WebSocket wire calls, and order
+submissions reference the numeric asset index, so the round-trip with
+Hyperliquid is unaffected.
+
+When subscribing to a HIP-3 instrument with wildcard bytes in its venue name,
+use the sanitized form. Symbols without `*` or `?` are passed through
+unchanged.
+
+The substitution is lossy: two distinct venue names such as `dex:FOO*` and
+`dex:FOO?` would normalize onto the same Nautilus symbol. The instrument
+loader detects collisions, keeps the first definition, and logs a warning
+with the dropped venue name; the dropped instrument will not be tradeable
+through Nautilus until the venue rename resolves the collision.
+
 ## Instrument provider
 
 The instrument provider supports filtering when loading instruments via

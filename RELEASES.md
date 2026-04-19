@@ -77,6 +77,7 @@ Released on TBD (UTC).
 - Fixed dYdX crossed-book size arithmetic using `f64` subtraction; now uses `Decimal` at full precision
 - Fixed dYdX position reports overriding venue `side` from `size` sign; venue side now preserved end-to-end
 - Fixed dYdX `DydxAdapterConfig` defaulting to mainnet URLs regardless of `network`; added `for_network` helper
+- Fixed Hyperliquid `LiveNode` bootstrap panic on HIP-3 instrument symbols containing `*`/`?` (e.g. `dex:STREAMABCD****-USD-PERP`) by substituting wildcard bytes with `x` in `InstrumentId.symbol` while preserving the venue-official name on `raw_symbol` (#3896), thanks for reporting @daiwanwei
 - Fixed Hyperliquid bracket order submission grouping (#3810), thanks for reporting @jindrichsirucek
 - Fixed Hyperliquid modify cancel-replace emitting stale `OrderCanceled` (#3827), thanks for reporting @P1YU5H-50N1
 - Fixed Hyperliquid order status query for closed orders (#3879), thanks for reporting @pusteckiy

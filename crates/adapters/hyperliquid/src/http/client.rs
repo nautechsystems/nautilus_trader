@@ -1060,18 +1060,26 @@ impl HyperliquidHttpClient {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
 
-                // Spot raw_symbols are either `@{pair_index}` or slash format
-                // (e.g., "PURR/USDC"); callers looking up by base token need the
-                // base indexed separately so spot balance/position reconciliation
-                // can map token names (e.g., "PURR") to instruments.
+                // Index the leading symbol component (the part before the first
+                // `-`) as a secondary key for two distinct callers:
+                //
+                // * Spot raw_symbols are either `@{pair_index}` or slash format
+                //   (e.g., "PURR/USDC"); spot balance/position reconciliation
+                //   maps the venue token name (e.g., "PURR") to instruments via
+                //   this alias.
+                // * Order submission paths split `instrument_id.symbol` on `-`
+                //   to derive a coin key. For HIP-3 perps with wildcard-bearing
+                //   venue names, the sanitized base in `instrument_id.symbol`
+                //   (e.g., "dex:STREAMABCDxxxx") differs from `raw_symbol` /
+                //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
+                //   sanitized base lets that lookup resolve.
                 //
                 // First-write-wins guards against non-canonical spot pairs that
                 // share a base token overwriting the canonical instrument; the
                 // spot loader sorts canonical pairs first so the alias resolves
-                // to the canonical one.
-                if product_type == HyperliquidProductType::Spot
-                    && let Some(base) = full_symbol.as_str().split('-').next()
-                {
+                // to the canonical one. For standard perps `base == coin`, so
+                // the alias is a no-op.
+                if let Some(base) = full_symbol.as_str().split('-').next() {
                     let base_ustr = Ustr::from(base);
                     let key = (base_ustr, product_type);
                     if base_ustr != coin && !m.contains_key(&key) {
@@ -1258,6 +1266,27 @@ impl HyperliquidHttpClient {
                 log::warn!("Failed to load Hyperliquid spot metadata: {e}");
             }
         }
+
+        // Drop defs whose Nautilus-internal symbol collides with one already
+        // accepted. This guards the HIP-3 case where two distinct venue names
+        // (e.g. `dex:FOO*` and `dex:FOO?`) sanitize onto the same internal
+        // symbol; without this filter the second def would silently overwrite
+        // the first in `asset_indices`, which would route orders to the wrong
+        // asset. First-write-wins matches the spot canonical-pair ordering.
+        let mut seen_symbols = ahash::AHashSet::with_capacity(defs.len());
+        let mut deduped: Vec<HyperliquidInstrumentDef> = Vec::with_capacity(defs.len());
+        for def in defs {
+            if seen_symbols.insert(def.symbol) {
+                deduped.push(def);
+            } else {
+                log::warn!(
+                    "Dropping Hyperliquid instrument: sanitized symbol '{}' collides with an earlier def (raw_symbol='{}')",
+                    def.symbol,
+                    def.raw_symbol,
+                );
+            }
+        }
+        let defs = deduped;
 
         // Populate asset indices for all instruments (including filtered HIP-3)
         self.asset_indices.rcu(|m| {
@@ -2802,7 +2831,7 @@ mod tests {
         currencies::CURRENCY_MAP,
         enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
-        instruments::{CurrencyPair, Instrument, InstrumentAny},
+        instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -3020,5 +3049,87 @@ mod tests {
             "@107",
             "base alias must point to the canonical pair, not the one cached later",
         );
+    }
+
+    #[rstest]
+    fn test_cache_instrument_perp_aliases_sanitized_base() {
+        // HIP-3 perp with wildcard-bearing venue name: `instrument_id.symbol`
+        // is sanitized but order paths derive a coin key by splitting that
+        // sanitized symbol on `-`. The cache must alias on the sanitized base
+        // so those lookups resolve to the same instrument cached under
+        // `raw_symbol` (the venue-official name).
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+
+        let base_currency = Currency::new(
+            "dex:STREAMABCD****",
+            8,
+            0,
+            "dex:STREAMABCD****",
+            CurrencyType::Crypto,
+        );
+        let usd = Currency::new("USD", 8, 0, "USD", CurrencyType::Crypto);
+        let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+        let clock = get_atomic_clock_realtime();
+        let ts = clock.get_time_ns();
+
+        let hip3 = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            InstrumentId::new(
+                Symbol::new("dex:STREAMABCDxxxx-USD-PERP"),
+                *HYPERLIQUID_VENUE,
+            ),
+            Symbol::new("dex:STREAMABCD****"),
+            base_currency,
+            usd,
+            usdc,
+            false,
+            6,
+            3,
+            Price::from("0.000001"),
+            Quantity::from("0.001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts,
+            ts,
+        ));
+
+        client.cache_instrument(&hip3);
+
+        let instruments_by_coin = client.instruments_by_coin.load();
+        let by_raw = instruments_by_coin
+            .get(&(
+                Ustr::from("dex:STREAMABCD****"),
+                HyperliquidProductType::Perp,
+            ))
+            .expect("venue coin lookup must resolve");
+        assert_eq!(by_raw.id(), hip3.id());
+
+        let by_sanitized = instruments_by_coin
+            .get(&(
+                Ustr::from("dex:STREAMABCDxxxx"),
+                HyperliquidProductType::Perp,
+            ))
+            .expect("sanitized base lookup must resolve");
+        assert_eq!(by_sanitized.id(), hip3.id());
+        drop(instruments_by_coin);
+
+        // Confirm the order-submission lookup path resolves through the alias.
+        let resolved = client
+            .get_or_create_instrument(
+                &Ustr::from("dex:STREAMABCDxxxx"),
+                Some(HyperliquidProductType::Perp),
+            )
+            .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
+        assert_eq!(resolved.id(), hip3.id());
     }
 }
