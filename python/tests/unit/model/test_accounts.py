@@ -141,7 +141,7 @@ def test_margin_account_properties_and_updates():
             MarginBalance(
                 initial=Money.from_str("10.00 USD"),
                 maintenance=Money.from_str("5.00 USD"),
-                instrument=instrument.id,
+                instrument_id=instrument.id,
             ),
         ],
         is_reported=True,
@@ -212,7 +212,7 @@ def test_margin_account_from_account_events():
             MarginBalance(
                 initial=Money.from_str("10.00 USD"),
                 maintenance=Money.from_str("5.00 USD"),
-                instrument=instrument.id,
+                instrument_id=instrument.id,
             ),
         ],
         is_reported=True,
