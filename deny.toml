@@ -208,6 +208,9 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
+  # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
+  { crate = "wit-bindgen" },
+
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },
 

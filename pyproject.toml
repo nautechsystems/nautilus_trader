@@ -91,7 +91,7 @@ dev = [
   "setuptools>=82",
   "mypy==1.20.1,<2.0.0", # Pinned to 1.20.1 (keep in line with .pre-commit-config.yaml)
   "pandas-stubs>=2.3.3,<3.0.0",
-  "ruff==0.15.10", # Pinned to 0.15.10 (keep in line with .pre-commit-config.yaml)
+  "ruff==0.15.11", # Pinned to 0.15.11 (keep in line with .pre-commit-config.yaml)
   "types-pytz>=2026.1,<2027.0",
   "types-toml>=0.10.2,<1.0.0",
 ]

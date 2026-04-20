@@ -181,8 +181,8 @@ user-login = "hsivonen"
 user-name = "Henri Sivonen"
 
 [[publisher.wasip2]]
-version = "1.0.2+wasi-0.2.9"
-when = "2026-01-15"
+version = "1.0.3+wasi-0.2.9"
+when = "2026-04-17"
 user-id = 1
 user-login = "alexcrichton"
 user-name = "Alex Crichton"
@@ -227,6 +227,11 @@ user-name = "Ed Page"
 [[publisher.wit-bindgen]]
 version = "0.51.0"
 when = "2026-01-12"
+trusted-publisher = "github:bytecodealliance/wit-bindgen"
+
+[[publisher.wit-bindgen]]
+version = "0.57.1"
+when = "2026-04-17"
 trusted-publisher = "github:bytecodealliance/wit-bindgen"
 
 [[publisher.wit-bindgen-core]]
@@ -1887,21 +1892,6 @@ version = "0.10.2"
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.10.8 -> 0.10.9"
-
-[[audits.isrg.audits.sha3]]
-who = "David Cook <dcook@divviup.org>"
-criteria = "safe-to-deploy"
-version = "0.10.6"
-
-[[audits.isrg.audits.sha3]]
-who = "Brandon Pitman <bran@bran.land>"
-criteria = "safe-to-deploy"
-delta = "0.10.6 -> 0.10.7"
-
-[[audits.isrg.audits.sha3]]
-who = "Brandon Pitman <bran@bran.land>"
-criteria = "safe-to-deploy"
-delta = "0.10.7 -> 0.10.8"
 
 [[audits.isrg.audits.subtle]]
 who = "David Cook <dcook@divviup.org>"

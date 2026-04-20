@@ -61,9 +61,9 @@ anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 bollard = { workspace = true, optional = true }
+bon = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
-derive_builder = { workspace = true }
 futures-util = { workspace = true }
 ibapi = { workspace = true }
 indexmap = { workspace = true }

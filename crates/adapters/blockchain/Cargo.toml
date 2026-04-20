@@ -30,7 +30,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-hypersync = ["hypersync-client", "hypersync-schema"]
+hypersync = ["hypersync-client"]
 python = [
   "nautilus-infrastructure/python",
   "nautilus-live/streaming",
@@ -77,7 +77,6 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 
 hypersync-client = { workspace = true, optional = true }
-hypersync-schema = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
