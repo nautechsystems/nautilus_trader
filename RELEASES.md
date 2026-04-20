@@ -127,6 +127,7 @@ Released on TBD (UTC).
 - Fixed Polymarket commission formula and fee source for fills (#3838), thanks for reporting @santivazq
 - Fixed Polymarket reconciliation fills using incorrect commission (#3860), thanks for reporting @fedoraiver
 - Fixed Polymarket instrument `min_quantity` denying market orders via limit-order shares rule (#3874), thanks for reporting @fedoraiver
+- Fixed Polymarket `request_instrument(s)` dropping WS via stale `token_meta` (#3900), thanks for reporting @fedoraiver
 
 ### Internal Improvements
 - Added `AccountBalance::from_total_and_locked` and `AccountBalance::from_total_and_free`, and migrated adapter balance parsing to preserve the `total == locked + free` invariant at currency precision (Rust)

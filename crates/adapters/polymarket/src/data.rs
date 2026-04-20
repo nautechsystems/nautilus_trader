@@ -136,6 +136,27 @@ struct TokenMeta {
     size_precision: u8,
 }
 
+// Inserts `instrument` into the live instrument cache and updates the
+// `token_meta` routing index in one step. Every path that populates the live
+// cache must go through here so WS messages can always resolve token_id back
+// to an InstrumentId.
+fn cache_instrument(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    instrument: &InstrumentAny,
+) {
+    let instrument_id = instrument.id();
+    token_meta.insert(
+        Ustr::from(instrument.raw_symbol().as_str()),
+        TokenMeta {
+            instrument_id,
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+        },
+    );
+    instruments.insert(instrument_id, instrument.clone());
+}
+
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -425,17 +446,9 @@ impl PolymarketDataClient {
                         continue;
                     }
 
-                    let instrument_id = inst.id();
-                    token_meta.insert(
-                        Ustr::from(inst.raw_symbol().as_str()),
-                        TokenMeta {
-                            instrument_id,
-                            price_precision: inst.price_precision(),
-                            size_precision: inst.size_precision(),
-                        },
-                    );
-                    instruments.insert(instrument_id, inst.clone());
+                    cache_instrument(&instruments, &token_meta, &inst);
 
+                    let instrument_id = inst.id();
                     if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
                         log::error!("Failed to emit auto-loaded instrument {instrument_id}: {e}");
                     }
@@ -482,16 +495,8 @@ impl PolymarketDataClient {
         let all_instruments = self.provider.store().list_all();
         let total = all_instruments.len();
         for instrument in all_instruments {
+            cache_instrument(&self.instruments, &self.token_meta, instrument);
             let instrument_id = instrument.id();
-            self.token_meta.insert(
-                Ustr::from(instrument.raw_symbol().as_str()),
-                TokenMeta {
-                    instrument_id,
-                    price_precision: instrument.price_precision(),
-                    size_precision: instrument.size_precision(),
-                },
-            );
-            self.instruments.insert(instrument_id, instrument.clone());
 
             if let Err(e) = self
                 .data_sender
@@ -864,18 +869,9 @@ impl PolymarketDataClient {
                                     continue;
                                 }
 
-                                let instrument_id = inst.id();
-                                let token_id = Ustr::from(inst.raw_symbol().as_str());
-                                token_meta.insert(
-                                    token_id,
-                                    TokenMeta {
-                                        instrument_id,
-                                        price_precision: inst.price_precision(),
-                                        size_precision: inst.size_precision(),
-                                    },
-                                );
-                                instruments.insert(instrument_id, inst.clone());
+                                cache_instrument(&instruments, &token_meta, &inst);
 
+                                let instrument_id = inst.id();
                                 if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
                                     log::error!(
                                         "Failed to emit new market instrument {instrument_id}: {e}"
@@ -1104,6 +1100,7 @@ impl DataClient for PolymarketDataClient {
         let filters = self.provider.filters();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *POLYMARKET_VENUE;
@@ -1118,7 +1115,7 @@ impl DataClient for PolymarketDataClient {
                     log::info!("Fetched {} instruments from Gamma API", instruments.len());
 
                     for instrument in &instruments {
-                        instruments_cache.insert(instrument.id(), instrument.clone());
+                        cache_instrument(&instruments_cache, &token_meta, instrument);
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1150,6 +1147,7 @@ impl DataClient for PolymarketDataClient {
         let http = self.provider.http_client().clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
         let client_id = request.client_id.unwrap_or(self.client_id);
         let request_id = request.request_id;
         let start = request.start;
@@ -1180,7 +1178,7 @@ impl DataClient for PolymarketDataClient {
             };
 
             if let Some(inst) = instrument {
-                instruments_cache.insert(inst.id(), inst.clone());
+                cache_instrument(&instruments_cache, &token_meta, &inst);
 
                 let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                     request_id,
@@ -1421,7 +1419,13 @@ impl DataClient for PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::BinaryOption,
+        types::{Currency, Price, Quantity},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -1630,5 +1634,121 @@ mod tests {
             rx.try_recv(),
             Ok(HandlerCommand::SubscribeMarket(_))
         ));
+    }
+
+    fn stub_instrument(
+        raw_symbol: &str,
+        price_increment: Price,
+        size_increment: Quantity,
+    ) -> InstrumentAny {
+        let price_precision = price_increment.precision;
+        let size_precision = size_increment.precision;
+        InstrumentAny::BinaryOption(BinaryOption::new(
+            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
+            Symbol::new(raw_symbol),
+            AssetClass::Alternative,
+            Currency::USDC(),
+            UnixNanos::default(),
+            UnixNanos::from(u64::MAX),
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    #[rstest]
+    #[case::p3_s2("token-a", Price::from("0.001"), Quantity::from("0.01"))]
+    #[case::p5_s4("token-b", Price::from("0.00001"), Quantity::from("0.0001"))]
+    fn cache_instrument_writes_both_maps(
+        #[case] raw_symbol: &str,
+        #[case] price_increment: Price,
+        #[case] size_increment: Quantity,
+    ) {
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let token_meta: Arc<DashMap<Ustr, TokenMeta>> = Arc::new(DashMap::new());
+        let inst = stub_instrument(raw_symbol, price_increment, size_increment);
+        let expected_id = inst.id();
+        let expected_token = Ustr::from(raw_symbol);
+        let expected_price_precision = price_increment.precision;
+        let expected_size_precision = size_increment.precision;
+
+        cache_instrument(&instruments, &token_meta, &inst);
+
+        let loaded = instruments.load();
+        let cached = loaded
+            .get(&expected_id)
+            .expect("instrument inserted into live cache");
+        assert_eq!(cached.id(), expected_id);
+        assert_eq!(cached.raw_symbol().as_str(), raw_symbol);
+
+        let meta = token_meta
+            .get(&expected_token)
+            .expect("token_meta inserted for raw_symbol");
+        assert_eq!(meta.instrument_id, expected_id);
+        assert_eq!(meta.price_precision, expected_price_precision);
+        assert_eq!(meta.size_precision, expected_size_precision);
+    }
+
+    #[rstest]
+    fn cache_instrument_overwrites_precisions_on_second_call() {
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let token_meta: Arc<DashMap<Ustr, TokenMeta>> = Arc::new(DashMap::new());
+        let raw_symbol = "token-overwrite";
+
+        let first = stub_instrument(raw_symbol, Price::from("0.01"), Quantity::from("0.1"));
+        cache_instrument(&instruments, &token_meta, &first);
+
+        let second = stub_instrument(raw_symbol, Price::from("0.0001"), Quantity::from("0.001"));
+        cache_instrument(&instruments, &token_meta, &second);
+
+        let meta = token_meta
+            .get(&Ustr::from(raw_symbol))
+            .expect("token_meta present after overwrite");
+        assert_eq!(meta.price_precision, 4);
+        assert_eq!(meta.size_precision, 3);
+        assert_eq!(token_meta.len(), 1);
+        assert_eq!(instruments.load().len(), 1);
+    }
+
+    #[rstest]
+    fn cache_instrument_maintains_dual_cache_invariant() {
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let token_meta: Arc<DashMap<Ustr, TokenMeta>> = Arc::new(DashMap::new());
+
+        let samples = [
+            stub_instrument("token-1", Price::from("0.001"), Quantity::from("0.01")),
+            stub_instrument("token-2", Price::from("0.0001"), Quantity::from("0.01")),
+            stub_instrument("token-3", Price::from("0.00001"), Quantity::from("0.001")),
+        ];
+
+        for inst in &samples {
+            cache_instrument(&instruments, &token_meta, inst);
+        }
+
+        let loaded = instruments.load();
+        assert_eq!(loaded.len(), samples.len());
+        for inst in loaded.values() {
+            let token_id = Ustr::from(inst.raw_symbol().as_str());
+            let meta = token_meta
+                .get(&token_id)
+                .unwrap_or_else(|| panic!("missing token_meta for {token_id}"));
+            assert_eq!(meta.instrument_id, inst.id());
+        }
     }
 }
