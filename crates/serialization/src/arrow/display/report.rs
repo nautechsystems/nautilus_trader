@@ -305,6 +305,38 @@ mod tests {
     }
 
     #[rstest]
+    fn test_encode_order_status_reports_linked_order_ids_round_trip() {
+        let mut report = make_report("AAPL.XNAS", 1_000);
+        report.linked_order_ids = Some(vec![
+            ClientOrderId::from("O-Z"),
+            ClientOrderId::from("O-A"),
+            ClientOrderId::from("O-M"),
+        ]);
+        let batch = encode_order_status_reports(&[report]).unwrap();
+
+        let linked_col = batch
+            .column(16)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert!(!linked_col.is_null(0));
+
+        let parsed: Vec<String> = serde_json::from_str(linked_col.value(0)).unwrap();
+        assert_eq!(parsed, vec!["O-Z", "O-A", "O-M"]);
+    }
+
+    #[rstest]
+    fn test_encode_order_status_reports_linked_order_ids_null_when_absent() {
+        let batch = encode_order_status_reports(&[make_report("AAPL.XNAS", 1_000)]).unwrap();
+        let linked_col = batch
+            .column(16)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert!(linked_col.is_null(0));
+    }
+
+    #[rstest]
     fn test_encode_order_status_reports_nullable_fields() {
         let reports = vec![make_report("AAPL.XNAS", 1_000)];
         let batch = encode_order_status_reports(&reports).unwrap();

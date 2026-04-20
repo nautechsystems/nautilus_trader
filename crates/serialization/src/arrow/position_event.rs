@@ -202,6 +202,69 @@ mod tests {
     }
 
     #[rstest]
+    fn test_position_opened_round_trip() {
+        let event = PositionOpened {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("EMA-CROSS"),
+            instrument_id: InstrumentId::from("EURUSD.SIM"),
+            position_id: PositionId::from("P-001"),
+            account_id: AccountId::from("SIM-001"),
+            opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 150.0,
+            quantity: Quantity::from("150"),
+            last_qty: Quantity::from("150"),
+            last_px: Price::from("1.0525"),
+            currency: Currency::USD(),
+            avg_px_open: 1.0525,
+            event_id: UUID4::default(),
+            ts_event: UnixNanos::from(1_000_000_000),
+            ts_init: UnixNanos::from(1_000_000_001),
+        };
+        let metadata = event.metadata();
+        let batch = PositionOpened::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
+        let decoded = PositionOpened::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![event]);
+    }
+
+    #[rstest]
+    fn test_position_changed_round_trip() {
+        let event = PositionChanged {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("EMA-CROSS"),
+            instrument_id: InstrumentId::from("EURUSD.SIM"),
+            position_id: PositionId::from("P-001"),
+            account_id: AccountId::from("SIM-001"),
+            opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 300.0,
+            quantity: Quantity::from("300"),
+            peak_quantity: Quantity::from("300"),
+            last_qty: Quantity::from("150"),
+            last_px: Price::from("1.0600"),
+            currency: Currency::USD(),
+            avg_px_open: 1.0562,
+            avg_px_close: None,
+            realized_return: 0.0,
+            realized_pnl: None,
+            unrealized_pnl: Money::new(56.25, Currency::USD()),
+            event_id: UUID4::default(),
+            ts_opened: UnixNanos::from(1_000_000_000),
+            ts_event: UnixNanos::from(2_000_000_000),
+            ts_init: UnixNanos::from(2_000_000_001),
+        };
+        let metadata = event.metadata();
+        let batch = PositionChanged::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
+        let decoded =
+            PositionChanged::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![event]);
+    }
+
+    #[rstest]
     fn test_position_closed_round_trip() {
         let event = PositionClosed {
             trader_id: TraderId::from("TRADER-001"),

@@ -147,11 +147,12 @@ impl_snapshot_arrow!(
 mod tests {
     use std::str::FromStr;
 
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{OrderSide, OrderType},
-        identifiers::InstrumentId,
+        enums::{OrderSide, OrderType, PositionSide},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
         orders::OrderTestBuilder,
-        types::{Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -174,6 +175,70 @@ mod tests {
         let batch =
             OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
         let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    fn make_position_snapshot() -> PositionSnapshot {
+        PositionSnapshot {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("EMA-CROSS"),
+            instrument_id: InstrumentId::from("EURUSD.SIM"),
+            position_id: PositionId::from("P-001"),
+            account_id: AccountId::from("SIM-001"),
+            opening_order_id: ClientOrderId::from("O-1"),
+            closing_order_id: Some(ClientOrderId::from("O-2")),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 100.0,
+            quantity: Quantity::from("100"),
+            peak_qty: Quantity::from("100"),
+            quote_currency: Currency::USD(),
+            base_currency: Some(Currency::EUR()),
+            settlement_currency: Currency::USD(),
+            avg_px_open: 1.0500,
+            avg_px_close: Some(1.0600),
+            realized_return: Some(0.0095),
+            realized_pnl: Some(Money::new(100.0, Currency::USD())),
+            unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
+            commissions: vec![Money::new(2.0, Currency::USD())],
+            duration_ns: Some(3_600_000_000_000),
+            ts_opened: UnixNanos::from(1_000_000_000),
+            ts_closed: Some(UnixNanos::from(4_600_000_000)),
+            ts_init: UnixNanos::from(2_000_000_000),
+            ts_last: UnixNanos::from(4_600_000_000),
+        }
+    }
+
+    #[rstest]
+    fn test_position_snapshot_round_trip() {
+        let snapshot = make_position_snapshot();
+        let metadata = snapshot.metadata();
+        let batch =
+            PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
+        let decoded =
+            PositionSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![snapshot]);
+    }
+
+    #[rstest]
+    fn test_position_snapshot_round_trip_null_optionals() {
+        let mut snapshot = make_position_snapshot();
+        snapshot.closing_order_id = None;
+        snapshot.base_currency = None;
+        snapshot.avg_px_close = None;
+        snapshot.realized_return = None;
+        snapshot.realized_pnl = None;
+        snapshot.unrealized_pnl = None;
+        snapshot.duration_ns = None;
+        snapshot.ts_closed = None;
+
+        let metadata = snapshot.metadata();
+        let batch =
+            PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
+        let decoded =
+            PositionSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }

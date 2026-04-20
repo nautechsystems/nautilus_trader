@@ -209,7 +209,13 @@ mod tests {
         assert_eq!(account_id_col.value(0), "SIM-001");
         assert!(!is_reported_col.value(0));
         assert_eq!(ts_event_col.value(0), 1_000_000);
-        assert!(balances_col.value(0).contains("10000"));
+
+        let balances: Vec<serde_json::Value> = serde_json::from_str(balances_col.value(0)).unwrap();
+        assert_eq!(balances.len(), 1);
+        assert_eq!(balances[0]["currency"], "USD");
+        assert!((balances[0]["total"].as_f64().unwrap() - 10_000.0).abs() < 1e-9);
+        assert!((balances[0]["locked"].as_f64().unwrap() - 1_000.0).abs() < 1e-9);
+        assert!((balances[0]["free"].as_f64().unwrap() - 9_000.0).abs() < 1e-9);
     }
 
     #[rstest]

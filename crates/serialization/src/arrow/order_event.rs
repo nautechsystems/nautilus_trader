@@ -346,7 +346,12 @@ impl_order_event_arrow!(OrderFilled, "OrderFilled", ORDER_FILLED_FIELDS);
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::events::order::stubs::{order_filled, order_initialized_buy_limit};
+    use nautilus_model::events::order::stubs::{
+        order_accepted, order_cancel_rejected, order_denied_max_submitted_rate, order_emulated,
+        order_expired, order_filled, order_initialized_buy_limit, order_modify_rejected,
+        order_pending_cancel, order_pending_update, order_rejected_insufficient_margin,
+        order_released, order_submitted, order_triggered, order_updated,
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -376,5 +381,91 @@ mod tests {
         let decoded = OrderFilled::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
+    }
+
+    fn roundtrip<T>(event: T)
+    where
+        T: ArrowSchemaProvider
+            + EncodeToRecordBatch
+            + DecodeTypedFromRecordBatch
+            + Clone
+            + PartialEq
+            + std::fmt::Debug,
+    {
+        let metadata = event.metadata();
+        let batch = T::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
+        let decoded = T::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        assert_eq!(decoded, vec![event]);
+    }
+
+    #[rstest]
+    fn test_order_denied_round_trip(order_denied_max_submitted_rate: OrderDenied) {
+        roundtrip(order_denied_max_submitted_rate);
+    }
+
+    #[rstest]
+    fn test_order_submitted_round_trip(order_submitted: OrderSubmitted) {
+        roundtrip(order_submitted);
+    }
+
+    #[rstest]
+    fn test_order_accepted_round_trip(order_accepted: OrderAccepted) {
+        roundtrip(order_accepted);
+    }
+
+    #[rstest]
+    fn test_order_rejected_round_trip(order_rejected_insufficient_margin: OrderRejected) {
+        roundtrip(order_rejected_insufficient_margin);
+    }
+
+    #[rstest]
+    fn test_order_canceled_round_trip() {
+        use nautilus_model::events::OrderCanceled;
+        roundtrip(OrderCanceled::default());
+    }
+
+    #[rstest]
+    fn test_order_updated_round_trip(order_updated: OrderUpdated) {
+        roundtrip(order_updated);
+    }
+
+    #[rstest]
+    fn test_order_triggered_round_trip(order_triggered: OrderTriggered) {
+        roundtrip(order_triggered);
+    }
+
+    #[rstest]
+    fn test_order_expired_round_trip(order_expired: OrderExpired) {
+        roundtrip(order_expired);
+    }
+
+    #[rstest]
+    fn test_order_pending_update_round_trip(order_pending_update: OrderPendingUpdate) {
+        roundtrip(order_pending_update);
+    }
+
+    #[rstest]
+    fn test_order_pending_cancel_round_trip(order_pending_cancel: OrderPendingCancel) {
+        roundtrip(order_pending_cancel);
+    }
+
+    #[rstest]
+    fn test_order_cancel_rejected_round_trip(order_cancel_rejected: OrderCancelRejected) {
+        roundtrip(order_cancel_rejected);
+    }
+
+    #[rstest]
+    fn test_order_modify_rejected_round_trip(order_modify_rejected: OrderModifyRejected) {
+        roundtrip(order_modify_rejected);
+    }
+
+    #[rstest]
+    fn test_order_emulated_round_trip(order_emulated: OrderEmulated) {
+        roundtrip(order_emulated);
+    }
+
+    #[rstest]
+    fn test_order_released_round_trip(order_released: OrderReleased) {
+        roundtrip(order_released);
     }
 }

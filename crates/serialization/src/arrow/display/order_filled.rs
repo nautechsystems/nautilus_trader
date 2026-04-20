@@ -240,7 +240,7 @@ mod tests {
         assert!((last_px_col.value(0) - 50.25).abs() < 1e-9);
         assert_eq!(ts_event_col.value(0), 1_000);
         assert!(!reconciliation_col.value(0));
-        assert!(commission_col.value(0).contains("10.50"));
+        assert_eq!(commission_col.value(0), "10.50 USD");
     }
 
     #[rstest]

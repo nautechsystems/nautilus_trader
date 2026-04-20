@@ -104,4 +104,24 @@ mod tests {
 
         assert_eq!(decoded, vec![update]);
     }
+
+    #[rstest]
+    fn test_funding_rate_update_round_trip_null_optionals() {
+        let update = FundingRateUpdate::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Decimal::from_str("0.0001").unwrap(),
+            None,
+            None,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+        let metadata = update.metadata();
+        let batch = FundingRateUpdate::encode_batch(&metadata, &[update]).unwrap();
+        let decoded =
+            FundingRateUpdate::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![update]);
+        assert!(decoded[0].interval.is_none());
+        assert!(decoded[0].next_funding_ns.is_none());
+    }
 }

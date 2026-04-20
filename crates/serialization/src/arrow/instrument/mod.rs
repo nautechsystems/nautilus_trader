@@ -657,4 +657,149 @@ mod tests {
             _ => panic!("Decoded instrument type mismatch"),
         }
     }
+
+    fn roundtrip_case(instrument: &InstrumentAny) {
+        use nautilus_model::instruments::Instrument;
+
+        let metadata = instrument.metadata();
+        let record_batch =
+            InstrumentAny::encode_batch(&metadata, std::slice::from_ref(instrument)).unwrap();
+        let decoded = decode_instrument_any_batch(&metadata, &record_batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(Instrument::id(&decoded[0]), Instrument::id(instrument));
+        assert_eq!(
+            Instrument::raw_symbol(&decoded[0]),
+            Instrument::raw_symbol(instrument)
+        );
+        assert_eq!(
+            Instrument::asset_class(&decoded[0]),
+            Instrument::asset_class(instrument)
+        );
+        assert_eq!(
+            Instrument::instrument_class(&decoded[0]),
+            Instrument::instrument_class(instrument)
+        );
+        assert_eq!(
+            Instrument::price_precision(&decoded[0]),
+            Instrument::price_precision(instrument)
+        );
+        assert_eq!(
+            Instrument::size_precision(&decoded[0]),
+            Instrument::size_precision(instrument)
+        );
+        assert_eq!(
+            Instrument::quote_currency(&decoded[0]),
+            Instrument::quote_currency(instrument)
+        );
+        assert_eq!(
+            std::mem::discriminant(&decoded[0]),
+            std::mem::discriminant(instrument),
+            "decoded variant must match encoded variant"
+        );
+    }
+
+    #[rstest]
+    fn test_roundtrip_betting() {
+        use nautilus_model::instruments::stubs::betting;
+        roundtrip_case(&InstrumentAny::Betting(betting()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_binary_option() {
+        use nautilus_model::instruments::stubs::binary_option;
+        roundtrip_case(&InstrumentAny::BinaryOption(binary_option()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_cfd() {
+        use nautilus_model::instruments::stubs::cfd_gold;
+        roundtrip_case(&InstrumentAny::Cfd(cfd_gold()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_commodity() {
+        use nautilus_model::instruments::stubs::commodity_gold;
+        roundtrip_case(&InstrumentAny::Commodity(commodity_gold()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_crypto_future() {
+        use nautilus_model::instruments::stubs::crypto_future_btcusdt;
+        roundtrip_case(&InstrumentAny::CryptoFuture(crypto_future_btcusdt(
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+        )));
+    }
+
+    #[rstest]
+    fn test_roundtrip_crypto_option() {
+        use nautilus_model::instruments::stubs::crypto_option_btc_deribit;
+        roundtrip_case(&InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        )));
+    }
+
+    #[rstest]
+    fn test_roundtrip_crypto_perpetual_inverse() {
+        use nautilus_model::instruments::stubs::xbtusd_bitmex;
+        roundtrip_case(&InstrumentAny::CryptoPerpetual(xbtusd_bitmex()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_crypto_perpetual_linear() {
+        use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
+        roundtrip_case(&InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_futures_contract() {
+        use nautilus_model::instruments::stubs::futures_contract_es;
+        roundtrip_case(&InstrumentAny::FuturesContract(futures_contract_es(
+            None, None,
+        )));
+    }
+
+    #[rstest]
+    fn test_roundtrip_futures_spread() {
+        use nautilus_model::instruments::stubs::futures_spread_es;
+        roundtrip_case(&InstrumentAny::FuturesSpread(futures_spread_es()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_index_instrument() {
+        use nautilus_model::instruments::stubs::index_instrument_spx;
+        roundtrip_case(&InstrumentAny::IndexInstrument(index_instrument_spx()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_option_contract() {
+        use nautilus_model::instruments::stubs::option_contract_appl;
+        roundtrip_case(&InstrumentAny::OptionContract(option_contract_appl()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_option_spread() {
+        use nautilus_model::instruments::stubs::option_spread;
+        roundtrip_case(&InstrumentAny::OptionSpread(option_spread()));
+    }
+
+    #[rstest]
+    fn test_roundtrip_perpetual_contract() {
+        use nautilus_model::instruments::stubs::perpetual_contract_eurusd;
+        roundtrip_case(&InstrumentAny::PerpetualContract(
+            perpetual_contract_eurusd(),
+        ));
+    }
+
+    #[rstest]
+    fn test_roundtrip_tokenized_asset() {
+        use nautilus_model::instruments::stubs::tokenized_asset_aaplx;
+        roundtrip_case(&InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()));
+    }
 }

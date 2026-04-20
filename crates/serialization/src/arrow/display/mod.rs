@@ -31,14 +31,18 @@ pub mod close;
 pub mod delta;
 pub mod depth;
 pub mod index_price;
+pub mod instrument;
 pub mod mark_price;
 pub mod order_filled;
+pub mod position;
 pub mod quote;
 pub mod report;
 pub mod trade;
 
 use arrow::datatypes::{DataType, Field, TimeUnit};
-use nautilus_model::types::{Price, Quantity, fixed::MAX_FLOAT_PRECISION, price::PRICE_ERROR};
+use nautilus_model::types::{
+    Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION, price::PRICE_ERROR,
+};
 use rust_decimal::prelude::ToPrimitive;
 
 /// Upper bound on precision the display encoders accept. Values above this are
@@ -60,6 +64,21 @@ pub(super) fn bool_field(name: &str, nullable: bool) -> Field {
 /// Builds a `Float64` field with the given name and nullability.
 pub(super) fn float64_field(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::Float64, nullable)
+}
+
+/// Builds a `UInt8` field with the given name and nullability.
+pub(super) fn uint8_field(name: &str, nullable: bool) -> Field {
+    Field::new(name, DataType::UInt8, nullable)
+}
+
+/// Builds a `UInt32` field with the given name and nullability.
+pub(super) fn uint32_field(name: &str, nullable: bool) -> Field {
+    Field::new(name, DataType::UInt32, nullable)
+}
+
+/// Builds a `UInt64` field with the given name and nullability.
+pub(super) fn uint64_field(name: &str, nullable: bool) -> Field {
+    Field::new(name, DataType::UInt64, nullable)
 }
 
 /// Builds a `Timestamp(Nanosecond, None)` field with the given name and nullability.
@@ -116,16 +135,36 @@ pub(super) fn quantity_to_f64(quantity: &Quantity) -> f64 {
     }
 }
 
+/// Converts a [`Money`] amount to `f64` for display without panicking.
+///
+/// [`Money::as_f64`] panics under `feature = "defi"` when the currency
+/// precision exceeds [`MAX_FLOAT_PRECISION`] (16); high-precision tokens
+/// (e.g. 18-decimal ERC-20s) would otherwise abort an entire display batch.
+/// This helper guards pathological precisions and falls back to the decimal
+/// path for 17-18 decimal currencies. Returns [`f64::NAN`] if the value is
+/// outside `f64` range.
+pub(super) fn money_to_f64(money: &Money) -> f64 {
+    if money.currency.precision > DISPLAY_MAX_PRECISION {
+        return f64::NAN;
+    }
+
+    if money.currency.precision <= MAX_FLOAT_PRECISION {
+        money.as_f64()
+    } else {
+        money.as_decimal().to_f64().unwrap_or(f64::NAN)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::types::{
-        Price, Quantity,
+        Currency, Money, Price, Quantity,
         price::{ERROR_PRICE, PRICE_ERROR, PRICE_UNDEF},
         quantity::QUANTITY_UNDEF,
     };
     use rstest::rstest;
 
-    use super::{price_to_f64, quantity_to_f64};
+    use super::{money_to_f64, price_to_f64, quantity_to_f64};
 
     #[rstest]
     fn test_price_to_f64_normal_value() {
@@ -189,5 +228,21 @@ mod tests {
             precision: 200,
         };
         assert!(quantity_to_f64(&quantity).is_nan());
+    }
+
+    #[rstest]
+    fn test_money_to_f64_normal_value() {
+        let money = Money::new(123.45, Currency::USD());
+        assert!((money_to_f64(&money) - 123.45).abs() < 1e-9);
+    }
+
+    #[rstest]
+    fn test_money_to_f64_pathological_precision_is_nan() {
+        // Simulates a DeFi currency whose precision exceeds DISPLAY_MAX_PRECISION
+        // so Money::as_f64 would panic under feature = "defi"; we mutate precision
+        // directly since Currency::new rejects values above FIXED_PRECISION.
+        let mut money = Money::new(0.0, Currency::USD());
+        money.currency.precision = 200;
+        assert!(money_to_f64(&money).is_nan());
     }
 }
