@@ -30,7 +30,7 @@ use nautilus_model::{
         OrderStatus, PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
@@ -47,7 +47,6 @@ use super::{
     },
 };
 use crate::common::{
-    consts::BYBIT_VENUE,
     enums::{BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
     parse::{
         get_currency, parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
@@ -977,21 +976,19 @@ pub fn parse_ws_account_state(
             total_dec, locked_dec, currency,
         )?);
 
-        let initial_margin_dec = coin_data.total_position_im;
+        // Sum position IM (reserved by open positions) and order IM (reserved by
+        // pending orders) so the reported initial margin reflects either source.
+        let initial_margin_dec = coin_data.total_position_im + coin_data.total_order_im;
         let maintenance_margin_dec = match &coin_data.total_position_mm {
             Some(mm) if !mm.is_empty() => mm.parse::<Decimal>()?,
             _ => Decimal::ZERO,
         };
 
         if !initial_margin_dec.is_zero() || !maintenance_margin_dec.is_zero() {
-            let margin_instrument_id = InstrumentId::new(
-                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin_data.coin)),
-                *BYBIT_VENUE,
-            );
             margins.push(MarginBalance::new(
                 Money::from_decimal(initial_margin_dec, currency)?,
                 Money::from_decimal(maintenance_margin_dec, currency)?,
-                margin_instrument_id,
+                None,
             ));
         }
     }
@@ -1441,11 +1438,23 @@ mod tests {
         assert!((usdt_balance.free.as_f64() - 9519.89806037).abs() < 1e-6);
         assert!((usdt_balance.locked.as_f64() - 127.8573161).abs() < 1e-6);
 
-        // BTC has zero position margins, USDT has non-zero
-        assert_eq!(state.margins.len(), 1);
-        let usdt_margin = &state.margins[0];
-        assert_eq!(usdt_margin.instrument_id.symbol.as_str(), "ACCOUNT-USDT");
-        assert_eq!(usdt_margin.instrument_id.venue.as_str(), "BYBIT");
+        // BTC has order IM only (no position), USDT has position IM+MM (no orders).
+        assert_eq!(state.margins.len(), 2);
+        assert!(state.margins.iter().all(|m| m.instrument_id.is_none()));
+
+        let btc_margin = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "BTC")
+            .expect("BTC margin missing");
+        assert!((btc_margin.initial.as_f64() - 0.0001).abs() < 1e-8);
+        assert!(btc_margin.maintenance.as_f64().abs() < 1e-9);
+
+        let usdt_margin = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "USDT")
+            .expect("USDT margin missing");
         assert!((usdt_margin.initial.as_f64() - 127.8573161).abs() < 1e-6);
         assert!((usdt_margin.maintenance.as_f64() - 12.78573161).abs() < 1e-6);
 
@@ -1486,8 +1495,14 @@ mod tests {
         // The bug would have calculated: locked = total - availableToWithdraw = 51,333.82 - 0 = 51,333.82 (all locked!)
         // This test verifies that we now correctly use totalOrderIM instead of deriving from availableToWithdraw
 
-        // No position margins in this fixture
-        assert_eq!(state.margins.len(), 0);
+        // The small order reserves 50.028 USDT of initial margin via `totalOrderIM`,
+        // so the account-wide USDT margin must be populated even with no open position.
+        assert_eq!(state.margins.len(), 1);
+        let usdt_margin = &state.margins[0];
+        assert!(usdt_margin.instrument_id.is_none());
+        assert_eq!(usdt_margin.currency.code.as_str(), "USDT");
+        assert!((usdt_margin.initial.as_f64() - 50.028).abs() < 1e-6);
+        assert!(usdt_margin.maintenance.as_f64().abs() < 1e-9);
     }
 
     #[rstest]

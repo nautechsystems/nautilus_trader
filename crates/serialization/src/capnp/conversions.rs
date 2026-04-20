@@ -1281,8 +1281,12 @@ impl<'a> ToCapnp<'a> for MarginBalance {
         let maintenance_builder = builder.reborrow().init_maintenance();
         self.maintenance.to_capnp(maintenance_builder);
 
-        let instrument_builder = builder.init_instrument();
-        self.instrument_id.to_capnp(instrument_builder);
+        // Only set the instrument pointer for per-instrument entries; leave
+        // unset to signal account-wide (cross margin) balances.
+        if let Some(instrument_id) = self.instrument_id {
+            let instrument_builder = builder.init_instrument();
+            instrument_id.to_capnp(instrument_builder);
+        }
     }
 }
 
@@ -1296,8 +1300,12 @@ impl<'a> FromCapnp<'a> for MarginBalance {
         let maintenance_reader = reader.get_maintenance()?;
         let maintenance = Money::from_capnp(maintenance_reader)?;
 
-        let instrument_reader = reader.get_instrument()?;
-        let instrument_id = InstrumentId::from_capnp(instrument_reader)?;
+        let instrument_id = if reader.has_instrument() {
+            let instrument_reader = reader.get_instrument()?;
+            Some(InstrumentId::from_capnp(instrument_reader)?)
+        } else {
+            None
+        };
 
         Ok(Self::new(initial, maintenance, instrument_id))
     }
@@ -4759,10 +4767,21 @@ mod tests {
         let initial = Money::new(500.0, Currency::USD());
         let maintenance = Money::new(250.0, Currency::USD());
         let instrument_id = InstrumentId::from("BTC-USD-PERP.BINANCE");
-        let balance = MarginBalance::new(initial, maintenance, instrument_id);
+        let balance = MarginBalance::new(initial, maintenance, Some(instrument_id));
         let bytes = serialize_margin_balance(&balance).unwrap();
         let decoded = deserialize_margin_balance(&bytes).unwrap();
         assert_eq!(balance, decoded);
+    }
+
+    #[rstest]
+    fn test_margin_balance_account_scope_roundtrip() {
+        let initial = Money::new(500.0, Currency::USD());
+        let maintenance = Money::new(250.0, Currency::USD());
+        let balance = MarginBalance::new(initial, maintenance, None);
+        let bytes = serialize_margin_balance(&balance).unwrap();
+        let decoded = deserialize_margin_balance(&bytes).unwrap();
+        assert_eq!(balance, decoded);
+        assert!(decoded.instrument_id.is_none());
     }
 
     // Identifier round-trip coverage

@@ -775,12 +775,12 @@ pub fn parse_account_state(
     }
 
     let mut balances: Vec<AccountBalance> = aggregated
-        .into_values()
-        .map(|(free, locked)| {
+        .into_iter()
+        .map(|(currency, (free, locked))| {
             let total = free + locked;
-            AccountBalance::new(total, locked, free)
+            AccountBalance::from_total_and_locked(total.as_decimal(), locked.as_decimal(), currency)
         })
-        .collect();
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     if balances.is_empty() {
         let fallback_currency = Currency::USD();

@@ -2103,7 +2103,7 @@ impl HyperliquidHttpClient {
                 Error::bad_request(format!("Failed to parse spot clearinghouse state: {e}"))
             })?;
 
-        let (balances, _margins) =
+        let (balances, margins) =
             parse_combined_account_balances_and_margins(&perp_state, &spot_state)
                 .map_err(|e| Error::decode(e.to_string()))?;
 
@@ -2111,8 +2111,8 @@ impl HyperliquidHttpClient {
             account_id,
             AccountType::Margin,
             balances,
-            vec![], // Margins can be added later if needed
-            true,   // reported
+            margins,
+            true, // reported
             UUID4::new(),
             ts_init,
             ts_init,

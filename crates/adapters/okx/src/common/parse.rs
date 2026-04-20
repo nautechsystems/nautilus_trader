@@ -43,7 +43,7 @@ use nautilus_model::{
     },
     events::AccountState,
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
     },
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -2092,7 +2092,8 @@ pub fn parse_account_state(
 
     let mut margins = Vec::new();
 
-    // OKX provides account-level margin requirements (not per instrument)
+    // OKX reports aggregate cross-margin requirements (`imr` / `mmr`) in USD terms;
+    // emit as an account-wide margin entry keyed by USD.
     if !okx_account.imr.is_empty() && !okx_account.mmr.is_empty() {
         match (
             Decimal::from_str(&okx_account.imr),
@@ -2101,8 +2102,6 @@ pub fn parse_account_state(
             (Ok(imr_dec), Ok(mmr_dec)) => {
                 if !imr_dec.is_zero() || !mmr_dec.is_zero() {
                     let margin_currency = Currency::USD();
-                    let margin_instrument_id =
-                        InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("OKX"));
 
                     let initial_margin = Money::from_decimal(imr_dec, margin_currency)
                         .unwrap_or_else(|e| {
@@ -2115,13 +2114,7 @@ pub fn parse_account_state(
                             Money::zero(margin_currency)
                         });
 
-                    let margin_balance = MarginBalance::new(
-                        initial_margin,
-                        maintenance_margin,
-                        margin_instrument_id,
-                    );
-
-                    margins.push(margin_balance);
+                    margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
                 }
             }
             (Err(e1), _) => {
@@ -3078,8 +3071,7 @@ mod tests {
         assert_eq!(margin.initial, Money::new(500.25, Currency::USD()));
         assert_eq!(margin.maintenance, Money::new(250.75, Currency::USD()));
         assert_eq!(margin.currency, Currency::USD());
-        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
-        assert_eq!(margin.instrument_id.venue.as_str(), "OKX");
+        assert!(margin.instrument_id.is_none());
 
         // Check the USDT balance details
         let usdt_balance = &account_state.balances[0];

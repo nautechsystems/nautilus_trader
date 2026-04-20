@@ -18,8 +18,10 @@ from decimal import Decimal
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.margin_models cimport MarginModel
 from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport MarginBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -30,6 +32,7 @@ cdef class MarginAccount(Account):
     cdef MarginModel _margin_model
     cdef dict _leverages
     cdef dict _margins
+    cdef dict _account_margins
 
     cdef readonly default_leverage
     """The accounts default leverage setting.\n\n:returns: `Decimal`"""
@@ -39,11 +42,19 @@ cdef class MarginAccount(Account):
     cpdef dict margins(self)
     cpdef dict margins_init(self)
     cpdef dict margins_maint(self)
+    cpdef dict account_margins(self)
+    cpdef dict account_margins_init(self)
+    cpdef dict account_margins_maint(self)
     cpdef dict leverages(self)
     cpdef object leverage(self, InstrumentId instrument_id)
     cpdef Money margin_init(self, InstrumentId instrument_id)
     cpdef Money margin_maint(self, InstrumentId instrument_id)
     cpdef MarginBalance margin(self, InstrumentId instrument_id)
+    cpdef MarginBalance margin_for_currency(self, Currency currency)
+    cpdef Money margin_init_for_currency(self, Currency currency)
+    cpdef Money margin_maint_for_currency(self, Currency currency)
+    cpdef Money total_margin_init(self, Currency currency)
+    cpdef Money total_margin_maint(self, Currency currency)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -56,6 +67,9 @@ cdef class MarginAccount(Account):
     cpdef void clear_margin_init(self, InstrumentId instrument_id)
     cpdef void clear_margin_maint(self, InstrumentId instrument_id)
     cpdef void clear_margin(self, InstrumentId instrument_id)
+    cpdef void clear_account_margin(self, Currency currency)
+
+    cdef void _route_margins_from_event(self, AccountState event)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 

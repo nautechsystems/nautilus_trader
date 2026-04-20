@@ -386,58 +386,35 @@ pub fn parse_account_balance(margin: &BitmexMarginMsg) -> AccountBalance {
         }
     };
 
-    // BitMEX returns values in satoshis for BTC (XBt) or microunits for stablecoins
-    let divisor = match margin.currency.as_str() {
-        "XBt" => 100_000_000.0,                              // Satoshis to BTC
-        "USDt" | "LAMp" | "MAMUSd" | "RLUSd" => 1_000_000.0, // Microunits to units
-        _ => 1.0,
-    };
+    // BitMEX returns values in satoshis for BTC (XBt) or microunits for stablecoins.
+    let divisor = bitmex_currency_divisor(margin.currency.as_str());
+    let to_dec = |raw: i64| Decimal::from(raw) / divisor;
 
-    // Wallet balance is the actual asset amount
-    let total = if let Some(wallet_balance) = margin.wallet_balance {
-        Money::new(wallet_balance as f64 / divisor, currency)
-    } else if let Some(margin_balance) = margin.margin_balance {
-        Money::new(margin_balance as f64 / divisor, currency)
+    // Wallet balance is the actual asset amount. Fall back progressively.
+    let total_dec = margin
+        .wallet_balance
+        .map(to_dec)
+        .or_else(|| margin.margin_balance.map(to_dec))
+        .or_else(|| margin.available_margin.map(to_dec))
+        .unwrap_or(Decimal::ZERO);
+
+    // Free balance: prefer withdrawable_margin, then available_margin, then
+    // derive as `total - init_margin`. `from_total_and_free` clamps `free`
+    // into `[0, total]` for non-negative totals, so no manual clamping here.
+    let free_dec = if let Some(withdrawable) = margin.withdrawable_margin {
+        to_dec(withdrawable)
     } else if let Some(available) = margin.available_margin {
-        // Fallback when only available_margin is provided
-        Money::new(available as f64 / divisor, currency)
+        to_dec(available)
     } else {
-        Money::new(0.0, currency)
+        let margin_used = margin.init_margin.map_or(Decimal::ZERO, to_dec);
+        total_dec - margin_used
     };
 
-    // Calculate how much is locked for margin requirements
-    let margin_used = if let Some(init_margin) = margin.init_margin {
-        Money::new(init_margin as f64 / divisor, currency)
-    } else {
-        Money::new(0.0, currency)
-    };
-
-    // Free balance: prefer withdrawable_margin, then available_margin, then calculate
-    let free = if let Some(withdrawable) = margin.withdrawable_margin {
-        Money::new(withdrawable as f64 / divisor, currency)
-    } else if let Some(available) = margin.available_margin {
-        // Available margin already accounts for orders and positions
-        let available_money = Money::new(available as f64 / divisor, currency);
-        // Ensure it doesn't exceed total (can happen with unrealized PnL)
-        if available_money > total {
-            total
-        } else {
-            available_money
-        }
-    } else {
-        // Fallback: free = total - init_margin
-        let calculated_free = total - margin_used;
-        if calculated_free < Money::new(0.0, currency) {
-            Money::new(0.0, currency)
-        } else {
-            calculated_free
-        }
-    };
-
-    // Locked is what's being used for margin
-    let locked = total - free;
-
-    AccountBalance::new(total, locked, free)
+    AccountBalance::from_total_and_free(total_dec, free_dec, currency).unwrap_or_else(|e| {
+        log::error!("Failed to build BitMEX account balance: {e}");
+        let zero = Money::zero(currency);
+        AccountBalance::new(zero, zero, zero)
+    })
 }
 
 /// Parses a BitMEX margin message into a Nautilus account state.
@@ -453,7 +430,6 @@ pub fn parse_account_state(
     let balance = parse_account_balance(margin);
     let balances = vec![balance];
 
-    let currency_str = map_bitmex_currency(margin.currency.as_str());
     let currency = balance.total.currency;
     let mut margins = Vec::new();
 
@@ -462,15 +438,12 @@ pub fn parse_account_state(
     let maintenance_dec = Decimal::from(margin.maint_margin.unwrap_or(0).max(0)) / divisor;
 
     if !initial_dec.is_zero() || !maintenance_dec.is_zero() {
-        let margin_instrument_id = InstrumentId::new(
-            Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
-            *BITMEX_VENUE,
-        );
+        // BitMEX reports cross-margin aggregates per collateral currency.
         margins.push(MarginBalance::new(
             Money::from_decimal(initial_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
             Money::from_decimal(maintenance_dec, currency)
                 .unwrap_or_else(|_| Money::zero(currency)),
-            margin_instrument_id,
+            None,
         ));
     }
 
@@ -729,6 +702,53 @@ mod tests {
         let usdt_margin = &account_state.margins[0];
         assert_eq!(usdt_margin.initial.as_f64(), 0.5); // 500000 microunits
         assert_eq!(usdt_margin.maintenance.as_f64(), 0.25); // 250000 microunits
+    }
+
+    #[rstest]
+    fn test_parse_account_balance_falls_back_to_margin_balance_when_wallet_absent() {
+        // Exercises the second rung of the fallback chain in `parse_account_balance`
+        // (wallet_balance → margin_balance → available_margin → 0). Without this
+        // test a swap that skipped the margin_balance branch silently passes.
+        let margin_msg = BitmexMarginMsg {
+            account: 123456,
+            currency: Ustr::from("XBt"),
+            risk_limit: None,
+            amount: None,
+            prev_realised_pnl: None,
+            gross_comm: None,
+            gross_open_cost: None,
+            gross_open_premium: None,
+            gross_exec_cost: None,
+            gross_mark_value: None,
+            risk_value: None,
+            init_margin: Some(20000),
+            maint_margin: Some(10000),
+            target_excess_margin: None,
+            realised_pnl: None,
+            unrealised_pnl: None,
+            wallet_balance: None,
+            margin_balance: Some(5_010_000),
+            margin_leverage: None,
+            margin_used_pcnt: None,
+            excess_margin: None,
+            available_margin: Some(4_980_000),
+            withdrawable_margin: Some(4_900_000),
+            maker_fee_discount: None,
+            taker_fee_discount: None,
+            timestamp: chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap(),
+            foreign_margin_balance: None,
+            foreign_requirement: None,
+        };
+
+        let balance = parse_account_balance(&margin_msg);
+
+        assert_eq!(balance.currency, Currency::from("XBT"));
+        // total sourced from margin_balance (5_010_000 satoshis = 0.0501 XBT)
+        assert!((balance.total.as_f64() - 0.0501).abs() < 1e-9);
+        // free preferred from withdrawable_margin (4_900_000 satoshis = 0.049 XBT)
+        assert!((balance.free.as_f64() - 0.049).abs() < 1e-9);
+        // locked derived centrally as total − free = 0.0011 XBT
+        assert!((balance.locked.as_f64() - 0.0011).abs() < 1e-9);
     }
 
     #[rstest]

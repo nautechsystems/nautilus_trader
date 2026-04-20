@@ -15,6 +15,9 @@ Released on TBD (UTC).
 - Added missing config values to `LiveExecEngineConfig` (#3841), thanks @Javdu10
 - Added `calculate_commission` to `ExecutionClient` for venue-specific reconciliation fills
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
+- Added `MarginAccount.margin_for_currency` + `margin_init/maint_for_currency` helpers for cross-margin queries
+- Added `MarginAccount.total_margin_init(currency)` / `total_margin_maint(currency)` summing both margin buckets
+- Added `MarginAccount.account_margins`, `account_margins_init/maint`, and `clear_account_margin` accessors
 
 ### Breaking Changes
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
@@ -32,11 +35,16 @@ Released on TBD (UTC).
 - Changed Binance USD-M Futures WebSocket URLs from `/ws` to `/market/ws` and `/private/ws`
 - Changed Cap'n Proto and SBE wire formats to preserve `Option` state (unstable, may change)
 - Changed Python and Serde-backed Rust config decoding to reject unknown fields, so stale or misspelled keys now fail fast during config parsing
+- Removed synthetic `ACCOUNT-*` placeholders from margin adapters; `MarginBalance` emits with currency only
+- Changed `MarginBalance.instrument_id` to optional; `None` marks account-wide (cross margin) entries keyed by currency
+- Changed `MarginAccount.margins_init`/`margins_maint` to per-instrument only; use `account_margins_*` for cross margin
+- Changed Binance Futures COIN-M to emit one `MarginBalance` per base coin (previously hardcoded USDT)
 - Renamed Python `DatabaseConfig.timeout` to `connection_timeout` and `response_timeout` to match the Redis/PyO3 wire schema
 
 ### Security
 
 ### Fixes
+- Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
 - Fixed `stop_timer` in `TimeBarAggregator` (#3822), thanks @faysou
 - Fixed `RiskEngine` applying base `min_quantity`/`max_quantity` bounds to quote-denominated orders
 - Fixed backtest `OrderMatchingEngine` treating `quote_quantity=True` orders as base quantity; the quote notional is now converted to a base quantity before fill simulation (#3873), thanks for reporting @fedoraiver
@@ -73,6 +81,7 @@ Released on TBD (UTC).
 - Fixed Bybit `load_all_async` dropping `base_coin` filter for options (#3865), thanks for reporting @Baerenstein
 - Fixed Bybit `InstrumentStatus` messages silently dropped instead of forwarded to the data engine
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
+- Fixed Bybit margin missing for accounts with orders but no positions (#3725), thanks for reporting @marco-rigoni
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin
 - Fixed dYdX `generate_order_status_report` fetching only the first order and missing later matches in the response
 - Fixed dYdX orderbook snapshots missing `F_SNAPSHOT` flag on deltas; empty-book Clear now emits `F_SNAPSHOT | F_LAST`
@@ -88,6 +97,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid order status query for closed orders (#3879), thanks for reporting @pusteckiy
 - Fixed Hyperliquid batch cancel silently dropping per-item errors (#3879), thanks for reporting @pusteckiy
 - Fixed Hyperliquid Rust `query_order` handler to emit status reports (#3879), thanks for reporting @pusteckiy
+- Fixed Hyperliquid `request_account_state` discarding parsed margins (#3725), thanks for reporting @marco-rigoni
 - Fixed IB Gateway Docker image failing on ARM64 hosts (#3813), thanks for reporting @Baki-0501
 - Fixed Interactive Brokers rejecting negative average fill price on combo/spread net-credit fills (#3884), thanks @faysou
 - Fixed Interactive Brokers position reconciliation `TypeError` when `priceMagnifier` is `None` (#3885), thanks @davidsblom
@@ -141,6 +151,8 @@ Released on TBD (UTC).
 - Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
 - Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
 - Added debug logging to dYdX `generate_order_status_report` showing filter scope and `page_full` on `None` results
+- Added per-currency account-wide margin storage to `MarginAccount`, routing event margins by `instrument_id` presence
+- Standardized margin emission convention across live derivatives adapters to use currency-keyed `MarginBalance` entries
 
 ### Documentation Updates
 - Added Polymarket Python and Rust adapter config tables and updated rate limits

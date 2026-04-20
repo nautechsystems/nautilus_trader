@@ -137,7 +137,7 @@ use nautilus_model::{
     },
     events::account::state::AccountState,
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, Venue, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, Symbol, TradeId, VenueOrderId,
     },
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture, crypto_option::CryptoOption,
@@ -1050,35 +1050,33 @@ pub fn parse_account_state(
     let mut margins = Vec::new();
 
     for coin in &wallet_balance.coin {
-        let initial_margin_f64 = match &coin.total_position_im {
+        // Position IM is reserved against open positions; order IM is reserved against
+        // pending orders. Sum both so an account that only has open orders still
+        // reports a non-zero initial margin.
+        let position_im_f64 = match &coin.total_position_im {
             Some(im) if !im.is_empty() => im.parse::<f64>()?,
             _ => 0.0,
         };
+        let order_im_f64 = match &coin.total_order_im {
+            Some(im) if !im.is_empty() => im.parse::<f64>()?,
+            _ => 0.0,
+        };
+        let initial_margin_f64 = position_im_f64 + order_im_f64;
 
         let maintenance_margin_f64 = match &coin.total_position_mm {
             Some(mm) if !mm.is_empty() => mm.parse::<f64>()?,
             _ => 0.0,
         };
 
-        let currency = get_currency(&coin.coin);
-
-        // Only create margin balance if there are actual margin requirements
-        if initial_margin_f64 > 0.0 || maintenance_margin_f64 > 0.0 {
-            let initial_margin = Money::new(initial_margin_f64, currency);
-            let maintenance_margin = Money::new(maintenance_margin_f64, currency);
-
-            // Create a synthetic instrument_id for account-level margins
-            let margin_instrument_id = InstrumentId::new(
-                Symbol::from_str_unchecked(format!("ACCOUNT-{}", coin.coin)),
-                Venue::new("BYBIT"),
-            );
-
-            margins.push(MarginBalance::new(
-                initial_margin,
-                maintenance_margin,
-                margin_instrument_id,
-            ));
+        if initial_margin_f64 == 0.0 && maintenance_margin_f64 == 0.0 {
+            continue;
         }
+
+        let currency = get_currency(&coin.coin);
+        let initial_margin = Money::new(initial_margin_f64, currency);
+        let maintenance_margin = Money::new(maintenance_margin_f64, currency);
+
+        margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
     let account_type = AccountType::Margin;

@@ -128,28 +128,30 @@ impl AccountState {
             }
         }
 
-        // Compare margins by instrument_id
-        let self_margins: HashMap<InstrumentId, &MarginBalance> = self
+        // Compare margins by (instrument_id, currency) so that account-wide
+        // entries (instrument_id = None) for different collateral currencies
+        // do not collide.
+        let self_margins: HashMap<(Option<InstrumentId>, Currency), &MarginBalance> = self
             .margins
             .iter()
-            .map(|margin| (margin.instrument_id, margin))
+            .map(|margin| ((margin.instrument_id, margin.currency), margin))
             .collect();
 
-        let other_margins: HashMap<InstrumentId, &MarginBalance> = other
+        let other_margins: HashMap<(Option<InstrumentId>, Currency), &MarginBalance> = other
             .margins
             .iter()
-            .map(|margin| (margin.instrument_id, margin))
+            .map(|margin| ((margin.instrument_id, margin.currency), margin))
             .collect();
 
         // Check if all margins are equal
-        for (instrument_id, self_margin) in &self_margins {
-            match other_margins.get(instrument_id) {
+        for (key, self_margin) in &self_margins {
+            match other_margins.get(key) {
                 Some(other_margin) => {
                     if self_margin != other_margin {
                         return false;
                     }
                 }
-                None => return false, // Instrument missing in other
+                None => return false, // Entry missing in other
             }
         }
 
@@ -300,7 +302,7 @@ mod tests {
         let different_margin = MarginBalance::new(
             Money::new(10000.0, usd),
             Money::new(40000.0, usd),
-            instrument_id,
+            Some(instrument_id),
         );
         state2.margins = vec![different_margin];
         assert!(!state1.has_same_balances_and_margins(&state2));
@@ -316,7 +318,7 @@ mod tests {
         let different_margin = MarginBalance::new(
             Money::new(5000.0, usd),
             Money::new(20000.0, usd),
-            different_instrument_id,
+            Some(different_instrument_id),
         );
         state2.margins = vec![different_margin];
         assert!(!state1.has_same_balances_and_margins(&state2));
@@ -332,7 +334,7 @@ mod tests {
         let additional_margin = MarginBalance::new(
             Money::new(3000.0, usd),
             Money::new(15000.0, usd),
-            additional_instrument_id,
+            Some(additional_instrument_id),
         );
         state2.margins.push(additional_margin);
         assert!(!state1.has_same_balances_and_margins(&state2));
@@ -401,12 +403,12 @@ mod tests {
             MarginBalance::new(
                 Money::new(5000.0, usd),
                 Money::new(20000.0, usd),
-                btc_instrument,
+                Some(btc_instrument),
             ),
             MarginBalance::new(
                 Money::new(3000.0, usd),
                 Money::new(15000.0, usd),
-                eth_instrument,
+                Some(eth_instrument),
             ),
         ];
 

@@ -60,6 +60,7 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     spot_fails: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -71,6 +72,7 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
@@ -170,24 +172,29 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             let custom = state.frontend_open_orders_response.lock().await;
             Json(custom.clone().unwrap_or(json!([]))).into_response()
         }
-        "clearinghouseState" => Json(json!({
-            "marginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMarginSummary": {
-                "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
-                "totalNtlPos": "0.0",
-                "totalRawUsd": "10000.0"
-            },
-            "crossMaintenanceMarginUsed": "0.0",
-            "withdrawable": "10000.0",
-            "assetPositions": []
-        }))
-        .into_response(),
+        "clearinghouseState" => {
+            let custom = state.clearinghouse_response.lock().await;
+            let body = custom.clone().unwrap_or_else(|| {
+                json!({
+                    "marginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMarginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMaintenanceMarginUsed": "0.0",
+                    "withdrawable": "10000.0",
+                    "assetPositions": []
+                })
+            });
+            Json(body).into_response()
+        }
         "spotClearinghouseState" => {
             if state.spot_fails.load(Ordering::Relaxed) {
                 return (
@@ -945,6 +952,58 @@ async fn test_user_fills_request_includes_user_parameter() {
         "userFills"
     );
     assert_eq!(request_body.get("user").unwrap().as_str().unwrap(), user);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_preserves_parsed_margins() {
+    // Regression: the HTTP client previously discarded parsed margins by passing
+    // `vec![]` into `AccountState::new`. Verify that a non-zero `totalMarginUsed`
+    // surfaces as a USDC account-wide margin on the returned `AccountState`.
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "marginSummary": {
+            "accountValue": "10000.0",
+            "totalMarginUsed": "1250.0",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "10000.0"
+        },
+        "crossMarginSummary": {
+            "accountValue": "10000.0",
+            "totalMarginUsed": "1250.0",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "10000.0"
+        },
+        "crossMaintenanceMarginUsed": "0.0",
+        "withdrawable": "8750.0",
+        "assetPositions": []
+    }));
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(
+        account_state.margins.len(),
+        1,
+        "parsed margins must not be discarded by the HTTP client",
+    );
+    let margin = &account_state.margins[0];
+    assert!(
+        margin.instrument_id.is_none(),
+        "Hyperliquid emits account-wide (cross margin) entries, not per-instrument",
+    );
+    assert_eq!(margin.currency.code.as_str(), "USDC");
+    assert_eq!(margin.initial.as_f64(), 1250.0);
+    assert_eq!(margin.maintenance.as_f64(), 1250.0);
 }
 
 fn create_test_client(addr: &SocketAddr) -> TestHttpClient {

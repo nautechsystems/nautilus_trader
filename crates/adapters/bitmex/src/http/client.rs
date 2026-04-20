@@ -46,7 +46,7 @@ use nautilus_model::{
         PriceType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
     instruments::{Instrument as InstrumentTrait, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{MarginBalance, Money, Price, Quantity},
@@ -77,15 +77,13 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_VENUE},
+        consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL},
         credential::{Credential, credential_env_vars},
         enums::{
             BitmexContingencyType, BitmexEnvironment, BitmexExecInstruction, BitmexOrderStatus,
             BitmexOrderType, BitmexPegPriceType, BitmexSide, BitmexTimeInForce,
         },
-        parse::{
-            bitmex_currency_divisor, map_bitmex_currency, parse_account_balance, quantity_to_u32,
-        },
+        parse::{bitmex_currency_divisor, parse_account_balance, quantity_to_u32},
     },
     http::{
         parse::{
@@ -1516,17 +1514,13 @@ impl BitmexHttpClient {
 
             if !initial_dec.is_zero() || !maintenance_dec.is_zero() {
                 let currency = balance.total.currency;
-                let currency_str = map_bitmex_currency(margin_msg.currency.as_str());
-                let margin_instrument_id = InstrumentId::new(
-                    Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
-                    *BITMEX_VENUE,
-                );
+                // BitMEX reports cross-margin aggregates per collateral currency.
                 margins_vec.push(MarginBalance::new(
                     Money::from_decimal(initial_dec, currency)
                         .unwrap_or_else(|_| Money::zero(currency)),
                     Money::from_decimal(maintenance_dec, currency)
                         .unwrap_or_else(|_| Money::zero(currency)),
-                    margin_instrument_id,
+                    None,
                 ));
             }
 

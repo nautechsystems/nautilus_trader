@@ -66,26 +66,51 @@ use crate::{
 pub struct MarginAccount {
     pub base: BaseAccount,
     pub leverages: AHashMap<InstrumentId, Decimal>,
+    /// Per-instrument margin balances (isolated margin, calculated margin in
+    /// backtest mode). Entries here have a concrete `instrument_id`.
     pub margins: AHashMap<InstrumentId, MarginBalance>,
+    /// Account-wide (cross margin) margin balances keyed by collateral currency.
+    /// Populated from `AccountState.margins` entries where `instrument_id` is
+    /// `None`. Most derivatives venues in cross-margin mode report here.
+    pub account_margins: AHashMap<Currency, MarginBalance>,
     pub default_leverage: Decimal,
     #[serde(skip, default = "MarginModelAny::default")]
     margin_model: MarginModelAny,
+}
+
+fn split_event_margins(
+    event: &AccountState,
+) -> (
+    AHashMap<InstrumentId, MarginBalance>,
+    AHashMap<Currency, MarginBalance>,
+) {
+    let mut per_instrument: AHashMap<InstrumentId, MarginBalance> = AHashMap::new();
+    let mut per_currency: AHashMap<Currency, MarginBalance> = AHashMap::new();
+
+    for margin in &event.margins {
+        match margin.instrument_id {
+            Some(instrument_id) => {
+                per_instrument.insert(instrument_id, *margin);
+            }
+            None => {
+                per_currency.insert(margin.currency, *margin);
+            }
+        }
+    }
+    (per_instrument, per_currency)
 }
 
 impl MarginAccount {
     /// Creates a new [`MarginAccount`] instance.
     #[must_use]
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
-        let margins = event
-            .margins
-            .iter()
-            .map(|margin| (margin.instrument_id, *margin))
-            .collect();
+        let (margins, account_margins) = split_event_margins(&event);
 
         Self {
             base: BaseAccount::new(event, calculate_account_state),
             leverages: AHashMap::new(),
             margins,
+            account_margins,
             default_leverage: Decimal::ONE,
             margin_model: MarginModelAny::default(),
         }
@@ -145,20 +170,36 @@ impl MarginAccount {
 
     #[must_use]
     pub fn initial_margins(&self) -> AHashMap<InstrumentId, Money> {
-        let mut initial_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
-        self.margins.values().for_each(|margin_balance| {
-            initial_margins.insert(margin_balance.instrument_id, margin_balance.initial);
-        });
-        initial_margins
+        self.margins
+            .values()
+            .filter_map(|margin| margin.instrument_id.map(|id| (id, margin.initial)))
+            .collect()
     }
 
     #[must_use]
     pub fn maintenance_margins(&self) -> AHashMap<InstrumentId, Money> {
-        let mut maintenance_margins: AHashMap<InstrumentId, Money> = AHashMap::new();
-        self.margins.values().for_each(|margin_balance| {
-            maintenance_margins.insert(margin_balance.instrument_id, margin_balance.maintenance);
-        });
-        maintenance_margins
+        self.margins
+            .values()
+            .filter_map(|margin| margin.instrument_id.map(|id| (id, margin.maintenance)))
+            .collect()
+    }
+
+    /// Returns all account-wide initial margins keyed by currency.
+    #[must_use]
+    pub fn account_initial_margins(&self) -> AHashMap<Currency, Money> {
+        self.account_margins
+            .values()
+            .map(|margin| (margin.currency, margin.initial))
+            .collect()
+    }
+
+    /// Returns all account-wide maintenance margins keyed by currency.
+    #[must_use]
+    pub fn account_maintenance_margins(&self) -> AHashMap<Currency, Money> {
+        self.account_margins
+            .values()
+            .map(|margin| (margin.currency, margin.maintenance))
+            .collect()
     }
 
     /// Updates the initial margin for the specified instrument.
@@ -175,7 +216,7 @@ impl MarginAccount {
                 MarginBalance::new(
                     margin_init,
                     Money::new(0.0, margin_init.currency),
-                    instrument_id,
+                    Some(instrument_id),
                 ),
             );
         }
@@ -215,7 +256,7 @@ impl MarginAccount {
                 MarginBalance::new(
                     Money::new(0.0, margin_maintenance.currency),
                     margin_maintenance,
-                    instrument_id,
+                    Some(instrument_id),
                 ),
             );
         }
@@ -243,10 +284,81 @@ impl MarginAccount {
         self.margins.get(instrument_id).copied()
     }
 
-    /// Updates the margin balance for the specified instrument with both initial and maintenance.
+    /// Returns the account-wide margin balance for the specified collateral currency.
+    #[must_use]
+    pub fn account_margin(&self, currency: &Currency) -> Option<MarginBalance> {
+        self.account_margins.get(currency).copied()
+    }
+
+    /// Returns the account-wide initial margin for the specified collateral currency.
+    #[must_use]
+    pub fn account_initial_margin(&self, currency: &Currency) -> Option<Money> {
+        self.account_margins.get(currency).map(|m| m.initial)
+    }
+
+    /// Returns the account-wide maintenance margin for the specified collateral currency.
+    #[must_use]
+    pub fn account_maintenance_margin(&self, currency: &Currency) -> Option<Money> {
+        self.account_margins.get(currency).map(|m| m.maintenance)
+    }
+
+    /// Returns the total initial margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[must_use]
+    pub fn total_initial_margin(&self, currency: Currency) -> Money {
+        let mut raw: MoneyRaw = 0;
+
+        for margin in self.margins.values() {
+            if margin.currency == currency {
+                raw = raw.saturating_add(margin.initial.raw);
+            }
+        }
+
+        for margin in self.account_margins.values() {
+            if margin.currency == currency {
+                raw = raw.saturating_add(margin.initial.raw);
+            }
+        }
+
+        Money::from_raw(raw, currency)
+    }
+
+    /// Returns the total maintenance margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[must_use]
+    pub fn total_maintenance_margin(&self, currency: Currency) -> Money {
+        let mut raw: MoneyRaw = 0;
+
+        for margin in self.margins.values() {
+            if margin.currency == currency {
+                raw = raw.saturating_add(margin.maintenance.raw);
+            }
+        }
+
+        for margin in self.account_margins.values() {
+            if margin.currency == currency {
+                raw = raw.saturating_add(margin.maintenance.raw);
+            }
+        }
+
+        Money::from_raw(raw, currency)
+    }
+
+    /// Updates the margin balance for the specified instrument or collateral.
+    ///
+    /// When `margin_balance.instrument_id` is `Some`, the entry is stored as a
+    /// per-instrument margin. When `None`, the entry is stored as an
+    /// account-wide margin keyed by `margin_balance.currency`.
     pub fn update_margin(&mut self, margin_balance: MarginBalance) {
-        self.margins
-            .insert(margin_balance.instrument_id, margin_balance);
+        match margin_balance.instrument_id {
+            Some(instrument_id) => {
+                self.margins.insert(instrument_id, margin_balance);
+            }
+            None => {
+                self.account_margins
+                    .insert(margin_balance.currency, margin_balance);
+            }
+        }
         self.recalculate_balance(margin_balance.currency);
     }
 
@@ -254,6 +366,13 @@ impl MarginAccount {
     pub fn clear_margin(&mut self, instrument_id: InstrumentId) {
         if let Some(margin_balance) = self.margins.remove(&instrument_id) {
             self.recalculate_balance(margin_balance.currency);
+        }
+    }
+
+    /// Clears the account-wide margin for the specified collateral currency.
+    pub fn clear_account_margin(&mut self, currency: Currency) {
+        if self.account_margins.remove(&currency).is_some() {
+            self.recalculate_balance(currency);
         }
     }
 
@@ -324,17 +443,26 @@ impl MarginAccount {
 
         let mut total_margin: MoneyRaw = 0;
 
+        let accumulate = |raw: MoneyRaw, margin: &MarginBalance| -> MoneyRaw {
+            raw.checked_add(margin.initial.raw)
+                .and_then(|sum| sum.checked_add(margin.maintenance.raw))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Margin calculation overflow for currency {}: total would exceed maximum",
+                        currency.code
+                    )
+                })
+        };
+
         for margin in self.margins.values() {
             if margin.currency == currency {
-                total_margin = total_margin
-                    .checked_add(margin.initial.raw)
-                    .and_then(|sum| sum.checked_add(margin.maintenance.raw))
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Margin calculation overflow for currency {}: total would exceed maximum",
-                            currency.code
-                        )
-                    });
+                total_margin = accumulate(total_margin, margin);
+            }
+        }
+
+        for margin in self.account_margins.values() {
+            if margin.currency == currency {
+                total_margin = accumulate(total_margin, margin);
             }
         }
 
@@ -449,13 +577,10 @@ impl Account for MarginAccount {
     }
 
     fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
-        let margins = event
-            .margins
-            .iter()
-            .map(|margin| (margin.instrument_id, *margin))
-            .collect();
+        let (per_instrument, per_currency) = split_event_margins(&event);
         self.base_apply(event);
-        self.margins = margins;
+        self.margins = per_instrument;
+        self.account_margins = per_currency;
         Ok(())
     }
 
@@ -634,12 +759,14 @@ mod tests {
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(margin_account.balances_locked(), balances_locked_expected);
         let margin_balance = margin_account_state.margins[0];
+        let instrument_id = margin_balance
+            .instrument_id
+            .expect("stub margin balance carries a concrete instrument_id");
         let mut initial_margins_expected = AHashMap::new();
-        initial_margins_expected.insert(margin_balance.instrument_id, margin_balance.initial);
+        initial_margins_expected.insert(instrument_id, margin_balance.initial);
         assert_eq!(margin_account.initial_margins(), initial_margins_expected);
         let mut maintenance_margins_expected = AHashMap::new();
-        maintenance_margins_expected
-            .insert(margin_balance.instrument_id, margin_balance.maintenance);
+        maintenance_margins_expected.insert(instrument_id, margin_balance.maintenance);
         assert_eq!(
             margin_account.maintenance_margins(),
             maintenance_margins_expected
@@ -754,7 +881,9 @@ mod tests {
         mut margin_account: MarginAccount,
         margin_account_state: AccountState,
     ) {
-        let old_instrument_id = margin_account_state.margins[0].instrument_id;
+        let old_instrument_id = margin_account_state.margins[0]
+            .instrument_id
+            .expect("stub margin balance carries a concrete instrument_id");
         let new_instrument_id = InstrumentId::from("USDJPY.SIM");
         let event = AccountState::new(
             margin_account_state.account_id,
@@ -763,7 +892,7 @@ mod tests {
             vec![MarginBalance::new(
                 Money::from("12500 USD"),
                 Money::from("25000 USD"),
-                new_instrument_id,
+                Some(new_instrument_id),
             )],
             true,
             uuid4(),
@@ -783,6 +912,46 @@ mod tests {
             Money::from("25000 USD")
         );
         assert!(margin_account.margin(&old_instrument_id).is_none());
+    }
+
+    #[rstest]
+    fn test_apply_routes_account_margins_by_currency(
+        mut margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        let usd = Currency::USD();
+        let event = AccountState::new(
+            margin_account_state.account_id,
+            AccountType::Margin,
+            margin_account_state.balances.clone(),
+            vec![MarginBalance::new(
+                Money::from("12500 USD"),
+                Money::from("25000 USD"),
+                None,
+            )],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            margin_account_state.base_currency,
+        );
+
+        margin_account.apply(event).unwrap();
+
+        assert!(margin_account.margins.is_empty());
+        assert_eq!(margin_account.account_margins.len(), 1);
+        assert_eq!(
+            margin_account.account_initial_margin(&usd),
+            Some(Money::from("12500 USD"))
+        );
+        assert_eq!(
+            margin_account.account_maintenance_margin(&usd),
+            Some(Money::from("25000 USD"))
+        );
+        assert_eq!(
+            margin_account.total_initial_margin(usd),
+            Money::from("12500 USD")
+        );
     }
 
     #[rstest]
@@ -1076,7 +1245,7 @@ mod tests {
         let margin_balance = MarginBalance::new(
             Money::from("1000 USD"),
             Money::from("500 USD"),
-            instrument_id_aud_usd_sim,
+            Some(instrument_id_aud_usd_sim),
         );
 
         margin_account.update_margin(margin_balance);
@@ -1086,7 +1255,7 @@ mod tests {
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.initial, Money::from("1000 USD"));
         assert_eq!(retrieved.maintenance, Money::from("500 USD"));
-        assert_eq!(retrieved.instrument_id, instrument_id_aud_usd_sim);
+        assert_eq!(retrieved.instrument_id, Some(instrument_id_aud_usd_sim));
     }
 
     #[rstest]
@@ -1097,7 +1266,7 @@ mod tests {
         let margin_balance = MarginBalance::new(
             Money::from("1000 USD"),
             Money::from("500 USD"),
-            instrument_id_aud_usd_sim,
+            Some(instrument_id_aud_usd_sim),
         );
 
         margin_account.update_margin(margin_balance);
@@ -1105,6 +1274,58 @@ mod tests {
 
         margin_account.clear_margin(instrument_id_aud_usd_sim);
         assert!(margin_account.margin(&instrument_id_aud_usd_sim).is_none());
+    }
+
+    #[rstest]
+    fn test_update_margin_routes_account_wide(mut margin_account: MarginAccount) {
+        let usd = Currency::USD();
+        let margin_balance =
+            MarginBalance::new(Money::from("200 USD"), Money::from("100 USD"), None);
+
+        margin_account.update_margin(margin_balance);
+
+        assert_eq!(margin_account.account_margin(&usd), Some(margin_balance));
+        assert_eq!(
+            margin_account.account_initial_margin(&usd),
+            Some(Money::from("200 USD"))
+        );
+        assert_eq!(
+            margin_account.account_maintenance_margin(&usd),
+            Some(Money::from("100 USD"))
+        );
+
+        margin_account.clear_account_margin(usd);
+        assert!(margin_account.account_margin(&usd).is_none());
+    }
+
+    #[rstest]
+    fn test_total_margin_sums_per_instrument_and_account_wide(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let usd = Currency::USD();
+        let baseline_initial = margin_account.total_initial_margin(usd);
+        let baseline_maintenance = margin_account.total_maintenance_margin(usd);
+
+        margin_account.update_margin(MarginBalance::new(
+            Money::from("100 USD"),
+            Money::from("50 USD"),
+            Some(instrument_id_aud_usd_sim),
+        ));
+        margin_account.update_margin(MarginBalance::new(
+            Money::from("200 USD"),
+            Money::from("150 USD"),
+            None,
+        ));
+
+        assert_eq!(
+            margin_account.total_initial_margin(usd).raw,
+            baseline_initial.raw + Money::from("300 USD").raw,
+        );
+        assert_eq!(
+            margin_account.total_maintenance_margin(usd).raw,
+            baseline_maintenance.raw + Money::from("200 USD").raw,
+        );
     }
 
     #[rstest]

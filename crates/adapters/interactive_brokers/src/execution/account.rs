@@ -32,7 +32,7 @@ use nautilus_common::{
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     enums::PositionSideSpecified,
-    identifiers::{AccountId, InstrumentId, Symbol, Venue},
+    identifiers::AccountId,
     instruments::Instrument,
     reports::PositionStatusReport,
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
@@ -128,10 +128,11 @@ pub async fn subscribe_account_summary(
                     }
                 }
 
-                // Parse margin requirements
-                if let Ok(margin) = parse_account_summary_to_margin(&summary) {
-                    margins.push(margin);
-                }
+                // Accumulate margin requirements by currency. IB reports INIT_MARGIN_REQ
+                // and MAINT_MARGIN_REQ as separate summary entries; merge them into one
+                // `MarginBalance` per currency so neither half overwrites the other when
+                // the account-wide margin store keys by `Currency`.
+                merge_account_summary_margin(&mut margins, &summary);
             }
             Ok(AccountSummaryResult::End) => {
                 break;
@@ -149,6 +150,41 @@ pub async fn subscribe_account_summary(
     );
 
     Ok((balances, margins))
+}
+
+fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &AccountSummary) {
+    let currency = match parse_currency(&summary.currency) {
+        Ok(currency) => currency,
+        Err(e) => {
+            tracing::warn!("Skipping margin summary with unknown currency: {}", e);
+            return;
+        }
+    };
+    let value = match parse_balance_decimal(&summary.value)
+        .and_then(|d| Money::from_decimal(d, currency).map_err(|e| anyhow::anyhow!(e.to_string())))
+    {
+        Ok(money) => money,
+        Err(e) => {
+            tracing::warn!("Failed to parse margin value '{}': {}", summary.value, e);
+            return;
+        }
+    };
+
+    let existing = margins
+        .iter_mut()
+        .find(|m| m.currency == currency && m.instrument_id.is_none());
+
+    match summary.tag.as_str() {
+        AccountSummaryTags::INIT_MARGIN_REQ => match existing {
+            Some(margin) => margin.initial = value,
+            None => margins.push(MarginBalance::new(value, Money::zero(currency), None)),
+        },
+        AccountSummaryTags::MAINT_MARGIN_REQ => match existing {
+            Some(margin) => margin.maintenance = value,
+            None => margins.push(MarginBalance::new(Money::zero(currency), value, None)),
+        },
+        _ => {}
+    }
 }
 
 fn merge_account_summary_balance(
@@ -530,43 +566,6 @@ fn parse_account_summary_to_balance(summary: &AccountSummary) -> anyhow::Result<
     }
 }
 
-/// Parse IB account summary to Nautilus MarginBalance.
-///
-/// Note: MarginBalance requires an instrument_id, so we use a placeholder
-/// for account-level margins. In practice, margins are usually per-instrument.
-fn parse_account_summary_to_margin(summary: &AccountSummary) -> anyhow::Result<MarginBalance> {
-    let currency = parse_currency(&summary.currency)?;
-    let money = parse_balance_value(&summary.value, &summary.currency)?;
-
-    // Use a placeholder instrument ID for account-level margins
-    // In practice, margins should be tracked per instrument
-    let placeholder_instrument =
-        InstrumentId::new(Symbol::from("ACCOUNT"), Venue::from("INTERACTIVE_BROKERS"));
-
-    match summary.tag.as_str() {
-        AccountSummaryTags::INIT_MARGIN_REQ => {
-            // For account-level initial margin, we use it for both initial and maintenance
-            // since we don't have per-instrument breakdown
-            Ok(MarginBalance::new(money, money, placeholder_instrument))
-        }
-        AccountSummaryTags::MAINT_MARGIN_REQ => {
-            // For maintenance margin, we use it as maintenance and set initial to zero
-            let zero = Money::new(0.0, currency);
-            Ok(MarginBalance::new(zero, money, placeholder_instrument))
-        }
-        _ => {
-            anyhow::bail!("Tag {} is not a margin tag", summary.tag);
-        }
-    }
-}
-
-/// Parse balance value string to Money.
-fn parse_balance_value(value: &str, currency: &str) -> anyhow::Result<Money> {
-    let currency = parse_currency(currency)?;
-    let amount = parse_balance_decimal(value)?;
-    Money::from_decimal(amount, currency)
-}
-
 fn parse_balance_decimal(value: &str) -> anyhow::Result<Decimal> {
     value
         .parse::<Decimal>()
@@ -580,10 +579,23 @@ fn parse_currency(currency: &str) -> anyhow::Result<Currency> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::{AccountBalance, Currency};
+    use ibapi::accounts::AccountSummary;
+    use nautilus_model::types::{AccountBalance, Currency, MarginBalance, Money};
     use rstest::rstest;
 
-    use super::{AccountSummaryTags, merge_account_summary_balance, parse_balance_value};
+    use super::{
+        AccountSummaryTags, merge_account_summary_balance, merge_account_summary_margin,
+        parse_currency,
+    };
+
+    fn margin_summary(tag: &str, value: &str, currency: &str) -> AccountSummary {
+        AccountSummary {
+            account: "DU123".to_string(),
+            tag: tag.to_string(),
+            value: value.to_string(),
+            currency: currency.to_string(),
+        }
+    }
 
     /// Verifies the IB avg cost to Nautilus price conversion formula used in position parsing.
     /// Python: converted_avg_cost = avg_cost / (multiplier * price_magnifier)
@@ -603,8 +615,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_balance_value_rejects_empty_currency() {
-        let result = parse_balance_value("1.0", "");
+    fn test_parse_currency_rejects_empty_string() {
+        let result = parse_currency("");
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
@@ -633,5 +645,76 @@ mod tests {
         assert_eq!(merged.total.as_decimal(), "100.00".parse().unwrap());
         assert_eq!(merged.locked.as_decimal(), "0.00".parse().unwrap());
         assert_eq!(merged.free.as_decimal(), "100.00".parse().unwrap());
+    }
+
+    #[rstest]
+    fn test_merge_account_summary_margin_combines_init_and_maint() {
+        // Regression: `INIT_MARGIN_REQ` and `MAINT_MARGIN_REQ` arrive as separate
+        // summary entries. The merge must land in a single `MarginBalance` per
+        // currency so neither half overwrites the other once the account-wide
+        // store keys by `Currency`.
+        let mut margins: Vec<MarginBalance> = Vec::new();
+
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::INIT_MARGIN_REQ, "500.00", "USD"),
+        );
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::MAINT_MARGIN_REQ, "250.00", "USD"),
+        );
+
+        assert_eq!(margins.len(), 1);
+        let margin = &margins[0];
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency, Currency::USD());
+        assert_eq!(margin.initial, Money::from("500.00 USD"));
+        assert_eq!(margin.maintenance, Money::from("250.00 USD"));
+    }
+
+    #[rstest]
+    fn test_merge_account_summary_margin_order_independent() {
+        // Arrival order should not matter.
+        let mut margins: Vec<MarginBalance> = Vec::new();
+
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::MAINT_MARGIN_REQ, "250.00", "USD"),
+        );
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::INIT_MARGIN_REQ, "500.00", "USD"),
+        );
+
+        assert_eq!(margins.len(), 1);
+        let margin = &margins[0];
+        assert_eq!(margin.initial, Money::from("500.00 USD"));
+        assert_eq!(margin.maintenance, Money::from("250.00 USD"));
+    }
+
+    #[rstest]
+    fn test_merge_account_summary_margin_separates_currencies() {
+        let mut margins: Vec<MarginBalance> = Vec::new();
+
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::INIT_MARGIN_REQ, "500.00", "USD"),
+        );
+        merge_account_summary_margin(
+            &mut margins,
+            &margin_summary(AccountSummaryTags::INIT_MARGIN_REQ, "400.00", "EUR"),
+        );
+
+        assert_eq!(margins.len(), 2);
+        let usd = margins
+            .iter()
+            .find(|m| m.currency == Currency::USD())
+            .unwrap();
+        let eur = margins
+            .iter()
+            .find(|m| m.currency == Currency::EUR())
+            .unwrap();
+        assert_eq!(usd.initial, Money::from("500.00 USD"));
+        assert_eq!(eur.initial, Money::from("400.00 EUR"));
     }
 }

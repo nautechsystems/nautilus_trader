@@ -19,7 +19,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{parsing::get_required_string, to_pyvalue_err};
+use nautilus_core::python::{
+    parsing::{get_optional_parsed, get_required_string},
+    to_pyvalue_err,
+};
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
@@ -129,9 +132,18 @@ impl AccountBalance {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginBalance {
     /// Creates a new `MarginBalance` instance.
+    ///
+    /// Pass `instrument_id=None` for account-wide (cross margin) balances that
+    /// apply to all positions in the entry's currency; pass a specific
+    /// `InstrumentId` for per-instrument (isolated margin) balances.
     #[new]
-    fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> Self {
-        Self::new(initial, maintenance, instrument)
+    #[pyo3(signature = (initial, maintenance, instrument_id=None))]
+    fn py_new(
+        initial: Money,
+        maintenance: Money,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Self> {
+        Self::new_checked(initial, maintenance, instrument_id).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -174,14 +186,16 @@ impl MarginBalance {
         let initial: f64 = initial_str.parse::<f64>().unwrap();
         let maintenance_str = get_required_string(values, "maintenance")?;
         let maintenance: f64 = maintenance_str.parse::<f64>().unwrap();
-        let instrument_id_str = get_required_string(values, "instrument_id")?;
+        let instrument_id = get_optional_parsed(values, "instrument_id", |s| {
+            Ok::<InstrumentId, String>(InstrumentId::from(s))
+        })?;
         let currency = Currency::from_str(currency_str.as_str()).map_err(to_pyvalue_err)?;
-        let account_balance = Self::new(
+        Self::new_checked(
             Money::new(initial, currency),
             Money::new(maintenance, currency),
-            InstrumentId::from(instrument_id_str),
-        );
-        Ok(account_balance)
+            instrument_id,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     /// Converts this [`MarginBalance`] into a Python dict.
@@ -211,7 +225,10 @@ impl MarginBalance {
             ),
         )?;
         dict.set_item("currency", self.currency.code.to_string())?;
-        dict.set_item("instrument_id", self.instrument_id.to_string())?;
+        match self.instrument_id {
+            Some(id) => dict.set_item("instrument_id", id.to_string())?,
+            None => dict.set_item("instrument_id", py.None())?,
+        }
         Ok(dict.into())
     }
 }

@@ -1127,21 +1127,12 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
     let currency_str = map_bitmex_currency(msg.currency.as_str());
     let currency = get_currency(&currency_str);
 
-    // BitMEX returns values in satoshis for BTC (XBt) or microunits for USDT/LAMp
-    let divisor = if msg.currency == "XBt" {
-        100_000_000.0 // Satoshis to BTC
-    } else if msg.currency == "USDt" || msg.currency == "LAMp" {
-        1_000_000.0 // Microunits to units
-    } else {
-        1.0
-    };
-    let amount = msg.amount.unwrap_or(0) as f64 / divisor;
+    // Wallet messages do not expose locked margin; treat the full balance as free
+    // and let the centralized helper enforce `total == locked + free` at currency precision.
+    let divisor = bitmex_currency_divisor(msg.currency.as_str());
+    let amount_dec = Decimal::from(msg.amount.unwrap_or(0)) / divisor;
 
-    let total = Money::new(amount, currency);
-    let locked = Money::new(0.0, currency); // No locked amount info available
-    let free = total - locked;
-
-    let balance = AccountBalance::new_checked(total, locked, free)
+    let balance = AccountBalance::from_total_and_locked(amount_dec, Decimal::ZERO, currency)
         .expect("Balance calculation should be valid");
 
     AccountState::new(
@@ -1157,11 +1148,9 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
     )
 }
 
-/// Parse a BitMEX margin message into margin balance information.
-///
-/// This creates a MarginBalance that can be added to an AccountState.
+/// Parse a BitMEX margin message into an account-wide [`MarginBalance`].
 #[must_use]
-pub fn parse_margin_msg(msg: &BitmexMarginMsg, instrument_id: InstrumentId) -> MarginBalance {
+pub fn parse_margin_msg(msg: &BitmexMarginMsg) -> MarginBalance {
     let currency_str = map_bitmex_currency(msg.currency.as_str());
     let currency = get_currency(&currency_str);
 
@@ -1172,7 +1161,7 @@ pub fn parse_margin_msg(msg: &BitmexMarginMsg, instrument_id: InstrumentId) -> M
     MarginBalance::new(
         Money::from_decimal(initial_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
         Money::from_decimal(maintenance_dec, currency).unwrap_or_else(|_| Money::zero(currency)),
-        instrument_id,
+        None,
     )
 }
 
@@ -1182,12 +1171,7 @@ pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> 
     let account_id = AccountId::new(format!("BITMEX-{}", msg.account));
     let balance = parse_account_balance(msg);
 
-    let currency_str = map_bitmex_currency(msg.currency.as_str());
-    let margin_instrument_id = InstrumentId::new(
-        Symbol::from_str_unchecked(format!("ACCOUNT-{currency_str}")),
-        *BITMEX_VENUE,
-    );
-    let margin = parse_margin_msg(msg, margin_instrument_id);
+    let margin = parse_margin_msg(msg);
 
     let margins = if !margin.initial.is_zero() || !margin.maintenance.is_zero() {
         vec![margin]
@@ -1819,6 +1803,9 @@ mod tests {
         assert_eq!(balance.currency.code.to_string(), "XBT");
         // Amount should be converted from satoshis (100005180 / 100_000_000.0 = 1.0000518)
         assert!((balance.total.as_f64() - 1.0000518).abs() < 1e-7);
+        // Wallet messages do not carry locked margin; full amount is free.
+        assert_eq!(balance.locked.as_f64(), 0.0);
+        assert_eq!(balance.free.as_decimal(), balance.total.as_decimal());
     }
 
     #[rstest]
@@ -1837,11 +1824,10 @@ mod tests {
     fn test_parse_margin_msg() {
         let json_data = load_test_json("ws_margin.json");
         let msg: BitmexMarginMsg = serde_json::from_str(&json_data).unwrap();
-        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let margin_balance = parse_margin_msg(&msg, instrument_id);
+        let margin_balance = parse_margin_msg(&msg);
 
         assert_eq!(margin_balance.currency.code.to_string(), "XBT");
-        assert_eq!(margin_balance.instrument_id, instrument_id);
+        assert!(margin_balance.instrument_id.is_none());
         // Values should be converted from satoshis to BTC
         // initMargin is 0 in test data, so should be 0.0
         assert_eq!(margin_balance.initial.as_f64(), 0.0);
@@ -1855,8 +1841,7 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_margin.json")).unwrap();
         msg.available_margin = None;
 
-        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let margin_balance = parse_margin_msg(&msg, instrument_id);
+        let margin_balance = parse_margin_msg(&msg);
         // Should still have valid margin values even if available_margin is None
         assert!(margin_balance.initial.as_f64() >= 0.0);
         assert!(margin_balance.maintenance.as_f64() >= 0.0);
@@ -1907,8 +1892,8 @@ mod tests {
         assert_eq!(balance.total.as_f64(), 5000.0);
 
         let margin = &state.margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT-USDT");
-        assert_eq!(margin.instrument_id.venue.as_str(), "BITMEX");
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency.code.as_str(), "USDT");
         assert_eq!(margin.initial.as_f64(), 200.0);
         assert_eq!(margin.maintenance.as_f64(), 100.0);
     }

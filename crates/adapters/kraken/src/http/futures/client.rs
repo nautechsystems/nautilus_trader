@@ -2557,11 +2557,12 @@ fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<Ma
             .as_ref()
             .and_then(|mr| mr.mm)
             .unwrap_or(0.0);
-        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *KRAKEN_VENUE);
+        // Kraken Futures reports cross-margin aggregates in USD; emit as an
+        // account-wide entry keyed by USD.
         margins.push(MarginBalance::new(
             Money::new(initial_margin, usd_currency),
             Money::new(maintenance, usd_currency),
-            margin_instrument_id,
+            None,
         ));
     }
 }
@@ -2597,11 +2598,10 @@ fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<Marg
         let mm = mr.mm.unwrap_or(0.0);
         if im > 0.0 || mm > 0.0 {
             let usd_currency = Currency::USD();
-            let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *KRAKEN_VENUE);
             margins.push(MarginBalance::new(
                 Money::new(im, usd_currency),
                 Money::new(mm, usd_currency),
-                margin_instrument_id,
+                None,
             ));
         }
     }
@@ -2621,10 +2621,7 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut Vec<Acco
             CurrencyType::Crypto,
         );
 
-        let total = Money::new(amount, currency);
-        let locked = Money::new(0.0, currency);
-
-        balances.push(AccountBalance::new(total, locked, total));
+        push_balance_from_f64(balances, amount, 0.0, currency, currency_code);
     }
 }
 
@@ -2709,8 +2706,8 @@ mod tests {
 
         assert_eq!(margins.len(), 1);
         let margin = &margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
-        assert_eq!(margin.instrument_id.venue.as_str(), "KRAKEN");
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency.code.as_str(), "USD");
         assert_eq!(margin.initial.as_f64(), 500.0);
         assert_eq!(margin.maintenance.as_f64(), 250.0);
     }

@@ -40,7 +40,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AccountType, AggressorSide, OrderSide, TimeInForce},
     events::AccountState,
-    identifiers::{InstrumentId, Symbol, TradeId, Venue},
+    identifiers::{InstrumentId, Symbol, TradeId},
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
 };
@@ -1302,13 +1302,8 @@ pub fn parse_account_state(
     // dYdX uses USDC as the settlement currency
     let currency = Currency::get_or_create_crypto_with_context("USDC", None);
 
-    let total = Money::from_decimal(equity, currency).context("failed to parse equity")?;
-    let free = Money::from_decimal(free_collateral, currency)
-        .context("failed to parse free collateral")?;
-    let locked = total - free;
-
-    let balance = AccountBalance::new_checked(total, locked, free)
-        .context("Failed to create AccountBalance from subaccount data")?;
+    let balance = AccountBalance::from_total_and_free(equity, free_collateral, currency)
+        .context("failed to derive account balance from subaccount data")?;
     balances.push(balance);
 
     // Calculate margin balances from open positions
@@ -1405,12 +1400,9 @@ pub fn parse_account_state(
             format!("Failed to create maintenance margin Money for {currency}"),
         )?;
 
-        // Create synthetic instrument ID for account-level margin
-        // Format: ACCOUNT.DYDX (similar to OKX pattern)
-        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
-
-        let margin_balance =
-            MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);
+        // dYdX cross-margin margins are computed per collateral currency; emit as
+        // account-wide entries keyed by that currency.
+        let margin_balance = MarginBalance::new(initial_money, maintenance_money, None);
         margins.push(margin_balance);
     }
 
@@ -1453,13 +1445,8 @@ pub fn parse_account_state_from_http(
     // dYdX uses USDC as the settlement currency
     let currency = Currency::get_or_create_crypto_with_context("USDC", None);
 
-    let total = Money::from_decimal(equity, currency).context("failed to parse equity")?;
-    let free = Money::from_decimal(free_collateral, currency)
-        .context("failed to parse free collateral")?;
-    let locked = total - free;
-
-    let balance = AccountBalance::new_checked(total, locked, free)
-        .context("Failed to create AccountBalance from subaccount data")?;
+    let balance = AccountBalance::from_total_and_free(equity, free_collateral, currency)
+        .context("failed to derive account balance from subaccount data")?;
     balances.push(balance);
 
     // Calculate margin balances from open positions
@@ -1533,10 +1520,7 @@ pub fn parse_account_state_from_http(
             format!("Failed to create maintenance margin Money for {currency}"),
         )?;
 
-        let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("DYDX"));
-
-        let margin_balance =
-            MarginBalance::new(initial_money, maintenance_money, margin_instrument_id);
+        let margin_balance = MarginBalance::new(initial_money, maintenance_money, None);
         margins.push(margin_balance);
     }
 
@@ -2101,5 +2085,89 @@ mod reconciliation_tests {
         assert_eq!(balance.total.as_f64(), 0.0);
         assert_eq!(balance.free.as_f64(), 0.0);
         assert_eq!(balance.locked.as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_parse_account_state_nonzero_balance() {
+        use crate::websocket::messages::DydxSubaccountInfo;
+
+        // Exercises the `from_total_and_free(equity, free_collateral, USDC)` path
+        // in the WebSocket subaccount parser, locking in the argument order so a
+        // later swap would fail.
+        let subaccount = DydxSubaccountInfo {
+            address: "dydx1abc".to_string(),
+            subaccount_number: 0,
+            equity: "15000".to_string(),
+            free_collateral: "12500".to_string(),
+            open_perpetual_positions: None,
+            asset_positions: None,
+            margin_enabled: true,
+            updated_at_height: "0".to_string(),
+            latest_processed_block_height: "0".to_string(),
+        };
+
+        let account_id = AccountId::new("DYDX-001");
+        let instruments = std::collections::HashMap::new();
+        let oracle_prices = std::collections::HashMap::new();
+        let ts = UnixNanos::default();
+
+        let state = parse_account_state(
+            &subaccount,
+            account_id,
+            &instruments,
+            &oracle_prices,
+            ts,
+            ts,
+        )
+        .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.total.as_decimal(), dec!(15000));
+        assert_eq!(balance.free.as_decimal(), dec!(12500));
+        assert_eq!(balance.locked.as_decimal(), dec!(2500));
+    }
+
+    #[rstest]
+    fn test_parse_account_state_from_http_nonzero_balance() {
+        use crate::http::models::Subaccount;
+
+        // Exercises the HTTP variant of the subaccount parser. Both variants
+        // route through `from_total_and_free(equity, free_collateral, …)`, so a
+        // swap in either path must be caught independently.
+        let subaccount = Subaccount {
+            address: "dydx1abc".to_string(),
+            subaccount_number: 0,
+            equity: dec!(15000),
+            free_collateral: dec!(12500),
+            open_perpetual_positions: std::collections::HashMap::new(),
+            asset_positions: std::collections::HashMap::new(),
+            margin_enabled: true,
+            updated_at_height: 0,
+            latest_processed_block_height: None,
+        };
+
+        let account_id = AccountId::new("DYDX-001");
+        let instruments = std::collections::HashMap::new();
+        let oracle_prices = std::collections::HashMap::new();
+        let ts = UnixNanos::default();
+
+        let state = parse_account_state_from_http(
+            &subaccount,
+            account_id,
+            &instruments,
+            &oracle_prices,
+            ts,
+            ts,
+        )
+        .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        let balance = &state.balances[0];
+        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.total.as_decimal(), dec!(15000));
+        assert_eq!(balance.free.as_decimal(), dec!(12500));
+        assert_eq!(balance.locked.as_decimal(), dec!(2500));
     }
 }

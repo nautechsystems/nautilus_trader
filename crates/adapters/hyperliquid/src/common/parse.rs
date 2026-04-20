@@ -71,7 +71,7 @@ use nautilus_model::{
         AggregationSource, BarAggregation, ContingencyType, OrderSide, OrderStatus, OrderType,
         TimeInForce,
     },
-    identifiers::{ClientOrderId, InstrumentId, Symbol, TradeId, Venue},
+    identifiers::{ClientOrderId, TradeId},
     orders::{Order, any::OrderAny},
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
@@ -804,16 +804,11 @@ pub fn parse_account_balances_and_margins(
     let margin_used = cross_margin_summary.total_margin_used;
 
     if margin_used > Decimal::ZERO {
-        let margin_instrument_id =
-            InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("HYPERLIQUID"));
-
+        // Hyperliquid perps use a single-collateral (USDC) cross-margin model, so the
+        // reserved margin is emitted as an account-wide entry keyed by USDC.
         let initial_margin = Money::from_decimal(margin_used, currency)?;
         let maintenance_margin = Money::from_decimal(margin_used, currency)?;
-
-        let margin_balance =
-            MarginBalance::new(initial_margin, maintenance_margin, margin_instrument_id);
-
-        margins.push(margin_balance);
+        margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
     Ok((balances, margins))
@@ -870,11 +865,14 @@ pub fn parse_spot_account_balances(
 
         let currency = crate::http::parse::get_currency(balance.coin.as_str());
 
-        let total = balance.total.max(Decimal::ZERO);
-        let locked = balance.hold.max(Decimal::ZERO).min(total);
-        let free = (total - locked).max(Decimal::ZERO);
-
-        balances.push(AccountBalance::from_total_and_free(total, free, currency)?);
+        // Let `from_total_and_locked` do the clamping and derivation at currency
+        // precision so the `total == locked + free` invariant holds without
+        // bespoke rounding here.
+        balances.push(AccountBalance::from_total_and_locked(
+            balance.total,
+            balance.hold,
+            currency,
+        )?);
     }
 
     Ok(balances)

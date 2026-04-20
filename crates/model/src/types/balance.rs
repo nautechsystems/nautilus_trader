@@ -202,11 +202,21 @@ impl Display for AccountBalance {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
+/// Represents a margin balance.
+///
+/// Margin entries have two mutually exclusive scopes:
+///
+/// - Per-instrument: `instrument_id = Some(id)`. Used for isolated margin and
+///   for calculated margin in backtest mode where each instrument carries its
+///   own reserve.
+/// - Account-wide (cross margin): `instrument_id = None`. Used for venues that
+///   report a single aggregate margin per collateral currency (most derivatives
+///   venues in cross-margin mode).
 pub struct MarginBalance {
     pub initial: Money,
     pub maintenance: Money,
     pub currency: Currency,
-    pub instrument_id: InstrumentId,
+    pub instrument_id: Option<InstrumentId>,
 }
 
 impl MarginBalance {
@@ -222,7 +232,7 @@ impl MarginBalance {
     pub fn new_checked(
         initial: Money,
         maintenance: Money,
-        instrument_id: InstrumentId,
+        instrument_id: Option<InstrumentId>,
     ) -> CorrectnessResult<Self> {
         check_predicate_true(
             initial.currency == maintenance.currency,
@@ -245,7 +255,7 @@ impl MarginBalance {
     ///
     /// Panics if `initial` and `maintenance` have different currencies.
     #[must_use]
-    pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
+    pub fn new(initial: Money, maintenance: Money, instrument_id: Option<InstrumentId>) -> Self {
         Self::new_checked(initial, maintenance, instrument_id).expect_display(FAILED)
     }
 }
@@ -260,14 +270,24 @@ impl PartialEq for MarginBalance {
 
 impl Debug for MarginBalance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}(initial={}, maintenance={}, instrument_id={})",
-            stringify!(MarginBalance),
-            self.initial,
-            self.maintenance,
-            self.instrument_id,
-        )
+        match self.instrument_id {
+            Some(id) => write!(
+                f,
+                "{}(initial={}, maintenance={}, instrument_id={})",
+                stringify!(MarginBalance),
+                self.initial,
+                self.maintenance,
+                id,
+            ),
+            None => write!(
+                f,
+                "{}(initial={}, maintenance={}, currency={})",
+                stringify!(MarginBalance),
+                self.initial,
+                self.maintenance,
+                self.currency,
+            ),
+        }
     }
 }
 
@@ -641,7 +661,7 @@ mod tests {
         let result = MarginBalance::new_checked(
             Money::new(5000.0, usd),
             Money::new(20000.0, eur),
-            instrument_id,
+            Some(instrument_id),
         );
         assert!(result.is_err());
     }
@@ -655,7 +675,17 @@ mod tests {
         let _ = MarginBalance::new(
             Money::new(5000.0, usd),
             Money::new(20000.0, eur),
-            instrument_id,
+            Some(instrument_id),
+        );
+    }
+
+    #[rstest]
+    fn test_margin_balance_account_scope_display() {
+        let usd = Currency::USD();
+        let balance = MarginBalance::new(Money::new(500.0, usd), Money::new(200.0, usd), None);
+        assert_eq!(
+            "MarginBalance(initial=500.00 USD, maintenance=200.00 USD, currency=USD)",
+            format!("{balance}")
         );
     }
 }

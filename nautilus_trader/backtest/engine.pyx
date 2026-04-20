@@ -3250,6 +3250,7 @@ cdef class SimulatedExchange:
         cdef list[MarginBalance] margins = []
         if account.is_margin_account:
             margins = list(account.margins().values())
+            margins.extend(account.account_margins().values())
 
         # Generate and handle event
         self.exec_client.generate_account_state(

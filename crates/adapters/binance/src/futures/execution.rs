@@ -54,7 +54,7 @@ use nautilus_model::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderModifyRejected,
         OrderRejected, OrderUpdated,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Symbol, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::Instrument,
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -317,24 +317,26 @@ impl BinanceFuturesExecutionClient {
             })
             .collect();
 
+        // Emit account-wide (cross-margin) margin balances per collateral asset.
+        // Binance reports per-asset `initialMargin` / `maintMargin` which covers both
+        // USDT-M (typically USDT, or USDT+BNB under multi-assets mode) and COIN-M
+        // (one entry per base coin, e.g. BTC / ETH).
         let mut margins: Vec<MarginBalance> = Vec::new();
 
-        if let (Some(initial_dec), Some(maint_dec)) = (
-            account_info.total_initial_margin,
-            account_info.total_maint_margin,
-        ) && (!initial_dec.is_zero() || !maint_dec.is_zero())
-        {
-            let margin_currency = Currency::USDT();
-            let margin_instrument_id = InstrumentId::new(Symbol::new("ACCOUNT"), *BINANCE_VENUE);
-            let initial_margin = Money::from_decimal(initial_dec, margin_currency)
-                .unwrap_or_else(|_| Money::zero(margin_currency));
-            let maintenance_margin = Money::from_decimal(maint_dec, margin_currency)
-                .unwrap_or_else(|_| Money::zero(margin_currency));
-            margins.push(MarginBalance::new(
-                initial_margin,
-                maintenance_margin,
-                margin_instrument_id,
-            ));
+        for asset in &account_info.assets {
+            let initial_dec = asset.initial_margin.unwrap_or_default();
+            let maint_dec = asset.maint_margin.unwrap_or_default();
+
+            if initial_dec.is_zero() && maint_dec.is_zero() {
+                continue;
+            }
+
+            let currency = Currency::from(&asset.asset);
+            let initial = Money::from_decimal(initial_dec, currency)
+                .unwrap_or_else(|_| Money::zero(currency));
+            let maintenance =
+                Money::from_decimal(maint_dec, currency).unwrap_or_else(|_| Money::zero(currency));
+            margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
         AccountState::new(

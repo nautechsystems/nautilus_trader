@@ -26,7 +26,7 @@ use nautilus_core::{
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, Venue, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -853,25 +853,29 @@ impl BinanceFuturesAccountInfo {
             balances.push(zero_balance);
         }
 
-        // Parse margin requirements
+        // Emit account-wide (cross-margin) margin balances per collateral asset.
+        // Binance reports per-asset `initialMargin` / `maintMargin` which covers both
+        // USDT-M (single collateral, typically USDT or BNB under multi-assets mode) and
+        // COIN-M (one entry per base coin, e.g. BTC / ETH).
         let mut margins = Vec::new();
 
-        if let (Some(initial_margin_dec), Some(maint_margin_dec)) =
-            (self.total_initial_margin, self.total_maint_margin)
-            && (!initial_margin_dec.is_zero() || !maint_margin_dec.is_zero())
-        {
-            let margin_currency = Currency::USDT();
-            let margin_instrument_id =
-                InstrumentId::new(Symbol::new("ACCOUNT"), Venue::new("BINANCE"));
+        for asset in &self.assets {
+            let initial_dec = asset.initial_margin.unwrap_or_default();
+            let maint_dec = asset.maint_margin.unwrap_or_default();
 
-            let initial_margin = Money::from_decimal(initial_margin_dec, margin_currency)
-                .unwrap_or_else(|_| Money::zero(margin_currency));
-            let maintenance_margin = Money::from_decimal(maint_margin_dec, margin_currency)
-                .unwrap_or_else(|_| Money::zero(margin_currency));
+            if initial_dec.is_zero() && maint_dec.is_zero() {
+                continue;
+            }
 
-            let margin_balance =
-                MarginBalance::new(initial_margin, maintenance_margin, margin_instrument_id);
-            margins.push(margin_balance);
+            let currency = Currency::get_or_create_crypto_with_context(
+                asset.asset.as_str(),
+                Some("futures margin"),
+            );
+            let initial = Money::from_decimal(initial_dec, currency)
+                .unwrap_or_else(|_| Money::zero(currency));
+            let maintenance =
+                Money::from_decimal(maint_dec, currency).unwrap_or_else(|_| Money::zero(currency));
+            margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
         let ts_event = self
@@ -1458,6 +1462,8 @@ mod tests {
                 "asset": "USDT",
                 "walletBalance": "10000.00000000",
                 "availableBalance": "9500.00000000",
+                "initialMargin": "500.25000000",
+                "maintMargin": "250.75000000",
                 "updateTime": 1617939110373
             }],
             "positions": []
@@ -1471,10 +1477,59 @@ mod tests {
 
         assert_eq!(state.margins.len(), 1);
         let margin = &state.margins[0];
-        assert_eq!(margin.instrument_id.symbol.as_str(), "ACCOUNT");
-        assert_eq!(margin.instrument_id.venue.as_str(), "BINANCE");
+        assert!(margin.instrument_id.is_none());
+        assert_eq!(margin.currency.code.as_str(), "USDT");
         assert_eq!(margin.initial.as_f64(), 500.25);
         assert_eq!(margin.maintenance.as_f64(), 250.75);
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_coin_margined_per_base_coin() {
+        let json = r#"{
+            "totalWalletBalance": "0.00000000",
+            "assets": [
+                {
+                    "asset": "BTC",
+                    "walletBalance": "1.50000000",
+                    "availableBalance": "1.40000000",
+                    "initialMargin": "0.05000000",
+                    "maintMargin": "0.02500000",
+                    "updateTime": 1617939110373
+                },
+                {
+                    "asset": "ETH",
+                    "walletBalance": "10.00000000",
+                    "availableBalance": "9.00000000",
+                    "initialMargin": "0.80000000",
+                    "maintMargin": "0.40000000",
+                    "updateTime": 1617939110373
+                }
+            ],
+            "positions": []
+        }"#;
+        let account: BinanceFuturesAccountInfo =
+            serde_json::from_str(json).expect("Failed to parse account info");
+
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let state = account.to_account_state(account_id, ts_init).unwrap();
+
+        assert_eq!(state.margins.len(), 2);
+        assert!(state.margins.iter().all(|m| m.instrument_id.is_none()));
+        let btc = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "BTC")
+            .expect("BTC margin missing");
+        assert_eq!(btc.initial.as_f64(), 0.05);
+        assert_eq!(btc.maintenance.as_f64(), 0.025);
+        let eth = state
+            .margins
+            .iter()
+            .find(|m| m.currency.code.as_str() == "ETH")
+            .expect("ETH margin missing");
+        assert_eq!(eth.initial.as_f64(), 0.8);
+        assert_eq!(eth.maintenance.as_f64(), 0.4);
     }
 
     // Regression for the #3867 bug class: wire values with more decimal places
