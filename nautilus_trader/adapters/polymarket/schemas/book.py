@@ -219,25 +219,46 @@ class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type
         last_quote: QuoteTick,
         ts_init: int,
     ) -> list[QuoteTick]:
+        """Build QuoteTicks from Polymarket `price_change` entries.
+
+        Uses the authoritative `best_bid` / `best_ask` fields that the
+        Polymarket WS payload carries on every entry (the top of book
+        after the change is applied), NOT `change.price` which is the
+        price of the specific level that was added, updated, or
+        removed. The level that changed is frequently not the spread
+        level (for example a `size=0` removal deep in the ladder), so
+        using `change.price` as the new best bid/ask would silently
+        drift the cached top of book away from the live market.
+
+        Sizes intentionally carry from `last_quote`: the WS payload
+        only reports the size at the changed level, never at the top.
+        Callers that need authoritative top of book sizes should
+        drive off `OrderBookDeltas` plus a local `OrderBook`, as
+        `PolymarketDataClient._handle_quote` does.
+
+        See https://github.com/nautechsystems/nautilus_trader/issues/3905.
+        """
         quotes: list[QuoteTick] = []
 
         for change in self.price_changes:
-            if change.side == PolymarketOrderSide.BUY:
-                ask_price = last_quote.ask_price
-                ask_size = last_quote.ask_size
-                bid_price = instrument.make_price(float(change.price))
-                bid_size = instrument.make_qty(float(change.size))
-            else:  # SELL
-                ask_price = instrument.make_price(float(change.price))
-                ask_size = instrument.make_qty(float(change.size))
-                bid_price = last_quote.bid_price
-                bid_size = last_quote.bid_size
+            try:
+                bid_f = float(change.best_bid)
+                ask_f = float(change.best_ask)
+            except (TypeError, ValueError):
+                continue
+            # Skip obviously invalid pairs (empty parse to 0, crossed
+            # book, one-sided). The next change within ms should
+            # arrive with a valid pair; dropping is better than
+            # emitting a bogus tick that downstream consumers (the
+            # OrderEmulator, user cache reads) would treat as truth.
+            if bid_f <= 0 or ask_f <= 0 or bid_f >= ask_f:
+                continue
             quote = QuoteTick(
                 instrument_id=instrument.id,
-                bid_price=bid_price,
-                ask_price=ask_price,
-                bid_size=bid_size,
-                ask_size=ask_size,
+                bid_price=instrument.make_price(bid_f),
+                ask_price=instrument.make_price(ask_f),
+                bid_size=last_quote.bid_size,
+                ask_size=last_quote.ask_size,
                 ts_event=millis_to_nanos(float(self.timestamp)),
                 ts_init=ts_init,
             )

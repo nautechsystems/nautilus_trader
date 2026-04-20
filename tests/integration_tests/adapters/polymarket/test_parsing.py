@@ -267,6 +267,76 @@ def test_parse_quote_ticks() -> None:
         assert price_change.hash is not None
 
 
+def test_parse_to_quote_ticks_uses_best_bid_and_best_ask_not_changed_level_price() -> None:
+    """Regression for https://github.com/nautechsystems/nautilus_trader/issues/3905.
+
+    Each Polymarket `price_change` entry carries the specific level's
+    price in `change.price` AND the authoritative post-change top of
+    book in `change.best_bid` / `change.best_ask`. The two are
+    frequently different (e.g. a `size=0` removal at a deep level).
+    `parse_to_quote_ticks` must build the resulting `QuoteTick` from
+    `best_bid` / `best_ask`; using `change.price` silently drifts the
+    cached top away from the live market.
+    """
+    from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
+    from nautilus_trader.model.data import QuoteTick
+    from nautilus_trader.model.objects import Price
+    from nautilus_trader.model.objects import Quantity
+
+    instrument = TestInstrumentProvider.binary_option()
+
+    # A deep-book BUY removal (level at $0.30 removed, but true top
+    # of book is still around $0.60 / $0.70).
+    deep_buy_removal = PolymarketQuote(
+        asset_id="0x0",
+        price="0.30",
+        side=PolymarketOrderSide.BUY,
+        size="0",
+        hash="a" * 40,
+        best_bid="0.60",
+        best_ask="0.70",
+    )
+    # A deep-book SELL removal (level at $0.95 removed, true top
+    # unchanged).
+    deep_sell_removal = PolymarketQuote(
+        asset_id="0x0",
+        price="0.95",
+        side=PolymarketOrderSide.SELL,
+        size="0",
+        hash="b" * 40,
+        best_bid="0.60",
+        best_ask="0.70",
+    )
+    ws_message = PolymarketQuotes(
+        market="0x0",
+        price_changes=[deep_buy_removal, deep_sell_removal],
+        timestamp="1729084877448",
+    )
+    last_quote = QuoteTick(
+        instrument_id=instrument.id,
+        bid_price=Price.from_str("0.50"),
+        ask_price=Price.from_str("0.80"),
+        bid_size=Quantity.from_int(100),
+        ask_size=Quantity.from_int(100),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    quotes = ws_message.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Both changes anchor the same authoritative top of book
+    # (`best_bid=0.60`, `best_ask=0.70`), so the top of book after the
+    # batch should not reflect the deep-level prices $0.30 / $0.95.
+    assert len(quotes) == 2
+    for quote in quotes:
+        assert float(quote.bid_price) == 0.60
+        assert float(quote.ask_price) == 0.70
+
+
 def test_parse_trade_tick() -> None:
     # Arrange
     data = pkgutil.get_data(
