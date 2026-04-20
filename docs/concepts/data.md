@@ -1,6 +1,6 @@
 # Data
 
-NautilusTrader provides built-in data types for the trading domain:
+Common built-in data types include:
 
 - `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
 - `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas for more efficient processing.
@@ -13,6 +13,8 @@ NautilusTrader provides built-in data types for the trading domain:
 - `FundingRateUpdate`: The funding rate for perpetual contracts (periodic payments between long and short positions).
 - `InstrumentStatus`: An instrument-level status event.
 - `InstrumentClose`: The closing price of an instrument.
+
+See the API reference for the full set of built-in data classes and wrappers.
 
 NautilusTrader operates primarily on granular order book data for the highest realism
 in execution simulations. Backtests can also run on any supported market data type,
@@ -283,9 +285,10 @@ def on_start(self) -> None:
     # Define a bar type for aggregating from TradeTick objects
     # Uses price_type=LAST which indicates TradeTick data as source
     bar_type = BarType.from_str("6EH4.XCME-50-VOLUME-LAST-INTERNAL")
+    start = self.clock.utc_now() - timedelta(days=30)
 
     # Request historical data (will receive bars in on_historical_data handler)
-    self.request_bars(bar_type)
+    self.request_bars(bar_type, start=start)
 
     # Subscribe to live data (will receive bars in on_bar handler)
     self.subscribe_bars(bar_type)
@@ -303,9 +306,10 @@ def on_start(self) -> None:
 
     # Create 1-minute bars from MID prices (middle between ASK and BID prices in QuoteTick objects)
     bar_type_mid = BarType.from_str("6EH4.XCME-1-MINUTE-MID-INTERNAL")
+    start = self.clock.utc_now() - timedelta(days=30)
 
     # Request historical data and subscribe to live data
-    self.request_bars(bar_type_ask)    # Historical bars processed in on_historical_data
+    self.request_bars(bar_type_ask, start=start)  # Historical bars processed in on_historical_data
     self.subscribe_bars(bar_type_ask)  # Live bars processed in on_bar
 ```
 
@@ -317,9 +321,10 @@ def on_start(self) -> None:
     # Format: target_bar_type@source_bar_type
     # Note: price type (LAST) is only needed on the left target side, not on the source side
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+    start = self.clock.utc_now() - timedelta(days=30)
 
-    # Request historical data (processed in on_historical_data(...) handler)
-    self.request_bars(bar_type)
+    # Request historical data by providing the dependency-ordered aggregation chain
+    self.request_aggregated_bars([bar_type], start=start)
 
     # Subscribe to live updates (processed in on_bar(...) handler)
     self.subscribe_bars(bar_type)
@@ -346,7 +351,10 @@ hourly_bar_type = BarType.from_str("6EH4.XCME-1-HOUR-LAST-INTERNAL@5-MINUTE-INTE
 
 NautilusTrader provides two distinct operations for working with bars:
 
-- **`request_bars()`**: Fetches historical data processed by the `on_historical_data()` handler.
+- **`request_bars()`**: Fetches historical data for a standard `BarType`, processed by the
+  `on_historical_data()` handler.
+- **`request_aggregated_bars()`**: Fetches historical data for a dependency-ordered list of bar
+  types, building internal bars on the fly.
 - **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
 
 These methods work together in a typical workflow:
@@ -360,24 +368,25 @@ Example usage in `on_start()`:
 def on_start(self) -> None:
     # Define bar type
     bar_type = BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL")
+    start = self.clock.utc_now() - timedelta(days=30)
+
+    # Register indicators before requesting history so they receive historical updates too
+    self.register_indicator_for_bars(bar_type, self.my_indicator)
 
     # Request historical data to initialize indicators
     # These bars will be delivered to the on_historical_data(...) handler in strategy
-    self.request_bars(bar_type)
+    self.request_bars(bar_type, start=start)
 
     # Subscribe to real-time updates
     # New bars will be delivered to the on_bar(...) handler in strategy
     self.subscribe_bars(bar_type)
-
-    # Register indicators to receive bar updates (they will be automatically updated)
-    self.register_indicator_for_bars(bar_type, self.my_indicator)
 ```
 
 Required handlers in your strategy to receive the data:
 
 ```python
 def on_historical_data(self, data):
-    # Processes batches of historical bars from request_bars()
+    # Processes historical Data objects from request_bars() or request_aggregated_bars()
     # Note: indicators registered with register_indicator_for_bars
     # are updated automatically with historical data
     pass
@@ -390,24 +399,30 @@ def on_bar(self, bar):
 
 ### Historical data requests with aggregation
 
-When requesting historical bars for backtesting or initializing indicators, you can use the `request_bars()` method, which supports both direct requests and aggregation:
+When requesting historical bars for backtesting or initializing indicators, use
+`request_bars()` for standard bar types and `request_aggregated_bars()` for
+on-the-fly aggregation:
 
 ```python
+start = self.clock.utc_now() - timedelta(days=30)
+
 # Request raw 1-minute bars (aggregated from TradeTick objects as indicated by LAST price type)
-self.request_bars(BarType.from_str("6EH4.XCME-1-MINUTE-LAST-EXTERNAL"))
+self.request_bars(
+    BarType.from_str("6EH4.XCME-1-MINUTE-LAST-EXTERNAL"),
+    start=start,
+)
+
+# Request bars that are aggregated from historical trade ticks
+self.request_aggregated_bars(
+    [BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")],
+    start=start,
+)
 
 # Request 5-minute bars aggregated from 1-minute bars
-self.request_bars(BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"))
-```
-
-If historical aggregated bars are needed, you can use specialized request `request_aggregated_bars()` method:
-
-```python
-# Request bars that are aggregated from historical trade ticks
-self.request_aggregated_bars([BarType.from_str("6EH4.XCME-100-VOLUME-LAST-INTERNAL")])
-
-# Request bars that are aggregated from other bars
-self.request_aggregated_bars([BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")])
+self.request_aggregated_bars(
+    [BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")],
+    start=start,
+)
 ```
 
 ### Common pitfalls
@@ -415,12 +430,14 @@ self.request_aggregated_bars([BarType.from_str("6EH4.XCME-5-MINUTE-LAST-INTERNAL
 **Register indicators before requesting data**: Ensure indicators are registered before requesting historical data so they get updated properly.
 
 ```python
+start = self.clock.utc_now() - timedelta(days=30)
+
 # Correct order
 self.register_indicator_for_bars(bar_type, self.ema)
-self.request_bars(bar_type)
+self.request_bars(bar_type, start=start)
 
 # Incorrect order
-self.request_bars(bar_type)  # Indicator won't receive historical data
+self.request_bars(bar_type, start=start)  # Indicator won't receive historical data
 self.register_indicator_for_bars(bar_type, self.ema)
 ```
 
@@ -456,7 +473,7 @@ apply to all time-based aggregation (millisecond through year):
 | `time_bars_timestamp_on_close`      | `bool` | `True`        | When `True`, `ts_event` is the bar close time. When `False`, `ts_event` is the bar open time.                                                   |
 | `time_bars_skip_first_non_full_bar` | `bool` | `False`       | Skip emitting a bar when aggregation starts mid‑interval, avoiding partial bars on startup.                                                     |
 | `time_bars_build_with_no_updates`   | `bool` | `True`        | When `True`, bars are emitted even if no market updates arrived during the interval.                                                            |
-| `time_bars_origin_offset`           | `dict` | `None`        | Maps `BarAggregation` types to `pd.Timedelta` offsets for shifting bar alignment (e.g., align to 09:30 market open).                            |
+| `time_bars_origin_offset`           | `dict` | `None`        | Maps `BarAggregation` types to `pd.Timedelta` or `pd.DateOffset` values for shifting bar alignment (e.g., align to 09:30 market open).          |
 | `time_bars_build_delay`             | `int`  | `0`           | Delay in microseconds before building a bar. Useful in backtests to ensure data at bar boundary timestamps is processed before the timer fires. |
 
 ```python
@@ -518,13 +535,14 @@ The dual timestamp system enables latency analysis within the platform:
 #### Live trading environment
 
 - The system processes data as it arrives to minimize latency and enable real-time decisions.
-  - `ts_init` field records the exact moment when data is received by Nautilus in real-time.
+  - For venue-sourced data, `ts_init` is typically when Nautilus creates the local object after receiving the update.
   - `ts_event` reflects the time the event occurred externally, enabling accurate comparisons between external event timing and system reception.
 - We can use the difference between `ts_init` and `ts_event` to detect network or processing delays.
 
 ### Other notes and considerations
 
-- For data from external sources, `ts_init` is always the same as or later than `ts_event`.
+- For data from external sources, `ts_init` is usually the local receipt or normalization time,
+  but clock skew means it is not guaranteed to be greater than or equal to `ts_event`.
 - For data created within Nautilus, `ts_init` and `ts_event` can be the same because the object is initialized at the same time the event happens.
 - Not every type with a `ts_init` field necessarily has a `ts_event` field. This reflects cases where:
   - The initialization of an object happens at the same time as the event itself.
@@ -532,7 +550,8 @@ The dual timestamp system enables latency analysis within the platform:
 
 #### Persisted data
 
-The `ts_init` field indicates when the message was originally received.
+The `ts_init` field preserves the original initialization timestamp. For venue data this is
+typically receipt time; for internally created data it is the creation time of that object.
 
 ## Data flow
 
@@ -571,13 +590,14 @@ an entirely different format to [Databento Binary Encoding (DBN)](https://databe
 ### Data wranglers
 
 Data wranglers are implemented per specific Nautilus data type, and can be found in the `nautilus_trader.persistence.wranglers` module.
-Currently there exists:
+Common v1 wranglers include:
 
 - `OrderBookDeltaDataWrangler`
-- `OrderBookDepth10DataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
+
+For Arrow v2 / PyO3 workflows, the v2 module also provides `OrderBookDepth10DataWranglerV2`.
 
 :::warning
 There are a number of **DataWrangler v2** components, which will take a `pd.DataFrame` typically
@@ -684,7 +704,9 @@ The NautilusTrader data catalog is built on a dual-backend architecture that com
 **Core components:**
 
 - **ParquetDataCatalog**: The main Python interface for data operations.
-- **Rust backend**: High-performance query engine for core data types (OrderBookDelta, QuoteTick, TradeTick, Bar, MarkPriceUpdate).
+- **Rust backend**: High-performance query engine for core data types (`OrderBookDelta`,
+  `OrderBookDeltas`, `OrderBookDepth10`, `QuoteTick`, `TradeTick`, `Bar`,
+  `MarkPriceUpdate`) and registered same-binary Rust custom data.
 - **PyArrow backend**: Flexible fallback for custom data types and advanced filtering.
 - **fsspec integration**: Support for local and cloud storage (S3, GCS, Azure, etc.).
 
@@ -850,19 +872,23 @@ catalog.write_data(bars, skip_disjoint_check=True)
 
 ### File naming and data organization
 
-The catalog automatically generates filenames based on the timestamp range of the data being written. Files are named using the pattern `{start_timestamp}_{end_timestamp}.parquet` where timestamps are in ISO format.
+The catalog automatically generates filenames based on the timestamp range of the data being
+written. Files are named using the pattern `{start_timestamp}_{end_timestamp}.parquet`, where
+each timestamp is an ISO 8601 value converted to a filename-safe form by replacing `:` and `.`
+with `-`.
 
-Data is organized in directories by data type and instrument ID:
+Data is organized in directories by data type and identifier
+(instrument ID, bar type, or custom identifier). Identifiers are made URI-safe by removing `/`:
 
 ```
 catalog/
 ├── data/
 │   ├── quote_ticks/
-│   │   └── eurusd.sim/
-│   │       └── 20240101T000000000000000_20240101T235959999999999.parquet
+│   │   └── EURUSD.SIM/
+│   │       └── 2024-01-01T00-00-00-000000000Z_2024-01-01T23-59-59-999999999Z.parquet
 │   └── trade_ticks/
-│       └── btcusd.binance/
-│           └── 20240101T000000000000000_20240101T235959999999999.parquet
+│       └── BTCUSD.BINANCE/
+│           └── 2024-01-01T00-00-00-000000000Z_2024-01-01T23-59-59-999999999Z.parquet
 ```
 
 **Rust backend data types (enhanced performance):**
@@ -878,7 +904,8 @@ The following data types use optimized Rust implementations:
 - `MarkPriceUpdate`.
 
 :::warning
-By default, data that overlaps with existing files will cause an assertion error to maintain data integrity. Use `skip_disjoint_check=True` in `write_data()` to bypass this check when needed.
+By default, overlapping writes raise a `ValueError` to maintain data integrity.
+Use `skip_disjoint_check=True` in `write_data()` to bypass this check when needed.
 :::
 
 ### Reading data
@@ -896,13 +923,12 @@ quotes = catalog.query(
     end="2024-01-02T00:00:00Z"
 )
 
-# Query trade ticks with filtering
+# Query trade ticks for a specific instrument and time range
 trades = catalog.query(
     data_cls=TradeTick,
     identifiers=["BTC/USD.BINANCE"],
     start="2024-01-01",
     end="2024-01-02",
-    where="price > 50000"
 )
 ```
 
@@ -921,6 +947,7 @@ The `BacktestDataConfig` class is the primary mechanism for specifying data requ
 
 - `catalog_fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', etc.).
 - `catalog_fs_storage_options`: Storage-specific options (credentials, region, etc.).
+- `catalog_fs_rust_storage_options`: Storage-specific options for the Rust backend.
 - `instrument_id`: Specific instrument to load data for.
 - `instrument_ids`: List of instruments (alternative to single instrument_id).
 - `start_time`: Start time for data filtering (ISO string or UNIX nanoseconds).
@@ -928,8 +955,10 @@ The `BacktestDataConfig` class is the primary mechanism for specifying data requ
 - `filter_expr`: Additional PyArrow filter expressions.
 - `client_id`: Client ID for custom data types.
 - `metadata`: Additional metadata for data queries.
-- `bar_spec`: Bar specification for bar data (e.g., "1-MINUTE-LAST").
-- `bar_types`: List of bar types (alternative to bar_spec).
+- `bar_spec`: Bar specification for bar data (e.g., `"1-MINUTE-LAST"`). When combined
+  with `instrument_id` or `instrument_ids`, this builds `...-EXTERNAL` bar identifiers.
+- `bar_types`: Explicit list of full bar types. Use this for `INTERNAL` bars or composite bars.
+- `optimize_file_loading`: Load directories instead of individual files when supported.
 
 #### Basic usage examples
 
@@ -967,7 +996,7 @@ data_config = BacktestDataConfig(
     catalog_path="/path/to/catalog",
     data_cls=Bar,
     instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
-    bar_spec="5-MINUTE-LAST",
+    bar_spec="5-MINUTE-LAST",  # Loads AAPL.NASDAQ-5-MINUTE-LAST-EXTERNAL
     start_time="2024-01-01",
     end_time="2024-01-31",
 )
@@ -1073,6 +1102,7 @@ Catalogs defined this way can also be used for requesting historical data.
 
 - `fs_protocol`: Filesystem protocol ('file', 's3', 'gcs', 'azure', etc.).
 - `fs_storage_options`: Protocol-specific storage options.
+- `fs_rust_storage_options`: Protocol-specific storage options for the Rust backend.
 - `name`: Optional name identifier for the catalog configuration.
 
 #### Basic usage examples
@@ -1126,7 +1156,7 @@ catalog_config = DataCatalogConfig(
 # Use in trading node configuration
 node_config = TradingNodeConfig(
     # ... other configurations
-    catalog=catalog_config,  # Enable historical data access
+    catalogs=[catalog_config],  # Enable historical data access
 )
 ```
 
@@ -1143,7 +1173,7 @@ streaming_config = StreamingConfig(
     fs_protocol="file",
     flush_interval_ms=1000,  # Flush every second
     replace_existing=False,
-    rotation_mode=RotationMode.DAILY,
+    rotation_mode=RotationMode.INTERVAL,
     rotation_interval=pd.Timedelta(hours=1),
     max_file_size=1024 * 1024 * 100,  # 100MB max file size
 )
@@ -1180,6 +1210,7 @@ The catalog's query system uses a dual-backend architecture that selects the que
 - **Supported Types**: OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick, Bar, MarkPriceUpdate.
 - **Conditions**: Used when `files` parameter is None (automatic file discovery).
 - **Benefits**: Optimized performance, memory efficiency, native Arrow integration.
+  Registered same-binary Rust custom data types can also use this path.
 
 **PyArrow backend (flexible):**
 
@@ -1197,10 +1228,12 @@ catalog.query(
     identifiers=["EUR/USD.SIM"],           # Instrument identifiers
     start="2024-01-01T00:00:00Z",         # Start time (various formats supported)
     end="2024-01-02T00:00:00Z",           # End time
-    where="bid > 1.1000",                 # PyArrow filter expression
-    files=None,                           # Specific files (forces PyArrow backend)
+    files=None,                           # Leave unset for automatic file discovery
 )
 ```
+
+- `where=` passes a DataFusion SQL predicate to Rust-backed queries.
+- `filter_expr=` passes a parsed PyArrow dataset expression to PyArrow-backed queries.
 
 **Time format support:**
 
@@ -1209,26 +1242,11 @@ catalog.query(
 - Pandas Timestamps: `pd.Timestamp("2024-01-01", tz="UTC")`.
 - Python datetime objects (timezone-aware recommended).
 
-**Advanced filtering examples:**
+**Filtering notes:**
 
-```python
-# Complex PyArrow expressions
-catalog.query(
-    data_cls=TradeTick,
-    identifiers=["BTC/USD.BINANCE"],
-    where="price > 50000 AND size > 1.0",
-    start="2024-01-01",
-    end="2024-01-02",
-)
-
-# Multiple instruments with metadata filtering
-catalog.query(
-    data_cls=Bar,
-    identifiers=["AAPL.NASDAQ", "MSFT.NASDAQ"],
-    where="volume > 1000000",
-    metadata={"bar_type": "1-MINUTE-LAST"},
-)
-```
+- Use `where=` for Rust-backed built-in market data queries.
+- Use `filter_expr=` for PyArrow-backed queries, including custom data and queries
+  forced onto the PyArrow path with `files=`.
 
 ### Catalog operations
 
@@ -1670,7 +1688,7 @@ self.publish_signal("signal_name", value, ts_event)
 self.subscribe_signal("signal_name")
 
 def on_signal(self, signal):
-    print("Signal", data)
+    print("Signal", signal)
 ```
 
 ### Option greeks example
@@ -1834,6 +1852,8 @@ the **type** (recommended) or a **sample instance**:
 
 ```python
 from nautilus_trader.core.nautilus_pyo3 import ParquetDataCatalog
+from nautilus_trader.core.nautilus_pyo3.model import CustomData
+from nautilus_trader.core.nautilus_pyo3.model import DataType
 from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
 from nautilus_trader.model.custom import customdataclass_pyo3
 
@@ -1849,8 +1869,16 @@ class MarketTickPython:
 register_custom_data_class(MarketTickPython)
 
 catalog = ParquetDataCatalog("/path/to/catalog")
-catalog.write_custom_data([MarketTickPython(1, 1, "AAPL", 150.5, 1000)])
-result = catalog.query("MarketTickPython", None, None, None, None, None, True)
+data_type = DataType("MarketTickPython", metadata={"exchange": "NASDAQ"})
+wrapped = [
+    CustomData(
+        data_type,
+        MarketTickPython(ts_event=1, ts_init=1, symbol="AAPL", price=150.5, volume=1000),
+    ),
+]
+catalog.write_custom_data(wrapped)
+result = catalog.query("MarketTickPython")
+ticks = [item.data for item in result]
 ```
 
 See `nautilus_trader.model.custom.customdataclass_pyo3` for details.
