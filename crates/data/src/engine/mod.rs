@@ -2104,9 +2104,8 @@ impl DataEngine {
                     instrument.price_increment(),
                     handler,
                 )) as Box<dyn BarAggregator>,
-                _ => panic!(
-                    "BarAggregation {:?} is not currently implemented. Supported aggregations: MILLISECOND, SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, YEAR, TICK, TICK_IMBALANCE, TICK_RUNS, VOLUME, VOLUME_IMBALANCE, VOLUME_RUNS, VALUE, VALUE_IMBALANCE, VALUE_RUNS, RENKO",
-                    bar_type.spec().aggregation
+                other => unreachable!(
+                    "Unsupported internal bar aggregation dispatch for {other:?}; update `create_bar_aggregator`"
                 ),
             }
         }

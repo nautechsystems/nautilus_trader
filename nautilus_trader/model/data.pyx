@@ -205,8 +205,8 @@ cpdef str bar_aggregation_not_implemented_message(BarAggregation aggregation):
     agg_str = bar_aggregation_to_str(aggregation)
     supported = supported_bar_aggregations_str()
     return (
-        f"BarAggregation.{agg_str} is not currently implemented. "
-        f"Supported aggregations are: {supported}."
+        f"BarAggregation.{agg_str} is unsupported in this context. "
+        f"Known aggregations are: {supported}."
     )
 
 
@@ -1190,9 +1190,8 @@ cdef class BarType:
     - Time aggregations support timedelta conversion
     - Threshold aggregations (tick, volume, value) don't have fixed time intervals
     - Information aggregations use complex algorithms for bar creation
+    - All bar aggregation methods can be internally aggregated
     - String representation format: "{step}-{aggregation}-{price_type}"
-        It is expected that all bar aggregation methods other than time will be
-        internally aggregated.
 
     """
 
