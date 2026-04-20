@@ -692,9 +692,9 @@ mod tests {
 
         // Numeric - should work without encode
         let numeric_id = ClientOrderId::from("12345");
-        let got = encoder.get(&numeric_id);
+        let actual = encoder.get(&numeric_id);
         assert_eq!(
-            got,
+            actual,
             Some(EncodedClientOrderId {
                 client_id: 12345,
                 client_metadata: DEFAULT_RUST_CLIENT_METADATA
@@ -703,13 +703,13 @@ mod tests {
 
         // O-format - should work without encode
         let o_id = ClientOrderId::from("O-20260131-174827-001-001-1");
-        let got = encoder.get(&o_id);
-        assert!(got.is_some());
+        let actual = encoder.get(&o_id);
+        assert!(actual.is_some());
 
         // Non-standard - requires encode first
         let custom_id = ClientOrderId::from("custom");
-        let got = encoder.get(&custom_id);
-        assert!(got.is_none());
+        let actual = encoder.get(&custom_id);
+        assert!(actual.is_none());
     }
 
     #[rstest]

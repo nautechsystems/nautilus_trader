@@ -226,7 +226,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
         if !verify_sha256_checksum(filepath, checksums_file)? {
             let actual = calculate_sha256(filepath)?;
-            println!("Checksum mismatch after download (got {actual}), retrying...");
+            println!("Checksum mismatch after download (calculated {actual}), retrying...");
             remove_file(filepath)?;
             drop(_guard);
 
@@ -238,7 +238,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
                 let actual = calculate_sha256(filepath)?;
                 remove_file(filepath)?;
                 anyhow::bail!(
-                    "Checksum mismatch after retry for {} (got {actual})",
+                    "Checksum mismatch after retry for {} (calculated {actual})",
                     filepath.file_name().unwrap_or_default().display(),
                 );
             }

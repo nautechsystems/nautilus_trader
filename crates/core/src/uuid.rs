@@ -80,12 +80,12 @@ impl UUID4 {
 
         debug_assert!(
             value[14] == b'4',
-            "Invariant: UUID version digit must be '4' (got {})",
+            "Invariant: UUID version digit must be '4' (was {})",
             value[14] as char
         );
         debug_assert!(
             matches!(value[19], b'8' | b'9' | b'a' | b'b'),
-            "Invariant: UUID variant byte must be RFC 4122 (got {})",
+            "Invariant: UUID variant byte must be RFC 4122 (was {})",
             value[19] as char
         );
         debug_assert!(

@@ -1807,7 +1807,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
-            "submit_order_list not yet implemented for Binance Futures (got {} orders)",
+            "submit_order_list not yet implemented for Binance Futures (received {} orders)",
             cmd.order_list.client_order_ids.len()
         );
         Ok(())

@@ -381,7 +381,7 @@ mod tests {
             if balance.total.raw >= 0 {
                 assert!(
                     balance.locked.raw >= 0,
-                    "locked must be non-negative for non-negative total (got raw={})",
+                    "locked must be non-negative for non-negative total (found raw={})",
                     balance.locked.raw,
                 );
             }
@@ -423,7 +423,7 @@ mod tests {
             if balance.total.raw >= 0 {
                 assert!(
                     balance.free.raw >= 0,
-                    "free must be non-negative for non-negative total (got raw={})",
+                    "free must be non-negative for non-negative total (found raw={})",
                     balance.free.raw,
                 );
             }

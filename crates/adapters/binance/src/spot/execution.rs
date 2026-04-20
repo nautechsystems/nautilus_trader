@@ -921,7 +921,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         log::warn!(
-            "submit_order_list not yet implemented for Binance Spot execution client (got {} orders)",
+            "submit_order_list not yet implemented for Binance Spot execution client (received {} orders)",
             cmd.order_list.client_order_ids.len()
         );
         Ok(())

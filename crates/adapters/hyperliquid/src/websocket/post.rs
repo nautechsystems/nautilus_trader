@@ -1017,7 +1017,7 @@ mod tests {
         )
         .await;
 
-        let got = sent.lock().await.clone();
-        assert_eq!(got, vec![1, 2, 3, 4, 5]);
+        let actual = sent.lock().await.clone();
+        assert_eq!(actual, vec![1, 2, 3, 4, 5]);
     }
 }
