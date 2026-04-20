@@ -55,5 +55,8 @@
 pub mod engine;
 pub mod sizing;
 
+#[cfg(feature = "python")]
+pub mod python;
+
 // Re-exports
 pub use engine::RiskEngine;

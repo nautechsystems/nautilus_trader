@@ -31,6 +31,7 @@ use nautilus_model::{
     types::Currency,
 };
 use nautilus_portfolio::config::PortfolioConfig;
+use nautilus_risk::engine::config::RiskEngineConfig;
 use pyo3::{Py, PyAny, Python};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -66,6 +67,7 @@ impl BacktestEngineConfig {
         cache = None,
         msgbus = None,
         data_engine = None,
+        risk_engine = None,
         exec_engine = None,
         portfolio = None,
     ))]
@@ -87,6 +89,7 @@ impl BacktestEngineConfig {
         cache: Option<CacheConfig>,
         msgbus: Option<MessageBusConfig>,
         data_engine: Option<DataEngineConfig>,
+        risk_engine: Option<RiskEngineConfig>,
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
     ) -> Self {
@@ -109,7 +112,7 @@ impl BacktestEngineConfig {
             cache,
             msgbus,
             data_engine,
-            risk_engine: None,
+            risk_engine,
             exec_engine,
             portfolio,
             streaming: None,
@@ -162,6 +165,12 @@ impl BacktestEngineConfig {
     #[pyo3(name = "data_engine")]
     fn py_data_engine(&self) -> Option<DataEngineConfig> {
         self.data_engine.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "risk_engine")]
+    fn py_risk_engine(&self) -> Option<RiskEngineConfig> {
+        self.risk_engine.clone()
     }
 
     #[getter]

@@ -28,6 +28,7 @@ from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OmsType
+from nautilus_trader.risk import RiskEngineConfig
 
 
 def test_engine_config_defaults():
@@ -61,12 +62,14 @@ def test_engine_config_sub_configs_default_to_none():
     assert config.cache is None
     assert config.msgbus is None
     assert config.data_engine is None
+    assert config.risk_engine is None
     assert config.exec_engine is None
     assert config.portfolio is None
 
 
 def test_engine_config_accepts_sub_configs():
     data_engine = DataEngineConfig(debug=True)
+    risk_engine = RiskEngineConfig(bypass=True, max_order_submit_rate="250/00:00:05")
     exec_engine = ExecutionEngineConfig(load_cache=False)
     cache = CacheConfig()
     msgbus = MessageBusConfig()
@@ -74,6 +77,7 @@ def test_engine_config_accepts_sub_configs():
 
     config = BacktestEngineConfig(
         data_engine=data_engine,
+        risk_engine=risk_engine,
         exec_engine=exec_engine,
         cache=cache,
         msgbus=msgbus,
@@ -82,6 +86,9 @@ def test_engine_config_accepts_sub_configs():
 
     assert config.data_engine is not None
     assert config.data_engine.debug is True
+    assert config.risk_engine is not None
+    assert config.risk_engine.bypass is True
+    assert config.risk_engine.max_order_submit_rate == "250/00:00:05"
     assert config.exec_engine is not None
     assert config.exec_engine.load_cache is False
     assert config.cache is not None

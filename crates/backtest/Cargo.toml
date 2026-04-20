@@ -50,6 +50,7 @@ python = [
   "nautilus-model/python",
   "nautilus-persistence?/python",
   "nautilus-portfolio/python",
+  "nautilus-risk/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",

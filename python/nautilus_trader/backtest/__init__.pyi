@@ -5,7 +5,11 @@ import typing
 
 from nautilus_trader import common
 from nautilus_trader import core
+from nautilus_trader import data
+from nautilus_trader import execution
 from nautilus_trader import model
+from nautilus_trader import portfolio
+from nautilus_trader import risk
 from nautilus_trader import trading
 
 __all__ = [
@@ -34,6 +38,7 @@ class BacktestDataConfig:
         catalog_path: str,
         catalog_fs_protocol: str | None = None,
         catalog_fs_storage_options: typing.Mapping[str, str] | None = None,
+        catalog_fs_rust_storage_options: typing.Mapping[str, str] | None = None,
         instrument_id: model.InstrumentId | None = None,
         instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         start_time: int | None = None,
@@ -58,6 +63,18 @@ class BacktestEngineConfig:
     def bypass_logging(self) -> bool: ...
     @property
     def run_analysis(self) -> bool: ...
+    @property
+    def cache(self) -> common.CacheConfig | None: ...
+    @property
+    def msgbus(self) -> common.MessageBusConfig | None: ...
+    @property
+    def data_engine(self) -> data.DataEngineConfig | None: ...
+    @property
+    def risk_engine(self) -> risk.RiskEngineConfig | None: ...
+    @property
+    def exec_engine(self) -> execution.ExecutionEngineConfig | None: ...
+    @property
+    def portfolio(self) -> portfolio.PortfolioConfig | None: ...
     def __new__(
         cls,
         trader_id: model.TraderId | None = None,
@@ -73,6 +90,12 @@ class BacktestEngineConfig:
         timeout_shutdown: int | None = None,
         logging: common.LoggerConfig | None = None,
         instance_id: core.UUID4 | None = None,
+        cache: common.CacheConfig | None = None,
+        msgbus: common.MessageBusConfig | None = None,
+        data_engine: data.DataEngineConfig | None = None,
+        risk_engine: risk.RiskEngineConfig | None = None,
+        exec_engine: execution.ExecutionEngineConfig | None = None,
+        portfolio: portfolio.PortfolioConfig | None = None,
     ) -> BacktestEngineConfig: ...
 
 @typing.final
@@ -126,6 +149,7 @@ class BacktestRunConfig:
         engine: BacktestEngineConfig | None = None,
         id: str | None = None,
         chunk_size: int | None = None,
+        raise_exception: bool | None = None,
         dispose_on_completion: bool | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -171,9 +195,15 @@ class BacktestVenueConfig:
         queue_position: bool | None = None,
         oto_trigger_mode: model.OtoTriggerMode | None = None,
         base_currency: model.Currency | None = None,
-        default_leverage: float | None = None,
-        leverages: typing.Mapping[model.InstrumentId, float] | None = None,
+        default_leverage: decimal.Decimal | None = None,
+        leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
+        margin_model: typing.Any | None = None,
+        modules: typing.Sequence[typing.Any] | None = None,
+        fill_model: typing.Any | None = None,
+        latency_model: typing.Any | None = None,
+        fee_model: typing.Any | None = None,
         price_protection_points: int | None = None,
+        settlement_prices: typing.Mapping[model.InstrumentId, float] | None = None,
     ) -> BacktestVenueConfig: ...
 
 @typing.final
@@ -226,6 +256,7 @@ class BacktestEngine:
         frozen_account: bool = False,
         oto_trigger_mode: model.OtoTriggerMode = model.OtoTriggerMode.PARTIAL,
         price_protection_points: int | None = None,
+        settlement_prices: typing.Mapping[model.InstrumentId, model.Price] | None = None,
     ) -> None: ...
     def change_fill_model(self, venue: model.Venue, fill_model: typing.Any) -> None: ...
     def add_data(

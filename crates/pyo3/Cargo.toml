@@ -54,6 +54,7 @@ extension-module = [
   "nautilus-polymarket/extension-module",
   "nautilus-sandbox/extension-module",
   "nautilus-persistence/extension-module",
+  "nautilus-risk/extension-module",
   "nautilus-serialization/extension-module",
   "nautilus-tardis/extension-module",
   "nautilus-testkit/extension-module",
@@ -106,6 +107,7 @@ nautilus-live = { workspace = true, features = ["python", "examples"] }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true, features = ["python"] }
 nautilus-persistence = { workspace = true, features = ["python"] }
+nautilus-risk = { workspace = true, features = ["python"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 nautilus-testkit = { workspace = true, features = ["python"] }
 nautilus-trading = { workspace = true, features = ["python"] }

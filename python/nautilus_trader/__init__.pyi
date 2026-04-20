@@ -9,6 +9,7 @@ from . import binance
 from . import bitmex
 from . import blockchain
 from . import bybit
+from . import coinbase
 from . import common
 from . import core
 from . import cryptography
@@ -28,6 +29,7 @@ from . import okx
 from . import persistence
 from . import polymarket
 from . import portfolio
+from . import risk
 from . import sandbox
 from . import serialization
 from . import tardis
@@ -42,6 +44,7 @@ __all__ = [
     "bitmex",
     "blockchain",
     "bybit",
+    "coinbase",
     "common",
     "core",
     "cryptography",
@@ -61,6 +64,7 @@ __all__ = [
     "persistence",
     "polymarket",
     "portfolio",
+    "risk",
     "sandbox",
     "serialization",
     "tardis",
