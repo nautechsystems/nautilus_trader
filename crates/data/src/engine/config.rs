@@ -22,6 +22,14 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `DataEngine` instances.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.data", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.data")
+)]
 #[derive(Clone, Debug, Deserialize, Serialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct DataEngineConfig {
@@ -64,40 +72,6 @@ pub struct DataEngineConfig {
     /// If debug mode is active (will provide extra debug logging).
     #[builder(default)]
     pub debug: bool,
-}
-
-impl DataEngineConfig {
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub const fn new(
-        time_bars_build_with_no_updates: bool,
-        time_bars_timestamp_on_close: bool,
-        time_bars_interval_type: BarIntervalType,
-        time_bars_skip_first_non_full_bar: bool,
-        time_bars_build_delay: u64,
-        time_bars_origins: HashMap<BarAggregation, Duration>,
-        validate_data_sequence: bool,
-        buffer_deltas: bool,
-        emit_quotes_from_book: bool,
-        emit_quotes_from_book_depths: bool,
-        external_clients: Option<Vec<ClientId>>,
-        debug: bool,
-    ) -> Self {
-        Self {
-            time_bars_build_with_no_updates,
-            time_bars_timestamp_on_close,
-            time_bars_skip_first_non_full_bar,
-            time_bars_interval_type,
-            time_bars_build_delay,
-            time_bars_origins,
-            validate_data_sequence,
-            buffer_deltas,
-            emit_quotes_from_book,
-            emit_quotes_from_book_depths,
-            external_clients,
-            debug,
-        }
-    }
 }
 
 impl Default for DataEngineConfig {

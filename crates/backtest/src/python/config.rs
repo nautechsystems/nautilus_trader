@@ -17,14 +17,20 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
+use nautilus_common::{
+    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
+    msgbus::database::MessageBusConfig,
+};
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_data::engine::config::DataEngineConfig;
+use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::{
     data::BarSpecification,
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
     types::Currency,
 };
+use nautilus_portfolio::config::PortfolioConfig;
 use pyo3::{Py, PyAny, Python};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -57,6 +63,11 @@ impl BacktestEngineConfig {
         timeout_shutdown = None,
         logging = None,
         instance_id = None,
+        cache = None,
+        msgbus = None,
+        data_engine = None,
+        exec_engine = None,
+        portfolio = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -73,6 +84,11 @@ impl BacktestEngineConfig {
         timeout_shutdown: Option<u64>,
         logging: Option<LoggerConfig>,
         instance_id: Option<UUID4>,
+        cache: Option<CacheConfig>,
+        msgbus: Option<MessageBusConfig>,
+        data_engine: Option<DataEngineConfig>,
+        exec_engine: Option<ExecutionEngineConfig>,
+        portfolio: Option<PortfolioConfig>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -90,12 +106,12 @@ impl BacktestEngineConfig {
             timeout_shutdown: Duration::from_secs(timeout_shutdown.unwrap_or(5)),
             logging: logging.unwrap_or_default(),
             instance_id,
-            cache: None,
-            msgbus: None,
-            data_engine: None,
+            cache,
+            msgbus,
+            data_engine,
             risk_engine: None,
-            exec_engine: None,
-            portfolio: None,
+            exec_engine,
+            portfolio,
             streaming: None,
         }
     }
@@ -128,6 +144,36 @@ impl BacktestEngineConfig {
     #[pyo3(name = "run_analysis")]
     const fn py_run_analysis(&self) -> bool {
         self.run_analysis
+    }
+
+    #[getter]
+    #[pyo3(name = "cache")]
+    fn py_cache(&self) -> Option<CacheConfig> {
+        self.cache.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "msgbus")]
+    fn py_msgbus(&self) -> Option<MessageBusConfig> {
+        self.msgbus.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "data_engine")]
+    fn py_data_engine(&self) -> Option<DataEngineConfig> {
+        self.data_engine.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "exec_engine")]
+    fn py_exec_engine(&self) -> Option<ExecutionEngineConfig> {
+        self.exec_engine.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "portfolio")]
+    const fn py_portfolio(&self) -> Option<PortfolioConfig> {
+        self.portfolio
     }
 
     fn __repr__(&self) -> String {

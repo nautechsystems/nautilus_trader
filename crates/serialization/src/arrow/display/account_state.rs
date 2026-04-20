@@ -65,7 +65,7 @@ fn margins_to_json(state: &AccountState) -> String {
         .iter()
         .map(|m| {
             serde_json::json!({
-                "instrument_id": m.instrument_id.to_string(),
+                "instrument_id": m.instrument_id.map(|id| id.to_string()),
                 "currency": m.currency.to_string(),
                 "initial": m.initial.as_f64(),
                 "maintenance": m.maintenance.as_f64(),

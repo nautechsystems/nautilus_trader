@@ -1131,6 +1131,20 @@ impl CacheConfig {
     /// Configuration for `Cache` instances.
     #[new]
     #[expect(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        encoding=None,
+        timestamps_as_iso8601=None,
+        buffer_interval_ms=None,
+        bulk_read_batch_size=None,
+        use_trader_prefix=None,
+        use_instance_id=None,
+        flush_on_start=None,
+        drop_instruments_on_reset=None,
+        tick_capacity=None,
+        bar_capacity=None,
+        save_market_data=None,
+        persist_account_events=None,
+    ))]
     fn py_new(
         encoding: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,

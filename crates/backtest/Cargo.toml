@@ -45,9 +45,11 @@ ffi = [
 python = [
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-data/python",
   "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-persistence?/python",
+  "nautilus-portfolio/python",
   "nautilus-trading/python",
   "pyo3",
   "pyo3-stub-gen",

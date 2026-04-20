@@ -121,6 +121,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::AggressorSide>()?;
     m.add_class::<crate::enums::AssetClass>()?;
     m.add_class::<crate::enums::BarAggregation>()?;
+    m.add_class::<crate::enums::BarIntervalType>()?;
     m.add_class::<crate::enums::BetSide>()?;
     m.add_class::<crate::enums::BookAction>()?;
     m.add_class::<crate::enums::BookType>()?;
