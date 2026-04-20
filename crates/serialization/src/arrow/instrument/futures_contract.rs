@@ -296,8 +296,7 @@ pub fn decode_futures_contract_batch(
             Some(Ustr::from(exchange_str))
         };
 
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = Currency::get_or_create_crypto(currency_values.value(i));
         let price_prec = price_precision_values.value(i);
         let _size_prec = size_precision_values.value(i); // Not used in constructor, set to default
 
@@ -377,3 +376,4 @@ pub fn decode_futures_contract_batch(
 
     Ok(result)
 }
+

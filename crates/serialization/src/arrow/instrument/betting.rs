@@ -269,8 +269,7 @@ pub fn decode_betting_instrument_batch(
     for i in 0..num_rows {
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = Currency::get_or_create_crypto(currency_values.value(i));
         let event_type_id = event_type_id_values.value(i);
         let event_type_name = Ustr::from(event_type_name_values.value(i));
         let competition_id = competition_id_values.value(i);
@@ -367,3 +366,4 @@ pub fn decode_betting_instrument_batch(
 
     Ok(result)
 }
+

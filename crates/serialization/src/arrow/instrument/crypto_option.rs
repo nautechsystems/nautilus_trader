@@ -346,14 +346,10 @@ pub fn decode_crypto_option_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let underlying = Currency::from_str(underlying_values.value(i))
-            .map_err(|e| EncodingError::ParseError("underlying", format!("row {i}: {e}")))?;
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-        let settlement_currency =
-            Currency::from_str(settlement_currency_values.value(i)).map_err(|e| {
-                EncodingError::ParseError("settlement_currency", format!("row {i}: {e}"))
-            })?;
+        let underlying = Currency::get_or_create_crypto(underlying_values.value(i));
+        let quote_currency = Currency::get_or_create_crypto(quote_currency_values.value(i));
+        let settlement_currency = Currency::get_or_create_crypto(settlement_currency_values.value(i));
+        
         let is_inverse = is_inverse_values.value(i);
         let option_kind = option_kind_from_str(option_kind_values.value(i))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
@@ -536,3 +532,4 @@ pub fn decode_crypto_option_batch(
 
     Ok(result)
 }
+

@@ -290,8 +290,7 @@ pub fn decode_binary_option_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let asset_class = asset_class_from_str(asset_class_values.value(i))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = Currency::get_or_create_crypto(currency_values.value(i));
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
 
@@ -423,3 +422,4 @@ pub fn decode_binary_option_batch(
 
     Ok(result)
 }
+

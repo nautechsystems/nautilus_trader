@@ -338,17 +338,10 @@ pub fn decode_perpetual_contract_batch(
                         EncodingError::ParseError("base_currency", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Currency::from_str(base_cur_str).map_err(|e| {
-                    EncodingError::ParseError("base_currency", format!("row {i}: {e}"))
-                })?)
+                Some(Currency::get_or_create_crypto(base_cur_str))
             };
-
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-        let settlement_currency =
-            Currency::from_str(settlement_currency_values.value(i)).map_err(|e| {
-                EncodingError::ParseError("settlement_currency", format!("row {i}: {e}"))
-            })?;
+        let quote_currency = Currency::get_or_create_crypto(quote_currency_values.value(i));
+        let settlement_currency = Currency::get_or_create_crypto(settlement_currency_values.value(i));
         let is_inverse = is_inverse_values.value(i);
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
@@ -527,3 +520,4 @@ pub fn decode_perpetual_contract_batch(
 
     Ok(result)
 }
+

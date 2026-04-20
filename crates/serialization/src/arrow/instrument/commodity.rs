@@ -293,8 +293,7 @@ pub fn decode_commodity_batch(
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let asset_class = AssetClass::from_str(asset_class_values.value(i))
             .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
+        let quote_currency = Currency::get_or_create_crypto(quote_currency_values.value(i));
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
 
@@ -478,3 +477,4 @@ pub fn decode_commodity_batch(
 
     Ok(result)
 }
+

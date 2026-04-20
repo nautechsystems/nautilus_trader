@@ -302,15 +302,10 @@ pub fn decode_crypto_perpetual_batch(
     for i in 0..num_rows {
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
-        let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let base_currency = Currency::from_str(base_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("base_currency", format!("row {i}: {e}")))?;
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-        let settlement_currency =
-            Currency::from_str(settlement_currency_values.value(i)).map_err(|e| {
-                EncodingError::ParseError("settlement_currency", format!("row {i}: {e}"))
-            })?;
+        let raw_symbol: Symbol = Symbol::from(raw_symbol_values.value(i));
+        let base_currency = Currency::get_or_create_crypto(base_currency_values.value(i));
+        let quote_currency = Currency::get_or_create_crypto(quote_currency_values.value(i));
+        let settlement_currency = Currency::get_or_create_crypto(settlement_currency_values.value(i));
         let is_inverse = is_inverse_values.value(i);
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
@@ -484,3 +479,4 @@ pub fn decode_crypto_perpetual_batch(
 
     Ok(result)
 }
+

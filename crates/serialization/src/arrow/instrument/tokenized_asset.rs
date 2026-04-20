@@ -322,9 +322,7 @@ pub fn decode_tokenized_asset_batch(
         let asset_class = AssetClass::from_str(asset_class_values.value(i))
             .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
         let base_currency = Currency::get_or_create_crypto(base_currency_values.value(i));
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
-
+        let quote_currency = Currency::get_or_create_crypto(quote_currency_values.value(i));
         let isin = if isin_values.is_null(i) {
             None
         } else {
@@ -524,3 +522,4 @@ pub fn decode_tokenized_asset_batch(
 
     Ok(result)
 }
+

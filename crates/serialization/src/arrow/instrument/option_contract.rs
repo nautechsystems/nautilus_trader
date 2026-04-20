@@ -330,8 +330,7 @@ pub fn decode_option_contract_batch(
         let option_kind = option_kind_from_str(option_kind_values.value(i))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = Currency::get_or_create_crypto(currency_values.value(i));
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));
         let expiration_ns = nautilus_core::UnixNanos::from(expiration_ns_values.value(i));
         let price_prec = price_precision_values.value(i);
@@ -412,3 +411,4 @@ pub fn decode_option_contract_batch(
 
     Ok(result)
 }
+
