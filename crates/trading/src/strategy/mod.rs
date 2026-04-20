@@ -480,10 +480,8 @@ pub trait Strategy: DataActor {
 
         if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
             manager.send_emulator_command(TradingCommand::ModifyOrder(command));
-        } else if order.exec_algorithm_id().is_some() {
-            manager.send_risk_command(TradingCommand::ModifyOrder(command));
         } else {
-            manager.send_exec_command(TradingCommand::ModifyOrder(command));
+            manager.send_risk_command(TradingCommand::ModifyOrder(command));
         }
         Ok(())
     }
@@ -1745,6 +1743,10 @@ mod tests {
         cache::Cache,
         clock::{Clock, TestClock},
         component::Component,
+        msgbus::{
+            self, MessagingSwitchboard,
+            stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
+        },
         timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::UnixNanos;
@@ -1919,6 +1921,62 @@ mod tests {
         strategy.on_order_modify_rejected(OrderModifyRejected::default());
         strategy.on_order_cancel_rejected(OrderCancelRejected::default());
         strategy.on_order_updated(OrderUpdated::default());
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_non_emulated_orders_to_risk() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("TEST-001"),
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            ClientOrderId::from("O-20250208-0003"),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        strategy
+            .modify_order(order, Some(Quantity::from(200_000)), None, None, None)
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        let exec_messages = exec_messages.get_messages();
+
+        assert_eq!(risk_messages.len(), 1);
+        assert!(matches!(
+            risk_messages.first(),
+            Some(TradingCommand::ModifyOrder(_))
+        ));
+        assert!(exec_messages.is_empty());
     }
 
     // -- GTD EXPIRY TESTS ----------------------------------------------------------------------------
