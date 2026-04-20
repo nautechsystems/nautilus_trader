@@ -27,7 +27,7 @@ use nautilus_core::Params;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::currency_pair::CurrencyPair,
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{money::Money, price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -303,10 +303,18 @@ pub fn decode_currency_pair_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let base_currency = Currency::from_str(base_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("base_currency", format!("row {i}: {e}")))?;
-        let quote_currency = Currency::from_str(quote_currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("quote_currency", format!("row {i}: {e}")))?;
+        let base_currency = super::decode_currency(
+            base_currency_values.value(i),
+            "base_currency",
+            "currency_pair.base_currency",
+            i,
+        )?;
+        let quote_currency = super::decode_currency(
+            quote_currency_values.value(i),
+            "quote_currency",
+            "currency_pair.quote_currency",
+            i,
+        )?;
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
 

@@ -27,7 +27,7 @@ use nautilus_core::Params;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::equity::Equity,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -262,8 +262,8 @@ pub fn decode_equity_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency =
+            super::decode_currency(currency_values.value(i), "currency", "equity.currency", i)?;
         let price_prec = price_precision_values.value(i);
 
         let price_increment = Price::from_str(price_increment_values.value(i))

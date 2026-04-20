@@ -22,14 +22,17 @@
 use std::collections::HashMap;
 
 use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
-use nautilus_model::instruments::{
-    Instrument, InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
-    commodity::Commodity, crypto_future::CryptoFuture, crypto_option::CryptoOption,
-    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-    futures_contract::FuturesContract, futures_spread::FuturesSpread,
-    index_instrument::IndexInstrument, option_contract::OptionContract,
-    option_spread::OptionSpread, perpetual_contract::PerpetualContract,
-    tokenized_asset::TokenizedAsset,
+use nautilus_model::{
+    instruments::{
+        Instrument, InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
+        cfd::Cfd, commodity::Commodity, crypto_future::CryptoFuture, crypto_option::CryptoOption,
+        crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+        futures_contract::FuturesContract, futures_spread::FuturesSpread,
+        index_instrument::IndexInstrument, option_contract::OptionContract,
+        option_spread::OptionSpread, perpetual_contract::PerpetualContract,
+        tokenized_asset::TokenizedAsset,
+    },
+    types::Currency,
 };
 
 #[allow(unused)]
@@ -54,6 +57,30 @@ pub mod option_contract;
 pub mod option_spread;
 pub mod perpetual_contract;
 pub mod tokenized_asset;
+
+// Errors on empty/whitespace codes so corrupted rows surface as ParseError,
+// instead of silently registering as a fallback currency. Known codes resolve
+// from CURRENCY_MAP with original metadata; unknown non-empty codes fall back
+// to a new crypto currency to support newly listed exchange assets.
+pub(crate) fn decode_currency(
+    value: &str,
+    field: &'static str,
+    context: &'static str,
+    row: usize,
+) -> Result<Currency, EncodingError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: empty currency code"),
+        ));
+    }
+
+    Ok(Currency::get_or_create_crypto_with_context(
+        trimmed,
+        Some(context),
+    ))
+}
 
 impl ArrowSchemaProvider for InstrumentAny {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -530,6 +557,7 @@ pub fn decode_instrument_any_batch(
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
+        enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
         instruments::{InstrumentAny, currency_pair::CurrencyPair},
         types::{Currency, Price, Quantity},
@@ -545,6 +573,64 @@ mod tests {
         let schema = InstrumentAny::get_schema(Some(metadata));
         assert!(schema.fields().len() >= 20);
         assert_eq!(schema.field(0).name(), "id");
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\t\n")]
+    fn test_decode_currency_empty_or_whitespace_errors(#[case] value: &str) {
+        let result = decode_currency(value, "currency", "test.currency", 7);
+        let err = result.expect_err("empty code must surface EncodingError");
+        match err {
+            EncodingError::ParseError(field, msg) => {
+                assert_eq!(field, "currency");
+                assert!(
+                    msg.contains("row 7"),
+                    "message should include row index, found: {msg}",
+                );
+                assert!(
+                    msg.contains("empty currency code"),
+                    "message should describe empty code, found: {msg}",
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+        // Ensure the fallback did not register a phantom currency under the empty key.
+        assert!(Currency::try_from_str(value.trim()).is_none());
+    }
+
+    #[rstest]
+    #[case("USD", CurrencyType::Fiat, 2)]
+    #[case("BTC", CurrencyType::Crypto, 8)]
+    #[case("XAU", CurrencyType::CommodityBacked, 2)]
+    fn test_decode_currency_known_code_preserves_metadata(
+        #[case] code: &str,
+        #[case] expected_type: CurrencyType,
+        #[case] expected_precision: u8,
+    ) {
+        let currency = decode_currency(code, "currency", "test.currency", 0).unwrap();
+        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.currency_type, expected_type);
+        assert_eq!(currency.precision, expected_precision);
+    }
+
+    #[rstest]
+    fn test_decode_currency_unknown_code_registers_as_crypto() {
+        let code = "XDECTEST";
+        assert!(
+            Currency::try_from_str(code).is_none(),
+            "test precondition: '{code}' must not be pre-registered",
+        );
+
+        let currency = decode_currency(code, "base_currency", "test.base_currency", 0).unwrap();
+        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+        assert_eq!(currency.precision, 8);
+        assert_eq!(currency.iso4217, 0);
+
+        let registered = Currency::try_from_str(code).expect("unknown code must be registered");
+        assert_eq!(registered, currency);
     }
 
     #[rstest]

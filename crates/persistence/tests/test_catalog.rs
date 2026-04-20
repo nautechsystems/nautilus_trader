@@ -22,10 +22,13 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
         depth::DEPTH10_LEN, is_monotonically_increasing_by_init, to_variant,
     },
-    enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, BookAction, CurrencyType, OrderSide,
+        PriceType,
+    },
     identifiers::{InstrumentId, Symbol, TradeId},
     instruments::{
-        CurrencyPair, Instrument, InstrumentAny,
+        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{audusd_sim, equity_aapl},
     },
     types::{Currency, Price, Quantity},
@@ -3719,4 +3722,65 @@ fn test_write_instruments_groups_by_type_and_id_before_encoding() {
     assert!(matches!(read[1], InstrumentAny::Equity(_)));
     assert_eq!(HasTsInit::ts_init(&read[0]), UnixNanos::from(1_000));
     assert_eq!(HasTsInit::ts_init(&read[1]), UnixNanos::from(2_000));
+}
+
+// Regression: instrument decode must not fail on base currencies that are not
+// pre-registered in CURRENCY_MAP (e.g. newly listed exchange assets). See issue #3898.
+#[rstest]
+fn test_instrument_roundtrip_with_unregistered_base_currency() {
+    // Use a deliberately unusual code that is not pre-registered in CURRENCY_MAP,
+    // and construct the Currency via `Currency::new` so the write path does not
+    // register it in the global map. This mirrors the fresh-session read scenario
+    // reported in issue #3898.
+    let unknown_code = "XUNREG1";
+    assert!(
+        Currency::try_from_str(unknown_code).is_none(),
+        "test precondition: '{unknown_code}' must not be pre-registered",
+    );
+
+    let base_currency = Currency::new(unknown_code, 8, 0, unknown_code, CurrencyType::Crypto);
+    let quote_currency = Currency::from("USDT");
+
+    let instrument_id = InstrumentId::from("XUNREG1USDT-PERP.BINANCE");
+    let perp = CryptoPerpetual::new(
+        instrument_id,
+        Symbol::from("XUNREG1USDT"),
+        base_currency,
+        quote_currency,
+        quote_currency,
+        false,
+        4,
+        0,
+        Price::from("0.0001"),
+        Quantity::from("1"),
+        None,
+        None,
+        None,
+        Some(Quantity::from("1")),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(Decimal::from(2) / Decimal::from(10_000)),
+        Some(Decimal::from(4) / Decimal::from(10_000)),
+        None,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let (_temp_dir, catalog) = create_temp_catalog();
+    catalog
+        .write_instruments(vec![InstrumentAny::CryptoPerpetual(perp)])
+        .unwrap();
+
+    let ids = vec![instrument_id.to_string()];
+    let read = catalog.query_instruments(Some(&ids)).unwrap();
+    assert_eq!(read.len(), 1);
+    let InstrumentAny::CryptoPerpetual(decoded) = &read[0] else {
+        panic!("expected CryptoPerpetual");
+    };
+    assert_eq!(decoded.base_currency.code.as_str(), unknown_code);
+    assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }

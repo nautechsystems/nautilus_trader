@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Fixed PyO3 `LiveNode` `request_bars()` historical callbacks dropped during startup warmup (#3825), thanks @BurnOutTrader
 - Fixed PyO3 `DataActor` missing `on_historical_funding_rates` and `on_historical_data` forwarding `None`
 - Fixed PyO3 crypto instrument `from_dict` for unregistered base/underlying codes (#3882), thanks for reporting @volemont
+- Fixed PyO3 catalog `instruments()` failing on unregistered currencies (#3898), thanks for reporting @volemont
 - Fixed execution engine ignoring user-supplied `position_id` from `submit_order` (Rust)
 - Fixed reconciliation IDs non-deterministic across restarts (#3878), thanks for reporting @peanut-copilot
 - Fixed reconciliation synthetic `OrderStatusReport` now propagates fill price to `avg_px` for downstream inferred fills

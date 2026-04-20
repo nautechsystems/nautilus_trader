@@ -29,7 +29,7 @@ use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::binary_option::BinaryOption,
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 #[allow(unused)]
 use rust_decimal::Decimal;
@@ -290,8 +290,12 @@ pub fn decode_binary_option_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let asset_class = asset_class_from_str(asset_class_values.value(i))?;
-        let currency = Currency::from_str(currency_values.value(i))
-            .map_err(|e| EncodingError::ParseError("currency", format!("row {i}: {e}")))?;
+        let currency = super::decode_currency(
+            currency_values.value(i),
+            "currency",
+            "binary_option.currency",
+            i,
+        )?;
         let price_prec = price_precision_values.value(i);
         let size_prec = size_precision_values.value(i);
 
