@@ -1,8 +1,8 @@
 # Gold Perpetual Book Imbalance with Proxy Futures Data (AX Exchange)
 
-This tutorial walks through backtesting an **order book imbalance** strategy on
-**XAU-PERP** (gold perpetual) using [AX Exchange](https://architect.exchange) instrument
-definitions and [Databento](https://databento.com) CME gold futures data as a proxy.
+This tutorial backtests an **order book imbalance** strategy on **XAU-PERP** (gold
+perpetual) using [AX Exchange](https://architect.exchange) instrument definitions
+and [Databento](https://databento.com) CME gold futures data as a proxy.
 
 ## Introduction
 
@@ -13,12 +13,12 @@ direction. For a deeper dive into the statistical foundations,
 see Databento's [blog post on HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)
 which demonstrates the predictive power of book imbalance features.
 
-For demonstration purposes, NautilusTrader ships with an `OrderBookImbalance` example
-strategy that is intentionally simple (no alpha advantage).
-The strategy monitors the ratio of the smaller to larger side at the top of book, and when
-this ratio drops below a configurable threshold it fires a fill-or-kill (FOK) limit order. Because
-it only needs top-of-book data, it works with Databento `mbp-1` (market by price best bid/ask) quotes
-rather than full depth-of-book, which is significantly cheaper to source.
+The `OrderBookImbalance` strategy shipped with NautilusTrader is intentionally
+simple (no alpha advantage). It monitors the ratio of the smaller to larger
+side at the top of book; when this ratio drops below a configurable threshold
+it fires a fill-or-kill (FOK) limit order. Because it only needs top-of-book
+data, it works with Databento `mbp-1` (market by price best bid/ask) quotes
+instead of full depth-of-book, which is significantly cheaper to source.
 
 ### Why proxy data?
 
@@ -288,11 +288,9 @@ in the examples directory.
 
 ## Running live
 
-The same strategy used in this backtest can be run live with no code changes - only a
-launch script is needed. NautilusTrader's architecture means your strategy is
-venue-agnostic: switching from backtest to live is a configuration change, not a rewrite.
-
-See the complete live example:
+The same `OrderBookImbalance` strategy runs live against AX Exchange. The launch
+script swaps the `BacktestEngine` for a `TradingNode` with the AX data and
+execution clients configured. See the complete live example:
 [`ax_book_imbalance.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_book_imbalance.py)
 
 For connection setup and API key configuration, refer to the

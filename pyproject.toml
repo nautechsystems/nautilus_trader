@@ -82,7 +82,7 @@ ib = [
 ]
 docker = ["docker>=7.1.0,<8.0.0"]
 polymarket = ["py-clob-client>=0.34.6,<1.0.0"]
-visualization = ["plotly>=6.6.0,<7.0.0"]
+visualization = ["plotly>=6.7.0,<7.0.0", "kaleido>=1.2.0,<2.0.0"]
 
 [dependency-groups]
 dev = [

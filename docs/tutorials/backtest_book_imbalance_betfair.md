@@ -1,8 +1,8 @@
 # Book Imbalance Backtest (Betfair)
 
 :::note
-This is a **Rust-only** v2 system tutorial. No Python, no Cython, no Parquet catalog.
-It uses the Rust `BacktestEngine` directly with raw Betfair streaming data.
+This is a **Rust-only** v2 system tutorial. It drives the Rust `BacktestEngine`
+directly with raw Betfair streaming data, bypassing the Python and Parquet paths.
 :::
 
 This tutorial backtests a **book imbalance** actor on Betfair exchange data.
@@ -29,9 +29,9 @@ A positive value means more backing interest for the outcome. Sports
 traders use this as a building-block signal, combining it with price
 momentum or market-wide features.
 
-This example uses the Rust backtest engine directly, without Python or the
-Parquet catalog. A release build processes ~3 million data points per
-second with full order book maintenance in the matching engine.
+This example drives the Rust `BacktestEngine` directly against raw Betfair
+stream files. A release build processes ~3 million data points per second
+with full order book maintenance in the matching engine.
 
 ## Prerequisites
 

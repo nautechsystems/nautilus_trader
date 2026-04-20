@@ -1,10 +1,10 @@
 # Grid Market Making with a Deadman's Switch (BitMEX)
 
-This tutorial walks through backtesting a grid market making strategy on BitMEX using free
-historical quote tick data from [Tardis.dev](https://tardis.dev), then running it live
-using the Rust-native `LiveNode`. The key differentiator covered here is BitMEX's
-**deadman's switch**, a server-side safety mechanism that automatically cancels all open
-orders if your client loses connectivity.
+This tutorial backtests a grid market making strategy on BitMEX with free historical
+quote tick data from [Tardis.dev](https://tardis.dev), then runs it live using the
+Rust-native `LiveNode`. It focuses on BitMEX's **deadman's switch**, a server-side
+safety mechanism that automatically cancels all open orders if your client loses
+connectivity.
 
 ## Introduction
 
@@ -32,7 +32,7 @@ When `deadmans_switch_timeout_secs` is set in the execution client config, a bac
 task runs continuously:
 
 ```
-timeout = 60s → refresh interval = timeout / 4 = 15s
+timeout = 60s -> refresh interval = timeout / 4 = 15s
 
  t=0s   Strategy starts, cancelAllAfter(60000ms) sent
  t=15s  Refresh: cancelAllAfter(60000ms) sent  (resets timer)
@@ -41,7 +41,7 @@ timeout = 60s → refresh interval = timeout / 4 = 15s
     ↓
  Connectivity lost at t=50s (last refresh was at t=45s)
     ↓
- t=105s  Server timer fires → BitMEX cancels all open orders
+ t=105s  Server timer fires -> BitMEX cancels all open orders
 ```
 
 For market making specifically, stranded quotes are a serious risk: if your software crashes
@@ -139,7 +139,7 @@ XBTUSD = PerpetualContract(
     quote_currency=USD,
     settlement_currency=BTC,
     is_inverse=True,
-    price_precision=1,        # $0.5 tick → one decimal place
+    price_precision=1,        # $0.5 tick -> one decimal place
     size_precision=0,         # integer contracts
     price_increment=Price.from_str("0.5"),
     size_increment=Quantity.from_int(1),
@@ -179,7 +179,7 @@ engine = BacktestEngine(config=config)
 
 BITMEX = Venue("BITMEX")
 engine.add_venue(
-    venue=BITMEX,
+    ↓enue=BITMEX,
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=BTC,
@@ -268,7 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::from("TESTER-001");
     let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
-    // Minimal data client: just selects testnet or mainnet endpoints
+    // Minimal data client: selects testnet or mainnet endpoints
     let data_config = BitmexDataClientConfig {
         use_testnet,
         ..Default::default()
@@ -336,15 +336,15 @@ refreshes the server-side timer. Its value becomes apparent in failure scenarios
 Normal operation:
   ┌─────────────────────────────────────────────────────────┐
   │  Strategy running                                       │
-  │  t=0s   cancelAllAfter(60_000ms) ──────────────► BitMEX │
-  │  t=15s  cancelAllAfter(60_000ms) ──────────────► BitMEX │
-  │  t=30s  cancelAllAfter(60_000ms) ──────────────► BitMEX │
+  │  t=0s   cancelAllAfter(60_000ms) ──────────────> BitMEX │
+  │  t=15s  cancelAllAfter(60_000ms) ──────────────> BitMEX │
+  │  t=30s  cancelAllAfter(60_000ms) ──────────────> BitMEX │
   └─────────────────────────────────────────────────────────┘
 
 Connectivity loss:
   ┌──────────────────────────────────────────────────────────┐
   │  t=40s  Network failure, no more refreshes sent          │
-  │  t=100s BitMEX timer fires → all open orders cancelled   │
+  │  t=100s BitMEX timer fires -> all open orders cancelled  │
   │         (60s after the last successful refresh at t=40s) │
   └──────────────────────────────────────────────────────────┘
 ```
@@ -437,7 +437,7 @@ Too low causes excessive cancel/replace churn; too high leaves orders stale duri
 ```
 LiveNode starts
   │
-  ├── connect() → REST: load instruments; WebSocket: subscribe channels
+  ├── connect() -> REST: load instruments; WebSocket: subscribe channels
   │
   ├── deadman's switch task starts
   │     └── cancelAllAfter(timeout_ms) sent every timeout/4 seconds
@@ -456,8 +456,8 @@ LiveNode starts
   │     └── Remove from pending_self_cancels; position/skew update
   │
   ├── on_order_canceled()
-  │     ├── Self-cancel? → no action
-  │     └── Unexpected cancel? → reset last_quoted_mid (triggers requote)
+  │     ├── Self-cancel? -> no action
+  │     └── Unexpected cancel? -> reset last_quoted_mid (triggers requote)
   │
   └── on_stop()
         ├── cancel_all_orders()

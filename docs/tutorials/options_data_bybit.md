@@ -6,15 +6,15 @@ the Bybit adapter to stream live option Greeks and option chain snapshots.
 :::
 
 This tutorial connects to Bybit's live options market and streams real-time
-Greeks and aggregated option chain snapshots using a Rust `DataActor`. By the
-end you will understand how to discover option instruments, subscribe to
-venue-provided Greeks, and consume periodic option chain snapshots with
-ATM-relative strike filtering.
+Greeks and aggregated option chain snapshots using a Rust `DataActor`. It
+covers instrument discovery, venue-provided Greeks subscriptions, and
+periodic option chain snapshots with ATM-relative strike filtering.
 
 ## Introduction
 
 Bybit publishes Greeks (delta, gamma, vega, theta) and implied volatility
-alongside every option ticker update. Nautilus exposes this data at two levels:
+alongside every option ticker update. NautilusTrader exposes this data at two
+levels:
 
 - **Per-instrument Greeks**: subscribe to a single option contract and receive
   an `OptionGreeks` event on every ticker update.
@@ -22,10 +22,9 @@ alongside every option ticker update. Nautilus exposes this data at two levels:
   periodic `OptionChainSlice` events that aggregate quotes and Greeks across
   all active strikes.
 
-This tutorial walks through both patterns using two existing examples in the
-repository. The first example subscribes to individual Greeks streams. The
-second subscribes to an aggregated option chain with ATM-relative strike
-filtering.
+Both patterns are backed by example binaries in the Bybit adapter crate. The
+first subscribes to individual Greeks streams; the second subscribes to an
+aggregated option chain with ATM-relative strike filtering.
 
 ## Prerequisites
 

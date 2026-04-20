@@ -2,15 +2,15 @@
 
 :::note
 This is a **Rust-only** tutorial. The strategy, backtest wiring, and tests
-all live in the compiled core; Python is not involved.
+all live in the compiled core.
 :::
 
-This tutorial walks through a directional **Hurst-exponent regime filter**
-combined with a **VPIN** (Volume-synchronized Probability of Informed
-Trading) flow signal on **PF_XBTUSD** (the USD-margined Bitcoin perpetual
-on [Kraken Futures](https://futures.kraken.com)), backtested against
-[Tardis.dev](https://tardis.dev) historical trades and quotes using the
-Rust `BacktestEngine`.
+This tutorial backtests a directional strategy on **PF_XBTUSD**, the
+USD-margined Bitcoin perpetual on [Kraken Futures](https://futures.kraken.com).
+The strategy combines a **Hurst-exponent regime filter** with a **VPIN**
+(Volume-synchronized Probability of Informed Trading) flow signal.
+Historical trades and quotes come from [Tardis.dev](https://tardis.dev)
+and replay through the Rust `BacktestEngine`.
 
 ## Introduction
 
@@ -73,19 +73,26 @@ same clock, and Hurst sampled on the same bars uses the same frame.
 
 ## Data preparation
 
-Kraken Futures is published by Tardis under its historical exchange slug
+Kraken Futures is published by Tardis under the historical slug
 `cryptofacilities`. The first day of each month is available for free
 without an API key, which is enough for a single-day plumbing check. A
 full backtest with the default windows needs several days of data and a
 paid Tardis API key (see the tip below).
 
 ```bash
-curl -L -o PF_XBTUSD_trades.csv.gz \
+mkdir -p /tmp/tardis_kraken
+
+curl -L -o /tmp/tardis_kraken/PF_XBTUSD_trades.csv.gz \
   https://datasets.tardis.dev/v1/cryptofacilities/trades/2024/01/01/PF_XBTUSD.csv.gz
 
-curl -L -o PF_XBTUSD_quotes.csv.gz \
+curl -L -o /tmp/tardis_kraken/PF_XBTUSD_quotes.csv.gz \
   https://datasets.tardis.dev/v1/cryptofacilities/quotes/2024/01/01/PF_XBTUSD.csv.gz
 ```
+
+The runnable example binary shown later in this tutorial reads from
+`/tmp/tardis_kraken/` by default, so downloading into that directory up front
+means `cargo run` works without needing `KRAKEN_TRADES` or `KRAKEN_QUOTES`
+overrides.
 
 :::tip
 Full historical ranges require a paid Tardis API key. Use the
@@ -194,15 +201,66 @@ or drop `hurst_window` and `vpin_window` accordingly. Full multi-day
 backtests should use the defaults.
 
 :::note
-`VALUE` bars are built from `TradeTick` data. The backtest engine
-consumes the same trade stream that the strategy uses for VPIN, so
-there is no double counting: the bars are a *view* onto the trade tape,
-not a separate data source.
+`VALUE` bars are a *view* onto the trade tape. The backtest engine
+consumes the same stream that drives VPIN, so there is no double
+counting.
 :::
 
 ## Strategy overview
 
-The `HurstVpinDirectional` strategy runs three concurrent pipelines:
+The `HurstVpinDirectional` strategy runs three concurrent pipelines that
+synchronize at bar close: trades feed a bucket accumulator, bar close
+triggers signal recomputation, and quotes drive entry and timeout
+checks.
+
+```mermaid
+flowchart LR
+    subgraph Inputs ["Data streams"]
+        T["TradeTick"]
+        B["Value bar close<br/>(USD 2M notional)"]
+        Q["QuoteTick"]
+    end
+
+    subgraph State ["Rolling state"]
+        BV["Bucket buy / sell volume"]
+        RET["Log-return window"]
+        IMB["Imbalance window"]
+    end
+
+    subgraph Signals ["Signals"]
+        H(("Hurst"))
+        V(("VPIN + signed"))
+    end
+
+    subgraph Gates ["Decision gates"]
+        E{"Flat AND<br/>Hurst >= 0.55 AND<br/>VPIN >= 0.30"}
+        R{"Open AND<br/>Hurst < 0.50"}
+        X{"Open AND<br/>held > max_holding_secs"}
+    end
+
+    subgraph Orders ["Orders"]
+        Op["Market IOC<br/>side = sign(signed VPIN)"]
+        Cl["Close position"]
+    end
+
+    T -->|aggressor| BV
+    B -->|log return| RET
+    BV -.->|snapshot + reset<br/>on bar close| IMB
+
+    RET --> H
+    IMB --> V
+
+    H --> E
+    V --> E
+    Q -->|tick| E
+    E -->|yes| Op
+
+    H --> R
+    R -->|yes| Cl
+
+    Q -->|tick| X
+    X -->|yes| Cl
+```
 
 1. **Per trade**: accumulate aggressive buy and aggressive sell volume
    for the current dollar-bar bucket using `TradeTick::aggressor_side`.
@@ -218,6 +276,15 @@ Regime exit fires from the bar pipeline when Hurst drops below
 `hurst_exit`. Holding timeout fires from the quote pipeline when the
 position has been open longer than `max_holding_secs`.
 
+![Signal dashboard during an active trading window](./assets/hurst_vpin_kraken/panel_b_dashboard.png)
+
+*Zoomed view of the three pipelines during a live trading window on
+2024-01-16. Hurst holds above `enter` for the full window and VPIN stays
+above threshold. Signed VPIN is negative when each short entry fires and
+drifts back toward zero as price rallies. The first position closes on
+the holding-time cap; the second reduces on a partial IOC cover and the
+residual size carries on open for the rest of the session.*
+
 ### Hurst estimator
 
 The strategy uses classical rescaled-range (R/S) regression across a
@@ -226,9 +293,16 @@ is split into non-overlapping chunks of length `k`, each chunk's
 rescaled range is computed, and the mean R/S is recorded. The slope of
 `log(R/S)` vs `log(k)` across the lag set gives the Hurst estimate.
 
+![Hurst exponent over the full backtest](./assets/hurst_vpin_kraken/panel_e_hurst_only.png)
+
+*Rolling Hurst estimate across 14 days of PF_XBTUSD (2024-01-15 to
+2024-01-28). The series spends most of its time above the 0.55 enter
+threshold with occasional decay below 0.50, which would trigger regime
+exits on any open position.*
+
 ### VPIN estimator
 
-With explicit trade aggressor side available from the exchange feed,
+With explicit trade aggressor side available from the venue feed,
 VPIN collapses to
 
 ```
@@ -240,6 +314,12 @@ retains the sign of `V_B - V_S` and is used to choose direction. This
 is more accurate than the bulk-volume classification used in the
 original Easley/Lopez de Prado formulation, which was only necessary
 when aggressor side was not directly observable.
+
+![VPIN distribution across the backtest](./assets/hurst_vpin_kraken/panel_d_vpin_hist.png)
+
+*VPIN sits just above the 0.30 threshold across the run, so roughly
+half the bars are flow-eligible. Combined with the Hurst gate, entries
+fire only when both conditions hold simultaneously.*
 
 ### Configuration
 
@@ -343,6 +423,44 @@ cargo run -p nautilus-kraken --features examples \
 By default it reads `PF_XBTUSD_trades.csv.gz` and `PF_XBTUSD_quotes.csv.gz`
 from `/tmp/tardis_kraken/`. Override with `KRAKEN_TRADES` and
 `KRAKEN_QUOTES` environment variables.
+
+![Trade detail during the active window](./assets/hurst_vpin_kraken/panel_a_price_regime.png)
+
+*Zoomed trade view from a 14-day run on Tardis PF_XBTUSD data. Teal
+bands mark bars where `Hurst >= 0.55`; gold bands mark periods the
+strategy held a position. Two short entries fire as the signals agree,
+but the realized price path runs against them. The first position
+closes cleanly on the holding-time cap. The second partially covers on
+an IOC exit and the residual carries on open for the rest of the
+session, which is how netting positions look when an exit IOC only
+fills part of the resting size.*
+
+![Decision space across every bar](./assets/hurst_vpin_kraken/panel_c_decision_scatter.png)
+
+*Per-bar view of the decision rule. Each point is one bar close,
+plotted at its Hurst and VPIN values, colored by signed VPIN. The
+shaded upper-right quadrant is where both thresholds are met and the
+strategy is eligible to enter. Most bars sit just above the VPIN
+threshold with modest signed flow, which is why live entries stay
+sparse across the 14-day window.*
+
+### Regenerate the panels
+
+The backtest strategy logs `Hurst=… VPIN=… signed=… bar_close=…` on every
+bar close and standard `OrderFilled` events on entries and exits, so the
+panels above are fully reproducible from the run's stdout:
+
+```bash
+RUST_LOG=info cargo run -p nautilus-kraken --features examples \
+    --example kraken-hurst-vpin-backtest --release > /tmp/backtest.log 2>&1
+
+uv sync --extra visualization
+BACKTEST_LOG=/tmp/backtest.log \
+    python3 docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
+```
+
+The renderer uses the shared `nautilus_dark` tearsheet theme and writes
+static PNGs via Plotly's Kaleido exporter.
 
 ## Next steps
 

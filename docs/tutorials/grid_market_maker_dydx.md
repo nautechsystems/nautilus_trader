@@ -1,9 +1,9 @@
 # On-Chain Grid Market Making with Short-Term Orders (dYdX)
 
-This tutorial walks through running a grid market making strategy on dYdX v4 using the
-Rust-native `LiveNode`. By the end, you will have a working grid quoter that places symmetric
-limit orders around the mid-price, skews the grid to manage inventory, and continuously
-requotes as short-term orders cycle through expiry.
+This tutorial runs a grid market making strategy on dYdX v4 using the Rust-native
+`LiveNode`. The strategy places symmetric limit orders around the mid-price, skews
+the grid to manage inventory, and continuously requotes as short-term orders cycle
+through expiry.
 
 ## Introduction
 
@@ -191,10 +191,9 @@ All price and size quantization for dYdX markets is handled automatically by the
 
 ### Post-only orders
 
-All grid orders are submitted with `post_only=true`. This ensures every order enters the
-book as a maker order (never crosses the spread). If a grid price has moved through the
-book by the time it reaches the matching engine, the order is rejected rather than filling
-as a taker. This guarantees maker fee rates and prevents unintended crossing during
+All grid orders are submitted with `post_only=true`. The exchange rejects any
+order that would cross the spread at match time, so every fill lands at the
+maker fee rate and the grid never inadvertently lifts its own offers during
 requote transitions.
 
 ## Running and stopping
@@ -351,7 +350,7 @@ Key configuration points:
 ```
 LiveNode starts
   │
-  ├── connect() → HTTP: load instruments, WebSocket: subscribe channels
+  ├── connect() -> HTTP: load instruments, WebSocket: subscribe channels
   │
   ├── on_start()
   │     └── subscribe_quotes(ETH-USD-PERP.DYDX)
@@ -367,8 +366,8 @@ LiveNode starts
   │     └── Remove from pending_self_cancels
   │
   ├── on_order_canceled()
-  │     ├── Self-cancel? → no action
-  │     └── Protocol cancel? → reset last_quoted_mid (triggers requote)
+  │     ├── Self-cancel? -> no action
+  │     └── Protocol cancel? -> reset last_quoted_mid (triggers requote)
   │
   └── on_stop()
         ├── cancel_all_orders()
@@ -384,7 +383,7 @@ strategy works without reading the full source.
 ### Trade size resolution (`on_start`)
 
 When the strategy starts, it resolves the trade size from the instrument cache. The fallback
-chain is: config value → instrument `min_quantity` → `1.0`:
+chain is: config value -> instrument `min_quantity` -> `1.0`:
 
 ```rust
 fn on_start(&mut self) -> anyhow::Result<()> {

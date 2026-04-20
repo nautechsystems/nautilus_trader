@@ -1,8 +1,8 @@
 # Mean Reversion with Proxy FX Data (AX Exchange)
 
-This tutorial walks through backtesting a **Bollinger Band mean reversion** strategy on
-**EURUSD-PERP** (EUR/USD perpetual) using [AX Exchange](https://architect.exchange) instrument
-definitions and [TrueFX](https://www.truefx.com) spot FX data as a proxy.
+This tutorial backtests a **Bollinger Band mean reversion** strategy on
+**EURUSD-PERP** (EUR/USD perpetual) using [AX Exchange](https://architect.exchange)
+instrument definitions and [TrueFX](https://www.truefx.com) spot FX data as a proxy.
 
 ## Introduction
 
@@ -15,8 +15,8 @@ This strategy adds a **Relative Strength Index (RSI)** filter as confirmation. A
 lower band alone is not sufficient to buy - RSI must also indicate oversold conditions. This
 two-indicator approach reduces whipsaws in trending markets.
 
-For demonstration purposes, NautilusTrader ships with a `BBMeanReversion` example strategy
-that is intentionally simple (no alpha advantage).
+The `BBMeanReversion` strategy shipped with NautilusTrader is intentionally
+simple (no alpha advantage).
 
 ### Why proxy data?
 
@@ -120,10 +120,11 @@ Fees are explicit backtest assumptions and should be set deliberately. Check the
 The `BBMeanReversion` strategy works as follows:
 
 1. **Wait for warm-up**: Both indicators must be initialized before trading.
-2. **Exit check (first)**: If long and close >= BB middle band → close position (mean
-   reversion target reached). If short and close <= BB middle band → close position.
-3. **Entry signals**: If close <= BB lower band AND RSI < buy threshold → buy. If
-   close >= BB upper band AND RSI > sell threshold → sell. Existing positions in the
+2. **Exit check (first)**: If long and close >= BB middle band, close the position
+   (mean reversion target reached). If short and close <= BB middle band, close the
+   position.
+3. **Entry signals**: If close <= BB lower band AND RSI < buy threshold, buy. If
+   close >= BB upper band AND RSI > sell threshold, sell. Existing positions in the
    opposite direction are closed before entering.
 
 ### Configuration
@@ -261,11 +262,9 @@ in the examples directory.
 
 ## Running live
 
-The same strategy used in this backtest can be run live with no code changes - only a
-launch script is needed. NautilusTrader's architecture means your strategy is
-venue-agnostic: switching from backtest to live is a configuration change, not a rewrite.
-
-See the complete live example:
+The same `BBMeanReversion` strategy runs live against AX Exchange. The launch
+script swaps the `BacktestEngine` for a `TradingNode` with the AX data and
+execution clients configured. See the complete live example:
 [`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py)
 
 For connection setup and API key configuration, refer to the
