@@ -1104,6 +1104,7 @@ impl DataClient for PolymarketDataClient {
         let filters = self.provider.filters();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *POLYMARKET_VENUE;
@@ -1118,7 +1119,16 @@ impl DataClient for PolymarketDataClient {
                     log::info!("Fetched {} instruments from Gamma API", instruments.len());
 
                     for instrument in &instruments {
-                        instruments_cache.insert(instrument.id(), instrument.clone());
+                        let instrument_id = instrument.id();
+                        instruments_cache.insert(instrument_id, instrument.clone());
+                        token_meta.insert(
+                            Ustr::from(instrument.raw_symbol().as_str()),
+                            TokenMeta {
+                                instrument_id,
+                                price_precision: instrument.price_precision(),
+                                size_precision: instrument.size_precision(),
+                            },
+                        );
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1150,6 +1160,7 @@ impl DataClient for PolymarketDataClient {
         let http = self.provider.http_client().clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let token_meta = self.token_meta.clone();
         let client_id = request.client_id.unwrap_or(self.client_id);
         let request_id = request.request_id;
         let start = request.start;
@@ -1181,6 +1192,14 @@ impl DataClient for PolymarketDataClient {
 
             if let Some(inst) = instrument {
                 instruments_cache.insert(inst.id(), inst.clone());
+                token_meta.insert(
+                    Ustr::from(inst.raw_symbol().as_str()),
+                    TokenMeta {
+                        instrument_id: inst.id(),
+                        price_precision: inst.price_precision(),
+                        size_precision: inst.size_precision(),
+                    },
+                );
 
                 let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                     request_id,
