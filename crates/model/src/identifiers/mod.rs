@@ -71,12 +71,13 @@ impl_serialization_for_identifier!(client_order_id::ClientOrderId);
 impl_serialization_for_identifier!(component_id::ComponentId);
 impl_serialization_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
 impl_serialization_for_identifier!(order_list_id::OrderListId);
-impl_serialization_for_identifier!(position_id::PositionId);
 impl_serialization_for_identifier!(strategy_id::StrategyId);
-impl_serialization_for_identifier!(symbol::Symbol);
 impl_serialization_for_identifier!(trader_id::TraderId);
 impl_serialization_for_identifier!(venue::Venue);
 impl_serialization_for_identifier!(venue_order_id::VenueOrderId);
+
+impl_serialization_for_identifier_utf8!(position_id::PositionId);
+impl_serialization_for_identifier_utf8!(symbol::Symbol);
 
 impl_as_ref_for_identifier!(account_id::AccountId);
 impl_as_ref_for_identifier!(actor_id::ActorId);

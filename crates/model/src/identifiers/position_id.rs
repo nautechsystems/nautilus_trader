@@ -119,4 +119,26 @@ mod tests {
     fn test_new_with_empty_string_panics_with_display_format() {
         let _ = PositionId::new("");
     }
+
+    #[rstest]
+    fn test_deserialize_json_with_unicode_escapes() {
+        let id: PositionId = serde_json::from_str(r#""P-\u9f99\u867e-1""#).unwrap();
+        assert_eq!(id.as_str(), "P-\u{9f99}\u{867e}-1");
+    }
+
+    #[rstest]
+    fn test_serialization_roundtrip_non_ascii() {
+        let id = PositionId::new("P-\u{9f99}\u{867e}-1");
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(json, "\"P-\u{9f99}\u{867e}-1\"");
+
+        let deserialized: PositionId = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, id);
+    }
+
+    #[rstest]
+    fn test_deserialize_rejects_empty_string() {
+        let result: Result<PositionId, _> = serde_json::from_str(r#""""#);
+        assert!(result.is_err());
+    }
 }

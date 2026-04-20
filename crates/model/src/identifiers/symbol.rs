@@ -217,4 +217,33 @@ mod tests {
     fn test_symbol_new_with_empty_string_panics_with_display_format() {
         let _ = Symbol::new("");
     }
+
+    #[rstest]
+    fn test_symbol_deserialize_json_with_unicode_escapes() {
+        let symbol: Symbol = serde_json::from_str(r#""\u9f99\u867eUSDT""#).unwrap();
+        assert_eq!(symbol.as_str(), "\u{9f99}\u{867e}USDT");
+    }
+
+    #[rstest]
+    fn test_symbol_deserialize_from_owned_value_with_non_ascii() {
+        let value = serde_json::Value::String("\u{9f99}\u{867e}USDT".to_string());
+        let symbol: Symbol = serde_json::from_value(value).unwrap();
+        assert_eq!(symbol.as_str(), "\u{9f99}\u{867e}USDT");
+    }
+
+    #[rstest]
+    fn test_symbol_serialization_roundtrip_non_ascii() {
+        let symbol = Symbol::new("\u{9f99}\u{867e}USDT");
+        let json = serde_json::to_string(&symbol).unwrap();
+        assert_eq!(json, "\"\u{9f99}\u{867e}USDT\"");
+
+        let deserialized: Symbol = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, symbol);
+    }
+
+    #[rstest]
+    fn test_symbol_deserialize_rejects_empty_string() {
+        let result: Result<Symbol, _> = serde_json::from_str(r#""""#);
+        assert!(result.is_err());
+    }
 }
