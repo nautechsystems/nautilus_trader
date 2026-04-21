@@ -74,19 +74,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .postgres_cache_database_config(PostgresConnectOptions::default())
         .build();
 
+    let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
+
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .with_load_state(false)
         .with_save_state(false)
         .add_data_client(
-            None, // Use factory name
+            Some(client_id.to_string()),
             Box::new(client_factory),
             Box::new(client_config),
         )?
         .build()?;
-
-    // Create and register a blockchain subscriber actor
-    let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
 
     let pools = vec![InstrumentId::from(
         "0x4CEf551255EC96d89feC975446301b5C4e164C59.Arbitrum:UniswapV3",

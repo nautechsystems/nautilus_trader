@@ -52,6 +52,8 @@ use crate::{
 /// 2. HyperSync API for efficient historical data queries.
 #[derive(Debug)]
 pub struct BlockchainDataClient {
+    /// The client ID used to identify this client with the data engine.
+    pub client_id: ClientId,
     /// The blockchain being targeted by this client instance.
     pub chain: SharedChain,
     /// Configuration parameters for the blockchain data client.
@@ -76,11 +78,12 @@ pub struct BlockchainDataClient {
 impl BlockchainDataClient {
     /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
     #[must_use]
-    pub fn new(config: BlockchainDataClientConfig) -> Self {
+    pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> Self {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
+            client_id,
             chain,
             core_client: None,
             config,
@@ -813,7 +816,7 @@ impl BlockchainDataClient {
 #[async_trait::async_trait(?Send)]
 impl DataClient for BlockchainDataClient {
     fn client_id(&self) -> ClientId {
-        ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
+        self.client_id
     }
 
     fn venue(&self) -> Option<Venue> {

@@ -111,7 +111,7 @@ impl NautilusKernel {
             config.trader_id(),
             &machine_id,
             instance_id,
-            Ustr::from(stringify!(LiveNode)),
+            Ustr::from(&name),
         );
 
         log::info!("Building system kernel");

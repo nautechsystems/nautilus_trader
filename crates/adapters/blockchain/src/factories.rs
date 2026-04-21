@@ -80,7 +80,7 @@ impl Default for BlockchainDataClientFactory {
 impl DataClientFactory for BlockchainDataClientFactory {
     fn create(
         &self,
-        _name: &str,
+        name: &str,
         config: &dyn ClientConfig,
         _cache: Rc<RefCell<Cache>>,
         _clock: Rc<RefCell<dyn Clock>>,
@@ -94,7 +94,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
                 )
             })?;
 
-        let client = BlockchainDataClient::new(blockchain_config.clone());
+        let client = BlockchainDataClient::new(ClientId::from(name), blockchain_config.clone());
 
         Ok(Box::new(client))
     }
@@ -149,7 +149,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             .downcast_ref::<BlockchainExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
+                    "Invalid config type for BlockchainExecutionClientFactory. Expected `BlockchainExecutionClientConfig`, was {config:?}"
                 )
             })?;
 
