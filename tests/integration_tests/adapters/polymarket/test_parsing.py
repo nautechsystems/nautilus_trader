@@ -31,10 +31,12 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStat
 from nautilus_trader.adapters.polymarket.common.parsing import basis_points_as_decimal
 from nautilus_trader.adapters.polymarket.common.parsing import calculate_commission
 from nautilus_trader.adapters.polymarket.common.parsing import determine_order_side
+from nautilus_trader.adapters.polymarket.common.parsing import determine_trade_id
 from nautilus_trader.adapters.polymarket.common.parsing import extract_fee_rates
 from nautilus_trader.adapters.polymarket.common.parsing import parse_polymarket_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
@@ -49,6 +51,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
@@ -56,6 +59,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Money
@@ -265,6 +269,395 @@ def test_parse_quote_ticks() -> None:
         assert price_change.best_bid == "0.6"
         assert price_change.best_ask == "0.7"
         assert price_change.hash is not None
+
+
+def _make_last_quote(
+    instrument: BinaryOption,
+    bid_price: float,
+    ask_price: float,
+    bid_size: float = 500.0,
+    ask_size: float = 600.0,
+) -> QuoteTick:
+    return QuoteTick(
+        instrument_id=instrument.id,
+        bid_price=instrument.make_price(bid_price),
+        ask_price=instrument.make_price(ask_price),
+        bid_size=instrument.make_qty(bid_size),
+        ask_size=instrument.make_qty(ask_size),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def test_parse_to_quote_ticks_uses_best_bid_ask_not_changed_level() -> None:
+    """
+    Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3905.
+
+    A size=0 removal at a deep level must not be used as the new top of book.
+    The post-change top is carried in `best_bid`/`best_ask`.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.009, ask_price=0.155)
+
+    quotes = PolymarketQuotes(
+        market="0x13e081035bf10a67c7faf2adde3912d26da6986a5aa7c097d0a134ab4a075717",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="39790575150005864502035112061767534106841339306960941347649609867025460648353",
+                price="0.156",
+                side=PolymarketOrderSide.SELL,
+                size="0",
+                hash="2aa07bfad07528cd22fffec6dbf7005e1f979720",
+                best_bid="0.009",
+                best_ask="0.155",
+            ),
+        ],
+        timestamp="1776713442539",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert len(result) == 1
+    quote = result[0]
+    assert quote.bid_price == instrument.make_price(0.009)
+    assert quote.ask_price == instrument.make_price(0.155)
+    # Changed level (0.156) is not the new top; sizes must carry from last_quote
+    assert quote.bid_size == last_quote.bid_size
+    assert quote.ask_size == last_quote.ask_size
+
+
+@pytest.mark.parametrize(
+    ("side", "changed_price", "at_top"),
+    [
+        (PolymarketOrderSide.BUY, "0.52", True),  # BUY at new top
+        (PolymarketOrderSide.BUY, "0.48", False),  # BUY at deeper level
+        (PolymarketOrderSide.SELL, "0.60", True),  # SELL at new top
+        (PolymarketOrderSide.SELL, "0.65", False),  # SELL at deeper level
+    ],
+    ids=["buy-top", "buy-deep", "sell-top", "sell-deep"],
+)
+def test_parse_to_quote_ticks_size_propagation(
+    side: PolymarketOrderSide,
+    changed_price: str,
+    at_top: bool,
+) -> None:
+    """
+    When the changed level is the new top, its size is authoritative for that side;
+    otherwise the top size carries from `last_quote`.
+
+    The untouched side always
+    carries from `last_quote`.
+
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+                price=changed_price,
+                side=side,
+                size="1234",
+                hash="aa",
+                best_bid="0.52",
+                best_ask="0.60",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert len(result) == 1
+    quote = result[0]
+    assert quote.bid_price == instrument.make_price(0.52)
+    assert quote.ask_price == instrument.make_price(0.60)
+
+    if side == PolymarketOrderSide.BUY:
+        expected_bid_size = instrument.make_qty(1234) if at_top else last_quote.bid_size
+        assert quote.bid_size == expected_bid_size
+        assert quote.ask_size == last_quote.ask_size
+    else:
+        expected_ask_size = instrument.make_qty(1234) if at_top else last_quote.ask_size
+        assert quote.ask_size == expected_ask_size
+        assert quote.bid_size == last_quote.bid_size
+
+
+def test_parse_to_quote_ticks_skips_when_best_bid_ask_is_none() -> None:
+    """
+    `best_bid`/`best_ask` being `None` (Optional fields missing from the payload)
+    triggers the explicit None guard.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="a",
+                best_bid=None,
+                best_ask=None,
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert result == []
+
+
+def test_parse_to_quote_ticks_skips_invalid_tops() -> None:
+    """
+    Entries with missing/zero best_bid or best_ask, or a locked/crossed book, are
+    skipped rather than producing degenerate quotes.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.binary_option()
+    last_quote = _make_last_quote(instrument, bid_price=0.50, ask_price=0.60)
+
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            # Zero best_bid (empty bid side)
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.SELL,
+                size="10",
+                hash="a",
+                best_bid="0",
+                best_ask="0.60",
+            ),
+            # Crossed (bid >= ask)
+            PolymarketQuote(
+                asset_id="1",
+                price="0.70",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="b",
+                best_bid="0.70",
+                best_ask="0.60",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+
+    # Act
+    result = quotes.parse_to_quote_ticks(
+        instrument=instrument,
+        last_quote=last_quote,
+        ts_init=1,
+    )
+
+    # Assert
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    ("bids", "asks", "expected_len"),
+    [
+        (
+            [
+                PolymarketBookLevel(price="0.40", size="150"),
+                PolymarketBookLevel(price="0.50", size="250"),
+            ],
+            [
+                PolymarketBookLevel(price="0.52", size="100"),
+                PolymarketBookLevel(price="0.60", size="200"),
+            ],
+            5,
+        ),
+        (
+            [
+                PolymarketBookLevel(price="0.40", size="150"),
+                PolymarketBookLevel(price="0.50", size="250"),
+            ],
+            [],
+            3,
+        ),
+        (
+            [],
+            [
+                PolymarketBookLevel(price="0.52", size="100"),
+                PolymarketBookLevel(price="0.60", size="200"),
+            ],
+            3,
+        ),
+    ],
+    ids=["two-sided", "bids-only", "asks-only"],
+)
+def test_parse_to_snapshot_flags_snapshot_bit_on_every_delta(
+    bids: list[PolymarketBookLevel],
+    asks: list[PolymarketBookLevel],
+    expected_len: int,
+) -> None:
+    """
+    Every snapshot delta (CLEAR + ADDs) must carry F_SNAPSHOT so downstream consumers
+    (data engine, wranglers) can distinguish the opening rebuild from an incremental
+    book reset.
+
+    F_LAST must be set on exactly one delta (the last).
+
+    """
+    # Arrange
+    snapshot = PolymarketBookSnapshot(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+        bids=bids,
+        asks=asks,
+        timestamp="1728799418260",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    deltas = snapshot.parse_to_snapshot(instrument=instrument, ts_init=1)
+
+    # Assert
+    assert deltas is not None
+    assert len(deltas.deltas) == expected_len
+
+    for delta in deltas.deltas:
+        assert delta.flags & RecordFlag.F_SNAPSHOT, f"F_SNAPSHOT missing from {delta}"
+
+    f_last_count = sum(1 for d in deltas.deltas if d.flags & RecordFlag.F_LAST)
+    assert f_last_count == 1
+    assert deltas.deltas[-1].flags & RecordFlag.F_LAST
+
+
+def test_parse_to_deltas_flags_last_on_final_only() -> None:
+    """
+    F_LAST must be set on exactly the final delta in the batch, not on every entry.
+    """
+    # Arrange
+    quotes = PolymarketQuotes(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        price_changes=[
+            PolymarketQuote(
+                asset_id="1",
+                price="0.50",
+                side=PolymarketOrderSide.BUY,
+                size="10",
+                hash="a",
+                best_bid="0.50",
+                best_ask="0.60",
+            ),
+            PolymarketQuote(
+                asset_id="1",
+                price="0.48",
+                side=PolymarketOrderSide.BUY,
+                size="20",
+                hash="b",
+                best_bid="0.50",
+                best_ask="0.60",
+            ),
+            PolymarketQuote(
+                asset_id="1",
+                price="0.60",
+                side=PolymarketOrderSide.SELL,
+                size="0",
+                hash="c",
+                best_bid="0.50",
+                best_ask="0.62",
+            ),
+        ],
+        timestamp="1729084877448",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    deltas = quotes.parse_to_deltas(instrument=instrument, ts_init=1)
+
+    # Assert
+    assert len(deltas.deltas) == 3
+    assert deltas.deltas[0].flags == 0
+    assert deltas.deltas[1].flags == 0
+    assert deltas.deltas[2].flags & RecordFlag.F_LAST
+
+
+def test_polymarket_quote_decodes_without_best_bid_ask() -> None:
+    """
+    `best_bid`/`best_ask` are optional; a payload that omits them must decode with the
+    fields defaulting to None rather than failing at the msgspec layer.
+    """
+    # Arrange
+    payload = {
+        "market": "0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        "price_changes": [
+            {
+                "asset_id": "1",
+                "price": "0.50",
+                "side": "BUY",
+                "size": "10",
+                "hash": "a",
+            },
+        ],
+        "event_type": "price_change",
+        "timestamp": "1729084877448",
+    }
+
+    # Act
+    quotes = msgspec.json.decode(msgspec.json.encode(payload), type=PolymarketQuotes)
+
+    # Assert
+    assert len(quotes.price_changes) == 1
+    assert quotes.price_changes[0].best_bid is None
+    assert quotes.price_changes[0].best_ask is None
+
+
+def test_determine_trade_id_is_deterministic() -> None:
+    id1 = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    id2 = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    assert id1 == id2
+
+
+def test_determine_trade_id_differentiates_sides() -> None:
+    buy = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    sell = determine_trade_id("asset-1", PolymarketOrderSide.SELL, "0.5", "10", "1700000")
+    assert buy != sell
+
+
+def test_determine_trade_id_field_delimiter_prevents_collision() -> None:
+    # "0.12" + "34" would collide with "0.1" + "234" if fields were concatenated
+    a = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.12", "34", "1700000")
+    b = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.1", "234", "1700000")
+    assert a != b
+
+
+def test_determine_trade_id_format() -> None:
+    trade_id = determine_trade_id("asset-1", PolymarketOrderSide.BUY, "0.5", "10", "1700000")
+    value = trade_id.value
+    assert len(value) == 16
+    assert all(c in "0123456789abcdef" for c in value)
 
 
 def test_parse_trade_tick() -> None:

@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `environment` enum config for BitMEX, Deribit, dYdX, Hyperliquid, and OKX adapters
 - Added `BybitEnvironment` to `BybitDataClientConfig` and `BybitExecClientConfig`
+- Added Bybit user-related endpoints (#3894), thanks @sunlei
 - Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
 - Added Interactive Brokers Rust adapter with PyO3 compatibility layer (#3864), thanks @faysou
 - Added Kraken xStocks tokenized asset support for spot market data, order submission, and futures instruments
@@ -67,6 +68,7 @@ Released on TBD (UTC).
 - Fixed PyO3 `DataActor` missing `on_historical_funding_rates` and `on_historical_data` forwarding `None`
 - Fixed PyO3 crypto instrument `from_dict` for unregistered base/underlying codes (#3882), thanks for reporting @volemont
 - Fixed PyO3 catalog `instruments()` failing on unregistered currencies (#3898), thanks for reporting @volemont
+- Fixed PyO3 `from_dict` on non-ASCII strings via `ensure_ascii=False` in `json.dumps` (#3895), thanks @costajohnt
 - Fixed execution engine ignoring user-supplied `position_id` from `submit_order` (Rust)
 - Fixed reconciliation IDs non-deterministic across restarts (#3878), thanks for reporting @peanut-copilot
 - Fixed reconciliation synthetic `OrderStatusReport` now propagates fill price to `avg_px` for downstream inferred fills
@@ -128,6 +130,10 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation fills using incorrect commission (#3860), thanks for reporting @fedoraiver
 - Fixed Polymarket instrument `min_quantity` denying market orders via limit-order shares rule (#3874), thanks for reporting @fedoraiver
 - Fixed Polymarket `request_instrument(s)` dropping WS via stale `token_meta` (#3900), thanks for reporting @fedoraiver
+- Fixed Polymarket `parse_to_quote_ticks` using changed level as top of book (#3905), thanks for reporting @camarigor
+- Fixed Polymarket `parse_to_snapshot` missing `F_SNAPSHOT` flag on CLEAR and intermediate ADD deltas
+- Fixed Polymarket `parse_to_deltas` flagging `F_LAST` on every delta instead of only the final one
+- Fixed Polymarket `parse_to_trade_tick` using `uuid.uuid4()`, producing non-deterministic trade IDs
 
 ### Internal Improvements
 - Added `AccountBalance::from_total_and_locked` and `AccountBalance::from_total_and_free`, and migrated adapter balance parsing to preserve the `total == locked + free` invariant at currency precision (Rust)
@@ -138,9 +144,18 @@ Released on TBD (UTC).
 - Added `biased` to `tokio::select!` blocks in network and live crates for deterministic poll order
 - Added engine config methods on PyO3 `LiveNodeBuilder` (#3848), thanks @BurnOutTrader
 - Added read-only `params()` accessor to `SubscribeCommand` and `TradingCommand` (#3846), thanks @faysou
-- Added Hyperliquid criterion benchmarks for L1 signing path
 - Added `ShutdownSystem` handling via `commands.system.shutdown` pub/sub topic, wired to kernel, backtest, and live (Rust)
 - Added PyO3 `DataActor` parity with v1 for `publish_data`, `publish_signal`, `subscribe_signal`, `unsubscribe_signal`, `add_synthetic`, and `update_synthetic` (Rust)
+- Added per-currency account-wide margin storage to `MarginAccount`, routing event margins by `instrument_id` presence
+- Added dYdX debug logging to `generate_order_status_report` showing filter scope and `page_full` on `None` results
+- Added Polymarket `determine_trade_id` helper with FNV-1a (Rust) and blake2b (Python) deterministic hashing
+- Added Hyperliquid criterion benchmarks for L1 signing path
+- Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
+- Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
+- Standardized adapter example manifests and trading deps (#3891), thanks @sunlei
+- Standardized margin emission convention across live derivatives adapters to use currency-keyed `MarginBalance` entries
+- Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
+- Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
 - Replaced `AHashMap`/`AHashSet` with `IndexMap`/`IndexSet` in `ExecutionManager` for deterministic ordering in simulations (Rust)
 - Refined make cargo-test to not include binaries for test harness builds (#3828), thanks @faysou
 - Refined Interactive Brokers combo fill average price calculation (#3834), thanks @faysou
@@ -154,11 +169,6 @@ Released on TBD (UTC).
 - Upgraded `datafusion` crate to v53.1.0
 - Upgraded `msgspec` to v0.21.1
 - Upgraded `tokio` crate to v1.52.1
-- Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
-- Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
-- Added debug logging to dYdX `generate_order_status_report` showing filter scope and `page_full` on `None` results
-- Added per-currency account-wide margin storage to `MarginAccount`, routing event margins by `instrument_id` presence
-- Standardized margin emission convention across live derivatives adapters to use currency-keyed `MarginBalance` entries
 
 ### Documentation Updates
 - Added Polymarket Python and Rust adapter config tables and updated rate limits

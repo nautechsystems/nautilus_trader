@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+import hashlib
 import time
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from typing import Any
 
 import pandas as pd
@@ -25,7 +29,6 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderStat
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
@@ -38,6 +41,59 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
+
+
+def determine_trade_id(
+    asset_id: str,
+    side: PolymarketOrderSide,
+    price: str,
+    size: str,
+    timestamp: str,
+) -> TradeId:
+    """
+    Derive a deterministic `TradeId` for a Polymarket market data trade.
+
+    Polymarket does not publish a trade ID with `last_trade_price` events, so we
+    derive one from the trade's identifying fields. Using blake2b with a 0x1f
+    delimiter prevents variable-length fields from colliding (e.g. "0.12" + "34"
+    vs "0.1" + "234").
+
+    Parameters
+    ----------
+    asset_id : str
+        The Polymarket asset (token) ID.
+    side : PolymarketOrderSide
+        The aggressor side of the trade.
+    price : str
+        The trade price as sent by the venue.
+    size : str
+        The trade size as sent by the venue.
+    timestamp : str
+        The trade timestamp as sent by the venue (milliseconds since epoch).
+
+    Returns
+    -------
+    TradeId
+
+    """
+    side_byte = b"B" if side == PolymarketOrderSide.BUY else b"S"
+    digest = hashlib.blake2b(digest_size=8)
+    digest.update(
+        b"\x1f".join(
+            (
+                asset_id.encode(),
+                side_byte,
+                price.encode(),
+                size.encode(),
+                timestamp.encode(),
+            ),
+        ),
+    )
+    return TradeId(digest.hexdigest())
 
 
 def make_composite_trade_id(trade_id: str, venue_order_id: VenueOrderId) -> TradeId:
