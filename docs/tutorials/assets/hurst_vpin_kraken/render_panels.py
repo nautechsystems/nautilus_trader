@@ -196,6 +196,34 @@ def _filter_fills(records, lo, hi):
     return [e for e in records if lo <= e["ts"] <= hi]
 
 
+def _draw_fill_connectors(fig, records, bars, row=None, col=None):
+    # Thin dotted segment from the bar-close polyline (interpolated at the
+    # fill timestamp) to the actual execution price. Makes the slip between
+    # fill price and reference line visually obvious without moving markers
+    # off their true y-value.
+    if not records or bars.empty:
+        return
+    kw = {}
+    if row is not None:
+        kw["row"] = row
+        kw["col"] = col
+    xs = bars["ts"].astype("int64").to_numpy()
+    ys = bars["close"].to_numpy()
+    for r in records:
+        line_y = float(np.interp(pd.Timestamp(r["ts"]).value, xs, ys))
+        fig.add_trace(
+            go.Scatter(
+                x=[r["ts"], r["ts"]],
+                y=[line_y, r["price"]],
+                mode="lines",
+                line={"color": "#eeeeee", "width": 1, "dash": "dot"},
+                showlegend=False,
+                hoverinfo="skip",
+            ),
+            **kw,
+        )
+
+
 def _draw_fill_markers(fig, entries, partials, closes, row=None, col=None, show_legend=True):
     kw = {}
     if row is not None:
@@ -319,6 +347,7 @@ def panel_a_price_regime(
             line={"color": PRIMARY, "width": 1.6},
         ),
     )
+    _draw_fill_connectors(fig, entries + partials + closes, bars)
     _draw_fill_markers(fig, entries, partials, closes)
     fig.add_trace(
         go.Scatter(
@@ -378,6 +407,7 @@ def panel_b_dashboard(
         row=1,
         col=1,
     )
+    _draw_fill_connectors(fig, entries + partials + closes, bars, row=1, col=1)
     _draw_fill_markers(fig, entries, partials, closes, row=1, col=1, show_legend=False)
 
     fig.add_trace(

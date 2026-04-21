@@ -6,24 +6,24 @@ instrument definitions and [TrueFX](https://www.truefx.com) spot FX data as a pr
 
 ## Introduction
 
-Mean reversion strategies assume that prices tend to return to a statistical average after
-deviating from it. **Bollinger Bands** provide a volatility-adaptive envelope around a moving
-average: the upper and lower bands expand in volatile markets and contract in quiet ones.
-When price touches a band, it may be overextended relative to recent history.
+Mean reversion strategies assume prices return to a statistical average after deviating from it.
+**Bollinger Bands** give a volatility-adaptive envelope around a moving average: the upper and
+lower bands expand in volatile markets and contract in quiet ones. A touch of a band flags price
+as overextended relative to recent history.
 
-This strategy adds a **Relative Strength Index (RSI)** filter as confirmation. A touch of the
-lower band alone is not sufficient to buy - RSI must also indicate oversold conditions. This
-two-indicator approach reduces whipsaws in trending markets.
+The strategy adds a **Relative Strength Index (RSI)** filter as confirmation. A lower-band touch
+alone does not trigger a buy: RSI must also read oversold. The two-indicator gate cuts whipsaws
+in trending markets.
 
-The `BBMeanReversion` strategy shipped with NautilusTrader is intentionally
-simple (no alpha advantage).
+The `BBMeanReversion` strategy shipped with NautilusTrader is intentionally simple (no alpha
+advantage).
 
 ### Why proxy data?
 
-AX Exchange is a new venue and is not yet covered by most historical data vendors.
+AX Exchange is a new venue not yet covered by most historical data vendors.
 [TrueFX](https://www.truefx.com) provides free institutional-grade spot FX tick data sourced
-from Integral and Jefferies liquidity pools. EUR/USD spot data serves as a representative
-proxy for backtesting an AX EURUSD-PERP strategy.
+from Integral and Jefferies liquidity pools. EUR/USD spot data serves as a proxy for
+backtesting an AX EURUSD-PERP strategy.
 
 ## Prerequisites
 
@@ -44,7 +44,7 @@ The raw TrueFX format has **no headers**. Columns are: `pair, timestamp, bid, as
 ### Load and prepare the data
 
 Use pandas to load the CSV and parse timestamps, then process through
-`QuoteTickDataWrangler` which auto-renames `bid`/`ask` columns:
+`QuoteTickDataWrangler`, which auto-renames `bid` and `ask` columns:
 
 ```python
 from pathlib import Path
@@ -69,12 +69,12 @@ ticks = wrangler.process(df)
 ```
 
 The wrangler produces `QuoteTick` objects tagged with the instrument ID. These ticks drive
-bar aggregation internally - 1-minute MID bars will be built from the quote tick stream.
+bar aggregation internally: 1-minute MID bars are built from the quote tick stream.
 
 ## Instrument definition
 
-Since we are using proxy data, we define the EURUSD-PERP instrument manually as a
-`PerpetualContract`. The multiplier of 1000 means each contract represents 1000 EUR notional:
+With proxy data, we define the EURUSD-PERP instrument manually as a `PerpetualContract`. The
+multiplier of 1000 means each contract represents 1000 EUR notional:
 
 ```python
 from decimal import Decimal
@@ -129,18 +129,18 @@ The `BBMeanReversion` strategy works as follows:
 
 ### Configuration
 
-| Parameter            | Value  | Description                                          |
-| -------------------- | ------ | ---------------------------------------------------- |
-| `bb_period`          | `20`   | 20-bar lookback for Bollinger Bands.                 |
-| `bb_std`             | `2.0`  | 2 standard deviations for band width.                |
-| `rsi_period`         | `14`   | 14-bar lookback for RSI.                             |
-| `rsi_buy_threshold`  | `0.30` | RSI below 0.30 confirms oversold (range 0-1).        |
-| `rsi_sell_threshold` | `0.70` | RSI above 0.70 confirms overbought (range 0-1).      |
-| `trade_size`         | `1`    | 1 contract per trade (1000 EUR notional).            |
+| Parameter            | Value  | Description                                     |
+|----------------------|--------|-------------------------------------------------|
+| `bb_period`          | `20`   | 20-bar lookback for Bollinger Bands.            |
+| `bb_std`             | `2.0`  | 2 standard deviations for band width.           |
+| `rsi_period`         | `14`   | 14-bar lookback for RSI.                        |
+| `rsi_buy_threshold`  | `0.30` | RSI below 0.30 confirms oversold (range 0-1).   |
+| `rsi_sell_threshold` | `0.70` | RSI above 0.70 confirms overbought (range 0-1). |
+| `trade_size`         | `1`    | 1 contract per trade (1000 EUR notional).       |
 
 :::tip
 NautilusTrader RSI outputs values in the range [0.0, 1.0], not [0, 100]. Set thresholds
-accordingly - 0.30 corresponds to the traditional RSI level of 30.
+accordingly: 0.30 corresponds to the traditional RSI level of 30.
 :::
 
 ## Backtest setup
@@ -220,7 +220,7 @@ engine.run()
 
 ## Results
 
-After the run completes, generate reports to analyze performance:
+Generate reports to analyze performance:
 
 ```python
 import pandas as pd
@@ -244,30 +244,28 @@ engine.dispose()
 
 ## Complete script
 
-The complete script is available as
-[`architect_ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_mean_reversion.py)
-in the examples directory.
+The full script lives at
+[`architect_ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_mean_reversion.py).
 
 ## Next steps
 
-- **Tune parameters**: Experiment with `bb_period`, `bb_std`, and RSI thresholds to
-  understand their effect on trade frequency and PnL.
-- **Try different pairs**: Download GBP/USD or USD/JPY data from TrueFX and define the
-  corresponding perpetual contract.
-- **Add stop losses**: Extend the strategy with stop-loss orders to limit downside on
+- **Tune parameters**: vary `bb_period`, `bb_std`, and RSI thresholds to see their effect on
+  trade frequency and PnL.
+- **Try different pairs**: download GBP/USD or USD/JPY data from TrueFX and define the
+  matching perpetual contract.
+- **Add stop losses**: extend the strategy with stop-loss orders to limit downside on
   positions that move against you.
-- **Go live on AX sandbox**: Once you are satisfied with backtest results, connect to the
-  AX sandbox environment for paper trading. See the
-  [AX Exchange integration guide](../integrations/architect_ax.md) for setup instructions.
+- **Go live on AX sandbox**: connect to the AX sandbox for paper trading. See the
+  [AX Exchange integration guide](../integrations/architect_ax.md) for setup.
 
 ## Running live
 
-The same `BBMeanReversion` strategy runs live against AX Exchange. The launch
-script swaps the `BacktestEngine` for a `TradingNode` with the AX data and
-execution clients configured. See the complete live example:
-[`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py)
+The same `BBMeanReversion` strategy runs live against AX Exchange. The launch script swaps
+the `BacktestEngine` for a `TradingNode` with the AX data and execution clients configured.
+See the live example:
+[`ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/architect_ax/ax_mean_reversion.py).
 
-For connection setup and API key configuration, refer to the
+For connection setup and API key configuration, see the
 [AX Exchange integration guide](../integrations/architect_ax.md).
 
 ## Further reading

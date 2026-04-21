@@ -11,8 +11,8 @@ through expiry.
 
 A grid market maker maintains a ladder of resting buy and sell limit orders at fixed price
 intervals around the current mid-price. When an order fills, the strategy profits from the
-spread between buy and sell levels. The approach is conceptually simple but requires careful
-inventory management to avoid accumulating a large directional position.
+spread between buy and sell levels. Inventory management keeps net exposure within
+`max_position` so the grid does not accumulate a directional position.
 
 ### Inventory skewing (Avellaneda-Stoikov inspired)
 
@@ -143,8 +143,8 @@ in the fast short-term path. When `None`, orders use GTC (long-term path).
 
 **`on_cancel_resubmit`**: Resubmits the grid on the next quote tick after any unexpected
 cancel (e.g. self-trade prevention, risk limits). Note that short-term order expiry is
-silent and does not generate cancel events, so the grid refreshes naturally via continuous
-requoting, not through this flag.
+silent and does not generate cancel events, so the grid refreshes via continuous requoting,
+not through this flag.
 
 ## dYdX-specific considerations
 
@@ -160,7 +160,7 @@ This is the recommended configuration for market making because:
 
 - Short-term orders have lower latency.
 - No gas fees for expiry (GTB replay protection handles it).
-- Continuous requoting naturally replaces expired orders.
+- Continuous requoting replaces expired orders.
 
 See the [Order classification](../integrations/dydx.md#order-classification) section
 in the integration guide for full details.
@@ -234,20 +234,14 @@ Press **Ctrl+C** to stop the node. The shutdown sequence:
 
 ### Node setup
 
-The complete `main()` function from the example (`node_grid_mm.rs`):
+The `main()` function from the example (`node_grid_mm.rs`):
 
 ```rust
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok(); // Load .env file if present
 
-    // Configuration
-    let is_testnet = false;
-    let network = if is_testnet {
-        DydxNetwork::Testnet
-    } else {
-        DydxNetwork::Mainnet
-    };
+    let network = DydxNetwork::Mainnet;
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -255,50 +249,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_name = "DYDX-GRID-MM-001".to_string();
     let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
 
-    // Load credentials from environment (testnet/mainnet-aware)
-    let private_key_env = if is_testnet {
-        "DYDX_TESTNET_PRIVATE_KEY"
-    } else {
-        "DYDX_PRIVATE_KEY"
-    };
-    let private_key = get_env_option(private_key_env);
-    let wallet_env = if is_testnet {
-        "DYDX_TESTNET_WALLET_ADDRESS"
-    } else {
-        "DYDX_WALLET_ADDRESS"
-    };
-    let wallet_address = get_env_option(wallet_env);
-
-    if private_key.is_none() && wallet_address.is_none() {
-        return Err(
-            format!("Set {private_key_env} or {wallet_env} environment variable").into(),
-        );
-    }
-
-    // Minimal data client config: is_testnet selects the correct endpoints
+    // Minimal data client config: network selects the correct endpoints
     let data_config = DydxDataClientConfig {
-        is_testnet,
+        network,
         ..Default::default()
     };
 
-    // Execution client with trader ID, network, credentials, and rate limiting
-    let exec_config = DYDXExecClientConfig {
+    // Execution client pulls credentials from environment variables by default
+    // (DYDX_PRIVATE_KEY/DYDX_WALLET_ADDRESS on mainnet, the _TESTNET_ variants on testnet).
+    let exec_config = DydxExecClientConfig {
         trader_id,
         account_id,
         network,
-        private_key,
-        wallet_address,
-        subaccount_number: 0,
-        grpc_endpoint: None,
-        grpc_urls: vec![],
-        ws_endpoint: None,
-        http_endpoint: None,
-        authenticator_ids: vec![],
-        http_timeout_secs: Some(30),
-        max_retries: Some(3),
-        retry_delay_initial_ms: Some(1000),
-        retry_delay_max_ms: Some(10000),
-        grpc_rate_limit_per_second: Some(4), // Conservative for public providers
+        ..Default::default()
     };
 
     let data_factory = DydxDataClientFactory::new();
@@ -377,8 +340,7 @@ LiveNode starts
 
 ## Strategy internals
 
-This section shows the key Rust code from `grid_mm.rs` so you can see exactly how the
-strategy works without reading the full source.
+The key Rust snippets from `grid_mm.rs` below show how the strategy works.
 
 ### Trade size resolution (`on_start`)
 
@@ -388,18 +350,19 @@ chain is: config value -> instrument `min_quantity` -> `1.0`:
 ```rust
 fn on_start(&mut self) -> anyhow::Result<()> {
     let instrument_id = self.config.instrument_id;
-    let (price_precision, size_precision, min_quantity) = {
+    let (instrument, size_precision, min_quantity) = {
         let cache = self.cache();
         let instrument = cache
             .instrument(&instrument_id)
-            .expect("Instrument should be in cache");
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
         (
-            instrument.price_precision(),
+            instrument.clone(),
             instrument.size_precision(),
             instrument.min_quantity(),
         )
     };
-    self.price_precision = price_precision;
+    self.price_precision = Some(instrument.price_precision());
+    self.instrument = Some(instrument);
 
     // Resolve trade_size from instrument when not explicitly provided
     if self.trade_size.is_none() {
@@ -414,14 +377,18 @@ fn on_start(&mut self) -> anyhow::Result<()> {
 
 ### Quote handler (`on_quote`, abbreviated)
 
-This is the heart of the strategy. On each quote tick it computes the mid-price,
-checks whether a requote is needed, cancels stale orders, computes worst-case exposure,
-and places new grid orders with GTD + post_only:
+On each quote tick `on_quote` computes the mid-price, checks whether a requote is needed,
+cancels stale orders, computes worst-case exposure, and places new grid orders with GTD and
+`post_only`:
 
 ```rust
 fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
     let mid_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
-    let mid = Price::new(mid_f64, self.price_precision);
+    let mid = Price::new(
+        mid_f64,
+        self.price_precision
+            .expect("price_precision should be resolved in on_start"),
+    );
 
     if !self.should_requote(mid) {
         return Ok(()); // Mid hasn't moved enough, keep existing grid
@@ -483,10 +450,15 @@ fn grid_orders(
     worst_long: Decimal,
     worst_short: Decimal,
 ) -> Vec<(OrderSide, Price)> {
+    let instrument = self
+        .instrument
+        .as_ref()
+        .expect("instrument should be resolved in on_start");
     let mid_f64 = mid.as_f64();
     let skew_f64 = self.config.skew_factor * net_position;
     let pct = self.config.grid_step_bps as f64 / 10_000.0;
-    let trade_size = self.trade_size
+    let trade_size = self
+        .trade_size
         .expect("trade_size should be resolved in on_start")
         .as_decimal();
     let max_pos = self.config.max_position.as_decimal();
@@ -495,23 +467,25 @@ fn grid_orders(
     let mut orders = Vec::new();
 
     for level in 1..=self.config.num_levels {
-        let buy_price = Price::new(
-            mid_f64 * (1.0 - pct).powi(level as i32) - skew_f64,
-            precision,
-        );
-        let sell_price = Price::new(
-            mid_f64 * (1.0 + pct).powi(level as i32) - skew_f64,
-            precision,
-        );
+        let buy_f64 = mid_f64 * (1.0 - pct).powi(level as i32) - skew_f64;
+        let sell_f64 = mid_f64 * (1.0 + pct).powi(level as i32) - skew_f64;
+        // next_bid_price floors to the nearest valid bid tick, next_ask_price
+        // ceils to the nearest valid ask tick, preventing self-cross.
+        let buy_price = instrument.next_bid_price(buy_f64, 0);
+        let sell_price = instrument.next_ask_price(sell_f64, 0);
 
         // Only place buy if projected long exposure stays within max_position
-        if projected_long + trade_size <= max_pos {
+        if let Some(buy_price) = buy_price
+            && projected_long + trade_size <= max_pos
+        {
             orders.push((OrderSide::Buy, buy_price));
             projected_long += trade_size;
         }
 
         // Only place sell if projected short exposure stays within max_position
-        if projected_short - trade_size >= -max_pos {
+        if let Some(sell_price) = sell_price
+            && projected_short - trade_size >= -max_pos
+        {
             orders.push((OrderSide::Sell, sell_price));
             projected_short -= trade_size;
         }
@@ -536,9 +510,10 @@ fn grid_orders(
 ### Expected behavior patterns
 
 1. **Startup**: Instruments load, WebSocket connects, first quote triggers initial grid.
-2. **Steady state**: Grid persists across ticks; requotes only on significant mid-price moves.
+2. **Steady state**: Grid persists across ticks; requotes only when the mid moves more than
+   `requote_threshold_bps`.
 3. **Fills**: Position updates, skew adjusts, next requote shifts grid.
-4. **Expiry**: Short-term orders expire silently after ~8s; grid naturally refreshes on the next requote.
+4. **Expiry**: Short-term orders expire silently after 8s; grid refreshes on the next requote.
 5. **Shutdown**: All orders cancelled, positions closed, WebSocket disconnected.
 
 ## Customization tips

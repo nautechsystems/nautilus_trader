@@ -7,25 +7,24 @@ and [Databento](https://databento.com) CME gold futures data as a proxy.
 ## Introduction
 
 Order book imbalance is a canonical microstructure signal used in high-frequency and
-short-term trading. When there is significantly more volume resting on one side of the
-book than the other, this can signal informed flow and near-term price movement in that
-direction. For a deeper dive into the statistical foundations,
-see Databento's [blog post on HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python)
+short-term trading. When one side of the book holds much more resting volume than the other,
+the imbalance can signal informed flow and near-term price movement in that direction. For
+the statistical foundations, see Databento's
+[blog post on HFT signals with sklearn](https://databento.com/blog/hft-sklearn-python),
 which demonstrates the predictive power of book imbalance features.
 
-The `OrderBookImbalance` strategy shipped with NautilusTrader is intentionally
-simple (no alpha advantage). It monitors the ratio of the smaller to larger
-side at the top of book; when this ratio drops below a configurable threshold
-it fires a fill-or-kill (FOK) limit order. Because it only needs top-of-book
-data, it works with Databento `mbp-1` (market by price best bid/ask) quotes
-instead of full depth-of-book, which is significantly cheaper to source.
+The `OrderBookImbalance` strategy shipped with NautilusTrader is intentionally simple (no
+alpha advantage). It monitors the ratio of the smaller to larger side at the top of book;
+when this ratio drops below a configurable threshold it fires a fill-or-kill (FOK) limit
+order. Because it only needs top-of-book data, it works with Databento `mbp-1` (market by
+price best bid/ask) quotes instead of full depth-of-book, which costs less to source.
 
 ### Why proxy data?
 
-AX Exchange is a new venue and is not yet covered specifically by data vendors like Databento.
-CME gold futures (GC) are the most liquid gold derivatives market globally, and
-provide representative price action for backtesting gold strategies. We download CME GC
-quote data from Databento and replay it through a NautilusTrader backtest with an AX-style
+AX Exchange is a new venue and data vendors like Databento do not yet cover it directly.
+CME gold futures (GC) are the most liquid gold derivatives market globally and provide
+representative price action for backtesting gold strategies. We download CME GC quote data
+from Databento and replay it through a NautilusTrader backtest with an AX-style
 `PerpetualContract` instrument definition.
 
 ## Prerequisites
@@ -50,9 +49,9 @@ depth-of-book data.
 
 We use a Databento **continuous contract** (`GC.v.0`) rather than a specific expiration like
 `GCZ4`. Continuous contracts stitch together successive contracts based on a roll rule.
-`v.0` tracks the highest-volume contract, which closely mirrors how a perpetual follows
-liquidity. The `stype_in="continuous"` parameter tells Databento to resolve the symbol
-through its continuous contract mapping.
+`v.0` tracks the highest-volume contract, which mirrors how a perpetual follows liquidity.
+The `stype_in="continuous"` parameter tells Databento to resolve the symbol through its
+continuous contract mapping.
 
 ```python
 import databento as db
@@ -176,7 +175,7 @@ strategy = OrderBookImbalance(config=strategy_config)
 ```
 
 | Parameter                      | Value    | Description                                   |
-| ------------------------------ | -------- | --------------------------------------------- |
+|--------------------------------|----------|-----------------------------------------------|
 | `max_trade_size`               | `10`     | Maximum 10 contracts per order.               |
 | `trigger_min_size`             | `1.0`    | Minimum 1 contract on the larger side.        |
 | `trigger_imbalance_ratio`      | `0.10`   | Trigger when ratio drops below 10%.           |
@@ -245,7 +244,7 @@ engine.run()
 
 ## Results
 
-After the run completes, generate reports to analyze performance:
+After the run completes, generate reports to review performance:
 
 ```python
 import pandas as pd

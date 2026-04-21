@@ -76,8 +76,8 @@ same clock, and Hurst sampled on the same bars uses the same frame.
 Kraken Futures is published by Tardis under the historical slug
 `cryptofacilities`. The first day of each month is available for free
 without an API key, which is enough for a single-day plumbing check. A
-full backtest with the default windows needs several days of data and a
-paid Tardis API key (see the tip below).
+full backtest needs at least two sessions to warm the 128-bar Hurst
+window, which requires a paid Tardis API key (see the tip below).
 
 ```bash
 mkdir -p /tmp/tardis_kraken
@@ -193,12 +193,12 @@ use nautilus_model::data::BarType;
 let bar_type = BarType::from("PF_XBTUSD.KRAKEN-2000000-VALUE-LAST-INTERNAL");
 ```
 
-Each bar closes after **USD 2,000,000** of traded notional. On a quiet
-session PF_XBTUSD prints only tens of bars at this size, so a single-day
-sample will not populate the default 128-bar Hurst window and 50-bar VPIN
-window. For a single-day run, either shrink the bar size to ~USD 500,000
-or drop `hurst_window` and `vpin_window` accordingly. Full multi-day
-backtests should use the defaults.
+Each bar closes after **USD 2,000,000** of traded notional. A session
+typically prints under 150 bars at this size, short of the 128-bar Hurst
+window, so warming the defaults needs multiple sessions. For a single-day
+run, either shrink the bar size to **USD 500,000** or drop `hurst_window`
+and `vpin_window` accordingly. Full multi-day backtests should use the
+defaults.
 
 :::note
 `VALUE` bars are a *view* onto the trade tape. The backtest engine
@@ -278,27 +278,22 @@ position has been open longer than `max_holding_secs`.
 
 ![Signal dashboard during an active trading window](./assets/hurst_vpin_kraken/panel_b_dashboard.png)
 
-*Zoomed view of the three pipelines during a live trading window on
-2024-01-16. Hurst holds above `enter` for the full window and VPIN stays
-above threshold. Signed VPIN is negative when each short entry fires and
-drifts back toward zero as price rallies. The first position closes on
-the holding-time cap; the second reduces on a partial IOC cover and the
-residual size carries on open for the rest of the session.*
+**Figure 1.** *Signal dashboard for 2024-01-16 14:09-16:15 UTC: close, Hurst,
+VPIN. Markers sit at actual fill price; dotted connector shows slip against
+the bar-close line.*
 
 ### Hurst estimator
 
-The strategy uses classical rescaled-range (R/S) regression across a
-small lag set. For each lag `k` in `(4, 8, 16, 32)`, the return window
+The strategy uses classical rescaled-range (R/S) regression. For each
+lag `k` in `(4, 8, 16, 32)`, the return window
 is split into non-overlapping chunks of length `k`, each chunk's
 rescaled range is computed, and the mean R/S is recorded. The slope of
 `log(R/S)` vs `log(k)` across the lag set gives the Hurst estimate.
 
 ![Hurst exponent over the full backtest](./assets/hurst_vpin_kraken/panel_e_hurst_only.png)
 
-*Rolling Hurst estimate across 14 days of PF_XBTUSD (2024-01-15 to
-2024-01-28). The series spends most of its time above the 0.55 enter
-threshold with occasional decay below 0.50, which would trigger regime
-exits on any open position.*
+**Figure 2.** *Rolling Hurst across 14 days of PF_XBTUSD (2024-01-15 to
+2024-01-28) with enter 0.55 and exit 0.50 thresholds.*
 
 ### VPIN estimator
 
@@ -317,9 +312,7 @@ when aggressor side was not directly observable.
 
 ![VPIN distribution across the backtest](./assets/hurst_vpin_kraken/panel_d_vpin_hist.png)
 
-*VPIN sits just above the 0.30 threshold across the run, so roughly
-half the bars are flow-eligible. Combined with the Hurst gate, entries
-fire only when both conditions hold simultaneously.*
+**Figure 3.** *VPIN distribution across all bars with the 0.30 entry threshold.*
 
 ### Configuration
 
@@ -333,7 +326,7 @@ fire only when both conditions hold simultaneously.*
 | `hurst_exit`       | `0.50`           | Below this, open positions are flattened.            |
 | `vpin_window`      | `50`             | Completed volume buckets averaged for VPIN.          |
 | `vpin_threshold`   | `0.30`           | Minimum VPIN for flow to be considered informed.     |
-| `max_holding_secs` | `1800`           | Maximum seconds a position may be held.              |
+| `max_holding_secs` | `1800`           | Seconds a position may be held (default `3600`; overridden here). |
 
 :::tip
 Dollar-bar size, Hurst lags, and VPIN window are all coupled. Smaller
@@ -410,8 +403,15 @@ sample stays in warmup for the whole run. The run will show the engine
 aggregating dollar bars and driving the strategy at trade and quote
 granularity, but Hurst and VPIN will not emit until the windows are
 full. To see signal updates and entry/exit logic fire on a single day,
-shrink the bar size or windows as noted above, or provide several days
-of data.
+shrink the bar size or windows as noted above, or provide two or more
+sessions of data.
+
+A 14-day run (2024-01-15 to 2024-01-28) on this configuration prints
+1,224 bars and fires only 2 entries, 1 partial cover, and 1 close.
+Entries are sparse by design: both `hurst_enter` and `vpin_threshold`
+must clear on the same quote. The residual size after the partial IOC
+cover stays open through the rest of the session, which is how a Netting
+OMS resolves an exit IOC that only fills part of the resting position.
 
 The wiring above is shipped as a runnable binary:
 
@@ -426,23 +426,15 @@ from `/tmp/tardis_kraken/`. Override with `KRAKEN_TRADES` and
 
 ![Trade detail during the active window](./assets/hurst_vpin_kraken/panel_a_price_regime.png)
 
-*Zoomed trade view from a 14-day run on Tardis PF_XBTUSD data. Teal
-bands mark bars where `Hurst >= 0.55`; gold bands mark periods the
-strategy held a position. Two short entries fire as the signals agree,
-but the realized price path runs against them. The first position
-closes cleanly on the holding-time cap. The second partially covers on
-an IOC exit and the residual carries on open for the rest of the
-session, which is how netting positions look when an exit IOC only
-fills part of the resting size.*
+**Figure 4.** *Close price for 2024-01-16 14:09-16:15 UTC. Teal bands mark
+`Hurst >= 0.55` bars; gold bands mark periods with an open position. Markers
+sit at actual fill price; dotted connector shows slip against the bar-close
+line.*
 
 ![Decision space across every bar](./assets/hurst_vpin_kraken/panel_c_decision_scatter.png)
 
-*Per-bar view of the decision rule. Each point is one bar close,
-plotted at its Hurst and VPIN values, colored by signed VPIN. The
-shaded upper-right quadrant is where both thresholds are met and the
-strategy is eligible to enter. Most bars sit just above the VPIN
-threshold with modest signed flow, which is why live entries stay
-sparse across the 14-day window.*
+**Figure 5.** *Per-bar Hurst vs. VPIN across the backtest, colored by signed
+VPIN. Shaded quadrant marks the entry-eligible region.*
 
 ### Regenerate the panels
 

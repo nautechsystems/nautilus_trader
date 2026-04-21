@@ -112,7 +112,7 @@ for item in items {
 the `Data` enum (an FFI shim).
 
 Instruments are re-emitted on every market definition update in the stream,
-so the map naturally deduplicates them by keeping the latest version.
+so the map deduplicates them by keeping the latest version.
 
 :::warning
 The `Status` variant carries market status transitions (PreOpen, Trading,
@@ -139,7 +139,7 @@ The second argument is the log interval: print a progress line every 5000
 updates. Set to 0 to disable periodic logging.
 
 The full source is at
-[`crates/trading/src/examples/actors/imbalance.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/actors/imbalance.rs).
+[`crates/trading/src/examples/actors/imbalance/actor.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/actors/imbalance/actor.rs).
 
 ### How it works
 
@@ -263,12 +263,12 @@ The complete example is available at
 
 - **Add a Strategy**: Replace the actor with a `Strategy` implementation that
   places back/lay orders based on the imbalance signal. See the `EmaCross`
-  example in `crates/trading/src/examples/strategies/ema_cross.rs` for the
-  pattern.
+  example in `crates/trading/src/examples/strategies/ema_cross/strategy.rs`
+  for the pattern.
 - **Use managed books**: Set `managed: true` in `subscribe_book_deltas` and
   access the full book via `self.cache().order_book(&id)` for richer signals
   like top-of-book spread, depth ratios, or weighted mid-price.
-- **Multiple markets**: Load several `.gz` files and run them through the
+- **Multiple markets**: Load more `.gz` files and run them through the
   same engine to test cross-market signals.
 - **Compare with Python**: Run the same backtest from Python using the
   `BacktestEngine` Python API. The Rust engine processes the same data

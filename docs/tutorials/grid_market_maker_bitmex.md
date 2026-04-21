@@ -3,28 +3,26 @@
 This tutorial backtests a grid market making strategy on BitMEX with free historical
 quote tick data from [Tardis.dev](https://tardis.dev), then runs it live using the
 Rust-native `LiveNode`. It focuses on BitMEX's **deadman's switch**, a server-side
-safety mechanism that automatically cancels all open orders if your client loses
-connectivity.
+safety mechanism that cancels all open orders when your client loses connectivity.
 
 ## Introduction
 
 ### Why BitMEX for grid market making?
 
-BitMEX is one of the deepest and most liquid Bitcoin derivatives venues, with a live order
-book going back to 2014. The `XBTUSD` inverse perpetual swap is among the most-traded
-instruments in crypto derivatives. Its thick order book and predictable spread behaviour
-make it a natural venue for grid market making.
+BitMEX lists `XBTUSD`, an inverse perpetual swap with a live order book going back to
+2014. Its thick order book and predictable spread behaviour make it a natural venue for
+grid market making.
 
-Two features make BitMEX particularly well-suited for automated market making:
+Two features make BitMEX well-suited for automated market making:
 
 1. **Deadman's switch** (`cancelAllAfter`): BitMEX maintains a server-side countdown timer.
    Your client refreshes it periodically. If the connection drops and the timer expires,
    BitMEX cancels all open orders on your behalf, protecting you from stranded quotes.
 
-2. **Submit/cancel broadcaster**: The adapter can fan out order submissions and
-   cancellations across multiple independent HTTP connections simultaneously, with the first
-   successful response short-circuiting the rest. This provides redundancy against transient
-   network failures.
+2. **Submit/cancel broadcaster**: The adapter fans out order submissions and cancellations
+   across multiple independent HTTP connections in parallel, with the first successful
+   response short-circuiting the rest. This provides redundancy against transient network
+   failures.
 
 ### Deadman's switch mechanics
 
@@ -34,19 +32,17 @@ task runs continuously:
 ```
 timeout = 60s -> refresh interval = timeout / 4 = 15s
 
- t=0s   Strategy starts, cancelAllAfter(60000ms) sent
- t=15s  Refresh: cancelAllAfter(60000ms) sent  (resets timer)
- t=30s  Refresh: cancelAllAfter(60000ms) sent
- t=45s  Refresh: cancelAllAfter(60000ms) sent
-    ↓
- Connectivity lost at t=50s (last refresh was at t=45s)
-    ↓
+ t=0s    Strategy starts, cancelAllAfter(60000ms) sent
+ t=15s   Refresh: cancelAllAfter(60000ms) sent  (resets timer)
+ t=30s   Refresh: cancelAllAfter(60000ms) sent
+ t=45s   Refresh: cancelAllAfter(60000ms) sent
+ t=50s   Connectivity lost (last refresh was at t=45s)
  t=105s  Server timer fires -> BitMEX cancels all open orders
 ```
 
-For market making specifically, stranded quotes are a serious risk: if your software crashes
-while holding grid orders around the mid-price, price can move against those orders before
-they are cancelled. The deadman's switch caps the window of exposure at `timeout` seconds,
+Stranded quotes are a serious risk for market makers: if your software crashes while
+holding grid orders around the mid-price, price can move against those orders before they
+are cancelled. The deadman's switch caps the exposure window at `timeout` seconds,
 regardless of why connectivity was lost.
 
 ## Prerequisites
@@ -76,7 +72,7 @@ Alternatively, place these in a `.env` file in the project root (loaded automati
 BitMEX does not offer historical market data via its own API beyond recent trade history.
 [Tardis.dev](https://tardis.dev) captures and archives tick-level BitMEX data from March 2019
 onward in its native WebSocket format. The **first day of each month is freely downloadable**
-without an API key (enough for a representative backtest run).
+without an API key.
 
 The grid market maker subscribes to best-bid/ask quotes, so the `quotes` dataset is the
 right source: it records every change to the top of book.
@@ -179,7 +175,7 @@ engine = BacktestEngine(config=config)
 
 BITMEX = Venue("BITMEX")
 engine.add_venue(
-    ↓enue=BITMEX,
+    venue=BITMEX,
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=BTC,
@@ -231,9 +227,9 @@ in the examples directory.
 
 ## Live trading: GridMarketMaker with deadman's switch
 
-Once you have validated data loading and strategy mechanics in the backtest, the same
+After validating data loading and strategy mechanics in the backtest, the same
 configuration runs live using the Rust `LiveNode`. The `GridMarketMaker` strategy is
-implemented natively in Rust for maximum throughput.
+implemented natively in Rust.
 
 ### Environment setup
 
@@ -262,15 +258,13 @@ The complete `main()` function from
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok(); // Load .env file if present
 
-    let use_testnet = true; // Set false for mainnet
-
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
     let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
 
-    // Minimal data client: selects testnet or mainnet endpoints
+    // Data client: selects testnet or mainnet endpoints
     let data_config = BitmexDataClientConfig {
-        use_testnet,
+        environment: BitmexEnvironment::Testnet,
         ..Default::default()
     };
 
@@ -278,8 +272,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let exec_config = BitmexExecFactoryConfig::new(
         trader_id,
         BitmexExecClientConfig {
-            use_testnet,
-            deadmans_switch_timeout_secs: Some(60), // Cancels all orders after 60s without refresh
+            environment: BitmexEnvironment::Testnet,
+            deadmans_switch_timeout_secs: Some(60), // Cancel all orders after 60s without refresh
             ..Default::default()
         },
     );
@@ -297,17 +291,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_logging(log_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
-        .with_reconciliation(true)            // Resume state across restarts
-        .with_reconciliation_lookback_mins(2880) // Look back 2 days (2880 min)
-        .with_delay_post_stop_secs(5)         // Grace period for pending cancel/close events
+        .with_reconciliation(true)               // Resume state across restarts
+        .with_reconciliation_lookback_mins(2880) // Look back 2880 minutes (2 days)
+        .with_delay_post_stop_secs(5)            // Grace period for pending cancel/close events
         .build()?;
 
-    // Grid configuration: XBTUSD, 300 USD max position, 3 levels at 100 bps each
+    // Grid configuration: XBTUSD, 300 contract max position, 3 levels at 100 bps
     let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("300"))
         .with_num_levels(3)
-        .with_grid_step_bps(100)      // 1% between levels
-        .with_skew_factor(0.5)        // shift grid 0.5 price units per unit of inventory
-        .with_requote_threshold_bps(10); // requote when mid moves more than 0.1%
+        .with_grid_step_bps(100)         // 100 bps between levels
+        .with_skew_factor(0.5)           // shift grid 0.5 price units per unit of inventory
+        .with_requote_threshold_bps(10); // requote when mid moves 10 bps
     let strategy = GridMarketMaker::new(config);
 
     node.add_strategy(strategy)?;
@@ -322,8 +316,9 @@ Configuration points:
 - **`deadmans_switch_timeout_secs: Some(60)`**: enables the deadman's switch with a 60-second
   timeout. The background task refreshes every 15 seconds (`timeout / 4`).
 - **`with_reconciliation(true)`**: reconciles open orders and positions on startup by
-  querying the BitMEX REST API, allowing the strategy to resume correctly after a restart.
-- **`with_reconciliation_lookback_mins(2880)`**: looks back 2 days when reconciling order history.
+  querying the BitMEX REST API, letting the strategy resume correctly after a restart.
+- **`with_reconciliation_lookback_mins(2880)`**: looks back 2880 minutes (2 days) when
+  reconciling order history.
 - **`with_delay_post_stop_secs(5)`**: allows 5 seconds after strategy stop for pending
   cancel/fill events to arrive before the node exits.
 
@@ -334,24 +329,20 @@ refreshes the server-side timer. Its value becomes apparent in failure scenarios
 
 ```
 Normal operation:
-  ┌─────────────────────────────────────────────────────────┐
-  │  Strategy running                                       │
-  │  t=0s   cancelAllAfter(60_000ms) ──────────────> BitMEX │
-  │  t=15s  cancelAllAfter(60_000ms) ──────────────> BitMEX │
-  │  t=30s  cancelAllAfter(60_000ms) ──────────────> BitMEX │
-  └─────────────────────────────────────────────────────────┘
+  Strategy running
+  t=0s   cancelAllAfter(60_000ms) -> BitMEX
+  t=15s  cancelAllAfter(60_000ms) -> BitMEX
+  t=30s  cancelAllAfter(60_000ms) -> BitMEX
 
 Connectivity loss:
-  ┌──────────────────────────────────────────────────────────┐
-  │  t=40s  Network failure, no more refreshes sent          │
-  │  t=100s BitMEX timer fires -> all open orders cancelled  │
-  │         (60s after the last successful refresh at t=40s) │
-  └──────────────────────────────────────────────────────────┘
+  t=40s   Network failure, no more refreshes sent
+  t=100s  BitMEX timer fires -> all open orders cancelled
+          (60s after the last successful refresh at t=40s)
 ```
 
-Unlike dYdX where short-term order expiry provides a similar automatic cleanup, BitMEX
-uses GTC orders (no expiry). Without the deadman's switch, a crashed client could leave
-grid orders resting in the book indefinitely.
+Unlike dYdX where short-term order expiry provides automatic cleanup, BitMEX uses GTC
+orders (no expiry). Without the deadman's switch, a crashed client could leave grid
+orders resting in the book indefinitely.
 
 ### BitMEX-specific considerations
 
@@ -363,7 +354,7 @@ a maker order; if a grid price has moved through the book by the time it reaches
 matching engine, the order is rejected rather than filling as a taker.
 
 This differs from the dYdX setup where short-term orders provide automatic expiry every
-~8 seconds. On BitMEX, the requote cycle is driven entirely by mid-price movement
+8 seconds. On BitMEX, the requote cycle is driven entirely by mid-price movement
 (`requote_threshold_bps`) rather than order expiry.
 
 #### Order quantization
@@ -374,8 +365,8 @@ adapter. No manual rounding or conversion is needed in strategy code.
 #### Inverse perpetual accounting
 
 Because XBTUSD is inverse (BTC-margined), PnL is in BTC. A grid that captures a $1 spread
-on a $42,000 BTC price earns approximately 1/42,000 BTC per fill. Account for this when
-sizing `max_position` and `trade_size`.
+on a $42,000 BTC price earns 1/42,000 BTC per fill. Account for this when sizing
+`max_position` and `trade_size`.
 
 ### Run the example
 
@@ -421,16 +412,16 @@ call frequency; higher values reduce overhead but extend the window.
 
 ### Choosing grid parameters
 
-**`grid_step_bps`**: XBTUSD has tight spreads. Start wider (50–100 bps) to ensure fills
-before tightening. Each level captures half the step as spread (buy fills $1 below mid,
-sells $1 above on a 200 bps total spread).
+**`grid_step_bps`**: XBTUSD has tight spreads. Start at 50-100 bps to ensure fills before
+tightening. Each level captures half the step as spread (buy fills $1 below mid, sells $1
+above on a 200 bps total spread).
 
 **`skew_factor`**: Start at `0.0` (no skew). A value of `0.5` shifts the grid by 0.5 price
-units per unit of net position. For XBTUSD, this is 0.5 USD per contract; with max_position
-of 300, full skew is ±150 price units.
+units per unit of net position. For XBTUSD, this is 0.5 USD per contract; with
+`max_position` of 300, full skew is 150 price units on either side.
 
-**`requote_threshold_bps`**: 10 bps (0.1%) is a reasonable starting point for XBTUSD.
-Too low causes excessive cancel/replace churn; too high leaves orders stale during fast moves.
+**`requote_threshold_bps`**: 10 bps (0.1%) is a starting point for XBTUSD. Lower values
+cause cancel/replace churn; higher values leave orders stale during fast moves.
 
 ## Event flow
 
@@ -494,8 +485,8 @@ LiveNode starts
 
 | Condition       | Adjustment                                                                 |
 | --------------- | -------------------------------------------------------------------------- |
-| High volatility | Wider `grid_step_bps` (100–200), fewer `num_levels`, lower `skew_factor`.  |
-| Low volatility  | Tighter `grid_step_bps` (20–50), more `num_levels`, higher `skew_factor`.  |
+| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`.  |
+| Low volatility  | Tighter `grid_step_bps` (20-50), more `num_levels`, higher `skew_factor`.  |
 | Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.               |
 
 ### Enabling the submit broadcaster
@@ -507,7 +498,7 @@ submission across multiple HTTP connections:
 let exec_config = BitmexExecFactoryConfig::new(
     trader_id,
     BitmexExecClientConfig {
-        use_testnet: false,
+        environment: BitmexEnvironment::Mainnet,
         deadmans_switch_timeout_secs: Some(60),
         submitter_pool_size: Some(2), // two parallel submission paths
         canceller_pool_size: Some(2), // two parallel cancel paths
@@ -516,19 +507,15 @@ let exec_config = BitmexExecFactoryConfig::new(
 );
 ```
 
-With `submitter_pool_size=2`, each order submission fans out to two HTTP clients in
+With `submitter_pool_size=2`, each order submission fans out to 2 HTTP clients in
 parallel; the first successful response wins. This reduces the probability of a missed
 submission due to a transient network failure on a single path.
 
 ### Mainnet toggle
 
-Change a single flag to switch networks:
-
-```rust
-let use_testnet = false; // true for testnet
-```
-
-All endpoints and credential environment variables are resolved automatically.
+Switch networks by setting the `environment` field on both configs to
+`BitmexEnvironment::Mainnet`. All endpoints and credential environment variables are
+resolved automatically.
 
 ## Further reading
 

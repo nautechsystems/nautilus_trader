@@ -35,8 +35,8 @@ export BYBIT_API_SECRET="your-api-secret"
 
 ## Strategy overview
 
-The `DeltaNeutralVol` strategy ships in the trading crate's `examples` module.
-It implements a short volatility strategy with automatic delta hedging:
+The `DeltaNeutralVol` strategy ships in the trading crate's `examples` module
+and runs in five stages:
 
 1. **Strike selection**: queries the instrument cache for all BTC options,
    filters to the nearest expiry, selects OTM call and put strikes using a
@@ -63,8 +63,9 @@ portfolio_delta = call_delta * call_position
 ```
 
 A short strangle starts near delta-neutral because the call and put deltas
-roughly offset. As the underlying moves, the net delta drifts and the strategy
-hedges to bring it back toward zero.
+offset. With the default `target_call_delta = 0.20` and `target_put_delta = -0.20`,
+the two legs cancel at entry. As the underlying moves, the net delta drifts and
+the strategy hedges to bring it back toward zero.
 
 ## Configuration
 
@@ -89,19 +90,19 @@ let strategy = DeltaNeutralVol::new(strategy_config);
 Parameters (defaults shown are the struct defaults; the example overrides
 `enter_strangle` to `false` and `iv_param_key` to `"order_iv"`):
 
-| Parameter                 | Default    | Example        | Description                                               |
-|---------------------------|------------|----------------|-----------------------------------------------------------|
-| `option_family`           | required   | `"BTC"`        | Underlying filter for instrument discovery.               |
-| `hedge_instrument_id`     | required   | BTCUSDT-LINEAR | Perpetual used for delta hedging.                     |
-| `client_id`               | required   | `"BYBIT"`      | Data and execution client identifier.                     |
-| `target_call_delta`       | `0.20`     |                | Target call delta for strike selection.                   |
-| `target_put_delta`        | `-0.20`    |                | Target put delta for strike selection.                    |
-| `contracts`               | `1`        |                | Contracts per leg.                                        |
-| `rehedge_delta_threshold` | `0.5`      |                | Portfolio delta that triggers a hedge.                    |
-| `rehedge_interval_secs`   | `30`       |                | Periodic rehedge timer interval.                          |
-| `enter_strangle`          | `true`     | `false`        | Place entry orders when Greeks arrive.                    |
-| `entry_iv_offset`         | `0.0`      |                | Vol points below mark IV for entry pricing.               |
-| `iv_param_key`            | `"px_vol"` | `"order_iv"`   | Adapter‑specific IV parameter key.                      |
+| Parameter                 | Default    | Example          | Description                                  |
+|---------------------------|------------|------------------|----------------------------------------------|
+| `option_family`           | required   | `"BTC"`          | Underlying filter for instrument discovery.  |
+| `hedge_instrument_id`     | required   | `BTCUSDT-LINEAR` | Perpetual used for delta hedging.            |
+| `client_id`               | required   | `"BYBIT"`        | Data and execution client identifier.        |
+| `target_call_delta`       | `0.20`     | -                | Target call delta for strike selection.      |
+| `target_put_delta`        | `-0.20`    | -                | Target put delta for strike selection.       |
+| `contracts`               | `1`        | -                | Contracts per leg.                           |
+| `rehedge_delta_threshold` | `0.5`      | -                | Portfolio delta that triggers a hedge.       |
+| `rehedge_interval_secs`   | `30`       | -                | Periodic rehedge timer interval.             |
+| `enter_strangle`          | `true`     | `false`          | Place entry orders when Greeks arrive.       |
+| `entry_iv_offset`         | `0.0`      | -                | Vol points below mark IV for entry pricing.  |
+| `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter‑specific IV parameter key.           |
 
 The `iv_param_key` is the key difference between venues. Bybit uses `order_iv`,
 which the adapter maps to the `orderIv` field in the place-order API. OKX
@@ -254,9 +255,9 @@ shutdown.
 
 ## See also
 
-- [Options data and Greeks on Bybit](options_data_bybit.md) - Prerequisite
+- [Options data and Greeks on Bybit](options_data_bybit.md): prerequisite
   tutorial covering Greeks subscriptions and option chain snapshots.
-- [Options](../concepts/options.md) - Option instrument types and data
+- [Options](../concepts/options.md): option instrument types and data
   architecture.
-- [Bybit integration](../integrations/bybit.md#options-trading) - Options
+- [Bybit integration](../integrations/bybit.md#options-trading): options
   order parameters including `order_iv` and `mmp`.

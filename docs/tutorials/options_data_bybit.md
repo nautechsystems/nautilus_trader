@@ -5,10 +5,10 @@ This is a **Rust-only** v2 system tutorial. It uses the Rust `LiveNode` with
 the Bybit adapter to stream live option Greeks and option chain snapshots.
 :::
 
-This tutorial connects to Bybit's live options market and streams real-time
-Greeks and aggregated option chain snapshots using a Rust `DataActor`. It
-covers instrument discovery, venue-provided Greeks subscriptions, and
-periodic option chain snapshots with ATM-relative strike filtering.
+This tutorial connects to Bybit's live options market and streams Greeks and
+aggregated option chain snapshots using a Rust `DataActor`. It covers
+instrument discovery, venue-provided Greeks subscriptions, and periodic
+option chain snapshots with ATM-relative strike filtering.
 
 ## Introduction
 
@@ -22,9 +22,9 @@ levels:
   periodic `OptionChainSlice` events that aggregate quotes and Greeks across
   all active strikes.
 
-Both patterns are backed by example binaries in the Bybit adapter crate. The
-first subscribes to individual Greeks streams; the second subscribes to an
-aggregated option chain with ATM-relative strike filtering.
+Two example binaries in the Bybit adapter crate back these patterns: the first
+subscribes to individual Greeks streams; the second subscribes to an aggregated
+option chain with ATM-relative strike filtering.
 
 ## Prerequisites
 
@@ -94,7 +94,7 @@ impl GreeksTester {
 
 The `core` field is required by the macro. The `client_id` identifies which
 data client to route subscriptions to. The `subscribed_instruments` vector
-tracks what we subscribed to so we can clean up on stop.
+tracks what we subscribed to so we clean up on stop.
 
 ### Discovering instruments
 
@@ -162,13 +162,14 @@ Each ticker update from Bybit triggers `on_option_greeks` with an
 ```rust
 fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
     log::info!(
-        "GREEKS | {} | delta={:.4} gamma={:.6} vega={:.4} theta={:.4} | \
+        "GREEKS | {} | delta={:.4} gamma={:.6} vega={:.4} theta={:.4} rho={:.6} | \
          mark_iv={} bid_iv={} ask_iv={} | underlying={} oi={}",
         greeks.instrument_id,
         greeks.delta,
         greeks.gamma,
         greeks.vega,
         greeks.theta,
+        greeks.rho,
         greeks.mark_iv.map_or("-".to_string(), |v| format!("{v:.2}")),
         greeks.bid_iv.map_or("-".to_string(), |v| format!("{v:.2}")),
         greeks.ask_iv.map_or("-".to_string(), |v| format!("{v:.2}")),
@@ -194,6 +195,10 @@ The `OptionGreeks` fields:
 | `ask_iv`           | `Option<f64>`  | Ask implied volatility.                            |
 | `underlying_price` | `Option<f64>`  | Current underlying forward price for this expiry.  |
 | `open_interest`    | `Option<f64>`  | Open interest for this contract.                   |
+
+The `delta`, `gamma`, `vega`, `theta`, and `rho` values live on a nested
+`greeks: OptionGreekValues` struct. `OptionGreeks` implements `Deref<Target = OptionGreekValues>`,
+so `greeks.delta` and friends work as shown above.
 
 Bybit does not provide rho; the adapter sets it to `0.0`.
 
@@ -221,14 +226,14 @@ quotes and Greeks.
 
 ### Why use option chains?
 
-Per-instrument subscriptions give you granular control, but monitoring an
-entire surface requires managing many individual streams and correlating
-updates across strikes. An option chain subscription handles this: the
-`DataEngine` aggregates quotes and Greeks across all strikes in a series and
-publishes a single `OptionChainSlice` on a timer.
+Per-instrument subscriptions give granular control, but monitoring an entire
+surface means managing individual streams and correlating updates across
+strikes. An option chain subscription handles this: the `DataEngine`
+aggregates quotes and Greeks across all strikes in a series and publishes a
+single `OptionChainSlice` on a timer.
 
 This aggregation happens inside NautilusTrader. Bybit publishes per-contract
-option market data. It does not expose a native option chain stream in the V5
+option market data and does not expose a native option chain stream in the V5
 public WebSocket docs.
 
 ### Key types
@@ -246,11 +251,11 @@ let series_id = OptionSeriesId::new(
 
 **`StrikeRange`** controls which strikes are active:
 
-| Variant       | Description                                    |
-|---------------|------------------------------------------------|
-| `Fixed`       | An explicit set of strike prices.              |
-| `AtmRelative` | N strikes above and N below the ATM strike.    |
-| `AtmPercent`  | All strikes within a percentage band of ATM.   |
+| Variant       | Description                                            |
+|---------------|--------------------------------------------------------|
+| `Fixed`       | A fixed set of strike prices.                          |
+| `AtmRelative` | `strikes_above` above and `strikes_below` below ATM.   |
+| `AtmPercent`  | All strikes within `pct` of the ATM price.             |
 
 For ATM-based variants, subscriptions are deferred until the ATM price is
 determined from the venue-provided forward price.
@@ -270,6 +275,7 @@ self.subscribe_option_chain(
     strike_range,
     snapshot_interval_ms,
     Some(client_id),
+    None, // params
 );
 ```
 
@@ -327,9 +333,9 @@ fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
 }
 ```
 
-The `OptionChainSlice` methods:
+The `OptionChainSlice` fields and methods:
 
-| Method           | Returns                     | Description                          |
+| Name             | Type / Returns              | Description                          |
 |------------------|-----------------------------|--------------------------------------|
 | `series_id`      | `OptionSeriesId`            | The series this snapshot covers.     |
 | `atm_strike`     | `Option<Price>`             | ATM strike from the forward price.   |
@@ -381,15 +387,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Setting `product_types` to `[BybitProductType::Option]` loads only option
-instruments. Bybit lists hundreds of options per underlying, so startup takes
-a few seconds while the instrument provider fetches and parses them all.
+instruments. Startup blocks while the instrument provider fetches and parses
+every listed option.
 
 ## Results
 
 ### Greeks output
 
-After startup and instrument discovery, the Greeks tester logs one line per
-ticker update:
+The Greeks tester logs one line per ticker update:
 
 ```
 Found 22 BTC CALL options at nearest expiry (ts=1775289600000000000)
