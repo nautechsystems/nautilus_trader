@@ -123,7 +123,8 @@ repos:
 
       - id: check-non-latin-text
         name: check non-Latin text
-        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to enforce English-only
+        description: Detect non-Latin characters (CJK, Cyrillic, Arabic, etc.) to
+          enforce English-only
         entry: bash .pre-commit-hooks/check_non_latin_text.sh
         language: system
         types: [text]
@@ -316,6 +317,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
+    # Pinned to 1.7.7 because v1.7.8 conflicts with this repo's Ruff docstring rules
     rev: v1.7.7
     hooks:
       - id: docformatter

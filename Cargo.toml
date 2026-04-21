@@ -316,7 +316,7 @@ bollard = { version = "0.18.0", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.47.0", default-features = false, features = [
+databento = { version = "0.48.0", default-features = false, features = [
   "historical",
   "live",
 ] }

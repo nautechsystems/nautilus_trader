@@ -27,6 +27,12 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "1.8.1 -> 1.8.2"
 
+[[audits.alloy-eip7928]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.3 -> 0.3.4"
+notes = "Adds DecodedBal lazy hash caching from raw RLP, empty-BAL hash fast path, and extra serde/borsh/arbitrary derives with tests. No new unsafe, build, or network behavior."
+
 [[audits.alloy-eips]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -183,6 +189,12 @@ criteria = "safe-to-deploy"
 delta = "0.45.0 -> 0.46.0"
 notes = "SplitDuration gains None variant, new TimeoutConf with connect/auth timeouts for Live client. No new unsafe."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.47.0 -> 0.48.0"
+notes = "Crate code only bumps dbn to 0.55.0 and updates changelog entries. No source logic, build script, or network changes in databento itself."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -195,6 +207,12 @@ criteria = "safe-to-deploy"
 delta = "0.52.1 -> 0.53.0"
 notes = "Bulk removal of #[pyo3(get,set)] (now via derive macros), FlagSet methods made const, publisher capitalization fix. No new unsafe."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.54.0 -> 0.55.0"
+notes = "Adds MXTO/IEXO venue and publisher constants, caches DbnFsm upgrade decisions to skip compat work when not needed, and removes Copy/Clone from RecordRefMut. No new unsafe."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -206,6 +224,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.52.1 -> 0.53.0"
 notes = "Version bump only"
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.54.0 -> 0.55.0"
+notes = "Serialize derive macros now return compile_error immediately on invalid attrs instead of emitting broken generated code. No new unsafe or runtime behavior."
 
 [[audits.fastrand]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -289,6 +313,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.103.9 -> 0.103.10"
 notes = "CRL authoritative_for() fix for multiple distribution point URIs, Rust 1.94 import compatibility. No new unsafe or dependency changes."
+
+[[audits.rustls-webpki]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.103.12 -> 0.103.13"
+notes = "Tightens DER BIT STRING padding validation, including empty values and malformed CRL issuing distribution points. Tests added; no new deps or unsafe."
 
 [[audits.semver]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -377,6 +407,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.7.14 -> 0.7.15"
 notes = "Doc fixes, lint renames, new unordered_seq macro, expression combinator updates. No unsafe changes."
+
+[[audits.winnow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.1 -> 1.0.2"
+notes = "Adds TreeError conversion impls for Bits<I> in binary mode and deprecates tuple-offset helpers. No parser-core logic, unsafe, build, or network changes."
 
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
