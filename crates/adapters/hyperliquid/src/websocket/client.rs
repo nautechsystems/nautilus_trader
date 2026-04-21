@@ -478,6 +478,18 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to L2 order book for an instrument.
     pub async fn subscribe_book(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to L2 order book with optional `nSigFigs` / `mantissa`
+    /// precision controls passed through to the venue's `l2Book` stream.
+    pub async fn subscribe_book_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
@@ -492,8 +504,8 @@ impl HyperliquidWebSocketClient {
 
         let subscription = SubscriptionRequest::L2Book {
             coin,
-            mantissa: None,
-            n_sig_figs: None,
+            mantissa,
+            n_sig_figs,
         };
 
         cmd_tx
@@ -501,6 +513,82 @@ impl HyperliquidWebSocketClient {
                 subscriptions: vec![subscription],
             })
             .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Subscribe to order book depth-10 snapshots.
+    ///
+    /// Reuses the same `l2Book` WebSocket subscription as
+    /// [`Self::subscribe_book`] and flags the handler to additionally emit
+    /// `NautilusWsMessage::Depth10` for this coin.
+    pub async fn subscribe_book_depth10(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_book_depth10_with_options(instrument_id, None, None)
+            .await
+    }
+
+    /// Subscribe to depth-10 snapshots with optional `nSigFigs` /
+    /// `mantissa` precision controls.
+    pub async fn subscribe_book_depth10_with_options(
+        &self,
+        instrument_id: InstrumentId,
+        n_sig_figs: Option<u32>,
+        mantissa: Option<u32>,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        let cmd_tx = self.cmd_tx.read().await;
+
+        cmd_tx
+            .send(HandlerCommand::UpdateInstrument(instrument.clone()))
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
+
+        cmd_tx
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: true,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
+
+        let subscription = SubscriptionRequest::L2Book {
+            coin,
+            mantissa,
+            n_sig_figs,
+        };
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription],
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        Ok(())
+    }
+
+    /// Unsubscribe from order book depth-10 snapshots.
+    ///
+    /// Clears the depth10 emission flag only; the underlying `l2Book`
+    /// stream stays open so active deltas subscribers keep receiving
+    /// updates. Call [`Self::unsubscribe_book`] separately to tear down
+    /// the stream entirely.
+    pub async fn unsubscribe_book_depth10(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let instrument = self
+            .get_instrument(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument not found: {instrument_id}"))?;
+        let coin = instrument.raw_symbol().inner();
+
+        self.cmd_tx
+            .read()
+            .await
+            .send(HandlerCommand::SetDepth10Sub {
+                coin,
+                subscribed: false,
+            })
+            .map_err(|e| anyhow::anyhow!("Failed to send SetDepth10Sub command: {e}"))?;
         Ok(())
     }
 

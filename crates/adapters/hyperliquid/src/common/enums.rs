@@ -830,8 +830,6 @@ pub enum HyperliquidInfoRequestType {
     CandleSnapshot,
     /// Get candle/bar data (WS post).
     Candle,
-    /// Get recent trades.
-    RecentTrades,
     /// Get historical orders.
     HistoricalOrders,
     /// Get funding history.
@@ -881,7 +879,6 @@ impl HyperliquidInfoRequestType {
             Self::ExchangeStatus => "exchangeStatus",
             Self::CandleSnapshot => "candleSnapshot",
             Self::Candle => "candle",
-            Self::RecentTrades => "recentTrades",
             Self::HistoricalOrders => "historicalOrders",
             Self::FundingHistory => "fundingHistory",
             Self::UserFunding => "userFunding",

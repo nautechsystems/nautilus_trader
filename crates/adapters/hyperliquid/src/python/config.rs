@@ -87,6 +87,7 @@ impl HyperliquidExecClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         normalize_prices = None,
+        market_order_slippage_bps = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -103,6 +104,7 @@ impl HyperliquidExecClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         normalize_prices: Option<bool>,
+        market_order_slippage_bps: Option<u32>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -121,6 +123,8 @@ impl HyperliquidExecClientConfig {
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             normalize_prices: normalize_prices.unwrap_or(defaults.normalize_prices),
+            market_order_slippage_bps: market_order_slippage_bps
+                .unwrap_or(defaults.market_order_slippage_bps),
         }
     }
 

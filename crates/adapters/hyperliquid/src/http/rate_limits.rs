@@ -154,8 +154,7 @@ pub fn info_extra_weight(req: &InfoRequest, json: &Value) -> u32 {
 
     let unit = match req.request_type {
         HyperliquidInfoRequestType::CandleSnapshot => 60usize,
-        HyperliquidInfoRequestType::RecentTrades
-        | HyperliquidInfoRequestType::HistoricalOrders
+        HyperliquidInfoRequestType::HistoricalOrders
         | HyperliquidInfoRequestType::UserFills
         | HyperliquidInfoRequestType::UserFillsByTime
         | HyperliquidInfoRequestType::FundingHistory

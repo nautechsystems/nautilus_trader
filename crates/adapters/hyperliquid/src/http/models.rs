@@ -367,6 +367,21 @@ pub struct HyperliquidCandle {
     pub num_trades: Option<u64>,
 }
 
+/// Represents a single funding history entry from the `fundingHistory` info endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HyperliquidFundingHistoryEntry {
+    /// Coin symbol (raw Hyperliquid name, e.g. `"BTC"`).
+    pub coin: Ustr,
+    /// Funding rate applied at the interval end, as a decimal string.
+    #[serde(rename = "fundingRate")]
+    pub funding_rate: String,
+    /// Premium at the time of funding, as a decimal string.
+    #[serde(default)]
+    pub premium: Option<String>,
+    /// Timestamp in milliseconds marking the end of the funding interval.
+    pub time: u64,
+}
+
 /// Represents an individual fill from user fills.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HyperliquidFill {
@@ -606,6 +621,39 @@ mod tests {
         assert_eq!(meta.universe.len(), 1);
         assert_eq!(meta.universe[0].name, "BTC");
         assert_eq!(meta.universe[0].sz_decimals, 5);
+    }
+
+    #[rstest]
+    fn test_funding_history_entry_with_premium() {
+        let json = r#"{
+            "coin": "BTC",
+            "fundingRate": "0.0000125",
+            "premium": "0.00029005",
+            "time": 1769908800000
+        }"#;
+
+        let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
+
+        assert_eq!(entry.coin.as_str(), "BTC");
+        assert_eq!(entry.funding_rate, "0.0000125");
+        assert_eq!(entry.premium.as_deref(), Some("0.00029005"));
+        assert_eq!(entry.time, 1769908800000);
+    }
+
+    #[rstest]
+    fn test_funding_history_entry_without_premium() {
+        // `premium` is optional in the venue response; it must deserialize
+        // to `None` when absent rather than fail.
+        let json = r#"{
+            "coin": "BTC",
+            "fundingRate": "0.0000033",
+            "time": 1769916000000
+        }"#;
+
+        let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
+
+        assert!(entry.premium.is_none());
+        assert_eq!(entry.funding_rate, "0.0000033");
     }
 
     #[rstest]

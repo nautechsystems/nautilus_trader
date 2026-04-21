@@ -147,6 +147,16 @@ pub struct CandleSnapshotParams {
     pub req: CandleSnapshotReq,
 }
 
+/// Parameters for funding history request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FundingHistoryParams {
+    pub coin: String,
+    pub start_time: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<u64>,
+}
+
 /// Info request parameters.
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
@@ -158,6 +168,7 @@ pub enum InfoRequestParams {
     ClearinghouseState(ClearinghouseStateParams),
     SpotClearinghouseState(SpotClearinghouseStateParams),
     CandleSnapshot(CandleSnapshotParams),
+    FundingHistory(FundingHistoryParams),
     None,
 }
 
@@ -311,6 +322,18 @@ impl InfoRequest {
             }),
         }
     }
+
+    /// Creates a request to get funding rate history for a coin.
+    pub fn funding_history(coin: &str, start_time: u64, end_time: Option<u64>) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::FundingHistory,
+            params: InfoRequestParams::FundingHistory(FundingHistoryParams {
+                coin: coin.to_string(),
+                start_time,
+                end_time,
+            }),
+        }
+    }
 }
 
 /// Exchange action parameters.
@@ -457,6 +480,31 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains(r#""type":"spotClearinghouseState""#));
         assert!(json.contains(r#""user":"0xabc""#));
+    }
+
+    #[rstest]
+    fn test_info_request_funding_history_with_end_time() {
+        let req = InfoRequest::funding_history("BTC", 1_700_000_000_000, Some(1_700_003_600_000));
+
+        assert_eq!(req.request_type, HyperliquidInfoRequestType::FundingHistory);
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""type":"fundingHistory""#));
+        assert!(json.contains(r#""coin":"BTC""#));
+        assert!(json.contains(r#""startTime":1700000000000"#));
+        assert!(json.contains(r#""endTime":1700003600000"#));
+    }
+
+    #[rstest]
+    fn test_info_request_funding_history_omits_end_time_when_none() {
+        // Hyperliquid defaults `endTime` to current time when absent; the
+        // serializer must omit the field rather than emit `null`.
+        let req = InfoRequest::funding_history("BTC", 1_700_000_000_000, None);
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains(r#""startTime":1700000000000"#));
+        assert!(
+            !json.contains("endTime"),
+            "endTime must be omitted when None; json={json}",
+        );
     }
 
     #[rstest]

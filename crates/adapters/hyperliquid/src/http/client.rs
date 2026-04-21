@@ -81,9 +81,9 @@ use crate::{
             HyperliquidExecGrouping, HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest,
             HyperliquidExecOrderKind, HyperliquidExecOrderResponseData, HyperliquidExecOrderStatus,
             HyperliquidExecPlaceOrderRequest, HyperliquidExecTif, HyperliquidExecTpSl,
-            HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidL2Book, HyperliquidMeta,
-            HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
-            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidExecTriggerParams, HyperliquidFills, HyperliquidFundingHistoryEntry,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, PerpMeta, PerpMetaAndCtxs,
+            RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
@@ -426,6 +426,21 @@ impl HyperliquidRawHttpClient {
             response
         );
 
+        serde_json::from_value(response).map_err(Error::Serde)
+    }
+
+    /// Get historical funding rates for a coin.
+    ///
+    /// `start_time` and `end_time` are Unix milliseconds. `end_time` is optional;
+    /// if omitted, the venue returns entries up to the most recent funding.
+    pub async fn info_funding_history(
+        &self,
+        coin: &str,
+        start_time: u64,
+        end_time: Option<u64>,
+    ) -> Result<Vec<HyperliquidFundingHistoryEntry>> {
+        let request = InfoRequest::funding_history(coin, start_time, end_time);
+        let response = self.send_info_request(&request).await?;
         serde_json::from_value(response).map_err(Error::Serde)
     }
 
@@ -793,6 +808,7 @@ pub struct HyperliquidHttpClient {
     /// instead of the address derived from the private key.
     account_address: Option<String>,
     normalize_prices: bool,
+    market_order_slippage_bps: u32,
 }
 
 impl Default for HyperliquidHttpClient {
@@ -843,6 +859,7 @@ impl HyperliquidHttpClient {
             account_id: None,
             account_address: None,
             normalize_prices: true,
+            market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
         }
     }
 
@@ -885,6 +902,7 @@ impl HyperliquidHttpClient {
             account_id: None,
             account_address: None,
             normalize_prices: true,
+            market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
         })
     }
 
@@ -948,6 +966,7 @@ impl HyperliquidHttpClient {
                     account_id: None,
                     account_address: resolved_account_address,
                     normalize_prices: true,
+                    market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
                 })
             }
             None => {
@@ -987,6 +1006,7 @@ impl HyperliquidHttpClient {
             account_id: None,
             account_address: None,
             normalize_prices: true,
+            market_order_slippage_bps: crate::common::parse::DEFAULT_MARKET_SLIPPAGE_BPS,
         })
     }
 
@@ -1005,6 +1025,17 @@ impl HyperliquidHttpClient {
     /// Sets whether to normalize order prices to 5 significant figures.
     pub fn set_normalize_prices(&mut self, value: bool) {
         self.normalize_prices = value;
+    }
+
+    /// Returns the MARKET-order slippage buffer in basis points.
+    #[must_use]
+    pub fn market_order_slippage_bps(&self) -> u32 {
+        self.market_order_slippage_bps
+    }
+
+    /// Sets the MARKET-order slippage buffer in basis points.
+    pub fn set_market_order_slippage_bps(&mut self, value: u32) {
+        self.market_order_slippage_bps = value;
     }
 
     /// Gets the user address derived from the private key (if client has credentials).
@@ -1432,6 +1463,18 @@ impl HyperliquidHttpClient {
     ) -> Result<HyperliquidCandleSnapshot> {
         self.inner
             .info_candle_snapshot(coin, interval, start_time, end_time)
+            .await
+    }
+
+    /// Get historical funding rates for a coin.
+    pub async fn info_funding_history(
+        &self,
+        coin: &str,
+        start_time: u64,
+        end_time: Option<u64>,
+    ) -> Result<Vec<HyperliquidFundingHistoryEntry>> {
+        self.inner
+            .info_funding_history(coin, start_time, end_time)
             .await
     }
 
@@ -2367,8 +2410,11 @@ impl HyperliquidHttpClient {
             {
                 match trigger_price {
                     Some(tp) => {
-                        let derived =
-                            derive_limit_from_trigger(tp.as_decimal().normalize(), is_buy);
+                        let derived = derive_limit_from_trigger(
+                            tp.as_decimal().normalize(),
+                            is_buy,
+                            self.market_order_slippage_bps,
+                        );
                         let sig_rounded = round_to_sig_figs(derived, 5);
                         clamp_price_to_precision(sig_rounded, price_precision, is_buy).normalize()
                     }
@@ -2664,6 +2710,7 @@ impl HyperliquidHttpClient {
                 asset,
                 price_decimals,
                 self.normalize_prices,
+                self.market_order_slippage_bps,
             )
             .map_err(|e| Error::bad_request(format!("Failed to convert order: {e}")))?;
             hyperliquid_orders.push(request);

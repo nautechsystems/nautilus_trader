@@ -27,28 +27,31 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, InstrumentResponse, InstrumentsResponse,
-            RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
+            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
+            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
             SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, Data, OrderBookDeltas_API},
+    data::{Bar, BarType, BookOrder, Data, FundingRateUpdate, OrderBookDeltas_API},
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -60,7 +63,10 @@ use crate::{
         parse::bar_type_to_interval,
     },
     config::HyperliquidDataClientConfig,
-    http::{client::HyperliquidHttpClient, models::HyperliquidCandle},
+    http::{
+        client::HyperliquidHttpClient,
+        models::{HyperliquidCandle, HyperliquidFundingHistoryEntry},
+    },
     websocket::{
         client::HyperliquidWebSocketClient,
         messages::{HyperliquidWsMessage, NautilusWsMessage},
@@ -231,6 +237,13 @@ impl HyperliquidDataClient {
                                         )))
                                     {
                                         log::error!("Failed to send order book deltas: {e}");
+                                    }
+                                }
+                                NautilusWsMessage::Depth10(depth) => {
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Data(Data::Depth10(depth)))
+                                    {
+                                        log::error!("Failed to send order book depth10: {e}");
                                     }
                                 }
                                 NautilusWsMessage::Candle(bar) => {
@@ -550,6 +563,291 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+        let instruments = self.instruments.load();
+        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
+            if let Err(e) = self
+                .data_sender
+                .send(DataEvent::Instrument(instrument.clone()))
+            {
+                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
+            }
+        } else {
+            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
+        }
+        Ok(())
+    }
+
+    fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
+        log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
+
+        if subscription.book_type != BookType::L2_MBP {
+            anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
+        }
+
+        let ws = self.ws_client.clone();
+        let instrument_id = subscription.instrument_id;
+        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .subscribe_book_with_options(instrument_id, n_sig_figs, mantissa)
+                .await
+            {
+                log::error!("Failed to subscribe to book deltas: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_book_depth10(&mut self, subscription: SubscribeBookDepth10) -> anyhow::Result<()> {
+        log::debug!(
+            "Subscribing to book depth10: {}",
+            subscription.instrument_id
+        );
+
+        if subscription.book_type != BookType::L2_MBP {
+            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth10");
+        }
+
+        let ws = self.ws_client.clone();
+        let instrument_id = subscription.instrument_id;
+        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws
+                .subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa)
+                .await
+            {
+                log::error!("Failed to subscribe to book depth10: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
+        log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
+
+        let ws = self.ws_client.clone();
+        let instrument_id = subscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_quotes(instrument_id).await {
+                log::error!("Failed to subscribe to quotes: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
+        log::debug!("Subscribing to trades: {}", subscription.instrument_id);
+
+        let ws = self.ws_client.clone();
+        let instrument_id = subscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_trades(instrument_id).await {
+                log::error!("Failed to subscribe to trades: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to subscribe to mark prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_index_prices(instrument_id).await {
+                log::error!("Failed to subscribe to index prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to subscribe to funding rates: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
+        log::debug!("Subscribing to bars: {}", subscription.bar_type);
+
+        let instrument_id = subscription.bar_type.instrument_id();
+        if !self.instruments.contains_key(&instrument_id) {
+            anyhow::bail!("Instrument {instrument_id} not found");
+        }
+
+        let bar_type = subscription.bar_type;
+        let ws = self.ws_client.clone();
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.subscribe_bars(bar_type).await {
+                log::error!("Failed to subscribe to bars: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(
+        &mut self,
+        unsubscription: &UnsubscribeBookDeltas,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from book deltas: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let instrument_id = unsubscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_book(instrument_id).await {
+                log::error!("Failed to unsubscribe from book deltas: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth10(
+        &mut self,
+        unsubscription: &UnsubscribeBookDepth10,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from book depth10: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let instrument_id = unsubscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_book_depth10(instrument_id).await {
+                log::error!("Failed to unsubscribe from book depth10: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from quotes: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let instrument_id = unsubscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
+                log::error!("Failed to unsubscribe from quotes: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from trades: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let instrument_id = unsubscription.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
+                log::error!("Failed to unsubscribe from trades: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_mark_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from mark prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_index_prices(instrument_id).await {
+                log::error!("Failed to unsubscribe from index prices: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = cmd.instrument_id;
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_funding_rates(instrument_id).await {
+                log::error!("Failed to unsubscribe from funding rates: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
+        log::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
+
+        let bar_type = unsubscription.bar_type;
+        let ws = self.ws_client.clone();
+
+        get_runtime().spawn(async move {
+            if let Err(e) = ws.unsubscribe_bars(bar_type).await {
+                log::error!("Failed to unsubscribe from bars: {e:?}");
+            }
+        });
+
+        Ok(())
+    }
+
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         log::debug!("Requesting all instruments");
 
@@ -710,33 +1008,100 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        log::debug!("Requesting trades for {}", request.instrument_id);
-
-        // NOTE: Hyperliquid does not provide public historical trade data via REST API
-        // - Real-time trades are available via WebSocket (subscribe_trades)
-        // - User fills (authenticated) are available via generate_fill_reports
-        // For now, return empty response similar to exchanges without public trade history
-        log::warn!(
-            "Historical trade data not available via REST on Hyperliquid for {}",
-            request.instrument_id
-        );
-
-        let trades = Vec::new();
-
-        let response = DataResponse::Trades(TradesResponse::new(
-            request.request_id,
-            request.client_id.unwrap_or(self.client_id),
+        // Hyperliquid has no public trade-tape REST endpoint; real-time
+        // trades are available via the `trades` WebSocket channel and
+        // account-scoped fills via `userFills`/`userFillsByTime`, but
+        // market-wide trade history cannot be served.
+        anyhow::bail!(
+            "Historical trade requests are not supported by Hyperliquid for {}; \
+             subscribe to trades via WebSocket for live trade ticks",
             request.instrument_id,
-            trades,
-            datetime_to_unix_nanos(request.start),
-            datetime_to_unix_nanos(request.end),
-            self.clock.get_time_ns(),
-            request.params,
-        ));
+        )
+    }
 
-        if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-            log::error!("Failed to send trades response: {e}");
+    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let instrument_id = request.instrument_id;
+        log::debug!("Requesting funding rates for {instrument_id}");
+
+        let instruments = self.instruments.load();
+        let instrument = instruments
+            .get(&instrument_id)
+            .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found"))?;
+
+        if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
+            anyhow::bail!("Funding rates are only available for perpetual instruments");
         }
+
+        let coin = instrument.raw_symbol().to_string();
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let request_id = request.request_id;
+        let params = request.params;
+        let clock = self.clock;
+        let limit = request.limit.map(|n| n.get());
+        let start_dt = request.start;
+        let end_dt = request.end;
+        let start_nanos = datetime_to_unix_nanos(start_dt);
+        let end_nanos = datetime_to_unix_nanos(end_dt);
+
+        let now_ms = Utc::now().timestamp_millis() as u64;
+
+        // Hyperliquid requires a startTime; default to a 7-day lookback when none given
+        let default_lookback_ms: u64 = 7 * 86_400_000;
+        let start_ms = match start_dt {
+            Some(dt) => dt.timestamp_millis().max(0) as u64,
+            None => now_ms.saturating_sub(default_lookback_ms),
+        };
+        let end_ms = end_dt.map(|dt| dt.timestamp_millis().max(0) as u64);
+
+        get_runtime().spawn(async move {
+            match http.info_funding_history(&coin, start_ms, end_ms).await {
+                Ok(entries) => {
+                    let mut funding_rates: Vec<FundingRateUpdate> = entries
+                        .iter()
+                        .filter_map(
+                            |entry| match funding_entry_to_update(entry, instrument_id) {
+                                Ok(update) => Some(update),
+                                Err(e) => {
+                                    log::warn!(
+                                        "Skipping funding history entry for {instrument_id}: {e}",
+                                    );
+                                    None
+                                }
+                            },
+                        )
+                        .collect();
+
+                    if let Some(limit) = limit
+                        && funding_rates.len() > limit
+                    {
+                        funding_rates.truncate(limit);
+                    }
+
+                    log::debug!(
+                        "Fetched {} funding rates for {instrument_id}",
+                        funding_rates.len(),
+                    );
+
+                    let response = DataResponse::FundingRates(FundingRatesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        funding_rates,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    ));
+
+                    if let Err(e) = sender.send(DataEvent::Response(response)) {
+                        log::error!("Failed to send funding rates response: {e}");
+                    }
+                }
+                Err(e) => log::error!("Funding rates request failed for {instrument_id}: {e:?}"),
+            }
+        });
 
         Ok(())
     }
@@ -850,240 +1215,50 @@ impl DataClient for HyperliquidDataClient {
 
         Ok(())
     }
+}
 
-    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        let instruments = self.instruments.load();
-        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
-                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
-            }
-        } else {
-            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
+// Reads optional `nSigFigs` / `mantissa` L2 precision controls from
+// `subscribe_params`; bails on non-positive integer values.
+pub(crate) fn parse_book_precision_params(
+    params: Option<&Params>,
+) -> anyhow::Result<(Option<u32>, Option<u32>)> {
+    let Some(params) = params else {
+        return Ok((None, None));
+    };
+
+    let read_u32 = |key: &str| -> anyhow::Result<Option<u32>> {
+        match params.get(key) {
+            None => Ok(None),
+            Some(v) => v
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| anyhow::anyhow!("`{key}` must be a positive u32"))
+                .map(Some),
         }
-        Ok(())
-    }
+    };
 
-    fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        log::debug!("Subscribing to trades: {}", subscription.instrument_id);
+    Ok((read_u32("n_sig_figs")?, read_u32("mantissa")?))
+}
 
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_trades(instrument_id).await {
-                log::error!("Failed to subscribe to trades: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from trades: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
-                log::error!("Failed to unsubscribe from trades: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
-
-        if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
-        }
-
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_book(instrument_id).await {
-                log::error!("Failed to subscribe to book deltas: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_book_deltas(
-        &mut self,
-        unsubscription: &UnsubscribeBookDeltas,
-    ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book deltas: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_book(instrument_id).await {
-                log::error!("Failed to unsubscribe from book deltas: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
-
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_quotes(instrument_id).await {
-                log::error!("Failed to subscribe to quotes: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from quotes: {}",
-            unsubscription.instrument_id
-        );
-
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
-                log::error!("Failed to unsubscribe from quotes: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_mark_prices(instrument_id).await {
-                log::error!("Failed to subscribe to mark prices: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_mark_prices(instrument_id).await {
-                log::error!("Failed to unsubscribe from mark prices: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_index_prices(instrument_id).await {
-                log::error!("Failed to subscribe to index prices: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_index_prices(instrument_id).await {
-                log::error!("Failed to unsubscribe from index prices: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_funding_rates(instrument_id).await {
-                log::error!("Failed to subscribe to funding rates: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_funding_rates(instrument_id).await {
-                log::error!("Failed to unsubscribe from funding rates: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Subscribing to bars: {}", subscription.bar_type);
-
-        let instrument_id = subscription.bar_type.instrument_id();
-        if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!("Instrument {instrument_id} not found");
-        }
-
-        let bar_type = subscription.bar_type;
-        let ws = self.ws_client.clone();
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.subscribe_bars(bar_type).await {
-                log::error!("Failed to subscribe to bars: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
-
-        let bar_type = unsubscription.bar_type;
-        let ws = self.ws_client.clone();
-
-        get_runtime().spawn(async move {
-            if let Err(e) = ws.unsubscribe_bars(bar_type).await {
-                log::error!("Failed to unsubscribe from bars: {e:?}");
-            }
-        });
-
-        Ok(())
-    }
+// Hyperliquid funds perpetuals hourly, so `interval` is fixed at 60 mins;
+// `time` from the venue marks the end of the funding interval in ms.
+pub(crate) fn funding_entry_to_update(
+    entry: &HyperliquidFundingHistoryEntry,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<FundingRateUpdate> {
+    let rate: Decimal = entry
+        .funding_rate
+        .parse()
+        .with_context(|| format!("invalid fundingRate '{}'", entry.funding_rate))?;
+    let ts = UnixNanos::from(entry.time * 1_000_000);
+    Ok(FundingRateUpdate::new(
+        instrument_id,
+        rate,
+        Some(60),
+        None,
+        ts,
+        ts,
+    ))
 }
 
 pub(crate) fn candle_to_bar(
@@ -1179,4 +1354,116 @@ async fn request_bars_from_http(
 
     log::debug!("Fetched {} bars for {}", bars.len(), bar_type);
     Ok(bars)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
+
+    use super::*;
+    use crate::common::testing::load_test_data;
+
+    fn btc_perp_id() -> InstrumentId {
+        InstrumentId::from("BTC-PERP.HYPERLIQUID")
+    }
+
+    #[rstest]
+    fn test_funding_entry_to_update_parses_positive_rate() {
+        let entry = HyperliquidFundingHistoryEntry {
+            coin: Ustr::from("BTC"),
+            funding_rate: "0.0000125".to_string(),
+            premium: Some("0.00029005".to_string()),
+            time: 1769908800000,
+        };
+        let instrument_id = btc_perp_id();
+
+        let update = funding_entry_to_update(&entry, instrument_id).unwrap();
+
+        assert_eq!(update.instrument_id, instrument_id);
+        assert_eq!(update.rate, dec!(0.0000125));
+        assert_eq!(update.interval, Some(60));
+        assert!(update.next_funding_ns.is_none());
+        assert_eq!(update.ts_event, UnixNanos::from(1769908800000 * 1_000_000));
+        assert_eq!(update.ts_init, update.ts_event);
+    }
+
+    #[rstest]
+    fn test_funding_entry_to_update_handles_negative_rate() {
+        let entry = HyperliquidFundingHistoryEntry {
+            coin: Ustr::from("BTC"),
+            funding_rate: "-0.0000081".to_string(),
+            premium: None,
+            time: 1769912400000,
+        };
+        let update = funding_entry_to_update(&entry, btc_perp_id()).unwrap();
+        assert_eq!(update.rate, dec!(-0.0000081));
+    }
+
+    #[rstest]
+    fn test_funding_entry_to_update_rejects_invalid_rate() {
+        let entry = HyperliquidFundingHistoryEntry {
+            coin: Ustr::from("BTC"),
+            funding_rate: "not-a-number".to_string(),
+            premium: None,
+            time: 1769912400000,
+        };
+        let result = funding_entry_to_update(&entry, btc_perp_id());
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_none() {
+        let (n, m) = parse_book_precision_params(None).unwrap();
+        assert_eq!(n, None);
+        assert_eq!(m, None);
+    }
+
+    fn make_params(json: serde_json::Value) -> Params {
+        serde_json::from_value(json).expect("valid params payload")
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_only_n_sig_figs() {
+        let params = make_params(serde_json::json!({"n_sig_figs": 4}));
+        let (n, m) = parse_book_precision_params(Some(&params)).unwrap();
+        assert_eq!(n, Some(4));
+        assert_eq!(m, None);
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_both() {
+        let params = make_params(serde_json::json!({"n_sig_figs": 5, "mantissa": 2}));
+        let (n, m) = parse_book_precision_params(Some(&params)).unwrap();
+        assert_eq!(n, Some(5));
+        assert_eq!(m, Some(2));
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_rejects_negative() {
+        let params = make_params(serde_json::json!({"n_sig_figs": -1}));
+        let err = parse_book_precision_params(Some(&params)).unwrap_err();
+        assert!(err.to_string().contains("n_sig_figs"));
+    }
+
+    #[rstest]
+    fn test_funding_history_fixture_parses() {
+        let entries: Vec<HyperliquidFundingHistoryEntry> =
+            load_test_data("http_funding_history.json");
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].coin.as_str(), "BTC");
+        assert_eq!(entries[0].funding_rate, "0.0000125");
+        assert_eq!(entries[0].premium.as_deref(), Some("0.00029005"));
+        assert!(entries[2].premium.is_none());
+
+        let updates: Vec<FundingRateUpdate> = entries
+            .iter()
+            .map(|e| funding_entry_to_update(e, btc_perp_id()).unwrap())
+            .collect();
+        assert_eq!(updates.len(), 3);
+        assert_eq!(updates[0].rate, dec!(0.0000125));
+        assert_eq!(updates[1].rate, dec!(-0.0000081));
+        assert_eq!(updates[2].rate, dec!(0.0000033));
+    }
 }

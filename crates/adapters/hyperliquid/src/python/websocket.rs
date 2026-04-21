@@ -181,6 +181,12 @@ impl HyperliquidWebSocketClient {
                                         call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
+                                NautilusWsMessage::Depth10(depth) => {
+                                    Python::attach(|py| {
+                                        let py_obj = data_to_pycapsule(py, Data::Depth10(depth));
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
+                                    });
+                                }
                                 NautilusWsMessage::Candle(bar) => {
                                     Python::attach(|py| {
                                         let py_obj = data_to_pycapsule(py, Data::Bar(bar));

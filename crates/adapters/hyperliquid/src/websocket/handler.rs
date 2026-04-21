@@ -47,7 +47,8 @@ use super::{
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
-        parse_ws_order_status_report, parse_ws_quote_tick, parse_ws_trade_tick,
+        parse_ws_order_book_depth10, parse_ws_order_status_report, parse_ws_quote_tick,
+        parse_ws_trade_tick,
     },
 };
 
@@ -86,6 +87,9 @@ pub enum HandlerCommand {
     },
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
+    /// Flag whether the `l2Book` stream for `coin` should also be emitted
+    /// as [`NautilusWsMessage::Depth10`] snapshots.
+    SetDepth10Sub { coin: Ustr, subscribed: bool },
 }
 
 pub(super) struct FeedHandler {
@@ -104,6 +108,7 @@ pub(super) struct FeedHandler {
     bar_types_cache: AHashMap<String, BarType>,
     bar_cache: AHashMap<String, CandleData>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+    depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     mark_price_cache: AHashMap<Ustr, String>,
     index_price_cache: AHashMap<Ustr, String>,
@@ -137,6 +142,7 @@ impl FeedHandler {
             bar_types_cache: AHashMap::new(),
             bar_cache: AHashMap::new(),
             asset_context_subs: AHashMap::new(),
+            depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
             mark_price_cache: AHashMap::new(),
             index_price_cache: AHashMap::new(),
@@ -268,6 +274,13 @@ impl FeedHandler {
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
                         }
+                        HandlerCommand::SetDepth10Sub { coin, subscribed } => {
+                            if subscribed {
+                                self.depth10_subs.insert(coin);
+                            } else {
+                                self.depth10_subs.remove(&coin);
+                            }
+                        }
                     }
                 }
 
@@ -291,6 +304,7 @@ impl FeedHandler {
                                         self.account_id,
                                         ts_init,
                                         &self.asset_context_subs,
+                                        &self.depth10_subs,
                                         &mut self.processed_trade_ids,
                                         &mut self.mark_price_cache,
                                         &mut self.index_price_cache,
@@ -341,6 +355,7 @@ impl FeedHandler {
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
+        depth10_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         mark_price_cache: &mut AHashMap<Ustr, String>,
         index_price_cache: &mut AHashMap<Ustr, String>,
@@ -431,9 +446,12 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::L2Book { data } => {
-                if let Some(msg) = Self::handle_l2_book(&data, instruments, ts_init) {
-                    result.push(msg);
-                }
+                result.extend(Self::handle_l2_book(
+                    &data,
+                    instruments,
+                    depth10_subs,
+                    ts_init,
+                ));
             }
             HyperliquidWsMessage::Candle { data } => {
                 if let Some(msg) =
@@ -618,20 +636,29 @@ impl FeedHandler {
     fn handle_l2_book(
         data: &super::messages::WsBookData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
+        depth10_subs: &AHashSet<Ustr>,
         ts_init: UnixNanos,
-    ) -> Option<NautilusWsMessage> {
-        if let Some(instrument) = instruments.get(&data.coin) {
-            match parse_ws_order_book_deltas(data, instrument, ts_init) {
-                Ok(deltas) => Some(NautilusWsMessage::Deltas(deltas)),
-                Err(e) => {
-                    log::error!("Error parsing order book deltas: {e}");
-                    None
-                }
-            }
-        } else {
+    ) -> Vec<NautilusWsMessage> {
+        let mut out = Vec::new();
+
+        let Some(instrument) = instruments.get(&data.coin) else {
             log::debug!("No instrument found for coin: {}", data.coin);
-            None
+            return out;
+        };
+
+        match parse_ws_order_book_deltas(data, instrument, ts_init) {
+            Ok(deltas) => out.push(NautilusWsMessage::Deltas(deltas)),
+            Err(e) => log::error!("Error parsing order book deltas: {e}"),
         }
+
+        if depth10_subs.contains(&data.coin) {
+            match parse_ws_order_book_depth10(data, instrument, ts_init) {
+                Ok(depth) => out.push(NautilusWsMessage::Depth10(Box::new(depth))),
+                Err(e) => log::error!("Error parsing order book depth10: {e}"),
+            }
+        }
+
+        out
     }
 
     fn handle_candle(
@@ -857,4 +884,122 @@ pub(crate) fn should_retry_hyperliquid_error(error: &HyperliquidWsError) -> bool
 /// Creates a timeout error for Hyperliquid retry logic.
 pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsError {
     HyperliquidWsError::ClientError(msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use ahash::{AHashMap, AHashSet};
+    use nautilus_core::nanos::UnixNanos;
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol, Venue},
+        instruments::{CryptoPerpetual, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::{
+        super::messages::{NautilusWsMessage, WsBookData, WsLevelData},
+        FeedHandler,
+    };
+
+    fn btc_perp() -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
+            InstrumentId::new(Symbol::new("BTC-PERP"), Venue::new("HYPERLIQUID")),
+            Symbol::new("BTC-PERP"),
+            Currency::from("BTC"),
+            Currency::from("USDC"),
+            Currency::from("USDC"),
+            false,
+            2,
+            3,
+            Price::from("0.01"),
+            Quantity::from("0.001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn one_level_book() -> WsBookData {
+        WsBookData {
+            coin: Ustr::from("BTC"),
+            levels: [
+                vec![WsLevelData {
+                    px: "100.00".to_string(),
+                    sz: "1.0".to_string(),
+                    n: 1,
+                }],
+                vec![WsLevelData {
+                    px: "100.01".to_string(),
+                    sz: "1.0".to_string(),
+                    n: 1,
+                }],
+            ],
+            time: 1_700_000_000_000,
+        }
+    }
+
+    #[rstest]
+    fn handle_l2_book_emits_deltas_only_when_not_in_depth10_subs() {
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), btc_perp());
+        let depth10_subs = AHashSet::<Ustr>::new();
+
+        let msgs = FeedHandler::handle_l2_book(
+            &one_level_book(),
+            &instruments,
+            &depth10_subs,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(msgs[0], NautilusWsMessage::Deltas(_)));
+    }
+
+    #[rstest]
+    fn handle_l2_book_emits_deltas_and_depth10_when_coin_in_subs() {
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), btc_perp());
+        let mut depth10_subs = AHashSet::<Ustr>::new();
+        depth10_subs.insert(Ustr::from("BTC"));
+
+        let msgs = FeedHandler::handle_l2_book(
+            &one_level_book(),
+            &instruments,
+            &depth10_subs,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(msgs[0], NautilusWsMessage::Deltas(_)));
+        assert!(matches!(msgs[1], NautilusWsMessage::Depth10(_)));
+    }
+
+    #[rstest]
+    fn handle_l2_book_returns_empty_when_instrument_unknown() {
+        let instruments = AHashMap::<Ustr, InstrumentAny>::new();
+        let depth10_subs = AHashSet::<Ustr>::new();
+
+        let msgs = FeedHandler::handle_l2_book(
+            &one_level_book(),
+            &instruments,
+            &depth10_subs,
+            UnixNanos::default(),
+        );
+
+        assert!(msgs.is_empty());
+    }
 }

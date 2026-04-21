@@ -157,6 +157,11 @@ pub struct HyperliquidExecClientConfig {
     /// before submission (Hyperliquid requirement).
     #[builder(default = true)]
     pub normalize_prices: bool,
+    /// Slippage buffer in basis points applied to MARKET orders and
+    /// stop-to-limit trigger derivations. Can be overridden per-order via
+    /// `SubmitOrder.params["market_order_slippage_bps"]`.
+    #[builder(default = 50)]
+    pub market_order_slippage_bps: u32,
 }
 
 impl Default for HyperliquidExecClientConfig {

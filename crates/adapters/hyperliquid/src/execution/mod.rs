@@ -33,7 +33,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    MUTEX_POISONED, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -128,6 +128,12 @@ impl HyperliquidExecutionClient {
         tasks.iter().all(|h| h.is_finished())
     }
 
+    fn resolve_slippage_bps(&self, params: Option<&Params>) -> u32 {
+        params
+            .and_then(|p| p.get_u64("market_order_slippage_bps"))
+            .map_or(self.config.market_order_slippage_bps, |v| v as u32)
+    }
+
     fn validate_order_submission(&self, order: &OrderAny) -> anyhow::Result<()> {
         // Check if instrument symbol is supported
         // Hyperliquid instruments: {base}-USD-PERP or {base}-{quote}-SPOT
@@ -208,6 +214,8 @@ impl HyperliquidExecutionClient {
 
         http_client.set_account_id(core.account_id);
         http_client.set_account_address(config.account_address.clone());
+        http_client.set_normalize_prices(config.normalize_prices);
+        http_client.set_market_order_slippage_bps(config.market_order_slippage_bps);
 
         // Apply URL overrides from config (used for testing with mock servers)
         if let Some(url) = &config.base_url_http {
@@ -512,11 +520,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         // Validate order conversion before marking as submitted
         let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
+        let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
         let mut hyperliquid_order = match order_to_hyperliquid_request_with_asset(
             &order,
             asset,
             price_decimals,
             self.config.normalize_prices,
+            slippage_bps,
         ) {
             Ok(req) => req,
             Err(e) => {
@@ -534,7 +544,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 Some(quote) => {
                     let is_buy = order.order_side() == OrderSide::Buy;
                     hyperliquid_order.price =
-                        derive_market_order_price(quote, is_buy, price_decimals);
+                        derive_market_order_price(quote, is_buy, price_decimals, slippage_bps);
                 }
                 None => {
                     self.emitter.emit_order_denied(
@@ -636,6 +646,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         );
 
         let http_client = self.http_client.clone();
+        let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
 
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
@@ -661,6 +672,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 asset,
                 price_decimals,
                 self.config.normalize_prices,
+                slippage_bps,
             ) {
                 Ok(req) => {
                     hyperliquid_orders.push(req);
@@ -860,6 +872,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let symbol = cmd.instrument_id.symbol.to_string();
         let should_normalize = self.config.normalize_prices;
+        let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
 
         let quantity = cmd.quantity.unwrap_or(order.leaves_qty());
         let price_decimals = http_client.get_price_precision(&symbol).unwrap_or(2);
@@ -880,6 +893,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             asset,
             price_decimals,
             should_normalize,
+            slippage_bps,
         ) {
             Ok(mut req) => {
                 // Only override price when explicitly provided
@@ -895,7 +909,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     // slippage-adjusted limit from the new trigger
                     let is_buy = order.order_side() == OrderSide::Buy;
                     let base = tp.as_decimal().normalize();
-                    let derived = derive_limit_from_trigger(base, is_buy);
+                    let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
                     let sig_rounded = round_to_sig_figs(derived, 5);
                     req.price =
                         clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
@@ -1063,25 +1077,50 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let symbol = cmd.instrument_id.symbol.to_string();
-        let client_order_ids: Vec<String> = open_orders
+        let instrument_id = cmd.instrument_id;
+        let strategy_id = cmd.strategy_id;
+        let entries: Vec<CancelEntry> = open_orders
             .iter()
-            .map(|o| o.client_order_id().to_string())
+            .map(|o| CancelEntry {
+                strategy_id,
+                instrument_id,
+                client_order_id: o.client_order_id(),
+                venue_order_id: o.venue_order_id(),
+                symbol: symbol.clone(),
+            })
             .collect();
 
         let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         self.spawn_task("cancel_all_orders", async move {
             let asset = match http_client.get_asset_index(&symbol) {
                 Some(a) => a,
                 None => {
-                    log::warn!("Asset index not found for symbol {symbol}");
+                    let reason = format!("Asset index not found for symbol {symbol}");
+                    log::warn!("{reason}");
+                    let ts = clock.get_time_ns();
+
+                    for entry in &entries {
+                        emitter.emit_order_cancel_rejected_event(
+                            entry.strategy_id,
+                            entry.instrument_id,
+                            entry.client_order_id,
+                            entry.venue_order_id,
+                            &reason,
+                            ts,
+                        );
+                    }
                     return Ok(());
                 }
             };
 
-            let cancel_requests: Vec<_> = client_order_ids
+            let cancel_requests: Vec<_> = entries
                 .iter()
-                .map(|id| client_order_id_to_cancel_request_with_asset(id, asset))
+                .map(|e| {
+                    client_order_id_to_cancel_request_with_asset(e.client_order_id.as_ref(), asset)
+                })
                 .collect();
 
             if cancel_requests.is_empty() {
@@ -1092,8 +1131,65 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 cancels: cancel_requests,
             };
 
-            if let Err(e) = http_client.post_action_exec(&action).await {
-                log::warn!("Cancel all orders request failed: {e}");
+            match http_client.post_action_exec(&action).await {
+                Ok(response) => {
+                    if response.is_ok() {
+                        let inner_errors = extract_inner_errors(&response);
+                        let ts = clock.get_time_ns();
+
+                        if inner_errors.is_empty() {
+                            log::info!("Cancel-all submitted successfully: {response:?}");
+                        } else {
+                            for (i, entry) in entries.iter().enumerate() {
+                                if let Some(Some(error_msg)) = inner_errors.get(i) {
+                                    log::warn!(
+                                        "Cancel for {} rejected by exchange: {error_msg}",
+                                        entry.client_order_id,
+                                    );
+                                    emitter.emit_order_cancel_rejected_event(
+                                        entry.strategy_id,
+                                        entry.instrument_id,
+                                        entry.client_order_id,
+                                        entry.venue_order_id,
+                                        error_msg,
+                                        ts,
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        let error_msg = extract_error_message(&response);
+                        log::warn!("Cancel-all rejected by exchange: {error_msg}");
+                        let ts = clock.get_time_ns();
+
+                        for entry in &entries {
+                            emitter.emit_order_cancel_rejected_event(
+                                entry.strategy_id,
+                                entry.instrument_id,
+                                entry.client_order_id,
+                                entry.venue_order_id,
+                                &error_msg,
+                                ts,
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    let reason = format!("Cancel-all HTTP request failed: {e}");
+                    log::warn!("{reason}");
+                    let ts = clock.get_time_ns();
+
+                    for entry in &entries {
+                        emitter.emit_order_cancel_rejected_event(
+                            entry.strategy_id,
+                            entry.instrument_id,
+                            entry.client_order_id,
+                            entry.venue_order_id,
+                            &reason,
+                            ts,
+                        );
+                    }
+                }
             }
 
             Ok(())
@@ -1690,6 +1786,7 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Trades(_)
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
+                        | NautilusWsMessage::Depth10(_)
                         | NautilusWsMessage::Candle(_)
                         | NautilusWsMessage::MarkPrice(_)
                         | NautilusWsMessage::IndexPrice(_)

@@ -5,22 +5,26 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `environment` enum config for BitMEX, Deribit, dYdX, Hyperliquid, and OKX adapters
 - Added `BybitEnvironment` to `BybitDataClientConfig` and `BybitExecClientConfig`
-- Added Bybit user-related endpoints (#3894), thanks @sunlei
-- Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
-- Added Interactive Brokers Rust adapter with PyO3 compatibility layer (#3864), thanks @faysou
-- Added Kraken xStocks tokenized asset support for spot market data, order submission, and futures instruments
-- Added OKX option greeks support for both Black-Scholes and price-adjusted conventions on every tick
-- Added `params["greeks_convention"]` (string or list) to narrow OKX option greeks subscriptions
-- Added Polymarket game_id and fee_schedule to instrument info (#3811), thanks @Javdu10
-- Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 - Added missing config values to `LiveExecEngineConfig` (#3841), thanks @Javdu10
 - Added `calculate_commission` to `ExecutionClient` for venue-specific reconciliation fills
-- Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
+- Added PyO3 bindings for `DataEngineConfig`, `ExecutionEngineConfig`, and `OrderEmulatorConfig` so they can be constructed from Python
+- Added `cache`, `msgbus`, `data_engine`, `exec_engine`, and `portfolio` keyword arguments to `BacktestEngineConfig` Python constructor
 - Added `MarginAccount.margin_for_currency` + `margin_init/maint_for_currency` helpers for cross-margin queries
 - Added `MarginAccount.total_margin_init(currency)` / `total_margin_maint(currency)` summing both margin buckets
 - Added `MarginAccount.account_margins`, `account_margins_init/maint`, and `clear_account_margin` accessors
-- Added PyO3 bindings for `DataEngineConfig`, `ExecutionEngineConfig`, and `OrderEmulatorConfig` so they can be constructed from Python
-- Added `cache`, `msgbus`, `data_engine`, `exec_engine`, and `portfolio` keyword arguments to `BacktestEngineConfig` Python constructor
+- Added Bybit user-related endpoints (#3894), thanks @sunlei
+- Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
+- Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
+- Added Hyperliquid historical funding rates via `fundingHistory` info endpoint
+- Added Hyperliquid configurable MARKET slippage (`market_order_slippage_bps`) with per-order override
+- Added Hyperliquid `OrderBookDepth10` subscription backed by the `l2Book` feed
+- Added Hyperliquid `nSigFigs` / `mantissa` L2 precision controls via `subscribe_params`
+- Added Interactive Brokers Rust adapter with PyO3 compatibility layer (#3864), thanks @faysou
+- Added Kraken xStocks tokenized asset support for spot market data, order submission, and futures instruments
+- Added OKX option greeks support for both Black-Scholes and price-adjusted conventions on every tick
+- Added OKX `params["greeks_convention"]` (string or list) to narrow option greeks subscriptions
+- Added Polymarket game_id and fee_schedule to instrument info (#3811), thanks @Javdu10
+- Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 
 ### Breaking Changes
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
@@ -111,6 +115,8 @@ Released on TBD (UTC).
 - Fixed Hyperliquid batch cancel silently dropping per-item errors (#3879), thanks for reporting @pusteckiy
 - Fixed Hyperliquid Rust `query_order` handler to emit status reports (#3879), thanks for reporting @pusteckiy
 - Fixed Hyperliquid `request_account_state` discarding parsed margins (#3725), thanks for reporting @marco-rigoni
+- Fixed Hyperliquid `cancel_all_orders` dropping per-order rejection events on partial or transport failure
+- Fixed Hyperliquid `request_trades` silently returning empty; now bails explicitly
 - Fixed IB Gateway Docker image failing on ARM64 hosts (#3813), thanks for reporting @Baki-0501
 - Fixed Interactive Brokers rejecting negative average fill price on combo/spread net-credit fills (#3884), thanks @faysou
 - Fixed Interactive Brokers position reconciliation `TypeError` when `priceMagnifier` is `None` (#3885), thanks @davidsblom
@@ -158,6 +164,7 @@ Released on TBD (UTC).
 - Added dYdX debug logging to `generate_order_status_report` showing filter scope and `page_full` on `None` results
 - Added Polymarket `determine_trade_id` helper with FNV-1a (Rust) and blake2b (Python) deterministic hashing
 - Added Hyperliquid criterion benchmarks for L1 signing path
+- Added Hyperliquid integration tests for funding rates, trades, cancel-all, and `handle_l2_book` routing
 - Added Binance unit tests for spot/futures dispatch dedup, post-only rejection, and value conversions
 - Added `derive_trade_id` FNV-1a helpers in BitMEX and Tardis common parse modules for deterministic fallback
 - Added `derive_cmbp_trade_id` in Databento decode for schemas without a native trade ID
@@ -192,6 +199,7 @@ Released on TBD (UTC).
 - Refined docs to follow style guide for symbols and filler words (#3830), thanks @JKDasondee
 - Refined Interactive Brokers documentation regarding UTC timestamps (#3826), thanks @faysou
 - Refined dYdX integration guide config tables to match the Python API (`environment`, `subaccount`, `base_url_grpc`)
+- Updated Hyperliquid integration guide with funding history, depth10, subscribe_params, and slippage
 - Updated the configuration concept guide to define unknown-field rejection as the config standard in Python and Rust
 
 ### Deprecations

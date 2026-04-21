@@ -48,8 +48,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, ExecutionReport,
         execution::{
-            BatchCancelOrders, CancelOrder, GenerateOrderStatusReport, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
         },
     },
     testing::wait_until_async,
@@ -63,7 +63,7 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, TimeInForce},
-    events::AccountState,
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderSubmitted},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
     },
@@ -1691,6 +1691,341 @@ async fn test_batch_cancel_orders_missing_asset_index_skips_and_rejects() {
     assert!(
         events[0].1.contains("Asset index not found"),
         "reason should explain the skip: {}",
+        events[0].1,
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+// Transitions a LIMIT order from INITIALIZED -> SUBMITTED -> ACCEPTED so
+// the cache routes it through `orders_open`, where `cancel_all_orders`
+// looks for candidates.
+fn open_limit_order_in_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: &str,
+    venue_order_id: &str,
+) -> OrderAny {
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    let mut order = make_limit_order(client_order_id);
+
+    let submitted = OrderSubmitted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    order
+        .apply(OrderEventAny::Submitted(submitted))
+        .expect("submitted transition");
+
+    let accepted = OrderAccepted::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        VenueOrderId::from(venue_order_id),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    order
+        .apply(OrderEventAny::Accepted(accepted))
+        .expect("accepted transition");
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .expect("add order");
+    cache
+        .borrow_mut()
+        .update_order(&order)
+        .expect("update order");
+
+    order
+}
+
+fn make_cancel_all_cmd(instrument_id: &str, side: OrderSide) -> CancelAllOrders {
+    CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("HYPERLIQUID")),
+        StrategyId::from("S-001"),
+        InstrumentId::from(instrument_id),
+        side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_per_item_error_emits_cancel_rejected() {
+    // Exchange returns top-level ok but one of the two inline cancel statuses
+    // is a MissingOrder error. The exec client must emit OrderCancelRejected
+    // for the failing entry only.
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": [
+                    "success",
+                    {"error": "Order was never placed, already canceled, or filled. MissingOrder"}
+                ]
+            }
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let ok_order = open_limit_order_in_cache(&cache, "O-CA-OK", "700");
+    let fail_order = open_limit_order_in_cache(&cache, "O-CA-FAIL", "701");
+
+    client
+        .cancel_all_orders(make_cancel_all_cmd(
+            HYPERLIQUID_TEST_INSTRUMENT,
+            OrderSide::Buy,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events.len(),
+        1,
+        "only the failing cancel inside the batch should be rejected",
+    );
+
+    let (rejected_coid, _) = &events[0];
+    assert!(
+        *rejected_coid == ok_order.client_order_id()
+            || *rejected_coid == fail_order.client_order_id(),
+        "rejected coid must correspond to one of the open orders",
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_http_error_rejects_every_open_order() {
+    // Transport failure: every order that was dispatched in the batch must
+    // get a cancel_rejected event so the engine does not wait for ghost acks.
+    let state = TestServerState::default();
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let a = open_limit_order_in_cache(&cache, "O-CA-A", "800");
+    let b = open_limit_order_in_cache(&cache, "O-CA-B", "801");
+
+    client
+        .cancel_all_orders(make_cancel_all_cmd(
+            HYPERLIQUID_TEST_INSTRUMENT,
+            OrderSide::Buy,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events.len(),
+        2,
+        "every open order must be rejected on transport failure",
+    );
+    let coids: std::collections::HashSet<_> = events.iter().map(|(c, _)| *c).collect();
+    assert!(coids.contains(&a.client_order_id()));
+    assert!(coids.contains(&b.client_order_id()));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_all_orders_missing_asset_index_rejects_all() {
+    // Instrument symbol is not registered with the asset-index map, so
+    // no HTTP dispatch happens. Every open order must still receive a
+    // cancel_rejected event with the "Asset index not found" reason.
+    const UNKNOWN_INSTRUMENT: &str = "NOPE-USD-PERP.HYPERLIQUID";
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    // Build orders on the unknown instrument so orders_open returns them but
+    // asset lookup fails.
+    let unknown_id = InstrumentId::from(UNKNOWN_INSTRUMENT);
+    let a_coid = ClientOrderId::new("O-CA-X");
+    let b_coid = ClientOrderId::new("O-CA-Y");
+    for (coid, voi) in [(a_coid, "900"), (b_coid, "901")] {
+        let account_id = AccountId::from("HYPERLIQUID-001");
+        let mut order = OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            unknown_id,
+            coid,
+            OrderSide::Buy,
+            Quantity::from("0.0001"),
+            Price::from("56730.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ));
+
+        let submitted = OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+        let accepted = OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from(voi),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        );
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache.borrow_mut().update_order(&order).unwrap();
+    }
+
+    client
+        .cancel_all_orders(make_cancel_all_cmd(UNKNOWN_INSTRUMENT, OrderSide::Buy))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(events.len(), 2, "both open orders must be rejected");
+    for (_, reason) in &events {
+        assert!(
+            reason.contains("Asset index not found"),
+            "reason should explain the skip: {reason}",
+        );
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_order_missing_emits_cancel_rejected() {
+    // TC-E44: cancelling an order the venue has already finalized must emit
+    // `OrderCancelRejected` (not `OrderDenied`). The mock returns a per-item
+    // "MissingOrder" status wrapped in a top-level ok response.
+    let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": [
+                    {"error": "Order was never placed, already canceled, or filled. MissingOrder"}
+                ]
+            }
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let coid = ClientOrderId::new("O-CANCEL-GONE");
+    let cmd = CancelOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(ClientId::from("HYPERLIQUID")),
+        StrategyId::from("S-001"),
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+        coid,
+        Some(VenueOrderId::from("777")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.cancel_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        events.len(),
+        1,
+        "a MissingOrder cancel must emit exactly one OrderCancelRejected event",
+    );
+    assert_eq!(events[0].0, coid);
+    assert!(
+        events[0].1.to_lowercase().contains("missingorder")
+            || events[0].1.contains("already canceled"),
+        "reason should explain why the cancel failed: {}",
         events[0].1,
     );
 

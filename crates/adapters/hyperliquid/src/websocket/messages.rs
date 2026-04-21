@@ -17,8 +17,8 @@ use ahash::AHashMap;
 use derive_builder::Builder;
 use nautilus_model::{
     data::{
-        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick,
-        TradeTick,
+        Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     reports::{FillReport, OrderStatusReport},
 };
@@ -1038,6 +1038,8 @@ pub enum NautilusWsMessage {
     Quote(QuoteTick),
     /// Parsed order book deltas.
     Deltas(OrderBookDeltas),
+    /// Parsed order book depth-10 snapshot.
+    Depth10(Box<OrderBookDepth10>),
     /// Parsed candle/bar.
     Candle(Bar),
     /// Mark price update.

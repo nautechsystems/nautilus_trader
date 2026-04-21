@@ -357,12 +357,14 @@ pub fn bar_type_to_interval(bar_type: &BarType) -> anyhow::Result<HyperliquidBar
 ///
 /// This variant is used when the caller has already resolved the asset index
 /// from the instrument cache (e.g., for SPOT instruments where the index
-/// cannot be derived from the symbol alone).
+/// cannot be derived from the symbol alone). `slippage_bps` controls the
+/// buffer applied when deriving a limit from a stop trigger price.
 pub fn order_to_hyperliquid_request_with_asset(
     order: &OrderAny,
     asset: u32,
     price_decimals: u8,
     should_normalize_prices: bool,
+    slippage_bps: u32,
 ) -> anyhow::Result<HyperliquidExecPlaceOrderRequest> {
     let is_buy = matches!(order.order_side(), OrderSide::Buy);
     let reduce_only = order.is_reduce_only();
@@ -388,7 +390,7 @@ pub fn order_to_hyperliquid_request_with_asset(
         match order.trigger_price() {
             Some(tp) => {
                 let base = tp.as_decimal().normalize();
-                let derived = derive_limit_from_trigger(base, is_buy);
+                let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
                 let sig_rounded = round_to_sig_figs(derived, 5);
                 clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
             }
@@ -508,31 +510,38 @@ pub fn order_to_hyperliquid_request_with_asset(
     })
 }
 
-/// Derives a market order limit price from a quote with 0.5% slippage.
-///
-/// Uses the ask price for buys and the bid price for sells, applies
-/// slippage, rounds to 5 significant figures, and clamps to the
-/// instrument's price precision.
-pub fn derive_market_order_price(quote: &QuoteTick, is_buy: bool, price_decimals: u8) -> Decimal {
+/// Default slippage buffer in basis points for MARKET orders.
+pub const DEFAULT_MARKET_SLIPPAGE_BPS: u32 = 50;
+
+/// Derives a market order limit price from a quote with a configurable
+/// slippage buffer in basis points, rounded to 5 significant figures and
+/// clamped to the instrument's price precision.
+pub fn derive_market_order_price(
+    quote: &QuoteTick,
+    is_buy: bool,
+    price_decimals: u8,
+    slippage_bps: u32,
+) -> Decimal {
     let base = if is_buy {
         quote.ask_price.as_decimal()
     } else {
         quote.bid_price.as_decimal()
     };
-    let derived = derive_limit_from_trigger(base, is_buy);
+    let derived = derive_limit_from_trigger(base, is_buy, slippage_bps);
     let sig_rounded = round_to_sig_figs(derived, 5);
     clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize()
 }
 
-/// Derives a limit price from a trigger price with slippage.
-///
-/// Hyperliquid requires that the limit price satisfies:
-/// - SELL stops: `limit_px <= trigger_px`
-/// - BUY stops: `limit_px >= trigger_px`
-///
-/// Applies 0.5% slippage in the appropriate direction.
-pub fn derive_limit_from_trigger(trigger_price: Decimal, is_buy: bool) -> Decimal {
-    let slippage = Decimal::new(5, 3); // 0.5%
+/// Derives a limit price from a trigger price with a configurable
+/// slippage buffer in basis points, widening the limit so BUY satisfies
+/// `limit_px >= trigger_px` and SELL satisfies `limit_px <= trigger_px`.
+pub fn derive_limit_from_trigger(
+    trigger_price: Decimal,
+    is_buy: bool,
+    slippage_bps: u32,
+) -> Decimal {
+    // bps -> Decimal: e.g. 50 bps -> 0.005
+    let slippage = Decimal::new(slippage_bps as i64, 4);
     let price = if is_buy {
         trigger_price * (Decimal::ONE + slippage)
     } else {
@@ -1272,7 +1281,7 @@ mod tests {
         #[case] is_buy: bool,
         #[case] expected: Decimal,
     ) {
-        let result = derive_limit_from_trigger(trigger_price, is_buy);
+        let result = derive_limit_from_trigger(trigger_price, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         assert_eq!(result, expected);
 
         // Verify invariant: BUY limit >= trigger, SELL limit <= trigger
@@ -1363,8 +1372,14 @@ mod tests {
         #[case] price_decimals: u8,
     ) {
         let order = stop_market_order(side, trigger_str);
-        let request =
-            order_to_hyperliquid_request_with_asset(&order, 0, price_decimals, true).unwrap();
+        let request = order_to_hyperliquid_request_with_asset(
+            &order,
+            0,
+            price_decimals,
+            true,
+            DEFAULT_MARKET_SLIPPAGE_BPS,
+        )
+        .unwrap();
         let trigger = Decimal::from_str(trigger_str).unwrap();
         let is_buy = matches!(side, OrderSide::Buy);
 
@@ -1385,8 +1400,8 @@ mod tests {
             assert!(!request.is_buy);
         }
 
-        // Price must equal the full pipeline: derive → sig figs → clamp → normalize
-        let derived = derive_limit_from_trigger(trigger, is_buy);
+        // Price must equal the full pipeline: derive -> sig figs -> clamp -> normalize
+        let derived = derive_limit_from_trigger(trigger, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         let sig_rounded = round_to_sig_figs(derived, 5);
         let expected = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
         assert_eq!(request.price, expected);
@@ -1681,7 +1696,8 @@ mod tests {
         #[case] expected: &str,
     ) {
         let quote = make_quote(bid, ask);
-        let result = derive_market_order_price(&quote, is_buy, price_decimals);
+        let result =
+            derive_market_order_price(&quote, is_buy, price_decimals, DEFAULT_MARKET_SLIPPAGE_BPS);
         let expected_dec = Decimal::from_str(expected).unwrap();
         assert_eq!(result, expected_dec);
 
@@ -1691,7 +1707,7 @@ mod tests {
         } else {
             quote.bid_price.as_decimal()
         };
-        let derived = derive_limit_from_trigger(base, is_buy);
+        let derived = derive_limit_from_trigger(base, is_buy, DEFAULT_MARKET_SLIPPAGE_BPS);
         let sig_rounded = round_to_sig_figs(derived, 5);
         let pipeline = clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
         assert_eq!(result, pipeline);
@@ -1712,6 +1728,34 @@ mod tests {
             actual_decimals <= price_decimals as usize,
             "Price {s} has {actual_decimals} decimals, max {price_decimals}",
         );
+    }
+
+    #[rstest]
+    #[case(50, dec!(1000), true, dec!(1005))] // default 0.5% BUY
+    #[case(50, dec!(1000), false, dec!(995))] // default 0.5% SELL
+    #[case(0, dec!(1000), true, dec!(1000))] // 0 bps: no adjustment
+    #[case(100, dec!(1000), true, dec!(1010))] // 1% BUY
+    #[case(100, dec!(1000), false, dec!(990))] // 1% SELL
+    #[case(800, dec!(1000), true, dec!(1080))] // 8% (Hyperliquid SDK default) BUY
+    #[case(800, dec!(1000), false, dec!(920))] // 8% SELL
+    fn test_derive_limit_from_trigger_respects_bps(
+        #[case] slippage_bps: u32,
+        #[case] trigger: Decimal,
+        #[case] is_buy: bool,
+        #[case] expected: Decimal,
+    ) {
+        let result = derive_limit_from_trigger(trigger, is_buy, slippage_bps);
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_derive_market_order_price_respects_slippage_override() {
+        let quote = make_quote("100.00", "100.10");
+        let tight = derive_market_order_price(&quote, true, 2, 50);
+        let wide = derive_market_order_price(&quote, true, 2, 800);
+        assert_eq!(tight, dec!(100.6));
+        assert_eq!(wide, dec!(108.11));
+        assert!(wide > tight);
     }
 
     // Locks in the field-selection invariant; diverging from it would silently
