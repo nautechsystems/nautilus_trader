@@ -2524,11 +2524,32 @@ impl ParquetDataCatalog {
         let directory = self.make_path(data_cls, identifier)?;
         let intervals = self.get_directory_intervals(&directory)?;
 
+        if identifier.is_none() {
+            // `get_directory_intervals` already recursed through every per-identifier
+            // subdirectory via `object_store.list`, so intervals from different
+            // identifiers can overlap. Merge overlaps into a disjoint sorted union
+            // so callers like `query_last_timestamp` see the true max end and
+            // `consolidate_data_by_period` sees contiguous coverage.
+            let mut merged: Vec<(u64, u64)> = Vec::new();
+
+            for interval in intervals {
+                if let Some(last) = merged.last_mut()
+                    && interval.0 <= last.1
+                {
+                    last.1 = last.1.max(interval.1);
+                    continue;
+                }
+                merged.push(interval);
+            }
+
+            return Ok(merged);
+        }
+
         // For bars, fall back to partial matching when the exact directory
         // doesn't exist (callers may pass an instrument_id like "EUR/USD.SIM"
         // but bars are stored under bar_type dirs like "EURUSD.SIM-1-MINUTE-...")
 
-        if !intervals.is_empty() || data_cls != "bars" || identifier.is_none() {
+        if !intervals.is_empty() || data_cls != "bars" {
             return Ok(intervals);
         }
 

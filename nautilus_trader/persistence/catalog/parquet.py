@@ -2330,8 +2330,29 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         directory = self._make_path(data_cls, identifier)
+        intervals = self._get_directory_intervals(directory)
 
-        return self._get_directory_intervals(directory)
+        if identifier is None:
+            # The standard layout partitions data into per-identifier subdirectories
+            # (e.g. `<data>/<type>/<instrument_id>/<ts_range>.parquet`). Aggregate
+            # intervals across every subdirectory, then merge overlaps so callers
+            # receive a disjoint sorted union (relied on by `query_last_timestamp`
+            # and `consolidate_data_by_period`).
+            for sub_dir in self.fs.glob(os.path.join(directory, "*")):
+                if not self.fs.isdir(sub_dir):
+                    continue
+                intervals.extend(self._get_directory_intervals(sub_dir))
+
+            interval_set = _get_integer_interval_set(intervals)
+            intervals = [
+                (
+                    interval.lower,
+                    interval.upper if interval.right == P.CLOSED else interval.upper - 1,
+                )
+                for interval in interval_set
+            ]
+
+        return intervals
 
     def _get_directory_intervals(self, directory: str) -> list[tuple[int, int]]:
         parquet_files = self.fs.glob(os.path.join(directory, "*.parquet"))

@@ -451,6 +451,60 @@ fn test_rust_append_data_to_catalog() {
 }
 
 #[rstest]
+fn test_rust_get_intervals_without_identifier_aggregates_across_partitions() {
+    // Regression: `get_intervals(cls, None)` must union intervals across every
+    // per-identifier subdirectory, not just the parent directory's top level.
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 2);
+    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+
+    catalog.write_to_parquet(audusd, None, None, None).unwrap();
+    catalog.write_to_parquet(ethusdt, None, None, None).unwrap();
+
+    let aud_intervals = catalog
+        .get_intervals("quotes", Some("AUD/USD.SIM"))
+        .unwrap();
+    let eth_intervals = catalog
+        .get_intervals("quotes", Some("ETH/USDT.BINANCE"))
+        .unwrap();
+    let all_intervals = catalog.get_intervals("quotes", None).unwrap();
+
+    assert_eq!(aud_intervals, vec![(1_000, 2_000)]);
+    assert_eq!(eth_intervals, vec![(5_000, 6_000)]);
+    assert_eq!(all_intervals, vec![(1_000, 2_000), (5_000, 6_000)]);
+}
+
+#[rstest]
+fn test_rust_get_intervals_without_identifier_merges_overlapping_partitions() {
+    // Regression: intervals must be merged into a disjoint sorted union so
+    // `query_last_timestamp` returns the true max end, not just the end of the
+    // last interval when sorted by start. One identifier straddles the other.
+    let (_temp_dir, catalog) = create_temp_catalog();
+
+    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 10);
+    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+
+    catalog.write_to_parquet(audusd, None, None, None).unwrap();
+    catalog.write_to_parquet(ethusdt, None, None, None).unwrap();
+
+    let all_intervals = catalog.get_intervals("quotes", None).unwrap();
+    assert_eq!(all_intervals, vec![(1_000, 10_000)]);
+
+    let last_ts = catalog.query_last_timestamp("quotes", None).unwrap();
+    assert_eq!(last_ts, Some(10_000));
+}
+
+#[rstest]
+fn test_rust_get_intervals_without_identifier_on_empty_directory() {
+    // No data written: the type directory does not exist. `get_intervals(cls, None)`
+    // must return an empty vec instead of erroring.
+    let (_temp_dir, catalog) = create_temp_catalog();
+    let intervals = catalog.get_intervals("quotes", None).unwrap();
+    assert_eq!(intervals, Vec::<(u64, u64)>::new());
+}
+
+#[rstest]
 fn test_rust_consolidate_catalog() {
     let (_temp_dir, catalog) = create_temp_catalog();
 

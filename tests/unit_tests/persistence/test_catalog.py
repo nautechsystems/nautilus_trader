@@ -29,6 +29,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import OrderSide
@@ -308,6 +309,86 @@ def test_write_data_empty_records_gap_extends_file(catalog: ParquetDataCatalog) 
     )
     intervals_after = catalog.get_intervals(Bar, bar_type_str)
     assert intervals_after == [(1000, 2000)]
+
+
+def test_get_intervals_without_identifier_aggregates_across_partitions(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Regression: `get_intervals(cls, identifier=None)` must union intervals across
+    # every per-identifier subdirectory, not just the parent directory's top level.
+    audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    eurusd = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    trades = [
+        TestDataStubs.trade_tick(instrument=audusd, ts_init=1_000_000_000),
+        TestDataStubs.trade_tick(instrument=audusd, ts_init=2_000_000_000),
+        TestDataStubs.trade_tick(instrument=eurusd, ts_init=3_000_000_000),
+        TestDataStubs.trade_tick(instrument=eurusd, ts_init=4_000_000_000),
+    ]
+    catalog.write_data(trades)
+
+    aud_intervals = catalog.get_intervals(TradeTick, identifier=str(audusd.id))
+    eur_intervals = catalog.get_intervals(TradeTick, identifier=str(eurusd.id))
+    all_intervals = catalog.get_intervals(TradeTick, identifier=None)
+
+    assert aud_intervals == [(1_000_000_000, 2_000_000_000)]
+    assert eur_intervals == [(3_000_000_000, 4_000_000_000)]
+    assert all_intervals == [
+        (1_000_000_000, 2_000_000_000),
+        (3_000_000_000, 4_000_000_000),
+    ]
+    assert catalog.get_missing_intervals_for_request(
+        start=1_000_000_000,
+        end=4_000_000_000,
+        data_cls=TradeTick,
+        identifier=None,
+    ) == [(2_000_000_001, 2_999_999_999)]
+
+
+def test_get_intervals_without_identifier_merges_overlapping_partitions(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Regression: aggregated intervals must be merged into a disjoint sorted union,
+    # so callers like `query_last_timestamp` see the max end across all partitions.
+    audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    eurusd = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    trades = [
+        TestDataStubs.trade_tick(instrument=audusd, ts_init=1_000_000_000),
+        TestDataStubs.trade_tick(instrument=audusd, ts_init=10_000_000_000),
+        TestDataStubs.trade_tick(instrument=eurusd, ts_init=5_000_000_000),
+        TestDataStubs.trade_tick(instrument=eurusd, ts_init=6_000_000_000),
+    ]
+    catalog.write_data(trades)
+
+    all_intervals = catalog.get_intervals(TradeTick, identifier=None)
+    assert all_intervals == [(1_000_000_000, 10_000_000_000)]
+
+    last_ts = catalog.query_last_timestamp(TradeTick, identifier=None)
+    assert last_ts == time_object_to_dt(10_000_000_000)
+
+
+def test_get_intervals_without_identifier_on_flat_layout(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Custom data without an `instrument_id` is written flat at
+    # `<type>/<start>-<end>.parquet`, so `get_intervals(cls, None)` must read
+    # from the top-level directory rather than only per-identifier subdirs.
+    custom_data = [
+        TestCustomData(value="a", number=1, ts_event=1_000_000_000, ts_init=1_000_000_000),
+        TestCustomData(value="b", number=2, ts_event=2_000_000_000, ts_init=2_000_000_000),
+    ]
+    catalog.write_data(custom_data)
+
+    assert catalog.get_intervals(TestCustomData, identifier=None) == [
+        (1_000_000_000, 2_000_000_000),
+    ]
+
+
+def test_get_intervals_without_identifier_on_empty_directory(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # No data written for this class: the type directory does not exist.
+    # `get_intervals(cls, None)` must return [] instead of raising.
+    assert catalog.get_intervals(TestCustomData, identifier=None) == []
 
 
 def test_write_data_empty_with_start_zero_does_not_skip_branch(
