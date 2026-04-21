@@ -1601,6 +1601,86 @@ class TestConsolidateDataByPeriod:
             end_day = pd.Timestamp(iv[1], unit="ns", tz="UTC").date()
             assert start_day == end_day
 
+    def test_consolidate_data_no_files_in_range_does_not_raise(self):
+        """
+        Regression: _consolidate_directory raised IndexError when start/end
+        filtered out all existing files, leaving intervals empty before intervals[0].
+        """
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+        bar_type = BarType(instrument.id, BarSpecification(1, BarAggregation.HOUR, PriceType.MID))
+        bar_type_str = str(bar_type)
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        hour_ns = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+        for i in range(24):
+            ts = start_ns + i * hour_ns
+            bar = Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.10000"),
+                high=Price.from_str("1.10010"),
+                low=Price.from_str("0.99990"),
+                close=Price.from_str("1.10005"),
+                volume=Quantity.from_str("1000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            self.catalog.write_data([bar], skip_disjoint_check=True)
+
+        # Data is Jan 2024, consolidating Jun 2024 — no overlap, must be no-op not IndexError
+        self.catalog.consolidate_data(
+            Bar,
+            bar_type_str,
+            start=pd.Timestamp("2024-06-01", tz="UTC"),
+            end=pd.Timestamp("2024-06-30", tz="UTC"),
+        )
+
+        assert self.catalog.get_intervals(Bar, bar_type_str) == self.catalog.get_intervals(
+            Bar,
+            bar_type_str,
+        )
+        assert len(self.catalog.bars(bar_types=[bar_type_str])) == 24
+
+    def test_consolidate_catalog_by_period_skips_unknown_directory(self):
+        """
+        Regression: consolidate_catalog_by_period used `return` instead of `continue`
+        on unknown directories, silently aborting all subsequent consolidations.
+        """
+        import os
+
+        instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+        bar_type = BarType(instrument.id, BarSpecification(1, BarAggregation.HOUR, PriceType.MID))
+        bar_type_str = str(bar_type)
+        start_ns = pd.Timestamp("2024-01-01", tz="UTC").value
+        hour_ns = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+        for i in range(24):
+            ts = start_ns + i * hour_ns
+            bar = Bar(
+                bar_type=bar_type,
+                open=Price.from_str("1.10000"),
+                high=Price.from_str("1.10010"),
+                low=Price.from_str("0.99990"),
+                close=Price.from_str("1.10005"),
+                volume=Quantity.from_str("1000"),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            self.catalog.write_data([bar], skip_disjoint_check=True)
+
+        # Plant unknown dir that sorts before "bar" — triggers the return/continue branch first
+        unknown_dir = os.path.join(self.temp_dir, "data", "aaa_unknown_garbage", "FAKESIM")
+        os.makedirs(unknown_dir, exist_ok=True)
+        open(os.path.join(unknown_dir, "fake.parquet"), "w").close()
+
+        self.catalog.consolidate_catalog_by_period(
+            period=pd.Timedelta(days=1),
+            ensure_contiguous_files=False,
+        )
+
+        # If bug present: stays at 24. If fixed: consolidates to 1.
+        assert len(self.catalog.get_intervals(Bar, bar_type_str)) == 1
+        assert len(self.catalog.bars(bar_types=[bar_type_str])) == 24
+
     def test_consolidate_data_by_period_idempotent(self):
         # Arrange - 48 hourly bars written one-per-file
         instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))

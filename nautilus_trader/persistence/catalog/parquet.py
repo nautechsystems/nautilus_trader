@@ -733,6 +733,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         intervals.sort(key=lambda x: x[0])
 
+        if not intervals:
+            return
+
         if ensure_contiguous_files:
             assert _are_intervals_contiguous(intervals)
 
@@ -868,7 +871,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             if data_cls is None:
                 # Skip directories that don't correspond to known data classes
-                return
+                continue
 
             # Call the existing consolidate_data_by_period method
             self.consolidate_data_by_period(
