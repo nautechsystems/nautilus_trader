@@ -150,6 +150,7 @@ Released on TBD (UTC).
 - Added dYdX debug logging to `generate_order_status_report` showing filter scope and `page_full` on `None` results
 - Added Polymarket `determine_trade_id` helper with FNV-1a (Rust) and blake2b (Python) deterministic hashing
 - Added Hyperliquid criterion benchmarks for L1 signing path
+- Added unit and integration tests for `architect_ax` execution helpers, request filters, and WebSocket parsers
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
 - Standardized adapter example manifests and trading deps (#3891), thanks @sunlei

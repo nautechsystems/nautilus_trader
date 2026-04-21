@@ -165,3 +165,87 @@ pub(crate) fn parse_order_message(raw: &str) -> Result<AxOrdersWsFrame, serde_js
         "order WS message has no 't', 'err', or 'res' field",
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::websocket::messages::{AxMdMessage, AxOrdersWsFrame, AxWsOrderResponse};
+
+    #[rstest]
+    fn test_parse_md_message_unknown_tag_errors() {
+        let raw = r#"{"t":"X","s":"EURUSD-PERP"}"#;
+        let err = parse_md_message(raw).expect_err("unknown tag should error");
+        assert!(err.to_string().contains("unknown MD message type tag"));
+    }
+
+    #[rstest]
+    fn test_parse_md_message_slow_path_subscription_response() {
+        let raw = r#"{"rid":1,"result":{"subscribed":"EURUSD-PERP"}}"#;
+        let msg = parse_md_message(raw).expect("should parse subscription response");
+        assert!(matches!(msg, AxMdMessage::SubscriptionResponse(_)));
+    }
+
+    #[rstest]
+    fn test_parse_md_message_slow_path_error_response() {
+        let raw = r#"{"rid":2,"error":{"code":400,"message":"bad"}}"#;
+        let msg = parse_md_message(raw).expect("should parse error response");
+        match msg {
+            AxMdMessage::Error(err) => {
+                assert_eq!(err.message, "bad");
+                assert_eq!(err.request_id, Some(2));
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_md_message_no_recognized_fields_errors() {
+        let raw = r#"{"foo":"bar"}"#;
+        let err = parse_md_message(raw).expect_err("should reject unknown shape");
+        assert!(
+            err.to_string()
+                .contains("no 't', 'result', or 'error' field")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_md_message_malformed_json_errors() {
+        let raw = "not json";
+        assert!(parse_md_message(raw).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_message_unrecognized_res_errors() {
+        let raw = r#"{"rid":1,"res":{"foo":"bar"}}"#;
+        let err = parse_order_message(raw).expect_err("unrecognized res shape should error");
+        assert!(
+            err.to_string()
+                .contains("unrecognized order response shape")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_order_message_no_recognized_fields_errors() {
+        let raw = r#"{"foo":"bar"}"#;
+        let err = parse_order_message(raw).expect_err("unknown shape should error");
+        assert!(err.to_string().contains("no 't', 'err', or 'res' field"));
+    }
+
+    #[rstest]
+    fn test_parse_order_message_malformed_json_errors() {
+        let raw = "not json";
+        assert!(parse_order_message(raw).is_err());
+    }
+
+    #[rstest]
+    fn test_parse_order_message_list_response_with_orders() {
+        let raw = r#"{"rid":0,"res":{"li":"01KCQM-4WP1-0000","o":[]}}"#;
+        let msg = parse_order_message(raw).expect("should parse list response");
+        assert!(matches!(
+            msg,
+            AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
+        ));
+    }
+}

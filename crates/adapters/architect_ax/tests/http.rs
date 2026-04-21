@@ -186,7 +186,13 @@ async fn test_raw_http_get_balances_returns_data() {
 
     let response = client.get_balances().await.unwrap();
 
-    assert!(!response.balances.is_empty());
+    assert_eq!(response.balances.len(), 3);
+    assert_eq!(response.balances[0].symbol.as_str(), "USD");
+    assert_eq!(response.balances[0].amount, dec!(100000.50));
+    assert_eq!(response.balances[1].symbol.as_str(), "BTC");
+    assert_eq!(response.balances[1].amount, dec!(1.25));
+    assert_eq!(response.balances[2].symbol.as_str(), "ETH");
+    assert_eq!(response.balances[2].amount, dec!(15.5));
 }
 
 #[rstest]
@@ -211,7 +217,12 @@ async fn test_raw_http_get_positions_returns_data() {
 
     let response = client.get_positions().await.unwrap();
 
-    assert!(!response.positions.is_empty());
+    assert_eq!(response.positions.len(), 2);
+    assert_eq!(response.positions[0].symbol.as_str(), "BTC-PERP");
+    assert_eq!(response.positions[0].signed_quantity, 2);
+    assert_eq!(response.positions[0].signed_notional, dec!(90000.00));
+    assert_eq!(response.positions[1].symbol.as_str(), "ETH-PERP");
+    assert_eq!(response.positions[1].signed_quantity, -5);
 }
 
 #[rstest]
@@ -236,8 +247,13 @@ async fn test_raw_http_get_tickers_returns_data() {
 
     let response = client.get_tickers().await.unwrap();
 
-    assert!(!response.tickers.is_empty());
-    assert_eq!(response.tickers[0].symbol.as_str(), "BTC-PERP");
+    assert_eq!(response.tickers.len(), 1);
+    let ticker = &response.tickers[0];
+    assert_eq!(ticker.symbol.as_str(), "BTC-PERP");
+    assert_eq!(ticker.bid, Some(dec!(45000.00)));
+    assert_eq!(ticker.ask, Some(dec!(45001.00)));
+    assert_eq!(ticker.last, Some(dec!(45000.50)));
+    assert_eq!(ticker.mark, Some(dec!(45000.25)));
 }
 
 #[rstest]
@@ -301,6 +317,11 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
         InstrumentAny::PerpetualContract(perp) => {
             assert_eq!(perp.id.symbol.as_str(), "EURUSD-PERP");
             assert_eq!(perp.id.venue.as_str(), "AX");
+            assert_eq!(perp.price_precision, 4);
+            assert_eq!(perp.price_increment.as_decimal(), dec!(0.0001));
+            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.margin_init, dec!(8.0));
+            assert_eq!(perp.margin_maint, dec!(4.0));
         }
         _ => panic!("Expected PerpetualContract instrument"),
     }

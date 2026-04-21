@@ -195,7 +195,7 @@ async fn test_handler_emits_candle_md_message() {
 
 #[rstest]
 #[tokio::test]
-async fn test_handler_ignores_unknown_symbol() {
+async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
     let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
@@ -211,15 +211,20 @@ async fn test_handler_ignores_unknown_symbol() {
     let stream = client.stream();
     tokio::pin!(stream);
 
-    // Handler now emits raw venue messages regardless of instrument cache.
-    // The consumer is responsible for filtering unknown symbols.
-    // Just verify the stream produces messages without crashing.
-    let result = tokio::time::timeout(Duration::from_secs(1), stream.next()).await;
+    // The handler forwards raw venue messages. Downstream consumers filter by
+    // symbol, so an MD message should arrive even if the caller had not cached
+    // the instrument yet. Verify the first message is the expected L1 book.
+    let msg = tokio::time::timeout(Duration::from_secs(3), stream.next())
+        .await
+        .expect("timeout waiting for WS message")
+        .expect("stream ended");
 
-    assert!(
-        result.is_ok(),
-        "Expected handler to forward raw messages even without instrument cache"
-    );
+    match msg {
+        AxDataWsMessage::MdMessage(AxMdMessage::BookL1(book)) => {
+            assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        }
+        other => panic!("expected BookL1, was {other:?}"),
+    }
 
     client.close().await;
 }

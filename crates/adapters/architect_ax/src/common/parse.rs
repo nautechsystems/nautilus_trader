@@ -117,6 +117,9 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
         );
     }
 
+    // QuantityRaw is u128 under the `high-precision` feature and u64 otherwise,
+    // so the narrowing cast is conditional on the active feature set.
+    #[allow(clippy::unnecessary_cast)]
     let contracts = (raw / scale) as u64;
     if contracts == 0 {
         anyhow::bail!("Order quantity must be at least 1 contract");
@@ -175,6 +178,58 @@ mod tests {
         let cid2 = client_order_id_to_cid(&coid2);
 
         assert_ne!(cid1, cid2);
+    }
+
+    #[rstest]
+    #[case("O-1")]
+    #[case("O-SHORT")]
+    #[case("O-20240101-000001")]
+    #[case("Order-with-dashes-and-digits-12345")]
+    #[case("SINGLE")]
+    #[case("a")]
+    #[case("X")]
+    #[case("LONG-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789")]
+    fn test_client_order_id_to_cid_stable_across_varied_inputs(#[case] value: &str) {
+        // The hash must be deterministic for any valid ClientOrderId, and the
+        // recovered ClientOrderId via cid_to_client_order_id must match the
+        // "CID-{cid}" format so reconciliation can resolve lost mappings.
+        let coid = ClientOrderId::new(value);
+        let cid_a = client_order_id_to_cid(&coid);
+        let cid_b = client_order_id_to_cid(&coid);
+        assert_eq!(cid_a, cid_b, "hash must be deterministic");
+
+        let recovered = cid_to_client_order_id(cid_a);
+        assert!(
+            recovered.inner().as_str().starts_with("CID-"),
+            "recovered id should have CID prefix: {recovered}",
+        );
+        assert!(
+            !recovered.inner().as_str().is_empty(),
+            "recovered id should not be empty",
+        );
+    }
+
+    #[rstest]
+    fn test_client_order_id_to_cid_collision_resistance_small_corpus() {
+        // Collision-free over a handful of distinct client order IDs.
+        let values = [
+            "O-1",
+            "O-2",
+            "O-10",
+            "O-11",
+            "O-20240101-000001",
+            "O-20240101-000002",
+            "strategy-a/1",
+            "strategy-a/2",
+            "strategy-b/1",
+        ];
+
+        let mut seen = std::collections::HashSet::new();
+        for v in values {
+            let coid = ClientOrderId::new(v);
+            let cid = client_order_id_to_cid(&coid);
+            assert!(seen.insert(cid), "cid collision for {v}");
+        }
     }
 
     #[rstest]
