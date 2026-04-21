@@ -377,6 +377,15 @@ Once a trade is initially matched, subsequent trade status updates will be recei
 NautilusTrader records the initial trade details in the `info` field of the `OrderFilled` event,
 with additional trade events stored in the cache as JSON under a custom key to retain this information.
 
+### Trade ID derivation
+
+Polymarket does not publish a trade ID on `last_trade_price` market-data events.
+The adapter derives a deterministic `TradeId` by FNV-1a hashing the asset ID,
+side, price, size, and timestamp (`determine_trade_id` in both Rust and Python).
+For CLOB Data API trade history the adapter uses the last 36 characters of the
+transaction hash directly. The same venue event yields the same trade ID across
+replays, keeping downstream dedup intact.
+
 ## Fees
 
 Polymarket uses the formula `fee = C * feeRate * p * (1 - p)` where C is shares traded and p is the share price. Fees peak at p = 0.50 and decrease symmetrically toward the extremes. Only takers pay fees; makers pay zero.

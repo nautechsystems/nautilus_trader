@@ -265,7 +265,7 @@ Short-term orders live **in validator memory only** and expire by block height (
 roughly ~20 seconds at ~0.5s/block). They are the fastest order type on dYdX because they skip
 on-chain storage.
 
-Key properties:
+**Properties**:
 
 - **IOC and FOK are always short-term**, regardless of other parameters
 - **GTD orders** are automatically classified as short-term when the expiry falls within the
@@ -280,7 +280,7 @@ Key properties:
 Long-term (stateful) orders are **stored on-chain** and expire by UTC timestamp. They generate
 explicit cancel events when they expire or are cancelled.
 
-Key properties:
+**Properties**:
 
 - **GTC** orders default to 90-day expiration (protocol limit is 95 days)
 - **GTD** orders use the user-provided expiry timestamp
@@ -293,7 +293,7 @@ Key properties:
 Conditional orders (stop-loss, take-profit) are **always stored on-chain** and triggered by
 price conditions on the validator.
 
-Key properties:
+**Properties**:
 
 - Always use timestamp-based expiry (default 90 days for GTC, protocol limit 95 days)
 - Always use the long-term broadcast path (serialized with semaphore)

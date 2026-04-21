@@ -569,8 +569,8 @@ cdef class OrderMatchingEngine:
     cdef PositionId _get_position_id(self, Order order, bint generate=*)
     cdef PositionId _generate_venue_position_id(self)
     cdef VenueOrderId _generate_venue_order_id(self)
-    cdef TradeId _generate_trade_id(self)
-    cdef str _generate_trade_id_str(self)
+    cdef TradeId _generate_trade_id(self, uint64_t ts_init)
+    cdef str _generate_trade_id_str(self, uint64_t ts_init)
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 

@@ -23,7 +23,7 @@ use nautilus_model::{
     data::bar::BarType,
     enums::{AccountType, AggressorSide, CurrencyType, LiquiditySide, PositionSide, TriggerType},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol},
+    identifiers::{AccountId, InstrumentId, Symbol, TradeId},
     instruments::{Instrument, InstrumentAny},
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
@@ -40,6 +40,10 @@ use crate::{
     },
     websocket::messages::BitmexMarginMsg,
 };
+
+// FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 /// Strip NautilusTrader identifier from BitMEX rejection/cancellation reasons.
 ///
@@ -497,6 +501,48 @@ pub fn parse_peg_offset_value(params: Option<&Params>) -> anyhow::Result<Option<
     }
 }
 
+/// Derives a deterministic [`TradeId`] for BitMEX trades that arrive without a
+/// `trdMatchID` (e.g. certain historical or bucketed rows).
+///
+/// The hash combines the symbol, timestamp, price, size and side so replayed
+/// data yields the same identifier across runs. FNV-1a is stable across
+/// architectures and crate versions; the 0x1f delimiter keeps variable-length
+/// fields from colliding.
+#[must_use]
+pub fn derive_trade_id(
+    symbol: Ustr,
+    ts_event_ns: u64,
+    price: f64,
+    size: i64,
+    side: Option<BitmexSide>,
+) -> TradeId {
+    let side_tag: &[u8] = match side {
+        Some(BitmexSide::Buy) => b"B",
+        Some(BitmexSide::Sell) => b"S",
+        None => b"N",
+    };
+
+    let mut hash: u64 = FNV_OFFSET_BASIS;
+
+    for bytes in [
+        symbol.as_str().as_bytes(),
+        b"\x1f",
+        &ts_event_ns.to_le_bytes(),
+        b"\x1f",
+        &price.to_bits().to_le_bytes(),
+        b"\x1f",
+        &size.to_le_bytes(),
+        b"\x1f",
+        side_tag,
+    ] {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    TradeId::new(format!("{hash:016x}"))
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
@@ -522,6 +568,72 @@ mod tests {
         );
         assert_eq!(clean_reason("No identifier here"), "No identifier here");
         assert_eq!(clean_reason("  \nNautilusTrader  "), "");
+    }
+
+    #[rstest]
+    fn test_derive_trade_id_is_deterministic_and_16_hex_chars() {
+        let first = derive_trade_id(
+            Ustr::from("XBTUSD"),
+            1_700_000_000_000_000_000,
+            98_570.9,
+            100,
+            Some(BitmexSide::Buy),
+        );
+        let second = derive_trade_id(
+            Ustr::from("XBTUSD"),
+            1_700_000_000_000_000_000,
+            98_570.9,
+            100,
+            Some(BitmexSide::Buy),
+        );
+        assert_eq!(first, second);
+        assert_eq!(first.as_str().len(), 16);
+    }
+
+    #[rstest]
+    #[case::symbol_changed(derive_trade_id(
+        Ustr::from("ETHUSD"),
+        1,
+        100.0,
+        1,
+        Some(BitmexSide::Buy)
+    ))]
+    #[case::ts_changed(derive_trade_id(Ustr::from("XBTUSD"), 2, 100.0, 1, Some(BitmexSide::Buy)))]
+    #[case::price_changed(derive_trade_id(
+        Ustr::from("XBTUSD"),
+        1,
+        101.0,
+        1,
+        Some(BitmexSide::Buy)
+    ))]
+    #[case::size_changed(derive_trade_id(
+        Ustr::from("XBTUSD"),
+        1,
+        100.0,
+        2,
+        Some(BitmexSide::Buy)
+    ))]
+    #[case::side_changed(derive_trade_id(
+        Ustr::from("XBTUSD"),
+        1,
+        100.0,
+        1,
+        Some(BitmexSide::Sell)
+    ))]
+    #[case::side_missing(derive_trade_id(Ustr::from("XBTUSD"), 1, 100.0, 1, None))]
+    fn test_derive_trade_id_each_field_affects_output(#[case] altered: TradeId) {
+        let baseline = derive_trade_id(Ustr::from("XBTUSD"), 1, 100.0, 1, Some(BitmexSide::Buy));
+        assert_ne!(baseline, altered);
+    }
+
+    #[rstest]
+    fn test_derive_trade_id_field_delimiter_prevents_collision() {
+        // Without the 0x1f delimiter between symbol and the remaining bytes,
+        // these two inputs would produce the same byte stream because
+        // `Ustr::from("A")` + `1u64` bytes == `Ustr::from("A\0\0\0\0\0\0\0\0")` + `0u64` bytes.
+        let a = derive_trade_id(Ustr::from("A"), 1, 0.0, 0, Some(BitmexSide::Buy));
+        let b = derive_trade_id(Ustr::from("A\0"), 256, 0.0, 0, Some(BitmexSide::Buy));
+        assert_ne!(a, b);
     }
 
     fn make_test_spot_instrument(size_increment: f64, size_precision: u8) -> InstrumentAny {

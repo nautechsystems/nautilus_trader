@@ -384,6 +384,15 @@ BitMEX caps each REST response at 1,000 rows and requires manual pagination via 
 first page; wider pagination support is scheduled for a future update.
 :::
 
+### Trade ID derivation
+
+Trade ticks and fills use the venue-provided `trdMatchID` (UUID) as the
+`TradeId`. When the venue omits `trdMatchID` (bucketed trades or certain
+execution types), the execution path falls back to the venue's `execID`; market
+data parsers fall back to a deterministic FNV-1a hash of the symbol,
+`ts_event`, price, size, and side. The same venue event yields the same trade
+ID across replays, keeping downstream dedup intact.
+
 ## Connection management
 
 ### HTTP Keep-Alive

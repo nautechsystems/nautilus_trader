@@ -1318,7 +1318,7 @@ impl OrderMatchingEngine {
             bar.open,
             size,
             aggressor_side,
-            self.ids_generator.generate_trade_id(),
+            self.ids_generator.generate_trade_id(bar.ts_init),
             bar.ts_init,
             bar.ts_init,
         );
@@ -1361,7 +1361,7 @@ impl OrderMatchingEngine {
             } else {
                 trade_tick.aggressor_side = AggressorSide::Seller;
             }
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -1377,7 +1377,7 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
             trade_tick.price = bar.high;
             trade_tick.aggressor_side = AggressorSide::Buyer;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -1391,7 +1391,7 @@ impl OrderMatchingEngine {
             self.fill_at_market = false;
             trade_tick.price = bar.low;
             trade_tick.aggressor_side = AggressorSide::Seller;
-            trade_tick.trade_id = self.ids_generator.generate_trade_id();
+            trade_tick.trade_id = self.ids_generator.generate_trade_id(trade_tick.ts_init);
 
             self.book.update_trade_tick(trade_tick).unwrap();
             self.iterate(trade_tick.ts_init, AggressorSide::NoAggressor);
@@ -4661,7 +4661,7 @@ impl OrderMatchingEngine {
             order.client_order_id(),
             venue_order_id,
             account_id,
-            self.ids_generator.generate_trade_id(),
+            self.ids_generator.generate_trade_id(ts_now),
             order.order_side(),
             order.order_type(),
             last_qty,

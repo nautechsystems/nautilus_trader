@@ -997,6 +997,28 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
     }
 
     #[rstest]
+    pub fn test_load_trades_derives_id_when_csv_id_empty() {
+        // Two rows with empty `id` column must both hash deterministically
+        // to the same TradeId, and a row with differing price must hash differently.
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,id,side,price,amount
+binance,BTCUSDT,1640995200000000,1640995200100000,,buy,50000.0,1.0
+binance,BTCUSDT,1640995200000000,1640995200100000,,buy,50000.0,1.0
+binance,BTCUSDT,1640995200000000,1640995200100000,,buy,50001.0,1.0";
+
+        let temp_file = std::env::temp_dir().join("test_load_trades_empty_id.csv");
+        std::fs::write(&temp_file, csv_data).unwrap();
+
+        let trades = load_trades(&temp_file, Some(2), Some(1), None, None).unwrap();
+        assert_eq!(trades.len(), 3);
+
+        assert_eq!(trades[0].trade_id, trades[1].trade_id);
+        assert_eq!(trades[0].trade_id.as_str().len(), 16);
+        assert_ne!(trades[0].trade_id, trades[2].trade_id);
+
+        std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
     pub fn test_load_trades_with_zero_sized_trade() {
         // Create test CSV data with one zero-sized trade that should be skipped
         let csv_data = "exchange,symbol,timestamp,local_timestamp,id,side,price,amount

@@ -16,12 +16,17 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::cache::Cache;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OmsType,
     identifiers::{PositionId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
 };
 use uuid::Uuid;
+
+// FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 pub struct IdsGenerator {
     venue: Venue,
@@ -138,13 +143,16 @@ impl IdsGenerator {
         }
     }
 
-    pub fn generate_trade_id(&mut self) -> TradeId {
+    pub fn generate_trade_id(&mut self, ts_init: UnixNanos) -> TradeId {
         self.execution_count += 1;
-        let trade_id = if self.use_random_ids {
-            Uuid::new_v4().to_string()
-        } else {
-            format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
-        };
+        // Trade IDs are always deterministic; `use_random_ids` only affects
+        // venue order IDs and position IDs. A bounded FNV-1a hash of
+        // `(venue, raw_id, ts_init)` keeps the ID under the 36-character
+        // `TradeId` cap for arbitrary-length venue names; `ts_init` protects
+        // against collisions after `reset()` rewinds `execution_count`, and
+        // the trailing counter distinguishes multiple fills at the same ts.
+        let hash = fnv1a_trade_id_hash(self.venue, self.raw_id, ts_init.as_u64());
+        let trade_id = format!("T-{hash:016x}-{:03}", self.execution_count);
         TradeId::from(trade_id.as_str())
     }
 
@@ -175,6 +183,24 @@ impl IdsGenerator {
             )
         }
     }
+}
+
+fn fnv1a_trade_id_hash(venue: Venue, raw_id: u32, ts_init_ns: u64) -> u64 {
+    let mut hash: u64 = FNV_OFFSET_BASIS;
+
+    for bytes in [
+        venue.as_str().as_bytes(),
+        b"\x1f",
+        &raw_id.to_le_bytes(),
+        b"\x1f",
+        &ts_init_ns.to_le_bytes(),
+    ] {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    hash
 }
 
 #[cfg(test)]
@@ -360,5 +386,133 @@ mod tests {
         // check if venue order id is cached again
         let venue_order_id3 = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
         assert_eq!(venue_order_id3, VenueOrderId::from("BINANCE-1-1"));
+    }
+
+    fn build_ids_generator(venue: Venue, raw_id: u32) -> IdsGenerator {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        IdsGenerator::new(venue, OmsType::Netting, raw_id, false, true, cache)
+    }
+
+    #[rstest]
+    fn test_generate_trade_id_format_and_length_bound() {
+        let mut generator =
+            build_ids_generator(Venue::from("SOMETHING_VERY_LONG_FOR_SAFETY"), 4_294_967_295);
+        let ts = UnixNanos::from(u64::MAX);
+
+        let trade_id = generator.generate_trade_id(ts);
+        let value = trade_id.as_str();
+
+        assert!(value.len() <= 36);
+        assert!(value.starts_with("T-"));
+        assert_eq!(value.len(), "T-0123456789abcdef-001".len());
+    }
+
+    #[rstest]
+    fn test_generate_trade_id_is_deterministic_across_reset_for_same_ts() {
+        let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let first = generator.generate_trade_id(ts);
+        generator.reset();
+        let second = generator.generate_trade_id(ts);
+        assert_eq!(
+            first, second,
+            "same ts_init and reset execution_count must reproduce the same id"
+        );
+    }
+
+    #[rstest]
+    fn test_generate_trade_id_differs_when_ts_init_changes() {
+        let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let first = generator.generate_trade_id(ts);
+        generator.reset();
+        let second = generator.generate_trade_id(ts + UnixNanos::from(1));
+        assert_ne!(
+            first, second,
+            "distinct ts_init must produce distinct ids across a reset"
+        );
+    }
+
+    #[rstest]
+    fn test_generate_trade_id_counter_tiebreaker_for_same_ts() {
+        let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let first = generator.generate_trade_id(ts);
+        let second = generator.generate_trade_id(ts);
+        let third = generator.generate_trade_id(ts);
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+        assert!(first.as_str().ends_with("-001"));
+        assert!(second.as_str().ends_with("-002"));
+        assert!(third.as_str().ends_with("-003"));
+    }
+
+    #[rstest]
+    fn test_generate_trade_id_differs_when_venue_or_raw_id_changes() {
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let mut gen_a = build_ids_generator(Venue::from("BINANCE"), 1);
+        let mut gen_b = build_ids_generator(Venue::from("BYBIT"), 1);
+        let mut gen_c = build_ids_generator(Venue::from("BINANCE"), 2);
+
+        let a = gen_a.generate_trade_id(ts);
+        let b = gen_b.generate_trade_id(ts);
+        let c = gen_c.generate_trade_id(ts);
+        assert_ne!(a, b, "venue must distinguish ids");
+        assert_ne!(a, c, "raw_id must distinguish ids");
+    }
+
+    // Parity fixtures: if either Rust or Python changes the hashing scheme,
+    // one of these assertions will fail and flag the drift.
+    // The Python mirror lives at python/tests/unit/backtest/test_trade_id_parity.py
+    #[rstest]
+    #[case::zero("BINANCE", 1_u32, 0_u64, "T-59d6cf33c843f0cc-001")]
+    #[case::nanos(
+        "BINANCE",
+        1_u32,
+        1_700_000_000_000_000_000_u64,
+        "T-5c080ffb681dc0d4-001"
+    )]
+    #[case::long_venue(
+        "SOMETHING_VERY_LONG_FOR_SAFETY",
+        42_u32,
+        1_700_000_000_000_000_000_u64,
+        "T-2a2238c5cc0cbaf2-001"
+    )]
+    fn test_generate_trade_id_matches_python_parity_fixture(
+        #[case] venue: &str,
+        #[case] raw_id: u32,
+        #[case] ts_init: u64,
+        #[case] expected: &str,
+    ) {
+        let mut generator = build_ids_generator(Venue::from(venue), raw_id);
+        let trade_id = generator.generate_trade_id(UnixNanos::from(ts_init));
+        assert_eq!(trade_id.as_str(), expected);
+    }
+
+    // Multi-tick parity: four consecutive bumps at the same ts_init (the
+    // bar O/H/L/C pattern) must produce counters 001..004. Mirrored in
+    // tests/unit_tests/backtest/test_trade_id_parity.py
+    // (test_trade_id_multi_tick_counter_matches_rust_parity_fixture).
+    #[rstest]
+    fn test_generate_trade_id_multi_tick_matches_python_parity_fixture() {
+        let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+        let sequence: Vec<String> = (0..4)
+            .map(|_| generator.generate_trade_id(ts).as_str().to_string())
+            .collect();
+
+        assert_eq!(
+            sequence,
+            vec![
+                "T-5c080ffb681dc0d4-001".to_string(),
+                "T-5c080ffb681dc0d4-002".to_string(),
+                "T-5c080ffb681dc0d4-003".to_string(),
+                "T-5c080ffb681dc0d4-004".to_string(),
+            ],
+        );
     }
 }

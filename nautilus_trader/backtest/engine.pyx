@@ -582,7 +582,8 @@ cdef class BacktestEngine:
         use_position_ids : bool, default True
             If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
-            If all venue generated identifiers will be random UUID4's.
+            If venue order IDs and position IDs will be random UUID4's.
+            Trade IDs are always deterministic and not affected by this flag.
         use_reduce_only : bool, default True
             If the `reduce_only` execution instruction on orders will be honored.
         use_message_queue : bool, default True
@@ -3843,7 +3844,8 @@ cdef class OrderMatchingEngine:
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If all venue generated identifiers will be random UUID4's.
+        If venue order IDs and position IDs will be random UUID4's.
+        Trade IDs are always deterministic and not affected by this flag.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
     bar_adaptive_high_low_ordering : bool, default False
@@ -4747,7 +4749,7 @@ cdef class OrderMatchingEngine:
             bar.open,
             size,
             AggressorSide.BUYER if not self._core.is_last_initialized or bar._mem.open.raw > self._core.last_raw else AggressorSide.SELLER,
-            self._generate_trade_id(),
+            self._generate_trade_id(bar.ts_init),
             bar.ts_init,
             bar.ts_init,
         )
@@ -4770,7 +4772,7 @@ cdef class OrderMatchingEngine:
             self._fill_at_market = False  # Market moving through prices
             tick._mem.price = bar._mem.high
             tick._mem.aggressor_side = AggressorSide.BUYER
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str(tick.ts_init)))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.high.raw)
@@ -4783,7 +4785,7 @@ cdef class OrderMatchingEngine:
             self._fill_at_market = False  # Market moving through prices
             tick._mem.price = bar._mem.low
             tick._mem.aggressor_side = AggressorSide.SELLER
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str(tick.ts_init)))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.low.raw)
@@ -4802,7 +4804,7 @@ cdef class OrderMatchingEngine:
             else:
                 tick._mem.aggressor_side = AggressorSide.SELLER
 
-            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str()))
+            tick._mem.trade_id = trade_id_new(pystr_to_cstr(self._generate_trade_id_str(tick.ts_init)))
             self._book.update_trade_tick(tick)
             self.iterate(tick.ts_init)
             self._core.set_last_raw(bar._mem.close.raw)
@@ -7357,10 +7359,6 @@ cdef class OrderMatchingEngine:
             # Generate unique venue order ID for leg fill
             leg_venue_order_id = VenueOrderId(f"{order.venue_order_id.value}-LEG-{leg_position}")
 
-            # Generate unique trade ID for the leg fill (matching IB pattern: {execution.execId}-{leg_position})
-            # Use the same base execution ID format as combo fills but append leg position
-            leg_trade_id = TradeId(f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}-{leg_position}")
-
             # Leg side mapping based on spread order direction
             # If spread BUY: positive ratio = BUY leg, negative = SELL leg
             # If spread SELL: positive ratio = SELL leg, negative = BUY leg
@@ -7368,6 +7366,12 @@ cdef class OrderMatchingEngine:
 
             # Create OrderFilled event for the leg
             ts_now = self._clock.timestamp_ns()
+
+            # Generate unique trade ID for the leg fill: reuse the bounded hash
+            # format from `_generate_trade_id_str` and append the leg position
+            # so legs sharing an execution step remain distinguishable.
+            leg_hash = _fnv1a_trade_id_hash(self.venue.to_str(), self.raw_id, ts_now)
+            leg_trade_id = TradeId(f"T-{leg_hash:016x}-{self._execution_count:03d}-{leg_position}")
             leg_fill = OrderFilled(
                 trader_id=order.trader_id,
                 strategy_id=order.strategy_id,
@@ -7753,15 +7757,22 @@ cdef class OrderMatchingEngine:
         else:
             return VenueOrderId(f"{self.venue.to_str()}-{self.raw_id}-{self._order_count:03d}")
 
-    cdef TradeId _generate_trade_id(self):
-        self._execution_count += 1
-        return TradeId(self._generate_trade_id_str())
+    cdef TradeId _generate_trade_id(self, uint64_t ts_init):
+        return TradeId(self._generate_trade_id_str(ts_init))
 
-    cdef str _generate_trade_id_str(self):
-        if self._use_random_ids:
-            return str(uuid.uuid4())
-        else:
-            return f"{self.venue.to_str()}-{self.raw_id}-{self._execution_count:03d}"
+    cdef str _generate_trade_id_str(self, uint64_t ts_init):
+        # Trade IDs are always deterministic; `_use_random_ids` only affects
+        # venue order IDs and position IDs. A bounded FNV-1a hash of
+        # `(venue, raw_id, ts_init)` keeps the ID under the 36-character
+        # `TradeId` cap for arbitrary-length venue names; `ts_init` protects
+        # against collisions after a reset rewinds `_execution_count`, and
+        # the trailing counter distinguishes multiple fills at the same ts.
+        # The counter bump lives here so every call site (open, high, low,
+        # close ticks in bar-driven matching as well as fill generation)
+        # advances it, matching the Rust `IdsGenerator::generate_trade_id`.
+        self._execution_count += 1
+        cdef uint64_t h = _fnv1a_trade_id_hash(self.venue.to_str(), self.raw_id, ts_init)
+        return f"T-{h:016x}-{self._execution_count:03d}"
 
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
@@ -8179,7 +8190,7 @@ cdef class OrderMatchingEngine:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             account_id=order.account_id or self._account_ids[order.trader_id],
-            trade_id=self._generate_trade_id(),
+            trade_id=self._generate_trade_id(ts_now),
             position_id=venue_position_id,
             order_side=order.side,
             order_type=order.order_type,
@@ -8193,3 +8204,24 @@ cdef class OrderMatchingEngine:
             ts_init=ts_now,
         )
         self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+
+
+# FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+# Used by `OrderMatchingEngine` to derive deterministic trade IDs.
+cdef uint64_t _FNV_OFFSET_BASIS = 0xcbf29ce484222325
+cdef uint64_t _FNV_PRIME = 0x100000001b3
+
+
+cdef uint64_t _fnv1a_trade_id_hash(str venue, uint32_t raw_id, uint64_t ts_init_ns):
+    cdef uint64_t h = _FNV_OFFSET_BASIS
+    cdef bytes venue_bytes = venue.encode("ascii")
+    cdef bytes raw_id_bytes = raw_id.to_bytes(4, "little")
+    cdef bytes ts_bytes = ts_init_ns.to_bytes(8, "little")
+    cdef bytes b
+    cdef int i
+
+    for b in (venue_bytes, b"\x1f", raw_id_bytes, b"\x1f", ts_bytes):
+        for i in range(len(b)):
+            h ^= b[i]
+            h = (h * _FNV_PRIME) & 0xFFFFFFFFFFFFFFFF
+    return h

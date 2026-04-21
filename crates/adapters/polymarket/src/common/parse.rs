@@ -21,9 +21,12 @@ pub use nautilus_core::serialization::{
     serialize_optional_decimal_as_str,
 };
 use nautilus_model::identifiers::TradeId;
-use ustr::Ustr;
 
 use crate::common::enums::PolymarketOrderSide;
+
+// FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
 /// Derives a deterministic [`TradeId`] for a Polymarket market data trade.
 ///
@@ -44,7 +47,7 @@ pub fn determine_trade_id(
         PolymarketOrderSide::Buy => b"B",
         PolymarketOrderSide::Sell => b"S",
     };
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut h: u64 = FNV_OFFSET_BASIS;
 
     for bytes in [
         asset_id.as_bytes(),
@@ -59,10 +62,10 @@ pub fn determine_trade_id(
     ] {
         for &b in bytes {
             h ^= u64::from(b);
-            h = h.wrapping_mul(0x0100_0000_01b3);
+            h = h.wrapping_mul(FNV_PRIME);
         }
     }
-    TradeId::new(Ustr::from(&format!("{h:016x}")))
+    TradeId::new(format!("{h:016x}"))
 }
 
 #[cfg(test)]

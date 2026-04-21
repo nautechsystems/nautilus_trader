@@ -43,6 +43,8 @@ Released on TBD (UTC).
 - Changed `MarginBalance.instrument_id` to optional; `None` marks account-wide (cross margin) entries keyed by currency
 - Changed `MarginAccount.margins_init`/`margins_maint` to per-instrument only; use `account_margins_*` for cross margin
 - Changed Binance Futures COIN-M to emit one `MarginBalance` per base coin (previously hardcoded USDT)
+- Changed matching-engine `TradeId` format to `T-{hash}-{count}` from `{venue}-{raw_id}-{count}`; `ts_init`-keyed
+- Changed `use_random_ids` to no longer govern `TradeId`; flag still affects `VenueOrderId` and `PositionId`
 - Renamed Python `DatabaseConfig.timeout` to `connection_timeout` and `response_timeout` to match the Redis/PyO3 wire schema
 
 ### Security
@@ -70,6 +72,7 @@ Released on TBD (UTC).
 - Fixed PyO3 catalog `instruments()` failing on unregistered currencies (#3898), thanks for reporting @volemont
 - Fixed PyO3 `from_dict` on non-ASCII strings via `ensure_ascii=False` in `json.dumps` (#3895), thanks @costajohnt
 - Fixed execution engine ignoring user-supplied `position_id` from `submit_order` (Rust)
+- Fixed `TestDataGenerator.generate_trade_ticks` using random UUID4; now sequences deterministic `T-{idx}` IDs
 - Fixed reconciliation IDs non-deterministic across restarts (#3878), thanks for reporting @peanut-copilot
 - Fixed reconciliation synthetic `OrderStatusReport` now propagates fill price to `avg_px` for downstream inferred fills
 - Fixed Betfair event order: `Instrument` now emits before `InstrumentStatus`/`InstrumentClose` within each MCM
@@ -83,12 +86,14 @@ Released on TBD (UTC).
 - Fixed Binance Futures WebSocket trades by forcing `@aggTrade` (#3861), thanks for reporting @KaizynX
 - Fixed Binance Ed25519 detector silently accepting base64 HMAC secrets as Ed25519 keys (Rust)
 - Fixed Binance HTTP request Ed25519 signature URL-encoding in query strings (Rust)
+- Fixed BitMEX trade ID fallback using random UUID4 when `trdMatchID` missing; now hashed from trade fields
 - Fixed Bybit position deserialization for closed positions (#3836), thanks for reporting @pusteckiy
 - Fixed Bybit perpetual instrument status to emit `PreClose` when scheduled for delisting (#3829), thanks @dxwil
 - Fixed Bybit `load_all_async` dropping `base_coin` filter for options (#3865), thanks for reporting @Baerenstein
 - Fixed Bybit `InstrumentStatus` messages silently dropped instead of forwarded to the data engine
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
 - Fixed Bybit margin missing for accounts with orders but no positions (#3725), thanks for reporting @marco-rigoni
+- Fixed Databento CMBP1 and TCBBO trade IDs using random UUID4 instead of deterministic hash of trade fields
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin
 - Fixed dYdX `generate_order_status_report` fetching only the first order and missing later matches in the response
 - Fixed dYdX orderbook snapshots missing `F_SNAPSHOT` flag on deltas; empty-book Clear now emits `F_SNAPSHOT | F_LAST`
@@ -134,6 +139,7 @@ Released on TBD (UTC).
 - Fixed Polymarket `parse_to_snapshot` missing `F_SNAPSHOT` flag on CLEAR and intermediate ADD deltas
 - Fixed Polymarket `parse_to_deltas` flagging `F_LAST` on every delta instead of only the final one
 - Fixed Polymarket `parse_to_trade_tick` using `uuid.uuid4()`, producing non-deterministic trade IDs
+- Fixed Tardis trade ID fallback using random UUID4 when venue `id` missing/empty (CSV and WebSocket parsers)
 
 ### Internal Improvements
 - Added `AccountBalance::from_total_and_locked` and `AccountBalance::from_total_and_free`, and migrated adapter balance parsing to preserve the `total == locked + free` invariant at currency precision (Rust)
@@ -152,6 +158,10 @@ Released on TBD (UTC).
 - Added Polymarket `determine_trade_id` helper with FNV-1a (Rust) and blake2b (Python) deterministic hashing
 - Added Hyperliquid criterion benchmarks for L1 signing path
 - Added Binance unit tests for spot/futures dispatch dedup, post-only rejection, and value conversions
+- Added `derive_trade_id` FNV-1a helpers in BitMEX and Tardis common parse modules for deterministic fallback
+- Added `derive_cmbp_trade_id` in Databento decode for schemas without a native trade ID
+- Added property-based tests for Databento trade ID derivation (stability and 16-hex format)
+- Added Rust/Python parity tests pinning matching-engine `TradeId` format across language bindings
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
 - Standardized adapter example manifests and trading deps (#3891), thanks @sunlei
@@ -176,6 +186,8 @@ Released on TBD (UTC).
 ### Documentation Updates
 - Added Polymarket Python and Rust adapter config tables and updated rate limits
 - Added ID determinism invariant to the reconciliation live and execution concept guides
+- Added Trade ID derivation sections to Polymarket, Databento, BitMEX, and Tardis integration guides
+- Added Trade ID derivation section to the backtesting concept guide
 - Refined docs to follow style guide for symbols and filler words (#3830), thanks @JKDasondee
 - Refined Interactive Brokers documentation regarding UTC timestamps (#3826), thanks @faysou
 - Refined dYdX integration guide config tables to match the Python API (`environment`, `subaccount`, `base_url_grpc`)

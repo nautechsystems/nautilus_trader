@@ -355,7 +355,8 @@ pub struct BacktestVenueConfig {
     /// If venue position IDs will be generated on order fills.
     #[builder(default = true)]
     use_position_ids: bool,
-    /// If all venue generated identifiers will be random UUID4's.
+    /// If venue order IDs and position IDs will be random UUID4's.
+    /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     use_random_ids: bool,
     /// If the `reduce_only` execution instruction on orders will be honored.

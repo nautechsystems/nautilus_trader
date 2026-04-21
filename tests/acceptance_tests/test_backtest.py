@@ -1914,17 +1914,19 @@ class TestBacktestNodeWithBacktestDataIterator:
 
         # Assert
         expected_order_filled_messages = [
-            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=XCME-1-001",
-            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=XCME-2-001",
-            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=XCME-3-002",
+            "Order filled: ESM4 P5230.XCME, qty=10, price=97.25, trade_id=T-d47be5ca9f6901ab-001",
+            "Order filled: ESM4 P5250.XCME, qty=10, price=108.50, trade_id=T-7f8e274f85bbdd3e-001",
+            "Order filled: ESM4.XCME, qty=1, price=5199.75, trade_id=T-75d12aa71a6bb07d-004",
             "Order filled: ((1))ESM4 P5230___(1)ESM4 P5250.XCME, qty=5, price=10.75, "
-            "trade_id=XCME-5-001",
-            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=XCME-5-001-0",
-            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=XCME-5-001-1",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, trade_id=XCME-6-001",
-            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, trade_id=XCME-6-002",
-            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=XCME-6-002-0",
-            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=XCME-6-002-1",
+            "trade_id=T-75c4107db8ae4ad7-001",
+            "Order filled: ESM4 P5230.XCME, qty=5, price=97.62, trade_id=T-75c4107db8ae4ad7-001-0",
+            "Order filled: ESM4 P5250.XCME, qty=5, price=108.38, trade_id=T-75c4107db8ae4ad7-001-1",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=2, price=12930.50, "
+            "trade_id=T-8ba53c03fcdf19ba-001",
+            "Order filled: ((1))ESM4___(1)NQM4.XCME, qty=3, price=12930.75, "
+            "trade_id=T-8ba53c03fcdf19ba-002",
+            "Order filled: ESM4.XCME, qty=2, price=5199.62, trade_id=T-8ba53c03fcdf19ba-002-0",
+            "Order filled: NQM4.XCME, qty=2, price=18130.12, trade_id=T-8ba53c03fcdf19ba-002-1",
         ]
         assert order_filled_messages == expected_order_filled_messages
 

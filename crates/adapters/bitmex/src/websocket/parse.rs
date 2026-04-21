@@ -46,7 +46,6 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
-use uuid::Uuid;
 
 use super::{
     enums::{BitmexAction, BitmexWsTopic},
@@ -64,11 +63,11 @@ use crate::{
             BitmexPegPriceType, BitmexSide,
         },
         parse::{
-            bitmex_currency_divisor, clean_reason, extract_trigger_type, map_bitmex_currency,
-            normalize_trade_bin_prices, normalize_trade_bin_volume, parse_account_balance,
-            parse_contracts_quantity, parse_fractional_quantity, parse_instrument_id,
-            parse_liquidity_side, parse_optional_datetime_to_unix_nanos, parse_position_side,
-            parse_signed_contracts_quantity,
+            bitmex_currency_divisor, clean_reason, derive_trade_id, extract_trigger_type,
+            map_bitmex_currency, normalize_trade_bin_prices, normalize_trade_bin_volume,
+            parse_account_balance, parse_contracts_quantity, parse_fractional_quantity,
+            parse_instrument_id, parse_liquidity_side, parse_optional_datetime_to_unix_nanos,
+            parse_position_side, parse_signed_contracts_quantity,
         },
     },
     http::parse::get_currency,
@@ -408,11 +407,17 @@ pub fn parse_trade_msg(
     let price = Price::new(msg.price, price_precision);
     let size = parse_contracts_quantity(msg.size, instrument);
     let aggressor_side = msg.side.as_aggressor_side();
-    let trade_id = TradeId::new(
-        msg.trd_match_id
-            .map_or_else(|| Uuid::new_v4().to_string(), |uuid| uuid.to_string()),
-    );
     let ts_event = UnixNanos::from(msg.timestamp);
+    let trade_id = match msg.trd_match_id {
+        Some(uuid) => TradeId::new(uuid.to_string()),
+        None => derive_trade_id(
+            msg.symbol,
+            ts_event.as_u64(),
+            msg.price,
+            msg.size as i64,
+            Some(msg.side.into()),
+        ),
+    };
 
     TradeTick::new(
         instrument_id,
@@ -1401,6 +1406,47 @@ mod tests {
         );
         assert_eq!(trade.ts_event, 1732436138704000000); // 2024-11-24T08:15:38.704Z in nanos
         assert_eq!(trade.ts_init, 3);
+    }
+
+    #[rstest]
+    fn test_trade_message_derives_trade_id_when_trd_match_id_missing() {
+        let json_data = load_test_json("ws_trade.json");
+        let mut msg: BitmexTradeMsg = serde_json::from_str(&json_data).unwrap();
+        msg.trd_match_id = None;
+        let instrument = create_test_perpetual_instrument();
+
+        let trade = parse_trade_msg(
+            &msg,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
+
+        let mut again_msg: BitmexTradeMsg = serde_json::from_str(&json_data).unwrap();
+        again_msg.trd_match_id = None;
+        let again = parse_trade_msg(
+            &again_msg,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
+
+        assert_eq!(trade.trade_id, again.trade_id, "derivation must be stable");
+        assert_eq!(trade.trade_id.as_str().len(), 16);
+
+        let mut altered: BitmexTradeMsg = serde_json::from_str(&json_data).unwrap();
+        altered.trd_match_id = None;
+        altered.price += 1.0;
+        let altered_trade = parse_trade_msg(
+            &altered,
+            &instrument,
+            instrument.id(),
+            instrument.price_precision(),
+            UnixNanos::from(3),
+        );
+        assert_ne!(trade.trade_id, altered_trade.trade_id);
     }
 
     #[rstest]

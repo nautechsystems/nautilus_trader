@@ -410,6 +410,15 @@ TBBO and TCBBO provide both quote and trade data in each message. Both schemas
 emit `QuoteTick` and `TradeTick` per message, more efficient than separate quote
 and trade subscriptions. TCBBO provides consolidated data across venues.
 
+#### Trade ID derivation (CMBP1 / TCBBO)
+
+The CMBP1 and TCBBO schemas do not publish a native trade identifier. The
+decoder derives a deterministic `TradeId` by FNV-1a hashing the instrument ID,
+`ts_event`, `ts_recv`, price, size, and aggressor side of the trade. The same
+venue event yields the same trade ID across replays, so downstream dedup stays
+intact. Two logically distinct trades with identical fields collide; this
+matches the venue's inability to distinguish them.
+
 ### OHLCV (bar aggregates)
 
 Databento timestamps bar messages at the **open** of the interval. The decoder

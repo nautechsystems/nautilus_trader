@@ -2284,14 +2284,15 @@ fn make_fill_for_account(
     price: Price,
     position_id: PositionId,
 ) -> OrderFilled {
+    let tag = format!("{position_id}-{}-{quantity}", side.as_ref());
     OrderFilled::new(
         TraderId::test_default(),
         StrategyId::test_default(),
         instrument.id(),
-        ClientOrderId::new(UUID4::new().to_string()),
-        VenueOrderId::new(UUID4::new().to_string()),
+        ClientOrderId::new(format!("O-{tag}")),
+        VenueOrderId::new(format!("V-{tag}")),
         account_id,
-        TradeId::new(UUID4::new().to_string()),
+        TradeId::new(format!("T-{tag}")),
         side,
         OrderType::Market,
         quantity,

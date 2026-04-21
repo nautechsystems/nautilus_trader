@@ -3868,6 +3868,96 @@ def test_bar_execution_respects_size_increment(volume: str) -> None:
     matching_engine.process_bar(bar)
 
 
+def test_bar_execution_bumps_trade_id_counter_per_tick() -> None:
+    """
+    Bar processing must bump the trade-id counter for every O/H/L/C tick.
+
+    Regression for Rust/Python parity: the Python `_generate_trade_id_str`
+    previously skipped the counter bump for high/low/close ticks, so the
+    four synthetic bar ticks all shared the same `TradeId` — and subsequent
+    fills on the same matching engine landed on counter values lower than
+    their Rust counterparts. Rust's `IdsGenerator::generate_trade_id` bumps
+    on every call; this test pins the Python matching engine to that contract
+    by observing the counter suffix encoded in a fill's `TradeId` after a bar.
+
+    """
+    # Arrange
+    clock = TestClock()
+    trader_id = TestIdStubs.trader_id()
+    msgbus = MessageBus(trader_id=trader_id, clock=clock)
+    instrument = _ETHUSDT_PERP_BINANCE
+    cache = TestComponentStubs.cache()
+    cache.add_instrument(instrument)
+
+    matching_engine = OrderMatchingEngine(
+        instrument=instrument,
+        raw_id=0,
+        fill_model=FillModel(),
+        fee_model=MakerTakerFeeModel(),
+        book_type=BookType.L1_MBP,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        reject_stop_orders=False,
+        bar_execution=True,
+        msgbus=msgbus,
+        cache=cache,
+        clock=clock,
+    )
+
+    bar_spec = BarSpecification(
+        step=1,
+        aggregation=BarAggregation.MINUTE,
+        price_type=PriceType.LAST,
+    )
+    bar_type = BarType(
+        instrument_id=instrument.id,
+        bar_spec=bar_spec,
+        aggregation_source=AggregationSource.EXTERNAL,
+    )
+    bar = Bar(
+        bar_type=bar_type,
+        open=Price.from_str("1000.00"),
+        high=Price.from_str("1005.00"),
+        low=Price.from_str("995.00"),
+        close=Price.from_str("1000.00"),
+        volume=Quantity.from_str("100.000"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Act: process a bar with no resting orders, then trigger a fill via a
+    # trade tick crossing a fresh market order. The fill's counter suffix
+    # reflects cumulative bumps since engine init.
+    matching_engine.process_bar(bar)
+
+    market_order = TestExecStubs.market_order(
+        instrument=instrument,
+        order_side=OrderSide.BUY,
+        quantity=instrument.make_qty(1.0),
+    )
+    messages: list[Any] = []
+    msgbus.register("ExecEngine.process", messages.append)
+    matching_engine.process_order(
+        market_order,
+        TestIdStubs.account_id(),
+    )
+
+    # Assert: one fill, counter reflects open + high + low + close bumps plus
+    # the market-order fill, so the fill carries `-005`.
+    fills = [m for m in messages if isinstance(m, OrderFilled)]
+    assert len(fills) == 1, (
+        f"Expected one fill from the market order, was {[type(m).__name__ for m in messages]}"
+    )
+    trade_id_value = fills[0].trade_id.value
+    parts = trade_id_value.split("-")
+    assert parts[0] == "T", trade_id_value
+    assert len(parts) == 3, trade_id_value
+    assert len(parts[1]) == 16, trade_id_value
+    assert parts[2] == "005", (
+        f"Expected counter suffix 005 after four bar ticks + one fill, was {trade_id_value}"
+    )
+
+
 @pytest.mark.parametrize(
     ("order_side", "opposite_side"),
     [

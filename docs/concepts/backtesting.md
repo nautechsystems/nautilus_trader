@@ -1409,6 +1409,30 @@ margin_model=MarginModelConfig(
 
 The model is applied to the simulated exchange during backtest execution.
 
+## Trade ID derivation
+
+The simulated exchange (used by both backtest and sandbox execution) emits a
+deterministic `TradeId` for each generated fill. The ID is formatted as
+`T-{hash:016x}-{count:03d}`, where the 16-character hex is an FNV-1a hash of
+`(venue, raw_id, ts_init)` and the trailing counter distinguishes multiple
+fills at the same `ts_init` (e.g. several legs of a bar-driven fill).
+
+**Properties**:
+
+- Deterministic across runs: the same replayed data produces the same
+  `TradeId` every time, so downstream dedup and golden-output comparisons stay
+  stable.
+- Collision-safe across resets: `ts_init` is pinned in backtest data and
+  monotonic in live/sandbox, so a `BacktestEngine.reset()` (or an in-memory
+  `IdsGenerator` reset in a sandbox with persisted orders) cannot mint a
+  `TradeId` that collides with one already in the cache.
+- Bounded length: the hash keeps the identifier under the 36-character
+  `TradeId` cap regardless of venue name length.
+
+The `use_random_ids` venue flag still governs `VenueOrderId` and `PositionId`
+generation, but `TradeId` is always deterministic and is not affected by the
+flag.
+
 ## Related guides
 
 - [Strategies](strategies.md) - Develop strategies to backtest.
