@@ -54,8 +54,9 @@ use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+#[cfg(feature = "python")]
+use nautilus_model::data::{Bar, BarType, Data, QuoteTick, TradeTick};
 use nautilus_model::{
-    data::{Bar, BarType, Data, QuoteTick, TradeTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, any::InstrumentAny},
