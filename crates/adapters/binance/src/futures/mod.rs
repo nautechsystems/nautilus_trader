@@ -35,6 +35,7 @@
 //! - Public streams: No authentication required
 //! - User data streams: Requires listen key (obtained via REST API)
 
+pub mod conversions;
 pub mod data;
 pub mod execution;
 pub mod http;

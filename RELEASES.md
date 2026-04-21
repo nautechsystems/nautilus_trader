@@ -147,16 +147,18 @@ Released on TBD (UTC).
 - Added `ShutdownSystem` handling via `commands.system.shutdown` pub/sub topic, wired to kernel, backtest, and live (Rust)
 - Added PyO3 `DataActor` parity with v1 for `publish_data`, `publish_signal`, `subscribe_signal`, `unsubscribe_signal`, `add_synthetic`, and `update_synthetic` (Rust)
 - Added per-currency account-wide margin storage to `MarginAccount`, routing event margins by `instrument_id` presence
+- Added Architect AX unit and integration tests for execution, request filters, and WebSocket parsers
 - Added dYdX debug logging to `generate_order_status_report` showing filter scope and `page_full` on `None` results
 - Added Polymarket `determine_trade_id` helper with FNV-1a (Rust) and blake2b (Python) deterministic hashing
 - Added Hyperliquid criterion benchmarks for L1 signing path
-- Added unit and integration tests for `architect_ax` execution helpers, request filters, and WebSocket parsers
+- Added Binance unit tests for spot/futures dispatch dedup, post-only rejection, and value conversions
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
 - Standardized adapter example manifests and trading deps (#3891), thanks @sunlei
 - Standardized margin emission convention across live derivatives adapters to use currency-keyed `MarginBalance` entries
 - Refactored `reconciliation` module into `types`, `ids`, `positions`, and `orders` submodules (Rust)
 - Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
+- Refactored Binance Futures value conversions into a new `futures::conversions` module (Rust)
 - Replaced `AHashMap`/`AHashSet` with `IndexMap`/`IndexSet` in `ExecutionManager` for deterministic ordering in simulations (Rust)
 - Refined make cargo-test to not include binaries for test harness builds (#3828), thanks @faysou
 - Refined Interactive Brokers combo fill average price calculation (#3834), thanks @faysou

@@ -99,4 +99,27 @@ mod tests {
         let instrument_id = InstrumentId::from(input);
         assert_eq!(format_binance_stream_symbol(&instrument_id), expected);
     }
+
+    #[rstest]
+    #[case::usdm_perp("BTCUSDT", BinanceProductType::UsdM, "BTCUSDT-PERP.BINANCE")]
+    #[case::usdm_eth("ETHUSDT", BinanceProductType::UsdM, "ETHUSDT-PERP.BINANCE")]
+    #[case::coinm_perp("BTCUSD_PERP", BinanceProductType::CoinM, "BTCUSD_PERP.BINANCE")]
+    #[case::coinm_eth("ETHUSD_PERP", BinanceProductType::CoinM, "ETHUSD_PERP.BINANCE")]
+    #[case::spot("BTCUSDT", BinanceProductType::Spot, "BTCUSDT.BINANCE")]
+    #[case::spot_eth("ETHBTC", BinanceProductType::Spot, "ETHBTC.BINANCE")]
+    #[case::margin("BTCUSDT", BinanceProductType::Margin, "BTCUSDT.BINANCE")]
+    #[case::options(
+        "BTC-240329-70000-C",
+        BinanceProductType::Options,
+        "BTC-240329-70000-C.BINANCE"
+    )]
+    fn test_format_instrument_id(
+        #[case] raw_symbol: &str,
+        #[case] product_type: BinanceProductType,
+        #[case] expected: &str,
+    ) {
+        let symbol = Ustr::from(raw_symbol);
+        let instrument_id = format_instrument_id(&symbol, product_type);
+        assert_eq!(instrument_id.to_string(), expected);
+    }
 }

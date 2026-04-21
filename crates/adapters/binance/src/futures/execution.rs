@@ -47,8 +47,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TrailingOffsetType,
-        TriggerType,
+        AccountType, OmsType, OrderType, PositionSideSpecified, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderModifyRejected,
@@ -96,18 +95,25 @@ use crate::{
         dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
         encoder::encode_broker_id,
         enums::{
-            BinanceEnvironment, BinancePositionSide, BinancePriceMatch, BinanceProductType,
-            BinanceSide, BinanceTimeInForce, BinanceWorkingType,
+            BinanceEnvironment, BinancePriceMatch, BinanceProductType, BinanceSide,
+            BinanceTimeInForce, BinanceWorkingType,
         },
         symbol::format_binance_symbol,
         urls::get_ws_private_base_url,
     },
     config::BinanceExecClientConfig,
-    futures::http::{
-        client::order_type_to_binance_futures,
-        models::BinanceFuturesAccountInfo,
-        query::{
-            BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder, BinanceNewOrderParams,
+    futures::{
+        conversions::{
+            determine_position_side, trailing_offset_to_callback_rate,
+            trailing_offset_to_callback_rate_string,
+        },
+        http::{
+            client::order_type_to_binance_futures,
+            models::BinanceFuturesAccountInfo,
+            query::{
+                BinanceCancelOrderParamsBuilder, BinanceModifyOrderParamsBuilder,
+                BinanceNewOrderParams,
+            },
         },
     },
 };
@@ -257,34 +263,6 @@ impl BinanceFuturesExecutionClient {
         self.http_client.instruments_cache()
     }
 
-    /// Determines the position side for hedge mode based on order direction.
-    fn determine_position_side(
-        &self,
-        order_side: OrderSide,
-        reduce_only: bool,
-    ) -> Option<BinancePositionSide> {
-        if !self.is_hedge_mode() {
-            return None;
-        }
-
-        // In hedge mode, position side depends on whether we're opening or closing
-        Some(if reduce_only {
-            // Closing: Buy closes Short, Sell closes Long
-            match order_side {
-                OrderSide::Buy => BinancePositionSide::Short,
-                OrderSide::Sell => BinancePositionSide::Long,
-                _ => BinancePositionSide::Both,
-            }
-        } else {
-            // Opening: Buy opens Long, Sell opens Short
-            match order_side {
-                OrderSide::Buy => BinancePositionSide::Long,
-                OrderSide::Sell => BinancePositionSide::Short,
-                _ => BinancePositionSide::Both,
-            }
-        })
-    }
-
     /// Converts Binance futures account info to Nautilus account state.
     fn create_account_state(&self, account_info: &BinanceFuturesAccountInfo) -> AccountState {
         Self::create_account_state_from(
@@ -427,7 +405,7 @@ impl BinanceFuturesExecutionClient {
         let activation_price = order.activation_price();
         let trailing_offset = order.trailing_offset();
         let trigger_type = order.trigger_type();
-        let position_side = self.determine_position_side(order_side, reduce_only);
+        let position_side = determine_position_side(self.is_hedge_mode(), order_side, reduce_only);
 
         // Register identity for tracked/external dispatch routing
         self.dispatch_state.order_identities.insert(
@@ -2196,60 +2174,5 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         });
 
         Ok(())
-    }
-}
-
-fn trailing_offset_to_callback_rate(offset: Decimal) -> anyhow::Result<Decimal> {
-    let rate = offset / rust_decimal::Decimal::ONE_HUNDRED;
-    let min_rate = rust_decimal::Decimal::new(1, 1);
-    let max_rate = rust_decimal::Decimal::new(100, 1);
-
-    if rate < min_rate || rate > max_rate {
-        anyhow::bail!("callbackRate {rate}% out of Binance range [{min_rate}, {max_rate}]");
-    }
-
-    Ok(rate)
-}
-
-fn trailing_offset_to_callback_rate_string(offset: Decimal) -> anyhow::Result<String> {
-    let rate = trailing_offset_to_callback_rate(offset)?;
-    Ok(format_callback_rate(rate))
-}
-
-fn format_callback_rate(rate: Decimal) -> String {
-    let normalized = rate.normalize();
-
-    if normalized.scale() == 0 {
-        format!("{normalized}.0")
-    } else {
-        normalized.to_string()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::*;
-
-    #[rstest]
-    fn test_trailing_offset_to_callback_rate_preserves_precision() {
-        let rate = trailing_offset_to_callback_rate(Decimal::from(25)).unwrap();
-        assert_eq!(rate, Decimal::new(25, 2));
-    }
-
-    #[rstest]
-    fn test_trailing_offset_to_callback_rate_string_formats_whole_percent() {
-        let rate = trailing_offset_to_callback_rate_string(Decimal::from(100)).unwrap();
-        assert_eq!(rate, "1.0");
-    }
-
-    #[rstest]
-    fn test_trailing_offset_to_callback_rate_rejects_out_of_range_values() {
-        let error = trailing_offset_to_callback_rate(Decimal::from(5)).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "callbackRate 0.05% out of Binance range [0.1, 10.0]"
-        );
     }
 }

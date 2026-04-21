@@ -272,12 +272,89 @@ mod tests {
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.venue_order_id, VenueOrderId::new("12345678"));
         assert_eq!(
             report.client_order_id,
             Some(ClientOrderId::from("O-20200101-000000-000-000-0")),
         );
+        assert_eq!(report.quantity, Quantity::new(1.0, SIZE_PRECISION));
+        assert_eq!(report.filled_qty, Quantity::new(0.0, SIZE_PRECISION));
+        assert_eq!(report.price, Some(Price::new(2500.0, PRICE_PRECISION)));
+        assert!(report.avg_px.is_none());
+        assert!(!report.post_only);
         assert!(report.trigger_price.is_none());
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_709_654_400_000_000_000u64)
+        );
+        assert_eq!(
+            report.ts_last,
+            UnixNanos::from(1_709_654_400_000_000_000u64)
+        );
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_parse_execution_report_limit_maker_sets_post_only() {
+        let json = r#"{
+            "e":"executionReport","E":1709654400000,"s":"ETHUSDT",
+            "c":"x-TD67BGP9-T0000000000000","S":"SELL","o":"LIMIT_MAKER",
+            "f":"GTC","q":"0.5","p":"2600.00","P":"0",
+            "x":"NEW","X":"NEW","r":"NONE","i":12345679,
+            "l":"0","z":"0","L":"0","n":"0","N":null,
+            "T":1709654400000,"t":-1,"w":true,"m":false,
+            "O":1709654400000,"Z":"0","C":""
+        }"#;
+        let msg: BinanceSpotExecutionReport = serde_json::from_str(json).unwrap();
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert!(report.post_only, "LIMIT_MAKER must set post_only");
+    }
+
+    #[rstest]
+    fn test_parse_execution_report_partial_fill_computes_avg_px() {
+        let json = r#"{
+            "e":"executionReport","E":1709654400000,"s":"ETHUSDT",
+            "c":"x-TD67BGP9-T0000000000000","S":"BUY","o":"LIMIT",
+            "f":"GTC","q":"2.0","p":"2500.00","P":"0",
+            "x":"TRADE","X":"PARTIALLY_FILLED","r":"NONE","i":12345678,
+            "l":"0.5","z":"0.5","L":"2499.00","n":"0.00100000","N":"ETH",
+            "T":1709654400000,"t":98765432,"w":true,"m":false,
+            "O":1709654400000,"Z":"1249.50","C":""
+        }"#;
+        let msg: BinanceSpotExecutionReport = serde_json::from_str(json).unwrap();
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.quantity, Quantity::new(2.0, SIZE_PRECISION));
+        assert_eq!(report.filled_qty, Quantity::new(0.5, SIZE_PRECISION));
+
+        // avg_px = cum_quote / filled_qty = 1249.50 / 0.5 = 2499.00
+        assert_eq!(report.avg_px.unwrap().to_string(), "2499.00");
     }
 
     #[rstest]

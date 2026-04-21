@@ -1235,4 +1235,265 @@ mod tests {
         serde_json::from_str(&load_fixture_string(&path))
             .unwrap_or_else(|e| panic!("Failed to parse fixture {path}: {e}"))
     }
+
+    fn build_expired_order_update() -> BinanceFuturesOrderUpdateMsg {
+        let json = r#"{
+            "e":"ORDER_TRADE_UPDATE","T":1568879465651,"E":1568879465651,
+            "o":{
+                "s":"BTCUSDT","c":"TEST","S":"BUY","o":"LIMIT","f":"GTC",
+                "q":"0.001","p":"7100.50","ap":"0","sp":"0",
+                "x":"EXPIRED","X":"EXPIRED","i":8886774,
+                "l":"0","z":"0","L":"0","N":"USDT","n":"0",
+                "T":1568879465651,"t":0,"b":"0","a":"0","m":false,"R":false,
+                "wt":"CONTRACT_PRICE","ot":"LIMIT","ps":"LONG","cp":false,
+                "AP":"0","cr":"0","pP":false,"si":0,"ss":0,"rp":"0",
+                "V":"EXPIRE_TAKER"
+            }
+        }"#;
+        serde_json::from_str(json).unwrap()
+    }
+
+    fn build_amendment_order_update() -> BinanceFuturesOrderUpdateMsg {
+        let json = r#"{
+            "e":"ORDER_TRADE_UPDATE","T":1568879465651,"E":1568879465651,
+            "o":{
+                "s":"BTCUSDT","c":"TEST","S":"BUY","o":"LIMIT","f":"GTC",
+                "q":"0.002","p":"7200.00","ap":"0","sp":"0",
+                "x":"AMENDMENT","X":"NEW","i":8886774,
+                "l":"0","z":"0","L":"0","N":"USDT","n":"0",
+                "T":1568879465651,"t":0,"b":"0","a":"0","m":false,"R":false,
+                "wt":"CONTRACT_PRICE","ot":"LIMIT","ps":"LONG","cp":false,
+                "AP":"0","cr":"0","pP":false,"si":0,"ss":0,"rp":"0",
+                "V":"EXPIRE_TAKER"
+            }
+        }"#;
+        serde_json::from_str(json).unwrap()
+    }
+
+    fn build_new_order_update_with_price(price: &str) -> BinanceFuturesOrderUpdateMsg {
+        let json = format!(
+            r#"{{
+                "e":"ORDER_TRADE_UPDATE","T":1568879465651,"E":1568879465651,
+                "o":{{
+                    "s":"BTCUSDT","c":"TEST","S":"BUY","o":"LIMIT","f":"GTC",
+                    "q":"0.001","p":"{price}","ap":"0","sp":"0",
+                    "x":"NEW","X":"NEW","i":8886774,
+                    "l":"0","z":"0","L":"0","N":"USDT","n":"0",
+                    "T":1568879465651,"t":0,"b":"0","a":"0","m":false,"R":false,
+                    "wt":"CONTRACT_PRICE","ot":"LIMIT","ps":"LONG","cp":false,
+                    "AP":"0","cr":"0","pP":false,"si":0,"ss":0,"rp":"0",
+                    "V":"EXPIRE_TAKER"
+                }}
+            }}"#
+        );
+        serde_json::from_str(&json).unwrap()
+    }
+
+    fn create_tracked_state_with_price(
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        price: Option<Price>,
+    ) -> WsDispatchState {
+        let dispatch_state = WsDispatchState::default();
+        dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id: StrategyId::from("TEST-STRATEGY"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                price,
+            },
+        );
+        dispatch_state
+    }
+
+    #[rstest]
+    #[case::as_canceled(true)]
+    #[case::as_expired(false)]
+    fn test_dispatch_order_update_expired_respects_treat_flag(
+        #[case] treat_expired_as_canceled: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let msg = build_expired_order_update();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_dispatch_state(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        );
+
+        // Pre-seed the accepted flag so ensure_accepted_emitted does not
+        // synthesize an OrderAccepted ahead of the terminal event.
+        dispatch_state.insert_accepted(ClientOrderId::from("TEST"));
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            treat_expired_as_canceled,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+
+        if treat_expired_as_canceled {
+            match &events[0] {
+                ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+                    assert_eq!(event.client_order_id, ClientOrderId::from("TEST"));
+                    assert_eq!(event.venue_order_id, Some(VenueOrderId::from("8886774")));
+                    assert_eq!(event.account_id, Some(AccountId::from("BINANCE-001")));
+                }
+                other => panic!("Expected OrderCanceled, was {other:?}"),
+            }
+        } else {
+            match &events[0] {
+                ExecutionEvent::Order(OrderEventAny::Expired(event)) => {
+                    assert_eq!(event.client_order_id, ClientOrderId::from("TEST"));
+                    assert_eq!(event.venue_order_id, Some(VenueOrderId::from("8886774")));
+                    assert_eq!(event.account_id, Some(AccountId::from("BINANCE-001")));
+                }
+                other => panic!("Expected OrderExpired, was {other:?}"),
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_amendment_emits_updated() {
+        let clock = get_atomic_clock_realtime();
+        let msg = build_amendment_order_update();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = create_tracked_dispatch_state(
+            ClientOrderId::from("TEST"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+
+        match &events[0] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.client_order_id, ClientOrderId::from("TEST"));
+                assert_eq!(event.venue_order_id, Some(VenueOrderId::from("8886774")));
+                assert_eq!(event.price, Some(Price::new(7200.00, 8)));
+                assert_eq!(event.quantity, Quantity::new(0.002, 8));
+                assert_eq!(event.account_id, Some(AccountId::from("BINANCE-001")));
+            }
+            other => panic!("Expected OrderUpdated, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_new_with_price_match_divergence_emits_updated() {
+        let clock = get_atomic_clock_realtime();
+
+        // Submitted with price 7000, venue filled it at 7100.50 (priceMatch).
+        let msg = build_new_order_update_with_price("7100.50");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state = create_tracked_state_with_price(
+            client_order_id,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7000.0, 8)),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 2);
+
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        match &events[1] {
+            ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.price, Some(Price::new(7100.50, 8)));
+                assert_eq!(event.quantity, Quantity::new(0.001, 8));
+            }
+            other => panic!("Expected OrderUpdated for priceMatch divergence, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_order_update_new_with_matching_price_skips_updated() {
+        let clock = get_atomic_clock_realtime();
+
+        // Submitted with price 7100.50, venue confirmed at 7100.50 (no drift).
+        let msg = build_new_order_update_with_price("7100.50");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let client_order_id = ClientOrderId::from("TEST");
+        let dispatch_state = create_tracked_state_with_price(
+            client_order_id,
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(Price::new(7100.50, 8)),
+        );
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            false,
+            Decimal::new(4, 4),
+            false,
+            &seen_trade_ids,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(
+            events.len(),
+            1,
+            "no OrderUpdated expected when price matches"
+        );
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+    }
 }
