@@ -62,6 +62,7 @@ use crate::net::TcpConnector;
 use crate::{
     RECONNECTED,
     backoff::ExponentialBackoff,
+    dst,
     error::SendError,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
@@ -453,7 +454,7 @@ impl WebSocketClientInner {
             return Ok(());
         }
 
-        tokio::time::timeout(self.reconnect_timeout, async {
+        dst::time::timeout(self.reconnect_timeout, async {
             // Attempt to connect; abort early if a disconnect was requested
             let (new_writer, reader) =
                 Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
@@ -493,7 +494,7 @@ impl WebSocketClientInner {
             }
 
             // Delay before closing connection
-            tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
+            dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
             if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
                 log::debug!("Reconnect aborted mid-flight (after delay)");
@@ -583,17 +584,17 @@ impl WebSocketClientInner {
         let ping_handler = ping_handler.cloned();
 
         tokio::task::spawn(async move {
-            let mut last_data_time = tokio::time::Instant::now();
+            let mut last_data_time = dst::time::Instant::now();
 
             loop {
                 if !ConnectionMode::from_atomic(&connection_state).is_active() {
                     break;
                 }
 
-                match tokio::time::timeout(check_interval, reader.next()).await {
+                match dst::time::timeout(check_interval, reader.next()).await {
                     Ok(Some(Ok(Message::Binary(data)))) => {
                         log::trace!("Received message <binary> {} bytes", data.len());
-                        last_data_time = tokio::time::Instant::now();
+                        last_data_time = dst::time::Instant::now();
 
                         if let Some(ref handler) = message_handler {
                             handler(Message::Binary(data));
@@ -601,7 +602,7 @@ impl WebSocketClientInner {
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
                         log::trace!("Received message: {data}");
-                        last_data_time = tokio::time::Instant::now();
+                        last_data_time = dst::time::Instant::now();
 
                         if let Some(ref handler) = message_handler {
                             handler(Message::Text(data));
@@ -744,7 +745,7 @@ impl WebSocketClientInner {
 
                         // Attempt to close the writer gracefully before exiting,
                         // we ignore any error as the writer may already be closed.
-                        _ = tokio::time::timeout(
+                        _ = dst::time::timeout(
                             Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
                             active_writer.close(),
                         )
@@ -800,7 +801,7 @@ impl WebSocketClientInner {
                     }
                 }
 
-                match tokio::time::timeout(check_interval, writer_rx.recv()).await {
+                match dst::time::timeout(check_interval, writer_rx.recv()).await {
                     Ok(Some(msg)) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
@@ -813,11 +814,11 @@ impl WebSocketClientInner {
                                 log::debug!("Received new writer");
 
                                 // Delay before closing connection
-                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                dst::time::sleep(Duration::from_millis(100)).await;
 
                                 // Attempt to close the writer gracefully on update,
                                 // we ignore any error as the writer may already be closed.
-                                _ = tokio::time::timeout(
+                                _ = dst::time::timeout(
                                     Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
                                     active_writer.close(),
                                 )
@@ -869,7 +870,7 @@ impl WebSocketClientInner {
 
             // Attempt to close the writer gracefully before exiting,
             // we ignore any error as the writer may already be closed.
-            _ = tokio::time::timeout(
+            _ = dst::time::timeout(
                 Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
                 active_writer.close(),
             )
@@ -891,7 +892,7 @@ impl WebSocketClientInner {
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
-                tokio::time::sleep(interval).await;
+                dst::time::sleep(interval).await;
 
                 match ConnectionMode::from_u8(connection_state.load(Ordering::SeqCst)) {
                     ConnectionMode::Active => {
@@ -1238,7 +1239,7 @@ impl WebSocketClient {
                     tokio::select! {
                         biased;
                         () = notified => {}
-                        () = tokio::time::sleep(Duration::from_millis(CHECK_INTERVAL_MS)) => {}
+                        () = dst::time::sleep(Duration::from_millis(CHECK_INTERVAL_MS)) => {}
                     }
                 }
             } => Err(SendError::Closed),
@@ -1266,7 +1267,7 @@ impl WebSocketClient {
 
         let fallback_interval = Duration::from_millis(FALLBACK_INTERVAL_MS);
 
-        tokio::time::timeout(self.reconnect_timeout, async {
+        dst::time::timeout(self.reconnect_timeout, async {
             loop {
                 // Register notification interest BEFORE checking state to prevent
                 // a race where the state changes between our check and the await
@@ -1284,7 +1285,7 @@ impl WebSocketClient {
                 tokio::select! {
                     biased;
                     () = notified => {}
-                    () = tokio::time::sleep(fallback_interval) => {}
+                    () = dst::time::sleep(fallback_interval) => {}
                 }
             }
         })
@@ -1326,9 +1327,9 @@ impl WebSocketClient {
             .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
         self.state_notify.notify_waiters();
 
-        if tokio::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+        if dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
             while !self.is_disconnected() {
-                tokio::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+                dst::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
             }
 
             if !self.controller_task.is_finished() {
@@ -1448,7 +1449,7 @@ impl WebSocketClient {
                 tokio::select! {
                     biased;
                     () = state_notify.notified() => {}
-                    () = tokio::time::sleep(fallback_interval) => {}
+                    () = dst::time::sleep(fallback_interval) => {}
                 }
 
                 let mut mode = ConnectionMode::from_atomic(&connection_mode);
@@ -1457,9 +1458,9 @@ impl WebSocketClient {
                     log::debug!("Disconnecting");
 
                     let timeout = Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS);
-                    if tokio::time::timeout(timeout, async {
+                    if dst::time::timeout(timeout, async {
                         // Delay awaiting graceful shutdown
-                        tokio::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
+                        dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
 
                         if let Some(task) = &inner.read_task
                             && !task.is_finished()
@@ -1594,7 +1595,7 @@ impl WebSocketClient {
                                 // Race backoff sleep against disconnect
                                 tokio::select! {
                                     biased;
-                                    () = tokio::time::sleep(duration) => {}
+                                    () = dst::time::sleep(duration) => {}
                                     () = async {
                                         loop {
                                             state_notify.notified().await;

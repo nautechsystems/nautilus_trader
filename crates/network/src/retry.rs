@@ -20,7 +20,7 @@ use std::{future::Future, marker::PhantomData, time::Duration};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::backoff::ExponentialBackoff;
+use crate::{backoff::ExponentialBackoff, dst};
 
 /// Configuration for retry behavior.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -129,7 +129,7 @@ where
         .map_err(|e| create_error(format!("Invalid configuration: {e}")))?;
 
         let mut attempt = 0;
-        let start_time = tokio::time::Instant::now();
+        let start_time = dst::time::Instant::now();
 
         loop {
             if let Some(token) = cancel
@@ -150,7 +150,7 @@ where
                 (Some(timeout_ms), Some(token)) => {
                     tokio::select! {
                         biased;
-                        result = tokio::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
+                        result = dst::time::timeout(Duration::from_millis(timeout_ms), operation()) => result,
                         () = token.cancelled() => {
                             log::debug!("Operation '{operation_name}' canceled during execution");
                             return Err(create_error("canceled".to_string()));
@@ -158,7 +158,7 @@ where
                     }
                 }
                 (Some(timeout_ms), None) => {
-                    tokio::time::timeout(Duration::from_millis(timeout_ms), operation()).await
+                    dst::time::timeout(Duration::from_millis(timeout_ms), operation()).await
                 }
                 (None, Some(token)) => {
                     tokio::select! {
@@ -227,14 +227,14 @@ where
                     if let Some(token) = cancel {
                         tokio::select! {
                             biased;
-                            () = tokio::time::sleep(delay) => {},
+                            () = dst::time::sleep(delay) => {},
                             () = token.cancelled() => {
                                 log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
                                 return Err(create_error("canceled".to_string()));
                             }
                         }
                     } else {
-                        tokio::time::sleep(delay).await;
+                        dst::time::sleep(delay).await;
                     }
                     attempt += 1;
                 }
@@ -287,14 +287,14 @@ where
                     if let Some(token) = cancel {
                         tokio::select! {
                             biased;
-                            () = tokio::time::sleep(delay) => {},
+                            () = dst::time::sleep(delay) => {},
                             () = token.cancelled() => {
                                 log::debug!("Operation '{operation_name}' canceled during retry delay (attempt {})", attempt + 1);
                                 return Err(create_error("canceled".to_string()));
                             }
                         }
                     } else {
-                        tokio::time::sleep(delay).await;
+                        dst::time::sleep(delay).await;
                     }
                     attempt += 1;
                 }
