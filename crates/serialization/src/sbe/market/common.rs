@@ -55,6 +55,7 @@ pub(super) struct MessageHeader {
     pub version: u16,
 }
 
+#[inline]
 pub(super) fn encode_header(
     buf: &mut Vec<u8>,
     block_length: u16,
@@ -68,6 +69,7 @@ pub(super) fn encode_header(
     buf.extend_from_slice(&version.to_le_bytes());
 }
 
+#[inline]
 pub(super) fn decode_header(cursor: &mut SbeCursor<'_>) -> Result<MessageHeader, SbeDecodeError> {
     cursor.require(HEADER_LENGTH)?;
     Ok(MessageHeader {
@@ -78,6 +80,7 @@ pub(super) fn decode_header(cursor: &mut SbeCursor<'_>) -> Result<MessageHeader,
     })
 }
 
+#[inline]
 pub(super) fn validate_header(
     header: &MessageHeader,
     expected_template_id: u16,
@@ -111,6 +114,7 @@ pub(super) fn validate_header(
     Ok(())
 }
 
+#[inline]
 pub(super) fn encode_price(buf: &mut Vec<u8>, price: &Price) {
     #[allow(clippy::useless_conversion)]
     let raw = i128::from(price.raw);
@@ -119,6 +123,7 @@ pub(super) fn encode_price(buf: &mut Vec<u8>, price: &Price) {
     buf.push(price.precision);
 }
 
+#[inline]
 pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecodeError> {
     let raw_i128 = cursor.read_i128_le()?;
     let precision = cursor.read_u8()?;
@@ -134,6 +139,7 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
     Ok(Price::from_raw(raw as PriceRaw, precision))
 }
 
+#[inline]
 pub(super) fn encode_quantity(buf: &mut Vec<u8>, quantity: &Quantity) {
     #[allow(clippy::useless_conversion)]
     let raw = u128::from(quantity.raw);
@@ -142,6 +148,7 @@ pub(super) fn encode_quantity(buf: &mut Vec<u8>, quantity: &Quantity) {
     buf.push(quantity.precision);
 }
 
+#[inline]
 pub(super) fn decode_quantity(cursor: &mut SbeCursor<'_>) -> Result<Quantity, SbeDecodeError> {
     let raw_u128 = cursor.read_u128_le()?;
     let precision = cursor.read_u8()?;
@@ -170,14 +177,17 @@ pub(super) fn decode_decimal(cursor: &mut SbeCursor<'_>) -> Result<Decimal, SbeD
     Ok(Decimal::deserialize(bytes))
 }
 
+#[inline]
 pub(super) fn encode_unix_nanos(buf: &mut Vec<u8>, value: UnixNanos) {
     buf.extend_from_slice(&(*value).to_le_bytes());
 }
 
+#[inline]
 pub(super) fn decode_unix_nanos(cursor: &mut SbeCursor<'_>) -> Result<UnixNanos, SbeDecodeError> {
     Ok(cursor.read_u64_le()?.into())
 }
 
+#[inline]
 pub(super) fn encode_instrument_id(
     buf: &mut Vec<u8>,
     instrument_id: &InstrumentId,
@@ -186,6 +196,7 @@ pub(super) fn encode_instrument_id(
     encode_var_string16(buf, "InstrumentId.venue", instrument_id.venue.as_str())
 }
 
+#[inline]
 pub(super) fn decode_instrument_id(
     cursor: &mut SbeCursor<'_>,
 ) -> Result<InstrumentId, SbeDecodeError> {
@@ -227,6 +238,7 @@ pub(super) fn decode_optional_ustr(
     Ok(Some(Ustr::from(s)))
 }
 
+#[inline]
 pub(super) fn encode_group_header_16(
     buf: &mut Vec<u8>,
     group: &'static str,
@@ -252,6 +264,7 @@ pub(super) fn encode_group_header_16(
     Ok(())
 }
 
+#[inline]
 pub(super) fn encode_var_string16(
     buf: &mut Vec<u8>,
     field: &'static str,
@@ -271,11 +284,13 @@ pub(super) fn encode_var_string16(
     Ok(())
 }
 
+#[inline]
 pub(super) fn encoded_instrument_id_size(instrument_id: &InstrumentId) -> usize {
     encoded_var_string16_size(instrument_id.symbol.as_str())
         + encoded_var_string16_size(instrument_id.venue.as_str())
 }
 
+#[inline]
 pub(super) fn encoded_optional_ustr_size(value: Option<Ustr>) -> usize {
     match value {
         None => std::mem::size_of::<u16>(),
@@ -283,6 +298,7 @@ pub(super) fn encoded_optional_ustr_size(value: Option<Ustr>) -> usize {
     }
 }
 
+#[inline]
 pub(super) fn encoded_var_string16_size(value: &str) -> usize {
     std::mem::size_of::<u16>() + value.len()
 }
@@ -318,6 +334,7 @@ pub(super) fn decode_optional_bool(
     }
 }
 
+#[inline]
 pub(super) fn decode_aggressor_side(
     cursor: &mut SbeCursor<'_>,
 ) -> Result<AggressorSide, SbeDecodeError> {
@@ -328,6 +345,7 @@ pub(super) fn decode_aggressor_side(
     })
 }
 
+#[inline]
 pub(super) fn decode_book_action(cursor: &mut SbeCursor<'_>) -> Result<BookAction, SbeDecodeError> {
     let value = cursor.read_u8()?;
     BookAction::from_u8(value).ok_or(SbeDecodeError::InvalidEnumValue {
@@ -336,6 +354,7 @@ pub(super) fn decode_book_action(cursor: &mut SbeCursor<'_>) -> Result<BookActio
     })
 }
 
+#[inline]
 pub(super) fn decode_order_side(cursor: &mut SbeCursor<'_>) -> Result<OrderSide, SbeDecodeError> {
     let value = cursor.read_u8()?;
     OrderSide::from_u8(value).ok_or(SbeDecodeError::InvalidEnumValue {

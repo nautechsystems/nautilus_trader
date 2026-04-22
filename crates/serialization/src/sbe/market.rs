@@ -128,6 +128,7 @@ impl<T> ToSbe for T
 where
     T: MarketSbeMessage,
 {
+    #[inline]
     fn to_sbe(&self) -> Result<Vec<u8>, SbeEncodeError> {
         let encoded_size = HEADER_LENGTH + self.encoded_body_size();
         let mut buf = Vec::with_capacity(encoded_size);
@@ -135,6 +136,7 @@ where
         Ok(buf)
     }
 
+    #[inline]
     fn to_sbe_into(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
         let encoded_size = HEADER_LENGTH + self.encoded_body_size();
         encode_market_message(self, buf, encoded_size)
@@ -145,6 +147,7 @@ impl<T> FromSbe for T
 where
     T: MarketSbeMessage,
 {
+    #[inline]
     fn from_sbe(bytes: &[u8]) -> Result<Self, SbeDecodeError> {
         let mut cursor = SbeCursor::new(bytes);
         let header = decode_header(&mut cursor)?;
@@ -153,6 +156,7 @@ where
     }
 }
 
+#[inline]
 fn encode_market_message<T>(
     value: &T,
     buf: &mut Vec<u8>,
