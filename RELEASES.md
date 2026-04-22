@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `Portfolio::mark_values`, `equity`, and `missing_price_instruments` queries for Rust and Python
 - Added `environment` enum config for BitMEX, Deribit, dYdX, Hyperliquid, and OKX adapters
 - Added `BybitEnvironment` to `BybitDataClientConfig` and `BybitExecClientConfig`
 - Added missing config values to `LiveExecEngineConfig` (#3841), thanks @Javdu10
@@ -28,6 +29,7 @@ Released on TBD (UTC).
 - Added Polymarket WebSocket `idle_timeout_ms` for zombie detection (#3908), thanks for reporting @camarigor
 
 ### Breaking Changes
+- Added `Option<&AccountId>` to Rust `Portfolio::unrealized_pnls`, `realized_pnls`, `total_pnls`; pass `None` to keep prior behavior
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
 - Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead
 - Removed `BlockchainDataClientConfig::new`, `BlockchainExecutionClientConfig::new`, and `DexPoolFilters::new` (Rust); use the corresponding `::builder()` instead
@@ -57,6 +59,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
 - Fixed `AccountState` to accept empty `balances` and `margins`
+- Fixed `mark_values`/`equity` keying by base currency when conversion is off; now keys by settlement currency
 - Fixed `stop_timer` in `TimeBarAggregator` (#3822), thanks @faysou
 - Fixed `RiskEngine` applying base `min_quantity`/`max_quantity` bounds to quote-denominated orders
 - Fixed backtest `OrderMatchingEngine` treating `quote_quantity=True` orders as base quantity; the quote notional is now converted to a base quantity before fill simulation (#3873), thanks for reporting @fedoraiver
@@ -200,6 +203,7 @@ Released on TBD (UTC).
 - Added ID determinism invariant to the reconciliation live and execution concept guides
 - Added Trade ID derivation sections to Polymarket, Databento, BitMEX, and Tardis integration guides
 - Added Trade ID derivation section to the backtesting concept guide
+- Added "Equity and mark-to-market" section to the portfolio concept guide
 - Refined docs to follow style guide for symbols and filler words (#3830), thanks @JKDasondee
 - Refined Interactive Brokers documentation regarding UTC timestamps (#3826), thanks @faysou
 - Refined dYdX integration guide config tables to match the Python API (`environment`, `subaccount`, `base_url_grpc`)

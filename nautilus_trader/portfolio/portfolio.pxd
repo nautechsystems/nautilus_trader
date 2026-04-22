@@ -67,6 +67,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef set[InstrumentId] _pending_calcs
     cdef dict[InstrumentId, Price] _bar_close_prices
     cdef dict[AccountId, uint64_t] _last_account_state_log_ts
+    cdef dict[Venue, set] _venues_missing_price
 
     # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -87,6 +88,8 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef void _update_account(self, AccountState event)
     cdef Account _get_account(self, Venue venue, AccountId account_id, str caller_name, str message=*)
+    cdef Venue _accumulate_mark_values(self, Venue venue, AccountId account_id, dict values, set unpriced)
+    cdef void _update_missing_price_state(self, Venue venue, set unpriced)
     cdef void _update_mark_xrate(self, Instrument instrument, double xrate, InstrumentId instrument_id)
     cdef void _update_instrument_id(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)

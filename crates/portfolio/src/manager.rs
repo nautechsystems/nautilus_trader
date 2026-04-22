@@ -22,7 +22,7 @@ use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount},
-    enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
+    enums::{AccountType, OrderSide, PriceType},
     events::{AccountState, OrderFilled},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -308,11 +308,8 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Margin(account.clone()),
-                        instrument,
-                        position.entry.as_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -400,11 +397,8 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Cash(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Cash(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -537,11 +531,8 @@ impl AccountsManager {
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_none() {
                     currency = base_currency;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Margin(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Margin(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -630,11 +621,8 @@ impl AccountsManager {
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_none() {
                     currency = base_curr;
-                    base_xrate = self.calculate_xrate_to_base(
-                        &AccountAny::Betting(account.clone()),
-                        instrument,
-                        order.order_side_specified(),
-                    );
+                    base_xrate = self
+                        .calculate_xrate_to_base(&AccountAny::Betting(account.clone()), instrument);
                 }
 
                 if let Some(xrate) = base_xrate {
@@ -971,7 +959,6 @@ impl AccountsManager {
         &self,
         account: &AccountAny,
         instrument: &InstrumentAny,
-        side: OrderSideSpecified,
     ) -> Option<f64> {
         match account.base_currency() {
             None => Some(1.0),
@@ -979,10 +966,7 @@ impl AccountsManager {
                 instrument.id().venue,
                 instrument.settlement_currency(),
                 base_curr,
-                match side {
-                    OrderSideSpecified::Sell => PriceType::Bid,
-                    OrderSideSpecified::Buy => PriceType::Ask,
-                },
+                PriceType::Mid,
             ),
         }
     }

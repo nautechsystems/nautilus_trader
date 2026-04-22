@@ -41,6 +41,9 @@ cdef class PortfolioFacade:
     cpdef dict unrealized_pnls(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
     cpdef dict total_pnls(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
     cpdef dict net_exposures(self, Venue venue=*, AccountId account_id=*, Currency target_currency=*)
+    cpdef dict mark_values(self, Venue venue=*, AccountId account_id=*)
+    cpdef dict equity(self, Venue venue=*, AccountId account_id=*)
+    cpdef list missing_price_instruments(self, Venue venue)
 
     cpdef Money realized_pnl(self, InstrumentId instrument_id, AccountId account_id=*, Currency target_currency=*)
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id, Price price=*, AccountId account_id=*, Currency target_currency=*)

@@ -60,6 +60,18 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `net_exposures` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef dict mark_values(self, Venue venue=None, AccountId account_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `mark_values` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef dict equity(self, Venue venue=None, AccountId account_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `equity` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef list missing_price_instruments(self, Venue venue):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `missing_price_instruments` must be implemented in the subclass")  # pragma: no cover
+
     cpdef Money realized_pnl(self, InstrumentId instrument_id, AccountId account_id=None, Currency target_currency=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `realized_pnl` must be implemented in the subclass")  # pragma: no cover

@@ -86,16 +86,16 @@ Covers capabilities and best practices.
 The `MessageBus` enables decoupled messaging between components, supporting point-to-point,
 publish/subscribe, and request/response patterns.
 
-## Portfolio
-
-The `Portfolio` tracks all positions across strategies and instruments, providing a unified view
-of holdings, risk exposure, and performance.
-
 ## Accounting
 
 Account types (cash, margin, betting), the `AccountBalance` and `MarginBalance`
 data model, the per-instrument vs account-wide margin scopes, the strategy query
 API, built-in margin models, and the adapter convention across live venues.
+
+## Portfolio
+
+The `Portfolio` tracks all positions across strategies and instruments, providing a unified view
+of holdings, risk exposure, and performance.
 
 ## Reports
 

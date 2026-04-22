@@ -179,12 +179,29 @@ These are system methods; adapter code calls them implicitly via
 
 ### Portfolio-level queries
 
+Margin queries:
+
 - `portfolio.margins_init(venue=..., account_id=...) -> dict[InstrumentId, Money]`
 - `portfolio.margins_maint(venue=..., account_id=...) -> dict[InstrumentId, Money]`
 
 These mirror `MarginAccount.margins_init` / `margins_maint` and return only the
 per-instrument entries. For account-wide data on cross-margin venues, query the
 account directly via `portfolio.account(venue).margin_init_for_currency(ccy)`.
+
+PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
+optional `account_id` to scope multi-account venues:
+
+- `portfolio.unrealized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.realized_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.total_pnls(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.net_exposures(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.mark_values(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.equity(venue=..., account_id=...) -> dict[Currency, Money]`
+- `portfolio.missing_price_instruments(venue) -> list[InstrumentId]`
+
+See the [Portfolio guide](portfolio.md#equity-and-mark-to-market) for the equity
+formula, price fallback chain, base-currency conversion behavior, and the
+warn-once missing-price tracker.
 
 ### Worked examples
 
