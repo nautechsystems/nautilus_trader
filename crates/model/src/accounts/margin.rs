@@ -577,10 +577,14 @@ impl Account for MarginAccount {
     }
 
     fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
+        let skip_margin_routing = event.balances.is_empty() && event.margins.is_empty();
         let (per_instrument, per_currency) = split_event_margins(&event);
         self.base_apply(event);
-        self.margins = per_instrument;
-        self.account_margins = per_currency;
+
+        if !skip_margin_routing {
+            self.margins = per_instrument;
+            self.account_margins = per_currency;
+        }
         Ok(())
     }
 
@@ -952,6 +956,39 @@ mod tests {
             margin_account.total_initial_margin(usd),
             Money::from("12500 USD")
         );
+    }
+
+    #[rstest]
+    fn test_apply_empty_event_preserves_margin_balances(
+        mut margin_account: MarginAccount,
+        margin_account_state: AccountState,
+    ) {
+        let instrument_id = margin_account_state.margins[0]
+            .instrument_id
+            .expect("stub margin balance carries a concrete instrument_id");
+        let initial_margin = margin_account.initial_margin(instrument_id);
+        let maintenance_margin = margin_account.maintenance_margin(instrument_id);
+
+        let empty_event = AccountState::new(
+            margin_account_state.account_id,
+            AccountType::Margin,
+            vec![],
+            vec![],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            margin_account_state.base_currency,
+        );
+
+        margin_account.apply(empty_event).unwrap();
+
+        assert_eq!(margin_account.initial_margin(instrument_id), initial_margin);
+        assert_eq!(
+            margin_account.maintenance_margin(instrument_id),
+            maintenance_margin
+        );
+        assert_eq!(margin_account.event_count(), 2);
     }
 
     #[rstest]

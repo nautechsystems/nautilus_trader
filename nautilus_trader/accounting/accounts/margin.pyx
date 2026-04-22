@@ -503,6 +503,9 @@ cdef class MarginAccount(Account):
 
         """
         Account.apply(self, event)
+        if len(event.balances) == 0 and len(event.margins) == 0:
+            return
+
         self._route_margins_from_event(event)
 
     cdef void _route_margins_from_event(self, AccountState event):

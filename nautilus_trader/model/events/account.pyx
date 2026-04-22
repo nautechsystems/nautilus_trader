@@ -42,7 +42,7 @@ cdef class AccountState(Event):
     reported : bool
         If the state is reported from the exchange (otherwise system calculated).
     balances : list[AccountBalance]
-        The account balances.
+        The account balances (can be empty).
     margins : list[MarginBalance]
         The margin balances (can be empty).
     info : dict [str, object]
@@ -53,11 +53,6 @@ cdef class AccountState(Event):
         UNIX timestamp (nanoseconds) when the account state event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-
-    Raises
-    ------
-    ValueError
-        If `balances` is empty.
     """
 
     def __init__(
@@ -73,8 +68,6 @@ cdef class AccountState(Event):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        Condition.not_empty(balances, "balances")
-
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency

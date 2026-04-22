@@ -84,6 +84,10 @@ def serialize(state: AccountState) -> RecordBatch:
             },
         )
 
+    # Preserve events with no balance and no margin rows so they round-trip
+    if not result:
+        result[(None, None)] = base.copy()
+
     return pa.RecordBatch.from_pylist(result.values(), schema=SCHEMA)
 
 

@@ -280,8 +280,8 @@ impl Account for CashAccount {
             }
         }
 
-        // Only clear locks for externally reported state (venue is authoritative)
-        if event.is_reported {
+        // Only clear locks when the venue reports a fresh balance snapshot
+        if event.is_reported && !event.balances.is_empty() {
             self.balances_locked.clear();
         }
 
@@ -1019,5 +1019,50 @@ mod tests {
             account.balance_total(Some(Currency::USD())),
             Some(Money::from("8000 USD"))
         );
+    }
+
+    #[rstest]
+    fn test_apply_empty_balances_preserves_per_instrument_locks() {
+        let initial_event = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("10000 USD"),
+                Money::from("0 USD"),
+                Money::from("10000 USD"),
+            )],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            Some(Currency::USD()),
+        );
+
+        let mut account = CashAccount::new(initial_event, false, false);
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        account.update_balance_locked(instrument_id, Money::from("5000 USD"));
+        assert_eq!(account.balances_locked.len(), 1);
+
+        let empty_event = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            Some(Currency::USD()),
+        );
+
+        account.apply(empty_event).unwrap();
+
+        assert_eq!(account.balances_locked.len(), 1);
+        assert_eq!(
+            account.balance_total(Some(Currency::USD())),
+            Some(Money::from("10000 USD"))
+        );
+        assert_eq!(account.event_count(), 2);
     }
 }

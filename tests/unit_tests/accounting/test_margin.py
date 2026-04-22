@@ -102,6 +102,32 @@ class TestMarginAccount:
         assert account == account
         assert account.default_leverage == Decimal(1)
 
+    def test_instantiate_multi_asset_margin_account_with_empty_balances(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        account = MarginAccount(event)
+
+        # Assert
+        assert account.base_currency is None
+        assert account.last_event == event
+        assert account.events == [event]
+        assert account.event_count == 1
+        assert account.currencies() == []
+        assert account.balances_total() == {}
+
     def test_set_default_leverage(self):
         # Arrange
         account = TestExecStubs.margin_account()
@@ -211,6 +237,63 @@ class TestMarginAccount:
         assert account.margin_maint(USDJPY_SIM.id) == Money(25_000, USD)
         assert account.margin_init(AUDUSD_SIM.id) is None
         assert account.margin_maint(AUDUSD_SIM.id) is None
+
+    def test_apply_empty_balance_update_to_multi_asset_margin_account_is_noop(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            margins=[
+                MarginBalance(
+                    Money(12_500, USD),
+                    Money(25_000, USD),
+                    USDJPY_SIM.id,
+                ),
+                MarginBalance(
+                    Money(5_000, USD),
+                    Money(10_000, USD),
+                    None,
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account = MarginAccount(event)
+        new_event = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=1,
+            ts_init=1,
+        )
+
+        # Act
+        account.apply(new_event)
+
+        # Assert
+        assert account.last_event == new_event
+        assert account.event_count == 2
+        assert account.balance_total(USD) == Money(1_000_000, USD)
+        assert account.margin_init(USDJPY_SIM.id) == Money(12_500, USD)
+        assert account.margin_maint(USDJPY_SIM.id) == Money(25_000, USD)
+        assert account.account_margins_init()[USD] == Money(5_000, USD)
+        assert account.account_margins_maint()[USD] == Money(10_000, USD)
 
     def test_apply_routes_account_wide_margin_by_currency(self):
         # Arrange

@@ -618,6 +618,8 @@ class PortfolioAnalyzer:
         daily_balances: dict[pd.Timestamp, float] = {}
 
         for state in states:
+            if len(state.balances) == 0:
+                continue
             if len(state.balances) != 1:
                 return self._empty_returns()
 
