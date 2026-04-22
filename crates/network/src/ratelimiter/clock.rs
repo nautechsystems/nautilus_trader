@@ -24,16 +24,18 @@
 //! your [`Reference`] type:
 use std::{
     fmt::Debug,
+    future::Future,
     ops::Add,
     prelude::v1::*,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use super::nanos::Nanos;
+use crate::dst::time::Instant;
 
 /// A measurement from a clock.
 pub trait Reference:
@@ -59,6 +61,13 @@ pub trait Clock: Clone {
 
     /// Returns a measurement of the clock.
     fn now(&self) -> Self::Instant;
+
+    /// Waits for `duration` on this clock's time base.
+    ///
+    /// Implementations must advance on the same clock as [`Clock::now`] so
+    /// callers using `sleep` together with `now` observe consistent time
+    /// under both real and simulated runtimes.
+    fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send + '_;
 }
 
 impl Reference for Duration {
@@ -134,6 +143,11 @@ impl Clock for FakeRelativeClock {
     fn now(&self) -> Self::Instant {
         self.now.load(Ordering::Relaxed).into()
     }
+
+    fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send + '_ {
+        self.advance(duration);
+        std::future::ready(())
+    }
 }
 
 /// The monotonic clock implemented by [`Instant`].
@@ -168,6 +182,13 @@ impl Clock for MonotonicClock {
 
     fn now(&self) -> Self::Instant {
         Instant::now()
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        tokio::time::sleep(duration).await;
+        #[cfg(all(feature = "simulation", madsim))]
+        madsim::time::sleep(duration).await;
     }
 }
 

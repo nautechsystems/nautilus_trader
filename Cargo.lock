@@ -6123,6 +6123,7 @@ dependencies = [
  "futures-util",
  "http",
  "log",
+ "madsim",
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",

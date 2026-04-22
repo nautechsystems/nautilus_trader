@@ -33,6 +33,7 @@ python = [
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
+simulation = ["dep:madsim", "nautilus-core/simulation"]
 turmoil = ["dep:turmoil"]
 
 [package.metadata.docs.rs]
@@ -68,6 +69,7 @@ url = { workspace = true }
 ustr = { workspace = true }
 webpki-roots = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

@@ -232,7 +232,7 @@ where
                     break;
                 }
                 Err(e) => {
-                    tokio::time::sleep(e.wait_time_from(self.clock.now())).await;
+                    self.clock.sleep(e.wait_time_from(self.clock.now())).await;
                 }
             }
         }
