@@ -36,14 +36,15 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    reports::{FillReport, OrderStatusReport},
-    types::{Price, Quantity},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{MarginBalance, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
+use rust_decimal::Decimal;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use url::form_urlencoded;
@@ -54,7 +55,8 @@ use crate::{
         consts::REST_API_PATH,
         credential::CoinbaseCredential,
         enums::{
-            CoinbaseEnvironment, CoinbaseOrderSide, CoinbaseProductType, CoinbaseStopDirection,
+            CoinbaseEnvironment, CoinbaseMarginType, CoinbaseOrderSide, CoinbaseProductType,
+            CoinbaseStopDirection,
         },
         parse::format_rfc3339_from_nanos,
         urls,
@@ -62,12 +64,15 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{
-            Account, AccountsResponse, CancelOrdersResponse, CreateOrderResponse,
-            EditOrderResponse, Fill, FillsResponse, Order, OrderResponse, OrdersListResponse,
-            ProductsResponse,
+            Account, AccountsResponse, CancelOrdersResponse, CfmBalanceSummary,
+            CfmBalanceSummaryResponse, CfmPositionResponse, CfmPositionsResponse,
+            CreateOrderResponse, EditOrderResponse, Fill, FillsResponse, Order, OrderResponse,
+            OrdersListResponse, ProductsResponse,
         },
         parse::{
-            parse_account_state, parse_fill_report, parse_instrument, parse_order_status_report,
+            parse_account_state, parse_cfm_account_state, parse_cfm_margin_balances,
+            parse_cfm_position_status_report, parse_fill_report, parse_instrument,
+            parse_order_status_report,
         },
         query::{
             CancelOrdersRequest, CreateOrderRequest, EditOrderRequest, FillListQuery, LimitFok,
@@ -501,6 +506,36 @@ impl CoinbaseRawHttpClient {
     /// Gets fee transaction summary.
     pub async fn get_transaction_summary(&self) -> Result<Value> {
         self.get("/transaction_summary").await
+    }
+
+    /// Gets the CFM (Coinbase Financial Markets) futures balance summary.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-balance-summary>
+    pub async fn get_cfm_balance_summary(&self) -> Result<CfmBalanceSummaryResponse> {
+        let json = self.get("/cfm/balance_summary").await?;
+        serde_json::from_value(json).map_err(Error::Serde)
+    }
+
+    /// Gets all CFM futures positions for the account.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-positions>
+    pub async fn get_cfm_positions(&self) -> Result<CfmPositionsResponse> {
+        let json = self.get("/cfm/positions").await?;
+        serde_json::from_value(json).map_err(Error::Serde)
+    }
+
+    /// Gets a single CFM futures position by product ID.
+    ///
+    /// # References
+    ///
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-position>
+    pub async fn get_cfm_position(&self, product_id: &str) -> Result<CfmPositionResponse> {
+        let json = self.get(&format!("/cfm/positions/{product_id}")).await?;
+        serde_json::from_value(json).map_err(Error::Serde)
     }
 
     /// Fetches every account, following Coinbase's cursor pagination.
@@ -1235,6 +1270,9 @@ impl CoinbaseHttpClient {
         expire_time: Option<UnixNanos>,
         post_only: bool,
         is_quote_quantity: bool,
+        leverage: Option<Decimal>,
+        margin_type: Option<CoinbaseMarginType>,
+        reduce_only: bool,
     ) -> anyhow::Result<CreateOrderResponse> {
         let coinbase_side = map_order_side(side)?;
         let order_config = build_order_configuration(
@@ -1247,6 +1285,7 @@ impl CoinbaseHttpClient {
             expire_time,
             post_only,
             is_quote_quantity,
+            reduce_only,
         )?;
 
         let request = CreateOrderRequest {
@@ -1255,9 +1294,10 @@ impl CoinbaseHttpClient {
             side: coinbase_side,
             order_configuration: order_config,
             self_trade_prevention_id: None,
-            leverage: None,
-            margin_type: None,
+            leverage: leverage.map(|d| d.normalize().to_string()),
+            margin_type,
             retail_portfolio_id: None,
+            reduce_only,
         };
 
         self.inner
@@ -1286,6 +1326,112 @@ impl CoinbaseHttpClient {
             .cancel_orders(&request)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to cancel orders: {e}"))
+    }
+
+    /// Fetches the CFM (futures) balance summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP request fails or the response cannot be
+    /// deserialized.
+    pub async fn request_cfm_balance_summary(&self) -> anyhow::Result<CfmBalanceSummary> {
+        let response = self
+            .inner
+            .get_cfm_balance_summary()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch CFM balance summary: {e}"))?;
+        Ok(response.balance_summary)
+    }
+
+    /// Fetches margin balances derived from the CFM balance summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the summary cannot be fetched or when a balance
+    /// cannot be constructed.
+    pub async fn request_cfm_margin_balances(&self) -> anyhow::Result<Vec<MarginBalance>> {
+        let summary = self.request_cfm_balance_summary().await?;
+        parse_cfm_margin_balances(&summary)
+    }
+
+    /// Fetches a margin [`AccountState`] derived from the CFM balance summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the summary cannot be fetched or when balances
+    /// cannot be constructed.
+    pub async fn request_cfm_account_state(
+        &self,
+        account_id: AccountId,
+    ) -> anyhow::Result<AccountState> {
+        let summary = self.request_cfm_balance_summary().await?;
+        let ts_event = self.ts_now();
+        parse_cfm_account_state(&summary, account_id, true, ts_event, ts_event)
+    }
+
+    /// Fetches all CFM futures positions and returns Nautilus position reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP request fails or a position cannot be
+    /// parsed.
+    pub async fn request_position_status_reports(
+        &self,
+        account_id: AccountId,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let response = self
+            .inner
+            .get_cfm_positions()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch CFM positions: {e}"))?;
+
+        let ts_init = self.ts_now();
+        let mut reports = Vec::with_capacity(response.positions.len());
+
+        for position in &response.positions {
+            let instrument = match self.get_or_fetch_instrument(position.product_id).await {
+                Ok(inst) => inst,
+                Err(e) => {
+                    log::debug!("Skipping CFM position {}: {e}", position.product_id);
+                    continue;
+                }
+            };
+
+            match parse_cfm_position_status_report(position, &instrument, account_id, ts_init) {
+                Ok(report) => reports.push(report),
+                Err(e) => log::warn!("Failed to parse CFM position {}: {e}", position.product_id),
+            }
+        }
+
+        Ok(reports)
+    }
+
+    /// Fetches a single CFM futures position and returns a position status
+    /// report when the venue reports a non-flat position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP request fails or the position cannot be
+    /// parsed.
+    pub async fn request_position_status_report(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<PositionStatusReport>> {
+        let product_id = instrument_id.symbol.as_str();
+        let response = self
+            .inner
+            .get_cfm_position(product_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch CFM position '{product_id}': {e}"))?;
+
+        let instrument = self
+            .get_or_fetch_instrument(response.position.product_id)
+            .await?;
+        let ts_init = self.ts_now();
+        let report =
+            parse_cfm_position_status_report(&response.position, &instrument, account_id, ts_init)?;
+        Ok(Some(report))
     }
 
     /// Modifies an existing GTC order's price, size, or stop price.
@@ -1355,10 +1501,15 @@ pub fn build_order_configuration(
     expire_time: Option<UnixNanos>,
     post_only: bool,
     is_quote_quantity: bool,
+    reduce_only: bool,
 ) -> anyhow::Result<OrderConfiguration> {
     let qty = quantity.as_decimal();
     let price = price.map(|p| p.as_decimal());
     let trigger = trigger_price.map(|p| p.as_decimal());
+
+    if reduce_only && matches!(order_type, OrderType::Market) {
+        log::debug!("Coinbase MARKET orders do not accept reduce_only; ignoring flag");
+    }
 
     match order_type {
         OrderType::Market => {
@@ -1603,6 +1754,7 @@ mod tests {
             None,
             false,
             false,
+            false,
         )
         .unwrap();
 
@@ -1627,6 +1779,7 @@ mod tests {
             None,
             false,
             true, // is_quote_quantity
+            false,
         )
         .unwrap();
 
@@ -1651,6 +1804,7 @@ mod tests {
             None,
             true,
             false,
+            false,
         )
         .unwrap();
 
@@ -1672,6 +1826,7 @@ mod tests {
             None,
             false,
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -1686,6 +1841,7 @@ mod tests {
             Some(Price::from("99.00")),
             TimeInForce::Gtc,
             None,
+            false,
             false,
             false,
         )
@@ -1707,6 +1863,7 @@ mod tests {
             Some(Price::from("99.00")),
             TimeInForce::Gtc,
             None,
+            false,
             false,
             false,
         )
@@ -1733,6 +1890,7 @@ mod tests {
             None,
             false,
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -1751,6 +1909,7 @@ mod tests {
             None,
             false,
             false,
+            false,
         )
         .unwrap();
         assert!(matches!(cfg, OrderConfiguration::MarketIoc(_)));
@@ -1766,6 +1925,7 @@ mod tests {
             Some(Price::from("100.00")),
             TimeInForce::Gtc,
             None,
+            false,
             false,
             false,
         );

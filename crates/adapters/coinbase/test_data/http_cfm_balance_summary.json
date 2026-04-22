@@ -1,0 +1,34 @@
+{
+  "balance_summary": {
+    "futures_buying_power": {"value": "5000.00", "currency": "USD"},
+    "total_usd_balance": {"value": "10000.00", "currency": "USD"},
+    "cbi_usd_balance": {"value": "2000.00", "currency": "USD"},
+    "cfm_usd_balance": {"value": "8000.00", "currency": "USD"},
+    "total_open_orders_hold_amount": {"value": "500.00", "currency": "USD"},
+    "unrealized_pnl": {"value": "150.00", "currency": "USD"},
+    "daily_realized_pnl": {"value": "25.00", "currency": "USD"},
+    "initial_margin": {"value": "1000.00", "currency": "USD"},
+    "available_margin": {"value": "7500.00", "currency": "USD"},
+    "liquidation_threshold": {"value": "300.00", "currency": "USD"},
+    "liquidation_buffer_amount": {"value": "7200.00", "currency": "USD"},
+    "liquidation_buffer_percentage": "2400",
+    "intraday_margin_window_measure": {
+      "margin_window_type": "FCM_MARGIN_WINDOW_TYPE_INTRADAY",
+      "margin_level": "MARGIN_LEVEL_TYPE_BASE",
+      "initial_margin": {"value": "500.00", "currency": "USD"},
+      "maintenance_margin": {"value": "250.00", "currency": "USD"},
+      "liquidation_buffer_percentage": "1000",
+      "total_hold": {"value": "100.00", "currency": "USD"},
+      "futures_buying_power": {"value": "5000.00", "currency": "USD"}
+    },
+    "overnight_margin_window_measure": {
+      "margin_window_type": "FCM_MARGIN_WINDOW_TYPE_OVERNIGHT",
+      "margin_level": "MARGIN_LEVEL_TYPE_BASE",
+      "initial_margin": {"value": "1000.00", "currency": "USD"},
+      "maintenance_margin": {"value": "500.00", "currency": "USD"},
+      "liquidation_buffer_percentage": "500",
+      "total_hold": {"value": "100.00", "currency": "USD"},
+      "futures_buying_power": {"value": "4000.00", "currency": "USD"}
+    }
+  }
+}

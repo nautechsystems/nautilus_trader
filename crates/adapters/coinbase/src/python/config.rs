@@ -15,10 +15,12 @@
 
 //! Python bindings for Coinbase configuration.
 
+use nautilus_model::enums::AccountType;
 use pyo3::pymethods;
+use rust_decimal::Decimal;
 
 use crate::{
-    common::enums::CoinbaseEnvironment,
+    common::enums::{CoinbaseEnvironment, CoinbaseMarginType},
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
 };
 
@@ -90,6 +92,9 @@ impl CoinbaseExecClientConfig {
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
+        account_type = None,
+        default_margin_type = None,
+        default_leverage = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -104,6 +109,9 @@ impl CoinbaseExecClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        account_type: Option<AccountType>,
+        default_margin_type: Option<CoinbaseMarginType>,
+        default_leverage: Option<Decimal>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -119,6 +127,9 @@ impl CoinbaseExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            account_type: account_type.unwrap_or(defaults.account_type),
+            default_margin_type,
+            default_leverage,
         }
     }
 

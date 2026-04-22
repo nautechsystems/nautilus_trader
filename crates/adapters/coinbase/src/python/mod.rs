@@ -34,6 +34,7 @@ use crate::{
 pub fn coinbase(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(COINBASE), COINBASE)?;
     m.add_class::<crate::common::enums::CoinbaseEnvironment>()?;
+    m.add_class::<crate::common::enums::CoinbaseMarginType>()?;
     m.add_class::<CoinbaseDataClientConfig>()?;
     m.add_class::<CoinbaseExecClientConfig>()?;
 

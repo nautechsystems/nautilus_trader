@@ -3,9 +3,9 @@
 Founded in 2012, Coinbase is one of the largest US-regulated cryptocurrency
 exchanges, offering trading across spot, perpetual swaps, and dated futures via
 the Advanced Trade API. This adapter supports live market data ingest and
-**spot** order execution; perpetual and dated futures execution is deferred
-to a future derivatives-specific exec client (see the
-[Spot-only execution scope](#spot-only-execution-scope) note).
+order execution on both spot (Cash) and CFM derivatives (Margin) accounts
+through a shared execution client, with the account type selected by the
+factory (see [Execution scope](#execution-scope)).
 
 ## Overview
 
@@ -16,15 +16,16 @@ construct them from Python.
 
 Current components:
 
-| Component                          | Status | Notes                                                          |
-|------------------------------------|--------|----------------------------------------------------------------|
-| `CoinbaseHttpClient`               | Built  | Two‑layer REST client: raw endpoint methods + domain wrapper.  |
-| `CoinbaseWebSocketClient`          | Built  | Low‑level WebSocket connectivity with JWT subscribe auth.      |
-| `CoinbaseInstrumentProvider`       | Built  | Instrument parsing and loading.                                |
-| `CoinbaseDataClient`               | Built  | Rust market data feed manager.                                 |
-| `CoinbaseDataClientFactory`        | Built  | Rust data client factory.                                      |
-| `CoinbaseExecutionClient`          | Built  | Spot‑only Rust execution client (REST orders + WS user feed).  |
-| `CoinbaseExecutionClientFactory`   | Built  | Rust execution client factory.                                 |
+| Component                                    | Status | Notes                                                                      |
+|----------------------------------------------|--------|----------------------------------------------------------------------------|
+| `CoinbaseHttpClient`                         | Built  | Two‑layer REST client: raw endpoint methods + domain wrapper.              |
+| `CoinbaseWebSocketClient`                    | Built  | Low‑level WebSocket connectivity with JWT subscribe auth.                  |
+| `CoinbaseInstrumentProvider`                 | Built  | Instrument parsing and loading.                                            |
+| `CoinbaseDataClient`                         | Built  | Rust market data feed manager.                                             |
+| `CoinbaseDataClientFactory`                  | Built  | Rust data client factory.                                                  |
+| `CoinbaseExecutionClient`                    | Built  | Rust execution client (spot or CFM derivatives; REST orders + WS streams). |
+| `CoinbaseExecutionClientFactory`             | Built  | Cash execution client factory (spot).                                      |
+| `CoinbaseDerivativesExecutionClientFactory`  | Built  | Margin execution client factory (CFM perpetuals and futures).              |
 
 PyO3 surface available from `nautilus_trader.core.nautilus_pyo3.coinbase`:
 
@@ -222,29 +223,38 @@ manual rotation is required.
 ## Orders capability
 
 The tables below describe the Coinbase **venue** order surface. The shipped
-[`CoinbaseExecutionClient`](#spot-only-execution-scope) routes spot orders;
-perpetual and dated futures rows describe what the venue supports, not what
-this client currently submits. Coinbase order capabilities differ between
-Spot and Derivatives (perpetuals and dated futures share the same FCM order
-surface).
+[`CoinbaseExecutionClient`](#execution-scope) routes spot orders through the
+Cash factory and CFM derivatives through the Derivatives factory. Coinbase
+order capabilities differ between Spot and Derivatives (perpetuals and dated
+futures share the same FCM order surface).
 
-### Spot-only execution scope
+### Execution scope
 
-The `CoinbaseExecutionClient` factory hardcodes `AccountType::Cash` and
-`OmsType::Netting`, and `generate_position_status_reports` returns empty.
-Margin / position bookkeeping for derivatives is therefore not represented.
-To prevent silent inconsistencies, three guards are in place:
+`CoinbaseExecutionClient` is a single client type. The account type and
+product family are selected by the factory:
 
-1. The connect-time instrument bootstrap loads only `CoinbaseProductType::Spot`
-   products.
-2. `submit_order` denies any order whose instrument is not present in the
-   spot-only cache.
+| Factory                                       | Account type            | Bootstrap instruments                          |
+|-----------------------------------------------|-------------------------|------------------------------------------------|
+| `CoinbaseExecutionClientFactory`              | `AccountType::Cash`     | `CoinbaseProductType::Spot` only.              |
+| `CoinbaseDerivativesExecutionClientFactory`   | `AccountType::Margin`   | `CoinbaseProductType::Future` (perp + dated).  |
+
+Both factories use `OmsType::Netting` because the venue does not expose
+hedge mode. To prevent cross-account bleed-through:
+
+1. Connect-time instrument bootstrap is limited to the factory's product
+   family; the other family's products never enter the in-process cache.
+2. `submit_order` denies any order whose instrument is outside that cache.
 3. `generate_order_status_report(s)` and `generate_fill_reports` post-filter
-   their output through the same spot cache, so a Coinbase account that holds
-   both spot and derivative activity will not surface derivative reports
-   through this client.
+   their output through the same cache, so a Coinbase account that holds
+   both spot and derivative activity will not surface the other scope's
+   reports through a single client.
+4. For the Margin factory, account state is refreshed via the CFM
+   `balance_summary` endpoint, the authenticated
+   `futures_balance_summary` WebSocket channel, and position reports are
+   produced from the CFM `positions` endpoint.
 
-A separate derivatives execution client variant is planned.
+Run one factory per Nautilus execution client instance; running both
+factories against the same trader subscribes the engine to both scopes.
 
 ### Order types
 
@@ -316,7 +326,8 @@ for the underlying venue specification.
 
 ### Spot trading limitations
 
-- `reduce_only` is not supported (the instruction applies to derivatives).
+- `reduce_only` is not supported on spot orders (the instruction applies to
+  derivatives).
 - Trailing stop orders are not supported.
 - Native stop‑limit and bracket orders are not available on Spot.
 - Quote‑denominated MARKET orders are supported; LIMIT orders are sized in
@@ -325,13 +336,22 @@ for the underlying venue specification.
 ### Derivatives trading
 
 Coinbase derivatives trade through the FCM (Futures Commission Merchant)
-venue. The adapter receives funding rates and mark prices through the public
-WebSocket `ticker` channel today. **Order routing for derivatives is not
-supported by the current `CoinbaseExecutionClient`** (see
-[Spot-only execution scope](#spot-only-execution-scope)). Futures balance
-updates through the authenticated `futures_balance_summary` channel and
-margin/position reconciliation are deferred to a future derivatives-specific
-exec client.
+venue. The Derivatives factory's exec client submits orders through the
+same `POST /orders` endpoint used for spot; per-order `leverage` and
+`margin_type` (`CROSS` or `ISOLATED`) defaults come from
+`CoinbaseExecClientConfig.default_leverage` /
+`default_margin_type`. Margin balances update from both the REST
+`cfm/balance_summary` endpoint (connect-time snapshot, `query_account`,
+and on WebSocket reconnect) and the authenticated
+`futures_balance_summary` WebSocket channel. Position reports come from
+the REST `cfm/positions` endpoints.
+
+Coinbase's Advanced Trade API does not document a `reduce_only` field on
+the create-order schema, even though the venue's failure-reason enum
+acknowledges the concept. The client threads `reduce_only` through its
+`submit_order` signature for API parity and includes the flag on the wire
+only when set to `true`; if the venue later accepts it, no client changes
+are required.
 
 #### Funding rates
 
@@ -485,12 +505,12 @@ in the order they were created. Coinbase requires a subscribe message within
 5 seconds of connection or the server disconnects; the adapter sends queued
 subscriptions immediately after the WebSocket handshake completes.
 
-For authenticated channels (`user` today, `futures_balance_summary` deferred
-with the derivatives exec client), the adapter generates a fresh JWT for
-every subscribe message; per the Coinbase docs, "you must generate a
-different JWT for each websocket message sent, since the JWTs will expire
-after 120 seconds." Once a subscription is accepted the data flow continues
-for the lifetime of the WebSocket connection without further authentication.
+For authenticated channels (`user`, and `futures_balance_summary` on the
+Derivatives factory), the adapter generates a fresh JWT for every
+subscribe message; per the Coinbase docs, "you must generate a different
+JWT for each websocket message sent, since the JWTs will expire after 120
+seconds." Once a subscription is accepted the data flow continues for
+the lifetime of the WebSocket connection without further authentication.
 
 When the exec client's WebSocket reconnects, the inner client is rebuilt
 from scratch (rather than relying on the existing connection's state
@@ -574,12 +594,14 @@ no Python factory wiring is required.
 
 ### Adapter-side
 
-- **Spot only.** Submission, modification, cancellation, and report
-  generation are filtered to spot products. Derivatives orders submitted
-  through this client are denied. See
-  [Spot-only execution scope](#spot-only-execution-scope).
-- **Position reports return empty.** Coinbase spot has no positions; futures
-  position reporting awaits the derivatives exec client variant.
+- **One product family per client.** Submission, modification, cancellation,
+  and report generation are filtered to the factory's product family (spot
+  under the Cash factory; perp + dated futures under the Derivatives
+  factory). Orders whose instrument falls outside the bootstrapped cache
+  are denied. See [Execution scope](#execution-scope).
+- **Position reports are always empty for Cash.** Coinbase spot has no
+  positions. Derivatives (CFM) position reports come from
+  `cfm/positions` and appear only on Margin-flavored clients.
 - **External-order reconciliation from the WS user channel is unsafe for
   LIMIT and STOP_LIMIT.** The Coinbase user channel does not include
   `price`, `stop_price`, or `trigger_type` on order updates. If the engine's
@@ -594,8 +616,8 @@ no Python factory wiring is required.
   list-open-orders REST call fails, no per-order `OrderCancelRejected` is
   emitted; orders remain in `PendingCancel` until the next reconciliation
   recovers them. Mirrors the Bybit adapter pattern.
-- **Newly listed spot products require a reconnect to be tradeable.** The
-  spot instrument cache is populated on connect; products listed after that
+- **Newly listed products require a reconnect to be tradeable.** The
+  instrument cache is populated on connect; products listed after that
   are not in the cache and `submit_order` will deny them.
 - **MARKET orders execute as IOC even when constructed with the Nautilus
   default `TimeInForce::Gtc`.** Coinbase's only MARKET wrapper is

@@ -119,6 +119,9 @@ pub enum NautilusWsMessage {
     Bar(Bar),
     /// Order status update from the user channel.
     UserOrder(Box<UserOrderUpdate>),
+    /// Futures balance summary snapshot from the
+    /// `futures_balance_summary` channel.
+    FuturesBalanceSummary(Box<crate::websocket::messages::WsFcmBalanceSummary>),
     /// The connection was re-established after a drop.
     Reconnected,
     /// An error occurred during message processing.
@@ -303,11 +306,7 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_user_events(&events, &timestamp, ts_init),
             CoinbaseWsMessage::FuturesBalanceSummary { events, .. } => {
-                log::debug!(
-                    "Ignoring {} futures balance summary events until account-state handling lands",
-                    events.len()
-                );
-                None
+                self.handle_futures_balance_summary(events)
             }
             CoinbaseWsMessage::Status { events, .. } => {
                 log::debug!(
@@ -567,6 +566,28 @@ impl FeedHandler {
         }
     }
 
+    fn handle_futures_balance_summary(
+        &mut self,
+        events: Vec<crate::websocket::messages::WsFuturesBalanceSummaryEvent>,
+    ) -> Option<NautilusWsMessage> {
+        let mut first: Option<NautilusWsMessage> = None;
+
+        for event in events {
+            let msg = NautilusWsMessage::FuturesBalanceSummary(Box::new(event.fcm_balance_summary));
+
+            if first.is_none() {
+                first = Some(msg);
+            } else {
+                self.buffer.push(msg);
+            }
+        }
+
+        if first.is_some() {
+            self.buffer.reverse();
+        }
+        first
+    }
+
     fn handle_candles(
         &mut self,
         events: &[crate::websocket::messages::WsCandlesEvent],
@@ -820,7 +841,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_text_ignores_futures_balance_summary_channel() {
+    fn test_handle_text_emits_futures_balance_summary_snapshot() {
+        use rust_decimal::Decimal;
+
         let json = r#"{
           "channel": "futures_balance_summary",
           "client_id": "",
@@ -866,8 +889,27 @@ mod tests {
         }"#;
         let mut handler = test_handler();
 
-        assert!(handler.handle_text(json).is_none());
-        assert!(handler.buffer.is_empty());
+        let msg = handler
+            .handle_text(json)
+            .expect("handler should emit a futures balance summary");
+        match msg {
+            NautilusWsMessage::FuturesBalanceSummary(summary) => {
+                assert_eq!(summary.futures_buying_power, Decimal::from(100));
+                assert_eq!(summary.total_usd_balance, Decimal::from(200));
+                assert_eq!(summary.total_open_orders_hold_amount, Decimal::from(500));
+                assert_eq!(summary.available_margin, Decimal::from(800));
+                let intraday = &summary.intraday_margin_window_measure;
+                assert_eq!(intraday.initial_margin, Decimal::from(100));
+                assert_eq!(intraday.maintenance_margin, Decimal::from(200));
+                let overnight = &summary.overnight_margin_window_measure;
+                assert_eq!(overnight.initial_margin, Decimal::from(300));
+                assert_eq!(overnight.maintenance_margin, Decimal::from(200));
+                // `total_hold` carries negative values on the wire; ensure
+                // the signed decimal survives the round trip.
+                assert_eq!(overnight.total_hold, "-30".parse::<Decimal>().unwrap());
+            }
+            other => panic!("expected FuturesBalanceSummary, was {other:?}"),
+        }
     }
 
     #[rstest]

@@ -139,7 +139,7 @@ impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        let coinbase_config = config
+        let mut coinbase_config = config
             .as_any()
             .downcast_ref::<CoinbaseExecClientConfig>()
             .ok_or_else(|| {
@@ -149,12 +149,95 @@ impl ExecutionClientFactory for CoinbaseExecutionClientFactory {
             })?
             .clone();
 
-        // Coinbase spot accounts are cash; derivatives (perpetuals, futures)
-        // settle on a margin account. Without explicit product-type config
-        // on the exec client, default to Cash + Netting and let the engine
-        // handle margin reconciliation when derivatives trades arrive.
+        // The Cash flavor always uses a Cash account with Netting OMS and a
+        // single spot instrument cache. Callers that want derivatives must
+        // use `CoinbaseDerivativesExecutionClientFactory`; the Cash factory
+        // ignores any override the user set on `config.account_type`.
         let account_type = AccountType::Cash;
         let oms_type = OmsType::Netting;
+        coinbase_config.account_type = account_type;
+
+        let core = ExecutionClientCore::new(
+            self.trader_id,
+            ClientId::from(name),
+            *COINBASE_VENUE,
+            oms_type,
+            self.account_id,
+            account_type,
+            None,
+            cache,
+        );
+
+        let client = CoinbaseExecutionClient::new(core, coinbase_config)?;
+
+        Ok(Box::new(client))
+    }
+
+    fn name(&self) -> &'static str {
+        "COINBASE"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "CoinbaseExecClientConfig"
+    }
+}
+
+/// Factory for creating Coinbase derivatives (CFM) execution clients.
+///
+/// Produces the same [`CoinbaseExecutionClient`] type as
+/// [`CoinbaseExecutionClientFactory`] but pins the account type to
+/// [`AccountType::Margin`]. The client's bootstrap loads perpetual and
+/// dated futures instruments, the `futures_balance_summary` WebSocket
+/// channel is subscribed for live balance updates, and position reports
+/// come from the CFM endpoints.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.coinbase")
+)]
+pub struct CoinbaseDerivativesExecutionClientFactory {
+    trader_id: TraderId,
+    account_id: AccountId,
+}
+
+impl CoinbaseDerivativesExecutionClientFactory {
+    /// Creates a new [`CoinbaseDerivativesExecutionClientFactory`] instance.
+    #[must_use]
+    pub const fn new(trader_id: TraderId, account_id: AccountId) -> Self {
+        Self {
+            trader_id,
+            account_id,
+        }
+    }
+}
+
+impl ExecutionClientFactory for CoinbaseDerivativesExecutionClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        let mut coinbase_config = config
+            .as_any()
+            .downcast_ref::<CoinbaseExecClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for CoinbaseDerivativesExecutionClientFactory. Expected CoinbaseExecClientConfig, was {config:?}",
+                )
+            })?
+            .clone();
+
+        // Derivatives (CFM) positions and balances require a Margin account.
+        // Hedge mode is not exposed by the venue; Netting matches the
+        // one-way-per-product scope.
+        let account_type = AccountType::Margin;
+        let oms_type = OmsType::Netting;
+        coinbase_config.account_type = account_type;
 
         let core = ExecutionClientCore::new(
             self.trader_id,
@@ -315,6 +398,27 @@ mod tests {
         assert_eq!(client.account_id(), AccountId::from("COINBASE-001"));
         assert_eq!(client.venue(), *COINBASE_VENUE);
         // Spot / Cash account, Netting OMS per the factory's hardcoded contract.
+        assert_eq!(client.oms_type(), OmsType::Netting);
+    }
+
+    #[rstest]
+    fn test_coinbase_derivatives_factory_creates_margin_client() {
+        setup_exec_test_env();
+
+        let factory = CoinbaseDerivativesExecutionClientFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+        );
+        let config = make_test_exec_config();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create("COINBASE-DERIV", &config, cache)
+            .expect("derivatives factory should create exec client");
+
+        assert_eq!(client.client_id(), ClientId::from("COINBASE-DERIV"));
+        assert_eq!(client.account_id(), AccountId::from("COINBASE-001"));
+        assert_eq!(client.venue(), *COINBASE_VENUE);
         assert_eq!(client.oms_type(), OmsType::Netting);
     }
 

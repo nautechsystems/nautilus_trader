@@ -32,8 +32,8 @@ use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
     },
 };
 use nautilus_core::{
@@ -43,7 +43,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderSide, OrderStatus},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -244,9 +244,16 @@ impl CoinbaseExecutionClient {
         }
     }
 
-    // Returns true when the instrument resides in the spot-only bootstrap
-    // cache populated at connect time.
-    fn is_spot_instrument(&self, instrument_id: &InstrumentId) -> bool {
+    // Returns true when the exec client was created with a Margin account,
+    // indicating it should handle CFM-backed derivatives traffic.
+    fn is_margin(&self) -> bool {
+        self.core.account_type == AccountType::Margin
+    }
+
+    // Returns true when the instrument resides in the connect-time bootstrap
+    // cache. For the Cash (spot) factory this gates spot-only traffic; for the
+    // Margin factory the cache contains CFM perp + future products.
+    fn is_instrument_cached(&self, instrument_id: &InstrumentId) -> bool {
         self.instruments_cache
             .contains_key(instrument_id.symbol.as_str())
     }
@@ -347,24 +354,30 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 self.ws_user.initialize_instruments(cached).await;
             }
         } else {
-            // Restrict the bootstrap to spot products: the factory currently
-            // creates a Cash account and `generate_position_status_reports`
-            // returns empty, so derivatives orders cannot be reconciled
-            // correctly through this client. Loading derivatives here would
-            // give callers a false impression that perpetual / dated futures
-            // are tradeable. Derivatives support requires a separate exec
-            // client variant with margin account handling.
-            let instruments = self
-                .http_client
-                .request_instruments(Some(CoinbaseProductType::Spot))
-                .await
-                .context("failed to load Coinbase instruments")?;
+            // The Cash (spot) factory loads only spot products; the Margin
+            // (derivatives) factory loads the futures universe so CFM perps
+            // and dated futures can be reconciled. Mixing the two through a
+            // single client is intentionally unsupported, so each factory
+            // picks one branch.
+            let instruments = if self.is_margin() {
+                self.http_client
+                    .request_instruments(Some(CoinbaseProductType::Future))
+                    .await
+                    .context("failed to load Coinbase futures instruments")?
+            } else {
+                self.http_client
+                    .request_instruments(Some(CoinbaseProductType::Spot))
+                    .await
+                    .context("failed to load Coinbase instruments")?
+            };
+
+            let product_kind = if self.is_margin() { "futures" } else { "spot" };
 
             if instruments.is_empty() {
-                log::warn!("Coinbase instrument bootstrap returned no instruments");
+                log::warn!("Coinbase instrument bootstrap returned no {product_kind} instruments");
             } else {
                 log::info!(
-                    "Coinbase exec client loaded {} spot instruments",
+                    "Coinbase exec client loaded {} {product_kind} instruments",
                     instruments.len()
                 );
             }
@@ -393,12 +406,21 @@ impl ExecutionClient for CoinbaseExecutionClient {
             .await
             .context("failed to subscribe to Coinbase user channel")?;
 
+        if self.is_margin() {
+            self.ws_user
+                .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                .await
+                .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
+        }
+
         if let Some(mut rx) = self.ws_user.take_out_rx() {
             let fill_dedup = Arc::clone(&self.fill_dedup);
             let cumulative_state = Arc::clone(&self.cumulative_state);
             let emitter = self.emitter.clone();
             let http_client = self.http_client.clone();
             let account_id = self.core.account_id;
+            let clock = self.clock;
+            let is_margin = self.is_margin();
 
             let handle = get_runtime().spawn(async move {
                 while let Some(message) = rx.recv().await {
@@ -411,11 +433,31 @@ impl ExecutionClient for CoinbaseExecutionClient {
                                 &cumulative_state,
                             );
                         }
+                        NautilusWsMessage::FuturesBalanceSummary(summary) => {
+                            let ts = clock.get_time_ns();
+                            match crate::http::parse::parse_ws_cfm_account_state(
+                                &summary, account_id, ts, ts,
+                            ) {
+                                Ok(state) => emitter.send_account_state(state),
+                                Err(e) => log::warn!(
+                                    "Failed to parse futures_balance_summary into AccountState: {e}"
+                                ),
+                            }
+                        }
                         NautilusWsMessage::Reconnected => {
                             log::info!("Coinbase user WebSocket reconnected");
                             // Re-fetch account state so any balance change
-                            // during the disconnect window is picked up.
-                            match http_client.request_account_state(account_id).await {
+                            // during the disconnect window is picked up. The
+                            // margin flavor targets the CFM summary so the
+                            // account type matches the registered Margin
+                            // account.
+                            let refresh = if is_margin {
+                                http_client.request_cfm_account_state(account_id).await
+                            } else {
+                                http_client.request_account_state(account_id).await
+                            };
+
+                            match refresh {
                                 Ok(state) => emitter.send_account_state(state),
                                 Err(e) => {
                                     log::warn!("Failed to refresh account state on reconnect: {e}");
@@ -432,11 +474,17 @@ impl ExecutionClient for CoinbaseExecutionClient {
             self.ws_stream_handle = Some(handle);
         }
 
-        let account_state = self
-            .http_client
-            .request_account_state(self.core.account_id)
-            .await
-            .context("failed to request Coinbase account state")?;
+        let account_state = if self.is_margin() {
+            self.http_client
+                .request_cfm_account_state(self.core.account_id)
+                .await
+                .context("failed to request Coinbase CFM account state")?
+        } else {
+            self.http_client
+                .request_account_state(self.core.account_id)
+                .await
+                .context("failed to request Coinbase account state")?
+        };
 
         if !account_state.balances.is_empty() {
             log::info!(
@@ -510,12 +558,20 @@ impl ExecutionClient for CoinbaseExecutionClient {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
         let emitter = self.emitter.clone();
+        let is_margin = self.is_margin();
 
         self.spawn_task("query_account", async move {
-            let account_state = http_client
-                .request_account_state(account_id)
-                .await
-                .context("failed to request Coinbase account state")?;
+            let account_state = if is_margin {
+                http_client
+                    .request_cfm_account_state(account_id)
+                    .await
+                    .context("failed to request Coinbase CFM account state")?
+            } else {
+                http_client
+                    .request_account_state(account_id)
+                    .await
+                    .context("failed to request Coinbase account state")?
+            };
             emitter.send_account_state(account_state);
             Ok(())
         });
@@ -569,11 +625,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
             .await
             .ok();
 
-        // Spot-only: drop reports for derivatives instruments. The exec
-        // client cannot reconcile margin/positions for them, so they would
-        // poison engine state. Derivatives accounts must use a separate
-        // (future) exec client variant.
-        Ok(report.filter(|r| self.is_spot_instrument(&r.instrument_id)))
+        // Filter reports to instruments this client bootstrapped. A Cash
+        // client drops derivatives reports (and vice-versa) so mixed activity
+        // on the same venue account does not poison the engine state
+        // associated with either exec client.
+        Ok(report.filter(|r| self.is_instrument_cached(&r.instrument_id)))
     }
 
     async fn generate_order_status_reports(
@@ -596,12 +652,14 @@ impl ExecutionClient for CoinbaseExecutionClient {
             .await?;
 
         let before = reports.len();
-        reports.retain(|r| self.is_spot_instrument(&r.instrument_id));
+        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
         if reports.len() != before {
-            log::debug!(
-                "Filtered {} non-spot order reports (spot-only client)",
-                before - reports.len()
-            );
+            let scope = if self.is_margin() {
+                "non-futures"
+            } else {
+                "non-spot"
+            };
+            log::debug!("Filtered {} {scope} order reports", before - reports.len());
         }
         Ok(reports)
     }
@@ -626,24 +684,44 @@ impl ExecutionClient for CoinbaseExecutionClient {
             .await?;
 
         let before = reports.len();
-        reports.retain(|r| self.is_spot_instrument(&r.instrument_id));
+        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
         if reports.len() != before {
-            log::debug!(
-                "Filtered {} non-spot fill reports (spot-only client)",
-                before - reports.len()
-            );
+            let scope = if self.is_margin() {
+                "non-futures"
+            } else {
+                "non-spot"
+            };
+            log::debug!("Filtered {} {scope} fill reports", before - reports.len());
         }
         Ok(reports)
     }
 
     async fn generate_position_status_reports(
         &self,
-        _cmd: &GeneratePositionStatusReports,
+        cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        // Coinbase spot has no positions; derivatives position reporting is
-        // not yet implemented in the HTTP client. Return empty so the engine's
-        // reconciliation can proceed.
-        Ok(Vec::new())
+        // Coinbase spot has no positions.
+        if !self.is_margin() {
+            return Ok(Vec::new());
+        }
+
+        // Errors propagate (matching `generate_order_status_reports` /
+        // `generate_fill_reports`) so `generate_mass_status` and the live
+        // manager's reconciliation path see venue failures rather than
+        // receive a silently-empty report set.
+        if let Some(instrument_id) = cmd.instrument_id {
+            let report = self
+                .http_client
+                .request_position_status_report(self.core.account_id, instrument_id)
+                .await
+                .with_context(|| format!("failed to request CFM position for {instrument_id}"))?;
+            Ok(report.map(|r| vec![r]).unwrap_or_default())
+        } else {
+            self.http_client
+                .request_position_status_reports(self.core.account_id)
+                .await
+                .context("failed to request CFM positions")
+        }
     }
 
     async fn generate_mass_status(
@@ -669,14 +747,20 @@ impl ExecutionClient for CoinbaseExecutionClient {
             .start(start)
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (order_reports, fill_reports) = tokio::try_join!(
+        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
             self.generate_fill_reports(fill_cmd),
+            self.generate_position_status_reports(&position_cmd),
         )?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
+        log::info!("Received {} PositionReports", position_reports.len());
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -688,6 +772,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
 
         Ok(Some(mass_status))
     }
@@ -707,18 +792,23 @@ impl ExecutionClient for CoinbaseExecutionClient {
             order.clone()
         };
 
-        // Spot-only guard: bootstrap loads only spot products, so any
-        // instrument that is not in the cache is either not loaded or is a
-        // perp/future. Deny instead of forwarding to the venue with a Cash
-        // account that cannot reconcile derivatives state.
+        // The connect-time bootstrap caches only the product family this
+        // client was configured for (Cash -> spot, Margin -> futures). An
+        // instrument outside that family is either not loaded yet or lives on
+        // the other venue scope, so deny instead of forwarding to the venue
+        // where the account type cannot reconcile the order's state.
         let instrument_id = order.instrument_id();
         let symbol_key = instrument_id.symbol.as_str();
         if !self.instruments_cache.contains_key(symbol_key) {
+            let scope = if self.is_margin() {
+                "a Coinbase futures / perpetual product"
+            } else {
+                "a Coinbase spot product"
+            };
             self.emitter.emit_order_denied(
                 &order,
                 &format!(
-                    "Instrument {} is not a Coinbase spot product; \
-                    derivatives execution is not yet supported",
+                    "Instrument {} is not {scope} in this client's bootstrap cache",
                     order.instrument_id()
                 ),
             );
@@ -742,6 +832,15 @@ impl ExecutionClient for CoinbaseExecutionClient {
         let expire_time = order.expire_time();
         let post_only = order.is_post_only();
         let is_quote_quantity = order.is_quote_quantity();
+        let reduce_only = order.is_reduce_only();
+        let (leverage, margin_type) = if self.core.account_type == AccountType::Margin {
+            (
+                self.config.default_leverage,
+                self.config.default_margin_type,
+            )
+        } else {
+            (None, None)
+        };
 
         self.spawn_task("submit_order", async move {
             let result = http_client
@@ -757,6 +856,9 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     expire_time,
                     post_only,
                     is_quote_quantity,
+                    leverage,
+                    margin_type,
+                    reduce_only,
                 )
                 .await;
 

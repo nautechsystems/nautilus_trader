@@ -273,6 +273,10 @@ fn dispatch_ws_message(
             // User-channel execution reports are consumed by the execution client
             log::debug!("Dropping user-channel update received on the data client");
         }
+        NautilusWsMessage::FuturesBalanceSummary(_) => {
+            // Futures balance summary events are consumed by the execution client
+            log::debug!("Dropping futures_balance_summary event received on the data client");
+        }
     }
 }
 

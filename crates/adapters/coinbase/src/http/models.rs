@@ -460,6 +460,102 @@ pub struct Order {
     pub attached_order_id: String,
 }
 
+/// Response for `GET /api/v3/brokerage/cfm/balance_summary`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmBalanceSummaryResponse {
+    pub balance_summary: CfmBalanceSummary,
+}
+
+/// Coinbase FCM (futures) balance summary.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmBalanceSummary {
+    pub futures_buying_power: CfmAmount,
+    pub total_usd_balance: CfmAmount,
+    pub cbi_usd_balance: CfmAmount,
+    pub cfm_usd_balance: CfmAmount,
+    pub total_open_orders_hold_amount: CfmAmount,
+    pub unrealized_pnl: CfmAmount,
+    pub daily_realized_pnl: CfmAmount,
+    pub initial_margin: CfmAmount,
+    pub available_margin: CfmAmount,
+    pub liquidation_threshold: CfmAmount,
+    pub liquidation_buffer_amount: CfmAmount,
+    #[serde(default)]
+    pub liquidation_buffer_percentage: String,
+    #[serde(default)]
+    pub intraday_margin_window_measure: Option<CfmMarginWindowMeasure>,
+    #[serde(default)]
+    pub overnight_margin_window_measure: Option<CfmMarginWindowMeasure>,
+}
+
+/// Monetary value with an explicit currency code.
+///
+/// REST returns FCM money fields as `{value: "...", currency: "USD"}`; the
+/// scalar-only WebSocket form is covered by
+/// [`crate::websocket::messages::WsFcmBalanceSummary`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmAmount {
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub value: Decimal,
+    pub currency: Ustr,
+}
+
+/// Margin window breakdown inside an FCM balance summary.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmMarginWindowMeasure {
+    pub margin_window_type: crate::common::enums::CoinbaseMarginWindowType,
+    pub margin_level: crate::common::enums::CoinbaseMarginLevel,
+    pub initial_margin: CfmAmount,
+    pub maintenance_margin: CfmAmount,
+    #[serde(default)]
+    pub liquidation_buffer_percentage: String,
+    pub total_hold: CfmAmount,
+    pub futures_buying_power: CfmAmount,
+}
+
+/// Response for `GET /api/v3/brokerage/cfm/positions`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmPositionsResponse {
+    pub positions: Vec<CfmPosition>,
+}
+
+/// Response for `GET /api/v3/brokerage/cfm/positions/{product_id}`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmPositionResponse {
+    pub position: CfmPosition,
+}
+
+/// Position on the Coinbase FCM venue.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfmPosition {
+    pub product_id: Ustr,
+    #[serde(default)]
+    pub expiration_time: String,
+    pub side: crate::common::enums::CoinbaseFcmPositionSide,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub number_of_contracts: Decimal,
+    pub current_price: CfmAmount,
+    pub avg_entry_price: CfmAmount,
+    pub unrealized_pnl: CfmAmount,
+    pub daily_realized_pnl: CfmAmount,
+    #[serde(default)]
+    pub total_fees: Option<CfmAmount>,
+    #[serde(default)]
+    pub contract_size: String,
+    #[serde(default)]
+    pub entry_vwap: Option<CfmAmount>,
+    #[serde(default)]
+    pub liquidation_price: Option<CfmAmount>,
+    #[serde(default)]
+    pub leverage: String,
+    #[serde(default)]
+    pub im_contribution: Option<CfmAmount>,
+    #[serde(default)]
+    pub mm_contribution: Option<CfmAmount>,
+    #[serde(default)]
+    pub position_notional: Option<CfmAmount>,
+}
+
 /// Response for listing fills.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FillsResponse {

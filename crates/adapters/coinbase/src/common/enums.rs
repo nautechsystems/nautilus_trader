@@ -164,6 +164,21 @@ pub enum CoinbaseOrderPlacementSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.coinbase",
+        eq,
+        eq_int,
+        frozen,
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.coinbase")
+)]
 pub enum CoinbaseMarginType {
     #[serde(alias = "Cross")]
     Cross,
@@ -247,6 +262,20 @@ pub enum CoinbaseFillTradeType {
     #[serde(rename = "FILL")]
     #[strum(serialize = "FILL")]
     Fill,
+}
+
+/// Coinbase FCM position side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+pub enum CoinbaseFcmPositionSide {
+    #[serde(rename = "FUTURES_POSITION_SIDE_UNSPECIFIED")]
+    #[strum(serialize = "FUTURES_POSITION_SIDE_UNSPECIFIED")]
+    Unspecified,
+    #[serde(rename = "LONG")]
+    #[strum(serialize = "LONG")]
+    Long,
+    #[serde(rename = "SHORT")]
+    #[strum(serialize = "SHORT")]
+    Short,
 }
 
 /// Coinbase futures margin window type.

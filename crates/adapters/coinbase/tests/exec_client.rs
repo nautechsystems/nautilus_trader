@@ -41,10 +41,26 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{TimeZone, Utc};
-use nautilus_coinbase::{common::enums::CoinbaseEnvironment, http::client::CoinbaseHttpClient};
+use nautilus_coinbase::{
+    common::{consts::COINBASE_VENUE, enums::CoinbaseEnvironment},
+    config::CoinbaseExecClientConfig,
+    execution::CoinbaseExecutionClient,
+    http::client::CoinbaseHttpClient,
+};
+use nautilus_common::{
+    cache::Cache,
+    clients::ExecutionClient,
+    live::runner::replace_exec_event_sender,
+    messages::{
+        ExecutionEvent,
+        execution::{GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder},
+    },
+};
+use nautilus_core::UnixNanos;
+use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TraderId, VenueOrderId},
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
@@ -242,9 +258,49 @@ async fn handle_product(
 
     if product_id == "BTC-USD" {
         Json(load_json("http_product.json"))
+    } else if product_id == "BIP-20DEC30-CDE" {
+        // Return the first (perpetual) entry from the futures fixture.
+        let payload = load_json("http_products_future.json");
+        let product = payload["products"][0].clone();
+        Json(product)
     } else {
         Json(json!({"error": "not found"}))
     }
+}
+
+async fn handle_cfm_balance_summary(State(state): State<TestState>) -> impl IntoResponse {
+    state.next_response("/cfm/balance_summary", String::new());
+    Json(load_json("http_cfm_balance_summary.json"))
+}
+
+async fn handle_cfm_positions(State(state): State<TestState>) -> axum::response::Response {
+    if state.is_failing("/cfm/positions") {
+        state.record_failure("/cfm/positions", String::new(), None);
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+    state.next_response("/cfm/positions", String::new());
+    Json(load_json("http_cfm_positions.json")).into_response()
+}
+
+async fn handle_cfm_position(
+    State(state): State<TestState>,
+    axum::extract::Path(product_id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    let path = format!("/cfm/positions/{product_id}");
+    if state.is_failing(&path) {
+        state.record_failure(&path, String::new(), None);
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+    state.next_response(&path, String::new());
+    Json(load_json("http_cfm_position.json")).into_response()
 }
 
 async fn handle_create_order(
@@ -304,6 +360,18 @@ fn create_router(state: TestState) -> Router {
         .route(
             &format!("{API_PREFIX}/market/products/{{product_id}}"),
             get(handle_product),
+        )
+        .route(
+            &format!("{API_PREFIX}/cfm/balance_summary"),
+            get(handle_cfm_balance_summary),
+        )
+        .route(
+            &format!("{API_PREFIX}/cfm/positions"),
+            get(handle_cfm_positions),
+        )
+        .route(
+            &format!("{API_PREFIX}/cfm/positions/{{product_id}}"),
+            get(handle_cfm_position),
         )
         .route(&format!("{API_PREFIX}/orders"), post(handle_create_order))
         .route(
@@ -964,6 +1032,9 @@ async fn test_http_submit_order_limit_gtc_serializes_typed_body() {
             None,
             true, // post_only
             false,
+            None,
+            None,
+            false,
         )
         .await
         .unwrap();
@@ -1009,6 +1080,9 @@ async fn test_http_submit_order_market_uses_base_size_when_not_quote_qty() {
             None,
             false,
             false, // is_quote_quantity = false → base_size
+            None,
+            None,
+            false,
         )
         .await
         .unwrap();
@@ -1043,6 +1117,9 @@ async fn test_http_submit_order_returns_failure_response() {
             None,
             false,
             false,
+            None,
+            None,
+            false,
         )
         .await
         .unwrap();
@@ -1076,6 +1153,9 @@ async fn test_http_submit_order_rejects_unsupported_market_tif() {
             None,
             None,
             false,
+            false,
+            None,
+            None,
             false,
         )
         .await;
@@ -1266,6 +1346,9 @@ async fn test_http_post_does_not_retry_transient_failure() {
             None,
             false,
             false,
+            None,
+            None,
+            false,
         )
         .await;
 
@@ -1275,5 +1358,425 @@ async fn test_http_post_does_not_retry_transient_failure() {
     assert_eq!(
         attempts, 1,
         "POST must run exactly once regardless of retry budget; saw {attempts}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_cfm_balance_summary_returns_parsed_summary() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let summary = client
+        .request_cfm_balance_summary()
+        .await
+        .expect("CFM balance summary should deserialize");
+
+    assert_eq!(
+        summary.total_usd_balance.value,
+        dec!(10000.00),
+        "USD balance mirrors the fixture"
+    );
+    assert_eq!(summary.available_margin.value, dec!(7500.00));
+    assert_eq!(
+        summary
+            .intraday_margin_window_measure
+            .as_ref()
+            .unwrap()
+            .initial_margin
+            .value,
+        dec!(500.00)
+    );
+
+    let requests = state.requests_for("/cfm/balance_summary");
+    assert_eq!(requests.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_cfm_margin_balances_picks_stricter_window() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let margins = client
+        .request_cfm_margin_balances()
+        .await
+        .expect("margin balances should build from summary");
+
+    // `MarginAccount::split_event_margins` keys account-level margins by
+    // Currency alone, so we collapse to a single MarginBalance. We pick the
+    // whole window with the larger `initial_margin` (overnight here, 1000 vs
+    // 500) so the emitted pair matches a real venue window verbatim.
+    assert_eq!(margins.len(), 1);
+    assert_eq!(margins[0].initial.as_decimal(), dec!(1000.00));
+    assert_eq!(margins[0].maintenance.as_decimal(), dec!(500.00));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_cfm_account_state_produces_margin_account() {
+    use nautilus_model::enums::AccountType;
+
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let account_state = client
+        .request_cfm_account_state(account_id())
+        .await
+        .expect("account state should build");
+
+    assert_eq!(account_state.account_type, AccountType::Margin);
+    assert_eq!(account_state.balances.len(), 1);
+    // total = total_usd_balance (venue equity); free = available_margin;
+    // locked = total - free captures both working-orders hold and margin
+    // consumed by open positions.
+    assert_eq!(account_state.balances[0].total.as_decimal(), dec!(10000.00));
+    assert_eq!(account_state.balances[0].free.as_decimal(), dec!(7500.00));
+    assert_eq!(account_state.balances[0].locked.as_decimal(), dec!(2500.00));
+    assert_eq!(
+        account_state.margins.len(),
+        1,
+        "intraday + overnight windows collapse to one account-level entry"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_position_status_reports_for_cfm() {
+    use nautilus_model::enums::PositionSideSpecified;
+
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let reports = client
+        .request_position_status_reports(account_id())
+        .await
+        .expect("position reports should build");
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    assert_eq!(report.quantity, Quantity::from("2"));
+    assert_eq!(report.avg_px_open, Some(dec!(49000.00)));
+    assert_eq!(report.instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
+
+    // `get_or_fetch_instrument` may trigger a single /market/products/{id}
+    // lookup to bootstrap the BIP instrument, which is fine — the CFM
+    // endpoint itself must only be hit once.
+    let positions_requests = state.requests_for("/cfm/positions");
+    assert_eq!(positions_requests.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_position_status_report_single_product() {
+    use nautilus_model::enums::PositionSideSpecified;
+
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
+    let report = client
+        .request_position_status_report(account_id(), instrument_id)
+        .await
+        .expect("position report should build")
+        .expect("fixture provides a non-flat position");
+
+    assert_eq!(report.position_side, PositionSideSpecified::Short);
+    assert_eq!(report.quantity, Quantity::from("3"));
+    assert_eq!(report.avg_px_open, Some(dec!(51000.00)));
+
+    let single_requests = state.requests_for("/cfm/positions/BIP-20DEC30-CDE");
+    assert_eq!(single_requests.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
+    use nautilus_coinbase::common::enums::CoinbaseMarginType;
+
+    let state = TestState::default();
+    state.enqueue(
+        "/orders",
+        create_order_success_response("venue-500", "client-500"),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let _ = client
+        .submit_order(
+            ClientOrderId::new("client-500"),
+            btc_usd_instrument_id(),
+            OrderSide::Sell,
+            OrderType::Limit,
+            Quantity::from("0.5"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            Some(dec!(5)),
+            Some(CoinbaseMarginType::Cross),
+            true,
+        )
+        .await
+        .expect("submit should succeed");
+
+    let requests = state.requests_for("/orders");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().expect("POST body captured");
+    assert_eq!(body["leverage"], "5");
+    assert_eq!(body["margin_type"], "CROSS");
+    assert_eq!(body["reduce_only"], true);
+}
+
+// reduce_only must not leak into the wire payload when the order is not
+// flagged; Coinbase would otherwise reject the field on spot accounts.
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_omits_derivatives_fields_for_spot_defaults() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders",
+        create_order_success_response("venue-501", "client-501"),
+    );
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let _ = client
+        .submit_order(
+            ClientOrderId::new("client-501"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.5"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            None,
+            false,
+        )
+        .await
+        .expect("submit should succeed");
+
+    let requests = state.requests_for("/orders");
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].body.as_ref().unwrap();
+    assert!(body.get("leverage").is_none());
+    assert!(body.get("margin_type").is_none());
+    assert!(body.get("reduce_only").is_none());
+}
+
+// Builds a `CoinbaseExecutionClient` against the mock server with explicit
+// account type so exec-client-level dispatch (Margin vs Cash) is exercised
+// without going through `connect()`. The returned client is constructed but
+// not connected; HTTP-backed methods still hit the mock because the base URL
+// is threaded through the config.
+fn make_exec_client(
+    addr: std::net::SocketAddr,
+    account_type: AccountType,
+) -> CoinbaseExecutionClient {
+    // The emitter inside the exec client tries to publish on the global
+    // runner sender; install a drop-through channel so constructing it is
+    // safe in tests that only call report-generation methods.
+    let (sender, _rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    replace_exec_event_sender(sender);
+
+    let cache = std::rc::Rc::new(std::cell::RefCell::new(Cache::default()));
+    let core = ExecutionClientCore::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("COINBASE-TEST"),
+        *COINBASE_VENUE,
+        OmsType::Netting,
+        AccountId::from("COINBASE-001"),
+        account_type,
+        None,
+        cache,
+    );
+
+    let config = CoinbaseExecClientConfig {
+        api_key: Some(test_api_key()),
+        api_secret: Some(test_pem_key()),
+        base_url_rest: Some(format!("http://{addr}")),
+        account_type,
+        ..CoinbaseExecClientConfig::default()
+    };
+
+    CoinbaseExecutionClient::new(core, config).expect("exec client construction")
+}
+
+fn position_status_reports_cmd(
+    instrument_id: Option<InstrumentId>,
+) -> GeneratePositionStatusReports {
+    GeneratePositionStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .instrument_id(instrument_id)
+        .build()
+        .expect("cmd build")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_position_reports_margin_list_hits_cfm_positions() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Margin);
+
+    let reports = client
+        .generate_position_status_reports(&position_status_reports_cmd(None))
+        .await
+        .expect("position reports");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
+
+    // Exec client must route to the list endpoint, not the single-product one.
+    assert_eq!(state.requests_for("/cfm/positions").len(), 1);
+    assert!(
+        state
+            .requests_for("/cfm/positions/BIP-20DEC30-CDE")
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_position_reports_margin_single_hits_scoped_endpoint() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Margin);
+
+    let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
+    let reports = client
+        .generate_position_status_reports(&position_status_reports_cmd(Some(instrument_id)))
+        .await
+        .expect("position reports");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+
+    // Exec client must target the single-product endpoint; the list
+    // endpoint should not be touched.
+    assert_eq!(
+        state.requests_for("/cfm/positions/BIP-20DEC30-CDE").len(),
+        1
+    );
+    assert!(state.requests_for("/cfm/positions").is_empty());
+}
+
+// Cash clients have no positions: the exec client's fast-path must return
+// empty without hitting the venue so a Cash/Margin factory mix-up does not
+// leak CFM traffic onto a spot account.
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_position_reports_cash_returns_empty_without_http() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Cash);
+
+    let reports = client
+        .generate_position_status_reports(&position_status_reports_cmd(None))
+        .await
+        .expect("position reports");
+
+    assert!(reports.is_empty());
+    assert!(state.requests_for("/cfm/positions").is_empty());
+    assert!(
+        state
+            .requests_for("/cfm/positions/BIP-20DEC30-CDE")
+            .is_empty()
+    );
+}
+
+// A 5xx from /cfm/positions must surface as an error rather than collapse
+// to an empty Ok(vec![]); otherwise `generate_mass_status` would return a
+// snapshot with zero positions and the live manager's reconciliation path
+// would treat a venue outage as "no positions open". Retry budgets may
+// retry the GET internally before the error propagates.
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_position_reports_margin_list_propagates_http_failure() {
+    let state = TestState::default();
+    state.mark_failing("/cfm/positions");
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Margin);
+
+    let result = client
+        .generate_position_status_reports(&position_status_reports_cmd(None))
+        .await;
+    assert!(
+        result.is_err(),
+        "503 from /cfm/positions must propagate, was {:?}",
+        result.as_ref().map(Vec::len)
+    );
+    assert!(!state.requests_for("/cfm/positions").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_position_reports_margin_single_propagates_http_failure() {
+    let state = TestState::default();
+    state.mark_failing("/cfm/positions/BIP-20DEC30-CDE");
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Margin);
+
+    let result = client
+        .generate_position_status_reports(&position_status_reports_cmd(Some(InstrumentId::from(
+            "BIP-20DEC30-CDE.COINBASE",
+        ))))
+        .await;
+    assert!(
+        result.is_err(),
+        "503 from /cfm/positions/BIP-20DEC30-CDE must propagate, was {:?}",
+        result.as_ref().map(Vec::len)
+    );
+}
+
+// Mass-status on a Margin client must route position reports through the
+// CFM endpoint, not treat the Margin account as spot.
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mass_status_margin_includes_cfm_positions() {
+    let state = TestState::default();
+    // Mass status also fetches orders/fills; enqueue empty pages.
+    state.enqueue(
+        "/orders/historical/batch",
+        json!({"orders": [], "sequence": "0", "has_next": false, "cursor": ""}),
+    );
+    state.enqueue(
+        "/orders/historical/fills",
+        json!({"fills": [], "cursor": ""}),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let client = make_exec_client(addr, AccountType::Margin);
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status populated");
+
+    // One position was expected through /cfm/positions; mass_status's
+    // position_reports map is keyed by instrument_id with a Vec of reports.
+    let position_reports = mass_status.position_reports();
+    let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
+    assert_eq!(
+        position_reports.get(&instrument_id).map(Vec::len),
+        Some(1),
+        "Margin mass status must carry the CFM position"
     );
 }

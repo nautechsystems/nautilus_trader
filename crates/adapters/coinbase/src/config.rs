@@ -15,7 +15,12 @@
 
 //! Configuration structures for the Coinbase adapter.
 
-use crate::common::{enums::CoinbaseEnvironment, urls};
+use nautilus_model::enums::AccountType;
+
+use crate::common::{
+    enums::{CoinbaseEnvironment, CoinbaseMarginType},
+    urls,
+};
 
 /// Configuration for the Coinbase data client.
 #[derive(Clone, Debug, bon::Builder)]
@@ -134,6 +139,16 @@ pub struct CoinbaseExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
+    /// Nautilus account type for the factory. The Cash factory ignores this and
+    /// hardcodes Cash; the derivatives factory sets it to Margin.
+    #[builder(default = AccountType::Cash)]
+    pub account_type: AccountType,
+    /// Optional default margin type applied to derivatives orders. Ignored on
+    /// Cash accounts.
+    pub default_margin_type: Option<CoinbaseMarginType>,
+    /// Optional default leverage applied to derivatives orders. Ignored on
+    /// Cash accounts.
+    pub default_leverage: Option<rust_decimal::Decimal>,
 }
 
 impl Default for CoinbaseExecClientConfig {

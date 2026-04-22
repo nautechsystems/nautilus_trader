@@ -23,13 +23,13 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        RecordFlag, TimeInForce,
+        PositionSideSpecified, RecordFlag, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
-    reports::{FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -40,11 +40,16 @@ use crate::{
             ORDER_CONFIG_LIMIT_PRICE, ORDER_CONFIG_POST_ONLY, ORDER_CONFIG_STOP_PRICE,
         },
         enums::{
-            CoinbaseContractExpiryType, CoinbaseLiquidityIndicator, CoinbaseOrderSide,
-            CoinbaseOrderStatus, CoinbaseOrderType, CoinbaseProductType, CoinbaseTimeInForce,
+            CoinbaseContractExpiryType, CoinbaseFcmPositionSide, CoinbaseLiquidityIndicator,
+            CoinbaseOrderSide, CoinbaseOrderStatus, CoinbaseOrderType, CoinbaseProductType,
+            CoinbaseTimeInForce,
         },
     },
-    http::models::{Account, BookLevel, Candle, Fill, Order, PriceBook, Product, Trade},
+    http::models::{
+        Account, BookLevel, Candle, CfmBalanceSummary, CfmPosition, Fill, Order, PriceBook,
+        Product, Trade,
+    },
+    websocket::messages::WsFcmBalanceSummary,
 };
 
 /// Parses an RFC 3339 timestamp string to `UnixNanos`.
@@ -814,6 +819,201 @@ fn parse_money_field(value: Decimal, field: &str, currency: Currency) -> Option<
     }
 }
 
+/// Parses a CFM balance summary into a single consolidated [`MarginBalance`].
+///
+/// Coinbase reports two windows (intraday and overnight) with identical
+/// currency, but `MarginAccount::split_event_margins` keys account-level
+/// margins by currency only, so emitting both would have one overwrite the
+/// other. Selecting per-field maxima could synthesize a pair that matches
+/// neither window, so we pick the whole window with the larger
+/// `initial_margin` (ties broken by `maintenance_margin`) and emit its pair
+/// verbatim — the stricter capital requirement governs risk.
+///
+/// # Errors
+///
+/// Returns an error when any balance cannot be built as [`Money`].
+pub fn parse_cfm_margin_balances(
+    summary: &CfmBalanceSummary,
+) -> anyhow::Result<Vec<MarginBalance>> {
+    let Some(window) = [
+        summary.intraday_margin_window_measure.as_ref(),
+        summary.overnight_margin_window_measure.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .max_by(|a, b| {
+        a.initial_margin
+            .value
+            .cmp(&b.initial_margin.value)
+            .then(a.maintenance_margin.value.cmp(&b.maintenance_margin.value))
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let currency = Currency::get_or_create_crypto(window.initial_margin.currency.as_str());
+    let initial = Money::from_decimal(window.initial_margin.value, currency)
+        .context("failed to build initial margin")?;
+    let maintenance = Money::from_decimal(window.maintenance_margin.value, currency)
+        .context("failed to build maintenance margin")?;
+
+    Ok(vec![MarginBalance::new(initial, maintenance, None)])
+}
+
+/// Builds a margin [`AccountState`] from the CFM balance summary and the
+/// current CBI / CFM USD balances.
+///
+/// # Errors
+///
+/// Returns an error if balances cannot be built from the summary values.
+pub fn parse_cfm_account_state(
+    summary: &CfmBalanceSummary,
+    account_id: AccountId,
+    is_reported: bool,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let usd_currency = Currency::get_or_create_crypto(summary.total_usd_balance.currency.as_str());
+
+    // `total_usd_balance` is the venue's equity figure and includes collateral
+    // already consumed by open positions; using it as total (with
+    // `available_margin` as free) preserves equity so `Portfolio::equity`
+    // matches the venue. `from_total_and_free` derives locked as total - free
+    // so the `total == free + locked` invariant holds by construction.
+    let balance = AccountBalance::from_total_and_free(
+        summary.total_usd_balance.value,
+        summary.available_margin.value,
+        usd_currency,
+    )
+    .context("failed to build CFM account balance")?;
+
+    let margins = parse_cfm_margin_balances(summary)?;
+
+    Ok(AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![balance],
+        margins,
+        is_reported,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        None,
+    ))
+}
+
+/// Builds a margin [`AccountState`] from a WebSocket-delivered FCM balance
+/// summary.
+///
+/// The WebSocket payload does not carry explicit currency codes, so the
+/// balance is reported in USD (the only CFM settlement currency).
+///
+/// # Errors
+///
+/// Returns an error when any component balance cannot be constructed.
+pub fn parse_ws_cfm_account_state(
+    summary: &WsFcmBalanceSummary,
+    account_id: AccountId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<AccountState> {
+    let usd = Currency::USD();
+
+    // See `parse_cfm_account_state`: `total_usd_balance` is the venue's
+    // equity and must be kept so cached balance and `Portfolio::equity` align
+    // with the venue.
+    let balance = AccountBalance::from_total_and_free(
+        summary.total_usd_balance,
+        summary.available_margin,
+        usd,
+    )
+    .context("failed to build WS CFM account balance")?;
+
+    // Pick the window with the larger `initial_margin` (ties by maintenance)
+    // and emit its pair verbatim so the emitted MarginBalance matches a real
+    // venue window. See `parse_cfm_margin_balances` for why.
+    let window = if summary
+        .intraday_margin_window_measure
+        .initial_margin
+        .cmp(&summary.overnight_margin_window_measure.initial_margin)
+        .then(
+            summary
+                .intraday_margin_window_measure
+                .maintenance_margin
+                .cmp(&summary.overnight_margin_window_measure.maintenance_margin),
+        )
+        .is_ge()
+    {
+        &summary.intraday_margin_window_measure
+    } else {
+        &summary.overnight_margin_window_measure
+    };
+
+    let initial = Money::from_decimal(window.initial_margin, usd)
+        .context("failed to build initial margin")?;
+    let maintenance = Money::from_decimal(window.maintenance_margin, usd)
+        .context("failed to build maintenance margin")?;
+
+    Ok(AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![balance],
+        vec![MarginBalance::new(initial, maintenance, None)],
+        true,
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        None,
+    ))
+}
+
+/// Parses a single CFM position into a Nautilus [`PositionStatusReport`].
+///
+/// The position's quantity is scaled by `contract_size` (expressed in the
+/// instrument's size precision). Callers are expected to supply the
+/// matching instrument so precision lines up with the venue's reported
+/// number of contracts.
+///
+/// # Errors
+///
+/// Returns an error when the quantity or average entry price cannot be
+/// represented with the instrument's precision.
+pub fn parse_cfm_position_status_report(
+    position: &CfmPosition,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+
+    let position_side = match position.side {
+        CoinbaseFcmPositionSide::Long => PositionSideSpecified::Long,
+        CoinbaseFcmPositionSide::Short => PositionSideSpecified::Short,
+        CoinbaseFcmPositionSide::Unspecified => PositionSideSpecified::Flat,
+    };
+
+    let quantity = Quantity::from_decimal_dp(position.number_of_contracts, size_precision)
+        .context("failed to build CFM position quantity")?;
+
+    let avg_px_open = if position.avg_entry_price.value.is_zero() {
+        None
+    } else {
+        Some(position.avg_entry_price.value)
+    };
+
+    Ok(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        quantity,
+        ts_init,
+        ts_init,
+        None,
+        None,
+        avg_px_open,
+    ))
+}
+
 // Coinbase history endpoints return a wider set of configuration shapes than
 // `OrderConfiguration` covers (bracket, TWAP, trigger variants). History
 // `Order.order_configuration` is kept as a raw `serde_json::Value`; these
@@ -934,7 +1134,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::testing::load_test_fixture,
+        common::{
+            enums::{CoinbaseMarginLevel, CoinbaseMarginWindowType},
+            testing::load_test_fixture,
+        },
         http::models::{Account, Balance},
     };
 
@@ -1892,5 +2095,274 @@ mod tests {
         // Values exceeding QUANTITY_RAW_MAX must return None instead of panicking
         let result = parse_optional_quantity("99999999999999999999999999999999");
         assert!(result.is_none());
+    }
+
+    // Confirms the "pick one whole window" invariant: when intraday has the
+    // larger initial_margin but overnight has the larger maintenance_margin,
+    // the emitted MarginBalance must match one of the venue windows verbatim
+    // rather than mixing fields across windows.
+    #[rstest]
+    fn test_parse_cfm_margin_balances_picks_whole_window_not_per_field_max() {
+        let summary = cfm_summary_with_windows(
+            Some(cfm_window(
+                CoinbaseMarginWindowType::Intraday,
+                "800.00",
+                "100.00",
+            )),
+            Some(cfm_window(
+                CoinbaseMarginWindowType::Overnight,
+                "500.00",
+                "400.00",
+            )),
+        );
+
+        let margins = parse_cfm_margin_balances(&summary).unwrap();
+        assert_eq!(margins.len(), 1);
+        let m = &margins[0];
+        // Intraday wins on initial (800 > 500); its maintenance (100) must
+        // come along, not the overnight 400 that would dominate a per-field
+        // max strategy.
+        assert_eq!(m.initial.as_decimal(), Decimal::from_str("800.00").unwrap());
+        assert_eq!(
+            m.maintenance.as_decimal(),
+            Decimal::from_str("100.00").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_cfm_margin_balances_returns_empty_when_no_windows() {
+        let summary = cfm_summary_with_windows(None, None);
+        assert!(parse_cfm_margin_balances(&summary).unwrap().is_empty());
+    }
+
+    #[rstest]
+    fn test_parse_cfm_margin_balances_uses_sole_intraday_window_verbatim() {
+        let summary = cfm_summary_with_windows(
+            Some(cfm_window(
+                CoinbaseMarginWindowType::Intraday,
+                "250.00",
+                "125.00",
+            )),
+            None,
+        );
+        let margins = parse_cfm_margin_balances(&summary).unwrap();
+        assert_eq!(margins.len(), 1);
+        assert_eq!(
+            margins[0].initial.as_decimal(),
+            Decimal::from_str("250.00").unwrap()
+        );
+        assert_eq!(
+            margins[0].maintenance.as_decimal(),
+            Decimal::from_str("125.00").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_cfm_margin_balances_uses_sole_overnight_window_verbatim() {
+        let summary = cfm_summary_with_windows(
+            None,
+            Some(cfm_window(
+                CoinbaseMarginWindowType::Overnight,
+                "900.00",
+                "450.00",
+            )),
+        );
+        let margins = parse_cfm_margin_balances(&summary).unwrap();
+        assert_eq!(margins.len(), 1);
+        assert_eq!(
+            margins[0].initial.as_decimal(),
+            Decimal::from_str("900.00").unwrap()
+        );
+        assert_eq!(
+            margins[0].maintenance.as_decimal(),
+            Decimal::from_str("450.00").unwrap()
+        );
+    }
+
+    // Mirrors `parse_cfm_margin_balances` selector tests for the WS variant
+    // so a future drift between the two selectors is caught before it ships.
+    #[rstest]
+    fn test_parse_ws_cfm_account_state_picks_whole_window_not_per_field_max() {
+        use nautilus_model::enums::AccountType;
+
+        use crate::websocket::messages::{WsFcmBalanceSummary, WsMarginWindowMeasure};
+
+        fn ws_window(
+            kind: CoinbaseMarginWindowType,
+            initial: &str,
+            maintenance: &str,
+        ) -> WsMarginWindowMeasure {
+            WsMarginWindowMeasure {
+                margin_window_type: kind,
+                margin_level: CoinbaseMarginLevel::Base,
+                initial_margin: Decimal::from_str(initial).unwrap(),
+                maintenance_margin: Decimal::from_str(maintenance).unwrap(),
+                liquidation_buffer_percentage: Decimal::ZERO,
+                total_hold: Decimal::ZERO,
+                futures_buying_power: Decimal::ZERO,
+            }
+        }
+
+        let summary = WsFcmBalanceSummary {
+            futures_buying_power: Decimal::from_str("100.00").unwrap(),
+            total_usd_balance: Decimal::from_str("500.00").unwrap(),
+            cbi_usd_balance: Decimal::ZERO,
+            cfm_usd_balance: Decimal::ZERO,
+            total_open_orders_hold_amount: Decimal::from_str("25.00").unwrap(),
+            unrealized_pnl: Decimal::ZERO,
+            daily_realized_pnl: Decimal::ZERO,
+            initial_margin: Decimal::ZERO,
+            available_margin: Decimal::from_str("350.00").unwrap(),
+            liquidation_threshold: Decimal::ZERO,
+            liquidation_buffer_amount: Decimal::ZERO,
+            liquidation_buffer_percentage: Decimal::ZERO,
+            intraday_margin_window_measure: ws_window(
+                CoinbaseMarginWindowType::Intraday,
+                "800.00",
+                "100.00",
+            ),
+            overnight_margin_window_measure: ws_window(
+                CoinbaseMarginWindowType::Overnight,
+                "500.00",
+                "400.00",
+            ),
+        };
+
+        let state = parse_ws_cfm_account_state(
+            &summary,
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(state.account_type, AccountType::Margin);
+        // Balance invariant: total == venue total_usd_balance; free == available_margin.
+        assert_eq!(
+            state.balances[0].total.as_decimal(),
+            Decimal::from_str("500.00").unwrap()
+        );
+        assert_eq!(
+            state.balances[0].free.as_decimal(),
+            Decimal::from_str("350.00").unwrap()
+        );
+        // Intraday wins on initial (800 > 500); its maintenance comes along.
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(
+            state.margins[0].initial.as_decimal(),
+            Decimal::from_str("800.00").unwrap()
+        );
+        assert_eq!(
+            state.margins[0].maintenance.as_decimal(),
+            Decimal::from_str("100.00").unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case(CoinbaseFcmPositionSide::Long, PositionSideSpecified::Long)]
+    #[case(CoinbaseFcmPositionSide::Short, PositionSideSpecified::Short)]
+    #[case(CoinbaseFcmPositionSide::Unspecified, PositionSideSpecified::Flat)]
+    fn test_parse_cfm_position_side_maps_all_variants(
+        #[case] venue_side: CoinbaseFcmPositionSide,
+        #[case] expected: PositionSideSpecified,
+    ) {
+        let report = parse_cfm_position_status_report(
+            &cfm_position(venue_side, "1", "49000.00"),
+            &btc_perp_instrument(),
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert_eq!(report.position_side, expected);
+    }
+
+    #[rstest]
+    fn test_parse_cfm_position_drops_avg_px_when_entry_zero() {
+        // Coinbase reports `avg_entry_price=0` on freshly-opened positions
+        // before a fill lands; Nautilus represents "no open price" as None.
+        let report = parse_cfm_position_status_report(
+            &cfm_position(CoinbaseFcmPositionSide::Long, "1", "0"),
+            &btc_perp_instrument(),
+            AccountId::new("COINBASE-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert!(report.avg_px_open.is_none());
+    }
+
+    fn cfm_amount(value: &str) -> crate::http::models::CfmAmount {
+        crate::http::models::CfmAmount {
+            value: Decimal::from_str(value).unwrap(),
+            currency: Ustr::from("USD"),
+        }
+    }
+
+    fn cfm_window(
+        kind: CoinbaseMarginWindowType,
+        initial: &str,
+        maintenance: &str,
+    ) -> crate::http::models::CfmMarginWindowMeasure {
+        crate::http::models::CfmMarginWindowMeasure {
+            margin_window_type: kind,
+            margin_level: CoinbaseMarginLevel::Base,
+            initial_margin: cfm_amount(initial),
+            maintenance_margin: cfm_amount(maintenance),
+            liquidation_buffer_percentage: String::new(),
+            total_hold: cfm_amount("0"),
+            futures_buying_power: cfm_amount("0"),
+        }
+    }
+
+    fn cfm_summary_with_windows(
+        intraday: Option<crate::http::models::CfmMarginWindowMeasure>,
+        overnight: Option<crate::http::models::CfmMarginWindowMeasure>,
+    ) -> CfmBalanceSummary {
+        CfmBalanceSummary {
+            futures_buying_power: cfm_amount("0"),
+            total_usd_balance: cfm_amount("0"),
+            cbi_usd_balance: cfm_amount("0"),
+            cfm_usd_balance: cfm_amount("0"),
+            total_open_orders_hold_amount: cfm_amount("0"),
+            unrealized_pnl: cfm_amount("0"),
+            daily_realized_pnl: cfm_amount("0"),
+            initial_margin: cfm_amount("0"),
+            available_margin: cfm_amount("0"),
+            liquidation_threshold: cfm_amount("0"),
+            liquidation_buffer_amount: cfm_amount("0"),
+            liquidation_buffer_percentage: String::new(),
+            intraday_margin_window_measure: intraday,
+            overnight_margin_window_measure: overnight,
+        }
+    }
+
+    fn cfm_position(
+        side: CoinbaseFcmPositionSide,
+        contracts: &str,
+        avg_entry: &str,
+    ) -> CfmPosition {
+        CfmPosition {
+            product_id: Ustr::from("BIP-20DEC30-CDE"),
+            expiration_time: String::new(),
+            side,
+            number_of_contracts: Decimal::from_str(contracts).unwrap(),
+            current_price: cfm_amount("50000.00"),
+            avg_entry_price: cfm_amount(avg_entry),
+            unrealized_pnl: cfm_amount("0"),
+            daily_realized_pnl: cfm_amount("0"),
+            total_fees: None,
+            contract_size: "0.01".to_string(),
+            entry_vwap: None,
+            liquidation_price: None,
+            leverage: String::new(),
+            im_contribution: None,
+            mm_contribution: None,
+            position_notional: None,
+        }
+    }
+
+    fn btc_perp_instrument() -> InstrumentAny {
+        let json = load_test_fixture("http_products_future.json");
+        let response: crate::http::models::ProductsResponse = serde_json::from_str(&json).unwrap();
+        parse_instrument(&response.products[0], UnixNanos::default()).unwrap()
     }
 }

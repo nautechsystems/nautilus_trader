@@ -51,6 +51,15 @@ pub struct CreateOrderRequest {
     pub margin_type: Option<CoinbaseMarginType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retail_portfolio_id: Option<String>,
+    /// Derivatives-only flag that marks the order as position-reducing only.
+    ///
+    /// Coinbase does not document `reduce_only` as an accepted create-order
+    /// field; the venue's failure-reason enum acknowledges the concept but the
+    /// order schema has no slot for it. The field is threaded through the
+    /// request for API parity with other adapters and is omitted from the wire
+    /// payload when `false`.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reduce_only: bool,
 }
 
 /// Request body for `POST /api/v3/brokerage/orders/batch_cancel` (Cancel Orders).
@@ -313,6 +322,7 @@ mod tests {
             leverage: None,
             margin_type: None,
             retail_portfolio_id: None,
+            reduce_only: false,
         };
 
         let value = serde_json::to_value(&order).unwrap();
@@ -342,6 +352,7 @@ mod tests {
             leverage: None,
             margin_type: None,
             retail_portfolio_id: None,
+            reduce_only: false,
         };
 
         let value = serde_json::to_value(&order).unwrap();
