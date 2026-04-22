@@ -198,6 +198,14 @@ repos:
         files: '\.rs$|Cargo\.toml$'
         pass_filenames: false
 
+      - id: check-dst-conventions
+        name: check DST conventions
+        description: Enforces deterministic simulation testing path bans
+        entry: bash .pre-commit-hooks/check_dst_conventions.sh
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+
       - id: check-pyo3-conventions
         name: check pyo3 conventions
         description: Enforces PyO3 naming conventions

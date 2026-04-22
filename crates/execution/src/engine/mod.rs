@@ -819,7 +819,7 @@ impl ExecutionEngine {
     ///
     /// Returns an error if any cache operation fails.
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
-        let ts = SystemTime::now();
+        let ts = SystemTime::now(); // dst-ok: init-time log timing, not on DST state path
 
         {
             let mut cache = self.cache.borrow_mut();
@@ -844,7 +844,7 @@ impl ExecutionEngine {
 
         log::info!(
             "Loaded cache in {}ms",
-            SystemTime::now()
+            SystemTime::now() // dst-ok: init-time log timing, not on DST state path
                 .duration_since(ts)
                 .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {e}"))?
                 .as_millis()
