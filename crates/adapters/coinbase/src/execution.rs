@@ -50,6 +50,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 
@@ -163,13 +164,29 @@ impl CoinbaseExecutionClient {
     ) -> anyhow::Result<Self> {
         let credential =
             CoinbaseCredential::resolve(config.api_key.as_deref(), config.api_secret.as_deref())
-                .map_err(|e| anyhow::anyhow!("Failed to resolve Coinbase credentials: {e}"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Coinbase credentials not available; set COINBASE_API_KEY and COINBASE_API_SECRET or pass them in the config"
+                    )
+                })?;
+
+        let retry_config = RetryConfig {
+            max_retries: config.max_retries,
+            initial_delay_ms: config.retry_delay_initial_ms,
+            max_delay_ms: config.retry_delay_max_ms,
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
 
         let mut http_client = CoinbaseHttpClient::with_credentials(
             credential.clone(),
             config.environment,
             config.http_timeout_secs,
             config.http_proxy_url.clone(),
+            Some(retry_config),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
 
@@ -317,7 +334,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 self.config.api_key.as_deref(),
                 self.config.api_secret.as_deref(),
             )
-            .map_err(|e| anyhow::anyhow!("Failed to resolve credentials for WS reset: {e}"))?;
+            .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
             self.ws_user =
                 CoinbaseWebSocketClient::with_credential(&self.config.ws_url(), credential);
         }

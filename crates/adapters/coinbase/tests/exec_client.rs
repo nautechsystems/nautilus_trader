@@ -21,7 +21,7 @@
 //! tests pass bogus credentials that still sign with a valid EC key pair.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -48,6 +48,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -89,6 +90,9 @@ struct RequestRecord {
 struct TestStateInner {
     requests: Vec<RequestRecord>,
     queues: HashMap<String, VecDeque<Value>>,
+    // Paths listed here respond with HTTP 503 so retry-guard tests can
+    // observe whether the client issues a second attempt.
+    fail_paths: HashSet<String>,
 }
 
 #[derive(Clone, Default)]
@@ -139,6 +143,26 @@ impl TestState {
         self.inner.lock().unwrap().requests.clone()
     }
 
+    fn mark_failing(&self, path: &str) {
+        self.inner
+            .lock()
+            .unwrap()
+            .fail_paths
+            .insert(path.to_string());
+    }
+
+    fn is_failing(&self, path: &str) -> bool {
+        self.inner.lock().unwrap().fail_paths.contains(path)
+    }
+
+    fn record_failure(&self, path: &str, raw_query: String, body: Option<Value>) {
+        self.inner.lock().unwrap().requests.push(RequestRecord {
+            path: path.to_string(),
+            raw_query,
+            body,
+        });
+    }
+
     fn requests_for(&self, path: &str) -> Vec<RequestRecord> {
         self.inner
             .lock()
@@ -180,7 +204,16 @@ async fn handle_accounts(State(state): State<TestState>, uri: Uri) -> impl IntoR
     Json(response)
 }
 
-async fn handle_products(State(state): State<TestState>) -> impl IntoResponse {
+async fn handle_products(State(state): State<TestState>) -> axum::response::Response {
+    if state.is_failing("/market/products") {
+        state.record_failure("/market/products", String::new(), None);
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+
     // If the test enqueued a custom products response use that; otherwise
     // fall back to the shared spot fixture so instrument resolution works
     // out of the box.
@@ -194,10 +227,10 @@ async fn handle_products(State(state): State<TestState>) -> impl IntoResponse {
 
     if have_queue {
         let response = state.next_response("/market/products", String::new());
-        Json(response)
+        Json(response).into_response()
     } else {
         state.next_response("/market/products", String::new());
-        Json(load_json("http_products.json"))
+        Json(load_json("http_products.json")).into_response()
     }
 }
 
@@ -217,9 +250,18 @@ async fn handle_product(
 async fn handle_create_order(
     State(state): State<TestState>,
     Json(body): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    if state.is_failing("/orders") {
+        state.record_failure("/orders", String::new(), Some(body));
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+
     let response = state.next_response_with_body("/orders", body);
-    Json(response)
+    Json(response).into_response()
 }
 
 async fn handle_cancel_orders(
@@ -302,16 +344,38 @@ async fn start_mock_server(state: TestState) -> SocketAddr {
 }
 
 fn create_http_client(addr: SocketAddr) -> CoinbaseHttpClient {
+    create_http_client_with_retry(addr, None)
+}
+
+fn create_http_client_with_retry(
+    addr: SocketAddr,
+    retry_config: Option<RetryConfig>,
+) -> CoinbaseHttpClient {
     let mut client = CoinbaseHttpClient::from_credentials(
         &test_api_key(),
         &test_pem_key(),
         CoinbaseEnvironment::Live,
         10,
         None,
+        retry_config,
     )
     .unwrap();
     client.set_base_url(format!("http://{addr}"));
     client
+}
+
+// Keeps retry-loop tests fast.
+fn fast_retry_config(max_retries: u32) -> RetryConfig {
+    RetryConfig {
+        max_retries,
+        initial_delay_ms: 5,
+        max_delay_ms: 5,
+        backoff_factor: 1.0,
+        jitter_ms: 0,
+        operation_timeout_ms: Some(2_000),
+        immediate_first: false,
+        max_elapsed_ms: None,
+    }
 }
 
 fn account_id() -> AccountId {
@@ -1151,5 +1215,65 @@ async fn test_http_modify_order_returns_typed_failure_reason() {
     assert_eq!(
         response.errors[0].edit_failure_reason,
         "ORDER_ALREADY_FILLED"
+    );
+}
+
+// GET is idempotent so transient 503s retry up to `max_retries` times,
+// giving `1 + max_retries` attempts.
+#[rstest]
+#[tokio::test]
+async fn test_http_get_retries_transient_failure_up_to_budget() {
+    let state = TestState::default();
+    state.mark_failing("/market/products");
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client_with_retry(addr, Some(fast_retry_config(3)));
+
+    let result = client.get_products().await;
+    assert!(
+        result.is_err(),
+        "expected 503 to surface after retry budget"
+    );
+
+    let attempts = state.requests_for("/market/products").len();
+    assert_eq!(
+        attempts, 4,
+        "GET should run once plus 3 retries; saw {attempts}"
+    );
+}
+
+// POSTs to order endpoints mutate live state; replaying could place, edit,
+// or cancel twice, so the retry gate must keep them single-shot.
+#[rstest]
+#[tokio::test]
+async fn test_http_post_does_not_retry_transient_failure() {
+    let state = TestState::default();
+    state.mark_failing("/orders");
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client_with_retry(addr, Some(fast_retry_config(3)));
+
+    let result = client
+        .submit_order(
+            ClientOrderId::new("client-retry-guard"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.1"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+        )
+        .await;
+
+    assert!(result.is_err(), "expected 503 to propagate from POST");
+
+    let attempts = state.requests_for("/orders").len();
+    assert_eq!(
+        attempts, 1,
+        "POST must run exactly once regardless of retry budget; saw {attempts}"
     );
 }

@@ -50,7 +50,10 @@ pub const ORDER_CONFIG_POST_ONLY: &str = "post_only";
 pub const ORDER_CONFIG_END_TIME: &str = "end_time";
 
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
+
+/// WebSocket control-frame ping interval, in seconds.
+pub const WS_HEARTBEAT_SECS: u64 = 30;
+
 pub const RECONNECT_BASE_BACKOFF: Duration = Duration::from_millis(250);
 pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 
@@ -78,7 +81,7 @@ mod tests {
     #[rstest]
     fn test_timeout_constants() {
         assert_eq!(HTTP_TIMEOUT, Duration::from_secs(10));
-        assert_eq!(HEARTBEAT_INTERVAL, Duration::from_secs(30));
+        assert_eq!(WS_HEARTBEAT_SECS, 30);
         assert_eq!(WS_SUBSCRIBE_DEADLINE, Duration::from_secs(5));
     }
 

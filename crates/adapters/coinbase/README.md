@@ -12,16 +12,19 @@ for spot, futures, and perpetual markets.
 
 Components:
 
-- `CoinbaseHttpClient`: Low-level HTTP API connectivity with ES256 JWT signing.
+- `CoinbaseHttpClient`: Low-level HTTP API connectivity with ES256 JWT signing
+  and retry-aware request dispatch.
 - `CoinbaseWebSocketClient`: Low-level WebSocket connectivity (market data and
-  authenticated user channels).
+  authenticated user channels) with automatic `heartbeats` subscription.
 - `CoinbaseInstrumentProvider`: Instrument loading and parsing.
 - `CoinbaseDataClient`: Market data feed manager.
 - `CoinbaseDataClientFactory`: Data client factory.
+- `CoinbaseExecutionClient`: Spot execution client (REST order routing plus
+  the `user` WebSocket channel).
+- `CoinbaseExecutionClientFactory`: Execution client factory.
 
-Pending (tracked for follow-up work):
-
-- `CoinbaseExecutionClient` and `CoinbaseExecutionClientFactory`.
+Derivatives execution (perpetual and dated futures) is deferred to a future
+exec client variant with margin account handling.
 
 The adapter is consumed by the v2 system. Configurations and enums are exported
 through PyO3 (`nautilus_pyo3.coinbase`); there is no legacy Python `TradingNode`

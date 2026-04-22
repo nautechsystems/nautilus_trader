@@ -15,7 +15,16 @@
 
 //! Integration tests for the Coinbase data client.
 
-use std::{net::SocketAddr, num::NonZeroUsize, path::PathBuf, time::Duration};
+use std::{
+    net::SocketAddr,
+    num::NonZeroUsize,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -67,7 +76,11 @@ fn load_json_str(filename: &str) -> String {
 }
 
 #[derive(Clone, Default)]
-struct TestServerState {}
+struct TestServerState {
+    // When true, `handle_product_book` returns 503 instead of the canned JSON.
+    book_should_fail: Arc<AtomicBool>,
+    book_hit_count: Arc<AtomicUsize>,
+}
 
 #[derive(Deserialize)]
 struct ProductBookQuery {
@@ -104,9 +117,19 @@ async fn handle_ticker(State(_state): State<TestServerState>) -> impl IntoRespon
 }
 
 async fn handle_product_book(
-    State(_state): State<TestServerState>,
+    State(state): State<TestServerState>,
     Query(query): Query<ProductBookQuery>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
+    state.book_hit_count.fetch_add(1, Ordering::SeqCst);
+
+    if state.book_should_fail.load(Ordering::SeqCst) {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "unavailable"})),
+        )
+            .into_response();
+    }
+
     let mut book = load_json("http_product_book.json");
 
     if let Some(limit) = query.limit {
@@ -123,7 +146,7 @@ async fn handle_product_book(
         }
     }
 
-    Json(book)
+    Json(book).into_response()
 }
 
 async fn handle_best_bid_ask(State(_state): State<TestServerState>) -> impl IntoResponse {
@@ -830,6 +853,45 @@ async fn test_data_client_subscribe_bars() {
         Duration::from_secs(5),
     )
     .await;
+
+    client.disconnect().await.unwrap();
+}
+
+// Data-client historical requests spawn outside the cancellation token, so
+// they must not retry. Force 503s and assert exactly one attempt.
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_request_book_snapshot_does_not_retry_on_failure() {
+    let state = TestServerState::default();
+    state.book_should_fail.store(true, Ordering::SeqCst);
+    let hit_count = state.book_hit_count.clone();
+
+    let addr = start_mock_server(state).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config).unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
+    let request = RequestBookSnapshot::new(
+        instrument_id,
+        None,
+        Some(ClientId::new("COINBASE")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    client.request_book_snapshot(request).unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let attempts = hit_count.load(Ordering::SeqCst);
+    assert_eq!(
+        attempts, 1,
+        "data-client historical requests must not retry; saw {attempts}"
+    );
 
     client.disconnect().await.unwrap();
 }

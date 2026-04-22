@@ -50,12 +50,16 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use nautilus_network::retry::RetryConfig;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
-    common::{consts::COINBASE_VENUE, enums::CoinbaseWsChannel, parse::bar_type_to_granularity},
+    common::{
+        consts::COINBASE_VENUE, credential::CoinbaseCredential, enums::CoinbaseWsChannel,
+        parse::bar_type_to_granularity,
+    },
     config::CoinbaseDataClientConfig,
     http::{
         client::CoinbaseHttpClient,
@@ -65,6 +69,22 @@ use crate::{
     provider::CoinbaseInstrumentProvider,
     websocket::{client::CoinbaseWebSocketClient, handler::NautilusWsMessage},
 };
+
+// Historical requests spawn detached tasks outside the client's cancellation
+// token; `max_retries = 0` keeps them bounded by a single HTTP timeout so a
+// shut-down client cannot keep emitting `DataResponse`s.
+fn data_client_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_retries: 0,
+        initial_delay_ms: 100,
+        max_delay_ms: 100,
+        backoff_factor: 1.0,
+        jitter_ms: 0,
+        operation_timeout_ms: None,
+        immediate_first: false,
+        max_elapsed_ms: None,
+    }
+}
 
 /// Data client for Coinbase Advanced Trade.
 ///
@@ -97,42 +117,27 @@ impl CoinbaseDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
-        let mut http_client = if config.has_credentials() {
-            let credential = crate::common::credential::CoinbaseCredential::new(
-                config.api_key.clone().unwrap_or_default(),
-                config.api_secret.clone().unwrap_or_default(),
-            );
-            CoinbaseHttpClient::with_credentials(
+        let retry_config = data_client_retry_config();
+
+        let mut http_client = match CoinbaseCredential::resolve(
+            config.api_key.as_deref(),
+            config.api_secret.as_deref(),
+        ) {
+            Some(credential) => CoinbaseHttpClient::with_credentials(
                 credential,
                 config.environment,
                 config.http_timeout_secs,
                 config.http_proxy_url.clone(),
+                Some(retry_config),
             )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
-        } else {
-            let env_key = std::env::var("COINBASE_API_KEY").ok();
-            let env_secret = std::env::var("COINBASE_API_SECRET").ok();
-
-            if let (Some(key), Some(secret)) = (
-                env_key.filter(|k| !k.trim().is_empty()),
-                env_secret.filter(|s| !s.trim().is_empty()),
-            ) {
-                CoinbaseHttpClient::from_credentials(
-                    &key,
-                    &secret,
-                    config.environment,
-                    config.http_timeout_secs,
-                    config.http_proxy_url.clone(),
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client from env: {e}"))?
-            } else {
-                CoinbaseHttpClient::new(
-                    config.environment,
-                    config.http_timeout_secs,
-                    config.http_proxy_url.clone(),
-                )
-                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
-            }
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            None => CoinbaseHttpClient::new(
+                config.environment,
+                config.http_timeout_secs,
+                config.http_proxy_url.clone(),
+                Some(retry_config),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
         };
 
         if let Some(url) = &config.base_url_rest {

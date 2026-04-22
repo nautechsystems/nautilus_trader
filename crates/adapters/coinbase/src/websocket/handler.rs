@@ -28,12 +28,13 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     reports::OrderStatusReport,
 };
-use nautilus_network::websocket::WebSocketClient;
+use nautilus_network::{RECONNECTED, websocket::WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     common::consts::COINBASE,
     websocket::{
+        client::COINBASE_WS_SUBSCRIPTION_KEYS,
         messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
         parse::{
             parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_ticker,
@@ -169,7 +170,7 @@ impl FeedHandler {
     pub async fn next(&mut self) -> Option<NautilusWsMessage> {
         // Check signal before draining buffer so disconnect takes
         // priority over pending buffered messages
-        if self.signal.load(std::sync::atomic::Ordering::Relaxed) {
+        if self.signal.load(std::sync::atomic::Ordering::Acquire) {
             self.buffer.clear();
             return None;
         }
@@ -179,7 +180,7 @@ impl FeedHandler {
         }
 
         loop {
-            if self.signal.load(std::sync::atomic::Ordering::Relaxed) {
+            if self.signal.load(std::sync::atomic::Ordering::Acquire) {
                 return None;
             }
 
@@ -253,7 +254,10 @@ impl FeedHandler {
 
         match serde_json::to_string(sub) {
             Ok(json) => {
-                if let Err(e) = client.send_text(json, None).await {
+                if let Err(e) = client
+                    .send_text(json, Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()))
+                    .await
+                {
                     log::error!("Failed to send subscription: {e}");
                 }
             }
@@ -262,8 +266,7 @@ impl FeedHandler {
     }
 
     fn handle_text(&mut self, text: &str) -> Option<NautilusWsMessage> {
-        // Check for reconnection sentinel
-        if text == "__RECONNECTED__" {
+        if text == RECONNECTED {
             return Some(NautilusWsMessage::Reconnected);
         }
 
@@ -865,5 +868,31 @@ mod tests {
 
         assert!(handler.handle_text(json).is_none());
         assert!(handler.buffer.is_empty());
+    }
+
+    #[rstest]
+    fn test_handle_text_routes_reconnected_sentinel() {
+        let mut handler = test_handler();
+        let result = handler.handle_text(RECONNECTED);
+        assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+    }
+
+    #[rstest]
+    fn test_signal_release_acquire_exits_handler_loop() {
+        use std::sync::atomic::Ordering;
+
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = FeedHandler::new(signal.clone(), cmd_rx, raw_rx);
+
+        signal.store(true, Ordering::Release);
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = runtime.block_on(async { handler.next().await });
+        assert!(result.is_none(), "{result:?}");
     }
 }

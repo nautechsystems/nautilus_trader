@@ -19,9 +19,10 @@
 //! parsed Nautilus messages through the [`FeedHandler`].
 
 use std::{
+    num::NonZeroU32,
     str::FromStr,
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -37,17 +38,35 @@ use nautilus_model::{
 };
 use nautilus_network::{
     mode::ConnectionMode,
+    ratelimiter::quota::Quota,
     websocket::{SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use ustr::Ustr;
 
 use crate::{
-    common::{credential::CoinbaseCredential, enums::CoinbaseWsChannel},
+    common::{consts::WS_HEARTBEAT_SECS, credential::CoinbaseCredential, enums::CoinbaseWsChannel},
     websocket::{
         handler::{FeedHandler, HandlerCommand, NautilusWsMessage},
         messages::{CoinbaseWsAction, CoinbaseWsSubscription},
     },
 };
+
+/// Coinbase WebSocket connection rate limit (8 per second per IP).
+pub static COINBASE_WS_CONNECTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(8).expect("non-zero")).expect("valid constant")
+});
+
+/// Coinbase WebSocket subscribe/unsubscribe rate limit (8 per second per IP).
+pub static COINBASE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(8).expect("non-zero")).expect("valid constant")
+});
+
+/// Rate-limit key for subscribe/unsubscribe operations.
+pub const COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION: &str = "subscription";
+
+/// Pre-interned [`COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION`] slice.
+pub static COINBASE_WS_SUBSCRIPTION_KEYS: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from(COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION)]);
 
 /// WebSocket client for Coinbase Advanced Trade market data and user streams.
 ///
@@ -153,6 +172,14 @@ impl CoinbaseWebSocketClient {
         }
     }
 
+    // Coinbase closes clients that idle without a subscribe inside 5s, and
+    // heartbeats keeps the connection alive when product topics are quiet.
+    // Marking before `resubscribe_all` replays it on every reconnect.
+    fn prime_default_subscriptions(&self) {
+        self.subscriptions
+            .mark_subscribe(CoinbaseWsChannel::Heartbeats.as_ref());
+    }
+
     /// Establishes the WebSocket connection and spawns the feed handler.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_active() || self.is_reconnecting() {
@@ -167,7 +194,9 @@ impl CoinbaseWebSocketClient {
         let cfg = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
-            heartbeat: None,
+            // Coinbase uses TCP control-frame pings for transport keep-alive;
+            // application-layer liveness comes from the heartbeats channel.
+            heartbeat: Some(WS_HEARTBEAT_SECS),
             heartbeat_msg: None,
             reconnect_timeout_ms: Some(15_000),
             reconnect_delay_initial_ms: Some(250),
@@ -178,8 +207,20 @@ impl CoinbaseWebSocketClient {
             idle_timeout_ms: None,
         };
 
-        let client =
-            WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;
+        let keyed_quotas = vec![(
+            COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION.to_string(),
+            *COINBASE_WS_SUBSCRIPTION_QUOTA,
+        )];
+
+        let client = WebSocketClient::connect(
+            cfg,
+            Some(message_handler),
+            None,
+            None,
+            keyed_quotas,
+            Some(*COINBASE_WS_CONNECTION_QUOTA),
+        )
+        .await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
@@ -217,6 +258,8 @@ impl CoinbaseWebSocketClient {
         {
             log::error!("Failed to restore account_id: {e}");
         }
+
+        self.prime_default_subscriptions();
 
         // Replay retained subscriptions from previous session
         resubscribe_all(&self.subscriptions, &self.credential, &cmd_tx);
@@ -345,8 +388,9 @@ impl CoinbaseWebSocketClient {
         }
         drop(cmd_tx);
 
-        // Set signal as fallback in case the command channel is full or closed
-        self.signal.store(true, Ordering::Relaxed);
+        // Release pairs with the handler's Acquire load; fallback for when
+        // the command channel is full or closed.
+        self.signal.store(true, Ordering::Release);
 
         if let Some(handle) = self.task_handle.take() {
             match tokio::time::timeout(Duration::from_secs(5), handle).await {
@@ -619,5 +663,31 @@ mod tests {
 
         // Auth channels should be skipped when no credentials are provided
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_prime_default_subscriptions_marks_heartbeats() {
+        let client = CoinbaseWebSocketClient::new("wss://test");
+        assert!(client.subscriptions.all_topics().is_empty());
+
+        client.prime_default_subscriptions();
+
+        let topics = client.subscriptions.all_topics();
+        assert!(topics.iter().any(|t| t == "heartbeats"), "{topics:?}");
+    }
+
+    #[rstest]
+    fn test_ws_quotas_match_documented_limits() {
+        assert_eq!(COINBASE_WS_CONNECTION_QUOTA.burst_size().get(), 8);
+        assert_eq!(COINBASE_WS_SUBSCRIPTION_QUOTA.burst_size().get(), 8);
+    }
+
+    #[rstest]
+    fn test_ws_subscription_rate_limit_key_is_stable() {
+        assert_eq!(COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION, "subscription");
+        assert_eq!(
+            COINBASE_WS_SUBSCRIPTION_KEYS[0].as_str(),
+            COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION,
+        );
     }
 }

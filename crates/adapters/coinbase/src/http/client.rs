@@ -19,7 +19,11 @@
 //! - [`CoinbaseRawHttpClient`]: low-level endpoint methods, JWT auth, rate limiting.
 //! - [`CoinbaseHttpClient`]: domain wrapper with instrument caching and Nautilus type conversions.
 
-use std::{collections::HashMap, num::NonZeroU32, sync::Arc};
+use std::{
+    collections::HashMap,
+    num::NonZeroU32,
+    sync::{Arc, LazyLock},
+};
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
@@ -38,8 +42,10 @@ use nautilus_model::{
 use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
 };
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 use url::form_urlencoded;
 use ustr::Ustr;
 
@@ -72,9 +78,24 @@ use crate::{
     },
 };
 
-// Coinbase Advanced Trade rate limit: 30 requests per second
-fn default_quota() -> Option<Quota> {
-    Quota::per_second(NonZeroU32::new(30).unwrap()) // Infallible: 30 is non-zero
+/// Default Coinbase Advanced Trade REST rate limit (30 requests per second).
+pub static COINBASE_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_second(NonZeroU32::new(30).expect("non-zero")).expect("valid constant")
+});
+
+/// Returns the default retry configuration for the Coinbase HTTP client.
+#[must_use]
+pub fn default_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_retries: 3,
+        initial_delay_ms: 100,
+        max_delay_ms: 5_000,
+        backoff_factor: 2.0,
+        jitter_ms: 250,
+        operation_timeout_ms: Some(60_000),
+        immediate_first: false,
+        max_elapsed_ms: Some(180_000),
+    }
 }
 
 // Builds a query string from `(key, value)` pairs, percent-encoding both
@@ -93,12 +114,14 @@ fn encode_query(params: &[(&str, &str)]) -> String {
 ///
 /// Handles JWT authentication, request construction, and response parsing.
 /// Each request generates a fresh ES256 JWT for authentication.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CoinbaseRawHttpClient {
     client: HttpClient,
     credential: Option<CoinbaseCredential>,
     base_url: String,
     environment: CoinbaseEnvironment,
+    retry_manager: RetryManager<Error>,
+    cancellation_token: CancellationToken,
 }
 
 impl CoinbaseRawHttpClient {
@@ -111,19 +134,22 @@ impl CoinbaseRawHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
                 vec![],
-                default_quota(),
+                Some(*COINBASE_REST_QUOTA),
                 Some(timeout_secs),
                 proxy_url,
             )?,
             credential: None,
             base_url: urls::rest_url(environment).to_string(),
             environment,
+            retry_manager: RetryManager::new(retry_config.unwrap_or_else(default_retry_config)),
+            cancellation_token: CancellationToken::new(),
         })
     }
 
@@ -137,19 +163,22 @@ impl CoinbaseRawHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
             client: HttpClient::new(
                 Self::default_headers(),
                 vec![],
                 vec![],
-                default_quota(),
+                Some(*COINBASE_REST_QUOTA),
                 Some(timeout_secs),
                 proxy_url,
             )?,
             credential: Some(credential),
             base_url: urls::rest_url(environment).to_string(),
             environment,
+            retry_manager: RetryManager::new(retry_config.unwrap_or_else(default_retry_config)),
+            cancellation_token: CancellationToken::new(),
         })
     }
 
@@ -161,7 +190,7 @@ impl CoinbaseRawHttpClient {
     pub fn from_env(environment: CoinbaseEnvironment) -> Result<Self> {
         let credential = CoinbaseCredential::from_env()
             .map_err(|e| Error::auth(format!("Missing credentials in environment: {e}")))?;
-        Self::with_credentials(credential, environment, 10, None)
+        Self::with_credentials(credential, environment, 10, None, None)
             .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
     }
 
@@ -176,10 +205,23 @@ impl CoinbaseRawHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let credential = CoinbaseCredential::new(api_key.to_string(), api_secret.to_string());
-        Self::with_credentials(credential, environment, timeout_secs, proxy_url)
-            .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
+        Self::with_credentials(
+            credential,
+            environment,
+            timeout_secs,
+            proxy_url,
+            retry_config,
+        )
+        .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))
+    }
+
+    /// Returns the cancellation token shared by in-flight requests.
+    #[must_use]
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
     }
 
     /// Overrides the base REST URL (for testing with mock servers).
@@ -250,16 +292,65 @@ impl CoinbaseRawHttpClient {
         serde_json::from_slice(&response.body).map_err(Error::Serde)
     }
 
+    // Retries are gated to GET/DELETE because Coinbase POST endpoints
+    // (`/orders`, `/orders/edit`, `/orders/batch_cancel`) mutate live state
+    // and a replay could submit, edit, or cancel twice. JWT headers are
+    // rebuilt on each attempt because Coinbase JWTs expire after 120s.
+    async fn send_request(
+        &self,
+        method: Method,
+        url: String,
+        sign_method: Option<&'static str>,
+        sign_path: Option<&str>,
+        body: Option<Vec<u8>>,
+    ) -> Result<Value> {
+        let sign_path_owned = sign_path.map(ToOwned::to_owned);
+        let operation_name = sign_path_owned
+            .as_deref()
+            .unwrap_or(url.as_str())
+            .to_string();
+
+        let is_idempotent = matches!(method, Method::GET | Method::DELETE);
+
+        let operation = || {
+            let method = method.clone();
+            let url = url.clone();
+            let body = body.clone();
+            let sign_path = sign_path_owned.clone();
+
+            async move {
+                let headers = match (sign_method, sign_path.as_deref()) {
+                    (Some(m), Some(p)) => Some(self.auth_headers(m, p)?),
+                    _ => None,
+                };
+
+                let response = self
+                    .client
+                    .request(method, url, None, headers, body, None, None)
+                    .await
+                    .map_err(Error::from_http_client)?;
+
+                self.parse_response(&response)
+            }
+        };
+
+        let should_retry = move |err: &Error| is_idempotent && err.is_retryable();
+
+        self.retry_manager
+            .execute_with_retry_with_cancel(
+                &operation_name,
+                operation,
+                should_retry,
+                Error::transport,
+                &self.cancellation_token,
+            )
+            .await
+    }
+
     /// Sends a GET request to a public endpoint (no auth required).
     pub async fn get_public(&self, path: &str) -> Result<Value> {
         let url = self.build_url(path);
-        let response = self
-            .client
-            .request(Method::GET, url, None, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
+        self.send_request(Method::GET, url, None, None, None).await
     }
 
     /// Sends a GET request with query parameters to a public endpoint.
@@ -270,26 +361,14 @@ impl CoinbaseRawHttpClient {
             format!("{path}?{query}")
         };
         let url = self.build_url(&full_path);
-        let response = self
-            .client
-            .request(Method::GET, url, None, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
+        self.send_request(Method::GET, url, None, None, None).await
     }
 
     /// Sends an authenticated GET request.
     pub async fn get(&self, path: &str) -> Result<Value> {
         let url = self.build_url(path);
-        let headers = self.auth_headers("GET", path)?;
-        let response = self
-            .client
-            .request(Method::GET, url, None, Some(headers), None, None, None)
+        self.send_request(Method::GET, url, Some("GET"), Some(path), None)
             .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
     }
 
     /// Sends an authenticated GET request with query parameters appended to the path.
@@ -304,51 +383,30 @@ impl CoinbaseRawHttpClient {
             format!("{path}?{query}")
         };
         let url = self.build_url(&full_url_path);
-
         // Sign with the bare path only (no query string).
-        let headers = self.auth_headers("GET", path)?;
-        let response = self
-            .client
-            .request(Method::GET, url, None, Some(headers), None, None, None)
+        self.send_request(Method::GET, url, Some("GET"), Some(path), None)
             .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
     }
 
     /// Sends an authenticated POST request with a JSON body.
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value> {
         let url = self.build_url(path);
-        let headers = self.auth_headers("POST", path)?;
         let body_bytes = serde_json::to_vec(body).map_err(Error::Serde)?;
-        let response = self
-            .client
-            .request(
-                Method::POST,
-                url,
-                None,
-                Some(headers),
-                Some(body_bytes),
-                None,
-                None,
-            )
-            .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
+        self.send_request(
+            Method::POST,
+            url,
+            Some("POST"),
+            Some(path),
+            Some(body_bytes),
+        )
+        .await
     }
 
     /// Sends an authenticated DELETE request.
     pub async fn delete(&self, path: &str) -> Result<Value> {
         let url = self.build_url(path);
-        let headers = self.auth_headers("DELETE", path)?;
-        let response = self
-            .client
-            .request(Method::DELETE, url, None, Some(headers), None, None, None)
+        self.send_request(Method::DELETE, url, Some("DELETE"), Some(path), None)
             .await
-            .map_err(Error::from_http_client)?;
-
-        self.parse_response(&response)
     }
 
     /// Gets all available products via the public `/market/products` endpoint.
@@ -669,7 +727,7 @@ pub struct CoinbaseHttpClient {
 
 impl Default for CoinbaseHttpClient {
     fn default() -> Self {
-        Self::new(CoinbaseEnvironment::Live, 10, None)
+        Self::new(CoinbaseEnvironment::Live, 10, None, None)
             .expect("Failed to create default Coinbase HTTP client")
     }
 }
@@ -684,8 +742,9 @@ impl CoinbaseHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
-        let raw = CoinbaseRawHttpClient::new(environment, timeout_secs, proxy_url)?;
+        let raw = CoinbaseRawHttpClient::new(environment, timeout_secs, proxy_url, retry_config)?;
         Ok(Self::from_raw(raw))
     }
 
@@ -699,12 +758,14 @@ impl CoinbaseHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         let raw = CoinbaseRawHttpClient::with_credentials(
             credential,
             environment,
             timeout_secs,
             proxy_url,
+            retry_config,
         )?;
         Ok(Self::from_raw(raw))
     }
@@ -730,6 +791,7 @@ impl CoinbaseHttpClient {
         environment: CoinbaseEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let raw = CoinbaseRawHttpClient::from_credentials(
             api_key,
@@ -737,8 +799,15 @@ impl CoinbaseHttpClient {
             environment,
             timeout_secs,
             proxy_url,
+            retry_config,
         )?;
         Ok(Self::from_raw(raw))
+    }
+
+    /// Returns the cancellation token shared by in-flight requests.
+    #[must_use]
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        self.inner.cancellation_token()
     }
 
     fn from_raw(raw: CoinbaseRawHttpClient) -> Self {
@@ -1405,34 +1474,36 @@ mod tests {
 
     #[rstest]
     fn test_raw_client_construction_live() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         assert_eq!(client.environment(), CoinbaseEnvironment::Live);
         assert!(!client.is_authenticated());
     }
 
     #[rstest]
     fn test_raw_client_construction_sandbox() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Sandbox, 10, None).unwrap();
+        let client =
+            CoinbaseRawHttpClient::new(CoinbaseEnvironment::Sandbox, 10, None, None).unwrap();
         assert_eq!(client.environment(), CoinbaseEnvironment::Sandbox);
     }
 
     #[rstest]
     fn test_raw_build_url() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         let url = client.build_url("/products");
         assert_eq!(url, "https://api.coinbase.com/api/v3/brokerage/products");
     }
 
     #[rstest]
     fn test_raw_build_jwt_uri_live() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         let uri = client.build_jwt_uri("GET", "/accounts");
         assert_eq!(uri, "GET api.coinbase.com/api/v3/brokerage/accounts");
     }
 
     #[rstest]
     fn test_raw_build_jwt_uri_sandbox() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Sandbox, 10, None).unwrap();
+        let client =
+            CoinbaseRawHttpClient::new(CoinbaseEnvironment::Sandbox, 10, None, None).unwrap();
         let uri = client.build_jwt_uri("GET", "/accounts");
         assert_eq!(
             uri,
@@ -1442,7 +1513,8 @@ mod tests {
 
     #[rstest]
     fn test_raw_build_jwt_uri_custom_base_url() {
-        let mut client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let mut client =
+            CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         client.set_base_url("http://localhost:8080".to_string());
         let uri = client.build_jwt_uri("POST", "/orders");
         assert_eq!(uri, "POST localhost:8080/api/v3/brokerage/orders");
@@ -1450,7 +1522,7 @@ mod tests {
 
     #[rstest]
     fn test_raw_auth_headers_without_credentials() {
-        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         let result = client.auth_headers("GET", "/accounts");
         assert!(result.is_err());
         assert!(result.unwrap_err().is_auth_error());
@@ -1458,7 +1530,7 @@ mod tests {
 
     #[rstest]
     fn test_domain_client_construction() {
-        let client = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let client = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         assert_eq!(client.environment(), CoinbaseEnvironment::Live);
         assert!(!client.is_authenticated());
     }
@@ -1477,7 +1549,8 @@ mod tests {
 
     #[rstest]
     fn test_domain_client_set_base_url() {
-        let mut client = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None).unwrap();
+        let mut client =
+            CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         client.set_base_url("http://localhost:9090".to_string());
         // Verify via raw client's build_url
         let url = client.inner.build_url("/test");
@@ -1697,5 +1770,19 @@ mod tests {
             false,
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_rest_quota_matches_documented_limit() {
+        assert_eq!(COINBASE_REST_QUOTA.burst_size().get(), 30);
+    }
+
+    #[rstest]
+    fn test_default_retry_config_values() {
+        let config = default_retry_config();
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.initial_delay_ms, 100);
+        assert_eq!(config.max_delay_ms, 5_000);
+        assert_eq!(config.max_elapsed_ms, Some(180_000));
     }
 }
