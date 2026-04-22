@@ -39,6 +39,15 @@ class PolymarketWebSocketChannel(Enum):
     USER = "user"
 
 
+# MARKET channel streams continuously; USER channel can legitimately be quiet
+# when no orders or fills exist, so give it a longer window before treating
+# silence as a zombie connection.
+def _idle_timeout_ms_for(channel: PolymarketWebSocketChannel) -> int:
+    if channel == PolymarketWebSocketChannel.USER:
+        return 300_000
+    return 60_000
+
+
 class PolymarketWebSocketClient:
     """
     Provides a Polymarket streaming WebSocket client.
@@ -359,6 +368,7 @@ class PolymarketWebSocketClient:
                 url=self._ws_url,
                 headers=[],
                 heartbeat=10,
+                idle_timeout_ms=_idle_timeout_ms_for(self._channel),
             )
 
             self._clients[client_id] = await WebSocketClient.connect(

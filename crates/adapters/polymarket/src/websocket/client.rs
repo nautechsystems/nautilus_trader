@@ -46,6 +46,16 @@ pub enum WsChannel {
     User,
 }
 
+// Market channel streams continuously; user channel can legitimately be quiet
+// when no orders or fills exist, so give it a longer window before treating
+// silence as a zombie connection.
+fn idle_timeout_ms_for(channel: WsChannel) -> u64 {
+    match channel {
+        WsChannel::Market => 60_000,
+        WsChannel::User => 300_000,
+    }
+}
+
 /// Lightweight handle for subscribing/unsubscribing to market data.
 ///
 /// `Clone` + `Send` safe for use in spawned async tasks.
@@ -173,7 +183,7 @@ impl PolymarketWebSocketClient {
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
         };
 
         let client =
@@ -432,5 +442,19 @@ impl PolymarketWebSocketClient {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{WsChannel, idle_timeout_ms_for};
+
+    #[rstest]
+    #[case::market(WsChannel::Market, 60_000)]
+    #[case::user(WsChannel::User, 300_000)]
+    fn test_idle_timeout_ms_for_channel(#[case] channel: WsChannel, #[case] expected: u64) {
+        assert_eq!(idle_timeout_ms_for(channel), expected);
     }
 }

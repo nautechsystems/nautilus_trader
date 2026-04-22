@@ -609,7 +609,8 @@ impl WebSocketClientInner {
                     }
                     Ok(Some(Ok(Message::Ping(ping_data)))) => {
                         log::trace!("Received ping: {ping_data:?}");
-                        last_data_time = tokio::time::Instant::now();
+                        // Do not reset last_data_time: pings are keep-alive frames, not application
+                        // data, so a peer that emits only pings must still trip the idle timeout.
 
                         if let Some(ref handler) = ping_handler {
                             handler(ping_data.to_vec());
@@ -617,7 +618,7 @@ impl WebSocketClientInner {
                     }
                     Ok(Some(Ok(Message::Pong(_)))) => {
                         log::trace!("Received pong");
-                        last_data_time = tokio::time::Instant::now();
+                        // Do not reset last_data_time: pongs are keep-alive replies (not data)
                     }
                     Ok(Some(Ok(Message::Close(_)))) => {
                         log::debug!("Received close message - terminating");
@@ -2932,6 +2933,137 @@ mod rust_tests {
         assert!(
             client.is_active(),
             "Client should remain active when data is flowing"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_idle_timeout_fires_when_only_pings_received() {
+        // Regression: pings and pongs are keep-alive frames, not application data,
+        // so a peer that only emits control frames must still trip the idle timeout.
+        // The peer keeps pinging for well past the observation window so the
+        // pre-fix behavior (reset-on-ping) would keep the client active; under the
+        // fix the idle timer never resets and fires after ~500ms.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+
+            for _ in 0..60 {
+                sleep(Duration::from_millis(100)).await;
+
+                if ws.send(WsMessage::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: Some(500),
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        assert!(client.is_active());
+
+        // Observation window is shorter than the ping stream (6s). If the idle
+        // timer mistakenly reset on every ping the client would still be active
+        // here; under the fix it goes inactive at ~500ms.
+        wait_until_async(
+            || async { client.is_reconnecting() || client.is_disconnected() },
+            Duration::from_millis(1_500),
+        )
+        .await;
+
+        assert!(
+            !client.is_active(),
+            "Client should not be active after idle timeout when only pings/pongs flow"
+        );
+
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_idle_timeout_fires_when_only_pongs_received() {
+        // Regression for the heartbeat-reply path. When the client heartbeat is
+        // enabled, the peer auto-replies with pongs for every outgoing ping. If
+        // those pongs refreshed last_data_time the idle timer would never fire on
+        // a zombie connection (the motivating Polymarket scenario).
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(stream).await.unwrap();
+
+            // Drain incoming frames so tungstenite's internal pong replies are
+            // actually flushed to the client. Hold the connection open well past
+            // the observation window.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(6);
+            while tokio::time::Instant::now() < deadline {
+                if let Ok(Some(Err(_)) | None) =
+                    tokio::time::timeout(Duration::from_millis(100), ws.next()).await
+                {
+                    break;
+                }
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            heartbeat: Some(1),
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            idle_timeout_ms: Some(1_500),
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .unwrap();
+
+        assert!(client.is_active());
+
+        // Heartbeat cadence is 1s; each ping draws a pong reply. Under the fix
+        // the idle timer ignores those pongs and fires at ~1.5s. Under the bug
+        // every pong reset the timer and the client would stay active.
+        wait_until_async(
+            || async { client.is_reconnecting() || client.is_disconnected() },
+            Duration::from_millis(2_500),
+        )
+        .await;
+
+        assert!(
+            !client.is_active(),
+            "Client should not be active after idle timeout when only pongs flow"
         );
 
         client.disconnect().await;
