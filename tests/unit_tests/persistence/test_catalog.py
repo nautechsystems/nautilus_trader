@@ -1867,6 +1867,94 @@ def test_consolidate_catalog_by_period(catalog: ParquetDataCatalog) -> None:
     assert initial_file_count >= 1  # We had some files initially
 
 
+def test_consolidate_data_no_overlap_range_is_noop(catalog: ParquetDataCatalog) -> None:
+    # Arrange: write bars in January 2024
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+    bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.MID)
+    bar_type = BarType(instrument.id, bar_spec)
+    bar_type_str = str(bar_type)
+
+    base = dt_to_unix_nanos(pd.Timestamp("2024-01-01", tz="UTC"))
+    hour = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+    def make_bar(ts: int) -> Bar:
+        return Bar(
+            bar_type=bar_type,
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("0.99990"),
+            close=Price.from_str("1.00005"),
+            volume=Quantity.from_str("1000"),
+            ts_event=ts,
+            ts_init=ts,
+        )
+
+    for i in range(24):
+        catalog.write_data([make_bar(base + i * hour)], skip_disjoint_check=True)
+
+    initial_files = catalog.fs.glob(f"{catalog._make_path(Bar, bar_type_str)}/*.parquet")
+    assert len(initial_files) == 24
+
+    # Act: consolidate over a range that does not overlap any files
+    catalog.consolidate_data(
+        data_cls=Bar,
+        identifier=bar_type_str,
+        start=pd.Timestamp("2024-06-01", tz="UTC"),
+        end=pd.Timestamp("2024-06-30", tz="UTC"),
+    )
+
+    # Assert: original files untouched, no error raised
+    final_files = catalog.fs.glob(f"{catalog._make_path(Bar, bar_type_str)}/*.parquet")
+    assert len(final_files) == 24
+
+
+def test_consolidate_catalog_by_period_skips_unknown_directory(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Arrange: write bars, then create an unknown directory that sorts before `bar`
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", venue=Venue("SIM"))
+    bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.MID)
+    bar_type = BarType(instrument.id, bar_spec)
+    bar_type_str = str(bar_type)
+
+    base = dt_to_unix_nanos(pd.Timestamp("2024-01-01", tz="UTC"))
+    hour = int(pd.Timedelta(hours=1).total_seconds() * 1e9)
+
+    def make_bar(ts: int) -> Bar:
+        return Bar(
+            bar_type=bar_type,
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("0.99990"),
+            close=Price.from_str("1.00005"),
+            volume=Quantity.from_str("1000"),
+            ts_event=ts,
+            ts_init=ts,
+        )
+
+    for i in range(24):
+        catalog.write_data([make_bar(base + i * hour)], skip_disjoint_check=True)
+
+    bar_dir = catalog._make_path(Bar, bar_type_str)
+    initial_files = catalog.fs.glob(f"{bar_dir}/*.parquet")
+    assert len(initial_files) == 24
+
+    unknown_dir = f"{catalog.path}/data/aaa_unknown_garbage"
+    catalog.fs.mkdir(unknown_dir, create_parents=True)
+    with catalog.fs.open(f"{unknown_dir}/placeholder.parquet", "wb") as f:
+        f.write(b"")
+
+    # Act: the unknown directory sorts before `bar`; the bug made this `return`
+    catalog.consolidate_catalog_by_period(
+        period=pd.Timedelta(days=1),
+        ensure_contiguous_files=False,
+    )
+
+    # Assert: bars were consolidated into a single file despite the unknown dir
+    final_files = catalog.fs.glob(f"{bar_dir}/*.parquet")
+    assert len(final_files) == 1
+
+
 def test_extract_data_cls_and_identifier_from_path(catalog: ParquetDataCatalog) -> None:
     # Arrange
     quote = TestDataStubs.quote_tick()
