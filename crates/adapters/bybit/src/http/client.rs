@@ -3051,7 +3051,8 @@ impl BybitHttpClient {
                 ref message,
             }) => {
                 log::warn!(
-                    "Fee rate request rejected (error {error_code}: {message}), using defaults"
+                    "{}",
+                    self.fee_rate_rejection_warning(product_type, error_code, message)
                 );
                 Ok(AHashMap::new())
             }
@@ -3087,8 +3088,9 @@ impl BybitHttpClient {
                 error_code,
                 ref message,
             }) => {
+                let error_detail = Self::format_bybit_error_detail(error_code, message);
                 log::warn!(
-                    "Option fee rate request rejected (error {error_code}: {message}), using defaults"
+                    "Option fee rate request rejected via /v5/account/fee-rate ({error_detail}), using defaults"
                 );
                 Ok(AHashMap::new())
             }
@@ -3096,6 +3098,43 @@ impl BybitHttpClient {
                 log::warn!("Option fee rate request failed ({e}), using defaults");
                 Ok(AHashMap::new())
             }
+        }
+    }
+
+    fn fee_rate_rejection_warning(
+        &self,
+        product_type: BybitProductType,
+        error_code: i32,
+        message: &str,
+    ) -> String {
+        let product_type = product_type.as_ref().to_ascii_lowercase();
+        let error_detail = Self::format_bybit_error_detail(error_code, message);
+
+        if self
+            .base_url()
+            .starts_with(bybit_http_base_url(BybitEnvironment::Demo))
+            && matches!(product_type.as_str(), "linear" | "inverse")
+            && error_code == 10001
+        {
+            format!(
+                "Bybit demo rejected the {product_type} fee rate request via \
+                 /v5/account/fee-rate ({error_detail}); demo derivatives fee rates appear \
+                 unsupported, using defaults"
+            )
+        } else {
+            format!(
+                "Fee rate request rejected for {product_type} instruments via \
+                 /v5/account/fee-rate ({error_detail}), using defaults"
+            )
+        }
+    }
+
+    fn format_bybit_error_detail(error_code: i32, message: &str) -> String {
+        let message = message.trim();
+        if message.is_empty() {
+            format!("error {error_code}, no message")
+        } else {
+            format!("error {error_code}: {message}")
         }
     }
 
@@ -4598,5 +4637,101 @@ mod tests {
         assert!(query1.contains("category=spot"));
         assert!(query1.contains("symbol=BTCUSDT"));
         assert!(query1.contains("limit=50"));
+    }
+
+    #[rstest]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Linear,
+        10001,
+        "",
+        "Bybit demo rejected the linear fee rate request via /v5/account/fee-rate \
+         (error 10001, no message); demo derivatives fee rates appear unsupported, using defaults"
+    )]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Inverse,
+        10001,
+        "",
+        "Bybit demo rejected the inverse fee rate request via /v5/account/fee-rate \
+         (error 10001, no message); demo derivatives fee rates appear unsupported, using defaults"
+    )]
+    #[case(
+        "https://api.bybit.com",
+        BybitProductType::Spot,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for spot instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    #[case(
+        "https://api-demo.bybit.com",
+        BybitProductType::Spot,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for spot instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    #[case(
+        "https://api.bybit.com",
+        BybitProductType::Linear,
+        10001,
+        "Parameter error",
+        "Fee rate request rejected for linear instruments via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    fn test_fee_rate_rejection_warning(
+        #[case] base_url: &str,
+        #[case] product_type: BybitProductType,
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let client =
+            BybitHttpClient::new(Some(base_url.to_string()), 60, 3, 1000, 10_000, 5_000, None)
+                .unwrap();
+
+        let warning = client.fee_rate_rejection_warning(product_type, error_code, message);
+
+        assert_eq!(warning, expected);
+    }
+
+    #[rstest]
+    #[case(10001, "", "error 10001, no message")]
+    #[case(10001, "Parameter error", "error 10001: Parameter error")]
+    fn test_format_bybit_error_detail(
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let detail = BybitHttpClient::format_bybit_error_detail(error_code, message);
+
+        assert_eq!(detail, expected);
+    }
+
+    #[rstest]
+    #[case(
+        10001,
+        "",
+        "Option fee rate request rejected via /v5/account/fee-rate \
+         (error 10001, no message), using defaults"
+    )]
+    #[case(
+        10001,
+        "Parameter error",
+        "Option fee rate request rejected via /v5/account/fee-rate \
+         (error 10001: Parameter error), using defaults"
+    )]
+    fn test_option_fee_rate_warning_message(
+        #[case] error_code: i32,
+        #[case] message: &str,
+        #[case] expected: &str,
+    ) {
+        let error_detail = BybitHttpClient::format_bybit_error_detail(error_code, message);
+        let warning = format!(
+            "Option fee rate request rejected via /v5/account/fee-rate ({error_detail}), using defaults"
+        );
+
+        assert_eq!(warning, expected);
     }
 }

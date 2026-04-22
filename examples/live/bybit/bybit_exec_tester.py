@@ -39,6 +39,9 @@ from nautilus_trader.test_kit.strategies.tester_exec import ExecTesterConfig
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+# MAINNET/DEMO/TESTNET
+bybit_environment = BybitEnvironment.MAINNET
+
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
 
@@ -137,7 +140,7 @@ config_node = TradingNodeConfig(
     # ),
     data_clients={
         BYBIT: BybitDataClientConfig(
-            environment=BybitEnvironment.MAINNET,
+            environment=bybit_environment,
             # instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,
@@ -148,7 +151,7 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         BYBIT: BybitExecClientConfig(
-            environment=BybitEnvironment.MAINNET,
+            environment=bybit_environment,
             # instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_provider=InstrumentProviderConfig(
                 load_all=False,

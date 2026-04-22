@@ -19,7 +19,6 @@ use super::enums::{BybitEnvironment, BybitProductType};
 
 const STREAM_MAINNET: &str = "stream";
 const STREAM_TESTNET: &str = "stream-testnet";
-const STREAM_DEMO: &str = "stream-demo";
 
 /// Returns the base HTTP endpoint for the given environment.
 #[must_use]
@@ -34,7 +33,8 @@ pub const fn bybit_http_base_url(environment: BybitEnvironment) -> &'static str 
 fn ws_public_subdomain(environment: BybitEnvironment) -> &'static str {
     match environment {
         BybitEnvironment::Mainnet => STREAM_MAINNET,
-        BybitEnvironment::Demo => STREAM_DEMO,
+        // Bybit demo trading uses mainnet public market data streams
+        BybitEnvironment::Demo => STREAM_MAINNET,
         BybitEnvironment::Testnet => STREAM_TESTNET,
     }
 }
@@ -88,7 +88,7 @@ mod tests {
         );
         assert_eq!(
             bybit_ws_public_url(BybitProductType::Option, BybitEnvironment::Demo),
-            "wss://stream-demo.bybit.com/v5/public/option"
+            "wss://stream.bybit.com/v5/public/option"
         );
         assert_eq!(
             bybit_ws_public_url(BybitProductType::Inverse, BybitEnvironment::Testnet),

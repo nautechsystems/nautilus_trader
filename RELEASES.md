@@ -56,6 +56,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
+- Fixed `AccountState` to accept empty `balances` and `margins`
 - Fixed `stop_timer` in `TimeBarAggregator` (#3822), thanks @faysou
 - Fixed `RiskEngine` applying base `min_quantity`/`max_quantity` bounds to quote-denominated orders
 - Fixed backtest `OrderMatchingEngine` treating `quote_quantity=True` orders as base quantity; the quote notional is now converted to a base quantity before fill simulation (#3873), thanks for reporting @fedoraiver
@@ -94,6 +95,7 @@ Released on TBD (UTC).
 - Fixed Binance Ed25519 detector silently accepting base64 HMAC secrets as Ed25519 keys (Rust)
 - Fixed Binance HTTP request Ed25519 signature URL-encoding in query strings (Rust)
 - Fixed BitMEX trade ID fallback using random UUID4 when `trdMatchID` missing; now hashed from trade fields
+- Fixed Bybit demo mode websocket data URLs (#3742), thanks for reporting @jindrichsirucek
 - Fixed Bybit position deserialization for closed positions (#3836), thanks for reporting @pusteckiy
 - Fixed Bybit perpetual instrument status to emit `PreClose` when scheduled for delisting (#3829), thanks @dxwil
 - Fixed Bybit `load_all_async` dropping `base_coin` filter for options (#3865), thanks for reporting @Baerenstein

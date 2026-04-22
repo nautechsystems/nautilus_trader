@@ -44,9 +44,9 @@ A `.env` file in the repository root also works. The examples load it via
 `dotenvy`.
 
 :::warning
-Bybit's demo environment does not support options. The public WebSocket
-endpoint for options does not exist on `stream-demo.bybit.com`. Use mainnet
-or testnet credentials for this tutorial.
+Bybit demo trading uses `stream-demo.bybit.com` only for private streams.
+Public option market data uses the mainnet public stream
+`wss://stream.bybit.com/v5/public/option`.
 :::
 
 ## The DataActor pattern

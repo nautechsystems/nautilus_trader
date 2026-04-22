@@ -96,7 +96,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.SPOT,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/spot",
+                "wss://stream.bybit.com/v5/public/spot",
             ],
             [
                 nautilus_pyo3.BybitProductType.LINEAR,
@@ -111,7 +111,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.LINEAR,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/linear",
+                "wss://stream.bybit.com/v5/public/linear",
             ],
             [
                 nautilus_pyo3.BybitProductType.INVERSE,
@@ -126,7 +126,7 @@ class TestBybitFactories:
             [
                 nautilus_pyo3.BybitProductType.INVERSE,
                 nautilus_pyo3.BybitEnvironment.DEMO,
-                "wss://stream-demo.bybit.com/v5/public/inverse",
+                "wss://stream.bybit.com/v5/public/inverse",
             ],
         ],
     )
