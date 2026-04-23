@@ -1,4 +1,4 @@
-# DST scope-hole inventory
+# DST Scope Inventory
 
 Companion to `docs/concepts/dst.md`. Lists every area where the DST contract
 does not apply, so "what the contract does not cover" is explicit rather than

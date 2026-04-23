@@ -26,4 +26,4 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Execution Testing Spec](spec_exec_testing.md)
 - [Benchmarking](benchmarking.md)
 - [FFI Memory Contract](ffi.md)
-- [DST Scope Holes](dst_scope_holes.md)
+- [DST Scope Inventory](dst_scope_inventory.md)

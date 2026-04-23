@@ -133,7 +133,7 @@ Requirements and best practices for developing integration adapters for data pro
 Writing actors, strategies, and running backtests and live trading in pure Rust
 using the `crates/` implementation directly.
 
-## Deterministic Simulation Testing
+## Deterministic Simulation Testing (DST)
 
 The determinism contract for seed-replayable execution, the source-level seams that implement
 it, the pre-commit hook that enforces it, and the known scope boundaries.

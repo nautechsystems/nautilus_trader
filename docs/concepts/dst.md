@@ -1,4 +1,4 @@
-# Deterministic Simulation Testing
+# DST
 
 Deterministic simulation testing (DST) runs NautilusTrader under a seed-controlled runtime so that
 timing-sensitive execution behavior is bitwise reproducible from a single integer. This guide
@@ -267,7 +267,7 @@ As of the current state of this repository:
 
 ## Further reading
 
-- The [DST scope-hole inventory](../developer_guide/dst_scope_holes.md) enumerates every area
+- The [DST scope-hole inventory](../developer_guide/dst_scope_inventory.md) enumerates every area
   where the contract does not apply, tagged closed / gated / scoped-out / unresolved.
 - `.pre-commit-hooks/check_dst_conventions.sh` defines the five enforcement rules in full and
   documents the `// dst-ok` marker convention.
