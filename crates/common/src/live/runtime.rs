@@ -84,10 +84,25 @@ fn initialize_runtime() -> tokio::runtime::Runtime {
         .expect("Failed to create tokio runtime")
 }
 
+/// Sets a custom pre-built Tokio runtime as the global Nautilus runtime.
+///
+/// Must be called before the first [`get_runtime`] invocation (i.e. before
+/// `LiveNode::build()` or any adapter/client usage). This gives callers who
+/// own `main()` full control over worker threads, blocking threads, thread
+/// names, stack sizes, and any other [`tokio::runtime::Builder`] options.
+///
+/// # Errors
+///
+/// Returns `Err` containing the runtime back if one was already initialized.
+pub fn set_runtime(runtime: tokio::runtime::Runtime) -> Result<(), tokio::runtime::Runtime> {
+    RUNTIME.set(runtime)
+}
+
 /// Returns a reference to the global Nautilus Tokio runtime.
 ///
 /// The runtime is lazily initialized on the first call and reused thereafter.
-/// Intended for use cases where passing a runtime around is impractical.
+/// If a custom runtime was previously installed via [`set_runtime`], that
+/// runtime is returned instead.
 pub fn get_runtime() -> &'static tokio::runtime::Runtime {
     RUNTIME.get_or_init(initialize_runtime)
 }
