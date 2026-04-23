@@ -31,9 +31,8 @@
 //! is crate-local.
 
 pub mod time {
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    pub use tokio::time::{Instant, sleep, timeout};
-
     #[cfg(all(feature = "simulation", madsim))]
     pub use madsim::time::{Instant, sleep, timeout};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    pub use tokio::time::{Instant, sleep, timeout};
 }

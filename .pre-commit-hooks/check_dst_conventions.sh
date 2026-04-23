@@ -34,7 +34,7 @@ IN_SCOPE_CRATES=(
   "risk" "serialization" "system" "trading"
 )
 
-# Rule-1 L-dispositioned sites from the Phase 1 audit: log timing, progress
+# Rule-1 L-dispositioned sites from the codebase audit: log timing, progress
 # reporting, and audit-only uses that do not affect DST-path state.
 RULE1_ALLOWLIST=(
   "crates/common/src/cache/mod.rs"
@@ -169,14 +169,14 @@ check_rule1_hit() {
   [[ "$content" =~ $ALLOW_MARKER ]] && return
   is_in_rule1_allowlist "$norm_file" && return
 
-  # Allowlist: definition of wall_clock_now in core::time.
+  # Allowlist: the wall-clock seam definition site in core::time.
   if [[ "$norm_file" == "crates/core/src/time.rs" ]] &&
     [[ "$content" =~ SystemTime::now ]]; then
     return
   fi
 
   report "rule1" "$norm_file" "$line_num" "$content" \
-    "Route through nautilus_core::time::wall_clock_now or a DST seam"
+    "Route through nautilus_core::time::duration_since_unix_epoch or a DST seam"
 }
 
 # Fully-qualified reads are caught everywhere.

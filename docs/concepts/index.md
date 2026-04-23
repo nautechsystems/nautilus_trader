@@ -27,7 +27,7 @@ Instrument definitions for tradable assets and contracts.
 
 User-defined instruments whose prices are computed by evaluating a numeric expression over component instrument prices.
 
-## Value types
+## Value Types
 
 The immutable numeric types (`Price`, `Quantity`, `Money`) used throughout the platform,
 including their arithmetic behavior, precision handling, and type-specific constraints.
@@ -53,12 +53,12 @@ Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-ti
 Greeks via the Rust/PyO3 `OptionGreeks` type, and the local `GreeksCalculator` for
 Black-Scholes computation with shock scenarios, beta weighting, and portfolio aggregation.
 
-## Custom data
+## Custom Data
 
 How the custom data system works across Python and Rust: registration, persistence,
 Arrow encoding, and runtime routing through actors and strategies.
 
-## Order book
+## Order Book
 
 The high-performance order book, own order tracking, filtered views for net liquidity, and binary market support.
 
@@ -119,7 +119,7 @@ customization options, and custom visualizations via the extensible chart regist
 How config structs work across Python and Rust: default resolution, the `T` vs `Option<T>`
 convention, builder patterns, and common fields shared across adapters and engines.
 
-## Live trading
+## Live Trading
 
 Deploying backtested strategies in real-time without code changes, and the key differences
 between backtesting and live trading.
@@ -132,6 +132,11 @@ Requirements and best practices for developing integration adapters for data pro
 
 Writing actors, strategies, and running backtests and live trading in pure Rust
 using the `crates/` implementation directly.
+
+## Deterministic Simulation Testing
+
+The determinism contract for seed-replayable execution, the source-level seams that implement
+it, the pre-commit hook that enforces it, and the known scope boundaries.
 
 :::note
 If there are discrepancies between these guides and the API reference, the API reference is correct.
