@@ -20,6 +20,7 @@ use std::{
     collections::{BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
+    sync::Arc,
 };
 
 use ahash::AHashMap;
@@ -37,7 +38,7 @@ use nautilus_core::{
 use nautilus_execution::{
     matching_core::OrderMatchInfo,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
+    models::{fee::FeeModel, fill::FillModelAny, latency::LatencyModel},
 };
 use nautilus_model::{
     accounts::{AccountAny, margin_model::MarginModelAny},
@@ -123,7 +124,7 @@ pub struct SimulatedExchange {
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<Rc<dyn ExecutionClient>>,
-    fee_model: FeeModelAny,
+    fee_model: Arc<dyn FeeModel>,
     fill_model: FillModelAny,
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
@@ -1056,6 +1057,7 @@ mod tests {
         cell::{Cell, RefCell},
         collections::BinaryHeap,
         rc::Rc,
+        sync::Arc,
     };
 
     use nautilus_common::{
@@ -1066,7 +1068,7 @@ mod tests {
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::models::{
-        fee::{FeeModelAny, MakerTakerFeeModel},
+        fee::{FeeModel, FeeModelAny, MakerTakerFeeModel, share_fee_model},
         latency::StaticLatencyModel,
     };
     use nautilus_model::{
@@ -1076,8 +1078,8 @@ mod tests {
             QuoteTick, TradeTick,
         },
         enums::{
-            AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
-            OmsType, OrderSide, OrderType,
+            AccountType, AggressorSide, BookAction, BookType, LiquiditySide, MarketStatus,
+            MarketStatusAction, OmsType, OrderSide, OrderType,
         },
         events::AccountState,
         identifiers::{
@@ -1086,7 +1088,7 @@ mod tests {
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
-        orders::{Order, OrderAny, OrderTestBuilder},
+        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderStubs},
         stubs::TestDefault,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
@@ -1099,6 +1101,23 @@ mod tests {
         execution_client::BacktestExecutionClient,
         modules::{ExchangeContext, SimulationModule},
     };
+
+    #[derive(Debug)]
+    struct CustomFeeModel {
+        commission: Money,
+    }
+
+    impl FeeModel for CustomFeeModel {
+        fn get_commission(
+            &self,
+            _order: &OrderAny,
+            _fill_quantity: Quantity,
+            _fill_px: Price,
+            _instrument: &InstrumentAny,
+        ) -> anyhow::Result<Money> {
+            Ok(self.commission)
+        }
+    }
 
     fn get_exchange(
         venue: Venue,
@@ -1115,7 +1134,7 @@ mod tests {
             .book_type(book_type)
             .starting_balances(vec![Money::new(1000.0, Currency::USD())])
             .default_leverage(Decimal::ONE)
-            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+            .fee_model(Arc::new(FeeModelAny::MakerTaker(MakerTakerFeeModel)))
             .build();
         let exchange = Rc::new(RefCell::new(
             SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
@@ -1882,7 +1901,7 @@ mod tests {
             .starting_balances(vec![Money::new(1000.0, Currency::USD())])
             .default_leverage(Decimal::ONE)
             .modules(modules)
-            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel))
+            .fee_model(Arc::new(FeeModelAny::MakerTaker(MakerTakerFeeModel)))
             .build();
         let exchange = Rc::new(RefCell::new(
             SimulatedExchange::new(config, cache.clone(), clock).unwrap(),
@@ -2052,5 +2071,47 @@ mod tests {
 
         assert_eq!(counts.pre_process.get(), 2);
         assert_eq!(counts.process.get(), 1);
+    }
+
+    #[rstest]
+    fn test_exchange_accepts_custom_runtime_fee_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::new("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::new(1000.0, Currency::USDT())])
+            .default_leverage(Decimal::ONE)
+            .fee_model(share_fee_model(CustomFeeModel {
+                commission: Money::from("7.5 USDT"),
+            }))
+            .build();
+
+        let mut exchange = SimulatedExchange::new(config, cache, clock).unwrap();
+        exchange.add_instrument(instrument.clone()).unwrap();
+
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let filled_order =
+            TestOrderStubs::make_filled_order(&market_order, &instrument, LiquiditySide::Taker);
+        let commission = exchange
+            .fee_model
+            .get_commission(
+                &filled_order,
+                Quantity::from("1.000"),
+                Price::from("1000.00"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("7.5 USDT"));
+        assert_eq!(Arc::strong_count(&exchange.fee_model), 2);
     }
 }

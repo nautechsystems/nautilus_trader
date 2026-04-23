@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{fmt::Debug, sync::Arc};
+
 use nautilus_model::{
     enums::LiquiditySide,
     instruments::{Instrument, InstrumentAny},
@@ -21,7 +23,7 @@ use nautilus_model::{
 };
 use rust_decimal::prelude::ToPrimitive;
 
-pub trait FeeModel {
+pub trait FeeModel: Debug {
     /// Calculates commission for a fill.
     ///
     /// # Errors
@@ -34,6 +36,19 @@ pub trait FeeModel {
         fill_px: Price,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money>;
+}
+
+#[must_use]
+pub fn default_fee_model() -> Arc<dyn FeeModel> {
+    Arc::new(FeeModelAny::default())
+}
+
+#[must_use]
+pub fn share_fee_model<T>(value: T) -> Arc<dyn FeeModel>
+where
+    T: FeeModel + 'static,
+{
+    Arc::new(value)
 }
 
 #[derive(Clone, Debug)]

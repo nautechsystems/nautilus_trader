@@ -15,7 +15,7 @@
 
 //! Configuration types for the backtest engine, venues, data, and run parameters.
 
-use std::{fmt::Display, str::FromStr, time::Duration};
+use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use nautilus_common::{
@@ -27,7 +27,7 @@ use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
     models::{
-        fee::FeeModelAny,
+        fee::{FeeModel, FeeModelAny, default_fee_model},
         fill::FillModelAny,
         latency::{LatencyModel, LatencyModelAny},
     },
@@ -252,7 +252,7 @@ impl Default for BacktestEngineConfig {
 /// Constructed via [`bon::Builder`] so callers only specify what differs from
 /// the documented defaults. Field types mirror the internal
 /// `SimulatedExchange` shapes (trait objects for modules/latency, typed
-/// `Money` balances), which is why this is distinct from the YAML-friendly
+/// `Money` balances and runtime fee models), which is why this is distinct from the YAML-friendly
 /// [`BacktestVenueConfig`] used by `BacktestNode`.
 #[derive(bon::Builder)]
 #[allow(missing_debug_implementations)]
@@ -273,8 +273,8 @@ pub struct SimulatedVenueConfig {
     pub modules: Vec<Box<dyn SimulationModule>>,
     #[builder(default)]
     pub fill_model: FillModelAny,
-    #[builder(default)]
-    pub fee_model: FeeModelAny,
+    #[builder(default = default_fee_model())]
+    pub fee_model: Arc<dyn FeeModel>,
     pub latency_model: Option<Box<dyn LatencyModel>>,
     #[builder(default = false)]
     pub routing: bool,

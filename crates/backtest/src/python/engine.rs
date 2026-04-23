@@ -15,7 +15,7 @@
 
 //! Python bindings for [`BacktestEngine`].
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use ahash::AHashMap;
 use nautilus_common::{
@@ -206,7 +206,7 @@ impl PyBacktestEngine {
             .maybe_margin_model(margin_model)
             .modules(modules)
             .fill_model(fill_model)
-            .fee_model(fee_model)
+            .fee_model(Arc::new(fee_model))
             .maybe_latency_model(latency_model)
             .routing(routing)
             .reject_stop_orders(reject_stop_orders)

@@ -19,6 +19,7 @@ use std::{
     fmt::Debug,
     ops::{Add, Sub},
     rc::Rc,
+    sync::Arc,
 };
 
 use chrono::TimeDelta;
@@ -64,7 +65,7 @@ use crate::{
     matching_core::{MatchAction, OrderMatchInfo, OrderMatchingCore},
     matching_engine::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator},
     models::{
-        fee::{FeeModel, FeeModelAny},
+        fee::FeeModel,
         fill::{FillModel, FillModelAny},
     },
     protection::protection_price_calculate,
@@ -94,7 +95,7 @@ pub struct OrderMatchingEngine {
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     fill_model: FillModelAny,
-    fee_model: FeeModelAny,
+    fee_model: Arc<dyn FeeModel>,
     event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
     target_bid: Option<Price>,
     target_ask: Option<Price>,
@@ -142,7 +143,7 @@ impl OrderMatchingEngine {
         instrument: InstrumentAny,
         raw_id: u32,
         fill_model: FillModelAny,
-        fee_model: FeeModelAny,
+        fee_model: Arc<dyn FeeModel>,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,

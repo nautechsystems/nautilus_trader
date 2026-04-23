@@ -15,7 +15,7 @@
 
 //! Provides a [`BacktestNode`] that orchestrates catalog-driven backtests.
 
-use std::iter::Peekable;
+use std::{iter::Peekable, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::UnixNanos;
@@ -116,7 +116,7 @@ impl BacktestNode {
                     .map(Into::into)
                     .collect();
                 let fill_model = venue_config.fill_model().cloned().unwrap_or_default();
-                let fee_model = venue_config.fee_model().cloned().unwrap_or_default();
+                let fee_model = Arc::new(venue_config.fee_model().cloned().unwrap_or_default());
                 let latency_model = venue_config.latency_model().cloned().map(Into::into);
                 let sim_config = SimulatedVenueConfig::builder()
                     .venue(Venue::from(venue_config.name().as_str()))
