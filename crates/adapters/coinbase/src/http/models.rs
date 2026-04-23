@@ -145,6 +145,12 @@ pub struct FutureProductDetails {
     #[serde(default)]
     pub funding_rate: String,
     #[serde(default)]
+    pub funding_time: Option<String>,
+    #[serde(default)]
+    pub funding_interval: Option<String>,
+    #[serde(default)]
+    pub index_price: Option<String>,
+    #[serde(default)]
     pub display_name: String,
     #[serde(default)]
     pub futures_asset_type: Option<CoinbaseFuturesAssetType>,

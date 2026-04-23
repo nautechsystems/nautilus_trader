@@ -252,7 +252,15 @@ pub enum CoinbaseRiskManagedBy {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum CoinbaseAccountType {
+    // Production currently returns the fully qualified wire names
+    // (`ACCOUNT_TYPE_CRYPTO`, `ACCOUNT_TYPE_FIAT`); older documented
+    // examples use the short forms. Accept both on deserialize / parse
+    // but keep the short form as the canonical Display value.
+    #[serde(alias = "ACCOUNT_TYPE_CRYPTO")]
+    #[strum(to_string = "CRYPTO", serialize = "ACCOUNT_TYPE_CRYPTO")]
     Crypto,
+    #[serde(alias = "ACCOUNT_TYPE_FIAT")]
+    #[strum(to_string = "FIAT", serialize = "ACCOUNT_TYPE_FIAT")]
     Fiat,
 }
 
@@ -480,6 +488,36 @@ mod tests {
 
         let account_type = CoinbaseAccountType::from_str("CRYPTO").unwrap();
         assert_eq!(account_type, CoinbaseAccountType::Crypto);
+    }
+
+    // Production `/accounts` currently returns the fully qualified wire
+    // names (`ACCOUNT_TYPE_CRYPTO` / `ACCOUNT_TYPE_FIAT`). Both shapes
+    // must parse so account-state bootstrap doesn't fail with
+    // "unknown variant".
+    #[rstest]
+    fn test_account_type_accepts_qualified_wire_values() {
+        let account_type: CoinbaseAccountType =
+            serde_json::from_str("\"ACCOUNT_TYPE_CRYPTO\"").unwrap();
+        assert_eq!(account_type, CoinbaseAccountType::Crypto);
+
+        let account_type: CoinbaseAccountType =
+            serde_json::from_str("\"ACCOUNT_TYPE_FIAT\"").unwrap();
+        assert_eq!(account_type, CoinbaseAccountType::Fiat);
+
+        let account_type = CoinbaseAccountType::from_str("ACCOUNT_TYPE_CRYPTO").unwrap();
+        assert_eq!(account_type, CoinbaseAccountType::Crypto);
+    }
+
+    // Display must keep emitting the short form regardless of input
+    // wire shape; the qualified form is an input-only alias.
+    #[rstest]
+    fn test_account_type_display_uses_short_form() {
+        assert_eq!(CoinbaseAccountType::Crypto.to_string(), "CRYPTO");
+        assert_eq!(CoinbaseAccountType::Fiat.to_string(), "FIAT");
+        assert_eq!(
+            serde_json::to_string(&CoinbaseAccountType::Crypto).unwrap(),
+            "\"CRYPTO\""
+        );
     }
 
     #[rstest]

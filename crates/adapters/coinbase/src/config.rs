@@ -57,6 +57,12 @@ pub struct CoinbaseDataClientConfig {
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Seconds between REST polls for derivatives-only data streams
+    /// (`IndexPriceUpdate`, `FundingRateUpdate`). Coinbase Advanced Trade
+    /// does not publish these on a WebSocket channel, so they are sourced
+    /// from periodic `/products/{id}` fetches.
+    #[builder(default = 15)]
+    pub derivatives_poll_interval_secs: u64,
 }
 
 impl Default for CoinbaseDataClientConfig {

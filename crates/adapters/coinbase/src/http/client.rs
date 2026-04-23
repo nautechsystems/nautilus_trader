@@ -103,6 +103,25 @@ pub fn default_retry_config() -> RetryConfig {
     }
 }
 
+/// Returns the retry configuration for the Coinbase data client.
+///
+/// Historical requests spawn detached tasks outside the client's
+/// cancellation token; `max_retries = 0` keeps them bounded by a single
+/// HTTP timeout so a shut-down client cannot keep emitting `DataResponse`s.
+#[must_use]
+pub fn data_client_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_retries: 0,
+        initial_delay_ms: 100,
+        max_delay_ms: 100,
+        backoff_factor: 1.0,
+        jitter_ms: 0,
+        operation_timeout_ms: None,
+        immediate_first: false,
+        max_elapsed_ms: None,
+    }
+}
+
 // Builds a query string from `(key, value)` pairs, percent-encoding both
 // halves. Coinbase cursors and RFC 3339 timestamps (`+00:00`) contain
 // reserved characters that must be encoded to avoid the server reading
@@ -1023,6 +1042,29 @@ impl CoinbaseHttpClient {
         let instrument = parse_instrument(&product, ts_init)?;
         self.cache_instrument(&instrument);
         Ok(instrument)
+    }
+
+    /// Requests the raw product payload for a product ID.
+    ///
+    /// Returns the full [`crate::http::models::Product`] so callers can read
+    /// derivatives-specific fields (`future_product_details.index_price`,
+    /// `funding_rate`, `funding_time`) that are stripped when parsing to a
+    /// Nautilus instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP request fails or the response cannot
+    /// be deserialized.
+    pub async fn request_raw_product(
+        &self,
+        product_id: &str,
+    ) -> anyhow::Result<crate::http::models::Product> {
+        let json = self
+            .inner
+            .get_product(product_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch product '{product_id}': {e}"))?;
+        serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))
     }
 
     /// Requests the current account state.

@@ -32,9 +32,11 @@ use nautilus_common::{
         data::{
             BarsResponse, BookResponse, DataResponse, InstrumentResponse, InstrumentsResponse,
             RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeInstrument, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeInstrument, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -50,10 +52,11 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-use nautilus_network::retry::RetryConfig;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
+
+pub(crate) mod poll;
 
 use crate::{
     common::{
@@ -61,30 +64,15 @@ use crate::{
         parse::bar_type_to_granularity,
     },
     config::CoinbaseDataClientConfig,
+    data::poll::DerivPollManager,
     http::{
-        client::CoinbaseHttpClient,
+        client::{CoinbaseHttpClient, data_client_retry_config},
         models::{CandlesResponse, PriceBook, TickerResponse},
         parse::{parse_bar, parse_product_book_snapshot, parse_trade_tick},
     },
     provider::CoinbaseInstrumentProvider,
     websocket::{client::CoinbaseWebSocketClient, handler::NautilusWsMessage},
 };
-
-// Historical requests spawn detached tasks outside the client's cancellation
-// token; `max_retries = 0` keeps them bounded by a single HTTP timeout so a
-// shut-down client cannot keep emitting `DataResponse`s.
-fn data_client_retry_config() -> RetryConfig {
-    RetryConfig {
-        max_retries: 0,
-        initial_delay_ms: 100,
-        max_delay_ms: 100,
-        backoff_factor: 1.0,
-        jitter_ms: 0,
-        operation_timeout_ms: None,
-        immediate_first: false,
-        max_elapsed_ms: None,
-    }
-}
 
 /// Data client for Coinbase Advanced Trade.
 ///
@@ -104,6 +92,7 @@ pub struct CoinbaseDataClient {
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    deriv_polls: DerivPollManager,
     clock: &'static AtomicTime,
 }
 
@@ -148,6 +137,13 @@ impl CoinbaseDataClient {
         let ws_client = CoinbaseWebSocketClient::new(&ws_url);
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
+        let deriv_polls = DerivPollManager::new(
+            http_client.clone(),
+            data_sender.clone(),
+            clock,
+            config.derivatives_poll_interval_secs,
+        );
+
         Ok(Self {
             client_id,
             config,
@@ -159,6 +155,7 @@ impl CoinbaseDataClient {
             tasks: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            deriv_polls,
             clock,
         })
     }
@@ -302,12 +299,15 @@ impl DataClient for CoinbaseDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Coinbase data client {}", self.client_id);
         self.cancellation_token.cancel();
+        self.deriv_polls.shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Coinbase data client {}", self.client_id);
+        self.cancellation_token.cancel();
+        self.deriv_polls.shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
@@ -349,6 +349,13 @@ impl DataClient for CoinbaseDataClient {
             .await
             .context("failed to spawn WebSocket client")?;
 
+        // Re-spawn polling tasks for any derivatives subscriptions that
+        // survived a previous disconnect. The data engine's client adapter
+        // remembers the subscription set and suppresses duplicate subscribe
+        // commands, so without this resume step index-price and
+        // funding-rate streams would stay dark after a reconnect.
+        self.deriv_polls.resume();
+
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected: client_id={}", self.client_id);
 
@@ -361,6 +368,7 @@ impl DataClient for CoinbaseDataClient {
         }
 
         self.cancellation_token.cancel();
+        self.deriv_polls.shutdown();
 
         for task in self.tasks.drain(..) {
             if let Err(e) = task.await {
@@ -567,6 +575,47 @@ impl DataClient for CoinbaseDataClient {
             }
         });
 
+        Ok(())
+    }
+
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        // Coinbase Advanced Trade does not publish a live mark price for its
+        // perpetuals on either WS or REST. `settlement_price` is the prior
+        // daily settlement and drifts from the live index, so synthesizing a
+        // mark from it would be misleading. Reject explicitly so callers
+        // failing this subscription know why.
+        anyhow::bail!(
+            "Coinbase Advanced Trade does not publish mark prices; \
+             cannot subscribe for {}",
+            cmd.instrument_id
+        )
+    }
+
+    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        log::debug!("Subscribing to index prices: {}", cmd.instrument_id);
+        self.deriv_polls.subscribe_index(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        log::debug!("Unsubscribing from index prices: {}", cmd.instrument_id);
+        self.deriv_polls.unsubscribe_index(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
+        log::debug!("Subscribing to funding rates: {}", cmd.instrument_id);
+        self.deriv_polls.subscribe_funding(cmd.instrument_id);
+        Ok(())
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        log::debug!("Unsubscribing from funding rates: {}", cmd.instrument_id);
+        self.deriv_polls.unsubscribe_funding(cmd.instrument_id);
         Ok(())
     }
 
@@ -929,5 +978,56 @@ impl DataClient for CoinbaseDataClient {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::{
+        live::runner::set_data_event_sender, messages::data::SubscribeMarkPrices,
+    };
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::identifiers::InstrumentId;
+    use rstest::rstest;
+
+    use super::*;
+
+    // Coinbase Advanced Trade does not publish live mark prices for its
+    // perpetuals, so `subscribe_mark_prices` must return an explicit error
+    // naming the instrument and mentioning mark prices. A regression that
+    // silently `Ok(())`s the call would mask the unsupported feature.
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscribe_mark_prices_rejects_with_explicit_error() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let config = CoinbaseDataClientConfig::default();
+        let mut client = CoinbaseDataClient::new(ClientId::new("COINBASE"), config)
+            .expect("client construction");
+
+        let instrument_id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
+        let cmd = SubscribeMarkPrices::new(
+            instrument_id,
+            Some(ClientId::new("COINBASE")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let err = client
+            .subscribe_mark_prices(cmd)
+            .expect_err("must reject mark-price subscriptions");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("mark prices"),
+            "error must mention mark prices, was: {msg}"
+        );
+        assert!(
+            msg.contains("BIP-20DEC30-CDE.COINBASE"),
+            "error must name the instrument, was: {msg}"
+        );
     }
 }
