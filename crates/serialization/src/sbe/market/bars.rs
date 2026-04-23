@@ -16,7 +16,7 @@
 use nautilus_model::data::{Bar, BarSpecification, BarType};
 
 use super::{
-    super::{SbeCursor, SbeDecodeError, SbeEncodeError},
+    super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
     MarketSbeMessage,
     common::{
         BAR_TYPE_BLOCK_LENGTH, PRICE_BLOCK_LENGTH, QUANTITY_BLOCK_LENGTH,
@@ -32,10 +32,10 @@ impl MarketSbeMessage for BarType {
     const TEMPLATE_ID: u16 = template_id::BAR_TYPE;
     const BLOCK_LENGTH: u16 = BAR_TYPE_BLOCK_LENGTH;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_bar_specification_fields(buf, self.spec())?;
-        buf.push(self.aggregation_source() as u8);
-        encode_instrument_id(buf, &self.instrument_id())
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_bar_specification_fields(writer, self.spec())?;
+        writer.write_u8(self.aggregation_source() as u8);
+        encode_instrument_id(writer, &self.instrument_id())
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -55,17 +55,17 @@ impl MarketSbeMessage for Bar {
     const BLOCK_LENGTH: u16 =
         BAR_TYPE_BLOCK_LENGTH + (PRICE_BLOCK_LENGTH * 4) + QUANTITY_BLOCK_LENGTH + 16;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_bar_specification_fields(buf, self.bar_type.spec())?;
-        buf.push(self.bar_type.aggregation_source() as u8);
-        encode_price(buf, &self.open);
-        encode_price(buf, &self.high);
-        encode_price(buf, &self.low);
-        encode_price(buf, &self.close);
-        encode_quantity(buf, &self.volume);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.bar_type.instrument_id())
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_bar_specification_fields(writer, self.bar_type.spec())?;
+        writer.write_u8(self.bar_type.aggregation_source() as u8);
+        encode_price(writer, &self.open);
+        encode_price(writer, &self.high);
+        encode_price(writer, &self.low);
+        encode_price(writer, &self.close);
+        encode_quantity(writer, &self.volume);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.bar_type.instrument_id())
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -98,15 +98,15 @@ impl MarketSbeMessage for Bar {
 }
 
 fn encode_bar_specification_fields(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     spec: BarSpecification,
 ) -> Result<(), SbeEncodeError> {
     let step = u32::try_from(spec.step.get()).map_err(|_| SbeEncodeError::NumericOverflow {
         field: "BarSpecification.step",
     })?;
-    buf.extend_from_slice(&step.to_le_bytes());
-    buf.push(spec.aggregation as u8);
-    buf.push(spec.price_type as u8);
+    writer.write_u32_le(step);
+    writer.write_u8(spec.aggregation as u8);
+    writer.write_u8(spec.price_type as u8);
     Ok(())
 }
 

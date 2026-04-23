@@ -19,7 +19,7 @@ use nautilus_model::data::{
 };
 
 use super::{
-    super::{SbeCursor, SbeDecodeError, SbeEncodeError},
+    super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
     DataAny, MarketSbeMessage, data_any_variant, template_id,
 };
 
@@ -27,51 +27,51 @@ impl MarketSbeMessage for DataAny {
     const TEMPLATE_ID: u16 = template_id::DATA_ANY;
     const BLOCK_LENGTH: u16 = 2;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
         match self {
             Self::OrderBookDelta(value) => {
-                buf.extend_from_slice(&data_any_variant::ORDER_BOOK_DELTA.to_le_bytes());
-                <OrderBookDelta as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::ORDER_BOOK_DELTA);
+                <OrderBookDelta as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::OrderBookDeltas(value) => {
-                buf.extend_from_slice(&data_any_variant::ORDER_BOOK_DELTAS.to_le_bytes());
-                <OrderBookDeltas as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::ORDER_BOOK_DELTAS);
+                <OrderBookDeltas as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::OrderBookDepth10(value) => {
-                buf.extend_from_slice(&data_any_variant::ORDER_BOOK_DEPTH10.to_le_bytes());
-                <OrderBookDepth10 as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::ORDER_BOOK_DEPTH10);
+                <OrderBookDepth10 as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::Quote(value) => {
-                buf.extend_from_slice(&data_any_variant::QUOTE.to_le_bytes());
-                <QuoteTick as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::QUOTE);
+                <QuoteTick as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::Trade(value) => {
-                buf.extend_from_slice(&data_any_variant::TRADE.to_le_bytes());
-                <TradeTick as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::TRADE);
+                <TradeTick as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::Bar(value) => {
-                buf.extend_from_slice(&data_any_variant::BAR.to_le_bytes());
-                <Bar as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::BAR);
+                <Bar as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::MarkPrice(value) => {
-                buf.extend_from_slice(&data_any_variant::MARK_PRICE.to_le_bytes());
-                <MarkPriceUpdate as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::MARK_PRICE);
+                <MarkPriceUpdate as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::IndexPrice(value) => {
-                buf.extend_from_slice(&data_any_variant::INDEX_PRICE.to_le_bytes());
-                <IndexPriceUpdate as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::INDEX_PRICE);
+                <IndexPriceUpdate as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::FundingRate(value) => {
-                buf.extend_from_slice(&data_any_variant::FUNDING_RATE.to_le_bytes());
-                <FundingRateUpdate as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::FUNDING_RATE);
+                <FundingRateUpdate as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::InstrumentStatus(value) => {
-                buf.extend_from_slice(&data_any_variant::INSTRUMENT_STATUS.to_le_bytes());
-                <InstrumentStatus as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::INSTRUMENT_STATUS);
+                <InstrumentStatus as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::InstrumentClose(value) => {
-                buf.extend_from_slice(&data_any_variant::INSTRUMENT_CLOSE.to_le_bytes());
-                <InstrumentClose as MarketSbeMessage>::encode_body(value, buf)
+                writer.write_u16_le(data_any_variant::INSTRUMENT_CLOSE);
+                <InstrumentClose as MarketSbeMessage>::encode_body(value, writer)
             }
         }
     }

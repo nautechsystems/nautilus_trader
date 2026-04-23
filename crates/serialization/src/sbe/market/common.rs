@@ -28,7 +28,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    super::{MAX_GROUP_SIZE, SbeCursor, SbeDecodeError, SbeEncodeError},
+    super::{MAX_GROUP_SIZE, SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
     MARKET_SCHEMA_ID, MARKET_SCHEMA_VERSION,
 };
 
@@ -57,16 +57,16 @@ pub(super) struct MessageHeader {
 
 #[inline]
 pub(super) fn encode_header(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     block_length: u16,
     template_id: u16,
     schema_id: u16,
     version: u16,
 ) {
-    buf.extend_from_slice(&block_length.to_le_bytes());
-    buf.extend_from_slice(&template_id.to_le_bytes());
-    buf.extend_from_slice(&schema_id.to_le_bytes());
-    buf.extend_from_slice(&version.to_le_bytes());
+    writer.write_u16_le(block_length);
+    writer.write_u16_le(template_id);
+    writer.write_u16_le(schema_id);
+    writer.write_u16_le(version);
 }
 
 #[inline]
@@ -115,12 +115,12 @@ pub(super) fn validate_header(
 }
 
 #[inline]
-pub(super) fn encode_price(buf: &mut Vec<u8>, price: &Price) {
+pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
     #[allow(clippy::useless_conversion)]
     let raw = i128::from(price.raw);
 
-    buf.extend_from_slice(&raw.to_le_bytes());
-    buf.push(price.precision);
+    writer.write_i128_le(raw);
+    writer.write_u8(price.precision);
 }
 
 #[inline]
@@ -140,12 +140,12 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
 }
 
 #[inline]
-pub(super) fn encode_quantity(buf: &mut Vec<u8>, quantity: &Quantity) {
+pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
     #[allow(clippy::useless_conversion)]
     let raw = u128::from(quantity.raw);
 
-    buf.extend_from_slice(&raw.to_le_bytes());
-    buf.push(quantity.precision);
+    writer.write_u128_le(raw);
+    writer.write_u8(quantity.precision);
 }
 
 #[inline]
@@ -165,8 +165,9 @@ pub(super) fn decode_quantity(cursor: &mut SbeCursor<'_>) -> Result<Quantity, Sb
     Ok(Quantity::from_raw(raw as QuantityRaw, precision))
 }
 
-pub(super) fn encode_decimal(buf: &mut Vec<u8>, value: &Decimal) {
-    buf.extend_from_slice(&value.serialize());
+#[inline]
+pub(super) fn encode_decimal(writer: &mut SbeWriter<'_>, value: &Decimal) {
+    writer.write_bytes(&value.serialize());
 }
 
 pub(super) fn decode_decimal(cursor: &mut SbeCursor<'_>) -> Result<Decimal, SbeDecodeError> {
@@ -178,8 +179,8 @@ pub(super) fn decode_decimal(cursor: &mut SbeCursor<'_>) -> Result<Decimal, SbeD
 }
 
 #[inline]
-pub(super) fn encode_unix_nanos(buf: &mut Vec<u8>, value: UnixNanos) {
-    buf.extend_from_slice(&(*value).to_le_bytes());
+pub(super) fn encode_unix_nanos(writer: &mut SbeWriter<'_>, value: UnixNanos) {
+    writer.write_u64_le(*value);
 }
 
 #[inline]
@@ -189,11 +190,11 @@ pub(super) fn decode_unix_nanos(cursor: &mut SbeCursor<'_>) -> Result<UnixNanos,
 
 #[inline]
 pub(super) fn encode_instrument_id(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     instrument_id: &InstrumentId,
 ) -> Result<(), SbeEncodeError> {
-    encode_var_string16(buf, "InstrumentId.symbol", instrument_id.symbol.as_str())?;
-    encode_var_string16(buf, "InstrumentId.venue", instrument_id.venue.as_str())
+    encode_var_string16(writer, "InstrumentId.symbol", instrument_id.symbol.as_str())?;
+    encode_var_string16(writer, "InstrumentId.venue", instrument_id.venue.as_str())
 }
 
 #[inline]
@@ -208,17 +209,18 @@ pub(super) fn decode_instrument_id(
 // Sentinel length that marks a var-string16 slot as absent (None)
 const VAR_STRING16_NULL: u16 = u16::MAX;
 
+#[inline]
 pub(super) fn encode_optional_ustr(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     field: &'static str,
     value: Option<Ustr>,
 ) -> Result<(), SbeEncodeError> {
     match value {
         None => {
-            buf.extend_from_slice(&VAR_STRING16_NULL.to_le_bytes());
+            writer.write_u16_le(VAR_STRING16_NULL);
             Ok(())
         }
-        Some(s) => encode_var_string16(buf, field, s.as_str()),
+        Some(s) => encode_var_string16(writer, field, s.as_str()),
     }
 }
 
@@ -240,7 +242,7 @@ pub(super) fn decode_optional_ustr(
 
 #[inline]
 pub(super) fn encode_group_header_16(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     group: &'static str,
     count: usize,
     block_length: u16,
@@ -259,14 +261,14 @@ pub(super) fn encode_group_header_16(
         max: u16::MAX as u32,
     })?;
 
-    buf.extend_from_slice(&block_length.to_le_bytes());
-    buf.extend_from_slice(&count_u16.to_le_bytes());
+    writer.write_u16_le(block_length);
+    writer.write_u16_le(count_u16);
     Ok(())
 }
 
 #[inline]
 pub(super) fn encode_var_string16(
-    buf: &mut Vec<u8>,
+    writer: &mut SbeWriter<'_>,
     field: &'static str,
     value: &str,
 ) -> Result<(), SbeEncodeError> {
@@ -279,8 +281,8 @@ pub(super) fn encode_var_string16(
         });
     }
 
-    buf.extend_from_slice(&(len as u16).to_le_bytes());
-    buf.extend_from_slice(value.as_bytes());
+    writer.write_u16_le(len as u16);
+    writer.write_bytes(value.as_bytes());
     Ok(())
 }
 

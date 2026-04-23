@@ -22,7 +22,7 @@ use nautilus_model::{
 };
 
 use super::{
-    super::{SbeCursor, SbeDecodeError, SbeEncodeError},
+    super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
     MarketSbeMessage,
     common::{
         DECIMAL_BLOCK_LENGTH, PRICE_BLOCK_LENGTH, QUANTITY_BLOCK_LENGTH, decode_aggressor_side,
@@ -40,14 +40,14 @@ impl MarketSbeMessage for QuoteTick {
     const TEMPLATE_ID: u16 = template_id::QUOTE_TICK;
     const BLOCK_LENGTH: u16 = (PRICE_BLOCK_LENGTH * 2) + (QUANTITY_BLOCK_LENGTH * 2) + 16;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_price(buf, &self.bid_price);
-        encode_price(buf, &self.ask_price);
-        encode_quantity(buf, &self.bid_size);
-        encode_quantity(buf, &self.ask_size);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.bid_price);
+        encode_price(writer, &self.ask_price);
+        encode_quantity(writer, &self.bid_size);
+        encode_quantity(writer, &self.ask_size);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -79,14 +79,14 @@ impl MarketSbeMessage for TradeTick {
     const TEMPLATE_ID: u16 = template_id::TRADE_TICK;
     const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + QUANTITY_BLOCK_LENGTH + 17;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_price(buf, &self.price);
-        encode_quantity(buf, &self.size);
-        buf.push(self.aggressor_side as u8);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)?;
-        encode_var_string16(buf, "TradeTick.trade_id", self.trade_id.as_str())
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.price);
+        encode_quantity(writer, &self.size);
+        writer.write_u8(self.aggressor_side as u8);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)?;
+        encode_var_string16(writer, "TradeTick.trade_id", self.trade_id.as_str())
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -120,11 +120,11 @@ impl MarketSbeMessage for MarkPriceUpdate {
     const TEMPLATE_ID: u16 = template_id::MARK_PRICE_UPDATE;
     const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + 16;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_price(buf, &self.value);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.value);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -150,11 +150,11 @@ impl MarketSbeMessage for IndexPriceUpdate {
     const TEMPLATE_ID: u16 = template_id::INDEX_PRICE_UPDATE;
     const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + 16;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_price(buf, &self.value);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.value);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -180,18 +180,13 @@ impl MarketSbeMessage for FundingRateUpdate {
     const TEMPLATE_ID: u16 = template_id::FUNDING_RATE_UPDATE;
     const BLOCK_LENGTH: u16 = DECIMAL_BLOCK_LENGTH + 26;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_decimal(buf, &self.rate);
-        buf.extend_from_slice(&self.interval.unwrap_or(u16::MAX).to_le_bytes());
-        buf.extend_from_slice(
-            &self
-                .next_funding_ns
-                .map_or(u64::MAX, |value| *value)
-                .to_le_bytes(),
-        );
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_decimal(writer, &self.rate);
+        writer.write_u16_le(self.interval.unwrap_or(u16::MAX));
+        writer.write_u64_le(self.next_funding_ns.map_or(u64::MAX, |value| *value));
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -221,12 +216,12 @@ impl MarketSbeMessage for InstrumentClose {
     const TEMPLATE_ID: u16 = template_id::INSTRUMENT_CLOSE;
     const BLOCK_LENGTH: u16 = PRICE_BLOCK_LENGTH + 17;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        encode_price(buf, &self.close_price);
-        buf.push(self.close_type as u8);
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        encode_price(writer, &self.close_price);
+        writer.write_u8(self.close_type as u8);
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -254,16 +249,16 @@ impl MarketSbeMessage for InstrumentStatus {
     const TEMPLATE_ID: u16 = template_id::INSTRUMENT_STATUS;
     const BLOCK_LENGTH: u16 = 21;
 
-    fn encode_body(&self, buf: &mut Vec<u8>) -> Result<(), SbeEncodeError> {
-        buf.extend_from_slice(&(self.action as u16).to_le_bytes());
-        buf.push(encode_optional_bool(self.is_trading));
-        buf.push(encode_optional_bool(self.is_quoting));
-        buf.push(encode_optional_bool(self.is_short_sell_restricted));
-        encode_unix_nanos(buf, self.ts_event);
-        encode_unix_nanos(buf, self.ts_init);
-        encode_instrument_id(buf, &self.instrument_id)?;
-        encode_optional_ustr(buf, "InstrumentStatus.reason", self.reason)?;
-        encode_optional_ustr(buf, "InstrumentStatus.trading_event", self.trading_event)
+    fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
+        writer.write_u16_le(self.action as u16);
+        writer.write_u8(encode_optional_bool(self.is_trading));
+        writer.write_u8(encode_optional_bool(self.is_quoting));
+        writer.write_u8(encode_optional_bool(self.is_short_sell_restricted));
+        encode_unix_nanos(writer, self.ts_event);
+        encode_unix_nanos(writer, self.ts_init);
+        encode_instrument_id(writer, &self.instrument_id)?;
+        encode_optional_ustr(writer, "InstrumentStatus.reason", self.reason)?;
+        encode_optional_ustr(writer, "InstrumentStatus.trading_event", self.trading_event)
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
