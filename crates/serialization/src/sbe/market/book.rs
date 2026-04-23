@@ -20,13 +20,14 @@ use nautilus_model::{
 
 use super::{
     super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter},
-    MarketSbeMessage,
+    FromSbeReuse, MarketSbeMessage,
     common::{
         BOOK_ORDER_BLOCK_LENGTH, DEPTH10_COUNTS_BLOCK_LENGTH, DEPTH10_LEVEL_BLOCK_LENGTH,
         DEPTH10_LEVEL_COUNT, GROUP_HEADER_16_LENGTH, ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH,
-        decode_book_action, decode_instrument_id, decode_order_side, decode_price, decode_quantity,
-        decode_unix_nanos, encode_group_header_16, encode_instrument_id, encode_price,
-        encode_quantity, encode_unix_nanos, encoded_instrument_id_size,
+        decode_book_action, decode_header, decode_instrument_id, decode_order_side, decode_price,
+        decode_quantity, decode_unix_nanos, encode_group_header_16, encode_instrument_id,
+        encode_price, encode_quantity, encode_unix_nanos, encoded_instrument_id_size,
+        validate_header,
     },
     template_id,
 };
@@ -104,49 +105,8 @@ impl MarketSbeMessage for OrderBookDeltas {
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
-        let flags = cursor.read_u8()?;
-        let sequence = cursor.read_u64_le()?;
-        let ts_event = decode_unix_nanos(cursor)?;
-        let ts_init = decode_unix_nanos(cursor)?;
-        let instrument_id = decode_instrument_id(cursor)?;
-        let (block_length, count) = cursor.read_group_header_16()?;
-
-        if block_length != ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH {
-            return Err(SbeDecodeError::InvalidBlockLength {
-                expected: ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH,
-                actual: block_length,
-            });
-        }
-
-        let mut deltas = Vec::with_capacity(usize::from(count));
-        for _ in 0..count {
-            let action = decode_book_action(cursor)?;
-            let order = decode_book_order(cursor)?;
-            let delta_flags = cursor.read_u8()?;
-            let delta_sequence = cursor.read_u64_le()?;
-            let delta_ts_event = decode_unix_nanos(cursor)?;
-            let delta_ts_init = decode_unix_nanos(cursor)?;
-            let delta_instrument_id = decode_instrument_id(cursor)?;
-
-            deltas.push(OrderBookDelta {
-                instrument_id: delta_instrument_id,
-                action,
-                order,
-                flags: delta_flags,
-                sequence: delta_sequence,
-                ts_event: delta_ts_event,
-                ts_init: delta_ts_init,
-            });
-        }
-
-        Ok(Self {
-            instrument_id,
-            deltas,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        })
+        let mut scratch = Vec::new();
+        decode_order_book_deltas_body(cursor, &mut scratch)
     }
 
     fn encoded_body_size(&self) -> usize {
@@ -159,6 +119,76 @@ impl MarketSbeMessage for OrderBookDeltas {
                 .map(encoded_order_book_delta_size)
                 .sum::<usize>()
     }
+}
+
+impl FromSbeReuse for OrderBookDeltas {
+    type Scratch = Vec<OrderBookDelta>;
+
+    fn from_sbe_reuse(
+        bytes: &[u8],
+        scratch: &mut Vec<OrderBookDelta>,
+    ) -> Result<Self, SbeDecodeError> {
+        let mut cursor = SbeCursor::new(bytes);
+        let header = decode_header(&mut cursor)?;
+        validate_header(
+            &header,
+            <Self as MarketSbeMessage>::TEMPLATE_ID,
+            <Self as MarketSbeMessage>::BLOCK_LENGTH,
+        )?;
+        decode_order_book_deltas_body(&mut cursor, scratch)
+    }
+}
+
+fn decode_order_book_deltas_body(
+    cursor: &mut SbeCursor<'_>,
+    scratch: &mut Vec<OrderBookDelta>,
+) -> Result<OrderBookDeltas, SbeDecodeError> {
+    let flags = cursor.read_u8()?;
+    let sequence = cursor.read_u64_le()?;
+    let ts_event = decode_unix_nanos(cursor)?;
+    let ts_init = decode_unix_nanos(cursor)?;
+    let instrument_id = decode_instrument_id(cursor)?;
+    let (block_length, count) = cursor.read_group_header_16()?;
+
+    if block_length != ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH {
+        return Err(SbeDecodeError::InvalidBlockLength {
+            expected: ORDER_BOOK_DELTA_GROUP_BLOCK_LENGTH,
+            actual: block_length,
+        });
+    }
+
+    let count = usize::from(count);
+    scratch.clear();
+    scratch.reserve(count);
+
+    for _ in 0..count {
+        let action = decode_book_action(cursor)?;
+        let order = decode_book_order(cursor)?;
+        let delta_flags = cursor.read_u8()?;
+        let delta_sequence = cursor.read_u64_le()?;
+        let delta_ts_event = decode_unix_nanos(cursor)?;
+        let delta_ts_init = decode_unix_nanos(cursor)?;
+        let delta_instrument_id = decode_instrument_id(cursor)?;
+
+        scratch.push(OrderBookDelta {
+            instrument_id: delta_instrument_id,
+            action,
+            order,
+            flags: delta_flags,
+            sequence: delta_sequence,
+            ts_event: delta_ts_event,
+            ts_init: delta_ts_init,
+        });
+    }
+
+    Ok(OrderBookDeltas {
+        instrument_id,
+        deltas: std::mem::take(scratch),
+        flags,
+        sequence,
+        ts_event,
+        ts_init,
+    })
 }
 
 impl MarketSbeMessage for OrderBookDepth10 {

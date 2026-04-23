@@ -35,7 +35,7 @@ use nautilus_model::{
 };
 use nautilus_serialization::{
     capnp::{FromCapnp, ToCapnp, market_capnp},
-    sbe::{DataAny, FromSbe, ToSbe},
+    sbe::{DataAny, FromSbe, FromSbeReuse, ToSbe},
 };
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -484,6 +484,18 @@ fn bench_order_book_deltas_scaling(c: &mut Criterion) {
             &sbe_bytes,
             |b, bytes| {
                 b.iter(|| black_box(OrderBookDeltas::from_sbe(black_box(bytes)).unwrap()));
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sbe_decode_reuse", count),
+            &sbe_bytes,
+            |b, bytes| {
+                let mut scratch: Vec<OrderBookDelta> = Vec::new();
+                b.iter(|| {
+                    let result =
+                        OrderBookDeltas::from_sbe_reuse(black_box(bytes), &mut scratch).unwrap();
+                    scratch = black_box(result).deltas;
+                });
             },
         );
         group.bench_with_input(

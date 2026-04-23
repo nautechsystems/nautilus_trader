@@ -31,6 +31,6 @@ pub mod writer;
 
 pub use cursor::SbeCursor;
 pub use error::{MAX_GROUP_SIZE, SbeDecodeError, SbeEncodeError};
-pub use market::{DataAny, FromSbe, ToSbe};
+pub use market::{DataAny, FromSbe, FromSbeReuse, ToSbe};
 pub use primitives::{GroupSize16Encoding, GroupSizeEncoding, decode_var_string8};
 pub use writer::SbeWriter;

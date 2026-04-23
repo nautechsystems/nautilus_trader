@@ -111,6 +111,28 @@ pub trait FromSbe: Sized {
     fn from_sbe(bytes: &[u8]) -> Result<Self, SbeDecodeError>;
 }
 
+/// Extension of [`FromSbe`] that reuses allocations between decodes.
+///
+/// Scalar messages decode without heap allocation, so they do not need this trait. Types with
+/// growable internal buffers (for example [`OrderBookDeltas`] with its `Vec<OrderBookDelta>`)
+/// implement it to let callers supply a pre-allocated scratch buffer and avoid per-message
+/// allocation in hot paths.
+pub trait FromSbeReuse: FromSbe {
+    /// Scratch buffer whose allocation is reused across decodes.
+    type Scratch;
+
+    /// Decodes a value from an SBE message buffer, reusing `scratch`'s allocation.
+    ///
+    /// On success, ownership of the allocation moves from `scratch` into the returned value and
+    /// `scratch` is left in its empty state. To continue reusing the allocation, move the buffer
+    /// back from the returned value (for example `scratch = std::mem::take(&mut result.deltas)`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header is invalid or the payload is malformed.
+    fn from_sbe_reuse(bytes: &[u8], scratch: &mut Self::Scratch) -> Result<Self, SbeDecodeError>;
+}
+
 pub(super) trait MarketSbeMessage: Sized {
     const TEMPLATE_ID: u16;
     const BLOCK_LENGTH: u16;

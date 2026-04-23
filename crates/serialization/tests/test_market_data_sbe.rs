@@ -33,7 +33,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
-use nautilus_serialization::sbe::{DataAny, FromSbe, SbeEncodeError, ToSbe};
+use nautilus_serialization::sbe::{DataAny, FromSbe, FromSbeReuse, SbeEncodeError, ToSbe};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -157,6 +157,40 @@ fn test_order_book_deltas_preserve_delta_instrument_ids() {
     let decoded = OrderBookDeltas::from_sbe(&bytes).unwrap();
 
     assert_order_book_deltas_fields(&value, &decoded);
+}
+
+#[rstest]
+fn test_order_book_deltas_from_sbe_reuse_matches_from_sbe() {
+    let value = stub_deltas();
+    let bytes = value.to_sbe().unwrap();
+
+    let mut scratch: Vec<OrderBookDelta> = Vec::new();
+    let reused = OrderBookDeltas::from_sbe_reuse(&bytes, &mut scratch).unwrap();
+    let plain = OrderBookDeltas::from_sbe(&bytes).unwrap();
+
+    assert_order_book_deltas_fields(&reused, &plain);
+    assert!(
+        scratch.is_empty(),
+        "scratch must be left empty after decode"
+    );
+}
+
+#[rstest]
+fn test_order_book_deltas_from_sbe_reuse_preserves_allocation() {
+    let value = stub_deltas();
+    let bytes = value.to_sbe().unwrap();
+
+    let mut scratch: Vec<OrderBookDelta> = Vec::new();
+    let first = OrderBookDeltas::from_sbe_reuse(&bytes, &mut scratch).unwrap();
+
+    // Move the allocation back for the second decode; capacity should be reused.
+    scratch = first.deltas;
+    let cap_before = scratch.capacity();
+    assert!(cap_before >= value.deltas.len());
+
+    let second = OrderBookDeltas::from_sbe_reuse(&bytes, &mut scratch).unwrap();
+    assert_eq!(second.deltas.capacity(), cap_before);
+    assert_order_book_deltas_fields(&value, &second);
 }
 
 #[rstest]
