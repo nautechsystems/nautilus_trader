@@ -287,7 +287,14 @@ Adapter crates (under `crates/adapters/`) require special handling for spawning 
    }
    ```
 
-4. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
+4. **Install custom runtimes before first use**: Rust-native binaries that own `main()` may call
+   `set_runtime()` before `LiveNode::build()` or any adapter/client usage. Build custom runtimes
+   with `tokio::runtime::Builder::new_multi_thread().enable_all()`; current-thread runtimes and
+   runtimes without I/O or timer drivers do not satisfy adapter assumptions. If the `python` feature
+   is enabled, prepare Python before building the runtime or keep the default initializer.
+
+5. **Tests are exempt**: Test code using `#[tokio::test]` creates its own runtime context, so
+   `tokio::spawn()` works correctly. The enforcement hook skips test files and test modules.
 
 :::info[Automated enforcement]
 The `check_tokio_usage.sh` pre-commit hook enforces these adapter runtime patterns automatically.
