@@ -21,6 +21,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use chrono_tz::Tz;
 use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
@@ -258,6 +259,64 @@ impl FeatherWriter {
         Ok(())
     }
 
+    /// Writes a batch of data values as one or more `RecordBatch`es.
+    ///
+    /// Uses `T::chunk_metadata` to derive the file schema metadata. This protects
+    /// types like `OrderBookDelta` from having their file metadata poisoned by a
+    /// leading sentinel row (e.g. `BookAction::Clear`, which carries
+    /// `price_precision=0, size_precision=0`).
+    ///
+    /// Per-instrument types are partitioned by instrument so a mixed-instrument
+    /// batch lands in the correct file for each instrument.
+    pub async fn write_batch<T>(&mut self, data: Vec<T>) -> Result<(), Box<dyn std::error::Error>>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
+        if data.is_empty() || !self.should_write::<T>() {
+            return Ok(());
+        }
+
+        // Group by logical writer identity (instrument_id for per-instrument types).
+        // Grouping on FileWriterPath would split same-instrument rows across distinct
+        // timestamped paths when the writer does not yet exist under a LiveClock.
+        let type_str = T::path_prefix();
+        let needs_instrument =
+            self.per_instrument_types.contains(type_str) || type_str.starts_with("custom_");
+
+        let mut groups: AHashMap<Option<String>, Vec<T>> = AHashMap::new();
+
+        for item in data {
+            let instrument_id = if needs_instrument {
+                T::metadata(&item).get(KEY_INSTRUMENT_ID).cloned()
+            } else {
+                None
+            };
+            groups.entry(instrument_id).or_default().push(item);
+        }
+
+        for group in groups.into_values() {
+            let path = self.get_writer_path(&group[0])?;
+            let metadata = T::chunk_metadata(&group);
+
+            if !self.writers.contains_key(&path) {
+                self.create_writer_with_metadata::<T>(path.clone(), metadata.clone())?;
+            }
+
+            let batch = T::encode_batch(&metadata, &group)?;
+
+            if let Some(writer) = self.writers.get_mut(&path) {
+                let should_rotate = writer.write_record_batch(&batch)?;
+                if should_rotate || self.check_scheduled_rotation(&path) {
+                    self.rotate_writer(&path).await?;
+                }
+            }
+        }
+
+        self.check_flush().await?;
+
+        Ok(())
+    }
+
     /// Checks if enough time has passed since last flush and flushes if needed.
     async fn check_flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.flush_interval_ms == 0 {
@@ -390,8 +449,22 @@ impl FeatherWriter {
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
     {
+        self.create_writer_with_metadata::<T>(path, T::metadata(data))
+    }
+
+    /// Creates (and inserts) a new `FileWriter` for type T with pre-computed metadata.
+    ///
+    /// Use this variant when the caller has selected metadata from a chunk
+    /// (e.g. via `T::chunk_metadata`) to avoid schema poisoning by sentinel rows.
+    fn create_writer_with_metadata<T>(
+        &mut self,
+        path: FileWriterPath,
+        metadata: HashMap<String, String>,
+    ) -> Result<(), ArrowError>
+    where
+        T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
+    {
         let schema = if self.per_instrument_types.contains(T::path_prefix()) {
-            let metadata = T::metadata(data);
             T::get_schema(Some(metadata))
         } else {
             T::get_schema(None)
@@ -671,11 +744,8 @@ impl FeatherWriter {
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
-                // OrderBookDeltas_API contains multiple deltas - write each one individually
-                for delta in &deltas_api.deltas {
-                    self.write(*delta).await?;
-                }
-                Ok(())
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                self.write_batch(deltas_api.deltas.clone()).await
             }
         }
     }
@@ -802,12 +872,10 @@ impl FeatherWriter {
             try_write!(message, ExecutionMassStatus, "ExecutionMassStatus");
 
             if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
-                // OrderBookDeltas contains multiple deltas - write each one individually
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
                 let mut writer = writer.borrow_mut();
-                for delta in &deltas.deltas {
-                    if let Err(e) = runtime.block_on(writer.write(*delta)) {
-                        log::warn!("Failed to write OrderBookDelta from OrderBookDeltas: {e}");
-                    }
+                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                    log::warn!("Failed to write OrderBookDeltas: {e}");
                 }
             } else if let Some(custom) = message.downcast_ref::<CustomData>() {
                 let mut writer = writer.borrow_mut();
