@@ -418,8 +418,14 @@ docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 		--timeout 30 \
 		--max-concurrency 10 \
 		--accept "100..=103,200..=299,429,502..=504" \
+		--include-fragments \
+		--fallback-extensions md,py,html \
+		--exclude-path .venv \
+		--exclude-path target \
+		--exclude-path docs/python-api-latest \
+		--exclude "file://.*/python-api-latest/.*" \
 		--exclude-file .lycheeignore \
-		"**/*.md"
+		"**/*.md" "docs/**/*.py"
 	@printf "$(GREEN)Link check passed$(RESET)\n"
 
 #== Rust Development

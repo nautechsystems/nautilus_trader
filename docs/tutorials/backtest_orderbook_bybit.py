@@ -2,7 +2,7 @@
 # # Backtest with Order Book Depth Data (Bybit)
 #
 # This tutorial follows the same pattern as
-# [Backtest with order book depth data (Binance)](backtest_orderbook_binance)
+# [Backtest with order book depth data (Binance)](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_binance.py)
 # using Bybit depth data instead.
 #
 # [View source on GitHub](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_bybit.py).
