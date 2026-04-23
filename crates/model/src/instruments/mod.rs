@@ -46,7 +46,7 @@ use nautilus_core::{
     correctness::{
         CorrectnessResult, check_equal_u8, check_positive_decimal, check_predicate_true,
     },
-    parsing::min_increment_precision_from_str,
+    string::parsing::min_increment_precision_from_str,
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use rust_decimal_macros::dec;
@@ -496,7 +496,7 @@ mod tests {
     #[case(Price::new(0.001, 3), 3)] // 0.001 -> precision 3
     fn test_min_increment_precision(#[case] price: Price, #[case] expected: u8) {
         assert_eq!(
-            nautilus_core::parsing::min_increment_precision_from_str(&price.to_string()),
+            nautilus_core::string::parsing::min_increment_precision_from_str(&price.to_string()),
             expected
         );
     }

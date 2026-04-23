@@ -37,7 +37,7 @@ use cosmrs::{
     crypto::{PublicKey, secp256k1::SigningKey},
     tx::SignDoc,
 };
-use nautilus_core::{env::get_or_env_var_opt, hex, string::REDACTED};
+use nautilus_core::{env::get_or_env_var_opt, hex, string::secret::REDACTED};
 
 use crate::common::{consts::DYDX_BECH32_PREFIX, enums::DydxNetwork};
 

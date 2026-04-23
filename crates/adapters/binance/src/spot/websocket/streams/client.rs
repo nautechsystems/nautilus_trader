@@ -34,7 +34,7 @@ use std::{
 
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, string::REDACTED};
+use nautilus_core::{AtomicMap, string::secret::REDACTED};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,

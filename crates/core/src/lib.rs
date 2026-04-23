@@ -73,21 +73,16 @@ pub mod correctness;
 pub mod datetime;
 pub mod drop;
 pub mod env;
-pub mod formatting;
 pub mod hex;
 pub mod math;
 pub mod message;
 pub mod nanos;
 pub mod params;
-pub mod stack_str;
-
-pub mod parsing;
 pub mod paths;
 pub mod serialization;
 pub mod shared;
 pub mod string;
 pub mod time;
-pub mod urlencoding;
 pub mod uuid;
 
 #[cfg(feature = "ffi")]
@@ -108,7 +103,7 @@ pub use crate::{
     nanos::UnixNanos,
     params::Params,
     shared::{SharedCell, WeakCell},
-    stack_str::{STACKSTR_CAPACITY, StackStr},
+    string::stack_str::{STACKSTR_CAPACITY, StackStr},
     time::AtomicTime,
     uuid::UUID4,
 };

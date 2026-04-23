@@ -80,8 +80,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UnixNanos,
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
-    string::to_snake_case,
-    urlencoding,
+    string::{conversions::to_snake_case, urlencoding},
 };
 use nautilus_model::{
     data::{

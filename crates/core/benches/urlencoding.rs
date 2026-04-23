@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use nautilus_core::urlencoding;
+use nautilus_core::string::urlencoding;
 
 // Realistic call-site inputs. JSON payloads come from tardis options encoding,
 // ISO timestamps from dydx query params, tokens from betfair form bodies.

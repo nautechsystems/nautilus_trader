@@ -41,7 +41,7 @@ use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
-    string::REDACTED,
+    string::secret::REDACTED,
 };
 use nautilus_model::{
     data::BarType,

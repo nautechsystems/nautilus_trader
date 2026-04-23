@@ -24,7 +24,7 @@ use std::{
     },
 };
 
-use nautilus_core::urlencoding;
+use nautilus_core::string::urlencoding;
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,

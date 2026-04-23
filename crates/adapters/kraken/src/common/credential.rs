@@ -24,7 +24,7 @@ use std::{
 
 use aws_lc_rs::{digest, hmac};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use nautilus_core::{env::resolve_env_var_pair, string::REDACTED};
+use nautilus_core::{env::resolve_env_var_pair, string::secret::REDACTED};
 use serde_urlencoded;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -268,7 +268,7 @@ impl KrakenCredential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(&self.api_key)
+        nautilus_core::string::secret::mask_api_key(&self.api_key)
     }
 }
 

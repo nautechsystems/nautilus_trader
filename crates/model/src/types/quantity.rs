@@ -54,7 +54,7 @@ use nautilus_core::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
         check_in_range_inclusive_f64, check_predicate_true,
     },
-    formatting::Separable,
+    string::formatting::Separable,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};

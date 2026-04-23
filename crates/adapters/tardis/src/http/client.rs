@@ -17,8 +17,9 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{
-    UnixNanos, consts::NAUTILUS_USER_AGENT, parsing::precision_from_str, string::REDACTED,
-    urlencoding,
+    UnixNanos,
+    consts::NAUTILUS_USER_AGENT,
+    string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::http::HttpClient;

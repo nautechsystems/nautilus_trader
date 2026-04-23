@@ -29,7 +29,7 @@ use std::fmt::{Debug, Display};
 
 use aws_lc_rs::hmac;
 use ed25519_dalek::{Signature, Signer, SigningKey};
-use nautilus_core::{hex, string::REDACTED};
+use nautilus_core::{hex, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
 
 use super::enums::{BinanceEnvironment, BinanceProductType};

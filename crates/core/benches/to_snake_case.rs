@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use nautilus_core::string::to_snake_case;
+use nautilus_core::string::conversions::to_snake_case;
 
 fn bench_pascal_case(c: &mut Criterion) {
     c.bench_function("to_snake_case (PascalCase)", |b| {

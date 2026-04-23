@@ -34,7 +34,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
-use nautilus_core::string::REDACTED;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,

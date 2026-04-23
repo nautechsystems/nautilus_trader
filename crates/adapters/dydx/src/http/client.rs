@@ -61,8 +61,8 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos,
     consts::NAUTILUS_USER_AGENT,
+    string::urlencoding,
     time::{AtomicTime, get_atomic_clock_realtime},
-    urlencoding,
 };
 use nautilus_model::{
     data::{

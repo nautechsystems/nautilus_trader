@@ -23,7 +23,7 @@ use aws_lc_rs::hmac;
 use nautilus_core::{
     env::resolve_env_var_pair,
     hex,
-    string::{REDACTED, mask_api_key},
+    string::secret::{REDACTED, mask_api_key},
 };
 use zeroize::ZeroizeOnDrop;
 

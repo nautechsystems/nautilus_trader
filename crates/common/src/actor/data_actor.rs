@@ -3076,7 +3076,10 @@ impl DataActorCore {
         let signal = Signal::new(Ustr::from(name), value, ts_event, now);
 
         let data_type = DataType::new(
-            &format!("Signal{}", nautilus_core::string::title_case(name)),
+            &format!(
+                "Signal{}",
+                nautilus_core::string::conversions::title_case(name)
+            ),
             None,
             None,
         );

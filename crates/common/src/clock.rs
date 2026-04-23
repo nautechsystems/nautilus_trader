@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
-    formatting::Separable,
+    string::formatting::Separable,
 };
 use ustr::Ustr;
 

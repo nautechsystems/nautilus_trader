@@ -21,7 +21,7 @@ use nautilus_blockchain::{
     exchanges::{find_dex_type_case_insensitive, get_supported_dexes_for_chain},
     rpc::providers::check_infura_rpc_provider,
 };
-use nautilus_core::string::mask_api_key;
+use nautilus_core::string::secret::mask_api_key;
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::chain::Chain;
 

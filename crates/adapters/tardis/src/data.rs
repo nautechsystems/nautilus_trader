@@ -36,7 +36,7 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::urlencoding;
+use nautilus_core::string::urlencoding;
 use nautilus_model::{
     data::Data,
     identifiers::{ClientId, Venue},

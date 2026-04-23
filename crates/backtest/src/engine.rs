@@ -36,7 +36,9 @@ use nautilus_common::{
         replace_exec_cmd_sender, trading_cmd_queue_is_empty,
     },
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
+use nautilus_core::{
+    UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable,
+};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelAny;
 use nautilus_model::{

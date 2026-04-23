@@ -49,7 +49,7 @@ use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
-    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::REDACTED,
+    datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{

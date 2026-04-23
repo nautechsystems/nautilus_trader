@@ -19,7 +19,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use nautilus_core::{
-    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, parsing::precision_from_str,
+    datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, string::parsing::precision_from_str,
     uuid::UUID4,
 };
 use nautilus_model::{

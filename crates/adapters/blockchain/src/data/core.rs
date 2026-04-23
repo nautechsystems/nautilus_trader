@@ -17,7 +17,7 @@ use std::{cmp::max, sync::Arc};
 
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{formatting::Separable, hex};
+use nautilus_core::{hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,

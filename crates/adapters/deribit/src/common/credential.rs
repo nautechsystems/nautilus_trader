@@ -21,7 +21,8 @@ use std::{collections::HashMap, fmt::Debug};
 
 use aws_lc_rs::hmac;
 use nautilus_core::{
-    UUID4, env::resolve_env_var_pair, hex, string::REDACTED, time::get_atomic_clock_realtime,
+    UUID4, env::resolve_env_var_pair, hex, string::secret::REDACTED,
+    time::get_atomic_clock_realtime,
 };
 use thiserror::Error;
 use zeroize::ZeroizeOnDrop;
@@ -144,7 +145,7 @@ impl Credential {
     /// For keys shorter than 8 characters, shows asterisks only.
     #[must_use]
     pub fn api_key_masked(&self) -> String {
-        nautilus_core::string::mask_api_key(&self.api_key)
+        nautilus_core::string::secret::mask_api_key(&self.api_key)
     }
 
     /// Signs a WebSocket authentication request according to Deribit specification.

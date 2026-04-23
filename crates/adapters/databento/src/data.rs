@@ -43,7 +43,7 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_core::{AtomicMap, MUTEX_POISONED, string::REDACTED, time::AtomicTime};
+use nautilus_core::{AtomicMap, MUTEX_POISONED, string::secret::REDACTED, time::AtomicTime};
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},

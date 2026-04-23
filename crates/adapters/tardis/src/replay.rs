@@ -23,7 +23,7 @@ use anyhow::Context;
 use arrow::record_batch::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, pin_mut};
-use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, formatting::Separable};
+use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,

@@ -211,7 +211,7 @@ macro_rules! define_switchboard {
                     .or_insert_with(|| {
                         format!(
                             "data.Signal{}",
-                            nautilus_core::string::title_case(name)
+                            nautilus_core::string::conversions::title_case(name)
                         )
                         .into()
                     })
@@ -230,7 +230,7 @@ macro_rules! define_switchboard {
                     .or_insert_with(|| {
                         format!(
                             "data.Signal{}*",
-                            nautilus_core::string::title_case(name)
+                            nautilus_core::string::conversions::title_case(name)
                         )
                         .into()
                     })
