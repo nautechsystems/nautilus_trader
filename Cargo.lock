@@ -5693,6 +5693,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "nautilus-persistence",
+ "proptest",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",

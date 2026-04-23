@@ -654,7 +654,7 @@ mod tests {
 
         let later_name = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("time_bar_ESM4-2-MINUTE-ASK-INTERNAL"),
+                Ustr::from("TIME_BAR_ESM4-2-MINUTE-ASK-INTERNAL"),
                 UUID4::from("00000000-0000-4000-8000-000000000003"),
                 100.into(),
                 100.into(),
@@ -663,7 +663,7 @@ mod tests {
         );
         let earlier_name = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000002"),
                 100.into(),
                 100.into(),
@@ -672,7 +672,7 @@ mod tests {
         );
         let later_init = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000004"),
                 100.into(),
                 101.into(),
@@ -681,7 +681,7 @@ mod tests {
         );
         let later_id = TimeEventHandler::new(
             TimeEvent::new(
-                Ustr::from("spread_quote_ESM4"),
+                Ustr::from("SPREAD_QUOTE_ESM4"),
                 UUID4::from("00000000-0000-4000-8000-000000000005"),
                 100.into(),
                 100.into(),

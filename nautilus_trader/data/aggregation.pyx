@@ -1450,7 +1450,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
         self._time_bars_origin_offset = time_bars_origin_offset or 0
-        self._timer_name = f"time_bar_{self.bar_type}"
+        self._timer_name = f"TIME_BAR_{self.bar_type}"
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
         self.stored_open_ns = 0
@@ -1829,8 +1829,8 @@ cdef class SpreadQuoteAggregator:
         self._historical_events = []
 
         # Timers on a same clock execute first based on their timer name
-        # "spread_quote_..." < "time_bar_..."
-        self._timer_name = f"spread_quote_{self._spread_instrument_id}"
+        # "SPREAD_QUOTE_..." < "TIME_BAR_..."
+        self._timer_name = f"SPREAD_QUOTE_{self._spread_instrument_id}"
         self._has_update = False
 
     cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None], GreeksCalculator greeks_calculator):
