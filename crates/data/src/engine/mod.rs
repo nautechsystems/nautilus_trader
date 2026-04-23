@@ -28,7 +28,9 @@
 //! Alternative implementations can be written on top of the generic engine - which
 //! just need to override the `execute`, `process`, `send` and `receive` methods.
 
+pub mod bar;
 pub mod book;
+mod commands;
 pub mod config;
 mod handlers;
 
@@ -45,7 +47,12 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
+pub use bar::BarAggregatorSubscription;
+use book::{
+    BookSnapshotInfo, BookSnapshotInfos, BookSnapshotKey, BookSnapshotUnsubscribeResult,
+    BookSnapshotter, BookUpdater,
+};
+pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
 use futures::future::join_all;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
@@ -63,7 +70,7 @@ use nautilus_common::{
         UnsubscribeQuotes,
     },
     msgbus::{
-        self, MStr, ShareableMessageHandler, Topic, TypedHandler, TypedIntoHandler,
+        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -113,71 +120,6 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
-/// Deferred subscribe/unsubscribe command.
-///
-/// Components that lack direct `DataClientAdapter` access (handlers, timers)
-/// push commands here; the `DataEngine` drains on each data tick.
-#[derive(Debug, Clone)]
-pub(crate) enum DeferredCommand {
-    Subscribe(SubscribeCommand),
-    Unsubscribe(UnsubscribeCommand),
-    ExpireSeries(OptionSeriesId),
-}
-
-/// Shared queue for deferred subscribe/unsubscribe commands.
-pub(crate) type DeferredCommandQueue = Rc<RefCell<VecDeque<DeferredCommand>>>;
-
-type BookSnapshotKey = (InstrumentId, NonZeroUsize);
-type BookSnapshotInfos = Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>;
-
-enum BookSnapshotUnsubscribeResult {
-    NotSubscribed,
-    Decremented,
-    Removed,
-}
-
-/// Typed subscription for bar aggregator handlers.
-///
-/// Stores the topic and handler for each data type so we can properly
-/// unsubscribe from the typed routers.
-#[derive(Clone)]
-pub enum BarAggregatorSubscription {
-    Bar {
-        topic: MStr<Topic>,
-        handler: TypedHandler<Bar>,
-    },
-    Trade {
-        topic: MStr<Topic>,
-        handler: TypedHandler<TradeTick>,
-    },
-    Quote {
-        topic: MStr<Topic>,
-        handler: TypedHandler<QuoteTick>,
-    },
-}
-
-impl Debug for BarAggregatorSubscription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Bar { topic, handler } => f
-                .debug_struct(stringify!(Bar))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-            Self::Trade { topic, handler } => f
-                .debug_struct(stringify!(Trade))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-            Self::Quote { topic, handler } => f
-                .debug_struct(stringify!(Quote))
-                .field("topic", topic)
-                .field("handler_id", &handler.id())
-                .finish(),
-        }
-    }
-}
-
 /// Provides a high-performance `DataEngine` for all environments.
 #[derive(Debug)]
 pub struct DataEngine {
@@ -204,6 +146,10 @@ pub struct DataEngine {
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
+    command_count: u64,
+    data_count: u64,
+    request_count: u64,
+    response_count: u64,
     pub(crate) msgbus_priority: u8,
     pub(crate) config: DataEngineConfig,
     #[cfg(feature = "defi")]
@@ -257,6 +203,10 @@ impl DataEngine {
             _synthetic_quote_feeds: AHashMap::new(),
             _synthetic_trade_feeds: AHashMap::new(),
             buffered_deltas_map: AHashMap::new(),
+            command_count: 0,
+            data_count: 0,
+            request_count: 0,
+            response_count: 0,
             msgbus_priority: 10, // High-priority for built-in component
             config,
             #[cfg(feature = "defi")]
@@ -336,6 +286,35 @@ impl DataEngine {
                 }
             }),
         );
+    }
+
+    /// Returns the total count of data commands received by the engine.
+    #[must_use]
+    pub const fn command_count(&self) -> u64 {
+        self.command_count
+    }
+
+    /// Returns the total count of data stream objects received by the engine.
+    #[must_use]
+    pub const fn data_count(&self) -> u64 {
+        self.data_count
+    }
+
+    #[cfg(feature = "defi")]
+    pub(crate) const fn increment_data_count(&mut self) {
+        self.data_count += 1;
+    }
+
+    /// Returns the total count of data requests received by the engine.
+    #[must_use]
+    pub const fn request_count(&self) -> u64 {
+        self.request_count
+    }
+
+    /// Returns the total count of data responses received by the engine.
+    #[must_use]
+    pub const fn response_count(&self) -> u64 {
+        self.response_count
     }
 
     /// Returns a read-only reference to the engines clock.
@@ -484,6 +463,11 @@ impl DataEngine {
                 log::error!("Error stopping bar aggregator during reset for {bar_type}: {e}");
             }
         }
+
+        self.command_count = 0;
+        self.data_count = 0;
+        self.request_count = 0;
+        self.response_count = 0;
     }
 
     /// Disposes the engine, stopping all clients and canceling any timers.
@@ -736,6 +720,18 @@ impl DataEngine {
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
+        match &cmd {
+            DataCommand::Subscribe(_) | DataCommand::Unsubscribe(_) => self.command_count += 1,
+            DataCommand::Request(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiRequest(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(_) | DataCommand::DefiUnsubscribe(_) => {
+                self.command_count += 1;
+            }
+            _ => {}
+        }
+
         if let Err(e) = match cmd {
             DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(&c),
@@ -774,6 +770,18 @@ impl DataEngine {
             SubscribeCommand::OptionChain(cmd) => {
                 self.subscribe_option_chain(cmd);
                 return Ok(());
+            }
+            SubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `Instrument` data");
+            }
+            SubscribeCommand::InstrumentStatus(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `InstrumentStatus` data");
+            }
+            SubscribeCommand::InstrumentClose(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `InstrumentClose` data");
+            }
+            SubscribeCommand::OptionGreeks(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `OptionGreeks` data");
             }
             _ => {} // Do nothing else
         }
@@ -822,6 +830,22 @@ impl DataEngine {
             UnsubscribeCommand::OptionChain(cmd) => {
                 self.unsubscribe_option_chain(cmd);
                 return Ok(());
+            }
+            UnsubscribeCommand::Instrument(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot unsubscribe from synthetic instrument `Instrument` data");
+            }
+            UnsubscribeCommand::InstrumentStatus(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!(
+                    "Cannot unsubscribe from synthetic instrument `InstrumentStatus` data"
+                );
+            }
+            UnsubscribeCommand::InstrumentClose(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!(
+                    "Cannot unsubscribe from synthetic instrument `InstrumentClose` data"
+                );
+            }
+            UnsubscribeCommand::OptionGreeks(cmd) if cmd.instrument_id.is_synthetic() => {
+                anyhow::bail!("Cannot unsubscribe from synthetic instrument `OptionGreeks` data");
             }
             _ => {} // Do nothing else
         }
@@ -893,6 +917,7 @@ impl DataEngine {
     ///
     /// Currently supports `InstrumentAny` and `FundingRateUpdate`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
+        self.data_count += 1;
         // TODO: Eventually these can be added to the `Data` enum (C/Cython blocking), process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
@@ -914,6 +939,8 @@ impl DataEngine {
 
     /// Processes a `Data` enum instance, dispatching to appropriate handlers.
     pub fn process_data(&mut self, data: Data) {
+        self.data_count += 1;
+
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
             Data::Deltas(deltas) => self.handle_deltas(deltas.into_inner()),
@@ -946,6 +973,7 @@ impl DataEngine {
     pub fn response(&mut self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
+        self.response_count += 1;
         let correlation_id = *resp.correlation_id();
 
         match &resp {

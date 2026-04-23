@@ -219,6 +219,8 @@ impl DataEngine {
 
     /// Processes DeFi-specific data events.
     pub fn process_defi_data(&mut self, data: DefiData) {
+        self.increment_data_count();
+
         match data {
             DefiData::Block(block) => {
                 let topic = defi::switchboard::get_defi_blocks_topic(block.chain());

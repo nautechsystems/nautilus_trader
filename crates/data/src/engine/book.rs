@@ -43,6 +43,25 @@ pub struct BookSnapshotInfo {
     pub interval_ms: NonZeroUsize,
 }
 
+/// Reference-counted map of per-instrument book snapshot descriptors.
+///
+/// Shared between the engine (which populates it on subscribe) and the
+/// [`BookSnapshotter`] timer callback (which iterates it on each tick).
+pub(crate) type BookSnapshotInfos = Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>;
+
+/// Reference count key for a book snapshot subscription.
+pub(crate) type BookSnapshotKey = (InstrumentId, NonZeroUsize);
+
+/// Outcome of decrementing a book snapshot subscription.
+pub(crate) enum BookSnapshotUnsubscribeResult {
+    /// No matching subscription was found.
+    NotSubscribed,
+    /// The reference count was decremented but other consumers remain.
+    Decremented,
+    /// The last consumer was removed; tear down associated state.
+    Removed,
+}
+
 /// Handles order book updates and delta processing for a specific instrument.
 ///
 /// The `BookUpdater` processes incoming order book deltas and maintains
