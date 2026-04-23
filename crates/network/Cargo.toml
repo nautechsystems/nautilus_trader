@@ -95,3 +95,13 @@ harness = false
 name = "http_response"
 path = "benches/http_response.rs"
 harness = false
+
+[[bench]]
+name = "websocket_transport"
+path = "benches/websocket_transport.rs"
+harness = false
+
+[[bench]]
+name = "websocket_latency"
+path = "benches/websocket_latency.rs"
+harness = false
