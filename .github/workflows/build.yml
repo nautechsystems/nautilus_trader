@@ -54,7 +54,19 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    runs-on: depot-ubuntu-22.04-8
+    # Self-hosted for internal work; Depot for fork PRs.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork
+      && fromJson('["depot-ubuntu-22.04-8"]')
+      || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
+    env:
+      # Self-hosted persists target dir outside the workspace so it survives
+      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
+      # through to Swatinem/rust-cache on the workspace target dir.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event.pull_request.head.repo.fork
+        && format('{0}/target', github.workspace)
+        || '/home/runner/.cache/cargo-target/pre-commit' }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
@@ -82,6 +94,7 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           build-type: "pre-commit"
+          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
 
       - name: Run pre-commit
         run: prek run --all-files
@@ -162,7 +175,10 @@ jobs:
     # Pushes to develop route to the self-hosted build pool; PRs and other
     # branches route to Depot.
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
-    runs-on: ${{ github.event_name == 'push' && github.ref_name == 'develop' && 'build' || 'depot-ubuntu-22.04-8' }}
+    runs-on: >-
+      ${{ github.event_name == 'push' && github.ref_name == 'develop'
+      && fromJson('["self-hosted", "Linux", "X64", "build"]')
+      || fromJson('["depot-ubuntu-22.04-8"]') }}
     needs:
       - plan
       - pre-commit

@@ -51,11 +51,19 @@ jobs:
         run: bash scripts/ci/plan.sh
 
   pre-commit:
-    runs-on: [self-hosted, Linux, X64, build-v2]
+    # Self-hosted for internal work; Depot for fork PRs.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork
+      && fromJson('["depot-ubuntu-22.04-8"]')
+      || fromJson('["self-hosted", "Linux", "X64", "build-v2"]') }}
     env:
-      # prek runs cargo clippy/doc hooks; persist target dir outside the
-      # workspace so it survives actions/checkout's git clean -ffdx.
-      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/pre-commit
+      # Self-hosted persists target dir outside the workspace so it survives
+      # actions/checkout's git clean -ffdx. Fork PRs run on Depot and fall
+      # through to Swatinem/rust-cache on the workspace target dir.
+      CARGO_TARGET_DIR: >-
+        ${{ github.event.pull_request.head.repo.fork
+        && format('{0}/target', github.workspace)
+        || '/home/runner/.cache/cargo-target/pre-commit' }}
     steps:
       - uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
@@ -80,7 +88,7 @@ jobs:
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
           build-type: "pre-commit"
-          rust-cache-enabled: "false"
+          rust-cache-enabled: ${{ github.event.pull_request.head.repo.fork && 'true' || 'false' }}
 
       - name: Run pre-commit
         run: prek run --all-files
