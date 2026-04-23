@@ -80,7 +80,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 unbounded-interval-tree = { workspace = true }
 url = { workspace = true }
-urlencoding = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }

@@ -31,6 +31,7 @@ use async_stream::stream;
 use futures_util::{SinkExt, Stream, StreamExt, stream::SplitSink};
 use message::WsMessage;
 use nautilus_common::live::get_runtime;
+use nautilus_core::urlencoding;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,

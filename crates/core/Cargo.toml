@@ -114,3 +114,8 @@ harness = false
 name = "to_snake_case"
 path = "benches/to_snake_case.rs"
 harness = false
+
+[[bench]]
+name = "urlencoding"
+path = "benches/urlencoding.rs"
+harness = false

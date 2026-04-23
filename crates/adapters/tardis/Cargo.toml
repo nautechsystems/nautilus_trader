@@ -80,7 +80,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
-urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }

@@ -36,6 +36,7 @@ use nautilus_common::{
         },
     },
 };
+use nautilus_core::urlencoding;
 use nautilus_model::{
     data::Data,
     identifiers::{ClientId, Venue},
@@ -661,9 +662,9 @@ mod tests {
         };
 
         let client = TardisDataClient::new(ClientId::new("TARDIS"), config).unwrap();
-        let url = client.build_ws_url("ws://localhost:8001").unwrap();
+        let ws_url = client.build_ws_url("ws://localhost:8001").unwrap();
 
-        let decoded = urlencoding::decode(url.split("options=").nth(1).unwrap()).unwrap();
+        let decoded = urlencoding::decode(ws_url.split("options=").nth(1).unwrap()).unwrap();
         let count = decoded.matches("derivative_ticker").count();
         assert_eq!(count, 1, "derivative_ticker should appear exactly once");
     }

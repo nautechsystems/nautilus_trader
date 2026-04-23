@@ -341,7 +341,6 @@ tonic = { version = "0.13.1", default-features = false, features = [
   "tls-aws-lc",
   "tls-webpki-roots",
 ] }
-urlencoding = "2.1.3"
 zeroize = { version = "1.8.2", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
