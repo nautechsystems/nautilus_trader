@@ -107,6 +107,7 @@ Released on TBD (UTC).
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
 - Fixed Bybit margin missing for accounts with orders but no positions (#3725), thanks for reporting @marco-rigoni
 - Fixed Databento CMBP1 and TCBBO trade IDs using random UUID4 instead of deterministic hash of trade fields
+- Fixed Databento dropping `start_ns` after session start; now logs error (#3877), thanks for reporting @jxstanford
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin
 - Fixed dYdX `generate_order_status_report` fetching only the first order and missing later matches in the response
 - Fixed dYdX orderbook snapshots missing `F_SNAPSHOT` flag on deltas; empty-book Clear now emits `F_SNAPSHOT | F_LAST`

@@ -435,8 +435,12 @@ impl DatabentoFeedHandler {
                     Some(HandlerCommand::Subscribe(sub)) => {
                         log::debug!("Received command: Subscribe");
 
-                        if !self.replay && sub.start.is_some() {
+                        if sub.start.is_some() {
                             self.replay = true;
+                            log::error!(
+                                "Ignoring `start` on {} subscribe, session already running, Databento drops replay anchors sent after session start",
+                                self.dataset,
+                            );
                         }
                         client.subscribe(sub.clone()).await?;
                         let mut sub_for_reconnect = sub;
