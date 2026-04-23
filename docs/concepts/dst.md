@@ -170,6 +170,26 @@ suitability requires a separate audit before they enter the DST path.
 
 The contract is deliberately narrow. The following weakenings are explicit, not oversights.
 
+### Python is not in DST scope
+
+DST runs under a native Rust test harness. No Python interpreter starts during a DST run. The
+PyO3 bindings under `crates/*/src/python/`, the `ffi/` directories, and the Python packages
+under `nautilus_trader/` are excluded from the contract as a policy, not as a weakness. Any
+code reachable only from Python call paths is out of scope; any Rust path reachable from the
+native DST harness must satisfy the contract even if the same type is also exported to Python.
+
+The `check-dst-conventions` hook encodes this policy by skipping `/python/` and `/ffi/` paths
+in the in-scope crates. Clock, RNG, and threading call sites behind those paths do not apply
+to the contract.
+
+The primary objective of DST is reliability of the Rust engine itself: the order lifecycle,
+reconciliation, matching, risk, and execution state machines. Deterministic replay of user
+strategies is a later, secondary goal that becomes available once strategies are authored in
+Rust or driven by the harness directly. In the meantime, a Python strategy that calls
+`time.time()`, issues arbitrary network requests, or relies on thread scheduling can vary its
+command stream between runs; the Rust core will process the varying stream deterministically,
+but end-to-end replay from a Python entry point is not guaranteed.
+
 ### Platform-scoped
 
 `madsim`'s libc overrides for `clock_gettime` and `getrandom` are platform-specific.
@@ -236,15 +256,19 @@ As of the current state of this repository:
   for `time`, `task`, `runtime`, and `signal`. Production call sites for `time`, `task`, and
   `runtime` route through the seam; signal call-site adoption is partial.
 - Layer 2 (nondeterminism substitution) is implemented across the 16 in-scope crates. Seams
-  exist for wall-clock time, monotonic time, and iteration order. The RNG policy is enforced
-  structurally (no raw RNG sources on the DST path); no production RNG is currently on the DST
-  path.
-- Static enforcement via `check-dst-conventions` is active in pre-commit and CI.
+  exist for wall-clock time, monotonic time, and iteration order. Known remaining RNG and
+  wall-clock call sites on the DST path are enumerated in the scope-hole inventory.
+- Static enforcement via `check-dst-conventions` is active in pre-commit and CI. The hook
+  covers the load-bearing conditions; some scope holes (`rand::rng`, `chrono::Utc::now`,
+  `Uuid::new_v4`) are outside the current hook surface and tracked in the scope-hole
+  inventory.
 - Runtime verification of the contract under `cfg(madsim)` (same-seed diff harness) is planned
   follow-up work and is not yet part of this repository.
 
 ## Further reading
 
+- The [DST scope-hole inventory](../developer_guide/dst_scope_holes.md) enumerates every area
+  where the contract does not apply, tagged closed / gated / scoped-out / unresolved.
 - `.pre-commit-hooks/check_dst_conventions.sh` defines the five enforcement rules in full and
   documents the `// dst-ok` marker convention.
 - External references: the [FoundationDB testing

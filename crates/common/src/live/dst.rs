@@ -50,8 +50,8 @@
 //!
 //! Monotonic time (`Instant`) goes through this module. Wall-clock time
 //! (`SystemTime` / Unix epoch) is a separate seam: see
-//! `nautilus_core::time::wall_clock_now`. Collapsing the two would lose epoch
-//! information and break order and fill timestamps.
+//! `nautilus_core::time::duration_since_unix_epoch`. Collapsing the two would
+//! lose epoch information and break order and fill timestamps.
 
 /// Deterministic time: virtual time under simulation, real time in production.
 ///

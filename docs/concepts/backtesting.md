@@ -457,7 +457,7 @@ This addresses a gap in academic literature: most research focuses on live marke
 
 - **Immutable historical data**: Order book and trade data are never modified.
 - **Optional consumption tracking**: When `liquidity_consumption=True`, the engine tracks consumed liquidity per price level to prevent duplicate fills. See [Order book immutability](#order-book-immutability) for configuration.
-- **Deterministic results**: The same backtest with the same data and configuration produces identical results when probabilistic fill models use a fixed `random_seed`.
+- **Reproducible results**: A fixed `random_seed` pins the probabilistic fill model's PRNG. Same-process reruns are expected to match; cross-process reruns may differ in rare cases due to hash-ordering effects outside the fill model.
 
 ### Fill price determination
 
