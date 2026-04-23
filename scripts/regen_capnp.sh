@@ -26,6 +26,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Read required version from tools.toml (single source of truth)
 REQUIRED_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" capnp)"
+CHECK_ONLY="${CAPNP_CHECK:-0}"
+TARGET_DIR="${CARGO_TARGET_DIR:-target}"
+OUT_DIR_FILE="$(mktemp "${TMPDIR:-/tmp}/nautilus_out_dir.XXXXXX")"
+trap 'rm -f "$OUT_DIR_FILE"' EXIT
 
 echo -e "${YELLOW}Regenerating Cap'n Proto schemas...${NC}"
 
@@ -66,20 +70,19 @@ cargo clean -p nautilus-serialization
 cargo build -p nautilus-serialization --features capnp --message-format=json 2>&1 |
   grep -o '"out_dir":"[^"]*"' |
   cut -d'"' -f4 |
-  grep nautilus-serialization > /tmp/nautilus_out_dir.txt || true
+  grep nautilus-serialization > "$OUT_DIR_FILE" || true
 
-OUT_DIR=$(cat /tmp/nautilus_out_dir.txt | head -1)
-rm -f /tmp/nautilus_out_dir.txt
+OUT_DIR=$(head -n 1 "$OUT_DIR_FILE")
 
 # Fallback: search target/debug/build if json parsing failed
 if [ -z "$OUT_DIR" ] || [ ! -d "$OUT_DIR" ]; then
-  echo -e "${YELLOW}JSON parse failed, searching target/debug/build...${NC}"
-  OUT_DIR=$(find target/debug/build -type d -name "nautilus-serialization-*" -path "*/out" | head -1)
+  echo -e "${YELLOW}JSON parse failed, searching ${TARGET_DIR}/debug/build...${NC}"
+  OUT_DIR=$(find "${TARGET_DIR}/debug/build" -type d -name "nautilus-serialization-*" -path "*/out" | head -1)
 fi
 
 if [ -z "$OUT_DIR" ] || [ ! -d "$OUT_DIR" ]; then
   echo -e "${RED}Error: Could not find OUT_DIR for nautilus-serialization${NC}"
-  echo "Searched for: target/debug/build/nautilus-serialization-*/out"
+  echo "Searched for: ${TARGET_DIR}/debug/build/nautilus-serialization-*/out"
   exit 1
 fi
 
@@ -90,13 +93,15 @@ echo -e "${YELLOW}Copying generated files to repository...${NC}"
 mkdir -p crates/serialization/generated/capnp
 cp -r "${OUT_DIR}/"* crates/serialization/generated/capnp/
 
-# Format the generated files (requires nightly)
-if rustup toolchain list | grep -q "nightly"; then
+# Format the generated files (manual regen only, requires nightly)
+if [ "$CHECK_ONLY" = "1" ]; then
+  echo -e "${YELLOW}Skipping formatting during schema check...${NC}"
+elif cargo +nightly fmt --version > /dev/null 2>&1; then
   echo -e "${YELLOW}Formatting generated files...${NC}"
-  make format
+  cargo +nightly fmt --manifest-path crates/serialization/Cargo.toml --all
 else
   echo -e "${YELLOW}Warning: Nightly toolchain not found. Skipping formatting.${NC}"
-  echo "Please run 'make format' manually after installing Rust nightly."
+  echo "Please run 'cargo +nightly fmt --manifest-path crates/serialization/Cargo.toml --all' manually after installing Rust nightly."
 fi
 # Show what was generated
 echo -e "${GREEN}Successfully regenerated Cap'n Proto schemas!${NC}"

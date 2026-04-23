@@ -518,7 +518,7 @@ check-capnp-schemas:
 	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
 	@if ! command -v capnp > /dev/null 2>&1; then \
 		echo "$(YELLOW)⚠ capnp not installed, skipping schema check$(RESET)"; \
-	elif ! bash scripts/regen_capnp.sh > /dev/null 2>&1; then \
+	elif ! CAPNP_CHECK=1 bash scripts/regen_capnp.sh; then \
 		echo "$(RED)Error: Cap'n Proto regeneration failed$(RESET)"; \
 		echo "Run manually to see errors: ./scripts/regen_capnp.sh"; \
 		exit 1; \
