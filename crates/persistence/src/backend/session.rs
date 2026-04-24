@@ -17,8 +17,11 @@ use std::{sync::Arc, vec::IntoIter};
 
 use ahash::{AHashMap, AHashSet};
 use datafusion::{
-    arrow::record_batch::RecordBatch, error::Result, logical_expr::expr::Sort,
-    physical_plan::SendableRecordBatchStream, prelude::*,
+    arrow::{datatypes::Schema, record_batch::RecordBatch},
+    error::Result,
+    logical_expr::expr::Sort,
+    physical_plan::SendableRecordBatchStream,
+    prelude::*,
 };
 use futures::StreamExt;
 use nautilus_core::{UnixNanos, ffi::cvec::CVec};
@@ -153,6 +156,24 @@ impl DataBackendSession {
     where
         T: DecodeDataFromRecordBatch,
     {
+        self.add_file_with_schema::<T>(table_name, file_path, sql_query, custom_type_name, None)
+    }
+
+    /// Registers a Parquet file with an explicit Arrow schema and adds a batch stream for decoding.
+    ///
+    /// Use this for dynamically registered custom data so DataFusion sees the registered schema
+    /// while planning the scan, including the `ts_init` column used for sort-order hints.
+    pub fn add_file_with_schema<T>(
+        &mut self,
+        table_name: &str,
+        file_path: &str,
+        sql_query: Option<&str>,
+        custom_type_name: Option<&str>,
+        schema: Option<&Schema>,
+    ) -> Result<()>
+    where
+        T: DecodeDataFromRecordBatch,
+    {
         // Check if table is already registered to avoid duplicates
         let is_new_table = !self.registered_tables.contains(table_name);
 
@@ -160,6 +181,7 @@ impl DataBackendSession {
             // Register the table only if it doesn't exist
             let parquet_options = ParquetReadOptions::<'_> {
                 skip_metadata: Some(false),
+                schema,
                 file_sort_order: vec![vec![Sort {
                     expr: col("ts_init"),
                     asc: true,

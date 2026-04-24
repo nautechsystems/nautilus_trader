@@ -3344,6 +3344,83 @@ fn test_rust_custom_data_roundtrip_with_params_field() {
     }
 }
 
+#[rstest]
+fn test_query_custom_data_dynamic_with_explicit_files() {
+    use std::sync::Arc;
+
+    use nautilus_model::data::{CustomData, Data, DataType};
+
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let instrument_id = InstrumentId::from("RUST.EXPLICIT");
+    let data_type = DataType::new("RustTestCustomData", None, Some(instrument_id.to_string()));
+
+    let first = RustTestCustomData {
+        instrument_id,
+        value: 1.0,
+        flag: true,
+        ts_event: UnixNanos::from(1),
+        ts_init: UnixNanos::from(1),
+    };
+    let second = RustTestCustomData {
+        instrument_id,
+        value: 2.0,
+        flag: false,
+        ts_event: UnixNanos::from(2),
+        ts_init: UnixNanos::from(2),
+    };
+
+    let first_path = catalog
+        .write_custom_data_batch(
+            vec![CustomData::new(Arc::new(first), data_type.clone())],
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+    let second_path = catalog
+        .write_custom_data_batch(
+            vec![CustomData::new(Arc::new(second), data_type)],
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            None,
+            None,
+            None,
+            None,
+            Some(vec![
+                first_path.to_string_lossy().to_string(),
+                second_path.to_string_lossy().to_string(),
+            ]),
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), 2);
+    let values: Vec<f64> = loaded
+        .iter()
+        .map(|item| match item {
+            Data::Custom(custom) => {
+                custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<RustTestCustomData>()
+                    .expect("Expected RustTestCustomData")
+                    .value
+            }
+            other => panic!("Expected Data::Custom variant, was {other:?}"),
+        })
+        .collect();
+    assert_eq!(values, vec![1.0, 2.0]);
+}
+
 /// Regression: write_data_enum groups custom data by full DataType (type_name + identifier + metadata).
 /// Same type_name with different identifiers must produce separate batches and be readable back.
 #[rstest]

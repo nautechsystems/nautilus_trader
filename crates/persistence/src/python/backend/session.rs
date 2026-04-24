@@ -23,10 +23,13 @@ use nautilus_model::data::{
     Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
     QuoteTick, TradeTick,
 };
-use nautilus_serialization::arrow::custom::CustomDataDecoder;
+use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
 use pyo3::{prelude::*, types::PyCapsule};
 
-use crate::backend::session::{DataBackendSession, DataQueryResult};
+use crate::backend::{
+    custom::schema_with_data_type_column,
+    session::{DataBackendSession, DataQueryResult},
+};
 
 /// Wrapper to pass a raw pointer across the GIL release boundary.
 struct SendPtr<T>(*mut T);
@@ -145,8 +148,23 @@ impl DataBackendSession {
         sql_query: Option<&str>,
     ) -> PyResult<()> {
         let _guard = slf.runtime.enter();
-        slf.add_file::<CustomDataDecoder>(table_name, file_path, sql_query, Some(type_name))
-            .map_err(to_pyruntime_err)
+        let mut metadata = HashMap::new();
+        metadata.insert("type_name".to_string(), type_name.to_string());
+        let base_schema = CustomDataDecoder::get_schema(Some(metadata));
+        base_schema.field_with_name("ts_init").map_err(|_| {
+            to_pyruntime_err(format!(
+                "custom data type '{type_name}' is not registered with an Arrow schema containing ts_init"
+            ))
+        })?;
+        let schema = schema_with_data_type_column(&base_schema, type_name);
+        slf.add_file_with_schema::<CustomDataDecoder>(
+            table_name,
+            file_path,
+            sql_query,
+            Some(type_name),
+            Some(&schema),
+        )
+        .map_err(to_pyruntime_err)
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
