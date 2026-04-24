@@ -184,43 +184,39 @@ scope-out from the contract.
 
 ### `AHashMap` / `AHashSet` outside `manager.rs`
 
-The `check-dst-conventions` hook enforces `IndexMap` / `IndexSet` only in
-`crates/live/src/manager.rs`. The 16 in-scope crates host `AHashMap` and
-`AHashSet` in ~85 other files, used for:
+The `check-dst-conventions` hook enforces `IndexMap` / `IndexSet` in
+`crates/live/src/manager.rs` and `crates/execution/src/matching_engine/engine.rs`.
+The 16 in-scope crates host `AHashMap` and `AHashSet` in ~85 other files, used for:
 
 - cache indexes (`crates/common/src/cache/mod.rs`)
 - order book state (`crates/model/src/orderbook/`)
 - account balances (`crates/model/src/accounts/`)
 - portfolio state (`crates/portfolio/src/`)
 - execution engine state (`crates/execution/src/engine/`)
-- matching engine state (`crates/execution/src/matching_engine/engine.rs`)
 - data aggregation (`crates/data/src/aggregation.rs`)
 - msgbus switchboard (`crates/common/src/msgbus/switchboard.rs`)
 
 | Area                                                   | Tag        |
 |--------------------------------------------------------|------------|
 | `AHashMap` / `AHashSet` in `manager.rs`                | closed     |
-| `AHashMap` / `AHashSet` in `matching_engine/engine.rs` | unresolved |
+| `AHashMap` / `AHashSet` in `matching_engine/engine.rs` | closed     |
 | `AHashMap` / `AHashSet` elsewhere                      | unresolved |
 
 **Notes.** `AHash` randomizes its hasher per process. Iteration order over
-these collections varies across runs. The `manager.rs` call site was flagged
-by the codebase audit as the only surface where iteration order drives
-downstream event publication, so only that file is hook-enforced.
+these collections varies across runs. `manager.rs` and
+`matching_engine/engine.rs` are the two surfaces where iteration order was
+known to drive observable state, so both files are hook-enforced.
 
-The matching engine is called out separately because it holds six
-`AHashMap` fields on the fill path (`bid_consumption`, `ask_consumption`,
-`queue_ahead`, `queue_excess`, `queue_pending`, `cached_filled_qty`) and
-iterates `queue_ahead.keys()` in the resting-order walk. Iteration order
-drives the sequence in which the seeded `FillModel` RNG is consumed, so a
-hash-seed change reorders fills even with `FillModel(random_seed=...)`
-pinned. Reported as a backtest-determinism break in issue
-[#3914](https://github.com/nautechsystems/nautilus_trader/issues/3914).
-
-**Effect on the contract.** The public backtesting guide promises
-deterministic results under a seeded `FillModel`; the matching-engine
-`AHashMap` breaks that promise across process boundaries. This is a
-user-visible scope hole, not a latent one.
+The matching-engine closure flipped nine fields to `IndexMap`
+(`execution_bar_types`, `execution_bar_deltas`, `account_ids`,
+`cached_filled_qty`, `bid_consumption`, `ask_consumption`, `queue_ahead`,
+`queue_excess`, `queue_pending`) and replaced `.remove()` on the iterated
+queue maps with `.shift_remove()` to preserve insertion order across
+deletes. This closes issue
+[#3914](https://github.com/nautechsystems/nautilus_trader/issues/3914): the
+seeded `FillModel` RNG is now consumed against the same resting-order
+sequence across runs, restoring the determinism promise in the backtesting
+guide.
 
 **Mitigation.** Other call sites need a per-file review to determine whether
 iteration order affects observable state. The audit classified them as
@@ -419,27 +415,25 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 18    |
+| closed     | 19    |
 | gated      | 10    |
 | scoped‑out | 23    |
-| unresolved | 8     |
+| unresolved | 7     |
 
 Unresolved entries at the end of this phase:
 
-1. `AHashMap` / `AHashSet` in `crates/execution/src/matching_engine/engine.rs`
-   (user-visible backtest-determinism break, issue #3914)
-2. `AHashMap` / `AHashSet` elsewhere outside `crates/live/src/manager.rs`
-3. `rand::rng()` in `core/uuid.rs`, `execution/models/fill.rs`, and
+1. `AHashMap` / `AHashSet` elsewhere outside the two hook-enforced files
+2. `rand::rng()` in `core/uuid.rs`, `execution/models/fill.rs`, and
    `network/backoff.rs`
-4. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
+3. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
    `use_random_ids` is active
-5. `chrono::Utc::now` in `core/datetime.rs:404`
-6. `tokio::signal::ctrl_c` call site in `crates/live/src/node.rs`
-7. Logger file-logging tests under `cfg(madsim)`
-8. Dynamic same-seed diff harness
+4. `chrono::Utc::now` in `core/datetime.rs:404`
+5. `tokio::signal::ctrl_c` call site in `crates/live/src/node.rs`
+6. Logger file-logging tests under `cfg(madsim)`
+7. Dynamic same-seed diff harness
 
-Items 1 through 6 are source-level follow-ups in this repository. Item 7
-is a test-only follow-up in this repository. Item 8 lives in
+Items 1 through 5 are source-level follow-ups in this repository. Item 6
+is a test-only follow-up in this repository. Item 7 lives in
 `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter

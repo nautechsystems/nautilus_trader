@@ -7,7 +7,8 @@
 #   3. No unbiased tokio::select! (must have `biased;` as first token in block)
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
-#   5. No AHashMap / AHashSet in crates/live/src/manager.rs
+#   5. No AHashMap / AHashSet in crates/live/src/manager.rs or
+#      crates/execution/src/matching_engine/engine.rs
 #
 # Use '// dst-ok' inline comment to allow specific exceptions.
 # Test modules (files under tests/, matching *_tests.rs, or lines inside an
@@ -272,13 +273,18 @@ done < <(rg -n --no-heading \
   "${GLOBS[@]}" --type rust 2> /dev/null || true)
 
 ################################################################################
-# Rule 5: AHashMap / AHashSet in reconciliation manager
+# Rule 5: AHashMap / AHashSet in reconciliation manager and matching engine
 ################################################################################
 
-echo "Checking AHashMap / AHashSet in crates/live/src/manager.rs..."
+RULE5_FILES=(
+  "crates/live/src/manager.rs"
+  "crates/execution/src/matching_engine/engine.rs"
+)
 
-MANAGER="crates/live/src/manager.rs"
-if [[ -f "$MANAGER" ]]; then
+for rule5_file in "${RULE5_FILES[@]}"; do
+  echo "Checking AHashMap / AHashSet in $rule5_file..."
+  [[ -f "$rule5_file" ]] || continue
+
   while IFS=: read -r file line_num content; do
     [[ -z "$file" ]] && continue
     is_doc_comment "$content" && continue
@@ -286,8 +292,8 @@ if [[ -f "$MANAGER" ]]; then
 
     report "rule5" "$file" "$line_num" "$content" \
       "Use IndexMap / IndexSet for deterministic iteration order"
-  done < <(rg -n --no-heading '\bAHash(Map|Set)\b' "$MANAGER" 2> /dev/null || true)
-fi
+  done < <(rg -n --no-heading '\bAHash(Map|Set)\b' "$rule5_file" 2> /dev/null || true)
+done
 
 ################################################################################
 # Summary

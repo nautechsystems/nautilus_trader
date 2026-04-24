@@ -53,6 +53,7 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }

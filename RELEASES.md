@@ -60,6 +60,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
 - Fixed `AccountState` to accept empty `balances` and `margins`
+- Fixed `FillModel` determinism via `IndexMap` in `OrderMatchingEngine` (#3914), thanks for reporting @timkoopmans
 - Fixed `mark_values`/`equity` keying by base currency when conversion is off; now keys by settlement currency
 - Fixed `stop_timer` in `TimeBarAggregator` (#3822), thanks @faysou
 - Fixed `RiskEngine` applying base `min_quantity`/`max_quantity` bounds to quote-denominated orders
@@ -191,6 +192,7 @@ Released on TBD (UTC).
 - Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
 - Refactored Binance Futures value conversions into a new `futures::conversions` module (Rust)
 - Replaced `AHashMap`/`AHashSet` with `IndexMap`/`IndexSet` in `ExecutionManager` for deterministic ordering in simulations (Rust)
+- Refined DST convention hook to enforce `IndexMap` in `OrderMatchingEngine`
 - Refined make cargo-test to not include binaries for test harness builds (#3828), thanks @faysou
 - Refined Interactive Brokers combo fill average price calculation (#3834), thanks @faysou
 - Refined Kraken WebSocket execution dispatch to emit typed events for tracked orders via per-product modules

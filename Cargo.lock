@@ -5839,6 +5839,7 @@ dependencies = [
  "bon",
  "chrono",
  "futures",
+ "indexmap 2.14.0",
  "log",
  "nautilus-common",
  "nautilus-core",

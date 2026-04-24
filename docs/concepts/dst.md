@@ -18,18 +18,20 @@ including task scheduling, timer firings, and random values. Two runs with the s
 and configuration produce identical observable behavior. When a property fails, the seed is the
 reproduction: the same seed replays the failure every time.
 
-The approach grew out of distributed databases. FoundationDB pioneered the pattern for production
-storage systems, documented in the SIGMOD 2021 paper *"FoundationDB: A Distributed Unbundled
-Transactional Key Value Store"*. TigerBeetle applies it to financial systems with public blog
-posts and talks. Antithesis offers VM-level determinism as a commercial service. Runtime-level
-work in the Rust ecosystem includes [madsim](https://github.com/madsim-rs/madsim), which
-intercepts `tokio` primitives to yield a deterministic scheduler.
+Scheduling decisions in an async runtime come from ambient process state: task wake order,
+timer resolution, thread scheduling, hash seeds. None of that is controlled by the test harness,
+which is why a race that surfaces once in CI is usually hard to reproduce on demand. DST
+replaces those ambient sources with a seeded pseudorandom sequence, so the interleaving is a
+function of the seed.
 
-The common thread: classes of bugs that escape unit, integration, property, and acceptance
-testing still surface under seed-replayable scheduling. Channel wakeup ordering, drain races at
-shutdown, startup sequencing, reconciliation ordering, and recovery-path correctness all involve
-interleavings that traditional tests cannot exhaustively cover but a deterministic scheduler can
-explore systematically.
+FoundationDB applied the pattern to a production distributed database starting around 2009;
+in the Rust ecosystem, [madsim](https://github.com/madsim-rs/madsim) intercepts `tokio`
+primitives to provide a deterministic scheduler.
+
+The bugs DST targets are the ones that escape unit, integration, property, and acceptance
+testing: channel wakeup ordering, drain races at shutdown, startup sequencing, reconciliation
+ordering, recovery-path correctness. All involve interleavings that other test layers cannot
+exhaustively cover but a deterministic scheduler can explore systematically.
 
 ### What this guide covers
 
@@ -39,8 +41,6 @@ NautilusTrader's DST support has two halves:
   conditions.
 - **The enforcement**: the source-level seams that implement the contract and the pre-commit
   hook that keeps them in place.
-
-This guide documents both.
 
 ## Goals
 
@@ -55,7 +55,10 @@ This guide documents both.
 
 ## Approach
 
-The implementation has two layers.
+`madsim` determinizes only the `tokio` primitives that route through its aliased submodules
+(`time`, `task`, `runtime`, `signal`). Wall-clock reads, monotonic reads, RNG draws, hash
+iteration, and `select!` polling bypass `tokio` entirely and need their own seams. Layer 1
+swaps the aliased submodules for `madsim`; Layer 2 supplies the seams.
 
 ### Layer 1: runtime swap
 
@@ -84,17 +87,17 @@ Nondeterminism outside the async runtime is redirected through explicit seams:
 
 - **Wall-clock reads** go through `nautilus_core::time::duration_since_unix_epoch`. Under
   simulation this routes to `madsim::time::TimeHandle`, preserving Unix-epoch semantics for
-  order and fill
-  timestamps.
+  order and fill timestamps.
 - **Monotonic reads** go through `nautilus_common::live::dst::time::Instant`. The type resolves
   to `tokio::time::Instant` on normal builds (for compatibility with `tokio::test(start_paused)`
   test helpers) and `madsim::time::Instant` under simulation.
 - **Network-local monotonic reads** go through `nautilus_network::dst::time`. The crate sits
   below `nautilus-common` in the dependency graph and exposes a local re-export module with the
   same semantics.
-- **Hash iteration order** in the reconciliation manager uses `IndexMap` and `IndexSet` rather
-  than `AHashMap` and `AHashSet`. `AHash` randomizes its hasher per process; insertion-order
-  iteration is needed where order drives downstream event publication.
+- **Hash iteration order** in the reconciliation manager and the order matching engine uses
+  `IndexMap` and `IndexSet` rather than `AHashMap` and `AHashSet`. `AHash` randomizes its hasher
+  per process; insertion-order iteration is needed where order drives downstream event
+  publication or the sequence in which a seeded `FillModel` RNG is consumed.
 - **`tokio::select!` polling order** uses the `biased;` modifier at every production site on the
   DST path. Unbiased `select!` polls branches in an order chosen by an unintercepted RNG.
 
@@ -143,7 +146,9 @@ and fails the commit when it detects any of:
 - `std::thread::spawn`, `std::thread::Builder::new`, or `tokio::task::spawn_blocking` calls that
   lack a preceding `#[cfg(test)]`, `#[cfg(not(madsim))]`, or
   `#[cfg(not(all(feature = "simulation", madsim)))]` attribute.
-- `AHashMap` or `AHashSet` in `crates/live/src/manager.rs`.
+- `AHashMap` or `AHashSet` in iteration-order-sensitive files on the DST path. The full set
+  of files is under audit; enforcement currently covers `crates/live/src/manager.rs` and
+  `crates/execution/src/matching_engine/engine.rs`, and expands as further files are reviewed.
 
 The hook supports two exception forms:
 
