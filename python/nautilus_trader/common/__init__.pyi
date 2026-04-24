@@ -62,18 +62,18 @@ class BusMessage:
 class CacheConfig:
     def __init__(
         self,
-        encoding: SerializationEncoding | None = ...,
-        timestamps_as_iso8601: bool | None = ...,
-        buffer_interval_ms: int | None = ...,
-        bulk_read_batch_size: int | None = ...,
-        use_trader_prefix: bool | None = ...,
-        use_instance_id: bool | None = ...,
-        flush_on_start: bool | None = ...,
-        drop_instruments_on_reset: bool | None = ...,
-        tick_capacity: int | None = ...,
-        bar_capacity: int | None = ...,
-        save_market_data: bool | None = ...,
-        persist_account_events: bool | None = ...,
+        encoding: SerializationEncoding | None = None,
+        timestamps_as_iso8601: bool | None = None,
+        buffer_interval_ms: int | None = None,
+        bulk_read_batch_size: int | None = None,
+        use_trader_prefix: bool | None = None,
+        use_instance_id: bool | None = None,
+        flush_on_start: bool | None = None,
+        drop_instruments_on_reset: bool | None = None,
+        tick_capacity: int | None = None,
+        bar_capacity: int | None = None,
+        save_market_data: bool | None = None,
+        persist_account_events: bool | None = None,
     ) -> None: ...
     @property
     def encoding(self) -> SerializationEncoding: ...
@@ -630,6 +630,10 @@ class DataActor:
     def degrade(self) -> None: ...
     def fault(self) -> None: ...
     def shutdown_system(self, reason: str | None = None) -> None: ...
+    def publish_data(self, data_type: model.DataType, data: model.CustomData) -> None: ...
+    def publish_signal(self, name: str, value: typing.Any, ts_event: int = 0) -> None: ...
+    def add_synthetic(self, synthetic: model.SyntheticInstrument) -> None: ...
+    def update_synthetic(self, synthetic: model.SyntheticInstrument) -> None: ...
     def on_start(self) -> None: ...
     def on_stop(self) -> None: ...
     def on_resume(self) -> None: ...
@@ -659,6 +663,7 @@ class DataActor:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def subscribe_signal(self, name: str = "") -> None: ...
     def subscribe_instruments(
         self,
         venue: model.Venue,
@@ -759,6 +764,7 @@ class DataActor:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def unsubscribe_signal(self, name: str = "") -> None: ...
     def unsubscribe_instruments(
         self,
         venue: model.Venue,

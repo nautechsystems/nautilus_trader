@@ -457,6 +457,8 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Waits until the WebSocket is authenticated or the timeout elapses.
+    ///
+    /// Returns an error on timeout or explicit auth failure.
     #[pyo3(name = "wait_until_authenticated")]
     fn py_wait_until_authenticated<'py>(
         &self,

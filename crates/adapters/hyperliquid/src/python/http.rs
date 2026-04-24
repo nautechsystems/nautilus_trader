@@ -456,17 +456,11 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Request a single order status report by venue order ID and/or client order ID.
+    /// Request a single order status report by venue order ID.
     ///
-    /// When `client_order_id` is supplied, open orders are searched by cloid first.
-    /// This catches modify/cancel-replace flows where the cloid is preserved but the
-    /// venue order ID changes, so a cached oid may point to the canceled leg; if a
-    /// live match exists, it is returned here. Otherwise, and if `venue_order_id`
-    /// is supplied, `info_order_status` is queried to cover closed
-    /// (canceled/filled/rejected) orders. The returned report's `client_order_id`
-    /// is left to downstream resolution (the Python client maps cloid hashes and
-    /// external/venue-order-id entries back to logical IDs).
-    /// At least one of `venue_order_id` or `client_order_id` must be provided.
+    /// Queries `info_frontend_open_orders` and filters for the given oid so the
+    /// result includes trigger metadata (trigger_px, tpsl, trailing_stop, etc.).
+    /// Falls back to `info_order_status` when the order is no longer open.
     #[pyo3(name = "request_order_status_report")]
     #[pyo3(signature = (venue_order_id=None, client_order_id=None))]
     fn py_request_order_status_report<'py>(
@@ -551,18 +545,18 @@ impl HyperliquidHttpClient {
 
     /// Request position status reports for a user.
     ///
-    /// Fetches both perp clearinghouse state and spot clearinghouse state and
-    /// returns the union: perp asset positions (short/long with PnL) plus spot
-    /// holdings (long only, derived entry price). When `instrument_id` resolves
-    /// to a specific product type, the opposite product's endpoint is skipped.
+    /// Fetches perp clearinghouse state and spot clearinghouse state, then returns
+    /// the union of perp asset positions (short/long with PnL) and spot holdings
+    /// (long only). This method requires instruments to be added to the client
+    /// cache via `cache_instrument()`.
     ///
-    /// Instruments must be added to the client cache via `cache_instrument()`
-    /// first. Spot balances whose base token has no cached instrument are
-    /// silently skipped. Vault tokens (starting with "vntls:") create synthetic
-    /// instruments on demand.
+    /// When `instrument_id` resolves to a specific product type, the opposite
+    /// product's endpoint is skipped to avoid wasted round trips and make
+    /// filtered queries independent of the unused endpoint's availability.
     ///
-    /// Propagates perp and spot request errors so silently truncated snapshots
-    /// cannot be mistaken for empty accounts.
+    /// For vault tokens (starting with "vntls:") that are not in the cache,
+    /// synthetic instruments will be created automatically. Spot balances whose
+    /// base token has no cached instrument are skipped with a debug log.
     #[pyo3(name = "request_position_status_reports")]
     fn py_request_position_status_reports<'py>(
         &self,
@@ -589,11 +583,10 @@ impl HyperliquidHttpClient {
 
     /// Request account state (balances and margins) for a user.
     ///
-    /// Fetches perp and spot clearinghouse state and returns a merged
-    /// `AccountState`. USDC is taken from the perp margin summary when present
-    /// (to avoid double-counting combined withdrawable); non-USDC tokens are
-    /// appended from the spot balances. Empty accounts emit an `AccountState`
-    /// with an empty balance list rather than being skipped.
+    /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
+    /// into a single `AccountState`. USDC is taken from the perp margin summary
+    /// when present (to avoid double-counting combined `withdrawable`); non-USDC
+    /// tokens are appended from the spot balances.
     ///
     /// # Errors
     ///
@@ -617,9 +610,14 @@ impl HyperliquidHttpClient {
 
     /// Request spot token balances for a user.
     ///
-    /// Fetches spot clearinghouse state and returns one `AccountBalance` per
-    /// non-zero token. Callers that also fetch perp state must dedupe shared
-    /// currencies (e.g. USDC) before emitting a merged `AccountState`.
+    /// Fetches `spotClearinghouseState` and returns one `AccountBalance` per
+    /// non-zero token. USDC is included as a separate balance entry when present;
+    /// callers that also report perp margin state must dedupe currencies before
+    /// emitting an `AccountState`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or the response cannot be parsed.
     #[pyo3(name = "request_spot_balances")]
     fn py_request_spot_balances<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -641,8 +639,11 @@ impl HyperliquidHttpClient {
 
     /// Request spot position status reports for a user.
     ///
-    /// Each non-zero spot balance becomes a Long `PositionStatusReport` against
-    /// the matching `{BASE}-{QUOTE}-SPOT` instrument (must be cached first).
+    /// Each non-zero spot balance is reported as a Long position against its
+    /// `{BASE}-{QUOTE}-SPOT` instrument. Balances whose base token has no
+    /// matching instrument in the cache are skipped with a debug log (callers
+    /// should ensure `request_instruments` has run
+    /// first).
     #[pyo3(name = "request_spot_position_status_reports")]
     fn py_request_spot_position_status_reports<'py>(
         &self,
@@ -667,7 +668,7 @@ impl HyperliquidHttpClient {
         })
     }
 
-    /// Get raw spot clearinghouse state JSON for a user.
+    /// Get spot clearinghouse state (per-token spot balances) for a user.
     #[pyo3(name = "info_spot_clearinghouse_state")]
     fn py_info_spot_clearinghouse_state<'py>(
         &self,

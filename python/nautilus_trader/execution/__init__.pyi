@@ -9,11 +9,13 @@ __all__ = [
     "BestPriceFillModel",
     "CompetitionAwareFillModel",
     "DefaultFillModel",
+    "ExecutionEngineConfig",
     "FixedFeeModel",
     "LimitOrderPartialFillModel",
     "MakerTakerFeeModel",
     "MarketHoursFillModel",
     "OneTickSlippageFillModel",
+    "OrderEmulatorConfig",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
     "SizeAwareFillModel",
@@ -50,6 +52,43 @@ class DefaultFillModel:
     ) -> None: ...
 
 @typing.final
+class ExecutionEngineConfig:
+    def __init__(
+        self,
+        load_cache: bool | None = None,
+        manage_own_order_books: bool | None = None,
+        snapshot_orders: bool | None = None,
+        snapshot_positions: bool | None = None,
+        snapshot_positions_interval_secs: float | None = None,
+        allow_overfills: bool | None = None,
+        external_clients: typing.Sequence[model.ClientId] | None = None,
+        purge_closed_orders_interval_mins: int | None = None,
+        purge_closed_orders_buffer_mins: int | None = None,
+        purge_closed_positions_interval_mins: int | None = None,
+        purge_closed_positions_buffer_mins: int | None = None,
+        purge_account_events_interval_mins: int | None = None,
+        purge_account_events_lookback_mins: int | None = None,
+        purge_from_database: bool | None = None,
+        debug: bool | None = None,
+    ) -> None: ...
+    @property
+    def load_cache(self) -> bool: ...
+    @property
+    def manage_own_order_books(self) -> bool: ...
+    @property
+    def snapshot_orders(self) -> bool: ...
+    @property
+    def snapshot_positions(self) -> bool: ...
+    @property
+    def snapshot_positions_interval_secs(self) -> float | None: ...
+    @property
+    def allow_overfills(self) -> bool: ...
+    @property
+    def purge_from_database(self) -> bool: ...
+    @property
+    def debug(self) -> bool: ...
+
+@typing.final
 class FixedFeeModel:
     def __init__(
         self, commission: model.Money, change_commission_once: bool | None = None
@@ -76,6 +115,12 @@ class OneTickSlippageFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class OrderEmulatorConfig:
+    def __init__(self, debug: bool | None = None) -> None: ...
+    @property
+    def debug(self) -> bool: ...
 
 @typing.final
 class PerContractFeeModel:
@@ -149,8 +194,8 @@ def create_position_reconciliation_venue_order_id(
     order_side: model.OrderSide,
     order_type: model.OrderType,
     quantity: model.Quantity,
-    price: model.Price | None = ...,
-    venue_position_id: model.PositionId | None = ...,
-    ts_last: int = ...,
-    tag: str | None = ...,
+    price: model.Price | None = None,
+    venue_position_id: model.PositionId | None = None,
+    ts_last: int = 0,
+    tag: str | None = None,
 ) -> model.VenueOrderId: ...

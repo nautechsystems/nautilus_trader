@@ -131,11 +131,16 @@ impl AccountBalance {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginBalance {
-    /// Creates a new `MarginBalance` instance.
+    /// Represents a margin balance.
     ///
-    /// Pass `instrument_id=None` for account-wide (cross margin) balances that
-    /// apply to all positions in the entry's currency; pass a specific
-    /// `InstrumentId` for per-instrument (isolated margin) balances.
+    /// Margin entries have two mutually exclusive scopes:
+    ///
+    /// - Per-instrument: `instrument_id = Some(id)`. Used for isolated margin and
+    ///   for calculated margin in backtest mode where each instrument carries its
+    ///   own reserve.
+    /// - Account-wide (cross margin): `instrument_id = None`. Used for venues that
+    ///   report a single aggregate margin per collateral currency (most derivatives
+    ///   venues in cross-margin mode).
     #[new]
     #[pyo3(signature = (initial, maintenance, instrument_id=None))]
     fn py_new(

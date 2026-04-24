@@ -22,6 +22,8 @@ class PolymarketDataClientConfig:
         ws_max_subscriptions: int | None = None,
         update_instruments_interval_mins: int | None = None,
         subscribe_new_markets: bool | None = None,
+        auto_load_missing_instruments: bool | None = None,
+        auto_load_debounce_ms: int | None = None,
     ) -> None: ...
 
 @typing.final

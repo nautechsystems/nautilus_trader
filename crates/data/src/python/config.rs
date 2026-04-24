@@ -54,9 +54,6 @@ fn coerce_bar_interval_type(value: &Py<PyAny>) -> PyResult<BarIntervalType> {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataEngineConfig {
     /// Configuration for `DataEngine` instances.
-    ///
-    /// `time_bars_origins` accepts nanosecond offsets keyed by
-    /// [`BarAggregation`] and is converted to `Duration` internally.
     #[new]
     #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (

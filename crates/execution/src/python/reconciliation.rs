@@ -118,6 +118,12 @@ pub fn py_calculate_reconciliation_price(
     )
 }
 
+/// Create a deterministic `TradeId` for an inferred reconciliation fill.
+///
+/// The `account_id` scopes the ID to the venue account, preventing cross-account
+/// collisions on venues where `venue_order_id` is only account-unique. The `ts_last`
+/// (venue-provided) differentiates successive reconciliation incidents with the same
+/// shape while keeping cross-restart replays deterministic.
 #[pyfunction(name = "create_inferred_reconciliation_trade_id")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (account_id, instrument_id, client_order_id, venue_order_id, order_side, order_type, filled_qty, last_qty, last_px, position_id, ts_last))]
@@ -150,6 +156,11 @@ pub fn py_create_inferred_reconciliation_trade_id(
     )
 }
 
+/// The `account_id` scopes the ID to the venue account, preventing cross-account
+/// collisions where the engine would otherwise fall back to `ClientOrderId::from(venue_order_id)`
+/// and conflate orders from different accounts. The `ts_last` (venue-provided) ensures that
+/// successive reconciliation incidents with the same shape get distinct IDs, while the same
+/// logical event replayed after restart still hashes the same (venue re-reports identical ts).
 #[pyfunction(name = "create_position_reconciliation_venue_order_id")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.execution")]
 #[pyo3(signature = (account_id, instrument_id, order_side, order_type, quantity, price=None, venue_position_id=None, ts_last=0, tag=None))]

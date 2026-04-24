@@ -11,6 +11,8 @@ __all__ = [
     "get_arrow_schema_map",
     "index_prices_to_arrow_record_batch_bytes",
     "instrument_closes_to_arrow_record_batch_bytes",
+    "instrument_status_from_arrow_record_batch_bytes",
+    "instrument_status_to_arrow_record_batch_bytes",
     "mark_prices_to_arrow_record_batch_bytes",
     "pyobjects_to_arrow_record_batch_bytes",
     "quotes_to_arrow_record_batch_bytes",
@@ -30,6 +32,12 @@ def index_prices_to_arrow_record_batch_bytes(
 ) -> bytes: ...
 def instrument_closes_to_arrow_record_batch_bytes(
     data: typing.Sequence[model.InstrumentClose],
+) -> bytes: ...
+def instrument_status_from_arrow_record_batch_bytes(
+    data: typing.Sequence[int],
+) -> list[model.InstrumentStatus]: ...
+def instrument_status_to_arrow_record_batch_bytes(
+    data: typing.Sequence[model.InstrumentStatus],
 ) -> bytes: ...
 def mark_prices_to_arrow_record_batch_bytes(
     data: typing.Sequence[model.MarkPriceUpdate],
