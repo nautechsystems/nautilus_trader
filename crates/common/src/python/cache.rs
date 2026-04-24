@@ -1109,8 +1109,33 @@ impl PyCache {
     }
 
     #[pyo3(name = "position_snapshot_bytes")]
-    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<u8>> {
+    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.0.borrow().position_snapshot_bytes(&position_id)
+    }
+
+    #[pyo3(name = "snapshot_position")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_snapshot_position(&self, py: Python, position: Py<PyAny>) -> PyResult<()> {
+        let position_obj = position.extract::<Position>(py)?;
+        self.0
+            .borrow_mut()
+            .snapshot_position(&position_obj)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
+    fn py_position_snapshots(
+        &self,
+        py: Python,
+        position_id: Option<PositionId>,
+        account_id: Option<AccountId>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let cache = self.0.borrow();
+        cache
+            .position_snapshots(position_id.as_ref(), account_id.as_ref())
+            .into_iter()
+            .map(|p| Ok(p.into_pyobject(py)?.into()))
+            .collect()
     }
 }
 
@@ -1529,6 +1554,20 @@ impl Cache {
     ) -> PyResult<()> {
         let position_obj = position.extract::<Position>(py)?;
         self.add_position(&position_obj, oms_type)
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
+    /// serializing it, and storing it in the position snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serializing or storing the position snapshot fails.
+    #[pyo3(name = "snapshot_position")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_snapshot_position(&mut self, py: Python, position: Py<PyAny>) -> PyResult<()> {
+        let position_obj = position.extract::<Position>(py)?;
+        self.snapshot_position(&position_obj)
             .map_err(to_pyvalue_err)
     }
 
@@ -2364,10 +2403,31 @@ impl Cache {
         self.strategy_id_for_position(&position_id).copied()
     }
 
-    /// Gets position snapshot bytes for the `position_id`.
+    /// Gets the serialized position snapshot frames for the `position_id`.
+    ///
+    /// Each element in the returned vector is one JSON-encoded `Position` snapshot,
+    /// in the order they were taken.
     #[pyo3(name = "position_snapshot_bytes")]
-    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<u8>> {
+    fn py_position_snapshot_bytes(&self, position_id: PositionId) -> Option<Vec<Vec<u8>>> {
         self.position_snapshot_bytes(&position_id)
+    }
+
+    /// Returns all position snapshots with the given optional filters.
+    ///
+    /// When `position_id` is `Some`, only snapshots for that position are returned.
+    /// When `account_id` is `Some`, snapshots are filtered to that account.
+    /// Frames that fail to deserialize are skipped with a warning.
+    #[pyo3(name = "position_snapshots", signature = (position_id=None, account_id=None))]
+    fn py_position_snapshots(
+        &self,
+        py: Python,
+        position_id: Option<PositionId>,
+        account_id: Option<AccountId>,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        self.position_snapshots(position_id.as_ref(), account_id.as_ref())
+            .into_iter()
+            .map(|p| Ok(p.into_pyobject(py)?.into()))
+            .collect()
     }
 
     /// Returns a reference to the account for the `account_id` (if found).

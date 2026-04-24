@@ -398,6 +398,27 @@ impl CoinbaseWebSocketClient {
                 Err(_) => log::warn!("Feed handler task did not complete within timeout"),
             }
         }
+
+        // Wait for the inner WebSocket's connection_mode atomic to reach Closed
+        // before returning. Without this, a subsequent connect() can observe a
+        // stale Active/Reconnect state and early-return, leaving out_rx unset
+        // and causing "WebSocket output receiver not available" on take.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+
+        loop {
+            let mode_ptr = self.connection_mode.load();
+
+            if ConnectionMode::from_u8(mode_ptr.load(Ordering::Relaxed)).is_closed() {
+                break;
+            }
+
+            if tokio::time::Instant::now() >= deadline {
+                log::warn!("Timed out waiting for WebSocket to reach Closed state");
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     /// Returns true if the WebSocket connection is active.

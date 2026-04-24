@@ -1140,7 +1140,6 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     .await;
 
     client.disconnect().await.unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
 
     while rx.try_recv().is_ok() {}
 

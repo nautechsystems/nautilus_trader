@@ -1341,11 +1341,7 @@ impl Portfolio {
 
         // Detect purge/reset (count regression) to trigger full rebuild
         for position_id in &snapshot_position_ids {
-            let position_snapshots = self.cache.borrow().position_snapshot_bytes(position_id);
-            let curr_count = position_snapshots.map_or(0, |s| {
-                // Count the number of snapshots (they're serialized as JSON objects)
-                s.split(|&b| b == b'{').count() - 1
-            });
+            let curr_count = self.cache.borrow().position_snapshot_count(position_id);
             let prev_count = self
                 .inner
                 .borrow()
@@ -1363,202 +1359,126 @@ impl Portfolio {
         if rebuild {
             // Full rebuild: process all snapshots from scratch
             for position_id in &snapshot_position_ids {
-                if let Some(position_snapshots) =
-                    self.cache.borrow().position_snapshot_bytes(position_id)
-                {
-                    let mut sum_pnl: Option<Money> = None;
-                    let mut last_pnl: Option<Money> = None;
-                    let mut snapshot_account_id: Option<AccountId> = None;
+                // Track the raw frame count, not the decoded count: snapshots that fail
+                // to deserialize are skipped and would otherwise make the incremental
+                // path reprocess trailing valid frames next time.
+                let snapshot_count = self.cache.borrow().position_snapshot_count(position_id);
+                let snapshots = self
+                    .cache
+                    .borrow()
+                    .position_snapshots(Some(position_id), None);
 
-                    // Snapshots are concatenated JSON objects
-                    let mut start = 0;
-                    let mut depth = 0;
-                    let mut in_string = false;
-                    let mut escape_next = false;
+                let mut sum_pnl: Option<Money> = None;
+                let mut last_pnl: Option<Money> = None;
+                let mut snapshot_account_id: Option<AccountId> = None;
 
-                    for (i, &byte) in position_snapshots.iter().enumerate() {
-                        if escape_next {
-                            escape_next = false;
-                            continue;
-                        }
-
-                        if byte == b'\\' && in_string {
-                            escape_next = true;
-                            continue;
-                        }
-
-                        if byte == b'"' && !escape_next {
-                            in_string = !in_string;
-                        }
-
-                        if !in_string {
-                            if byte == b'{' {
-                                if depth == 0 {
-                                    start = i;
-                                }
-                                depth += 1;
-                            } else if byte == b'}' {
-                                depth -= 1;
-                                if depth == 0
-                                    && let Ok(snapshot) = serde_json::from_slice::<Position>(
-                                        &position_snapshots[start..=i],
-                                    )
-                                {
-                                    snapshot_account_id.get_or_insert(snapshot.account_id);
-                                    if let Some(realized_pnl) = snapshot.realized_pnl {
-                                        if let Some(ref mut sum) = sum_pnl {
-                                            if sum.currency == realized_pnl.currency {
-                                                *sum = Money::new(
-                                                    sum.as_f64() + realized_pnl.as_f64(),
-                                                    sum.currency,
-                                                );
-                                            }
-                                        } else {
-                                            sum_pnl = Some(realized_pnl);
-                                        }
-                                        last_pnl = Some(realized_pnl);
-                                    }
-                                }
+                for snapshot in snapshots {
+                    snapshot_account_id.get_or_insert(snapshot.account_id);
+                    if let Some(realized_pnl) = snapshot.realized_pnl {
+                        if let Some(sum) = sum_pnl {
+                            if sum.currency == realized_pnl.currency {
+                                sum_pnl = Some(sum + realized_pnl);
                             }
+                        } else {
+                            sum_pnl = Some(realized_pnl);
                         }
+                        last_pnl = Some(realized_pnl);
                     }
-
-                    let mut inner = self.inner.borrow_mut();
-
-                    if let Some(sum) = sum_pnl {
-                        inner.snapshot_sum_per_position.insert(*position_id, sum);
-
-                        if let Some(last) = last_pnl {
-                            inner.snapshot_last_per_position.insert(*position_id, last);
-                        }
-                    } else {
-                        inner.snapshot_sum_per_position.remove(position_id);
-                        inner.snapshot_last_per_position.remove(position_id);
-                    }
-
-                    if let Some(account_id) = snapshot_account_id {
-                        inner.snapshot_account_ids.insert(*position_id, account_id);
-                    } else {
-                        inner.snapshot_account_ids.remove(position_id);
-                    }
-
-                    let snapshot_count = position_snapshots.split(|&b| b == b'{').count() - 1;
-                    inner
-                        .snapshot_processed_counts
-                        .insert(*position_id, snapshot_count);
                 }
+
+                let mut inner = self.inner.borrow_mut();
+
+                if let Some(sum) = sum_pnl {
+                    inner.snapshot_sum_per_position.insert(*position_id, sum);
+
+                    if let Some(last) = last_pnl {
+                        inner.snapshot_last_per_position.insert(*position_id, last);
+                    }
+                } else {
+                    inner.snapshot_sum_per_position.remove(position_id);
+                    inner.snapshot_last_per_position.remove(position_id);
+                }
+
+                if let Some(account_id) = snapshot_account_id {
+                    inner.snapshot_account_ids.insert(*position_id, account_id);
+                } else {
+                    inner.snapshot_account_ids.remove(position_id);
+                }
+
+                inner
+                    .snapshot_processed_counts
+                    .insert(*position_id, snapshot_count);
             }
         } else {
             // Incremental path: only process new snapshots
             for position_id in &snapshot_position_ids {
-                if let Some(position_snapshots) =
-                    self.cache.borrow().position_snapshot_bytes(position_id)
-                {
-                    let curr_count = position_snapshots.split(|&b| b == b'{').count() - 1;
-                    let prev_count = self
-                        .inner
-                        .borrow()
-                        .snapshot_processed_counts
-                        .get(position_id)
-                        .copied()
-                        .unwrap_or(0);
+                // Compare raw frame counts first so untouched positions skip any
+                // allocation/serde cost on repeated PnL refreshes.
+                let curr_count = self.cache.borrow().position_snapshot_count(position_id);
+                let prev_count = self
+                    .inner
+                    .borrow()
+                    .snapshot_processed_counts
+                    .get(position_id)
+                    .copied()
+                    .unwrap_or(0);
 
-                    if prev_count >= curr_count {
-                        continue;
-                    }
-
-                    let mut sum_pnl = self
-                        .inner
-                        .borrow()
-                        .snapshot_sum_per_position
-                        .get(position_id)
-                        .copied();
-                    let mut last_pnl = self
-                        .inner
-                        .borrow()
-                        .snapshot_last_per_position
-                        .get(position_id)
-                        .copied();
-
-                    // Process only new snapshots
-                    let mut start = 0;
-                    let mut depth = 0;
-                    let mut in_string = false;
-                    let mut escape_next = false;
-                    let mut snapshot_index = 0;
-                    let mut snapshot_account_id: Option<AccountId> = None;
-
-                    for (i, &byte) in position_snapshots.iter().enumerate() {
-                        if escape_next {
-                            escape_next = false;
-                            continue;
-                        }
-
-                        if byte == b'\\' && in_string {
-                            escape_next = true;
-                            continue;
-                        }
-
-                        if byte == b'"' && !escape_next {
-                            in_string = !in_string;
-                        }
-
-                        if !in_string {
-                            if byte == b'{' {
-                                if depth == 0 {
-                                    start = i;
-                                }
-                                depth += 1;
-                            } else if byte == b'}' {
-                                depth -= 1;
-                                if depth == 0 {
-                                    snapshot_index += 1;
-                                    // Only process new snapshots
-                                    if snapshot_index > prev_count
-                                        && let Ok(snapshot) = serde_json::from_slice::<Position>(
-                                            &position_snapshots[start..=i],
-                                        )
-                                    {
-                                        snapshot_account_id.get_or_insert(snapshot.account_id);
-                                        if let Some(realized_pnl) = snapshot.realized_pnl {
-                                            if let Some(ref mut sum) = sum_pnl {
-                                                if sum.currency == realized_pnl.currency {
-                                                    *sum = Money::new(
-                                                        sum.as_f64() + realized_pnl.as_f64(),
-                                                        sum.currency,
-                                                    );
-                                                }
-                                            } else {
-                                                sum_pnl = Some(realized_pnl);
-                                            }
-                                            last_pnl = Some(realized_pnl);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    let mut inner = self.inner.borrow_mut();
-
-                    if let Some(sum) = sum_pnl {
-                        inner.snapshot_sum_per_position.insert(*position_id, sum);
-
-                        if let Some(last) = last_pnl {
-                            inner.snapshot_last_per_position.insert(*position_id, last);
-                        }
-                    }
-
-                    if let Some(account_id) = snapshot_account_id
-                        && !inner.snapshot_account_ids.contains_key(position_id)
-                    {
-                        inner.snapshot_account_ids.insert(*position_id, account_id);
-                    }
-
-                    inner
-                        .snapshot_processed_counts
-                        .insert(*position_id, curr_count);
+                if prev_count >= curr_count {
+                    continue;
                 }
+
+                let mut sum_pnl = self
+                    .inner
+                    .borrow()
+                    .snapshot_sum_per_position
+                    .get(position_id)
+                    .copied();
+                let mut last_pnl = self
+                    .inner
+                    .borrow()
+                    .snapshot_last_per_position
+                    .get(position_id)
+                    .copied();
+                let mut snapshot_account_id: Option<AccountId> = None;
+
+                let new_snapshots = self
+                    .cache
+                    .borrow()
+                    .position_snapshots_from(position_id, prev_count);
+
+                for snapshot in new_snapshots {
+                    snapshot_account_id.get_or_insert(snapshot.account_id);
+                    if let Some(realized_pnl) = snapshot.realized_pnl {
+                        if let Some(sum) = sum_pnl {
+                            if sum.currency == realized_pnl.currency {
+                                sum_pnl = Some(sum + realized_pnl);
+                            }
+                        } else {
+                            sum_pnl = Some(realized_pnl);
+                        }
+                        last_pnl = Some(realized_pnl);
+                    }
+                }
+
+                let mut inner = self.inner.borrow_mut();
+
+                if let Some(sum) = sum_pnl {
+                    inner.snapshot_sum_per_position.insert(*position_id, sum);
+
+                    if let Some(last) = last_pnl {
+                        inner.snapshot_last_per_position.insert(*position_id, last);
+                    }
+                }
+
+                if let Some(account_id) = snapshot_account_id
+                    && !inner.snapshot_account_ids.contains_key(position_id)
+                {
+                    inner.snapshot_account_ids.insert(*position_id, account_id);
+                }
+
+                inner
+                    .snapshot_processed_counts
+                    .insert(*position_id, curr_count);
             }
         }
     }

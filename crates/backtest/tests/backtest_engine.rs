@@ -511,21 +511,6 @@ fn test_run_processes_quote_ticks(crypto_perpetual_ethusdt: CryptoPerpetual) {
 
 #[rstest]
 fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: CryptoPerpetual) {
-    fn sum_realized(positions: &[&Position]) -> f64 {
-        positions
-            .iter()
-            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-            .sum()
-    }
-
-    fn sum_realized_from_snapshot_bytes(snapshot_bytes: &[u8]) -> f64 {
-        serde_json::de::Deserializer::from_slice(snapshot_bytes)
-            .into_iter::<Position>()
-            .filter_map(Result::ok)
-            .filter_map(|p| p.realized_pnl.map(|m| m.as_f64()))
-            .sum()
-    }
-
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();
@@ -552,28 +537,27 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     let cache = cache_rc.borrow();
     let positions = cache.positions(None, None, None, None, None);
 
-    let cache_realized = sum_realized(&positions);
+    let cache_realized: f64 = positions
+        .iter()
+        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
+        .sum();
     let cache_realized_count = positions
         .iter()
         .filter(|p| p.realized_pnl.is_some())
         .count() as f64;
 
-    let snapshots_realized: f64 = positions
+    let snapshot_positions: Vec<Position> = positions
         .iter()
-        .filter_map(|p| cache.position_snapshot_bytes(&p.id))
-        .map(|bytes| sum_realized_from_snapshot_bytes(&bytes))
-        .sum();
-    let snapshots_realized_count: f64 = positions
+        .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
+        .collect();
+    let snapshots_realized: f64 = snapshot_positions
         .iter()
-        .filter_map(|p| cache.position_snapshot_bytes(&p.id))
-        .map(|bytes| {
-            serde_json::de::Deserializer::from_slice(&bytes)
-                .into_iter::<Position>()
-                .filter_map(Result::ok)
-                .filter(|p| p.realized_pnl.is_some())
-                .count() as f64
-        })
+        .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
         .sum();
+    let snapshots_realized_count = snapshot_positions
+        .iter()
+        .filter(|p| p.realized_pnl.is_some())
+        .count() as f64;
 
     assert!(
         snapshots_realized.abs() > 0.0,

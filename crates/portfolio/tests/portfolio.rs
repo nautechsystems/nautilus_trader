@@ -2266,14 +2266,144 @@ fn test_portfolio_realized_pnl_with_position_snapshots_netting_oms(
     // Calculate realized PnL - should include snapshot PnL
     let realized_pnl = portfolio.realized_pnl(&instrument_audusd.id());
 
-    // First cycle: (0.80020 - 0.80000) * 100000 - 4.0 (commission) = 200 - 4 = 196 USD
-    // Second cycle (active): 0 (no realized PnL yet)
-    // With NETTING OMS and active position, should use last snapshot PnL only
-    assert!(realized_pnl.is_some());
-    let pnl = realized_pnl.unwrap();
+    // NETTING 3-case rule with the margin account: LAST snapshot's realized PnL
+    // (positive first cycle, net of commissions) is converted through the margin
+    // account's base currency xrate to 15.00 USD.
+    let pnl = realized_pnl.expect("realized_pnl should be Some");
     assert_eq!(pnl.currency, Currency::USD());
-    // The exact value depends on the 3-case rule implementation
-    // For active position with snapshots, it should use the last snapshot PnL
+    assert_eq!(pnl, Money::from("15.00 USD"));
+}
+
+#[rstest]
+fn test_portfolio_realized_pnl_with_multiple_snapshots_netting_oms(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    // Drives the multi-snapshot path through ensure_snapshot_pnls_cached_for:
+    // with a fresh portfolio state prev_count is 0, so this exercises the incremental
+    // branch via position_snapshots_from(pid, 0) with more than one frame.
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+
+    let order1 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000.00"))
+        .build();
+    let fill1 = OrderFilled::new(
+        order1.trader_id(),
+        order1.strategy_id(),
+        order1.instrument_id(),
+        order1.client_order_id(),
+        VenueOrderId::new("1"),
+        AccountId::new("SIM-001"),
+        TradeId::new("1"),
+        order1.order_side(),
+        order1.order_type(),
+        order1.quantity(),
+        Price::from("0.80000"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("AUDUSD-MULTI")),
+        Some(Money::from("2.0 USD")),
+    );
+    let mut position1 = Position::new(&instrument_audusd, fill1);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position1, OmsType::Netting)
+        .unwrap();
+
+    let order2 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100000.00"))
+        .build();
+    let fill2 = OrderFilled::new(
+        order2.trader_id(),
+        order2.strategy_id(),
+        order2.instrument_id(),
+        order2.client_order_id(),
+        VenueOrderId::new("2"),
+        AccountId::new("SIM-001"),
+        TradeId::new("2"),
+        order2.order_side(),
+        order2.order_type(),
+        order2.quantity(),
+        Price::from("0.80020"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("AUDUSD-MULTI")),
+        Some(Money::from("2.0 USD")),
+    );
+    position1.apply(&fill2);
+
+    // Take two snapshots of the same closed state so the rebuild pass processes
+    // more than one frame for the same position id.
+    for _ in 0..2 {
+        portfolio
+            .cache()
+            .borrow_mut()
+            .snapshot_position(&position1)
+            .unwrap();
+    }
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position1)
+        .unwrap();
+
+    // Reopen the position in NETTING so the LAST snapshot rule applies
+    let order3 = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("50000.00"))
+        .build();
+    let fill3 = OrderFilled::new(
+        order3.trader_id(),
+        order3.strategy_id(),
+        order3.instrument_id(),
+        order3.client_order_id(),
+        VenueOrderId::new("3"),
+        AccountId::new("SIM-001"),
+        TradeId::new("3"),
+        order3.order_side(),
+        order3.order_type(),
+        order3.quantity(),
+        Price::from("0.80050"),
+        Currency::USD(),
+        LiquiditySide::Taker,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("AUDUSD-MULTI")),
+        Some(Money::from("1.0 USD")),
+    );
+    let position2 = Position::new(&instrument_audusd, fill3);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position2, OmsType::Netting)
+        .unwrap();
+
+    // Both stored frames carry the same realized PnL, so the LAST-rule result
+    // matches the single-snapshot baseline (15.00 USD). A broken
+    // position_snapshot_count or position_snapshots_from would drop all
+    // snapshot contribution and return 0 USD here.
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+    assert_eq!(pnl.currency, Currency::USD());
+    assert_eq!(pnl, Money::from("15.00 USD"));
 }
 
 fn make_fill_for_account(

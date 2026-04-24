@@ -18,6 +18,7 @@
 #[cfg(feature = "defi")]
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use bytes::Bytes;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
@@ -2945,6 +2946,162 @@ fn test_position_flip_netting_mode_cleans_up_closed_index() {
     assert_eq!(cached_pos.side, PositionSide::Long);
     assert_eq!(cached_pos.quantity, Quantity::from(50_000));
     assert_eq!(cached_pos.event_count(), 1); // Only the reopen fill event
+}
+
+#[rstest]
+fn test_position_snapshots_round_trip(mut cache: Cache) {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim());
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        Some(TradeId::new("T-1")),
+        Some(PositionId::new("P-1")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        None,
+    );
+    let position = Position::new(&audusd_sim, fill.into());
+    let position_id = position.id;
+    let account_id = position.account_id;
+
+    cache.snapshot_position(&position).unwrap();
+    cache.snapshot_position(&position).unwrap();
+    cache.snapshot_position(&position).unwrap();
+
+    // Frames are stored as one entry per call, not concatenated
+    let frames = cache.position_snapshot_bytes(&position_id).unwrap();
+    assert_eq!(frames.len(), 3);
+
+    // All snapshots round-trip via position_snapshots()
+    let snapshots = cache.position_snapshots(Some(&position_id), None);
+    assert_eq!(snapshots.len(), 3);
+
+    // Each snapshot has a unique ID derived from the original (UUID suffix)
+    let prefix = format!("{}-", position_id.as_str());
+    for snapshot in &snapshots {
+        assert!(snapshot.id.as_str().starts_with(&prefix));
+        assert_ne!(snapshot.id, position_id);
+    }
+    let unique_ids: AHashSet<_> = snapshots.iter().map(|p| p.id).collect();
+    assert_eq!(unique_ids.len(), 3);
+
+    // Account filter keeps matching snapshots
+    assert_eq!(cache.position_snapshots(None, Some(&account_id)).len(), 3,);
+    // Account filter drops non-matching snapshots
+    assert!(
+        cache
+            .position_snapshots(None, Some(&AccountId::new("OTHER-000")))
+            .is_empty(),
+    );
+}
+
+fn snapshot_test_position() -> Position {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        Some(TradeId::new("T-1")),
+        Some(PositionId::new("P-1")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        Some(UnixNanos::from(1_000_000_000)),
+        None,
+    );
+    Position::new(&audusd_sim, fill.into())
+}
+
+#[rstest]
+#[case(0)]
+#[case(1)]
+#[case(3)]
+fn test_position_snapshot_count(mut cache: Cache, #[case] n: usize) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    for _ in 0..n {
+        cache.snapshot_position(&position).unwrap();
+    }
+
+    assert_eq!(cache.position_snapshot_count(&position_id), n);
+}
+
+#[rstest]
+fn test_position_snapshot_count_unknown_position(cache: Cache) {
+    assert_eq!(
+        cache.position_snapshot_count(&PositionId::new("NOT-PRESENT")),
+        0,
+    );
+}
+
+#[rstest]
+fn test_position_snapshots_from_preserves_order_and_skip(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    for _ in 0..3 {
+        cache.snapshot_position(&position).unwrap();
+    }
+
+    // skip=0 returns all three, in insertion order
+    let all_from_zero = cache.position_snapshots_from(&position_id, 0);
+    assert_eq!(all_from_zero.len(), 3);
+    let all_ids: Vec<_> = all_from_zero.iter().map(|p| p.id).collect();
+
+    // skip=1 returns the last two, matching the tail of the full list
+    let from_one = cache.position_snapshots_from(&position_id, 1);
+    let from_one_ids: Vec<_> = from_one.iter().map(|p| p.id).collect();
+    assert_eq!(from_one_ids, all_ids[1..]);
+
+    // skip at or past len returns empty
+    assert!(cache.position_snapshots_from(&position_id, 3).is_empty());
+    assert!(cache.position_snapshots_from(&position_id, 10).is_empty());
+
+    // Unknown position returns empty regardless of skip
+    assert!(
+        cache
+            .position_snapshots_from(&PositionId::new("NOT-PRESENT"), 0)
+            .is_empty(),
+    );
+}
+
+#[rstest]
+fn test_position_snapshots_skip_malformed_frames(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    cache.snapshot_position(&position).unwrap();
+    // Inject a corrupt frame between two valid ones
+    cache
+        .position_snapshots
+        .get_mut(&position_id)
+        .unwrap()
+        .push(Bytes::from_static(b"not json"));
+    cache.snapshot_position(&position).unwrap();
+
+    // Raw frame count stays authoritative; decoded view drops the bad frame
+    assert_eq!(cache.position_snapshot_count(&position_id), 3);
+    assert_eq!(
+        cache.position_snapshot_bytes(&position_id).unwrap().len(),
+        3
+    );
+    assert_eq!(cache.position_snapshots(Some(&position_id), None).len(), 2);
+    assert_eq!(cache.position_snapshots_from(&position_id, 0).len(), 2);
 }
 
 #[rstest]
