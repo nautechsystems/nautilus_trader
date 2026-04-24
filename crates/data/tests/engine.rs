@@ -2088,10 +2088,121 @@ fn test_process_instrument_status(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::InstrumentStatus(status));
+    let cache = data_engine.get_cache();
     let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
 
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&status));
+    assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status));
+    assert_eq!(
+        cache.instrument_statuses(&audusd_sim.id),
+        Some(vec![status]),
+    );
+}
+
+#[rstest]
+fn test_process_instrument_status_through_any(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeInstrumentStatus::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(sub));
+    data_engine.borrow_mut().execute(cmd);
+
+    let status = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+    let handler = msgbus::stubs::get_message_saving_handler::<InstrumentStatus>(None);
+    let topic = switchboard::get_instrument_status_topic(status.instrument_id);
+    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    // Drive through the process() entrypoint with `&dyn Any`
+    data_engine.process(&status as &dyn Any);
+    let cache = data_engine.get_cache();
+    let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
+
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&status));
+    assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status));
+}
+
+#[rstest]
+fn test_process_instrument_status_updates_existing(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let sub = SubscribeInstrumentStatus::new(
+        audusd_sim.id,
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    let cmd = DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(sub));
+    data_engine.borrow_mut().execute(cmd);
+
+    let status1 = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::PreOpen,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    );
+    let status2 = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process_data(Data::InstrumentStatus(status1));
+    data_engine.process_data(Data::InstrumentStatus(status2));
+    let cache = data_engine.get_cache();
+
+    assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status2));
+    assert_eq!(
+        cache.instrument_statuses(&audusd_sim.id),
+        Some(vec![status2, status1]),
+    );
 }
 
 #[cfg(feature = "defi")]
@@ -4837,6 +4948,93 @@ fn test_subscribe_option_chain_resubscribe_replaces_manager(
         sub_quotes, 2,
         "Expected 2 quote subscribes (initial + re-subscribe)"
     );
+}
+
+#[rstest]
+#[case::close(MarketStatusAction::Close, 1, 1)]
+#[case::not_available(MarketStatusAction::NotAvailableForTrading, 1, 1)]
+#[case::trading(MarketStatusAction::Trading, 0, 0)]
+fn test_process_instrument_status_expires_option_chain_instrument(
+    #[case] action: MarketStatusAction,
+    #[case] expected_quote_unsubs: usize,
+    #[case] expected_greeks_unsubs: usize,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let _ = msgbus::get_message_bus();
+    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+
+    let client_id = ClientId::new("DERIBIT");
+    let venue = Venue::new("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    // Add two options to the cache so the option chain has multiple members;
+    // we will only expire one and assert teardown is scoped to that instrument.
+    let call = make_btc_option("50000.000", OptionKind::Call);
+    let put = make_btc_option("50000.000", OptionKind::Put);
+    let call_id = call.id();
+    let _ = cache.borrow_mut().add_instrument(call);
+    let _ = cache.borrow_mut().add_instrument(put);
+
+    let series_id = make_series_id();
+    let cmd = make_subscribe_option_chain(
+        series_id,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    data_engine.borrow_mut().execute(cmd);
+
+    // Clear the recorder so only commands triggered by the status are counted.
+    recorder.borrow_mut().clear();
+
+    let status = InstrumentStatus::new(
+        call_id,
+        action,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    );
+    data_engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(status));
+
+    let recorded = recorder.borrow();
+    let quote_unsubs = recorded
+        .iter()
+        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))))
+        .count();
+    let greeks_unsubs = recorded
+        .iter()
+        .filter(|cmd| {
+            matches!(
+                cmd,
+                DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(_))
+            )
+        })
+        .count();
+
+    // Cache write happens regardless of action
+    assert_eq!(
+        data_engine.borrow().get_cache().instrument_status(&call_id),
+        Some(&status),
+    );
+    assert_eq!(quote_unsubs, expected_quote_unsubs);
+    assert_eq!(greeks_unsubs, expected_greeks_unsubs);
 }
 
 #[rstest]

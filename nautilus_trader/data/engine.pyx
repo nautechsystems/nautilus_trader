@@ -2765,6 +2765,9 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=self._topic_cache.get_bars_topic(bar_type, historical), msg=bar)
 
     cpdef void _handle_instrument_status(self, InstrumentStatus data, bint historical = False):
+        if not (historical and self._disable_historical_cache):
+            self._cache.add_instrument_status(data)
+
         self._msgbus.publish_c(topic=self._topic_cache.get_status_topic(data.instrument_id, historical), msg=data)
 
         # Check for option chain instrument expiry

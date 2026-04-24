@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `Portfolio::mark_values`, `equity`, and `missing_price_instruments` queries for Rust and Python
+- Added `instrument_status` / `instrument_statuses` cache queries and auto-caching in the data engine (#3858)
 - Added `environment` enum config for BitMEX, Deribit, dYdX, Hyperliquid, and OKX adapters
 - Added `BybitEnvironment` to `BybitDataClientConfig` and `BybitExecClientConfig`
 - Added missing config values to `LiveExecEngineConfig` (#3841), thanks @Javdu10

@@ -76,6 +76,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -87,6 +88,7 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -1815,6 +1817,76 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_instrument_status() == []
         assert self.binance_client.subscribed_instrument_status() == []
+
+    def test_process_instrument_status_when_subscriber_then_caches_and_publishes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(
+            topic=f"data.status.BINANCE.{ETHUSDT_BINANCE.id.symbol}",
+            handler=handler.append,
+        )
+
+        subscribe = SubscribeInstrumentStatus(
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        status = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.TRADING,
+            ts_event=1,
+            ts_init=2,
+        )
+
+        # Act
+        self.data_engine.process(status)
+
+        # Assert
+        assert handler == [status]
+        assert self.cache.instrument_status(ETHUSDT_BINANCE.id) == status
+        assert self.cache.instrument_statuses(ETHUSDT_BINANCE.id) == [status]
+
+    def test_process_instrument_status_updates_existing_in_cache(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeInstrumentStatus(
+            client_id=None,
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        self.data_engine.execute(subscribe)
+
+        status1 = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.PRE_OPEN,
+            ts_event=1,
+            ts_init=2,
+        )
+        status2 = InstrumentStatus(
+            instrument_id=ETHUSDT_BINANCE.id,
+            action=MarketStatusAction.TRADING,
+            ts_event=3,
+            ts_init=4,
+        )
+
+        # Act
+        self.data_engine.process(status1)
+        self.data_engine.process(status2)
+
+        # Assert: latest status is returned by the default-index getter
+        assert self.cache.instrument_status(ETHUSDT_BINANCE.id) == status2
+        assert self.cache.instrument_statuses(ETHUSDT_BINANCE.id) == [status2, status1]
 
     def test_subscribe_instrument_close_then_subscribes(self):
         # Arrange

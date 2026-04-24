@@ -303,7 +303,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use 8-core runners for faster builds
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04-arm)
     runs-on: depot-ubuntu-22.04-arm-8
     # Pause job on develop branch (takes ~1-1.5 hrs)
@@ -439,7 +438,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use Depot macOS runners for faster builds
     name: build - python ${{ matrix.python-version }} (macos)
     runs-on: macos-latest
     needs:
@@ -602,7 +600,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Push events use Depot Windows runners for faster builds
     name: build - python ${{ matrix.python-version }} (windows)
     runs-on: depot-windows-2022-8
     needs:

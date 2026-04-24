@@ -49,8 +49,8 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, QuoteTick,
-        TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
+        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
@@ -91,6 +91,7 @@ pub struct Cache {
     mark_prices: AHashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
     index_prices: AHashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
     funding_rates: AHashMap<InstrumentId, VecDeque<FundingRateUpdate>>,
+    instrument_statuses: AHashMap<InstrumentId, VecDeque<InstrumentStatus>>,
     bars: AHashMap<BarType, VecDeque<Bar>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
@@ -121,6 +122,7 @@ impl Debug for Cache {
             .field("mark_prices", &self.mark_prices)
             .field("index_prices", &self.index_prices)
             .field("funding_rates", &self.funding_rates)
+            .field("instrument_statuses", &self.instrument_statuses)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
@@ -167,6 +169,7 @@ impl Cache {
             mark_prices: AHashMap::new(),
             index_prices: AHashMap::new(),
             funding_rates: AHashMap::new(),
+            instrument_statuses: AHashMap::new(),
             bars: AHashMap::new(),
             greeks: AHashMap::new(),
             option_greeks: AHashMap::new(),
@@ -1283,6 +1286,7 @@ impl Cache {
         self.mark_prices.clear();
         self.index_prices.clear();
         self.funding_rates.clear();
+        self.instrument_statuses.clear();
         self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
@@ -1473,6 +1477,26 @@ impl Cache {
         for funding_rate in funding_rates {
             funding_rate_deque.push_front(*funding_rate);
         }
+        Ok(())
+    }
+
+    /// Adds the `instrument_status` update to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the instrument status to the backing database fails.
+    pub fn add_instrument_status(&mut self, status: InstrumentStatus) -> anyhow::Result<()> {
+        log::debug!("Adding `InstrumentStatus` for {}", status.instrument_id);
+
+        if self.config.save_market_data {
+            // TODO: Placeholder and return Result for consistency
+        }
+
+        let statuses_deque = self
+            .instrument_statuses
+            .entry(status.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        statuses_deque.push_front(status);
         Ok(())
     }
 
@@ -3427,6 +3451,17 @@ impl Cache {
             .map(|funding_rates| funding_rates.iter().copied().collect())
     }
 
+    /// Gets all instrument status updates for the `instrument_id`.
+    #[must_use]
+    pub fn instrument_statuses(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<Vec<InstrumentStatus>> {
+        self.instrument_statuses
+            .get(instrument_id)
+            .map(|statuses| statuses.iter().copied().collect())
+    }
+
     /// Gets all bars for the `bar_type`.
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
@@ -3520,6 +3555,14 @@ impl Cache {
         self.funding_rates
             .get(instrument_id)
             .and_then(|funding_rates| funding_rates.front())
+    }
+
+    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    #[must_use]
+    pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<&InstrumentStatus> {
+        self.instrument_statuses
+            .get(instrument_id)
+            .and_then(|statuses| statuses.front())
     }
 
     /// Gets a reference to the latest bar for the `bar_type`.

@@ -26,10 +26,12 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, BarType, FundingRateUpdate, MarkPriceUpdate, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+    },
     enums::{
-        AggressorSide, BookType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        PriceType, TriggerType,
+        AggressorSide, BookType, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, TriggerType,
     },
     events::{
         OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled, OrderRejected,
@@ -1341,6 +1343,71 @@ fn test_add_funding_rate_updates_existing(mut cache: Cache, audusd_sim: Currency
 
     let result = cache.funding_rate(&audusd_sim.id);
     assert_eq!(result, Some(&funding_rate2));
+}
+
+#[rstest]
+fn test_instrument_status_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    assert!(cache.instrument_status(&audusd_sim.id).is_none());
+    assert!(cache.instrument_statuses(&audusd_sim.id).is_none());
+}
+
+#[rstest]
+fn test_add_instrument_status(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let status = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+
+    cache.add_instrument_status(status).unwrap();
+
+    assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status));
+    assert_eq!(
+        cache.instrument_statuses(&audusd_sim.id),
+        Some(vec![status])
+    );
+}
+
+#[rstest]
+fn test_add_instrument_status_keeps_time_series(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let status1 = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::PreOpen,
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    );
+    let status2 = InstrumentStatus::new(
+        audusd_sim.id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(15),
+        UnixNanos::from(20),
+        None,
+        None,
+        Some(true),
+        Some(true),
+        None,
+    );
+
+    cache.add_instrument_status(status1).unwrap();
+    cache.add_instrument_status(status2).unwrap();
+
+    // Latest status first (push_front semantics)
+    assert_eq!(cache.instrument_status(&audusd_sim.id), Some(&status2));
+    assert_eq!(
+        cache.instrument_statuses(&audusd_sim.id),
+        Some(vec![status2, status1]),
+    );
 }
 
 #[rstest]

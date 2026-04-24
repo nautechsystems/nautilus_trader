@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, InstrumentStatus, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -191,6 +191,16 @@ impl PyCache {
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.0.borrow().funding_rate(&instrument_id).copied()
+    }
+
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.0.borrow().instrument_status(&instrument_id).copied()
+    }
+
+    #[pyo3(name = "instrument_statuses")]
+    fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
+        self.0.borrow().instrument_statuses(&instrument_id)
     }
 
     #[pyo3(name = "price")]
@@ -1736,6 +1746,18 @@ impl Cache {
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
+    }
+
+    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    #[pyo3(name = "instrument_status")]
+    fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
+        self.instrument_status(&instrument_id).copied()
+    }
+
+    /// Gets all instrument status updates for the `instrument_id`.
+    #[pyo3(name = "instrument_statuses")]
+    fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
+        self.instrument_statuses(&instrument_id)
     }
 
     /// Gets a reference to the order book for the `instrument_id`.

@@ -1227,6 +1227,15 @@ impl DataEngine {
     }
 
     fn handle_instrument_status(&mut self, status: InstrumentStatus) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_instrument_status(status)
+        {
+            log_error_on_cache_insert(&e);
+        }
+
         let topic = switchboard::get_instrument_status_topic(status.instrument_id);
         msgbus::publish_any(topic, &status);
 
