@@ -413,6 +413,8 @@ impl From<bool> for HyperliquidLiquidityFlag {
 pub enum HyperliquidLiquidationMethod {
     Market,
     Backstop,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Hyperliquid position type/mode.
@@ -642,6 +644,9 @@ pub enum HyperliquidOrderStatus {
     /// Order rejected due to minimum trade notional.
     #[serde(rename = "minTradeNtlRejected")]
     MinTradeNtlRejected,
+    /// Order rejected due to minimum spot trade notional.
+    #[serde(rename = "minTradeSpotNtlRejected")]
+    MinTradeSpotNtlRejected,
     /// Order rejected due to perp margin.
     #[serde(rename = "perpMarginRejected")]
     PerpMarginRejected,
@@ -704,6 +709,7 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
             HyperliquidOrderStatus::Rejected
             | HyperliquidOrderStatus::TickRejected
             | HyperliquidOrderStatus::MinTradeNtlRejected
+            | HyperliquidOrderStatus::MinTradeSpotNtlRejected
             | HyperliquidOrderStatus::PerpMarginRejected
             | HyperliquidOrderStatus::ReduceOnlyRejected
             | HyperliquidOrderStatus::BadAloPxRejected
@@ -772,6 +778,10 @@ pub enum HyperliquidFillDirection {
     #[serde(rename = "Short > Long")]
     #[strum(serialize = "Short > Long")]
     ShortToLong,
+    /// Auto-deleveraging counterparty fill (perp ADL event).
+    #[serde(rename = "Auto-Deleveraging")]
+    #[strum(serialize = "Auto-Deleveraging")]
+    AutoDeleveraging,
     /// Buying an asset (spot only).
     Buy,
     /// Selling an asset (spot only).

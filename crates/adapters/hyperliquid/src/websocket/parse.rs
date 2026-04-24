@@ -39,8 +39,11 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use super::messages::{
     CandleData, WsActiveAssetCtxData, WsBboData, WsBookData, WsFillData, WsOrderData, WsTradeData,
 };
-use crate::common::parse::{
-    is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+use crate::common::{
+    enums::HyperliquidFillDirection,
+    parse::{
+        is_conditional_order_data, make_fill_trade_id, millis_to_nanos, parse_trigger_order_type,
+    },
 };
 
 fn parse_price(
@@ -372,6 +375,13 @@ pub fn parse_ws_fill_report(
                 .liquidated_user
                 .as_deref()
                 .unwrap_or("<unknown>"),
+        );
+    } else if matches!(fill.dir, HyperliquidFillDirection::AutoDeleveraging) {
+        log::warn!(
+            "Auto-deleveraging fill: {instrument_id} oid={} px={} sz={}",
+            fill.oid,
+            fill.px,
+            fill.sz,
         );
     }
 

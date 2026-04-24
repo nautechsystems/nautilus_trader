@@ -34,7 +34,8 @@ use crate::{
     common::{
         consts::HYPERLIQUID_VENUE,
         enums::{
-            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide, HyperliquidTpSl,
+            HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
+            HyperliquidSide, HyperliquidTpSl,
         },
         parse::make_fill_trade_id,
     },
@@ -528,6 +529,15 @@ pub fn parse_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
+
+    if matches!(fill.dir, HyperliquidFillDirection::AutoDeleveraging) {
+        log::warn!(
+            "Auto-deleveraging fill: {instrument_id} oid={} px={} sz={}",
+            fill.oid,
+            fill.px,
+            fill.sz,
+        );
+    }
 
     let trade_id = make_fill_trade_id(
         &fill.hash,
