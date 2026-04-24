@@ -352,6 +352,22 @@ def test_get_ws_public_base_url(account_type, environment, is_us, expected):
             "private",
             "wss://fstream.binance.com/private",
         ),
+        (
+            "wss://fstream-mm.binance.com",
+            "market",
+            "wss://fstream-mm.binance.com/market",
+        ),
+        (
+            "wss://fstream-mm.binance.com/ws",
+            "public",
+            "wss://fstream-mm.binance.com/public",
+        ),
+        (
+            "wss://fstream-auth.binance.com/market/ws",
+            "private",
+            "wss://fstream-auth.binance.com/private",
+        ),
+        ("wss://fstream.binance.us", "market", "wss://fstream.binance.us/market"),
     ],
 )
 def test_get_usdm_ws_route_base_url_normalizes_fstream_override(base_url, route, expected):
@@ -364,6 +380,8 @@ def test_get_usdm_ws_route_base_url_normalizes_fstream_override(base_url, route,
         ("ws://127.0.0.1:9999/ws", "market"),
         ("wss://other.example.com/private/ws", "private"),
         ("ws://localhost:8080", "public"),
+        ("wss://other-fstream.binance.com.example.org/ws", "market"),
+        ("wss://fstream.binance.com.example.org/ws", "market"),
     ],
 )
 def test_get_usdm_ws_route_base_url_passes_through_non_binance_host(base_url, route):

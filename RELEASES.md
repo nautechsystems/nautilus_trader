@@ -104,6 +104,7 @@ Released on TBD (UTC).
 - Fixed Binance HTTP request Ed25519 signature URL-encoding in query strings (Rust)
 - Fixed Binance Futures USD-M `cancel_all_orders` silently failing; routes through HTTP (WS API does not support it)
 - Fixed Binance Futures `TRADE_LITE` user data events logging "Unknown event type" warnings on every fill
+- Fixed Binance USD-M Futures WebSocket routing for `fstream-mm` and `fstream-auth` hosts
 - Fixed BitMEX trade ID fallback using random UUID4 when `trdMatchID` missing; now hashed from trade fields
 - Fixed Bybit demo mode websocket data URLs (#3742), thanks for reporting @jindrichsirucek
 - Fixed Bybit position deserialization for closed positions (#3836), thanks for reporting @pusteckiy

@@ -141,6 +141,20 @@ pub fn get_ws_private_base_url(
     }
 }
 
+fn is_usdm_ws_host(base_url: &str) -> bool {
+    // Strip scheme (e.g. `wss://`) and trailing path/port, then match the hostname.
+    // Accepts fstream.binance.com, fstream-mm.binance.com, fstream-auth.binance.com,
+    // and their .us counterparts, without admitting arbitrary substrings.
+    let without_scheme = base_url
+        .split_once("://")
+        .map_or(base_url, |(_, rest)| rest);
+    let host = without_scheme
+        .split(['/', ':'])
+        .next()
+        .unwrap_or(without_scheme);
+    host.starts_with("fstream") && (host.ends_with(".binance.com") || host.ends_with(".binance.us"))
+}
+
 /// Returns a routed USD-M Futures WebSocket URL derived from an override.
 ///
 /// Binance now routes USD-M Futures mainnet traffic by category. This helper
@@ -171,7 +185,7 @@ pub(crate) fn get_usdm_ws_route_base_url(base_url: &str, route: &str) -> String 
         "invalid USD-M WebSocket route: {route}"
     );
 
-    if !base_url.contains("fstream.binance.com") {
+    if !is_usdm_ws_host(base_url) {
         return base_url.to_string();
     }
 
@@ -311,6 +325,26 @@ mod tests {
         "private",
         "wss://fstream.binance.com/private/ws"
     )]
+    #[case(
+        "wss://fstream-mm.binance.com",
+        "market",
+        "wss://fstream-mm.binance.com/market/ws"
+    )]
+    #[case(
+        "wss://fstream-mm.binance.com/ws",
+        "public",
+        "wss://fstream-mm.binance.com/public/ws"
+    )]
+    #[case(
+        "wss://fstream-auth.binance.com/market/ws",
+        "private",
+        "wss://fstream-auth.binance.com/private/ws"
+    )]
+    #[case(
+        "wss://fstream.binance.us",
+        "market",
+        "wss://fstream.binance.us/market/ws"
+    )]
     fn test_usdm_ws_route_base_url_normalizes_override(
         #[case] base_url: &str,
         #[case] route: &str,
@@ -324,6 +358,8 @@ mod tests {
     #[case("ws://127.0.0.1:9999/ws", "market")]
     #[case("wss://other.example.com/private/ws", "private")]
     #[case("ws://localhost:8080", "public")]
+    #[case("wss://other-fstream.binance.com.example.org/ws", "market")]
+    #[case("wss://fstream.binance.com.example.org/ws", "market")]
     fn test_usdm_ws_route_base_url_passes_through_non_binance_host(
         #[case] base_url: &str,
         #[case] route: &str,

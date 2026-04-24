@@ -13,8 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from urllib.parse import urlparse
+
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
+
+
+def _is_usdm_ws_host(base_url: str) -> bool:
+    hostname = urlparse(base_url).hostname
+    if hostname is None:
+        return False
+    # Matches fstream.binance.com, fstream-mm.binance.com, fstream-auth.binance.com,
+    # and their .us counterparts, without accepting arbitrary substrings.
+    return hostname.startswith("fstream") and hostname.endswith(
+        (".binance.com", ".binance.us"),
+    )
 
 
 def get_http_base_url(  # noqa: C901 (URL dispatch)
@@ -233,7 +246,7 @@ def get_usdm_ws_route_base_url(base_url: str, route: str) -> str:
     if route not in {"market", "public", "private"}:
         raise ValueError(f"invalid USD-M WebSocket route, was {route!r}")
 
-    if "fstream.binance.com" not in base_url:
+    if not _is_usdm_ws_host(base_url):
         return base_url
 
     normalized = base_url.rstrip("/")
