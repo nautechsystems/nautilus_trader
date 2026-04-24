@@ -121,6 +121,18 @@ pub enum CoinbaseOrderStatus {
     EditQueued,
 }
 
+impl CoinbaseOrderStatus {
+    /// Returns true when the status represents a terminal lifecycle state
+    /// (no further updates expected from the venue).
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Filled | Self::Cancelled | Self::Expired | Self::Failed
+        )
+    }
+}
+
 /// Coinbase time in force.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -427,6 +439,21 @@ mod tests {
     #[case("SELL", CoinbaseOrderSide::Sell)]
     fn test_order_side_from_str(#[case] input: &str, #[case] expected: CoinbaseOrderSide) {
         assert_eq!(CoinbaseOrderSide::from_str(input).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case(CoinbaseOrderStatus::Filled, true)]
+    #[case(CoinbaseOrderStatus::Cancelled, true)]
+    #[case(CoinbaseOrderStatus::Expired, true)]
+    #[case(CoinbaseOrderStatus::Failed, true)]
+    #[case(CoinbaseOrderStatus::Open, false)]
+    #[case(CoinbaseOrderStatus::Pending, false)]
+    #[case(CoinbaseOrderStatus::Queued, false)]
+    #[case(CoinbaseOrderStatus::CancelQueued, false)]
+    #[case(CoinbaseOrderStatus::EditQueued, false)]
+    #[case(CoinbaseOrderStatus::Unknown, false)]
+    fn test_order_status_is_terminal(#[case] status: CoinbaseOrderStatus, #[case] expected: bool) {
+        assert_eq!(status.is_terminal(), expected);
     }
 
     #[rstest]

@@ -22,7 +22,7 @@
 //! ```
 //!
 //! Requires `COINBASE_API_KEY` and `COINBASE_API_SECRET` in the environment
-//! (CDP API key name and PEM-encoded EC private key). Reads only — submits
+//! (CDP API key name and PEM-encoded EC private key). Reads only; submits
 //! no orders. Exercises the new typed domain methods end-to-end so the
 //! parse path and HTTP signing can be verified against a live account.
 
@@ -44,6 +44,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_instruments(Some(CoinbaseProductType::Spot))
         .await?;
     log::info!("Cached {} spot instruments", instruments.len());
+
+    // Print the venue's gating flags for common products so we can tell
+    // whether a specific pair (e.g. BTC-USD vs BTC-USDC) is order-eligible
+    // for this account before we try to submit against it.
+    for product_id in ["BTC-USD", "BTC-USDC"] {
+        match client.get_product(product_id).await {
+            Ok(value) => {
+                let status = value.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                let trading_disabled = value
+                    .get("trading_disabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let is_disabled = value
+                    .get("is_disabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let view_only = value
+                    .get("view_only")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let cancel_only = value
+                    .get("cancel_only")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let limit_only = value
+                    .get("limit_only")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let post_only = value
+                    .get("post_only")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let auction_mode = value
+                    .get("auction_mode")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let base_min = value
+                    .get("base_min_size")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let quote_min = value
+                    .get("quote_min_size")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                log::info!(
+                    "{product_id}: status={status} trading_disabled={trading_disabled} is_disabled={is_disabled} view_only={view_only} cancel_only={cancel_only} limit_only={limit_only} post_only={post_only} auction_mode={auction_mode} base_min={base_min} quote_min={quote_min}"
+                );
+            }
+            Err(e) => log::warn!("Failed to look up {product_id}: {e:?}"),
+        }
+    }
+
+    log::info!("Listing portfolios visible to this API key");
+
+    match client.get_portfolios().await {
+        Ok(value) => {
+            let portfolios = value
+                .get("portfolios")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            log::info!("Found {} portfolio(s)", portfolios.len());
+            for p in &portfolios {
+                let name = p
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<unnamed>");
+                let uuid = p
+                    .get("uuid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<no uuid>");
+                let type_ = p
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<no type>");
+                let deleted = p.get("deleted").and_then(|v| v.as_bool()).unwrap_or(false);
+                log::info!("  name={name} type={type_} uuid={uuid} deleted={deleted}");
+            }
+        }
+        Err(e) => log::error!("Failed to list portfolios: {e:?}"),
+    }
 
     log::info!("Requesting account state");
     match client.request_account_state(account_id).await {
@@ -90,6 +171,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Err(e) => log::error!("{e:?}"),
+    }
+
+    // Ask Coinbase to validate (not submit) a tiny limit order for each
+    // candidate product. The `/orders/preview` endpoint returns the same
+    // error shape as `/orders` without placing anything, so we can tell
+    // which product the account can actually trade.
+    for (product_id, quote_size) in [("BTC-USD", "1"), ("BTC-USDC", "1")] {
+        let body = serde_json::json!({
+            "product_id": product_id,
+            "side": "BUY",
+            "order_configuration": {
+                "market_market_ioc": {
+                    "quote_size": quote_size
+                }
+            }
+        });
+
+        match client.preview_order(&body).await {
+            Ok(value) => {
+                let err = value.get("error_response");
+                let preview_failure_reason = value
+                    .get("preview_failure_reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                log::info!(
+                    "Preview {product_id} quote_size={quote_size}: preview_failure_reason={preview_failure_reason} error={err:?}"
+                );
+            }
+            Err(e) => log::warn!("Preview {product_id} failed: {e:?}"),
+        }
     }
 
     log::info!("Requesting recent fill reports");

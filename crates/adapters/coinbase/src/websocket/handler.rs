@@ -299,7 +299,7 @@ impl FeedHandler {
             CoinbaseWsMessage::Candles { events, .. } => self.handle_candles(&events, ts_init),
             CoinbaseWsMessage::Heartbeats { .. } => None,
             CoinbaseWsMessage::Subscriptions { events, .. } => {
-                log::debug!("Subscription confirmed: {events:?}");
+                log::info!("Subscription confirmed: {events:?}");
                 None
             }
             CoinbaseWsMessage::User {

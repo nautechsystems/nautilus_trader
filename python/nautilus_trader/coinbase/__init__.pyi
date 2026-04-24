@@ -41,9 +41,6 @@ class CoinbaseDataClientConfig:
 class CoinbaseDataClientFactory: ...
 
 @typing.final
-class CoinbaseDerivativesExecutionClientFactory: ...
-
-@typing.final
 class CoinbaseExecClientConfig:
     def __init__(
         self,

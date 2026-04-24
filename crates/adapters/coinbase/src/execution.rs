@@ -78,6 +78,11 @@ const BATCH_CANCEL_CHUNK: usize = 100;
 // so the global Ustr arena is not polluted with unique trade IDs.
 const FILL_DEDUP_CAPACITY: usize = 10_000;
 
+// Bounded LRU for per-order cumulative tracking. Terminal events drop entries
+// eagerly; this cap also protects against orders that this client never
+// observes a terminal status for (e.g. cancelled out-of-band).
+const CUMULATIVE_STATE_CAPACITY: usize = 10_000;
+
 // Coinbase spot account is ready as soon as the REST account state lands, but
 // the engine registers it asynchronously; wait up to 30s for that to happen.
 const ACCOUNT_REGISTERED_TIMEOUT_SECS: f64 = 30.0;
@@ -135,6 +140,98 @@ struct OrderCumulativeState {
     quantity: Option<Quantity>,
 }
 
+// Bounded map for per-order cumulative tracking. Insertions track LRU order;
+// when the live entry count reaches `capacity`, the oldest non-stale entry is
+// evicted. Terminal events call `remove()` which clears the map entry; the
+// matching deque slot becomes stale and is reclaimed during the next eviction
+// pass (the deque is also trimmed if it grows beyond `2 * capacity`).
+#[derive(Debug)]
+struct CumulativeStateMap {
+    map: AHashMap<String, OrderCumulativeState>,
+    order: VecDeque<String>,
+    capacity: usize,
+}
+
+impl CumulativeStateMap {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            map: AHashMap::with_capacity(capacity),
+            order: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn entry_or_default(&mut self, key: &str) -> &mut OrderCumulativeState {
+        if self.map.contains_key(key) {
+            // Hit: refresh recency so a long-lived order receiving updates
+            // is not evicted by churn on other orders. O(n) lookup and
+            // shift; tolerated because user-channel update volume is small
+            // relative to capacity
+            if let Some(pos) = self.order.iter().position(|k| k == key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key.to_string());
+        } else {
+            self.evict_until_capacity_or_empty();
+            self.order.push_back(key.to_string());
+            self.map
+                .insert(key.to_string(), OrderCumulativeState::default());
+        }
+        self.map
+            .get_mut(key)
+            .expect("key was just inserted or confirmed present")
+    }
+
+    fn remove(&mut self, key: &str) {
+        if self.map.remove(key).is_some() {
+            // Drop the matching deque slot too. Without this, a later
+            // re-insert of the same key would leave a stale slot ahead of
+            // the new live one, and the eviction loop would pop the stale
+            // slot and remove the live entry from the map
+            self.order.retain(|k| k != key);
+        }
+    }
+
+    fn evict_until_capacity_or_empty(&mut self) {
+        // Evict the oldest live entries until we're under capacity. Stale
+        // deque entries (already removed from the map) are skipped naturally
+        // because removing a missing key is a no-op
+        while self.map.len() >= self.capacity {
+            match self.order.pop_front() {
+                Some(oldest) => {
+                    self.map.remove(&oldest);
+                }
+                None => break,
+            }
+        }
+
+        // When the deque accumulates many stale entries (e.g. a long-lived
+        // order at the front while later orders churn through terminal
+        // events), compact in place: keep live entries in their original
+        // order and drop the rest. Bounds memory without ever evicting live
+        // state
+        if self.order.len() > 2 * self.capacity {
+            self.order.retain(|key| self.map.contains_key(key));
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[cfg(test)]
+    fn get(&self, key: &str) -> Option<&OrderCumulativeState> {
+        self.map.get(key)
+    }
+
+    #[cfg(test)]
+    fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
+}
+
 /// Live execution client for Coinbase Advanced Trade.
 #[derive(Debug)]
 pub struct CoinbaseExecutionClient {
@@ -148,7 +245,7 @@ pub struct CoinbaseExecutionClient {
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
     fill_dedup: Arc<Mutex<FillDedup>>,
-    cumulative_state: Arc<Mutex<AHashMap<String, OrderCumulativeState>>>,
+    cumulative_state: Arc<Mutex<CumulativeStateMap>>,
 }
 
 impl CoinbaseExecutionClient {
@@ -181,7 +278,7 @@ impl CoinbaseExecutionClient {
             max_elapsed_ms: Some(180_000),
         };
 
-        let mut http_client = CoinbaseHttpClient::with_credentials(
+        let http_client = CoinbaseHttpClient::with_credentials(
             credential.clone(),
             config.environment,
             config.http_timeout_secs,
@@ -217,7 +314,9 @@ impl CoinbaseExecutionClient {
             pending_tasks: Mutex::new(Vec::new()),
             instruments_cache: Arc::new(AHashMap::new()),
             fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
-            cumulative_state: Arc::new(Mutex::new(AHashMap::new())),
+            cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+                CUMULATIVE_STATE_CAPACITY,
+            ))),
         })
     }
 
@@ -337,6 +436,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
         if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
             log::info!("Tearing down stale user WS before reconnect");
             self.ws_user.disconnect().await;
+            // Abort any prior consumer task; the rebuilt ws_user gets a fresh
+            // out_rx so the previous task is otherwise leaked.
+            if let Some(handle) = self.ws_stream_handle.take() {
+                handle.abort();
+            }
             let credential = CoinbaseCredential::resolve(
                 self.config.api_key.as_deref(),
                 self.config.api_secret.as_deref(),
@@ -841,6 +945,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         } else {
             (None, None)
         };
+        let retail_portfolio_id = self.config.retail_portfolio_id.clone();
 
         self.spawn_task("submit_order", async move {
             let result = http_client
@@ -859,6 +964,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     leverage,
                     margin_type,
                     reduce_only,
+                    retail_portfolio_id,
                 )
                 .await;
 
@@ -1269,7 +1375,7 @@ fn handle_user_order_update(
     carrier: UserOrderUpdate,
     emitter: &ExecutionEventEmitter,
     fill_dedup: &Arc<Mutex<FillDedup>>,
-    cumulative_state: &Arc<Mutex<AHashMap<String, OrderCumulativeState>>>,
+    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
 ) {
     let UserOrderUpdate {
         mut report,
@@ -1328,19 +1434,13 @@ fn handle_user_order_update(
     };
     let order_id = update.order_id.clone();
 
-    let is_terminal = matches!(
-        update.status,
-        crate::common::enums::CoinbaseOrderStatus::Cancelled
-            | crate::common::enums::CoinbaseOrderStatus::Filled
-            | crate::common::enums::CoinbaseOrderStatus::Expired
-            | crate::common::enums::CoinbaseOrderStatus::Failed
-    );
+    let is_terminal = update.status.is_terminal();
 
     // Snapshot previous state under lock; update immediately to avoid races
     // between concurrent handler tasks for the same order.
     let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
         let mut state = cumulative_state.lock().expect(MUTEX_POISONED);
-        let entry = state.entry(order_id.clone()).or_default();
+        let entry = state.entry_or_default(&order_id);
         let prev_qty = entry
             .filled_qty
             .unwrap_or_else(|| Quantity::zero(size_precision));
@@ -1530,6 +1630,122 @@ mod tests {
         assert!(dedup.insert(("v".to_string(), "t1".to_string())));
     }
 
+    #[rstest]
+    fn test_cumulative_state_evicts_oldest_at_capacity() {
+        let mut state = CumulativeStateMap::with_capacity(2);
+        state.entry_or_default("a");
+        state.entry_or_default("b");
+        // Capacity reached; inserting a third evicts "a"
+        state.entry_or_default("c");
+        assert_eq!(state.len(), 2);
+        assert!(state.map.contains_key("b"));
+        assert!(state.map.contains_key("c"));
+        assert!(!state.map.contains_key("a"));
+    }
+
+    #[rstest]
+    fn test_cumulative_state_remove_drops_entry_and_allows_reinsert() {
+        let mut state = CumulativeStateMap::with_capacity(2);
+        state.entry_or_default("a");
+        state.entry_or_default("b");
+        state.remove("a");
+        // After remove, the next insert should fit without evicting "b"
+        state.entry_or_default("c");
+        assert_eq!(state.len(), 2);
+        assert!(state.map.contains_key("b"));
+        assert!(state.map.contains_key("c"));
+    }
+
+    #[rstest]
+    fn test_cumulative_state_remove_and_reinsert_does_not_evict_live_state() {
+        // Codex repro: remove() must purge stale deque slots so a later
+        // re-insert of the same key cannot have the eviction loop pop the
+        // stale slot and remove the now-live entry.
+        let mut state = CumulativeStateMap::with_capacity(2);
+        state.entry_or_default("a");
+        state.remove("a");
+        state.entry_or_default("b");
+        state.entry_or_default("a");
+        // With the bug, inserting "c" pops the stale "a" slot at the front
+        // and removes the live "a" entry from the map; the live "b" should
+        // be evicted instead because it is now the oldest live entry.
+        state.entry_or_default("c");
+        assert_eq!(state.len(), 2);
+        assert!(
+            state.map.contains_key("a"),
+            "re-inserted live key must survive"
+        );
+        assert!(state.map.contains_key("c"));
+        assert!(!state.map.contains_key("b"));
+    }
+
+    #[rstest]
+    fn test_cumulative_state_hit_refreshes_lru_recency() {
+        // A repeat access to an existing key must move it to the back of the
+        // eviction queue so a hot order receiving many updates is not evicted
+        // by churn on other orders.
+        let mut state = CumulativeStateMap::with_capacity(2);
+        state.entry_or_default("a");
+        state.entry_or_default("b");
+        // Re-access "a": without the LRU refresh this is a no-op and the
+        // next insert evicts "a"; with the refresh it should evict "b".
+        state.entry_or_default("a");
+        state.entry_or_default("c");
+        assert_eq!(state.len(), 2);
+        assert!(
+            state.map.contains_key("a"),
+            "recently-accessed key must survive eviction"
+        );
+        assert!(state.map.contains_key("c"));
+        assert!(!state.map.contains_key("b"));
+    }
+
+    #[rstest]
+    fn test_cumulative_state_preserves_live_entry_when_trimming_stale() {
+        // A long-lived order at the front of the deque must survive any number
+        // of terminal events on later orders, and the deque must stay bounded
+        // (compacted) so memory does not grow without bound under high churn.
+        let mut state = CumulativeStateMap::with_capacity(2);
+        state.entry_or_default("live");
+        // Churn far beyond 2*capacity to force the deque-compaction path.
+        for i in 0..50 {
+            let key = format!("t{i}");
+            state.entry_or_default(&key);
+            state.remove(&key);
+        }
+        assert!(
+            state.map.contains_key("live"),
+            "live entry must survive stale-trim cycles"
+        );
+        assert_eq!(state.len(), 1);
+        assert!(
+            state.order.len() <= 2 * state.capacity,
+            "deque must remain bounded after compaction (was {})",
+            state.order.len(),
+        );
+        // The live key must remain reachable through the deque so future
+        // eviction can find and (correctly) evict it. A bug that drops live
+        // keys from the deque would let the map grow past capacity on the
+        // next series of inserts.
+        assert!(
+            state.order.iter().any(|k| k == "live"),
+            "live key must remain in the deque, was: {:?}",
+            state.order,
+        );
+        // Drive eviction past capacity to confirm the live key still
+        // participates in LRU. With capacity=2, "live" plus two new keys
+        // means the next insert must evict the next-oldest live key
+        // ("live"), not silently grow the map.
+        state.entry_or_default("a");
+        state.entry_or_default("b");
+        state.entry_or_default("c");
+        assert_eq!(state.len(), state.capacity);
+        assert!(
+            !state.map.contains_key("live"),
+            "live key should have been evicted in LRU order once capacity demanded it"
+        );
+    }
+
     fn test_instrument() -> InstrumentAny {
         let instrument_id =
             InstrumentId::new(Symbol::new("BTC-USD"), Venue::new(Ustr::from("COINBASE")));
@@ -1647,7 +1863,9 @@ mod tests {
     fn test_handle_user_order_update_emits_status_report_and_no_fill_when_zero_filled() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // Open with no fills yet.
         let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
@@ -1672,7 +1890,9 @@ mod tests {
     fn test_handle_user_order_update_synthesizes_per_fill_price_from_notional_delta() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // First partial: 0.5 @ 100, total_fees=0.05.
         let update_1 = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
@@ -1702,7 +1922,9 @@ mod tests {
     fn test_handle_user_order_update_drops_replayed_fills() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         let update = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
         handle_user_order_update(make_carrier(update.clone()), &emitter, &dedup, &state);
@@ -1724,7 +1946,9 @@ mod tests {
     fn test_handle_user_order_update_clears_state_on_terminal_status() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         let update = make_user_order_update("1.0", "0", "100.00", "0.10", CbStatus::Filled);
         handle_user_order_update(make_carrier(update), &emitter, &dedup, &state);
@@ -1734,7 +1958,7 @@ mod tests {
 
         let s = state.lock().unwrap();
         assert!(
-            !s.contains_key("venue-1"),
+            s.get("venue-1").is_none(),
             "terminal status should remove cumulative state entry"
         );
     }
@@ -1743,7 +1967,9 @@ mod tests {
     fn test_handle_user_order_update_skips_when_avg_price_nonpositive() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // cumulative_quantity > 0 but avg_price = 0 (defensive: should not emit fill).
         let update = make_user_order_update("0.5", "0.5", "0", "0", CbStatus::Open);
@@ -1760,7 +1986,9 @@ mod tests {
     fn test_handle_user_order_update_snapshot_does_not_synthesize_fill() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // Cold-start snapshot: order was already partially filled before we
         // subscribed. Cumulative_quantity > 0 with positive avg_price would
@@ -1790,7 +2018,9 @@ mod tests {
     fn test_handle_user_order_update_snapshot_then_update_synthesizes_only_delta() {
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // Cold-start snapshot at cumulative=0.5.
         let snap = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
@@ -1816,7 +2046,9 @@ mod tests {
 
         let (emitter, mut rx) = make_emitter();
         let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(AHashMap::new()));
+        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+            CUMULATIVE_STATE_CAPACITY,
+        )));
 
         // Live partial: cumulative=0, leaves=1.0 (full size 1.0 working).
         let working = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);

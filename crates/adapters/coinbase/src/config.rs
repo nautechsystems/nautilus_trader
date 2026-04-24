@@ -145,8 +145,8 @@ pub struct CoinbaseExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
-    /// Nautilus account type for the factory. The Cash factory ignores this and
-    /// hardcodes Cash; the derivatives factory sets it to Margin.
+    /// Selects the execution scope: `Cash` for spot, `Margin` for CFM
+    /// derivatives. `CoinbaseExecutionClientFactory` rejects other values.
     #[builder(default = AccountType::Cash)]
     pub account_type: AccountType,
     /// Optional default margin type applied to derivatives orders. Ignored on
@@ -155,6 +155,11 @@ pub struct CoinbaseExecClientConfig {
     /// Optional default leverage applied to derivatives orders. Ignored on
     /// Cash accounts.
     pub default_leverage: Option<rust_decimal::Decimal>,
+    /// CDP retail portfolio UUID required when the API key is bound to a
+    /// non-default portfolio. When unset, the venue uses the key's default
+    /// portfolio. Coinbase rejects orders with `"account is not available"`
+    /// if the portfolio is non-default and this field is omitted.
+    pub retail_portfolio_id: Option<String>,
 }
 
 impl Default for CoinbaseExecClientConfig {

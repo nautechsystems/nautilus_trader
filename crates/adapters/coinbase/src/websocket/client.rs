@@ -44,7 +44,14 @@ use nautilus_network::{
 use ustr::Ustr;
 
 use crate::{
-    common::{consts::WS_HEARTBEAT_SECS, credential::CoinbaseCredential, enums::CoinbaseWsChannel},
+    common::{
+        consts::{
+            RECONNECT_BACKOFF_FACTOR, RECONNECT_BASE_BACKOFF, RECONNECT_JITTER_MS,
+            RECONNECT_MAX_BACKOFF, RECONNECT_TIMEOUT, WS_DISCONNECT_TIMEOUT, WS_HEARTBEAT_SECS,
+        },
+        credential::CoinbaseCredential,
+        enums::CoinbaseWsChannel,
+    },
     websocket::{
         handler::{FeedHandler, HandlerCommand, NautilusWsMessage},
         messages::{CoinbaseWsAction, CoinbaseWsSubscription},
@@ -198,11 +205,11 @@ impl CoinbaseWebSocketClient {
             // application-layer liveness comes from the heartbeats channel.
             heartbeat: Some(WS_HEARTBEAT_SECS),
             heartbeat_msg: None,
-            reconnect_timeout_ms: Some(15_000),
-            reconnect_delay_initial_ms: Some(250),
-            reconnect_delay_max_ms: Some(30_000),
-            reconnect_backoff_factor: Some(2.0),
-            reconnect_jitter_ms: Some(200),
+            reconnect_timeout_ms: Some(RECONNECT_TIMEOUT.as_millis() as u64),
+            reconnect_delay_initial_ms: Some(RECONNECT_BASE_BACKOFF.as_millis() as u64),
+            reconnect_delay_max_ms: Some(RECONNECT_MAX_BACKOFF.as_millis() as u64),
+            reconnect_backoff_factor: Some(RECONNECT_BACKOFF_FACTOR),
+            reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
         };
@@ -262,7 +269,12 @@ impl CoinbaseWebSocketClient {
         self.prime_default_subscriptions();
 
         // Replay retained subscriptions from previous session
-        resubscribe_all(&self.subscriptions, &self.credential, &cmd_tx);
+        resubscribe_all(
+            &self.subscriptions,
+            &self.credential,
+            &cmd_tx,
+            Some(&out_tx),
+        );
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
@@ -275,7 +287,12 @@ impl CoinbaseWebSocketClient {
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
-                        resubscribe_all(&subscriptions, &credential, &cmd_tx_reconnect);
+                        resubscribe_all(
+                            &subscriptions,
+                            &credential,
+                            &cmd_tx_reconnect,
+                            Some(&out_tx),
+                        );
 
                         if let Err(e) = out_tx.send(NautilusWsMessage::Reconnected) {
                             log::debug!("Output channel closed: {e}");
@@ -393,9 +410,15 @@ impl CoinbaseWebSocketClient {
         self.signal.store(true, Ordering::Release);
 
         if let Some(handle) = self.task_handle.take() {
-            match tokio::time::timeout(Duration::from_secs(5), handle).await {
+            // Capture an abort handle before awaiting so a stuck task can be
+            // forcibly stopped on timeout instead of leaking.
+            let abort_handle = handle.abort_handle();
+            match tokio::time::timeout(WS_DISCONNECT_TIMEOUT, handle).await {
                 Ok(_) => log::debug!("Feed handler task completed"),
-                Err(_) => log::warn!("Feed handler task did not complete within timeout"),
+                Err(_) => {
+                    log::warn!("Feed handler task did not complete within timeout, aborting");
+                    abort_handle.abort();
+                }
             }
         }
 
@@ -494,6 +517,7 @@ fn resubscribe_all(
     subscriptions: &SubscriptionState,
     credential: &Option<CoinbaseCredential>,
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    out_tx: Option<&tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>>,
 ) {
     let topics = subscriptions.all_topics();
 
@@ -526,7 +550,13 @@ fn resubscribe_all(
                 Ok(token) => Some(token),
                 Err(e) => {
                     if channel_enum.requires_auth() {
-                        log::error!("JWT required for {channel} but build failed: {e}");
+                        let msg = format!(
+                            "JWT required for {channel} but build failed: {e}; topic {topic} not restored"
+                        );
+                        log::error!("{msg}");
+                        if let Some(tx) = out_tx {
+                            let _ = tx.send(NautilusWsMessage::Error(msg));
+                        }
                         continue;
                     }
                     None
@@ -534,7 +564,13 @@ fn resubscribe_all(
             },
             None => {
                 if channel_enum.requires_auth() {
-                    log::error!("JWT required for {channel} but no credentials configured");
+                    let msg = format!(
+                        "JWT required for {channel} but no credentials configured; topic {topic} not restored"
+                    );
+                    log::error!("{msg}");
+                    if let Some(tx) = out_tx {
+                        let _ = tx.send(NautilusWsMessage::Error(msg));
+                    }
                     continue;
                 }
                 None
@@ -572,7 +608,7 @@ mod tests {
         subs.mark_subscribe("level2|BTC-USD");
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         let cmd = rx.try_recv().unwrap();
 
@@ -593,7 +629,7 @@ mod tests {
         subs.mark_subscribe("heartbeats");
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         let cmd = rx.try_recv().unwrap();
 
@@ -613,7 +649,7 @@ mod tests {
         subs.mark_subscribe("ticker|ETH-USD");
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         let cmd1 = rx.try_recv().unwrap();
         let cmd2 = rx.try_recv().unwrap();
@@ -628,7 +664,7 @@ mod tests {
         let subs = SubscriptionState::new('|');
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         assert!(rx.try_recv().is_err());
     }
@@ -639,7 +675,7 @@ mod tests {
         subs.mark_subscribe("nonexistent_channel|BTC-USD");
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         assert!(rx.try_recv().is_err());
     }
@@ -660,7 +696,7 @@ mod tests {
         subs.mark_subscribe(topic);
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         let cmd = rx.try_recv().unwrap();
 
@@ -680,10 +716,75 @@ mod tests {
         subs.mark_subscribe(topic);
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        resubscribe_all(&subs, &None, &tx);
+        resubscribe_all(&subs, &None, &tx, None);
 
         // Auth channels should be skipped when no credentials are provided
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case("user|BTC-USD", "user")]
+    #[case("futures_balance_summary", "futures_balance_summary")]
+    fn test_resubscribe_all_emits_error_for_auth_channel_without_credentials(
+        #[case] topic: &str,
+        #[case] channel: &str,
+    ) {
+        let subs = SubscriptionState::new('|');
+        subs.mark_subscribe(topic);
+
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        resubscribe_all(&subs, &None, &cmd_tx, Some(&out_tx));
+
+        // No subscribe command should be sent for an unauthenticated auth channel.
+        assert!(cmd_rx.try_recv().is_err());
+
+        let msg = out_rx
+            .try_recv()
+            .expect("Error event must be emitted when auth channel cannot resubscribe");
+        match msg {
+            NautilusWsMessage::Error(text) => {
+                assert!(
+                    text.contains(channel),
+                    "error must mention the channel, was: {text}"
+                );
+                assert!(
+                    text.contains(topic),
+                    "error must mention the topic, was: {text}"
+                );
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_resubscribe_all_emits_error_when_jwt_build_fails() {
+        let subs = SubscriptionState::new('|');
+        let topic = "user|BTC-USD";
+        subs.mark_subscribe(topic);
+
+        // A credential with a malformed PEM secret causes build_ws_jwt() to fail
+        // every time, exercising the JWT-build error branch.
+        let bad_credential = Some(CoinbaseCredential::new(
+            "organizations/test/apiKeys/test".to_string(),
+            "not-a-pem-key".to_string(),
+        ));
+
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        resubscribe_all(&subs, &bad_credential, &cmd_tx, Some(&out_tx));
+
+        assert!(cmd_rx.try_recv().is_err(), "no subscribe should be sent");
+        let msg = out_rx
+            .try_recv()
+            .expect("Error event must be emitted when JWT build fails for an auth channel");
+        match msg {
+            NautilusWsMessage::Error(text) => {
+                assert!(text.contains("user"), "error must mention channel: {text}");
+                assert!(text.contains(topic), "error must mention topic: {text}");
+            }
+            other => panic!("expected Error variant, was {other:?}"),
+        }
     }
 
     #[rstest]

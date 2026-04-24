@@ -25,6 +25,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
     AtomicMap, UnixNanos,
@@ -52,7 +53,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::REST_API_PATH,
+        consts::{ACCOUNTS_PAGE_LIMIT, ORDER_STATUS_OPEN, REST_API_PATH},
         credential::CoinbaseCredential,
         enums::{
             CoinbaseEnvironment, CoinbaseMarginType, CoinbaseOrderSide, CoinbaseProductType,
@@ -142,7 +143,7 @@ fn encode_query(params: &[(&str, &str)]) -> String {
 pub struct CoinbaseRawHttpClient {
     client: HttpClient,
     credential: Option<CoinbaseCredential>,
-    base_url: String,
+    base_url: ArcSwap<String>,
     environment: CoinbaseEnvironment,
     retry_manager: RetryManager<Error>,
     cancellation_token: CancellationToken,
@@ -170,7 +171,7 @@ impl CoinbaseRawHttpClient {
                 proxy_url,
             )?,
             credential: None,
-            base_url: urls::rest_url(environment).to_string(),
+            base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,
             retry_manager: RetryManager::new(retry_config.unwrap_or_else(default_retry_config)),
             cancellation_token: CancellationToken::new(),
@@ -199,7 +200,7 @@ impl CoinbaseRawHttpClient {
                 proxy_url,
             )?,
             credential: Some(credential),
-            base_url: urls::rest_url(environment).to_string(),
+            base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,
             retry_manager: RetryManager::new(retry_config.unwrap_or_else(default_retry_config)),
             cancellation_token: CancellationToken::new(),
@@ -249,8 +250,10 @@ impl CoinbaseRawHttpClient {
     }
 
     /// Overrides the base REST URL (for testing with mock servers).
-    pub fn set_base_url(&mut self, url: String) {
-        self.base_url = url;
+    ///
+    /// Lock-free; safe to call after the client has been cloned.
+    pub fn set_base_url(&self, url: String) {
+        self.base_url.store(Arc::new(url));
     }
 
     /// Returns the configured environment.
@@ -273,16 +276,16 @@ impl CoinbaseRawHttpClient {
     }
 
     fn build_url(&self, path: &str) -> String {
-        format!("{}{REST_API_PATH}{path}", self.base_url)
+        format!("{}{REST_API_PATH}{path}", self.base_url.load())
     }
 
     // JWT uri claim must match the actual request host
     fn build_jwt_uri(&self, method: &str, path: &str) -> String {
-        let host = self
-            .base_url
+        let base = self.base_url.load();
+        let host = base
             .strip_prefix("https://")
-            .or_else(|| self.base_url.strip_prefix("http://"))
-            .unwrap_or(&self.base_url);
+            .or_else(|| base.strip_prefix("http://"))
+            .unwrap_or(base.as_str());
         format!("{method} {host}{REST_API_PATH}{path}")
     }
 
@@ -507,6 +510,11 @@ impl CoinbaseRawHttpClient {
         self.get(&format!("/accounts/{account_id}")).await
     }
 
+    /// Lists all portfolios visible to the authenticated key.
+    pub async fn get_portfolios(&self) -> Result<Value> {
+        self.get("/portfolios").await
+    }
+
     /// Gets historical orders.
     pub async fn get_orders(&self, query: &str) -> Result<Value> {
         self.get_with_query("/orders/historical/batch", query).await
@@ -566,7 +574,7 @@ impl CoinbaseRawHttpClient {
         let mut cursor: Option<String> = None;
 
         loop {
-            let mut pairs: Vec<(&str, &str)> = vec![("limit", "250")];
+            let mut pairs: Vec<(&str, &str)> = vec![("limit", ACCOUNTS_PAGE_LIMIT)];
             if let Some(c) = cursor.as_deref().filter(|s| !s.is_empty()) {
                 pairs.push(("cursor", c));
             }
@@ -609,7 +617,7 @@ impl CoinbaseRawHttpClient {
             }
 
             if query.open_only {
-                pairs.push(("order_status", "OPEN"));
+                pairs.push(("order_status", ORDER_STATUS_OPEN));
             }
 
             if let Some(s) = start_str.as_deref() {
@@ -874,13 +882,9 @@ impl CoinbaseHttpClient {
 
     /// Overrides the base REST URL (for testing with mock servers).
     ///
-    /// # Panics
-    ///
-    /// Panics if the inner `Arc` has multiple references.
-    pub fn set_base_url(&mut self, url: String) {
-        Arc::get_mut(&mut self.inner)
-            .expect("cannot override URL: Arc has multiple references")
-            .set_base_url(url);
+    /// Safe to call regardless of how many clones share the inner client.
+    pub fn set_base_url(&self, url: String) {
+        self.inner.set_base_url(url);
     }
 
     /// Returns the configured environment.
@@ -953,6 +957,19 @@ impl CoinbaseHttpClient {
     /// Gets a specific account by UUID.
     pub async fn get_account(&self, account_id: &str) -> Result<Value> {
         self.inner.get_account(account_id).await
+    }
+
+    /// Lists all portfolios visible to the authenticated key.
+    pub async fn get_portfolios(&self) -> Result<Value> {
+        self.inner.get_portfolios().await
+    }
+
+    /// Validates an order payload against the venue without submitting it.
+    ///
+    /// Useful for diagnosing `account is not available` and similar errors
+    /// because it returns the same error envelope as `POST /orders`.
+    pub async fn preview_order(&self, body: &Value) -> Result<Value> {
+        self.inner.post("/orders/preview", body).await
     }
 
     /// Gets historical orders.
@@ -1315,6 +1332,7 @@ impl CoinbaseHttpClient {
         leverage: Option<Decimal>,
         margin_type: Option<CoinbaseMarginType>,
         reduce_only: bool,
+        retail_portfolio_id: Option<String>,
     ) -> anyhow::Result<CreateOrderResponse> {
         let coinbase_side = map_order_side(side)?;
         let order_config = build_order_configuration(
@@ -1338,7 +1356,7 @@ impl CoinbaseHttpClient {
             self_trade_prevention_id: None,
             leverage: leverage.map(|d| d.normalize().to_string()),
             margin_type,
-            retail_portfolio_id: None,
+            retail_portfolio_id,
             reduce_only,
         };
 
@@ -1706,11 +1724,21 @@ mod tests {
 
     #[rstest]
     fn test_raw_build_jwt_uri_custom_base_url() {
-        let mut client =
-            CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
+        let client = CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
         client.set_base_url("http://localhost:8080".to_string());
         let uri = client.build_jwt_uri("POST", "/orders");
         assert_eq!(uri, "POST localhost:8080/api/v3/brokerage/orders");
+    }
+
+    #[rstest]
+    fn test_raw_set_base_url_safe_after_clone_via_arc() {
+        let raw = Arc::new(
+            CoinbaseRawHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap(),
+        );
+        let other = Arc::clone(&raw);
+        // Mutating after a clone must not panic; readers see the new value
+        raw.set_base_url("http://localhost:1234".to_string());
+        assert!(other.build_url("/foo").starts_with("http://localhost:1234"));
     }
 
     #[rstest]
@@ -1742,11 +1770,11 @@ mod tests {
 
     #[rstest]
     fn test_domain_client_set_base_url() {
-        let mut client =
-            CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
+        let client = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 10, None, None).unwrap();
+        let cloned = client.clone();
+        // Mutating after a clone must not panic; both clones observe the change
         client.set_base_url("http://localhost:9090".to_string());
-        // Verify via raw client's build_url
-        let url = client.inner.build_url("/test");
+        let url = cloned.inner.build_url("/test");
         assert!(url.starts_with("http://localhost:9090"));
     }
 

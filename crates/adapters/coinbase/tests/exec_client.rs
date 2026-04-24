@@ -419,7 +419,7 @@ fn create_http_client_with_retry(
     addr: SocketAddr,
     retry_config: Option<RetryConfig>,
 ) -> CoinbaseHttpClient {
-    let mut client = CoinbaseHttpClient::from_credentials(
+    let client = CoinbaseHttpClient::from_credentials(
         &test_api_key(),
         &test_pem_key(),
         CoinbaseEnvironment::Live,
@@ -1035,6 +1035,7 @@ async fn test_http_submit_order_limit_gtc_serializes_typed_body() {
             None,
             None,
             false,
+            None,
         )
         .await
         .unwrap();
@@ -1053,6 +1054,50 @@ async fn test_http_submit_order_limit_gtc_serializes_typed_body() {
     assert_eq!(cfg["base_size"], "0.5");
     assert_eq!(cfg["limit_price"], "50000.00");
     assert_eq!(cfg["post_only"], true);
+    // retail_portfolio_id was None; the field must be omitted so the venue
+    // routes the order to the key's default portfolio.
+    assert!(body.get("retail_portfolio_id").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_submit_order_threads_retail_portfolio_id_when_set() {
+    let state = TestState::default();
+    state.enqueue(
+        "/orders",
+        create_order_success_response("venue-portfolio", "client-portfolio"),
+    );
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_http_client(addr);
+
+    let response = client
+        .submit_order(
+            ClientOrderId::new("client-portfolio"),
+            btc_usd_instrument_id(),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.5"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            true, // post_only
+            false,
+            None,
+            None,
+            false,
+            Some("portfolio-uuid-123".to_string()),
+        )
+        .await
+        .unwrap();
+
+    assert!(response.success);
+    let requests = state.requests_for("/orders");
+    let body = requests[0].body.as_ref().expect("POST body captured");
+    assert_eq!(
+        body["retail_portfolio_id"], "portfolio-uuid-123",
+        "retail_portfolio_id must reach the wire when configured"
+    );
 }
 
 #[rstest]
@@ -1083,6 +1128,7 @@ async fn test_http_submit_order_market_uses_base_size_when_not_quote_qty() {
             None,
             None,
             false,
+            None,
         )
         .await
         .unwrap();
@@ -1120,6 +1166,7 @@ async fn test_http_submit_order_returns_failure_response() {
             None,
             None,
             false,
+            None,
         )
         .await
         .unwrap();
@@ -1157,6 +1204,7 @@ async fn test_http_submit_order_rejects_unsupported_market_tif() {
             None,
             None,
             false,
+            None,
         )
         .await;
 
@@ -1349,6 +1397,7 @@ async fn test_http_post_does_not_retry_transient_failure() {
             None,
             None,
             false,
+            None,
         )
         .await;
 
@@ -1525,6 +1574,7 @@ async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
             Some(dec!(5)),
             Some(CoinbaseMarginType::Cross),
             true,
+            None,
         )
         .await
         .expect("submit should succeed");
@@ -1567,6 +1617,7 @@ async fn test_http_submit_order_omits_derivatives_fields_for_spot_defaults() {
             None,
             None,
             false,
+            None,
         )
         .await
         .expect("submit should succeed");

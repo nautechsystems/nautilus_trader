@@ -41,6 +41,7 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+examples = ["nautilus-trading/examples"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -53,6 +54,7 @@ nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
+nautilus-trading = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -104,4 +106,9 @@ test = false
 [[example]]
 name = "coinbase-data-tester"
 path = "examples/node_data_tester.rs"
+doc = false
+
+[[example]]
+name = "coinbase-exec-tester"
+path = "examples/node_exec_tester.rs"
 doc = false

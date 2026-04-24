@@ -108,7 +108,7 @@ impl CoinbaseDataClient {
 
         let retry_config = data_client_retry_config();
 
-        let mut http_client = match CoinbaseCredential::resolve(
+        let http_client = match CoinbaseCredential::resolve(
             config.api_key.as_deref(),
             config.api_secret.as_deref(),
         ) {

@@ -49,6 +49,13 @@ pub const ORDER_CONFIG_STOP_PRICE: &str = "stop_price";
 pub const ORDER_CONFIG_POST_ONLY: &str = "post_only";
 pub const ORDER_CONFIG_END_TIME: &str = "end_time";
 
+/// Maximum page size accepted by Coinbase's `/accounts` endpoint.
+pub const ACCOUNTS_PAGE_LIMIT: &str = "250";
+
+/// `order_status` filter value for Coinbase's `/orders/historical/batch`
+/// endpoint; selects orders the venue considers `OPEN`.
+pub const ORDER_STATUS_OPEN: &str = "OPEN";
+
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// WebSocket control-frame ping interval, in seconds.
@@ -56,6 +63,13 @@ pub const WS_HEARTBEAT_SECS: u64 = 30;
 
 pub const RECONNECT_BASE_BACKOFF: Duration = Duration::from_millis(250);
 pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
+pub const RECONNECT_JITTER_MS: u64 = 200;
+pub const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
+pub const RECONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Maximum time the client waits for the feed handler task to drain on
+/// disconnect before forcibly aborting.
+pub const WS_DISCONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Coinbase disconnects if no subscription within 5 seconds
 pub const WS_SUBSCRIBE_DEADLINE: Duration = Duration::from_secs(5);

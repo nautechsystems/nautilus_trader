@@ -63,10 +63,7 @@ pub use crate::{
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
     data::CoinbaseDataClient,
     execution::CoinbaseExecutionClient,
-    factories::{
-        CoinbaseDataClientFactory, CoinbaseDerivativesExecutionClientFactory,
-        CoinbaseExecutionClientFactory,
-    },
+    factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
     http::client::{CoinbaseHttpClient, CoinbaseRawHttpClient},
     provider::CoinbaseInstrumentProvider,
 };

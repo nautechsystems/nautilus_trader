@@ -99,6 +99,7 @@ impl CoinbaseExecClientConfig {
         account_type = None,
         default_margin_type = None,
         default_leverage = None,
+        retail_portfolio_id = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -116,6 +117,7 @@ impl CoinbaseExecClientConfig {
         account_type: Option<AccountType>,
         default_margin_type: Option<CoinbaseMarginType>,
         default_leverage: Option<Decimal>,
+        retail_portfolio_id: Option<String>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -134,6 +136,7 @@ impl CoinbaseExecClientConfig {
             account_type: account_type.unwrap_or(defaults.account_type),
             default_margin_type,
             default_leverage,
+            retail_portfolio_id,
         }
     }
 
