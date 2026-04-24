@@ -576,6 +576,31 @@ Leverage is managed directly through the Hyperliquid web UI or API, not through 
 Set your desired leverage per instrument on Hyperliquid before trading.
 :::
 
+## Liquidation and ADL handling
+
+Hyperliquid signals venue-initiated closures through two WebSocket surfaces on
+the `userEvents` subscription:
+
+- **`liquidation` event**: emitted when an account is liquidated. Carries a
+  `liquidation ID`, liquidator address, liquidated user, liquidated notional
+  position, and liquidated account value. The adapter logs these at warning
+  level for operator visibility.
+- **Fill-level `liquidation` metadata**: each entry in the `fills` array can
+  carry an optional `liquidation` object with `method`, `markPx`, and
+  `liquidatedUser`. The `method` value is either `market` (liquidated into
+  the book) or `backstop` (closed against the backstop vault, the equivalent
+  of an ADL close when the insurance mechanism steps in).
+
+The adapter emits the standard `FillReport` for each liquidation fill. The
+liquidation metadata is logged alongside the fill so you can correlate closures
+to venue-side events. No strategy-side changes are required; existing risk and
+reconciliation logic runs over these fills as for any other TAKER fill.
+
+Upstream references:
+
+- [WebSocket `userEvents` (`liquidation` and `FillLiquidation`)](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions)
+- [Liquidation mechanics](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/liquidations)
+
 ## Connection management
 
 The adapter automatically reconnects on WebSocket disconnection using exponential backoff

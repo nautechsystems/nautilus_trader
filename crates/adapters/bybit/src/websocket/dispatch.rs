@@ -513,6 +513,19 @@ fn dispatch_execution_fill(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
+    if exec.exec_type.is_exchange_generated() {
+        log::warn!(
+            "Exchange-generated execution: exec_type={:?}, symbol={}, order_id={}, order_link_id={}, side={:?}, qty={}, price={}",
+            exec.exec_type,
+            exec.symbol,
+            exec.order_id,
+            exec.order_link_id,
+            exec.side,
+            exec.exec_qty,
+            exec.exec_price,
+        );
+    }
+
     let client_order_id = if exec.order_link_id.is_empty() {
         None
     } else {

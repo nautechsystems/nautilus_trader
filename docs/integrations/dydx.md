@@ -238,6 +238,39 @@ operates in `NETTING` mode only. Hedging support is planned for a future version
 | Bracket orders     | -          | *Not supported*.                                 |
 | Conditional orders | ✓          | Stop, take‑profit market, and take‑profit limit. |
 
+### Liquidation and ADL (deleveraging) handling
+
+dYdX v4 applies two sequential risk mechanisms:
+
+1. **Liquidation** runs when an account drops below its maintenance margin.
+   Positions close against the insurance fund within a bounded spread from the
+   oracle price.
+2. **Deleveraging (ADL)** activates when either liquidation cannot fully
+   restore collateralisation, or when a large oracle jump drives an account
+   negative in a single step. Deleveraging closes the undercollateralised
+   position against randomly selected offsetting accounts.
+
+The indexer exposes the classification via the `type` field on each `Fill`
+record (`DydxFillType`):
+
+| `type`         | Meaning                                               |
+|----------------|-------------------------------------------------------|
+| `LIMIT`        | Normal fill.                                          |
+| `LIQUIDATED`   | Taker side of a liquidation (undercollateralised).    |
+| `LIQUIDATION`  | Maker side of a liquidation (insurance fund).         |
+| `DELEVERAGED`  | Taker side of a deleveraging (ADL closure).           |
+| `OFFSETTING`   | Maker side of a deleveraging (offsetting account).    |
+
+The adapter logs a warning with instrument, side, size, and price for each
+liquidation / deleveraging fill, then emits the `FillReport` through the
+normal path. `DydxPerpetualPositionStatus::Liquidated` closes out the
+corresponding position report.
+
+Upstream references:
+
+- [Liquidations](https://docs.dydx.xyz/concepts/trading/liquidations)
+- [Contract loss mechanisms (deleveraging)](https://help.dydx.trade/en/articles/166973-contract-loss-mechanisms-on-dydx-chain)
+
 ### Order classification
 
 dYdX classifies every order into one of three on-chain categories. The Rust adapter

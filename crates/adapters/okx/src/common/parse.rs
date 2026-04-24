@@ -58,8 +58,8 @@ use crate::{
     common::{
         consts::OKX_VENUE,
         enums::{
-            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderStatus, OKXOrderType,
-            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
+            OKXExecType, OKXInstrumentStatus, OKXInstrumentType, OKXOrderCategory, OKXOrderStatus,
+            OKXOrderType, OKXPositionSide, OKXSide, OKXTargetCurrency, OKXVipLevel,
         },
         models::OKXInstrument,
     },
@@ -569,6 +569,33 @@ pub fn parse_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
+    match order.category {
+        OKXOrderCategory::FullLiquidation | OKXOrderCategory::PartialLiquidation => {
+            log::warn!(
+                "Liquidation order (HTTP history): ord_id={}, category={:?}, inst_id={}, state={:?}, side={:?}, sz={}, fill_sz={}",
+                order.ord_id,
+                order.category,
+                instrument_id,
+                order.state,
+                order.side,
+                order.sz,
+                order.acc_fill_sz,
+            );
+        }
+        OKXOrderCategory::Adl => {
+            log::warn!(
+                "ADL (Auto-Deleveraging) order (HTTP history): ord_id={}, inst_id={}, state={:?}, side={:?}, sz={}, fill_sz={}",
+                order.ord_id,
+                instrument_id,
+                order.state,
+                order.side,
+                order.sz,
+                order.acc_fill_sz,
+            );
+        }
+        _ => {}
+    }
+
     let okx_ord_type: OKXOrderType = order.ord_type;
     let order_type =
         determine_order_type_with_alt(okx_ord_type, &order.px, &order.px_vol, &order.px_usd);

@@ -46,6 +46,7 @@ pub use self::{
 pub enum ExecutionReport {
     Order(Box<OrderStatusReport>),
     Fill(Box<FillReport>),
+    OrderWithFills(Box<OrderStatusReport>, Vec<FillReport>),
     Position(Box<PositionStatusReport>),
     MassStatus(Box<ExecutionMassStatus>),
 }

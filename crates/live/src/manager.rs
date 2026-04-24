@@ -1204,6 +1204,7 @@ impl ExecutionManager {
     /// Updates performed per report variant:
     /// - `Order`: clears inflight tracking and records local activity
     /// - `Fill`: marks fill as processed, records order and position activity
+    /// - `OrderWithFills`: clears inflight tracking, records local activity, records position activity per fill
     /// - `Position`: records position activity
     /// - `MassStatus`: no-op (handled separately via startup reconciliation)
     pub fn observe_execution_report(&mut self, report: &ExecutionReport) {
@@ -1235,6 +1236,21 @@ impl ExecutionManager {
                     self.record_local_activity(coid);
                 }
                 self.record_position_activity(fill_report.instrument_id, fill_report.ts_event);
+            }
+            ExecutionReport::OrderWithFills(order_report, fills) => {
+                if let Some(client_order_id) = &order_report.client_order_id
+                    && !matches!(
+                        order_report.order_status,
+                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+                    )
+                {
+                    self.clear_recon_tracking(client_order_id, true);
+                    self.record_local_activity(*client_order_id);
+                }
+
+                for fill_report in fills {
+                    self.record_position_activity(fill_report.instrument_id, fill_report.ts_event);
+                }
             }
             ExecutionReport::Position(position_report) => {
                 self.record_position_activity(

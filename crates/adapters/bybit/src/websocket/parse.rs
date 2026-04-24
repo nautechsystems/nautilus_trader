@@ -938,6 +938,18 @@ pub fn parse_ws_position_status_report(
         BybitPositionSide::Flat => PositionSideSpecified::Flat,
     };
 
+    // Bybit ranks open positions 1-5 by ADL priority (5 = next to be deleveraged);
+    // 0 means the account has no open position or is flat. Warn when approaching the
+    // top tier so operators can react before the venue force-closes.
+    if position.adl_rank_indicator >= 4 {
+        log::warn!(
+            "Elevated ADL risk: {} position size={} adl_rank={}",
+            instrument_id,
+            position.size,
+            position.adl_rank_indicator,
+        );
+    }
+
     let ts_last = parse_millis_timestamp(&position.updated_time, "position.updatedTime")?;
 
     Ok(PositionStatusReport::new(
@@ -1020,6 +1032,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
+            enums::BybitExecType,
             parse::{parse_linear_instrument, parse_option_instrument},
             testing::load_test_json,
         },
@@ -1317,6 +1330,34 @@ mod tests {
             "test-order-link-001"
         );
         assert_eq!(report.ts_event, UnixNanos::new(1_746_270_400_353_000_000));
+    }
+
+    #[rstest]
+    fn parse_ws_adl_execution_into_fill_report() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_execution_adl.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let execution = &msg.data[0];
+        let account_id = AccountId::new("BYBIT-001");
+
+        assert_eq!(execution.exec_type, BybitExecType::AdlTrade);
+        assert!(execution.exec_type.is_exchange_generated());
+        assert!(execution.order_link_id.is_empty());
+
+        let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
+
+        // ADL fills carry an empty orderLinkId; client_order_id is None so the engine
+        // creates the order as external from the accompanying order status report.
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(
+            report.venue_order_id.to_string(),
+            "9aac161b-8ed6-450d-9cab-c5cc67c21785"
+        );
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
+        assert_eq!(report.last_px, instrument.make_price(95850.0));
+        assert_eq!(report.commission.as_f64(), 0.0);
     }
 
     #[rstest]

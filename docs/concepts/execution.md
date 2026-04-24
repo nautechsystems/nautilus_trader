@@ -537,6 +537,61 @@ between the system and the venue. Use the [reconciliation](live.md#execution-rec
 features to detect and resolve such discrepancies.
 :::
 
+## Reconciliation reports
+
+The execution engine consumes four reconciliation report variants emitted by
+adapters in live trading. Each variant has a different role and a different
+fallback when the matching order is not yet in the local cache.
+
+| Variant                | Use case                                                     | Order missing from cache              |
+|------------------------|--------------------------------------------------------------|---------------------------------------|
+| `OrderStatusReport`    | Standalone order state update.                               | External order created from the report; if status is `PartiallyFilled`/`Filled`, an inferred fill is synthesised from `avg_px`/`filled_qty`. |
+| `FillReport`           | Standalone execution.                                        | External order is created from the fill (`OrderType::Market`, quantity `last_qty`); the real fill is then applied so its `trade_id` and `commission` are preserved. |
+| `OrderWithFills`       | Order status update bundled with the fills that produced it. | External order created without an inferred fill; the supplied fills are applied first; any residual gap between `report.filled_qty` and the sum of supplied `last_qty`s is closed with an inferred fill. |
+| `PositionStatusReport` | Position snapshot from the venue.                            | Logged; positions are derived from fills, not bootstrapped here. |
+
+### When to use each variant
+
+Adapters choose the variant based on what the venue's wire format actually
+delivers for a given event:
+
+- Use `OrderStatusReport` for ordinary order lifecycle updates (Accepted,
+  PartiallyFilled, Canceled, Expired) where fill detail arrives separately on
+  a different stream.
+- Use `FillReport` for venues that only surface a fill for venue-initiated
+  closures and never open a user-level order (the canonical example is
+  Hyperliquid liquidations: the user receives a `userFills` entry with
+  `liquidation` metadata but no entry on the orders stream).
+- Use `OrderWithFills` when a single venue event maps to both a status update
+  and one or more fills, and the adapter has both available at the same
+  point in time. Bundling lets the engine apply real fill metadata
+  (`trade_id`, `commission`) and only synthesise an inferred fill for the
+  residual quantity. Binance Futures uses this for exchange-generated ADL,
+  liquidation, and settlement orders via
+  `dispatch_exchange_generated_fill`.
+
+### External order creation
+
+When a report references an order that is not in the cache (a
+venue-initiated ADL / liquidation / settlement, an order placed by a
+different process, or an order that has not yet been observed locally), the
+engine creates an *external order* and routes ownership to:
+
+- The strategy that has claimed the instrument via
+  `register_external_order_claims`, or
+- The `EXTERNAL` strategy as a default fallback.
+
+The external order's `client_order_id` is taken from the report when
+present, otherwise derived from the `venue_order_id`. The order is added to
+the cache, the venue order ID index is registered, and the engine emits the
+appropriate lifecycle events (`OrderAccepted`, `OrderFilled`,
+`OrderCanceled`, `OrderExpired`) so positions update through the normal
+event pipeline.
+
+This means a Hyperliquid liquidation that arrives as a single `FillReport`
+and a Binance ADL that arrives as a bundled `OrderWithFills` both update
+the local position without any strategy-side handling.
+
 ## Related guides
 
 - [Events](events.md) - Order and position event types and dispatch.

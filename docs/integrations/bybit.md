@@ -247,6 +247,42 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Leverage control    | -    | ✓      | ✓       | -      | Not applicable for Options.              |
 | Margin mode         | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin.    |
 
+### Risk events
+
+| Feature                   | Spot | Linear | Inverse | Option | Notes                                     |
+|---------------------------|------|--------|---------|--------|-------------------------------------------|
+| Liquidation handling      | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange‑generated. |
+| ADL handling              | -    | ✓      | ✓       | ✓      | Auto‑deleveraging fills flagged and logged.   |
+| ADL rank warnings         | -    | ✓      | ✓       | ✓      | Position reports logged when `adlRankIndicator >= 4`. |
+
+Bybit emits venue-initiated fills with `execType` set to:
+
+- `AdlTrade`: Auto-deleveraging execution. An opposing profitable position was
+  selected to close the undercollateralised counterparty after the insurance
+  fund could not cover the loss.
+- `BustTrade`: Liquidation takeover. The liquidation engine seized the
+  position after margin was exhausted.
+- `Delivery`: USDC futures delivery.
+- `Settle`: Inverse futures settlement.
+
+The adapter flags each as exchange-generated and logs a warning containing the
+execution ID, symbol, side, quantity, and price. Fills flow through the normal
+`FillReport` path; because these orders carry an empty `orderLinkId`, the
+execution engine treats them as external and assigns them via
+`external_order_claims` (or the `EXTERNAL` strategy by default).
+
+Bybit also publishes an ADL ranking on position updates via the
+`adlRankIndicator` field. The range is 0 (flat / no position) to 5 (next to
+deleverage). The adapter logs a warning whenever an open position carries a
+rank of 4 or higher so you can react before the venue force-closes.
+
+Upstream references:
+
+- [V5 `execType` values](https://bybit-exchange.github.io/docs/v5/enum#exectype)
+- [V5 `createType` values](https://bybit-exchange.github.io/docs/v5/enum#createtype)
+- [Liquidation mechanism](https://www.bybit.com/en/help-center/article/Liquidation-Process-Derivatives-Trading)
+- [Auto-Deleveraging mechanism](https://www.bybit.com/en/help-center/article/Auto-Deleveraging-ADL-Derivatives-Trading)
+
 ### Order querying
 
 | Feature             | Spot | Linear | Inverse | Option | Notes                                   |

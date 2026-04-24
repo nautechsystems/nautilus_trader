@@ -414,6 +414,16 @@ impl FeedHandler {
                             log::warn!("Cannot process fills: account_id is None");
                         }
                     }
+                    WsUserEventData::Liquidation { liquidation } => {
+                        log::warn!(
+                            "Liquidation event: lid={}, liquidator={}, liquidated_user={}, ntl_pos={}, account_value={}",
+                            liquidation.lid,
+                            liquidation.liquidator,
+                            liquidation.liquidated_user,
+                            liquidation.liquidated_ntl_pos,
+                            liquidation.liquidated_account_value,
+                        );
+                    }
                     _ => {
                         log::debug!("Received non-fill user event: {data:?}");
                     }

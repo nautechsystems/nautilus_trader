@@ -360,6 +360,21 @@ pub fn parse_ws_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
+
+    if let Some(liquidation) = fill.liquidation.as_ref() {
+        log::warn!(
+            "Liquidation fill: {} oid={} method={:?} mark_px={} liquidated_user={}",
+            instrument_id,
+            fill.oid,
+            liquidation.method,
+            liquidation.mark_px,
+            liquidation
+                .liquidated_user
+                .as_deref()
+                .unwrap_or("<unknown>"),
+        );
+    }
+
     let venue_order_id = VenueOrderId::new(fill.oid.to_string());
     let trade_id = make_fill_trade_id(
         &fill.hash,
@@ -505,11 +520,12 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{
-            HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-            HyperliquidSide,
+            HyperliquidFillDirection, HyperliquidLiquidationMethod,
+            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
         },
         websocket::messages::{
-            PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData, WsBookData, WsLevelData,
+            FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
+            WsBookData, WsLevelData,
         },
     };
 
@@ -613,6 +629,46 @@ mod tests {
         let report = result.unwrap();
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+    }
+
+    #[rstest]
+    fn test_parse_ws_fill_report_with_liquidation() {
+        let instrument = create_test_instrument();
+        let account_id = AccountId::new("HYPERLIQUID-001");
+        let ts_init = UnixNanos::default();
+
+        let fill_data = WsFillData {
+            coin: Ustr::from("BTC"),
+            px: "50000.0".to_string(),
+            sz: "0.1".to_string(),
+            side: HyperliquidSide::Sell,
+            time: 1704470400000,
+            start_position: "0.1".to_string(),
+            dir: HyperliquidFillDirection::CloseLong,
+            closed_pnl: "-25.0".to_string(),
+            hash: "0xdef456".to_string(),
+            oid: 54321,
+            crossed: true,
+            fee: "0.0".to_string(),
+            tid: 12345,
+            liquidation: Some(FillLiquidationData {
+                liquidated_user: Some("0xuser".to_string()),
+                mark_px: 50_000.0,
+                method: HyperliquidLiquidationMethod::Market,
+            }),
+            fee_token: Ustr::from("USDC"),
+            builder_fee: None,
+            cloid: None,
+            twap_id: None,
+        };
+
+        let report = parse_ws_fill_report(&fill_data, &instrument, account_id, ts_init).unwrap();
+
+        // The fill is still emitted through the standard path; the liquidation
+        // metadata is logged for observability rather than encoded on the report.
+        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.venue_order_id.to_string(), "54321");
     }
 
     #[rstest]

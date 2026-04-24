@@ -765,9 +765,14 @@ impl OrderUpdateData {
     }
 
     /// Returns true if this is a settlement order.
+    ///
+    /// USDT-margined futures use `settlement_autoclose-` for funding/margin
+    /// settlement; coin-margined delivery futures use `delivery_autoclose-`
+    /// when an expiring contract auto-closes.
     #[must_use]
     pub fn is_settlement(&self) -> bool {
         self.client_order_id.starts_with("settlement_autoclose-")
+            || self.client_order_id.starts_with("delivery_autoclose-")
     }
 
     /// Returns true if this is an exchange-generated order.

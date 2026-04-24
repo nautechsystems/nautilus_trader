@@ -822,6 +822,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_is_exchange_generated_delivery_autoclose() {
+        let msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_delivery.json");
+        assert!(msg.order.is_exchange_generated());
+        assert!(msg.order.is_settlement());
+        assert!(!msg.order.is_liquidation());
+        assert!(!msg.order.is_adl());
+    }
+
+    #[rstest]
     fn test_normal_order_is_not_exchange_generated() {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
         assert!(!msg.order.is_exchange_generated());

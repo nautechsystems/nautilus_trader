@@ -441,11 +441,34 @@ The OKX adapter automatically detects and handles exchange-initiated risk manage
 - **Liquidation orders**: When a position is liquidated by the exchange (full or partial), the adapter detects the liquidation category and logs warnings with order details. These orders are processed normally through the order and fill pipeline.
 - **Auto-Deleveraging (ADL)**: When your position is closed by the exchange to offset a counterparty's liquidation, the adapter detects and logs the ADL event with position details.
 
+Detection is driven by the `category` field on the order record. The
+recognised values are:
+
+| `category`              | Meaning                                              |
+|-------------------------|------------------------------------------------------|
+| `full_liquidation`      | Full position liquidation.                           |
+| `partial_liquidation`   | Partial position liquidation.                        |
+| `adl`                   | Auto‑deleveraging close.                             |
+| `delivery`              | Contract delivery at expiry.                         |
+| `normal` / other values | Regular order flow.                                  |
+
+Detection runs on both paths:
+
+- WebSocket `orders` channel (live order/fill updates).
+- HTTP `GET /api/v5/trade/orders-history` and `orders-history-archive`
+  (used during reconciliation and cold-start mass status).
+
 :::info
 **Liquidation and ADL events are logged at WARNING level** with details including order ID, instrument, and state. Monitor your logs for these events as part of your risk management process.
 
 The adapter handles these exchange-generated orders, generating appropriate `OrderFilled` events and updating positions accordingly. No special handling is required in your strategy code.
 :::
+
+Upstream references:
+
+- [Order channel and `category` field](https://www.okx.com/docs-v5/en/#order-book-trading-trade-ws-order-channel)
+- [Auto-Deleveraging mechanism](https://www.okx.com/help/okx-contract-auto-deleveraging-adl)
+- [Liquidation mechanism](https://www.okx.com/help/introduction-to-liquidation)
 
 ## Options trading
 

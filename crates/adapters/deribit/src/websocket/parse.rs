@@ -856,6 +856,27 @@ pub fn parse_user_trade_msg(
     let venue_order_id = VenueOrderId::new(&msg.order_id);
     let trade_id = TradeId::new(&msg.trade_id);
 
+    // Deribit marks liquidation-triggered trades with "M" (maker liquidated),
+    // "T" (taker liquidated), or "MT" (both). Absent means a normal trade.
+    if let Some(liq) = msg.liquidation.as_deref().filter(|s| !s.is_empty()) {
+        let who = match liq {
+            "M" => "maker",
+            "T" => "taker",
+            "MT" => "both",
+            _ => liq,
+        };
+        log::warn!(
+            "Liquidation trade: {} trade_id={} order_id={} liquidation_side={} direction={} amount={} price={}",
+            instrument_id,
+            msg.trade_id,
+            msg.order_id,
+            who,
+            msg.direction,
+            msg.amount,
+            msg.price,
+        );
+    }
+
     let order_side = match msg.direction.as_str() {
         "buy" => OrderSide::Buy,
         "sell" => OrderSide::Sell,

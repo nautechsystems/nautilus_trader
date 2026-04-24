@@ -175,8 +175,10 @@ order, it uses the standard cancel endpoint.
 Binance Futures can trigger exchange-generated orders in response to risk events:
 
 - **Liquidations**: When insufficient margin exists to maintain a position, Binance forcibly closes it at the bankruptcy price. These orders have client IDs starting with `autoclose-`.
-- **ADL (Auto-Deleveraging)**: When the insurance fund is depleted, Binance closes profitable positions to cover losses. These orders use client ID `adl_autoclose`.
-- **Settlements**: Quarterly contract deliveries use client IDs starting with `settlement_autoclose-`.
+- **ADL (Auto-Deleveraging)**: When the insurance fund is depleted, Binance closes profitable positions to cover losses. These orders use client ID prefix `adl_autoclose`.
+- **Settlements (USDT-M)**: Funding/margin settlement orders use client IDs starting with `settlement_autoclose-`.
+- **Deliveries (COIN-M)**: Expiring delivery contracts auto-close with client IDs starting with `delivery_autoclose-`.
+- **Insurance fund**: Takeover by the insurance fund uses status `NEW_INSURANCE` (deprecated on the public changelog but still observed on the wire).
 
 The adapter detects these special order types via their client ID patterns
 (checked before the execution type), then:
@@ -184,6 +186,11 @@ The adapter detects these special order types via their client ID patterns
 1. Logs a warning with order details for monitoring.
 2. Generates a `FillReport` with correct fill details and TAKER liquidity side.
 3. Generates an `OrderStatusReport` for reconciliation.
+
+Upstream references:
+
+- [USDT-M `ORDER_TRADE_UPDATE`](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update)
+- [COIN-M `ORDER_TRADE_UPDATE`](https://developers.binance.com/docs/derivatives/coin-margined-futures/user-data-streams/Event-Order-Update)
 
 The execution engine creates external orders from runtime status reports when
 the order is not already in cache. This covers first-seen exchange-generated
@@ -208,12 +215,12 @@ include a `venue_position_id` derived from the instrument and position side
 `BinanceExecClientConfig` for virtual positions with `OmsType.HEDGING`.
 
 :::note
-The fill report is sent before the status report so that the engine
-receives both. Because the order does not exist in cache when the fill
-arrives, the fill report is dropped and the engine creates an inferred fill
-from the status report instead. This produces correct order and position
-state but loses per-fill metadata (trade ID, commission). A future version
-will bundle the fill report with the status report to preserve this data.
+The status report and fill report are emitted bundled as a single
+`OrderWithFills` execution report. The engine creates the external order
+from the status report and then applies the real fill, preserving the
+venue's `trade_id` and `commission`. Any residual quantity not covered by
+the bundled fills is closed with an inferred fill from the status report's
+`avg_px`.
 :::
 
 ### Order querying

@@ -258,6 +258,9 @@ fn dispatch_python_exec_event(
             ExecutionReport::MassStatus(report) => {
                 ("mass_status_report", (*report).into_py_any(py)?)
             }
+            // The IB adapter never emits OrderWithFills; this arm exists only to
+            // keep the match exhaustive against the shared ExecutionReport enum.
+            ExecutionReport::OrderWithFills(..) => return Ok(()),
         },
         ExecutionEvent::Account(account_state) => ("account_state", account_state.into_py_any(py)?),
     };

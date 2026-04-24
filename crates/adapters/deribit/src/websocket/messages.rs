@@ -675,6 +675,9 @@ pub struct DeribitUserTradeMsg {
     /// Post-only flag.
     #[serde(default)]
     pub post_only: bool,
+    /// Liquidation indicator for trades caused by liquidation.
+    #[serde(default)]
+    pub liquidation: Option<String>,
     /// Profit/loss for this trade.
     #[serde(
         default,

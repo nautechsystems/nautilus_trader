@@ -457,6 +457,11 @@ impl ExecutionEventEmitter {
         self.send_execution_report(ExecutionReport::Fill(Box::new(report)));
     }
 
+    /// Emits an order status report bundled with the fills that produced it.
+    pub fn send_order_with_fills(&self, report: OrderStatusReport, fills: Vec<FillReport>) {
+        self.send_execution_report(ExecutionReport::OrderWithFills(Box::new(report), fills));
+    }
+
     /// Emits a position status report.
     pub fn send_position_report(&self, report: PositionStatusReport) {
         self.send_execution_report(ExecutionReport::Position(Box::new(report)));

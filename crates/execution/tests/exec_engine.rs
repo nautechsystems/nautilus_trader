@@ -8219,8 +8219,10 @@ fn create_fill_report(
 }
 
 #[rstest]
-fn test_reconcile_fill_report_order_not_found(mut execution_engine: ExecutionEngine) {
+fn test_reconcile_fill_report_bootstraps_external_order(mut execution_engine: ExecutionEngine) {
     let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-MISSING");
+    let venue_order_id = VenueOrderId::from("V-001");
 
     execution_engine
         .cache()
@@ -8230,7 +8232,81 @@ fn test_reconcile_fill_report_order_not_found(mut execution_engine: ExecutionEng
 
     let report = create_fill_report(
         instrument.id(),
-        Some(ClientOrderId::from("O-MISSING")),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-001"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    // The engine creates an external order from the lone fill so venue-initiated
+    // closures (e.g. Hyperliquid liquidations) that arrive without a companion
+    // order status report still update the local order/position state.
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be created from fill report");
+    assert_eq!(order.order_type(), OrderType::Market);
+    assert_eq!(order.quantity(), Quantity::from(50_000));
+    assert_eq!(order.filled_qty(), Quantity::from(50_000));
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.trade_ids().len(), 1);
+    assert_eq!(*order.trade_ids()[0], TradeId::from("T-001"));
+    // Lock the policy for venue-initiated closes: IOC, reduce-only, EXTERNAL strategy.
+    assert_eq!(order.time_in_force(), TimeInForce::Ioc);
+    assert!(order.is_reduce_only());
+    assert_eq!(order.strategy_id(), StrategyId::from("EXTERNAL"));
+}
+
+#[rstest]
+fn test_reconcile_fill_report_bootstrap_uses_claimed_strategy(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-CLAIMED");
+    let venue_order_id = VenueOrderId::from("V-CLAIMED-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let strategy_id = StrategyId::from("MyStrategy-001");
+    let mut instruments = HashSet::new();
+    instruments.insert(instrument.id());
+    execution_engine
+        .register_external_order_claims(strategy_id, &instruments)
+        .unwrap();
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-CLAIMED-001"),
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be created from fill report");
+    assert_eq!(order.strategy_id(), strategy_id);
+}
+
+#[rstest]
+fn test_reconcile_fill_report_skips_when_instrument_missing(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-MISSING");
+
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
         VenueOrderId::from("V-001"),
         TradeId::from("T-001"),
         Quantity::from(50_000),
@@ -8239,8 +8315,9 @@ fn test_reconcile_fill_report_order_not_found(mut execution_engine: ExecutionEng
 
     execution_engine.reconcile_fill_report(&report);
 
+    // Without an instrument the engine cannot bootstrap an external order.
     let cache = execution_engine.cache().borrow();
-    assert!(cache.order(&ClientOrderId::from("O-MISSING")).is_none());
+    assert!(cache.order(&client_order_id).is_none());
 }
 
 #[rstest]
@@ -8995,4 +9072,279 @@ fn test_reconcile_order_status_report_external_order_skipped_without_instrument(
 
     let cache = execution_engine.cache().borrow();
     assert!(cache.order(&ClientOrderId::from("autoclose-999")).is_none());
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_creates_external_with_real_fill(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("adl_autoclose-001");
+    let venue_order_id = VenueOrderId::from("V-BUNDLED-001");
+    let trade_id = TradeId::from("T-REAL-001");
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    let fill_report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        trade_id,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[fill_report]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    // Real fill metadata is preserved instead of an inferred trade ID.
+    assert_eq!(order.trade_ids().len(), 1);
+    assert_eq!(*order.trade_ids()[0], trade_id);
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_infers_residual_gap(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("adl_autoclose-002");
+    let venue_order_id = VenueOrderId::from("V-BUNDLED-002");
+    let real_trade_id = TradeId::from("T-REAL-002");
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    // Real fill covers only 70k of the 100k filled_qty; the engine must infer
+    // a 30k fill to bring the order to its venue-reported terminal state.
+    let real_fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        real_trade_id,
+        Quantity::from(70_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[real_fill]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().iter().any(|id| **id == real_trade_id));
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-LOCAL-001");
+    let venue_order_id = VenueOrderId::from("V-LOCAL-001");
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+
+    let submitted = TestOrderEventStubs::submitted(&order, AccountId::test_default());
+    execution_engine.process(&submitted);
+    let accepted = TestOrderEventStubs::accepted(&order, AccountId::test_default(), venue_order_id);
+    execution_engine.process(&accepted);
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+    let fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        TradeId::from("T-LOCAL-001"),
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[fill]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(order.trade_ids().len(), 1);
+    assert_eq!(*order.trade_ids()[0], TradeId::from("T-LOCAL-001"));
+}
+
+#[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Expired)]
+fn test_reconcile_order_with_fills_emits_terminal_event_for_external(
+    mut execution_engine: ExecutionEngine,
+    #[case] terminal_status: OrderStatus,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("autoclose-terminal-001");
+    let venue_order_id = VenueOrderId::from("V-TERMINAL-001");
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        terminal_status,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), terminal_status);
+    assert!(order.is_closed());
+    assert_eq!(order.filled_qty(), Quantity::from(0));
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_applies_multiple_fills(mut execution_engine: ExecutionEngine) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("adl_autoclose-multi");
+    let venue_order_id = VenueOrderId::from("V-MULTI-001");
+    let trade_id_a = TradeId::from("T-MULTI-A");
+    let trade_id_b = TradeId::from("T-MULTI-B");
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    let fill_a = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        trade_id_a,
+        Quantity::from(30_000),
+        Price::from("1.00000"),
+    );
+    let fill_b = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        trade_id_b,
+        Quantity::from(70_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[fill_a, fill_b]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    // Both real trade IDs are preserved; no inferred fill is generated because
+    // sum(real fills) == report.filled_qty.
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().iter().any(|id| **id == trade_id_a));
+    assert!(order.trade_ids().iter().any(|id| **id == trade_id_b));
+}
+
+#[rstest]
+fn test_reconcile_order_with_fills_empty_fills_infers_full_quantity(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("adl_autoclose-empty");
+    let venue_order_id = VenueOrderId::from("V-EMPTY-001");
+
+    let order_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument.id(),
+        OrderStatus::Filled,
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+    );
+
+    execution_engine.reconcile_order_with_fills(&order_report, &[]);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache
+        .order(&client_order_id)
+        .expect("external order should be in cache");
+    // With no real fills, the gap path infers a single fill for the entire
+    // reported quantity so the order reaches its venue-reported terminal state.
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(order.trade_ids().len(), 1);
 }

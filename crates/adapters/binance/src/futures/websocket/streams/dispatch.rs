@@ -32,6 +32,7 @@ use nautilus_model::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderUpdated,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -626,7 +627,7 @@ pub(crate) fn dispatch_order_update(
                     return;
                 }
 
-                match parse_futures_order_update_to_fill(
+                let fill = match parse_futures_order_update_to_fill(
                     msg,
                     account_id,
                     instrument_id,
@@ -637,11 +638,14 @@ pub(crate) fn dispatch_order_update(
                     None,
                     ts_init,
                 ) {
-                    Ok(fill) => emitter.send_fill_report(fill),
-                    Err(e) => log::error!("Failed to parse fill report: {e}"),
-                }
+                    Ok(fill) => Some(fill),
+                    Err(e) => {
+                        log::error!("Failed to parse fill report: {e}");
+                        None
+                    }
+                };
 
-                match parse_futures_order_update_to_order_status(
+                let status = match parse_futures_order_update_to_order_status(
                     msg,
                     instrument_id,
                     price_precision,
@@ -650,9 +654,14 @@ pub(crate) fn dispatch_order_update(
                     treat_expired_as_canceled,
                     ts_init,
                 ) {
-                    Ok(status) => emitter.send_order_status_report(status),
-                    Err(e) => log::error!("Failed to parse order status report: {e}"),
-                }
+                    Ok(status) => Some(status),
+                    Err(e) => {
+                        log::error!("Failed to parse order status report: {e}");
+                        None
+                    }
+                };
+
+                emit_bundled_or_individual(emitter, status, fill);
             }
             BinanceExecutionType::New
             | BinanceExecutionType::Canceled
@@ -810,12 +819,11 @@ pub(crate) fn make_venue_position_id(
 
 /// Dispatches exchange-generated order fills (liquidation, ADL, settlement).
 ///
-/// Sends a `FillReport` first, then an `OrderStatusReport`. The fill report
-/// is dropped by the engine (order not yet in cache). The status report
-/// triggers `create_external_order`, which builds the order and applies an
-/// inferred fill from `avg_px`/`filled_qty`. Real fill metadata (commission,
-/// trade_id) is lost; see `engine-bundled-fill-reconciliation` plan for the
-/// path to preserving it.
+/// Bundles the parsed `OrderStatusReport` and `FillReport` into a single
+/// `OrderWithFills` send so the engine creates the external order from the
+/// status report and applies the real fill (preserving `trade_id` and
+/// `commission`) instead of synthesising one. Falls back to whichever report
+/// parsed if the other parser fails.
 ///
 /// Skips events with zero fill quantity (pending liquidation notifications).
 #[expect(clippy::too_many_arguments)]
@@ -875,7 +883,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
         order.execution_type,
     );
 
-    match parse_futures_order_update_to_fill(
+    let fill = match parse_futures_order_update_to_fill(
         msg,
         account_id,
         instrument_id,
@@ -886,11 +894,14 @@ pub(crate) fn dispatch_exchange_generated_fill(
         venue_position_id,
         ts_init,
     ) {
-        Ok(fill) => emitter.send_fill_report(fill),
-        Err(e) => log::error!("Failed to parse fill report: {e}"),
-    }
+        Ok(fill) => Some(fill),
+        Err(e) => {
+            log::error!("Failed to parse fill report: {e}");
+            None
+        }
+    };
 
-    match parse_futures_order_update_to_order_status(
+    let status = match parse_futures_order_update_to_order_status(
         msg,
         instrument_id,
         price_precision,
@@ -899,8 +910,34 @@ pub(crate) fn dispatch_exchange_generated_fill(
         false, // Exchange-generated fills are not subject to expired-as-canceled
         ts_init,
     ) {
-        Ok(status) => emitter.send_order_status_report(status),
-        Err(e) => log::error!("Failed to parse order status report: {e}"),
+        Ok(status) => Some(status),
+        Err(e) => {
+            log::error!("Failed to parse order status report: {e}");
+            None
+        }
+    };
+
+    emit_bundled_or_individual(emitter, status, fill);
+}
+
+/// Bundles status + fill into a single `OrderWithFills` send when both parsed,
+/// otherwise emits whichever side parsed on its own.
+///
+/// Sending the fill alone would let the engine bootstrap a synthetic order at
+/// `last_qty`, which then closes on the first partial fill and rejects
+/// subsequent fills for the same venue order. Sending whichever report parsed
+/// instead of dropping both keeps the position in sync when only one parser
+/// fails.
+fn emit_bundled_or_individual(
+    emitter: &ExecutionEventEmitter,
+    status: Option<OrderStatusReport>,
+    fill: Option<FillReport>,
+) {
+    match (status, fill) {
+        (Some(status), Some(fill)) => emitter.send_order_with_fills(status, vec![fill]),
+        (Some(status), None) => emitter.send_order_status_report(status),
+        (None, Some(fill)) => emitter.send_fill_report(fill),
+        (None, None) => {}
     }
 }
 
@@ -1101,6 +1138,105 @@ mod tests {
         assert_eq!(result, Some(PositionId::from(expected)));
     }
 
+    fn make_status_report() -> OrderStatusReport {
+        use nautilus_model::enums::TimeInForce;
+        OrderStatusReport::new(
+            AccountId::from("BINANCE-001"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Some(ClientOrderId::from("O-PARSER-001")),
+            VenueOrderId::from("V-PARSER-001"),
+            OrderSide::Buy,
+            OrderType::Market,
+            TimeInForce::Ioc,
+            OrderStatus::Filled,
+            Quantity::from(1),
+            Quantity::from(1),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+    }
+
+    fn make_fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("BINANCE-001"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            VenueOrderId::from("V-PARSER-001"),
+            TradeId::from("T-PARSER-001"),
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from("50000.0"),
+            Money::new(0.0, Currency::USD()),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-PARSER-001")),
+            None,
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+    }
+
+    #[rstest]
+    fn test_emit_bundled_when_both_parsed() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+
+        emit_bundled_or_individual(
+            &emitter,
+            Some(make_status_report()),
+            Some(make_fill_report()),
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Report(ExecutionReport::OrderWithFills(_, ref fills)) if fills.len() == 1
+        ));
+    }
+
+    #[rstest]
+    fn test_emit_status_alone_when_fill_parser_fails() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+
+        emit_bundled_or_individual(&emitter, Some(make_status_report()), None);
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Report(ExecutionReport::Order(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_emit_fill_alone_when_status_parser_fails() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+
+        emit_bundled_or_individual(&emitter, None, Some(make_fill_report()));
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            events[0],
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_emit_nothing_when_both_parsers_fail() {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+
+        emit_bundled_or_individual(&emitter, None, None);
+
+        let events = collect_events(&mut rx);
+        assert!(events.is_empty());
+    }
+
     #[rstest]
     #[case::long(BinancePositionSide::Long)]
     #[case::short(BinancePositionSide::Short)]
@@ -1215,25 +1351,18 @@ mod tests {
 
         let events = collect_events(&mut rx);
 
-        assert_eq!(events.len(), 2);
+        // The untracked TRADE path now emits a single bundled OrderWithFills
+        // report; the duplicate trade_id is suppressed by seen_trade_ids dedup.
+        assert_eq!(events.len(), 1);
         assert_eq!(
             events
                 .iter()
                 .filter(|event| matches!(
                     event,
-                    ExecutionEvent::Report(ExecutionReport::Fill(fill))
-                        if fill.trade_id == TradeId::new("12345678")
-                ))
-                .count(),
-            1
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    ExecutionEvent::Report(ExecutionReport::Order(status))
+                    ExecutionEvent::Report(ExecutionReport::OrderWithFills(status, fills))
                         if status.client_order_id == Some(ClientOrderId::from("TEST"))
+                            && fills.len() == 1
+                            && fills[0].trade_id == TradeId::new("12345678")
                 ))
                 .count(),
             1
@@ -1281,25 +1410,18 @@ mod tests {
 
         let events = collect_events(&mut rx);
 
-        assert_eq!(events.len(), 2);
+        // Exchange-generated fills emit a single bundled OrderWithFills report.
+        // The duplicate trade_id is suppressed by the seen_trade_ids dedup.
+        assert_eq!(events.len(), 1);
         assert_eq!(
             events
                 .iter()
                 .filter(|event| matches!(
                     event,
-                    ExecutionEvent::Report(ExecutionReport::Fill(fill))
-                        if fill.trade_id == TradeId::new("12345999")
-                ))
-                .count(),
-            1
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    ExecutionEvent::Report(ExecutionReport::Order(status))
+                    ExecutionEvent::Report(ExecutionReport::OrderWithFills(status, fills))
                         if status.order_status == OrderStatus::Filled
+                            && fills.len() == 1
+                            && fills[0].trade_id == TradeId::new("12345999")
                 ))
                 .count(),
             1
@@ -1906,21 +2028,19 @@ mod tests {
         );
 
         let events = collect_events(&mut rx);
-        let fill_reports = events
+        let bundled = events
             .iter()
-            .filter(|event| matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_))))
-            .count();
-        let status_reports = events
-            .iter()
-            .filter(|event| matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_))))
+            .filter(|event| {
+                matches!(
+                    event,
+                    ExecutionEvent::Report(ExecutionReport::OrderWithFills(_, fills))
+                        if fills.len() == 1
+                )
+            })
             .count();
         assert_eq!(
-            fill_reports, 1,
-            "untracked Trade should still emit FillReport regardless of use_trade_lite"
-        );
-        assert_eq!(
-            status_reports, 1,
-            "untracked Trade should still emit OrderStatusReport regardless of use_trade_lite"
+            bundled, 1,
+            "untracked Trade should emit a single bundled OrderWithFills regardless of use_trade_lite"
         );
     }
 

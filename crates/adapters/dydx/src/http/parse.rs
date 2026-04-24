@@ -1166,6 +1166,40 @@ pub fn parse_fill_report(
     let trade_id = TradeId::new(&fill.id);
     let order_side = fill.side;
 
+    // On dYdX v4 the indexer tags protocol-generated fills via the `type` field:
+    // LIQUIDATED / LIQUIDATION mark the undercollateralised account and the
+    // matching insurance-fund counterparty; DELEVERAGED / OFFSETTING mark
+    // deleveraging (ADL) events when the insurance fund is exhausted.
+    match fill.fill_type {
+        crate::common::enums::DydxFillType::Liquidated
+        | crate::common::enums::DydxFillType::Liquidation => {
+            log::warn!(
+                "Liquidation fill: {} id={} order_id={} type={:?} side={:?} size={} price={}",
+                instrument_id,
+                fill.id,
+                fill.order_id,
+                fill.fill_type,
+                order_side,
+                fill.size,
+                fill.price,
+            );
+        }
+        crate::common::enums::DydxFillType::Deleveraged
+        | crate::common::enums::DydxFillType::Offsetting => {
+            log::warn!(
+                "Deleveraging (ADL) fill: {} id={} order_id={} type={:?} side={:?} size={} price={}",
+                instrument_id,
+                fill.id,
+                fill.order_id,
+                fill.fill_type,
+                order_side,
+                fill.size,
+                fill.price,
+            );
+        }
+        crate::common::enums::DydxFillType::Limit => {}
+    }
+
     let size_precision = instrument.size_precision();
     let price_precision = instrument.price_precision();
 
