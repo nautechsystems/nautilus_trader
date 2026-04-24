@@ -1371,7 +1371,9 @@ cdef class BacktestEngine:
         """
         self._run(start, end, run_config_id, streaming)
 
-        if not streaming:
+        # Finalize on non-streaming runs, or when a shutdown was triggered at
+        # any point during the run so the trader and engines actually stop
+        if not streaming or FORCE_STOP:
             self.end()
 
     def end(self):
@@ -1599,6 +1601,9 @@ cdef class BacktestEngine:
 
         try:
             while True:
+                if FORCE_STOP:
+                    break
+
                 if data is None:
                     if streaming:
                         # In streaming mode, don't advance timers past the

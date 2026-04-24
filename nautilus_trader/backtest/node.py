@@ -36,6 +36,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import is_backtest_force_stop
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ActorFactory
@@ -618,6 +619,11 @@ class BacktestNode:
                 streaming=True,
             )
             engine.clear_data()
+
+            if is_backtest_force_stop():
+                # Shutdown requested during the chunk; skip remaining chunks.
+                # engine.run() already finalized via end() on the force-stop path
+                return
 
         engine.end()
 

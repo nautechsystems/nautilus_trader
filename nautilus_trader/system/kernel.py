@@ -623,14 +623,16 @@ class NautilusKernel:
 
         self._log.info(f"Received {command!r}, shutting down...", LogColor.BLUE)
 
+        # Set FORCE_STOP before teardown so the backtest loop bails out even
+        # if stop() / stop_async() raises partway through
+        if self._environment == Environment.BACKTEST:
+            set_backtest_force_stop(True)
+            self._log.debug("Set backtest FORCE_STOP")
+
         if self._loop:
             self._loop.create_task(self.stop_async())
         else:
             self.stop()
-
-        if self._environment == Environment.BACKTEST:
-            set_backtest_force_stop(True)
-            self._log.debug("Set backtest FORCE_STOP")
 
     @property
     def environment(self) -> Environment:

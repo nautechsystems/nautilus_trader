@@ -446,6 +446,12 @@ fn stream_chunks<I: Iterator<Item = Data>>(
         engine.run(next_start, end, Some(config.id().to_string()), true)?;
         engine.clear_data();
 
+        // A shutdown request during the chunk already triggered end() inside
+        // engine.run(); stop loading further chunks so later data is not processed
+        if engine.kernel().is_shutdown_requested() {
+            return Ok(());
+        }
+
         // Carry forward the end timestamp so the next chunk's run_impl
         // sets clocks contiguously and processes gap timers correctly
         next_start = end;
