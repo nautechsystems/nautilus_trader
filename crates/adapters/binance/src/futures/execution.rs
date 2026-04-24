@@ -99,7 +99,7 @@ use crate::{
             BinanceTimeInForce, BinanceWorkingType,
         },
         symbol::format_binance_symbol,
-        urls::get_ws_private_base_url,
+        urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
     },
     config::BinanceExecClientConfig,
     futures::{
@@ -982,9 +982,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.product_type,
         )?;
 
-        let private_base_url = self.config.base_url_ws.clone().unwrap_or_else(|| {
-            get_ws_private_base_url(self.product_type, self.config.environment).to_string()
-        });
+        let private_base_url = self.config.base_url_ws.clone().map_or_else(
+            || get_ws_private_base_url(self.product_type, self.config.environment).to_string(),
+            |url| {
+                if self.product_type == BinanceProductType::UsdM
+                    && self.config.environment == BinanceEnvironment::Mainnet
+                {
+                    get_usdm_ws_route_base_url(&url, "private")
+                } else {
+                    url
+                }
+            },
+        );
 
         let (recovery_tx, recovery_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         *self.recovery_tx.lock().expect(MUTEX_POISONED) = Some(recovery_tx.clone());
@@ -1004,6 +1013,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             use_position_ids: self.config.use_position_ids,
             default_taker_fee: self.config.default_taker_fee,
             treat_expired_as_canceled: self.config.treat_expired_as_canceled,
+            use_trade_lite: self.config.use_trade_lite,
             seen_trade_ids,
             cancellation_token: self.cancellation_token.clone(),
         });
@@ -2005,35 +2015,19 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
-        let ws_active = self.ws_trading_active();
-        let ws_client_clone = self.ws_trading_client.clone();
 
+        // USD-M Futures WS Trading API does not expose an openOrders.cancelAll
+        // method, so regular and algo cancel-all both go through HTTP.
         self.spawn_task("cancel_all_orders", async move {
-            if ws_active {
-                if let Some(ref ws_client) = ws_client_clone {
-                    let symbol = instrument_id.symbol.to_string();
-                    if let Err(e) = ws_client.cancel_all_orders(symbol).await {
-                        log::error!("WS cancel_all_orders failed: {e}");
-                    } else {
-                        log::info!(
-                            "WS cancel all regular orders request accepted for {instrument_id}"
-                        );
-                    }
+            match http_client.cancel_all_orders(instrument_id).await {
+                Ok(_) => {
+                    log::info!("Cancel all regular orders request accepted for {instrument_id}");
                 }
-            } else {
-                match http_client.cancel_all_orders(instrument_id).await {
-                    Ok(_) => {
-                        log::info!(
-                            "Cancel all regular orders request accepted for {instrument_id}"
-                        );
-                    }
-                    Err(e) => {
-                        log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
-                    }
+                Err(e) => {
+                    log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
                 }
             }
 
-            // Algo orders always go through HTTP (WS API does not support algo service)
             match http_client.cancel_all_algo_orders(instrument_id).await {
                 Ok(()) => {
                     log::info!("Cancel all algo orders request accepted for {instrument_id}");

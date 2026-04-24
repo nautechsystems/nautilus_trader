@@ -141,6 +141,52 @@ pub fn get_ws_private_base_url(
     }
 }
 
+/// Returns a routed USD-M Futures WebSocket URL derived from an override.
+///
+/// Binance now routes USD-M Futures mainnet traffic by category. This helper
+/// accepts either a root override (for example `wss://fstream.binance.com`) or
+/// a routed/transport-specific override such as `/market`, `/public/ws`, or
+/// `/private/stream`, then rebuilds the URL for the requested route.
+///
+/// URLs that do not point at `fstream.binance.com` (for example local test
+/// endpoints) are returned unchanged.
+#[must_use]
+pub(crate) fn get_usdm_ws_route_base_url(base_url: &str, route: &str) -> String {
+    const SUFFIXES: [&str; 11] = [
+        "/market/ws",
+        "/market/stream",
+        "/public/ws",
+        "/public/stream",
+        "/private/ws",
+        "/private/stream",
+        "/market",
+        "/public",
+        "/private",
+        "/ws",
+        "/stream",
+    ];
+
+    assert!(
+        matches!(route, "market" | "public" | "private"),
+        "invalid USD-M WebSocket route: {route}"
+    );
+
+    if !base_url.contains("fstream.binance.com") {
+        return base_url.to_string();
+    }
+
+    let mut normalized = base_url.trim_end_matches('/').to_string();
+
+    for suffix in SUFFIXES {
+        if normalized.ends_with(suffix) {
+            normalized.truncate(normalized.len() - suffix.len());
+            break;
+        }
+    }
+
+    format!("{normalized}/{route}/ws")
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -247,5 +293,42 @@ mod tests {
             url,
             get_ws_base_url(BinanceProductType::Spot, BinanceEnvironment::Mainnet)
         );
+    }
+
+    #[rstest]
+    #[case(
+        "wss://fstream.binance.com",
+        "market",
+        "wss://fstream.binance.com/market/ws"
+    )]
+    #[case(
+        "wss://fstream.binance.com/ws",
+        "public",
+        "wss://fstream.binance.com/public/ws"
+    )]
+    #[case(
+        "wss://fstream.binance.com/market/ws",
+        "private",
+        "wss://fstream.binance.com/private/ws"
+    )]
+    fn test_usdm_ws_route_base_url_normalizes_override(
+        #[case] base_url: &str,
+        #[case] route: &str,
+        #[case] expected: &str,
+    ) {
+        let url = get_usdm_ws_route_base_url(base_url, route);
+        assert_eq!(url, expected);
+    }
+
+    #[rstest]
+    #[case("ws://127.0.0.1:9999/ws", "market")]
+    #[case("wss://other.example.com/private/ws", "private")]
+    #[case("ws://localhost:8080", "public")]
+    fn test_usdm_ws_route_base_url_passes_through_non_binance_host(
+        #[case] base_url: &str,
+        #[case] route: &str,
+    ) {
+        let url = get_usdm_ws_route_base_url(base_url, route);
+        assert_eq!(url, base_url);
     }
 }

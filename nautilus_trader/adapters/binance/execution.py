@@ -36,6 +36,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserTrade
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.common.urls import get_usdm_ws_route_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_private_base_url
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
@@ -226,6 +227,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 environment=environment,
                 is_us=config.us,
             )
+
+            if (
+                environment == BinanceEnvironment.LIVE
+                and account_type == BinanceAccountType.USDT_FUTURES
+            ):
+                stream_base_url = get_usdm_ws_route_base_url(
+                    stream_base_url,
+                    "private",
+                )
 
         # Force Ed25519 when explicitly configured, otherwise auto-detect
         if config.key_type == BinanceKeyType.ED25519:

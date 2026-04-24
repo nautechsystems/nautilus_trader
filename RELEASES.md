@@ -13,8 +13,9 @@ Released on TBD (UTC).
 - Added `MarginAccount.margin_for_currency` + `margin_init/maint_for_currency` helpers for cross-margin queries
 - Added `MarginAccount.total_margin_init(currency)` / `total_margin_maint(currency)` summing both margin buckets
 - Added `MarginAccount.account_margins`, `account_margins_init/maint`, and `clear_account_margin` accessors
-- Added Bybit user-related endpoints (#3894), thanks @sunlei
 - Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
+- Added Binance Futures `use_trade_lite` config to opt into low-latency `TRADE_LITE` fills (Rust, default `False`)
+- Added Bybit user-related endpoints (#3894), thanks @sunlei
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 - Added Hyperliquid historical funding rates via `fundingHistory` info endpoint
 - Added Hyperliquid configurable MARKET slippage (`market_order_slippage_bps`) with per-order override
@@ -99,6 +100,8 @@ Released on TBD (UTC).
 - Fixed Binance Futures WebSocket trades by forcing `@aggTrade` (#3861), thanks for reporting @KaizynX
 - Fixed Binance Ed25519 detector silently accepting base64 HMAC secrets as Ed25519 keys (Rust)
 - Fixed Binance HTTP request Ed25519 signature URL-encoding in query strings (Rust)
+- Fixed Binance Futures USD-M `cancel_all_orders` silently failing; routes through HTTP (WS API does not support it)
+- Fixed Binance Futures `TRADE_LITE` user data events logging "Unknown event type" warnings on every fill
 - Fixed BitMEX trade ID fallback using random UUID4 when `trdMatchID` missing; now hashed from trade fields
 - Fixed Bybit demo mode websocket data URLs (#3742), thanks for reporting @jindrichsirucek
 - Fixed Bybit position deserialization for closed positions (#3836), thanks for reporting @pusteckiy

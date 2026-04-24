@@ -94,6 +94,7 @@ impl BinanceExecClientConfig {
         futures_leverages = None,
         futures_margin_types = None,
         treat_expired_as_canceled = false,
+        use_trade_lite = false,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -112,6 +113,7 @@ impl BinanceExecClientConfig {
         futures_leverages: Option<HashMap<String, u32>>,
         futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
         treat_expired_as_canceled: bool,
+        use_trade_lite: bool,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -132,6 +134,7 @@ impl BinanceExecClientConfig {
             futures_leverages,
             futures_margin_types,
             treat_expired_as_canceled,
+            use_trade_lite,
         }
     }
 
@@ -194,7 +197,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
             trader_id, account_id, None, None, None, None, None, true, true, None, None, None,
-            None, None, false,
+            None, None, false, false,
         );
         let defaults = BinanceExecClientConfig::default();
 
@@ -241,6 +244,7 @@ mod tests {
             Some(leverages.clone()),
             Some(margin_types.clone()),
             true,
+            true,
         );
 
         assert_eq!(config.product_types, vec![BinanceProductType::UsdM]);
@@ -262,6 +266,7 @@ mod tests {
         assert_eq!(config.futures_leverages, Some(leverages));
         assert_eq!(config.futures_margin_types, Some(margin_types));
         assert!(config.treat_expired_as_canceled);
+        assert!(config.use_trade_lite);
     }
 
     #[rstest]
@@ -282,6 +287,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
         );
 

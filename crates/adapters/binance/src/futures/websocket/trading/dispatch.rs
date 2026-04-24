@@ -172,10 +172,6 @@ pub(crate) fn dispatch_ws_trading_message(
                 emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
             }
         }
-        BinanceFuturesWsTradingMessage::AllOrdersCanceled { request_id } => {
-            dispatch_state.pending_requests.remove(&request_id);
-            log::debug!("WS all orders canceled: request_id={request_id}");
-        }
         BinanceFuturesWsTradingMessage::Connected => {
             log::info!("WS trading API connected");
         }

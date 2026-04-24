@@ -354,24 +354,6 @@ impl BinanceFuturesWsTradingClient {
         self.send_cmd(cmd).await
     }
 
-    /// Cancels all open orders for a symbol via the WebSocket Trading API.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the handler is unavailable.
-    pub async fn cancel_all_orders(
-        &self,
-        symbol: impl Into<String>,
-    ) -> BinanceFuturesWsApiResult<String> {
-        let id = self.next_request_id();
-        let cmd = BinanceFuturesWsTradingCommand::CancelAllOrders {
-            id: id.clone(),
-            symbol: symbol.into(),
-        };
-        self.send_cmd(cmd).await?;
-        Ok(id)
-    }
-
     /// Receives the next message from the handler.
     ///
     /// Returns `None` if the receiver is closed or not initialized.

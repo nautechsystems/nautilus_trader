@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
+from nautilus_trader.adapters.binance.common.urls import get_usdm_ws_route_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_api_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_private_base_url
@@ -339,3 +340,36 @@ def test_get_ws_private_base_url(account_type, environment, is_us, expected):
 def test_get_ws_public_base_url(account_type, environment, is_us, expected):
     url = get_ws_public_base_url(account_type, environment=environment, is_us=is_us)
     assert url == expected
+
+
+@pytest.mark.parametrize(
+    ("base_url", "route", "expected"),
+    [
+        ("wss://fstream.binance.com", "market", "wss://fstream.binance.com/market"),
+        ("wss://fstream.binance.com/ws", "public", "wss://fstream.binance.com/public"),
+        (
+            "wss://fstream.binance.com/market/ws",
+            "private",
+            "wss://fstream.binance.com/private",
+        ),
+    ],
+)
+def test_get_usdm_ws_route_base_url_normalizes_fstream_override(base_url, route, expected):
+    assert get_usdm_ws_route_base_url(base_url, route) == expected
+
+
+@pytest.mark.parametrize(
+    ("base_url", "route"),
+    [
+        ("ws://127.0.0.1:9999/ws", "market"),
+        ("wss://other.example.com/private/ws", "private"),
+        ("ws://localhost:8080", "public"),
+    ],
+)
+def test_get_usdm_ws_route_base_url_passes_through_non_binance_host(base_url, route):
+    assert get_usdm_ws_route_base_url(base_url, route) == base_url
+
+
+def test_get_usdm_ws_route_base_url_raises_on_invalid_route():
+    with pytest.raises(ValueError, match="invalid USD-M WebSocket route"):
+        get_usdm_ws_route_base_url("wss://fstream.binance.com", "bogus")

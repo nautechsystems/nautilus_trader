@@ -785,56 +785,6 @@ async fn test_modify_order_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_cancel_all_orders() {
-    let (addr, state) = start_test_server().await.unwrap();
-    let mut client = create_test_client(&addr);
-
-    client.connect().await.unwrap();
-
-    wait_until_async(
-        || async { *state.connection_count.lock().await > 0 },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    // Drain Connected message
-    let _ = client.recv().await;
-
-    client.cancel_all_orders("BTCUSDT").await.unwrap();
-
-    wait_until_async(
-        || async { !state.received_requests().await.is_empty() },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    let requests = state.received_requests().await;
-    let request = &requests[0];
-    assert_eq!(
-        request.get("method").and_then(|v| v.as_str()),
-        Some("openOrders.cancelAll")
-    );
-
-    let params = request.get("params").unwrap();
-    assert_eq!(
-        params.get("symbol").and_then(|v| v.as_str()),
-        Some("BTCUSDT")
-    );
-
-    let msg = client.recv().await;
-
-    match msg {
-        Some(BinanceFuturesWsTradingMessage::AllOrdersCanceled { request_id }) => {
-            assert!(request_id.starts_with("req-"));
-        }
-        other => panic!("Expected AllOrdersCanceled, was {other:?}"),
-    }
-
-    client.disconnect().await;
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_request_id_increments() {
     let (addr, state) = start_test_server().await.unwrap();
     let mut client = create_test_client(&addr);

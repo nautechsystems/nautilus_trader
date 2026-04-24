@@ -95,6 +95,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
+        Live USD-M Futures data overrides are normalized onto the matching
+        `/market` and `/public` routes.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
     us : bool, default False
@@ -155,6 +157,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_stream : str, optional
         The WebSocket stream custom endpoint override for futures user data event delivery.
         Only applicable to futures account types. When ``None``, derived from the environment.
+        Live USD-M Futures stream overrides are normalized onto the `/private` route.
     proxy_url : str, optional
         The proxy URL for HTTP requests.
     us : bool, default False

@@ -59,11 +59,11 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE},
-        enums::BinanceProductType,
+        enums::{BinanceEnvironment, BinanceProductType},
         parse::bar_spec_to_binance_interval,
         status::diff_and_emit_statuses,
         symbol::format_binance_stream_symbol,
-        urls::get_ws_public_base_url,
+        urls::{get_usdm_ws_route_base_url, get_ws_public_base_url},
     },
     config::BinanceDataClientConfig,
     futures::{
@@ -163,18 +163,37 @@ impl BinanceFuturesDataClient {
             false, // treat_expired_as_canceled
         )?;
 
+        let market_url = config.base_url_ws.clone().map(|url| {
+            if product_type == BinanceProductType::UsdM
+                && config.environment == BinanceEnvironment::Mainnet
+            {
+                get_usdm_ws_route_base_url(&url, "market")
+            } else {
+                url
+            }
+        });
+
         let ws_client = BinanceFuturesWebSocketClient::new(
             product_type,
             config.environment,
             config.api_key.clone(),
             config.api_secret.clone(),
-            config.base_url_ws.clone(),
+            market_url,
             Some(20), // Heartbeat interval
         )?;
 
-        let public_url = config.base_url_ws.clone().unwrap_or_else(|| {
-            get_ws_public_base_url(product_type, config.environment).to_string()
-        });
+        let public_url = config.base_url_ws.clone().map_or_else(
+            || get_ws_public_base_url(product_type, config.environment).to_string(),
+            |url| {
+                if product_type == BinanceProductType::UsdM
+                    && config.environment == BinanceEnvironment::Mainnet
+                {
+                    get_usdm_ws_route_base_url(&url, "public")
+                } else {
+                    url
+                }
+            },
+        );
         let ws_public_client = BinanceFuturesWebSocketClient::new(
             product_type,
             config.environment,
@@ -350,6 +369,7 @@ impl BinanceFuturesDataClient {
             // Execution messages ignored by data client
             BinanceFuturesWsStreamsMessage::AccountUpdate(_)
             | BinanceFuturesWsStreamsMessage::OrderUpdate(_)
+            | BinanceFuturesWsStreamsMessage::TradeLite(_)
             | BinanceFuturesWsStreamsMessage::AlgoUpdate(_)
             | BinanceFuturesWsStreamsMessage::MarginCall(_)
             | BinanceFuturesWsStreamsMessage::AccountConfigUpdate(_)

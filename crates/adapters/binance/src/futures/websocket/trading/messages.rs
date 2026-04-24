@@ -63,13 +63,6 @@ pub enum BinanceFuturesWsTradingCommand {
         /// Modify parameters.
         params: BinanceModifyOrderParams,
     },
-    /// Cancels all open orders for a symbol.
-    CancelAllOrders {
-        /// Request ID for correlation.
-        id: String,
-        /// Symbol to cancel all orders for.
-        symbol: String,
-    },
 }
 
 /// Normalized output message from the Futures WebSocket Trading API handler.
@@ -130,11 +123,6 @@ pub enum BinanceFuturesWsTradingMessage {
         /// Error message from venue.
         msg: String,
     },
-    /// All open orders canceled for a symbol.
-    AllOrdersCanceled {
-        /// Request ID for correlation.
-        request_id: String,
-    },
     /// Error from venue or network.
     Error(String),
 }
@@ -150,8 +138,6 @@ pub enum BinanceFuturesWsTradingRequestMeta {
     CancelOrder,
     /// Pending order modification.
     ModifyOrder,
-    /// Pending cancel-all.
-    CancelAllOrders,
 }
 
 /// WebSocket Trading API request wrapper.
@@ -218,6 +204,4 @@ pub mod method {
     pub const ORDER_CANCEL: &str = "order.cancel";
     /// Modifies an order (in-place amendment).
     pub const ORDER_MODIFY: &str = "order.modify";
-    /// Cancels all open orders for a symbol.
-    pub const OPEN_ORDERS_CANCEL_ALL: &str = "openOrders.cancelAll";
 }

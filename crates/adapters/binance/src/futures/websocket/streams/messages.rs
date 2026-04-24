@@ -68,6 +68,8 @@ pub enum BinanceFuturesWsStreamsMessage {
     AccountUpdate(BinanceFuturesAccountUpdateMsg),
     /// Order/trade update.
     OrderUpdate(Box<BinanceFuturesOrderUpdateMsg>),
+    /// Trade Lite fill notification (low-latency subset of `OrderUpdate`).
+    TradeLite(Box<BinanceFuturesTradeLiteMsg>),
     /// Algo order update (conditional orders via Algo Service).
     AlgoUpdate(Box<BinanceFuturesAlgoUpdateMsg>),
     /// Margin call warning.
@@ -773,6 +775,55 @@ impl OrderUpdateData {
     pub fn is_exchange_generated(&self) -> bool {
         self.is_liquidation() || self.is_adl() || self.is_settlement()
     }
+}
+
+/// Trade Lite event from user data stream.
+///
+/// Binance pushes `TRADE_LITE` alongside `ORDER_TRADE_UPDATE` as a lower-latency
+/// subset containing only the fields needed to recognize a fill. Clients that
+/// prioritize latency can opt to act on `TRADE_LITE` and dedup the matching
+/// fill portion of the full `ORDER_TRADE_UPDATE` event.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BinanceFuturesTradeLiteMsg {
+    /// Event type.
+    #[serde(rename = "e")]
+    pub event_type: String,
+    /// Event time in milliseconds.
+    #[serde(rename = "E")]
+    pub event_time: i64,
+    /// Transaction time in milliseconds.
+    #[serde(rename = "T")]
+    pub transaction_time: i64,
+    /// Symbol.
+    #[serde(rename = "s")]
+    pub symbol: Ustr,
+    /// Client order ID.
+    #[serde(rename = "c")]
+    pub client_order_id: String,
+    /// Order side.
+    #[serde(rename = "S")]
+    pub side: BinanceSide,
+    /// Original quantity.
+    #[serde(rename = "q")]
+    pub original_qty: String,
+    /// Original price.
+    #[serde(rename = "p")]
+    pub original_price: String,
+    /// Order ID.
+    #[serde(rename = "i")]
+    pub order_id: i64,
+    /// Last executed quantity.
+    #[serde(rename = "l")]
+    pub last_filled_qty: String,
+    /// Last executed price.
+    #[serde(rename = "L")]
+    pub last_filled_price: String,
+    /// Trade ID.
+    #[serde(rename = "t")]
+    pub trade_id: i64,
+    /// Is maker.
+    #[serde(rename = "m")]
+    pub is_maker: bool,
 }
 
 /// Execution type for order updates.

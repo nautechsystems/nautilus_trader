@@ -199,3 +199,61 @@ def get_ws_private_base_url(
         return f"wss://fstream.binance.{top_level_domain}/private"
 
     return get_ws_base_url(account_type, environment, is_us)
+
+
+def get_usdm_ws_route_base_url(base_url: str, route: str) -> str:
+    """
+    Return a routed USD-M Futures WebSocket base URL derived from an override.
+
+    Binance now routes USD-M Futures mainnet traffic by category. This helper
+    accepts either a root override (for example `wss://fstream.binance.com`) or
+    a routed/transport-specific override such as `/market`, `/public/ws`, or
+    `/private/stream`, then rebuilds the base URL for the requested route.
+
+    URLs that do not point at `fstream.binance.com` (for example local test
+    endpoints) are returned unchanged.
+
+    Parameters
+    ----------
+    base_url : str
+        The custom WebSocket base URL override.
+    route : str
+        The USD-M Futures route: `market`, `public`, or `private`.
+
+    Returns
+    -------
+    str
+
+    Raises
+    ------
+    ValueError
+        If `route` is invalid.
+
+    """
+    if route not in {"market", "public", "private"}:
+        raise ValueError(f"invalid USD-M WebSocket route, was {route!r}")
+
+    if "fstream.binance.com" not in base_url:
+        return base_url
+
+    normalized = base_url.rstrip("/")
+    suffixes = (
+        "/market/ws",
+        "/market/stream",
+        "/public/ws",
+        "/public/stream",
+        "/private/ws",
+        "/private/stream",
+        "/market",
+        "/public",
+        "/private",
+        "/ws",
+        "/stream",
+    )
+
+    for suffix in suffixes:
+        if normalized.endswith(suffix):
+            normalized = normalized[: -len(suffix)]
+            break
+
+    return f"{normalized}/{route}"

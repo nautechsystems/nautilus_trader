@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         product_types: vec![BinanceProductType::UsdM],
-        environment: BinanceEnvironment::Demo,
+        environment: BinanceEnvironment::Testnet,
         ..Default::default()
     };
 
