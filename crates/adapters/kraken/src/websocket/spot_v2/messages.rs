@@ -141,6 +141,7 @@ pub struct KrakenWsTickerData {
     pub low: f64,
     pub high: f64,
     pub change: f64,
+    pub timestamp: DateTime<Utc>,
     pub change_pct: f64,
 }
 
@@ -329,6 +330,7 @@ mod tests {
         assert!(ticker.bid.is_finite() && ticker.bid > 0.0);
         assert!(ticker.ask.is_finite() && ticker.ask > 0.0);
         assert!(ticker.last.is_finite() && ticker.last > 0.0);
+        assert_eq!(ticker.timestamp.timestamp_nanos_opt().unwrap(), 1_671_960_659_123_456_000);
     }
 
     #[rstest]

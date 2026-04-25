@@ -67,8 +67,11 @@ pub fn parse_quote_tick(
         format!("Failed to construct ask Quantity with precision {size_precision}")
     })?;
 
-    // Kraken ticker doesn't include timestamp
-    let ts_event = ts_init;
+    let nanos = ticker
+        .timestamp
+        .timestamp_nanos_opt()
+        .context("invalid ticker.timestamp")?;
+    let ts_event = UnixNanos::from(nanos as u64);
 
     Ok(QuoteTick::new(
         instrument_id,
@@ -630,6 +633,8 @@ mod tests {
         assert!(quote_tick.ask_price.as_f64() > 0.0);
         assert!(quote_tick.bid_size.as_f64() > 0.0);
         assert!(quote_tick.ask_size.as_f64() > 0.0);
+        assert_eq!(quote_tick.ts_event, UnixNanos::from(1_671_960_659_123_456_000));
+        assert_eq!(quote_tick.ts_init, TS);
     }
 
     #[rstest]
