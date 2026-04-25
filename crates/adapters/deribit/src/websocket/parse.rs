@@ -1927,6 +1927,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_order_stop_market_response() {
+        // Regression for https://github.com/nautechsystems/nautilus_trader/issues/3925
+        // Deribit returns the literal string "market_price" for the price of
+        // trigger market orders; the deserializer must map this to None rather
+        // than failing with "Invalid decimal: unknown character".
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_order_stop_market_response.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let order_msg: DeribitOrderMsg =
+            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+
+        assert_eq!(order_msg.order_id, "USDC-104819327499");
+        assert_eq!(order_msg.order_type, "stop_market");
+        assert_eq!(order_msg.order_state, "untriggered");
+        assert_eq!(order_msg.price, None);
+        assert_eq!(order_msg.trigger_price, Some(dec!(2228.0)));
+        assert_eq!(order_msg.trigger.as_deref(), Some("mark_price"));
+        assert!(order_msg.reduce_only);
+
+        let account_id = AccountId::new("DERIBIT-001");
+        let report =
+            parse_user_order_msg(&order_msg, &instrument, account_id, UnixNanos::default())
+                .unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert!(report.price.is_none());
+        assert!(report.trigger_price.is_some());
+        assert!(report.reduce_only);
+    }
+
+    #[rstest]
     fn test_parse_user_order_msg_to_status_report() {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_order_buy_response.json");

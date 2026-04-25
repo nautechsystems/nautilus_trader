@@ -15,6 +15,8 @@
 
 //! Data structures for Deribit WebSocket JSON-RPC messages.
 
+use std::str::FromStr;
+
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
 use nautilus_model::{
     data::{
@@ -29,7 +31,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 use ustr::Ustr;
 
 use super::enums::{DeribitBookAction, DeribitBookMsgType, DeribitHeartbeatType};
@@ -522,6 +524,78 @@ pub struct DeribitGetOrderStateParams {
     pub order_id: String,
 }
 
+// Deribit returns the literal string `"market_price"` for the price of trigger
+// market orders (`stop_market`, `take_market`) since they have no limit price.
+// Such values are mapped to `None`; other inputs delegate to the standard
+// optional decimal deserialization.
+fn deserialize_optional_decimal_or_market<'de, D>(
+    deserializer: D,
+) -> Result<Option<Decimal>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct Visitor;
+
+    impl<'de> de::Visitor<'de> for Visitor {
+        type Value = Option<Decimal>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str(
+                "null, a decimal as string/integer/float, or the literal \"market_price\"",
+            )
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            if v.is_empty() || v == "market_price" {
+                return Ok(None);
+            }
+
+            if v.contains('e') || v.contains('E') {
+                Decimal::from_scientific(v).map(Some).map_err(E::custom)
+            } else {
+                Decimal::from_str(v).map(Some).map_err(E::custom)
+            }
+        }
+
+        fn visit_string<E: de::Error>(self, v: String) -> Result<Self::Value, E> {
+            self.visit_str(&v)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(v)))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(v)))
+        }
+
+        fn visit_i128<E: de::Error>(self, v: i128) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(v)))
+        }
+
+        fn visit_u128<E: de::Error>(self, v: u128) -> Result<Self::Value, E> {
+            Ok(Some(Decimal::from(v)))
+        }
+
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            if v.is_nan() || v.is_infinite() {
+                return Err(E::invalid_value(de::Unexpected::Float(v), &self));
+            }
+            Decimal::try_from(v).map(Some).map_err(E::custom)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_any(Visitor)
+}
+
 /// Order response from buy/sell/edit operations.
 ///
 /// Contains the order details and any trades that resulted from the order.
@@ -551,11 +625,9 @@ pub struct DeribitOrderMsg {
     pub order_type: String,
     /// Order state: "open", "filled", "rejected", "cancelled", "untriggered".
     pub order_state: String,
-    /// Limit price (None for market orders).
-    #[serde(
-        default,
-        deserialize_with = "nautilus_core::serialization::deserialize_optional_decimal"
-    )]
+    /// Limit price (None for market orders, or when Deribit returns the
+    /// literal `"market_price"` for trigger market orders).
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_market")]
     pub price: Option<Decimal>,
     /// Original order amount in contracts.
     #[serde(deserialize_with = "nautilus_core::serialization::deserialize_decimal")]
