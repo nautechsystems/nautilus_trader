@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_sandbox"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]

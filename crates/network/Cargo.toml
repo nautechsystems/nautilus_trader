@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_network"
-crate-type = ["rlib", "staticlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
@@ -54,7 +54,7 @@ futures-util = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true }

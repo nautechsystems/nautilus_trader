@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_execution"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []

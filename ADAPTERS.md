@@ -82,7 +82,7 @@ The following adapters are maintained in the core repository:
 | Architect (AX)      | Data/Execution |
 | Betfair             | Data/Execution |
 | Binance             | Data/Execution |
-| BitMEX              | Data           |
+| BitMEX              | Data/Execution |
 | Bybit               | Data/Execution |
 | Coinbase            | Data/Execution |
 | Databento           | Data           |
@@ -102,7 +102,7 @@ Community adapters listed here met the listing criteria at the time of review.
 ### Listing criteria
 
 - Complies with [TRADEMARK.md](./TRADEMARK.md) (naming and disclaimer).
-- Licensed under an open-source license compatible with LGPL v3.0.
+- Licensed under an open-source license *compatible* with LGPL v3.0.
 - Maintainer is identifiable and contactable.
 - Repository shows activity within the last six months.
 - Repository includes installation or usage documentation.
@@ -129,4 +129,4 @@ Community adapters are externally maintained and are not supported by NautilusTr
 This document may be updated from time to time. Changes are tracked through the
 repository's version control history.
 
-Last updated: 2026-04-13
+Last updated: 2026-04-25

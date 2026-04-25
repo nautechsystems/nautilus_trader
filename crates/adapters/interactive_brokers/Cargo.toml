@@ -19,7 +19,7 @@ workspace = true
 
 [lib]
 name = "nautilus_interactive_brokers"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = []

@@ -36,6 +36,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      - name: Install Rust linker (lld)
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update -o Acquire::Retries=5
+          sudo apt-get install -y lld -o Acquire::Retries=5
+
       - name: Get Rust toolchain version
         if: matrix.language == 'rust'
         id: rust-toolchain

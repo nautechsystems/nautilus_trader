@@ -361,10 +361,10 @@ It's possible to install from source using pip if you first install the build de
      - Start a new PowerShell
 
 3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
-   - Linux:
+   - Linux (also installs [lld](https://lld.llvm.org/), used as the Rust linker for faster builds):
 
        ```bash
-       sudo apt-get install clang
+       sudo apt-get install clang lld
        ```
 
    - macOS:

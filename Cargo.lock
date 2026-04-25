@@ -6309,7 +6309,6 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -6494,7 +6493,6 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "ustr",
- "uuid",
  "zeroize",
 ]
 

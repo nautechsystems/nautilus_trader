@@ -18,7 +18,7 @@ workspace = true
 
 [lib]
 name = "nautilus_tardis"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
 default = ["replay", "high-precision"]
@@ -81,7 +81,6 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

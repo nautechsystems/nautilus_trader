@@ -31,7 +31,7 @@ Install platform tools first:
 
 ```bash tab="Ubuntu"
 sudo apt-get update
-sudo apt-get install -y build-essential clang curl git make pkg-config
+sudo apt-get install -y build-essential clang lld curl git make pkg-config
 ```
 
 ```bash tab="macOS"

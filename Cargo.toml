@@ -224,7 +224,6 @@ regex = { version = "1.12.3", default-features = false, features = [
   "unicode-perl",
 ] }
 reqwest = { version = "0.13.2", default-features = false, features = [
-  "blocking",
   "http2",
   "json",
   "query",
@@ -395,11 +394,17 @@ store = { path = '.supply-chain' }
 opt-level = 0
 debug = false # Improves compile times
 debug-assertions = false # Fails Cython build if true
-overflow-checks = true
+overflow-checks = false # test profile keeps these on for catching overflow bugs
 strip = "debuginfo" # Improves compile times
 lto = false
 panic = "unwind"
 incremental = true
+
+# Compile third-party deps at opt-level=1 in dev/test profiles. Workspace
+# members keep opt-level=0 (fast iteration); deps recompile rarely so the
+# small one-off compile cost pays off in faster test/run loops.
+[profile.dev.package."*"]
+opt-level = 1
 
 [profile.debug-pyo3]
 inherits = "dev"
@@ -414,6 +419,9 @@ overflow-checks = true
 strip = false
 lto = false
 incremental = true
+
+[profile.test.package."*"]
+opt-level = 1
 
 [profile.nextest]
 inherits = "test"

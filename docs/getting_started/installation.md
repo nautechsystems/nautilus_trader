@@ -196,10 +196,10 @@ source $HOME/.cargo/env
 
 ### 3. Install clang
 
-Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
+Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM). On Linux this also installs [lld](https://lld.llvm.org/), which is configured as the Rust linker for faster builds:
 
 ```bash tab="Linux"
-sudo apt-get install clang
+sudo apt-get install clang lld
 ```
 
 ```powershell tab="Windows"
