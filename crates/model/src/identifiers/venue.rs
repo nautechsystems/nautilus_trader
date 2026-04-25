@@ -188,24 +188,38 @@ impl Display for Venue {
 /// - Format is not "Chain:DexId" (missing colon or empty parts)
 /// - Chain or Dex is not recognized
 #[cfg(feature = "defi")]
-pub fn validate_blockchain_venue(venue_part: &str) -> anyhow::Result<()> {
+pub fn validate_blockchain_venue(venue_part: &str) -> CorrectnessResult<()> {
     if let Some((chain_name, dex_id)) = venue_part.split_once(':') {
         if chain_name.is_empty() || dex_id.is_empty() {
-            anyhow::bail!("invalid blockchain venue '{venue_part}': expected format 'Chain:DexId'");
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "invalid blockchain venue '{venue_part}': expected format 'Chain:DexId'"
+                ),
+            });
         }
 
         if Chain::from_chain_name(chain_name).is_none() {
-            anyhow::bail!(
-                "invalid blockchain venue '{venue_part}': chain '{chain_name}' not recognized"
-            );
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "invalid blockchain venue '{venue_part}': chain '{chain_name}' not recognized"
+                ),
+            });
         }
 
         if DexType::from_dex_name(dex_id).is_none() {
-            anyhow::bail!("invalid blockchain venue '{venue_part}': dex '{dex_id}' not recognized");
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "invalid blockchain venue '{venue_part}': dex '{dex_id}' not recognized"
+                ),
+            });
         }
         Ok(())
     } else {
-        anyhow::bail!("invalid blockchain venue '{venue_part}': expected format 'Chain:DexId'");
+        Err(CorrectnessError::PredicateViolation {
+            message: format!(
+                "invalid blockchain venue '{venue_part}': expected format 'Chain:DexId'"
+            ),
+        })
     }
 }
 
@@ -235,6 +249,38 @@ mod tests {
             }
         );
         assert_eq!(error.to_string(), "invalid string for 'value', was empty");
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(
+        "Arbitrum:",
+        "invalid blockchain venue 'Arbitrum:': expected format 'Chain:DexId'"
+    )]
+    #[case(
+        "InvalidChain:UniswapV3",
+        "invalid blockchain venue 'InvalidChain:UniswapV3': chain 'InvalidChain' not recognized"
+    )]
+    #[case(
+        "Arbitrum:InvalidDex",
+        "invalid blockchain venue 'Arbitrum:InvalidDex': dex 'InvalidDex' not recognized"
+    )]
+    #[case(
+        "no-colon",
+        "invalid blockchain venue 'no-colon': expected format 'Chain:DexId'"
+    )]
+    fn test_validate_blockchain_venue_returns_typed_error_with_stable_display(
+        #[case] input: &str,
+        #[case] expected_message: &str,
+    ) {
+        let error = super::validate_blockchain_venue(input).unwrap_err();
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: expected_message.to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), expected_message);
     }
 
     #[cfg(feature = "defi")]

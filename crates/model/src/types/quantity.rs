@@ -391,22 +391,34 @@ impl Quantity {
     /// - The decimal value is negative.
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
-    pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            decimal.mantissa() >= 0,
-            "Decimal value '{decimal}' is negative, Quantity must be non-negative"
-        );
+    pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> CorrectnessResult<Self> {
+        if decimal.mantissa() < 0 {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Decimal value '{decimal}' is negative, Quantity must be non-negative"
+                ),
+            });
+        }
 
         let exponent = -(decimal.scale() as i8);
         let raw_i128 = mantissa_exponent_to_fixed_i128(decimal.mantissa(), exponent, precision)?;
 
-        let raw: QuantityRaw = raw_i128.try_into().map_err(|_| {
-            anyhow::anyhow!("Decimal value exceeds QuantityRaw range [0, {QUANTITY_RAW_MAX}]")
-        })?;
-        anyhow::ensure!(
-            raw <= QUANTITY_RAW_MAX,
-            "Raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
-        );
+        let raw: QuantityRaw =
+            raw_i128
+                .try_into()
+                .map_err(|_| CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Decimal value exceeds QuantityRaw range [0, {QUANTITY_RAW_MAX}]"
+                    ),
+                })?;
+
+        if raw > QUANTITY_RAW_MAX {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+                ),
+            });
+        }
 
         Ok(Self { raw, precision })
     }
@@ -422,7 +434,7 @@ impl Quantity {
     /// - The inferred precision exceeds [`FIXED_PRECISION`].
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
-    pub fn from_decimal(decimal: Decimal) -> anyhow::Result<Self> {
+    pub fn from_decimal(decimal: Decimal) -> CorrectnessResult<Self> {
         let precision = decimal.scale() as u8;
         Self::from_decimal_dp(decimal, precision)
     }
@@ -465,29 +477,31 @@ impl Quantity {
     /// - Overflow occurs during scaling when precision is less than [`FIXED_PRECISION`].
     /// - The scaled U256 amount exceeds the `QuantityRaw` range.
     #[cfg(feature = "defi")]
-    pub fn from_u256(amount: U256, precision: u8) -> anyhow::Result<Self> {
+    pub fn from_u256(amount: U256, precision: u8) -> CorrectnessResult<Self> {
         // Quantity expects raw values scaled to at least FIXED_PRECISION or higher(WEI)
         let scaled_amount = if precision < FIXED_PRECISION {
             amount
                 .checked_mul(U256::from(
                     10u128.pow(u32::from(FIXED_PRECISION - precision)),
                 ))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
+                .ok_or_else(|| CorrectnessError::PredicateViolation {
+                    message: format!(
                         "Amount overflow during scaling to fixed precision: {} * 10^{}",
                         amount,
                         FIXED_PRECISION - precision
-                    )
+                    ),
                 })?
         } else {
             amount
         };
 
         let raw = QuantityRaw::try_from(scaled_amount).map_err(|_| {
-            anyhow::anyhow!("U256 scaled amount {scaled_amount} exceeds QuantityRaw range")
+            CorrectnessError::PredicateViolation {
+                message: format!("U256 scaled amount {scaled_amount} exceeds QuantityRaw range"),
+            }
         })?;
 
-        Ok(Self::from_raw(raw, precision))
+        Self::from_raw_checked(raw, precision)
     }
 }
 
@@ -1259,6 +1273,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_decimal_dp_negative_returns_typed_error_with_stable_display() {
+        let error = Quantity::from_decimal_dp(dec!(-1.5), 2).unwrap_err();
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "Decimal value '-1.5' is negative, Quantity must be non-negative"
+                    .to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "Decimal value '-1.5' is negative, Quantity must be non-negative",
+        );
+    }
+
+    #[rstest]
     fn test_add() {
         let a = 1.0;
         let b = 2.0;
@@ -1525,6 +1555,54 @@ mod tests {
         let qty = Quantity::from_u256(amount, precision).unwrap();
         assert_eq!(qty.precision, precision);
         assert_eq!(qty.as_decimal().to_string(), expected_str);
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_from_u256_overflow_returns_typed_error_with_stable_display() {
+        let error = Quantity::from_u256(U256::MAX, 0).unwrap_err();
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert!(
+                    message.contains("Amount overflow during scaling to fixed precision"),
+                    "unexpected message: {message:?}",
+                );
+            }
+            _ => panic!("expected PredicateViolation, was {error:?}"),
+        }
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_from_u256_invalid_precision_returns_typed_error() {
+        let error = Quantity::from_u256(U256::from(1u8), 19).unwrap_err();
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert!(
+                    message.contains("WEI_PRECISION"),
+                    "unexpected message: {message:?}",
+                );
+            }
+            _ => panic!("expected PredicateViolation, was {error:?}"),
+        }
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_from_u256_raw_above_max_returns_typed_error() {
+        // Pick a U256 value whose scaled raw lies between QUANTITY_RAW_MAX and
+        // QuantityRaw::MAX so try_from succeeds but from_raw_checked rejects it.
+        let raw = QUANTITY_RAW_MAX + 1;
+        let error = Quantity::from_u256(U256::from(raw), FIXED_PRECISION).unwrap_err();
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert!(
+                    message.contains("QUANTITY_RAW_MAX"),
+                    "unexpected message: {message:?}",
+                );
+            }
+            _ => panic!("expected PredicateViolation, was {error:?}"),
+        }
     }
 }
 

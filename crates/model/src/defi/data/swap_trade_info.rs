@@ -271,7 +271,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        Quantity::from_u256(amount, precision)
+        Quantity::from_u256(amount, precision).map_err(Into::into)
     }
 
     /// Returns the quantity of the quote token involved in the swap.
@@ -298,7 +298,7 @@ impl<'a> SwapTradeInfoCalculator<'a> {
             )
         };
 
-        Quantity::from_u256(amount, precision)
+        Quantity::from_u256(amount, precision).map_err(Into::into)
     }
 
     /// Returns the human-readable spot price in base/quote (market) convention.

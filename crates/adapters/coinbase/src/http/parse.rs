@@ -784,6 +784,7 @@ pub fn parse_account_state(
         .map(|(currency, (free, locked))| {
             let total = free + locked;
             AccountBalance::from_total_and_locked(total.as_decimal(), locked.as_decimal(), currency)
+                .map_err(anyhow::Error::from)
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 

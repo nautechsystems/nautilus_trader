@@ -277,7 +277,7 @@ pub trait Instrument: 'static + Send {
         let precision = u32::from(self.min_price_increment_precision());
         let rounded_decimal =
             dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        Price::from_decimal_dp(rounded_decimal, self.price_precision())
+        Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
     }
 
     fn make_price(&self, value: f64) -> Price {
@@ -301,7 +301,7 @@ pub trait Instrument: 'static + Send {
         if dec_value > Decimal::ZERO && rounded.is_zero() {
             anyhow::bail!("value rounded to zero for quantity");
         }
-        Quantity::from_decimal_dp(rounded, self.size_precision())
+        Quantity::from_decimal_dp(rounded, self.size_precision()).map_err(Into::into)
     }
 
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
@@ -319,7 +319,7 @@ pub trait Instrument: 'static + Send {
         let precision = u32::from(self.min_size_increment_precision());
         let value = (quantity.as_decimal() / last_price.as_decimal())
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
-        Quantity::from_decimal_dp(value, self.size_precision())
+        Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
 
     fn calculate_base_quantity(&self, quantity: Quantity, last_price: Price) -> Quantity {

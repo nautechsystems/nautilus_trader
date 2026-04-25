@@ -689,6 +689,7 @@ impl HyperliquidAccountState {
                 // Create currency - Hyperliquid primarily uses USD/USDC
                 let currency = get_currency(&balance.asset);
                 AccountBalance::from_total_and_free(balance.total, balance.available, currency)
+                    .map_err(anyhow::Error::from)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
 

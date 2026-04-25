@@ -595,7 +595,7 @@ pub fn mantissa_exponent_to_fixed_i128(
     mantissa: i128,
     exponent: i8,
     precision: u8,
-) -> anyhow::Result<i128> {
+) -> CorrectnessResult<i128> {
     check_fixed_precision(precision)?;
 
     let precision_i16 = i16::from(precision);
@@ -611,17 +611,22 @@ pub fn mantissa_exponent_to_fixed_i128(
 
     let scale_after_rounding = frac_digits.min(precision_i16);
     let scale_exp = target_scale - scale_after_rounding;
-    anyhow::ensure!(
-        scale_exp <= 38,
-        "Exponent {exponent} produces scale factor 10^{scale_exp} which exceeds i128 range"
-    );
+    if scale_exp > 38 {
+        return Err(CorrectnessError::PredicateViolation {
+            message: format!(
+                "Exponent {exponent} produces scale factor 10^{scale_exp} which exceeds i128 range"
+            ),
+        });
+    }
 
     if scale_exp >= 0 {
         mantissa.checked_mul(10i128.pow(scale_exp as u32))
     } else {
         Some(mantissa / 10i128.pow((-scale_exp) as u32))
     }
-    .ok_or_else(|| anyhow::anyhow!("Overflow when scaling mantissa to fixed precision"))
+    .ok_or_else(|| CorrectnessError::PredicateViolation {
+        message: "Overflow when scaling mantissa to fixed precision".to_string(),
+    })
 }
 
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.

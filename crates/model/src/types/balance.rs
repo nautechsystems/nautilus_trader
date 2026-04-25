@@ -119,7 +119,7 @@ impl AccountBalance {
         total: Decimal,
         locked: Decimal,
         currency: Currency,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         let total = Money::from_decimal(total, currency)?;
         let locked = Money::from_decimal(locked, currency)?;
         let locked_raw = if total.raw >= 0 {
@@ -149,7 +149,7 @@ impl AccountBalance {
         total: Decimal,
         free: Decimal,
         currency: Currency,
-    ) -> anyhow::Result<Self> {
+    ) -> CorrectnessResult<Self> {
         let total = Money::from_decimal(total, currency)?;
         let free = Money::from_decimal(free, currency)?;
         let free_raw = if total.raw >= 0 {

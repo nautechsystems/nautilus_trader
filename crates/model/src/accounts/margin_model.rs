@@ -166,7 +166,7 @@ impl MarginModel for StandardMarginModel {
         let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
         let margin = notional.as_decimal() * instrument.margin_init();
         let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency)
+        Money::from_decimal(margin, currency).map_err(Into::into)
     }
 
     fn calculate_maintenance_margin(
@@ -181,7 +181,7 @@ impl MarginModel for StandardMarginModel {
         let notional = instrument.calculate_notional_value(quantity, price, Some(use_quote));
         let margin = notional.as_decimal() * instrument.margin_maint();
         let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency)
+        Money::from_decimal(margin, currency).map_err(Into::into)
     }
 }
 
@@ -218,7 +218,7 @@ impl MarginModel for LeveragedMarginModel {
         let adjusted = notional.as_decimal() / leverage;
         let margin = adjusted * instrument.margin_init();
         let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency)
+        Money::from_decimal(margin, currency).map_err(Into::into)
     }
 
     fn calculate_maintenance_margin(
@@ -237,7 +237,7 @@ impl MarginModel for LeveragedMarginModel {
         let adjusted = notional.as_decimal() / leverage;
         let margin = adjusted * instrument.margin_maint();
         let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency)
+        Money::from_decimal(margin, currency).map_err(Into::into)
     }
 }
 

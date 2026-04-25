@@ -197,7 +197,7 @@ pub fn convert_contract_quantity(
             }
             let decimal = decimal.normalize();
             let precision = decimal.scale() as u8;
-            Quantity::from_decimal_dp(decimal, precision)
+            Quantity::from_decimal_dp(decimal, precision).map_err(anyhow::Error::from)
         })
         .transpose()
 }

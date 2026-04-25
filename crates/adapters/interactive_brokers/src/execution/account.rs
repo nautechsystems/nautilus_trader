@@ -549,19 +549,22 @@ fn parse_account_summary_to_balance(summary: &AccountSummary) -> anyhow::Result<
         AccountSummaryTags::SETTLED_CASH | AccountSummaryTags::TOTAL_CASH_VALUE => {
             // Cash balance - free equals total for settled cash
             AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
+                .map_err(Into::into)
         }
         AccountSummaryTags::NET_LIQUIDATION => {
             // Net liquidation - represents total equity
             // Free would be calculated from available funds
             AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
+                .map_err(Into::into)
         }
         AccountSummaryTags::BUYING_POWER | AccountSummaryTags::AVAILABLE_FUNDS => {
             // Available funds - this is the free amount
-            AccountBalance::from_total_and_free(balance, balance, currency)
+            AccountBalance::from_total_and_free(balance, balance, currency).map_err(Into::into)
         }
         _ => {
             // Default: treat as total balance
             AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
+                .map_err(Into::into)
         }
     }
 }

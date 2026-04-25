@@ -407,7 +407,7 @@ impl Price {
     /// - `precision` exceeds [`FIXED_PRECISION`].
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
-    pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> anyhow::Result<Self> {
+    pub fn from_decimal_dp(decimal: Decimal, precision: u8) -> CorrectnessResult<Self> {
         let exponent = -(decimal.scale() as i8);
         let raw_i128 = mantissa_exponent_to_fixed_i128(decimal.mantissa(), exponent, precision)?;
 
@@ -415,15 +415,22 @@ impl Price {
             clippy::useless_conversion,
             reason = "i128 to PriceRaw is real when not high-precision"
         )]
-        let raw: PriceRaw = raw_i128.try_into().map_err(|_| {
-            anyhow::anyhow!(
-                "Decimal value exceeds PriceRaw range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]"
-            )
-        })?;
-        anyhow::ensure!(
-            raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX,
-            "Raw value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}] for Price"
-        );
+        let raw: PriceRaw =
+            raw_i128
+                .try_into()
+                .map_err(|_| CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Decimal value exceeds PriceRaw range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]"
+                    ),
+                })?;
+
+        if !(raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Raw value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}] for Price"
+                ),
+            });
+        }
 
         Ok(Self { raw, precision })
     }
@@ -439,7 +446,7 @@ impl Price {
     /// - The inferred precision exceeds [`FIXED_PRECISION`].
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
-    pub fn from_decimal(decimal: Decimal) -> anyhow::Result<Self> {
+    pub fn from_decimal(decimal: Decimal) -> CorrectnessResult<Self> {
         let precision = decimal.scale() as u8;
         Self::from_decimal_dp(decimal, precision)
     }
@@ -1130,6 +1137,21 @@ mod tests {
         // If scale exceeds FIXED_PRECISION, from_decimal should error
         if decimal.scale() > u32::from(FIXED_PRECISION) {
             assert!(Price::from_decimal(decimal).is_err());
+        }
+    }
+
+    #[rstest]
+    fn test_from_decimal_dp_out_of_range_returns_typed_error_with_stable_display() {
+        let huge = Decimal::from_str("99999999999999999999.99").unwrap();
+        let error = Price::from_decimal_dp(huge, 2).unwrap_err();
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert!(
+                    message.contains("PriceRaw range") || message.contains("for Price"),
+                    "unexpected message: {message:?}",
+                );
+            }
+            _ => panic!("expected PredicateViolation, was {error:?}"),
         }
     }
 

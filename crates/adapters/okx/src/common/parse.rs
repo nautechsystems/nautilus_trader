@@ -309,7 +309,7 @@ pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
 /// of decimal places exceeds `precision`.
 pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
     let decimal = Decimal::from_str(value)?;
-    Price::from_decimal_dp(decimal, precision)
+    Price::from_decimal_dp(decimal, precision).map_err(Into::into)
 }
 
 /// Converts a textual quantity to a [`Quantity`].
@@ -320,7 +320,7 @@ pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
 /// precision.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     let decimal = Decimal::from_str(value)?;
-    Quantity::from_decimal_dp(decimal, precision)
+    Quantity::from_decimal_dp(decimal, precision).map_err(Into::into)
 }
 
 /// Converts a textual fee amount into a [`Money`] value.
@@ -336,7 +336,7 @@ pub fn parse_fee(value: Option<&str>, currency: Currency) -> anyhow::Result<Mone
     // OKX uses opposite sign convention: negative = cost, positive = rebate.
     // Negate to match Nautilus convention: positive = cost, negative = rebate.
     let decimal = Decimal::from_str(value.unwrap_or("0"))?;
-    Money::from_decimal(-decimal, currency)
+    Money::from_decimal(-decimal, currency).map_err(Into::into)
 }
 
 /// Parses OKX fee currency code, handling empty strings.

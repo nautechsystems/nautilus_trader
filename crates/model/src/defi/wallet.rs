@@ -53,7 +53,7 @@ impl TokenBalance {
     ///
     /// Returns an error if the U256 amount cannot be converted to a `Quantity`.
     pub fn as_quantity(&self) -> anyhow::Result<Quantity> {
-        Quantity::from_u256(self.amount, self.token.decimals)
+        Quantity::from_u256(self.amount, self.token.decimals).map_err(Into::into)
     }
 
     /// Sets the USD equivalent value for this token balance.
