@@ -233,26 +233,34 @@ state on the DST path is a future scope-hole closure.
 | `fastrand`             | 0                                                    | closed     |
 | `getrandom`            | 0                                                    | closed     |
 | `OsRng`                | 0                                                    | closed     |
-| `rand::rng()`          | `core/uuid.rs:56`, `execution/models/fill.rs:85`, `network/backoff.rs:105` | unresolved |
+| `rand::rng()`          | `execution/models/fill.rs:85`, `network/backoff.rs:105` | unresolved |
 | `Uuid::new_v4` (tests) | `core/uuid.rs:380`                                   | closed     |
 | `Uuid::new_v4` (prod)  | `execution/matching_engine/ids_generator.rs:167,179` | unresolved |
 
 **Notes.** `rand::rng()` is the `rand` 0.9 replacement for `rand::thread_rng`
-and draws from the same per-thread CSPRNG. Rule 2 of the hook does not
-currently match `rand::rng` (it covers `rand::thread_rng`, `fastrand::`,
-`getrandom::`, and `OsRng`), so these three sites are not flagged by the
-hook.
+and draws from the same per-thread CSPRNG. Rule 2 of the hook now matches
+`rand::rng()` and skips lines whose preceding 15 lines carry a non-simulation
+cfg gate, so cfg-gated production fallbacks pass.
 
-The call sites are:
+Closed call site:
 
-- `crates/core/src/uuid.rs:56` in `UUID4::new()`. Reachable from production
-  factories such as `crates/common/src/factories/order.rs` and
-  `crates/common/src/messages/execution/report.rs` as well as
+- `crates/core/src/uuid.rs:56` in `UUID4::new()` now routes through
+  `madsim::rand::thread_rng()` under `cfg(all(feature = "simulation", madsim))`
+  and `rand::rng()` under the negation. Reachable from production factories
+  such as `crates/common/src/factories/order.rs`,
+  `crates/common/src/messages/execution/report.rs`, and
   `crates/risk/src/engine/mod.rs`.
+
+Allowed-with-marker call sites:
+
 - `crates/execution/src/models/fill.rs:85` when `FillModel::new()` is
-  constructed with `random_seed=None`. When a seed is provided the model
-  routes through `StdRng::seed_from_u64`, which is deterministic.
-- `crates/network/src/backoff.rs:105` for reconnect jitter.
+  constructed with `random_seed=None`. Marked `// dst-ok` pending a
+  follow-up commit that routes through `madsim::rand` under `cfg(madsim)`.
+  When a seed is provided the model routes through `StdRng::seed_from_u64`,
+  which is deterministic.
+- `crates/network/src/backoff.rs:105` for reconnect jitter. Marked
+  `// dst-ok`: transport-layer, out of DST scope per
+  `nautilus_dst/docs/compatibility_matrix.md`.
 
 `Uuid::new_v4` is the separate `uuid` crate path in the matching engine ID
 generator, gated behind `use_random_ids` on `IdsGenerator`. The default ID
@@ -261,13 +269,12 @@ scheme is deterministic (`{venue}-{raw_id}-{count}`). Under the hood,
 in `docs/concepts/dst.md` lists as not intercepted by the current `madsim`
 wiring.
 
-**Mitigation.** Close both in one follow-up:
+**Mitigation.** `Uuid::new_v4` close-out is the remaining follow-up:
 
 1. Route the production branches through `madsim::rand` under `cfg(madsim)`.
-2. Extend Rule 2 of the hook to ban `rand::rng` and `Uuid::new_v4` in the
-   in-scope crates. Call sites that remain intentionally non-deterministic
-   (for example `network/backoff.rs` jitter) mark with `// dst-ok` and a
-   reason.
+2. Extend Rule 2 of the hook to ban `Uuid::new_v4` in the in-scope crates.
+   Call sites that remain intentionally non-deterministic mark with
+   `// dst-ok` and a reason.
 
 Deferred until a DST scenario exercises these call sites. Adapter-crate
 RNG sources (`Uuid::new_v4`, `chrono::Utc::now`-seeded paths, venue-side
@@ -346,23 +353,21 @@ catch.
 ### Signal handling call-site migration
 
 `nautilus_common::live::dst::signal::ctrl_c` re-exports the deterministic
-`ctrl_c` shim. One production call site has not been migrated yet:
-`crates/live/src/node.rs:834` still calls `tokio::signal::ctrl_c` directly.
+`ctrl_c` shim. The `crates/live/src/node.rs` run loop now routes through it.
 
 | Area                                           | Tag        |
 |------------------------------------------------|------------|
 | `nautilus_common::live::dst::signal` re‑export | closed     |
-| `crates/live/src/node.rs:834` call site        | unresolved |
+| `crates/live/src/node.rs` call site            | closed     |
 | Adapter‑bin `ctrl_c` sites                     | scoped‑out |
 
 **Effect on the contract.** Under `simulation` + `cfg(madsim)`, node shutdown
-driven by `ctrl_c` runs on real-tokio signal handling and is not injectable
-from test code. The rest of the node's behavior is deterministic; only the
-shutdown-signal arrival is not.
+driven by `ctrl_c` is now injectable from test code via
+`madsim::runtime::Handle::send_ctrl_c`.
 
-**Mitigation.** Documented in `docs/concepts/dst.md` under "Signal handling":
-call sites will be migrated as the contract is tightened; until then, signal
-handling under `cfg(madsim)` is out of scope.
+**Mitigation.** Documented in `docs/concepts/dst.md` under "Signal handling".
+The `crates/live/src/node.rs` run loop has been migrated; remaining sites
+are adapter-bin entry points which stay scoped-out.
 
 ### Logger file-logging tests under `cfg(madsim)`
 
@@ -415,25 +420,24 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 19    |
+| closed     | 20    |
 | gated      | 10    |
 | scoped‑out | 23    |
-| unresolved | 7     |
+| unresolved | 6     |
 
 Unresolved entries at the end of this phase:
 
 1. `AHashMap` / `AHashSet` elsewhere outside the two hook-enforced files
-2. `rand::rng()` in `core/uuid.rs`, `execution/models/fill.rs`, and
-   `network/backoff.rs`
+2. `rand::rng()` in `execution/models/fill.rs` (pending routing through
+   `madsim::rand` under `cfg(madsim)`)
 3. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
    `use_random_ids` is active
 4. `chrono::Utc::now` in `core/datetime.rs:404`
-5. `tokio::signal::ctrl_c` call site in `crates/live/src/node.rs`
-6. Logger file-logging tests under `cfg(madsim)`
-7. Dynamic same-seed diff harness
+5. Logger file-logging tests under `cfg(madsim)`
+6. Dynamic same-seed diff harness
 
-Items 1 through 5 are source-level follow-ups in this repository. Item 6
-is a test-only follow-up in this repository. Item 7 lives in
+Items 1 through 4 are source-level follow-ups in this repository. Item 5
+is a test-only follow-up in this repository. Item 6 lives in
 `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter

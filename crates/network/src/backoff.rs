@@ -102,7 +102,7 @@ impl ExponentialBackoff {
         }
 
         // Generate random jitter
-        let jitter = rand::rng().random_range(0..=self.jitter_ms);
+        let jitter = rand::rng().random_range(0..=self.jitter_ms); // dst-ok: transport-layer reconnect jitter, out of DST scope
         let delay_with_jitter = self.delay_current + Duration::from_millis(jitter);
 
         // Clamp the returned delay to never exceed delay_max

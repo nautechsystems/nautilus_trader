@@ -831,7 +831,7 @@ impl LiveNode {
 
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
-        let ctrl_c = tokio::signal::ctrl_c();
+        let ctrl_c = dst::signal::ctrl_c();
         tokio::pin!(ctrl_c);
 
         loop {

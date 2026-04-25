@@ -123,8 +123,8 @@ The contract holds only when all of the following are true:
 3. Monotonic time reads route through the DST seam (either `nautilus_common::live::dst::time` or
    `nautilus_network::dst::time`), not `std::time::Instant::now` directly.
 4. Wall-clock time reads route through `nautilus_core::time::duration_since_unix_epoch`.
-5. Randomness routes through `madsim::rand`. `rand::thread_rng`, `fastrand`, `getrandom`, and
-   `OsRng` are not intercepted.
+5. Randomness routes through `madsim::rand`. `rand::thread_rng`, `rand::rng()`, `fastrand`,
+   `getrandom`, and `OsRng` are not intercepted.
 6. Iteration-order-sensitive collections use `IndexMap` or `IndexSet`, not `AHashMap` or
    `AHashSet`.
 7. `tokio::task::LocalSet` construction is cfg-gated out under simulation. `madsim` does not
@@ -141,7 +141,8 @@ and fails the commit when it detects any of:
 
 - Raw `std::time::Instant::now()` or `SystemTime::now()` reads, including bare forms when the
   enclosing file imports the type from `std::time`.
-- Raw RNG usage (`rand::thread_rng`, `fastrand::`, `getrandom::`, `OsRng`).
+- Raw RNG usage (`rand::thread_rng`, `rand::rng()`, `fastrand::`, `getrandom::`, `OsRng`)
+  without cfg gating.
 - `tokio::select!` blocks missing `biased;` within the first three lines.
 - `std::thread::spawn`, `std::thread::Builder::new`, or `tokio::task::spawn_blocking` calls that
   lack a preceding `#[cfg(test)]`, `#[cfg(not(madsim))]`, or
@@ -217,10 +218,10 @@ determinism would require per-crate `madsim` shims that do not exist at this tim
 
 ### Signal handling
 
-`nautilus_common::live::dst::signal` exposes a routed `ctrl_c` re-export, but not every
-production call site has adopted it yet. Code that still calls `tokio::signal::ctrl_c` directly
-bypasses the seam. Call sites will be migrated as the determinism contract is tightened; until
-then, signal handling under `cfg(madsim)` should be treated as out of scope.
+`nautilus_common::live::dst::signal` exposes a routed `ctrl_c` re-export. The
+`crates/live/src/node.rs` run loop routes through it, so node shutdown driven by `ctrl_c` is
+injectable from test code under `cfg(madsim)` via `madsim::runtime::Handle::send_ctrl_c`.
+Adapter-bin entry points still call `tokio::signal::ctrl_c` directly and remain scoped out.
 
 ### Logging runs on real OS threads
 
@@ -264,9 +265,8 @@ As of the current state of this repository:
   exist for wall-clock time, monotonic time, and iteration order. Known remaining RNG and
   wall-clock call sites on the DST path are enumerated in the scope-hole inventory.
 - Static enforcement via `check-dst-conventions` is active in pre-commit and CI. The hook
-  covers the load-bearing conditions; some scope holes (`rand::rng`, `chrono::Utc::now`,
-  `Uuid::new_v4`) are outside the current hook surface and tracked in the scope-hole
-  inventory.
+  covers the load-bearing conditions; some scope holes (`chrono::Utc::now`, `Uuid::new_v4`)
+  are outside the current hook surface and tracked in the scope-hole inventory.
 - Runtime verification of the contract under `cfg(madsim)` (same-seed diff harness) is planned
   follow-up work and is not yet part of this repository.
 

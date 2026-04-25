@@ -3,7 +3,8 @@
 #
 # Rules (all applied to production code in the 16 in-scope crates):
 #   1. No direct std::time::Instant::now() or std::time::SystemTime::now() reads
-#   2. No raw RNG imports (rand::thread_rng, fastrand::, getrandom::, OsRng)
+#   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
+#      getrandom::, OsRng) without cfg gating
 #   3. No unbiased tokio::select! (must have `biased;` as first token in block)
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
@@ -220,10 +221,12 @@ while IFS=: read -r file line_num content; do
   is_doc_comment "$content" && continue
   [[ "$content" =~ $ALLOW_MARKER ]] && continue
 
+  has_preceding_dst_cfg "$file" "$line_num" && continue
+
   report "rule2" "$file" "$line_num" "$content" \
     "Route RNG through a seeded source; madsim::rand under cfg(madsim)"
 done < <(rg -n --no-heading \
-  'rand::thread_rng|fastrand::|getrandom::|\bOsRng\b' \
+  '(?:^|[^:])rand::thread_rng|(?:^|[^:])rand::rng\(\)|fastrand::|getrandom::|\bOsRng\b' \
   "${GLOBS[@]}" --type rust 2> /dev/null || true)
 
 ################################################################################

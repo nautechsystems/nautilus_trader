@@ -82,7 +82,7 @@ impl ProbabilisticFillState {
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage")?;
         let rng = match random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(&mut rand::rng()),
+            None => StdRng::from_rng(&mut rand::rng()), // dst-ok: pending separate routing through madsim::rand
         };
         Ok(Self {
             prob_fill_on_limit,

@@ -23,6 +23,9 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(all(feature = "simulation", madsim))]
+use madsim::rand::RngCore;
+#[cfg(not(all(feature = "simulation", madsim)))]
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
@@ -53,9 +56,11 @@ impl UUID4 {
     /// The UUID value is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
-        let mut rng = rand::rng();
         let mut bytes = [0u8; 16];
-        rng.fill_bytes(&mut bytes);
+        #[cfg(all(feature = "simulation", madsim))]
+        madsim::rand::thread_rng().fill_bytes(&mut bytes);
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        rand::rng().fill_bytes(&mut bytes);
 
         bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
         bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
