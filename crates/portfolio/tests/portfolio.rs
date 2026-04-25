@@ -471,6 +471,15 @@ fn test_update_tick(mut portfolio: Portfolio, instrument_audusd: InstrumentAny) 
     assert!(portfolio.unrealized_pnl(&instrument_audusd.id()).is_none());
 }
 
+#[rstest]
+fn test_reset_clears_initialized_flag(mut portfolio: Portfolio) {
+    portfolio.initialize_orders();
+    assert!(portfolio.is_initialized());
+
+    portfolio.reset();
+    assert!(!portfolio.is_initialized());
+}
+
 //TODO: FIX: It should return an error
 #[rstest]
 fn test_exceed_free_balance_single_currency_raises_account_balance_negative_exception(

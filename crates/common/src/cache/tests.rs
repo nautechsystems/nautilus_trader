@@ -55,7 +55,7 @@ use nautilus_model::{
 };
 use rstest::{fixture, rstest};
 
-use crate::cache::Cache;
+use crate::cache::{Cache, CacheConfig};
 
 #[fixture]
 fn cache() -> Cache {
@@ -87,6 +87,39 @@ fn test_clear_index_when_empty(mut cache: Cache) {
 #[rstest]
 fn test_reset_when_empty(mut cache: Cache) {
     cache.reset();
+}
+
+#[rstest]
+#[case(true, false)]
+#[case(false, true)]
+fn test_reset_honors_drop_instruments_on_reset(
+    audusd_sim: CurrencyPair,
+    #[case] drop_on_reset: bool,
+    #[case] retained: bool,
+) {
+    let config = CacheConfig::builder()
+        .drop_instruments_on_reset(drop_on_reset)
+        .build();
+    let mut cache = Cache::new(Some(config), None);
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    cache.add_instrument(instrument).unwrap();
+    assert!(cache.instrument(&audusd_sim.id).is_some());
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache.add_order(order, None, None, false).unwrap();
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 1);
+
+    cache.reset();
+
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+    assert_eq!(cache.instrument(&audusd_sim.id).is_some(), retained);
 }
 
 #[rstest]

@@ -98,9 +98,11 @@ impl PortfolioState {
         self.snapshot_processed_counts.clear();
         self.snapshot_account_ids.clear();
         self.pending_calcs.clear();
+        self.bar_close_prices.clear();
         self.last_account_state_log_ts.clear();
         self.venues_missing_price.clear();
         self.analyzer.reset();
+        self.initialized = false;
         log::debug!("READY");
     }
 }

@@ -151,24 +151,52 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert result.total_positions > 0
         assert result.total_events > 0
 
-    @pytest.mark.skip(
-        reason="v2 missing: deterministic trade-id generation across reset (PredicateViolation: fill.trade_id already contained in trade_ids)",
-    )
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         self.engine.add_strategy_from_config(
             _ema_config(self.usdjpy.id, "USD/JPY.SIM-15-MINUTE-BID-INTERNAL"),
         )
 
+        usd = Currency.from_str("USD")
+
         self.engine.run()
         result1 = self.engine.get_result()
+        cache = self.engine.cache
+        orders_total_1 = cache.orders_total_count()
+        positions_total_1 = cache.positions_total_count()
+        account_1 = cache.account_for_venue(self.venue)
+        assert account_1 is not None
+        balance_1 = account_1.balance_total(usd)
+        event_count_1 = account_1.event_count
 
         self.engine.reset()
         self.engine.run()
         result2 = self.engine.get_result()
+        cache = self.engine.cache
+        orders_total_2 = cache.orders_total_count()
+        positions_total_2 = cache.positions_total_count()
+        account_2 = cache.account_for_venue(self.venue)
+        assert account_2 is not None
+        balance_2 = account_2.balance_total(usd)
+        event_count_2 = account_2.event_count
+
+        # Sanity: the strategy actually traded. Without these, the cross-run
+        # equality assertions could pass trivially (e.g. a regression that
+        # returns 0/None for both runs).
+        assert result1.iterations > 0
+        assert result1.total_orders > 0
+        assert result1.total_positions > 0
+        assert orders_total_1 > 0
+        assert positions_total_1 > 0
+        assert balance_1 is not None
+        assert event_count_1 >= 1
 
         assert result1.iterations == result2.iterations
         assert result1.total_orders == result2.total_orders
         assert result1.total_positions == result2.total_positions
+        assert orders_total_1 == orders_total_2
+        assert positions_total_1 == positions_total_2
+        assert balance_1 == balance_2
+        assert event_count_1 == event_count_2
 
     def test_run_multiple_strategies(self):
         # v1 uses order_id_tag="001" / "002" to disambiguate two EMACross instances.
@@ -930,6 +958,38 @@ def test_engine_reset_allows_rerun():
     engine.reset()
     engine.run()
     assert engine.get_result().iterations == 0
+    engine.dispose()
+
+
+def test_engine_cache_shares_kernel_state():
+    """
+    The ``BacktestEngine.cache`` getter must return a wrapper backed by the kernel's own
+    cache (not a fresh detached one).
+
+    A regression that constructs
+    a new ``Cache`` per call would silently break parity assertions in the
+    rerun acceptance test.
+
+    """
+    engine = _engine()
+    venue = Venue("SIM")
+    instrument = TestInstrumentProvider.audusd_sim()
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        base_currency=Currency.from_str("USD"),
+    )
+    engine.add_instrument(instrument)
+
+    cache_a = engine.cache
+    cache_b = engine.cache
+
+    # Both wrappers see the instrument written into the kernel cache by
+    # `add_instrument`. A detached/fresh cache would return None here.
+    assert cache_a.instrument(instrument.id) is not None
+    assert cache_b.instrument(instrument.id) is not None
     engine.dispose()
 
 

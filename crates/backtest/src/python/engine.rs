@@ -18,7 +18,10 @@
 use std::collections::HashMap;
 
 use ahash::AHashMap;
-use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
+use nautilus_common::{
+    actor::data_actor::ImportableActorConfig,
+    python::{actor::PyDataActor, cache::PyCache},
+};
 use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
@@ -713,6 +716,13 @@ impl PyBacktestEngine {
     #[pyo3(name = "list_venues")]
     fn py_list_venues(&self) -> Vec<Venue> {
         self.0.list_venues()
+    }
+
+    /// Returns the cache shared with the kernel and registered components.
+    #[getter]
+    #[pyo3(name = "cache")]
+    fn py_cache(&self) -> PyCache {
+        PyCache::from_rc(self.0.kernel().cache.clone())
     }
 
     fn __repr__(&self) -> String {

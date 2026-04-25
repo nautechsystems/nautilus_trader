@@ -1270,14 +1270,13 @@ impl Cache {
 
     /// Resets the cache.
     ///
-    /// All stateful fields are reset to their initial value.
+    /// All stateful fields are reset to their initial value. Instruments,
+    /// currencies and synthetics are retained when `drop_instruments_on_reset`
+    /// is `false` so that repeated backtest runs can reuse the same dataset.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 
         self.general.clear();
-        self.currencies.clear();
-        self.instruments.clear();
-        self.synthetics.clear();
         self.books.clear();
         self.own_books.clear();
         self.quotes.clear();
@@ -1295,6 +1294,12 @@ impl Cache {
         self.position_snapshots.clear();
         self.greeks.clear();
         self.yield_curves.clear();
+
+        if self.config.drop_instruments_on_reset {
+            self.currencies.clear();
+            self.instruments.clear();
+            self.synthetics.clear();
+        }
 
         #[cfg(feature = "defi")]
         {

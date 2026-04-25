@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
@@ -23,7 +26,7 @@ use crate::{
     identifiers::AccountId,
     position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -131,6 +134,42 @@ impl BettingAccount {
     #[pyo3(name = "balances_locked")]
     fn py_balances_locked(&self) -> std::collections::HashMap<Currency, Money> {
         self.balances_locked().into_iter().collect()
+    }
+
+    #[pyo3(name = "balance")]
+    #[pyo3(signature = (currency=None))]
+    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
+        Account::balance(self, currency).copied()
+    }
+
+    #[pyo3(name = "balances")]
+    fn py_balances(&self) -> std::collections::HashMap<Currency, AccountBalance> {
+        Account::balances(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "starting_balances")]
+    fn py_starting_balances(&self) -> std::collections::HashMap<Currency, Money> {
+        Account::starting_balances(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "currencies")]
+    fn py_currencies(&self) -> Vec<Currency> {
+        Account::currencies(self)
+    }
+
+    #[pyo3(name = "is_cash_account")]
+    fn py_is_cash_account(&self) -> bool {
+        Account::is_cash_account(self)
+    }
+
+    #[pyo3(name = "is_margin_account")]
+    fn py_is_margin_account(&self) -> bool {
+        Account::is_margin_account(self)
+    }
+
+    #[pyo3(name = "purge_account_events")]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        Account::purge_account_events(self, UnixNanos::from(ts_now), lookback_secs);
     }
 
     #[pyo3(name = "apply")]

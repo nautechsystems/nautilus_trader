@@ -137,6 +137,10 @@ pub struct BacktestEngineConfig {
     #[builder(default = Duration::from_secs(5))]
     pub timeout_shutdown: Duration,
     /// The cache configuration.
+    ///
+    /// [`crate::engine::BacktestEngine`] always overrides
+    /// `drop_instruments_on_reset` to `false` on this config so that
+    /// successive runs can reuse the same dataset.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
     pub msgbus: Option<MessageBusConfig>,

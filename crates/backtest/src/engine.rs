@@ -119,7 +119,12 @@ impl BacktestEngine {
     /// # Errors
     ///
     /// Returns an error if the core `NautilusKernel` fails to initialize.
-    pub fn new(config: BacktestEngineConfig) -> anyhow::Result<Self> {
+    pub fn new(mut config: BacktestEngineConfig) -> anyhow::Result<Self> {
+        // The engine does not replay `add_instrument` on reset, so reruns rely
+        // on the cache retaining instruments regardless of the caller's config.
+        let mut cache_config = config.cache.unwrap_or_default();
+        cache_config.drop_instruments_on_reset = false;
+        config.cache = Some(cache_config);
         let kernel = NautilusKernel::new("BacktestEngine".to_string(), config.clone())?;
         Ok(Self {
             instance_id: kernel.instance_id,
@@ -664,10 +669,14 @@ impl BacktestEngine {
             log::error!("Error resetting trader: {e:?}");
         }
 
-        // Reset all exchanges
+        // `exchange.reset()` re-emits a fresh account state event; the cache
+        // reset that follows drops it so the next run starts with the same
+        // event count as the first.
         for exchange in self.venues.values() {
             exchange.borrow_mut().reset();
         }
+        self.kernel.cache.borrow_mut().reset();
+        self.kernel.portfolio.borrow_mut().reset();
 
         // Clear run state
         self.run_config_id = None;
@@ -1327,6 +1336,55 @@ mod tests {
             .build();
         engine.add_venue(venue_config).unwrap();
         engine
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(true))]
+    #[case(Some(false))]
+    fn test_new_forces_drop_instruments_on_reset_false(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[case] user_value: Option<bool>,
+    ) {
+        use nautilus_common::cache::CacheConfig;
+
+        let config = match user_value {
+            None => BacktestEngineConfig::builder().build(),
+            Some(value) => BacktestEngineConfig::builder()
+                .cache(
+                    CacheConfig::builder()
+                        .drop_instruments_on_reset(value)
+                        .build(),
+                )
+                .build(),
+        };
+        let mut engine = BacktestEngine::new(config).unwrap();
+
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .build();
+        engine.add_venue(venue_config).unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+
+        engine.reset();
+
+        assert!(
+            engine
+                .kernel()
+                .cache
+                .borrow()
+                .instrument(&instrument_id)
+                .is_some(),
+            "instrument must survive engine.reset(); user-supplied \
+             drop_instruments_on_reset={user_value:?} must not leak through",
+        );
     }
 
     #[rstest]

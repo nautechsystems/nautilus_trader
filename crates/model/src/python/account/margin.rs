@@ -13,17 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::{
+    UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    accounts::MarginAccount,
-    events::AccountState,
+    accounts::{Account, MarginAccount},
+    enums::{AccountType, LiquiditySide, OrderSide},
+    events::{AccountState, OrderFilled},
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
+    position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -49,6 +54,18 @@ impl MarginAccount {
     }
 
     #[getter]
+    #[pyo3(name = "account_type")]
+    fn py_account_type(&self) -> AccountType {
+        self.account_type
+    }
+
+    #[getter]
+    #[pyo3(name = "base_currency")]
+    fn py_base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    #[getter]
     fn default_leverage(&self) -> Decimal {
         self.default_leverage
     }
@@ -57,6 +74,160 @@ impl MarginAccount {
     #[pyo3(name = "calculate_account_state")]
     fn py_calculate_account_state(&self) -> bool {
         self.calculate_account_state
+    }
+
+    #[getter]
+    #[pyo3(name = "last_event")]
+    fn py_last_event(&self) -> Option<AccountState> {
+        Account::last_event(self)
+    }
+
+    #[getter]
+    #[pyo3(name = "event_count")]
+    fn py_event_count(&self) -> usize {
+        Account::event_count(self)
+    }
+
+    #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self) -> Vec<AccountState> {
+        Account::events(self)
+    }
+
+    #[pyo3(name = "balance_total")]
+    #[pyo3(signature = (currency=None))]
+    fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
+        Account::balance_total(self, currency)
+    }
+
+    #[pyo3(name = "balances_total")]
+    fn py_balances_total(&self) -> std::collections::HashMap<Currency, Money> {
+        Account::balances_total(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "balance_free")]
+    #[pyo3(signature = (currency=None))]
+    fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
+        Account::balance_free(self, currency)
+    }
+
+    #[pyo3(name = "balances_free")]
+    fn py_balances_free(&self) -> std::collections::HashMap<Currency, Money> {
+        Account::balances_free(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "balance_locked")]
+    #[pyo3(signature = (currency=None))]
+    fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
+        Account::balance_locked(self, currency)
+    }
+
+    #[pyo3(name = "balances_locked")]
+    fn py_balances_locked(&self) -> std::collections::HashMap<Currency, Money> {
+        Account::balances_locked(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "balance")]
+    #[pyo3(signature = (currency=None))]
+    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
+        Account::balance(self, currency).copied()
+    }
+
+    #[pyo3(name = "balances")]
+    fn py_balances(&self) -> std::collections::HashMap<Currency, AccountBalance> {
+        Account::balances(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "starting_balances")]
+    fn py_starting_balances(&self) -> std::collections::HashMap<Currency, Money> {
+        Account::starting_balances(self).into_iter().collect()
+    }
+
+    #[pyo3(name = "currencies")]
+    fn py_currencies(&self) -> Vec<Currency> {
+        Account::currencies(self)
+    }
+
+    #[pyo3(name = "is_cash_account")]
+    fn py_is_cash_account(&self) -> bool {
+        Account::is_cash_account(self)
+    }
+
+    #[pyo3(name = "is_margin_account")]
+    fn py_is_margin_account(&self) -> bool {
+        Account::is_margin_account(self)
+    }
+
+    #[pyo3(name = "apply")]
+    fn py_apply(&mut self, event: AccountState) -> PyResult<()> {
+        Account::apply(self, event).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "purge_account_events")]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        Account::purge_account_events(self, UnixNanos::from(ts_now), lookback_secs);
+    }
+
+    #[pyo3(name = "calculate_balance_locked")]
+    #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
+    fn py_calculate_balance_locked(
+        &mut self,
+        instrument: Py<PyAny>,
+        side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+        py: Python,
+    ) -> PyResult<Money> {
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
+        Account::calculate_balance_locked(
+            self,
+            &instrument,
+            side,
+            quantity,
+            price,
+            use_quote_for_inverse,
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "calculate_commission")]
+    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, use_quote_for_inverse=None))]
+    fn py_calculate_commission(
+        &self,
+        instrument: Py<PyAny>,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        use_quote_for_inverse: Option<bool>,
+        py: Python,
+    ) -> PyResult<Money> {
+        if liquidity_side == LiquiditySide::NoLiquiditySide {
+            return Err(to_pyvalue_err("Invalid liquidity side"));
+        }
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
+        Account::calculate_commission(
+            self,
+            &instrument,
+            last_qty,
+            last_px,
+            liquidity_side,
+            use_quote_for_inverse,
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "calculate_pnls")]
+    #[pyo3(signature = (instrument, fill, position=None))]
+    fn py_calculate_pnls(
+        &self,
+        instrument: Py<PyAny>,
+        fill: OrderFilled,
+        position: Option<Position>,
+        py: Python,
+    ) -> PyResult<Vec<Money>> {
+        let instrument = pyobject_to_instrument_any(py, instrument)?;
+        Account::calculate_pnls(self, &instrument, &fill, position).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
