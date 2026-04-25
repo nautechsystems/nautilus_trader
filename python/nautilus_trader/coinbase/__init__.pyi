@@ -58,6 +58,7 @@ class CoinbaseExecClientConfig:
         account_type: model.AccountType | None = None,
         default_margin_type: CoinbaseMarginType | None = None,
         default_leverage: decimal.Decimal | None = None,
+        retail_portfolio_id: str | None = None,
     ) -> None: ...
 
 @typing.final

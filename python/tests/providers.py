@@ -15,9 +15,14 @@
 
 from __future__ import annotations
 
+import csv
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from nautilus_trader.model import AggressorSide
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
 from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
@@ -27,11 +32,22 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Symbol
+from nautilus_trader.model import TradeId
+from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DATA_DIR = PACKAGE_ROOT / "tests" / "test_data"
+
+
+def _parse_iso_to_ns(value: str) -> int:
+    s = value.strip()
+    if "+" not in s and not s.endswith("Z"):
+        s += "+00:00"
+    elif s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return int(datetime.fromisoformat(s).timestamp() * 1_000_000_000)
 
 
 class TestInstrumentProvider:
@@ -163,12 +179,207 @@ class TestInstrumentProvider:
 
 class TestDataProvider:
     """
-    Generate synthetic test data for acceptance tests.
+    Provide test data for acceptance tests.
 
-    Produces deterministic tick data using sine-wave price patterns that create EMA
-    crossovers for strategy testing.
+    Includes synthetic generators (deterministic sine-wave price patterns that create
+    EMA crossovers) and CSV readers for the shared `tests/test_data` directory.
 
     """
+
+    @staticmethod
+    def quotes_from_fxcm_bars(
+        instrument: CurrencyPair,
+        bid_csv: str,
+        ask_csv: str,
+        max_rows: int | None = None,
+    ) -> list[QuoteTick]:
+        """
+        Build QuoteTicks from a pair of FXCM 1-minute OHLC CSV files.
+
+        For each bid/ask bar, emits four ticks in OHLC order with the bar timestamp.
+
+        """
+        bid_rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / bid_csv, max_rows)
+        ask_rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / ask_csv, max_rows)
+        precision = instrument.price_precision
+        size = Quantity.from_str("1000000")
+        ticks: list[QuoteTick] = []
+
+        for bid_row, ask_row in zip(bid_rows, ask_rows, strict=True):
+            ts_ns = _parse_iso_to_ns(bid_row[0])
+
+            for column in (1, 2, 3, 4):  # open, high, low, close
+                bid_price = Price(float(bid_row[column]), precision=precision)
+                ask_price = Price(float(ask_row[column]), precision=precision)
+                ticks.append(
+                    QuoteTick(
+                        instrument_id=instrument.id,
+                        bid_price=bid_price,
+                        ask_price=ask_price,
+                        bid_size=size,
+                        ask_size=size,
+                        ts_event=ts_ns,
+                        ts_init=ts_ns,
+                    ),
+                )
+
+        return ticks
+
+    @staticmethod
+    def bars_from_fxcm_bars(
+        instrument: CurrencyPair,
+        bar_type: BarType,
+        bid_or_ask_csv: str,
+        max_rows: int | None = None,
+    ) -> list[Bar]:
+        rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / bid_or_ask_csv, max_rows)
+        precision = instrument.price_precision
+        bars: list[Bar] = []
+
+        for row in rows:
+            ts_ns = _parse_iso_to_ns(row[0])
+            bars.append(
+                Bar(
+                    bar_type=bar_type,
+                    open=Price(float(row[1]), precision=precision),
+                    high=Price(float(row[2]), precision=precision),
+                    low=Price(float(row[3]), precision=precision),
+                    close=Price(float(row[4]), precision=precision),
+                    volume=Quantity.from_str("1000000"),
+                    ts_event=ts_ns,
+                    ts_init=ts_ns,
+                ),
+            )
+
+        return bars
+
+    @staticmethod
+    def quotes_from_truefx_csv(
+        instrument: CurrencyPair,
+        csv_name: str,
+        max_rows: int | None = None,
+    ) -> list[QuoteTick]:
+        path = TEST_DATA_DIR / csv_name
+        precision = instrument.price_precision
+        size = Quantity.from_str("1000000")
+        ticks: list[QuoteTick] = []
+
+        with path.open("r") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            assert header[:3] == ["timestamp", "bid", "ask"]
+
+            for i, row in enumerate(reader):
+                if max_rows is not None and i >= max_rows:
+                    break
+                ts_ns = _parse_iso_to_ns(row[0])
+                ticks.append(
+                    QuoteTick(
+                        instrument_id=instrument.id,
+                        bid_price=Price(float(row[1]), precision=precision),
+                        ask_price=Price(float(row[2]), precision=precision),
+                        bid_size=size,
+                        ask_size=size,
+                        ts_event=ts_ns,
+                        ts_init=ts_ns,
+                    ),
+                )
+
+        return ticks
+
+    @staticmethod
+    def trades_from_binance_csv(
+        instrument: CurrencyPair,
+        csv_name: str,
+        max_rows: int | None = None,
+    ) -> list[TradeTick]:
+        path = TEST_DATA_DIR / csv_name
+        price_precision = instrument.price_precision
+        size_precision = instrument.size_precision
+        trades: list[TradeTick] = []
+
+        with path.open("r") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            assert header[:5] == [
+                "timestamp",
+                "trade_id",
+                "price",
+                "quantity",
+                "buyer_maker",
+            ]
+
+            for i, row in enumerate(reader):
+                if max_rows is not None and i >= max_rows:
+                    break
+                ts_ns = _parse_iso_to_ns(row[0])
+                buyer_maker = row[4].strip().lower() == "true"
+                aggressor = AggressorSide.SELLER if buyer_maker else AggressorSide.BUYER
+                trades.append(
+                    TradeTick(
+                        instrument_id=instrument.id,
+                        price=Price(float(row[2]), precision=price_precision),
+                        size=Quantity(float(row[3]), precision=size_precision),
+                        aggressor_side=aggressor,
+                        trade_id=TradeId(row[1]),
+                        ts_event=ts_ns,
+                        ts_init=ts_ns,
+                    ),
+                )
+
+        return trades
+
+    @staticmethod
+    def bars_from_binance_csv(
+        instrument: CurrencyPair,
+        bar_type: BarType,
+        csv_name: str,
+        max_rows: int | None = None,
+    ) -> list[Bar]:
+        path = TEST_DATA_DIR / csv_name
+        price_precision = instrument.price_precision
+        size_precision = instrument.size_precision
+        bars: list[Bar] = []
+
+        with path.open("r") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            assert header[:6] == ["timestamp", "open", "high", "low", "close", "volume"]
+
+            for i, row in enumerate(reader):
+                if max_rows is not None and i >= max_rows:
+                    break
+                ts_ns = _parse_iso_to_ns(row[0])
+                bars.append(
+                    Bar(
+                        bar_type=bar_type,
+                        open=Price(float(row[1]), precision=price_precision),
+                        high=Price(float(row[2]), precision=price_precision),
+                        low=Price(float(row[3]), precision=price_precision),
+                        close=Price(float(row[4]), precision=price_precision),
+                        volume=Quantity(float(row[5]), precision=size_precision),
+                        ts_event=ts_ns,
+                        ts_init=ts_ns,
+                    ),
+                )
+
+        return bars
+
+    @staticmethod
+    def _read_ohlc_rows(path: Path, max_rows: int | None) -> list[list[str]]:
+        rows: list[list[str]] = []
+
+        with path.open("r") as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            assert header[:5] == ["timestamp", "open", "high", "low", "close"]
+
+            for i, row in enumerate(reader):
+                if max_rows is not None and i >= max_rows:
+                    break
+                rows.append(row)
+
+        return rows
 
     @staticmethod
     def usdjpy_quotes(count: int = 10_000) -> list[QuoteTick]:
