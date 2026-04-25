@@ -37,6 +37,7 @@ python = [
   "pyo3",
   "pyo3-stub-gen",
 ]
+simulation = ["dep:madsim", "nautilus-core/simulation"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -63,6 +64,7 @@ serde = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

@@ -15,6 +15,8 @@
 
 use std::fmt::Display;
 
+#[cfg(all(feature = "simulation", madsim))]
+use madsim::rand::RngCore;
 use nautilus_core::{UnixNanos, correctness::check_in_range_inclusive_f64};
 use nautilus_model::{
     data::order::BookOrder,
@@ -82,7 +84,7 @@ impl ProbabilisticFillState {
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage")?;
         let rng = match random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_rng(&mut rand::rng()), // dst-ok: pending separate routing through madsim::rand
+            None => default_std_rng(),
         };
         Ok(Self {
             prob_fill_on_limit,
@@ -121,6 +123,19 @@ impl Clone for ProbabilisticFillState {
             self.random_seed,
         )
         .expect("ProbabilisticFillState clone should not fail with valid parameters")
+    }
+}
+
+fn default_std_rng() -> StdRng {
+    #[cfg(all(feature = "simulation", madsim))]
+    {
+        let mut seed = [0u8; 32];
+        madsim::rand::thread_rng().fill_bytes(&mut seed);
+        StdRng::from_seed(seed)
+    }
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    {
+        StdRng::from_rng(&mut rand::rng())
     }
 }
 

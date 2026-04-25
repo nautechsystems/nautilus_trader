@@ -233,7 +233,7 @@ state on the DST path is a future scope-hole closure.
 | `fastrand`             | 0                                                    | closed     |
 | `getrandom`            | 0                                                    | closed     |
 | `OsRng`                | 0                                                    | closed     |
-| `rand::rng()`          | `execution/models/fill.rs:85`, `network/backoff.rs:105` | unresolved |
+| `rand::rng()`          | `network/backoff.rs:105`                             | scoped‑out |
 | `Uuid::new_v4` (tests) | `core/uuid.rs:380`                                   | closed     |
 | `Uuid::new_v4` (prod)  | `execution/matching_engine/ids_generator.rs:167,179` | unresolved |
 
@@ -242,7 +242,7 @@ and draws from the same per-thread CSPRNG. Rule 2 of the hook now matches
 `rand::rng()` and skips lines whose preceding 15 lines carry a non-simulation
 cfg gate, so cfg-gated production fallbacks pass.
 
-Closed call site:
+Closed call sites:
 
 - `crates/core/src/uuid.rs:56` in `UUID4::new()` now routes through
   `madsim::rand::thread_rng()` under `cfg(all(feature = "simulation", madsim))`
@@ -250,14 +250,15 @@ Closed call site:
   such as `crates/common/src/factories/order.rs`,
   `crates/common/src/messages/execution/report.rs`, and
   `crates/risk/src/engine/mod.rs`.
+- `crates/execution/src/models/fill.rs:129` `default_std_rng()` now routes
+  through `madsim::rand::thread_rng()` under
+  `cfg(all(feature = "simulation", madsim))` and `rand::rng()` under the
+  negation. Called from `ProbabilisticFillState::new()` when constructed
+  with `random_seed=None`. When a seed is provided the model routes through
+  `StdRng::seed_from_u64`, which is deterministic.
 
 Allowed-with-marker call sites:
 
-- `crates/execution/src/models/fill.rs:85` when `FillModel::new()` is
-  constructed with `random_seed=None`. Marked `// dst-ok` pending a
-  follow-up commit that routes through `madsim::rand` under `cfg(madsim)`.
-  When a seed is provided the model routes through `StdRng::seed_from_u64`,
-  which is deterministic.
 - `crates/network/src/backoff.rs:105` for reconnect jitter. Marked
   `// dst-ok`: transport-layer, out of DST scope per
   `nautilus_dst/docs/compatibility_matrix.md`.
@@ -422,22 +423,20 @@ remains a design intent, not a verified property.
 |------------|-------|
 | closed     | 20    |
 | gated      | 10    |
-| scoped‑out | 23    |
-| unresolved | 6     |
+| scoped‑out | 24    |
+| unresolved | 5     |
 
 Unresolved entries at the end of this phase:
 
 1. `AHashMap` / `AHashSet` elsewhere outside the two hook-enforced files
-2. `rand::rng()` in `execution/models/fill.rs` (pending routing through
-   `madsim::rand` under `cfg(madsim)`)
-3. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
+2. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
    `use_random_ids` is active
-4. `chrono::Utc::now` in `core/datetime.rs:404`
-5. Logger file-logging tests under `cfg(madsim)`
-6. Dynamic same-seed diff harness
+3. `chrono::Utc::now` in `core/datetime.rs:404`
+4. Logger file-logging tests under `cfg(madsim)`
+5. Dynamic same-seed diff harness
 
-Items 1 through 4 are source-level follow-ups in this repository. Item 5
-is a test-only follow-up in this repository. Item 6 lives in
+Items 1 through 3 are source-level follow-ups in this repository. Item 4
+is a test-only follow-up in this repository. Item 5 lives in
 `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter

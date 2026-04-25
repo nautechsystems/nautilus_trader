@@ -5842,6 +5842,7 @@ dependencies = [
  "futures",
  "indexmap 2.14.0",
  "log",
+ "madsim",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
