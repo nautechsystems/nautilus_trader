@@ -181,6 +181,7 @@ Released on TBD (UTC).
 - Added deterministic simulation testing (DST) re-export module gated behind `simulation` feature (Rust)
 - Added `wall_clock_now` seam in `nautilus-core` for virtual time under simulation (Rust)
 - Added `biased` to `tokio::select!` blocks in network and live crates for deterministic poll order
+- Added `nautilus_network::transport` module with `Message`/`TransportError`/`WsTransport` for future backend swap (Rust)
 - Added engine config methods on PyO3 `LiveNodeBuilder` (#3848), thanks @BurnOutTrader
 - Added read-only `params()` accessor to `SubscribeCommand` and `TradingCommand` (#3846), thanks @faysou
 - Added `ShutdownSystem` handling via `commands.system.shutdown` pub/sub topic, wired to kernel, backtest, and live (Rust)

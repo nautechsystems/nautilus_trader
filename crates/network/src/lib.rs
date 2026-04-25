@@ -94,6 +94,7 @@ pub mod mode;
 pub mod net;
 pub mod retry;
 pub mod socket;
+pub mod transport;
 pub mod websocket;
 
 mod logging;
