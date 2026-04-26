@@ -43,9 +43,7 @@ use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::client_async;
 #[cfg(not(feature = "turmoil"))]
 use tokio_tungstenite::connect_async_with_config;
-use tokio_tungstenite::tungstenite::{
-    Error, Message, client::IntoClientRequest, http::HeaderValue,
-};
+use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use ustr::Ustr;
 
 use super::{
@@ -67,6 +65,7 @@ use crate::{
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+    transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -133,7 +132,7 @@ impl WebSocketClientInner {
     pub async fn new_with_writer(
         config: WebSocketConfig,
         writer: MessageWriter,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
@@ -150,7 +149,9 @@ impl WebSocketClientInner {
             100,
             true,
         )
-        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+        .map_err(|e| {
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        })?;
 
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
@@ -210,18 +211,18 @@ impl WebSocketClientInner {
         config: WebSocketConfig,
         message_handler: Option<MessageHandler>,
         ping_handler: Option<PingHandler>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
         if config.heartbeat == Some(0) {
-            return Err(Error::Io(std::io::Error::new(
+            return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Heartbeat interval cannot be zero",
             )));
         }
 
         if config.idle_timeout_ms == Some(0) {
-            return Err(Error::Io(std::io::Error::new(
+            return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Idle timeout cannot be zero",
             )));
@@ -282,7 +283,9 @@ impl WebSocketClientInner {
             config.reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
         )
-        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+        .map_err(|e| {
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        })?;
 
         Ok(Self {
             config,
@@ -319,22 +322,24 @@ impl WebSocketClientInner {
     pub async fn connect_with_server(
         url: &str,
         headers: Vec<(String, String)>,
-    ) -> Result<(MessageWriter, MessageReader), Error> {
-        let mut request = url.into_client_request()?;
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
+        let mut request = url.into_client_request().map_err(TransportError::from)?;
         let req_headers = request.headers_mut();
 
-        let mut header_names: Vec<HeaderName> = Vec::new();
-
         for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val)?;
-            let header_name: HeaderName = key.parse()?;
-            header_names.push(header_name.clone());
+            let header_value = HeaderValue::from_str(&val)
+                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
+            let header_name: HeaderName = key
+                .parse()
+                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
             req_headers.insert(header_name, header_value);
         }
 
-        connect_async_with_config(request, None, true)
+        let (stream, _resp) = connect_async_with_config(request, None, true)
             .await
-            .map(|resp| resp.0.split())
+            .map_err(TransportError::from)?;
+        let transport: BoxedWsTransport = Box::pin(TungsteniteTransport::new(stream));
+        Ok(transport.split())
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
@@ -354,27 +359,27 @@ impl WebSocketClientInner {
     pub async fn connect_with_server(
         url: &str,
         headers: Vec<(String, String)>,
-    ) -> Result<(MessageWriter, MessageReader), Error> {
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
         use rustls::ClientConfig;
         use tokio_rustls::TlsConnector;
 
-        let mut request = url.into_client_request()?;
+        let mut request = url.into_client_request().map_err(TransportError::from)?;
         let req_headers = request.headers_mut();
 
-        let mut header_names: Vec<HeaderName> = Vec::new();
-
         for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val)?;
-            let header_name: HeaderName = key.parse()?;
-            header_names.push(header_name.clone());
+            let header_value = HeaderValue::from_str(&val)
+                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
+            let header_name: HeaderName = key
+                .parse()
+                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
             req_headers.insert(header_name, header_value);
         }
 
         let uri = request.uri();
         let scheme = uri.scheme_str().unwrap_or("ws");
-        let host = uri.host().ok_or_else(|| {
-            Error::Url(tokio_tungstenite::tungstenite::error::UrlError::NoHostName)
-        })?;
+        let host = uri
+            .host()
+            .ok_or_else(|| TransportError::InvalidUrl("missing hostname".to_string()))?;
 
         // Determine port: use explicit port if specified, otherwise default based on scheme
         let port = uri
@@ -401,24 +406,24 @@ impl WebSocketClientInner {
                 .with_no_client_auth();
 
             let tls_connector = TlsConnector::from(std::sync::Arc::new(config));
-            let domain =
-                rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|e| {
-                    Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        format!("Invalid DNS name: {e}"),
-                    ))
-                })?;
+            let domain = rustls::pki_types::ServerName::try_from(host.to_string())
+                .map_err(|e| TransportError::Tls(format!("Invalid DNS name: {e}")))?;
 
-            let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
+            let tls_stream = tls_connector
+                .connect(domain, tcp_stream)
+                .await
+                .map_err(TransportError::Io)?;
             MaybeTlsStream::Rustls(tls_stream)
         } else {
             MaybeTlsStream::Plain(tcp_stream)
         };
 
         // Use client_async with the stream (plain or TLS)
-        client_async(request, maybe_tls_stream)
+        let (stream, _resp) = client_async(request, maybe_tls_stream)
             .await
-            .map(|resp| resp.0.split())
+            .map_err(TransportError::from)?;
+        let transport: BoxedWsTransport = Box::pin(TungsteniteTransport::new(stream));
+        Ok(transport.split())
     }
 
     /// Reconnect with server.
@@ -435,7 +440,7 @@ impl WebSocketClientInner {
     /// Returns an error if:
     /// - The reconnection attempt times out.
     /// - The connection to the server fails.
-    pub async fn reconnect(&mut self) -> Result<(), Error> {
+    pub async fn reconnect(&mut self) -> Result<(), TransportError> {
         log::debug!("Reconnecting");
 
         if self.is_stream_mode {
@@ -469,7 +474,7 @@ impl WebSocketClientInner {
             let (tx, rx) = tokio::sync::oneshot::channel();
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
                 log::error!("{e}");
-                return Err(Error::Io(std::io::Error::new(
+                return Err(TransportError::Io(std::io::Error::new(
                     std::io::ErrorKind::BrokenPipe,
                     format!("Failed to send update command: {e}"),
                 )));
@@ -480,13 +485,13 @@ impl WebSocketClientInner {
                 Ok(true) => log::debug!("Writer confirmed socket update"),
                 Ok(false) => {
                     log::warn!("Writer rejected socket update, aborting reconnect");
-                    return Err(Error::Io(std::io::Error::other(
+                    return Err(TransportError::Io(std::io::Error::other(
                         "Failed to update reconnection writer",
                     )));
                 }
                 Err(e) => {
                     log::error!("Writer dropped update channel: {e}");
-                    return Err(Error::Io(std::io::Error::new(
+                    return Err(TransportError::Io(std::io::Error::new(
                         std::io::ErrorKind::BrokenPipe,
                         "Writer task dropped response channel",
                     )));
@@ -542,7 +547,7 @@ impl WebSocketClientInner {
         })
         .await
         .map_err(|_| {
-            Error::Io(std::io::Error::new(
+            TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 format!(
                     "reconnection timed out after {}s",
@@ -601,7 +606,7 @@ impl WebSocketClientInner {
                         }
                     }
                     Ok(Some(Ok(Message::Text(data)))) => {
-                        log::trace!("Received message: {data}");
+                        log::trace!("Received message: {data:?}");
                         last_data_time = dst::time::Instant::now();
 
                         if let Some(ref handler) = message_handler {
@@ -625,7 +630,6 @@ impl WebSocketClientInner {
                         log::debug!("Received close message - terminating");
                         break;
                     }
-                    Ok(Some(Ok(_))) => (),
                     Ok(Some(Err(e))) => {
                         log::error!("Received error message - terminating: {e}");
                         break;
@@ -1021,7 +1025,7 @@ impl WebSocketClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
-    ) -> Result<(MessageReader, Self), Error> {
+    ) -> Result<(MessageReader, Self), TransportError> {
         install_cryptographic_provider();
 
         // Create a single connection and split it, respecting configured headers
@@ -1090,10 +1094,10 @@ impl WebSocketClient {
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, TransportError> {
         // Validate that handler mode has a message handler
         if message_handler.is_none() {
-            return Err(Error::Io(std::io::Error::new(
+            return Err(TransportError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Handler mode requires message_handler to be set. Use connect_stream() for stream mode without a handler.",
             )));
@@ -2202,7 +2206,7 @@ mod rust_tests {
             {
                 use futures_util::SinkExt;
                 let _ = ws
-                    .send(Message::Text("reconnected".to_string().into()))
+                    .send(WsMessage::Text("reconnected".to_string().into()))
                     .await;
                 sleep(Duration::from_secs(1)).await;
             }
@@ -2232,7 +2236,7 @@ mod rust_tests {
         let result = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if let Ok(msg) = rx.try_recv()
-                    && matches!(msg, Message::Text(ref text) if AsRef::<str>::as_ref(text) == "reconnected")
+                    && matches!(msg, WsMessage::Text(ref text) if AsRef::<str>::as_ref(text) == "reconnected")
                 {
                     return true;
                 }
@@ -2264,7 +2268,7 @@ mod rust_tests {
                 && let Ok(mut ws) = accept_async(stream).await
             {
                 use futures_util::SinkExt;
-                let _ = ws.send(Message::Text("hello".to_string().into())).await;
+                let _ = ws.send(WsMessage::Text("hello".to_string().into())).await;
                 sleep(Duration::from_millis(50)).await;
                 // Connection closes when ws is dropped
             }
@@ -2294,7 +2298,7 @@ mod rust_tests {
         // Read the hello message
         let msg = reader.next().await;
         assert!(
-            matches!(msg, Some(Ok(Message::Text(ref text))) if AsRef::<str>::as_ref(text) == "hello"),
+            matches!(&msg, Some(Ok(Message::Text(bytes))) if bytes.as_ref() == b"hello"),
             "Should receive initial message"
         );
 
@@ -3335,9 +3339,7 @@ mod rust_tests {
         );
 
         writer_tx
-            .send(WriterCommand::Send(WsMessage::Text(
-                "stale".to_string().into(),
-            )))
+            .send(WriterCommand::Send(Message::Text("stale".into())))
             .unwrap();
 
         let (new_writer, _reader) = WebSocketClientInner::connect_with_server(&url, vec![])
@@ -3402,9 +3404,7 @@ mod rust_tests {
         );
 
         writer_tx
-            .send(WriterCommand::Send(WsMessage::Text(
-                "stale".to_string().into(),
-            )))
+            .send(WriterCommand::Send(Message::Text("stale".into())))
             .unwrap();
 
         let (new_writer, _reader) = WebSocketClientInner::connect_with_server(&url, vec![])
@@ -3519,7 +3519,7 @@ mod turmoil_tests {
 
             client
                 .writer_tx
-                .send(WriterCommand::Send(WsMessage::Text("stale".into())))
+                .send(WriterCommand::Send(Message::Text("stale".into())))
                 .unwrap();
 
             wait_until_async(|| async { client.is_active() }, Duration::from_secs(3)).await;
@@ -3590,7 +3590,7 @@ mod turmoil_tests {
 
             client
                 .writer_tx
-                .send(WriterCommand::Send(WsMessage::Text("stale".into())))
+                .send(WriterCommand::Send(Message::Text("stale".into())))
                 .unwrap();
 
             wait_until_async(|| async { client.is_active() }, Duration::from_secs(3)).await;

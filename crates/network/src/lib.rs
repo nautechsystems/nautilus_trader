@@ -106,5 +106,7 @@ pub mod python;
 pub mod error;
 pub mod ratelimiter;
 
+pub use transport::{Message, TransportError};
+
 /// Sentinel message to signal reconnection completion to Rust consumers.
 pub const RECONNECTED: &str = "__RECONNECTED__";
