@@ -348,18 +348,9 @@ impl BybitWebSocketClient {
             req_id: None,
         })?;
 
-        // Sockudo's HTTP/1.1 client rejects custom upgrade headers, so the
-        // Bybit identification headers are omitted when that backend is
-        // selected. They are non-essential (auth happens via subscription
-        // messages, not headers).
-        let headers = match self.transport_backend {
-            TransportBackend::Sockudo => vec![],
-            TransportBackend::Tungstenite => Self::default_headers(),
-        };
-
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers,
+            headers: Self::default_headers(),
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(ping_msg),
             reconnect_timeout_ms: Some(5_000),

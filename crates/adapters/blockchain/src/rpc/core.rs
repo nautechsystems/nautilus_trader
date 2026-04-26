@@ -103,9 +103,6 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Sets the transport backend for the next [`Self::connect`].
-    ///
-    /// When `Sockudo` is selected the default `User-Agent` upgrade header is
-    /// dropped because sockudo does not accept custom upgrade headers.
     #[must_use]
     pub fn with_transport_backend(mut self, backend: TransportBackend) -> Self {
         self.transport_backend = backend;
@@ -131,16 +128,9 @@ impl CoreBlockchainRpcClient {
         // Most blockchain RPC nodes require a heartbeat to keep the connection alive
         let heartbeat_interval = 30;
 
-        let headers = match self.transport_backend {
-            TransportBackend::Sockudo => vec![],
-            TransportBackend::Tungstenite => {
-                vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
-            }
-        };
-
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
-            headers,
+            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
             reconnect_timeout_ms: Some(10_000),

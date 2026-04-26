@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added `MarginAccount.account_margins`, `account_margins_init/maint`, and `clear_account_margin` accessors
 - Added `transport-sockudo` feature with `TransportBackend` runtime selector for the WebSocket transport (Rust)
 - Added `TransportBackend` PyO3 enum and `WebSocketConfig.backend` kwarg for backend selection from Python
+- Added custom upgrade-header support on the sockudo backend so adapters carry the same `User-Agent` and per-venue headers on both backends (#3932), thanks @sunlei
 - Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
 - Added Binance Futures `use_trade_lite` config to opt into low-latency `TRADE_LITE` fills (Rust, default `False`)
 - Added Bybit user-related endpoints (#3894), thanks @sunlei
@@ -73,6 +74,7 @@ Released on TBD (UTC).
 ### Security
 
 ### Fixes
+- Fixed sockudo WebSocket backend dropping handshake leftover bytes when the server piggybacks the first frame on the 101 response (#3932), thanks @sunlei
 - Fixed account state regeneration dropping account-wide margins on every fill across live and backtest paths
 - Fixed `AccountState` to accept empty `balances` and `margins`
 - Fixed `FillModel` determinism via `IndexMap` in `OrderMatchingEngine` (#3914), thanks for reporting @timkoopmans
@@ -209,6 +211,7 @@ Released on TBD (UTC).
 - Added property-based tests for Databento trade ID derivation (stability and 16-hex format)
 - Added Rust/Python parity tests pinning matching-engine `TradeId` format across language bindings
 - Added `node` feature to `nautilus-live` gating `builder`, `config`, `manager`, and `node` modules (default on)
+- Added support for user-provided Tokio runtime in live module (#3918), thanks @filipmacek
 - Added continuous futures support for bar requests and subscriptions (#3921), thanks @faysou
 - Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
 - Migrated `WebSocketClient` onto the `WsTransport` trait, decoupling reconnect/auth from tungstenite types (Rust)

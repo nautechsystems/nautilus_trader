@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{
     str::FromStr,
     time::{Duration, Instant},
@@ -25,6 +40,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
@@ -64,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment,
         api_key: Some(api_key.clone()),
         api_secret: Some(api_secret.clone()),
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -74,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment,
         api_key: Some(api_key),
         api_secret: Some(api_secret),
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

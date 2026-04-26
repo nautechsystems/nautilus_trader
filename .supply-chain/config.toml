@@ -2361,6 +2361,10 @@ criteria = "safe-to-deploy"
 version = "0.6.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.sockudo-ws]]
+version = "1.7.4"
+criteria = "safe-to-deploy"
+
 [[exemptions.spin]]
 version = "0.9.8"
 criteria = "safe-to-deploy"

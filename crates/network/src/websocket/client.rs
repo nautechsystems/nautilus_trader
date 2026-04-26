@@ -45,7 +45,7 @@ use rustls::ClientConfig;
 #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
 use sockudo_ws::{
     Config as SockudoConfig, Http1, Role, Stream as SockudoStream,
-    WebSocketStream as SockudoWebSocketStream, handshake as sockudo_handshake,
+    WebSocketStream as SockudoWebSocketStream,
 };
 #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -470,8 +470,8 @@ impl WebSocketClientInner {
 
     /// Connects with the server using the sockudo-ws backend.
     ///
-    /// Uses sockudo's native handshake when no custom headers are required, and
-    /// a local HTTP/1.1 helper only for upgrade requests with custom headers.
+    /// Uses a local HTTP/1.1 handshake helper so error logging and stream
+    /// construction stay in our hands regardless of header count.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
     async fn connect_sockudo(
@@ -517,26 +517,17 @@ impl WebSocketClientInner {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        // sockudo's high-level client drops handshake leftover bytes today, so
-        // choose the handshake primitive here and always own stream construction.
-        let handshake = if headers.is_empty() {
-            sockudo_handshake::client_handshake(
-                &mut stream,
-                &target.host_header,
-                &target.path,
-                None,
-            )
-            .await
-        } else {
-            client_handshake_with_headers(
-                &mut stream,
-                &target.host_header,
-                &target.path,
-                None,
-                headers,
-            )
-            .await
-        }
+        // Use our helper for both paths: uniform error logging, and we own
+        // stream construction since sockudo's high-level client drops the
+        // handshake leftover.
+        let handshake = client_handshake_with_headers(
+            &mut stream,
+            &target.host_header,
+            &target.path,
+            None,
+            headers,
+        )
+        .await
         .map_err(TransportError::from)?;
 
         // Reading the HTTP 101 may also read the first WebSocket frame prefix;
@@ -2147,6 +2138,8 @@ mod rust_tests {
     use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
+    #[cfg(feature = "transport-sockudo")]
+    use sockudo_ws::handshake as sockudo_handshake;
     #[cfg(feature = "transport-sockudo")]
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
     use tokio::{

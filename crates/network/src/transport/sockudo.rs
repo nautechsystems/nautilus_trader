@@ -53,6 +53,9 @@ use super::{
 
 #[cfg(not(feature = "turmoil"))]
 const MAX_HTTP_HEADER_SIZE: usize = 8192;
+
+// WebSocket upgrade headers we always set, plus body-framing headers that have
+// no place on a GET upgrade.
 #[cfg(not(feature = "turmoil"))]
 const RESERVED_UPGRADE_HEADERS: &[&str] = &[
     "host",
@@ -62,9 +65,15 @@ const RESERVED_UPGRADE_HEADERS: &[&str] = &[
     "sec-websocket-version",
     "sec-websocket-protocol",
     "sec-websocket-extensions",
+    "content-length",
+    "transfer-encoding",
+    "te",
+    "trailer",
 ];
 
-/// Perform an HTTP/1.1 WebSocket client handshake with custom headers.
+/// Mirror of `sockudo_ws::handshake::client_handshake` (1.7.4) with custom headers.
+///
+/// Caller pre-validates `extra_headers` via [`validate_extra_headers`].
 #[cfg(not(feature = "turmoil"))]
 pub(crate) async fn client_handshake_with_headers<S>(
     stream: &mut S,
@@ -79,7 +88,7 @@ where
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let key = handshake::generate_key();
-    let request = build_request_with_headers(host, path, &key, protocol, None, extra_headers)?;
+    let request = build_request_with_headers(host, path, &key, protocol, None, extra_headers);
 
     stream.write_all(&request).await?;
     stream.flush().await?;
@@ -96,15 +105,25 @@ where
             return Err(SockudoError::ConnectionClosed);
         }
 
-        if let Some((res, consumed)) = handshake::parse_response(&buf)? {
-            let accept = res.accept.ok_or(SockudoError::HandshakeFailed(
-                "missing Sec-WebSocket-Accept",
-            ))?;
+        let parsed = match handshake::parse_response(&buf) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                log_handshake_response(host, path, &e, &buf);
+                return Err(e);
+            }
+        };
+
+        if let Some((res, consumed)) = parsed {
+            let accept = res.accept.ok_or_else(|| {
+                let e = SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept");
+                log_handshake_response(host, path, &e, &buf);
+                e
+            })?;
 
             if !handshake::validate_accept_key(&key, accept) {
-                return Err(SockudoError::HandshakeFailed(
-                    "invalid Sec-WebSocket-Accept",
-                ));
+                let e = SockudoError::HandshakeFailed("invalid Sec-WebSocket-Accept");
+                log_handshake_response(host, path, &e, &buf);
+                return Err(e);
             }
 
             let res_protocol = res.protocol.map(String::from);
@@ -125,6 +144,20 @@ where
     }
 }
 
+// Surface the upstream HTTP response on parse failure so non-101 statuses are visible.
+#[cfg(not(feature = "turmoil"))]
+fn log_handshake_response(host: &str, path: &str, err: &SockudoError, buf: &BytesMut) {
+    const PREVIEW_BYTES: usize = 512;
+    let take = buf.len().min(PREVIEW_BYTES);
+    let preview = String::from_utf8_lossy(&buf[..take]);
+    let truncated = if buf.len() > take { " (truncated)" } else { "" };
+    log::error!(
+        "Sockudo handshake failed for {host}{path}: {err}; response{truncated}:\n{preview}"
+    );
+}
+
+// Mirror of `sockudo_ws::handshake::build_request` (1.7.4) with `extra_headers`
+// appended; caller pre-validates.
 #[cfg(not(feature = "turmoil"))]
 fn build_request_with_headers(
     host: &str,
@@ -133,7 +166,7 @@ fn build_request_with_headers(
     protocol: Option<&str>,
     extensions: Option<&str>,
     extra_headers: &[(String, String)],
-) -> Result<Bytes, SockudoError> {
+) -> Bytes {
     let mut buf = BytesMut::with_capacity(512);
 
     buf.put_slice(b"GET ");
@@ -161,7 +194,6 @@ fn build_request_with_headers(
         buf.put_slice(b"\r\n");
     }
 
-    validate_extra_headers(extra_headers)?;
     for (name, value) in extra_headers {
         buf.put_slice(name.as_bytes());
         buf.put_slice(b": ");
@@ -170,7 +202,7 @@ fn build_request_with_headers(
     }
 
     buf.put_slice(b"\r\n");
-    Ok(buf.freeze())
+    buf.freeze()
 }
 
 #[cfg(not(feature = "turmoil"))]
@@ -553,6 +585,10 @@ mod tests {
     #[case::sec_websocket_version("Sec-WebSocket-Version")]
     #[case::sec_websocket_protocol("Sec-WebSocket-Protocol")]
     #[case::sec_websocket_extensions("Sec-WebSocket-Extensions")]
+    #[case::content_length("Content-Length")]
+    #[case::transfer_encoding("Transfer-Encoding")]
+    #[case::te("TE")]
+    #[case::trailer("Trailer")]
     fn validate_extra_header_rejects_reserved_upgrade_headers(#[case] name: &str) {
         let err = validate_extra_header(name, "value").unwrap_err();
 

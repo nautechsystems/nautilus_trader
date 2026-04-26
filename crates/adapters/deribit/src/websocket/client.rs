@@ -506,12 +506,7 @@ impl DeribitWebSocketClient {
         // Configure WebSocket client
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: match self.transport_backend {
-                TransportBackend::Sockudo => vec![],
-                TransportBackend::Tungstenite => {
-                    vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
-                }
-            },
+            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat_interval,
             heartbeat_msg: None, // Deribit uses JSON-RPC heartbeat, not text ping
             reconnect_timeout_ms: Some(5_000),
