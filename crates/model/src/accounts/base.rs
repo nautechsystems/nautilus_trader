@@ -19,6 +19,7 @@
 //! in this file.
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_equal},
@@ -48,16 +49,16 @@ pub struct BaseAccount {
     pub calculate_account_state: bool,
     pub events: Vec<AccountState>,
     pub commissions: AHashMap<Currency, Money>,
-    pub balances: AHashMap<Currency, AccountBalance>,
-    pub balances_starting: AHashMap<Currency, Money>,
+    pub balances: IndexMap<Currency, AccountBalance>,
+    pub balances_starting: IndexMap<Currency, Money>,
 }
 
 impl BaseAccount {
     /// Creates a new [`BaseAccount`] instance.
     #[must_use]
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
-        let mut balances_starting: AHashMap<Currency, Money> = AHashMap::new();
-        let mut balances: AHashMap<Currency, AccountBalance> = AHashMap::new();
+        let mut balances_starting: IndexMap<Currency, Money> = IndexMap::new();
+        let mut balances: IndexMap<Currency, AccountBalance> = IndexMap::new();
         event.balances.iter().for_each(|balance| {
             balances_starting.insert(balance.currency, balance.total);
             balances.insert(balance.currency, *balance);
@@ -102,7 +103,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_total(&self) -> AHashMap<Currency, Money> {
+    pub fn base_balances_total(&self) -> IndexMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.total))
@@ -124,7 +125,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_free(&self) -> AHashMap<Currency, Money> {
+    pub fn base_balances_free(&self) -> IndexMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.free))
@@ -146,7 +147,7 @@ impl BaseAccount {
     }
 
     #[must_use]
-    pub fn base_balances_locked(&self) -> AHashMap<Currency, Money> {
+    pub fn base_balances_locked(&self) -> IndexMap<Currency, Money> {
         self.balances
             .iter()
             .map(|(currency, balance)| (*currency, balance.locked))
@@ -291,7 +292,7 @@ impl BaseAccount {
         fill: &OrderFilled,
         _position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        let mut pnls: AHashMap<Currency, Money> = AHashMap::new();
+        let mut pnls: IndexMap<Currency, Money> = IndexMap::new();
         let base_currency = instrument.base_currency();
 
         // No quantity capping (betting accounts cap to position qty, cash accounts don't)

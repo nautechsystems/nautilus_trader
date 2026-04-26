@@ -18,6 +18,7 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
@@ -294,11 +295,11 @@ impl Portfolio {
     ///
     /// Locked balances represent funds reserved for open orders.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> AHashMap<Currency, Money> {
+    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!("Cannot get balances locked: no account generated for {venue}");
-                AHashMap::new()
+                IndexMap::new()
             },
             AccountAny::balances_locked,
         )
@@ -308,19 +309,19 @@ impl Portfolio {
     ///
     /// Only applicable for margin accounts. Returns empty map for cash accounts.
     #[must_use]
-    pub fn margins_init(&self, venue: &Venue) -> AHashMap<InstrumentId, Money> {
+    pub fn margins_init(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
                     "Cannot get initial (order) margins: no account registered for {venue}"
                 );
-                AHashMap::new()
+                IndexMap::new()
             },
             |account| match account {
                 AccountAny::Margin(margin_account) => margin_account.initial_margins(),
                 AccountAny::Cash(_) | AccountAny::Betting(_) => {
                     log::warn!("Initial margins not applicable for cash account");
-                    AHashMap::new()
+                    IndexMap::new()
                 }
             },
         )
@@ -330,19 +331,19 @@ impl Portfolio {
     ///
     /// Only applicable for margin accounts. Returns empty map for cash accounts.
     #[must_use]
-    pub fn margins_maint(&self, venue: &Venue) -> AHashMap<InstrumentId, Money> {
+    pub fn margins_maint(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
                     "Cannot get maintenance (position) margins: no account registered for {venue}"
                 );
-                AHashMap::new()
+                IndexMap::new()
             },
             |account| match account {
                 AccountAny::Margin(margin_account) => margin_account.maintenance_margins(),
                 AccountAny::Cash(_) | AccountAny::Betting(_) => {
                     log::warn!("Maintenance margins not applicable for cash account");
-                    AHashMap::new()
+                    IndexMap::new()
                 }
             },
         )

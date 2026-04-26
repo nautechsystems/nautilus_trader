@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
@@ -101,8 +102,8 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "balances_total")]
-    fn py_balances_total(&self) -> std::collections::HashMap<Currency, Money> {
-        Account::balances_total(self).into_iter().collect()
+    fn py_balances_total(&self) -> IndexMap<Currency, Money> {
+        Account::balances_total(self)
     }
 
     #[pyo3(name = "balance_free")]
@@ -112,8 +113,8 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "balances_free")]
-    fn py_balances_free(&self) -> std::collections::HashMap<Currency, Money> {
-        Account::balances_free(self).into_iter().collect()
+    fn py_balances_free(&self) -> IndexMap<Currency, Money> {
+        Account::balances_free(self)
     }
 
     #[pyo3(name = "balance_locked")]
@@ -123,8 +124,8 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "balances_locked")]
-    fn py_balances_locked(&self) -> std::collections::HashMap<Currency, Money> {
-        Account::balances_locked(self).into_iter().collect()
+    fn py_balances_locked(&self) -> IndexMap<Currency, Money> {
+        Account::balances_locked(self)
     }
 
     #[pyo3(name = "balance")]
@@ -134,13 +135,13 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "balances")]
-    fn py_balances(&self) -> std::collections::HashMap<Currency, AccountBalance> {
-        Account::balances(self).into_iter().collect()
+    fn py_balances(&self) -> IndexMap<Currency, AccountBalance> {
+        Account::balances(self)
     }
 
     #[pyo3(name = "starting_balances")]
-    fn py_starting_balances(&self) -> std::collections::HashMap<Currency, Money> {
-        Account::starting_balances(self).into_iter().collect()
+    fn py_starting_balances(&self) -> IndexMap<Currency, Money> {
+        Account::starting_balances(self)
     }
 
     #[pyo3(name = "currencies")]

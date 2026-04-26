@@ -107,6 +107,7 @@ fn portfolio(
 }
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 
 // Helpers
 fn get_cash_account(accountid: Option<&str>) -> AccountState {
@@ -359,19 +360,19 @@ fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio
 #[rstest]
 fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.balances_locked(&venue);
-    assert_eq!(result, AHashMap::new());
+    assert_eq!(result, IndexMap::new());
 }
 
 #[rstest]
 fn test_margins_init_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_init(&venue);
-    assert_eq!(result, AHashMap::new());
+    assert_eq!(result, IndexMap::new());
 }
 
 #[rstest]
 fn test_margins_maint_when_no_account_for_venue_returns_none(portfolio: Portfolio, venue: Venue) {
     let result = portfolio.margins_maint(&venue);
-    assert_eq!(result, AHashMap::new());
+    assert_eq!(result, IndexMap::new());
 }
 
 #[rstest]
@@ -1473,7 +1474,7 @@ fn test_opening_several_positions_updates_portfolio(
     // FIX: TODO: should not be empty
     assert_eq!(
         portfolio.margins_maint(&Venue::test_default()),
-        AHashMap::new()
+        IndexMap::new()
     );
     assert_eq!(
         portfolio
@@ -1646,7 +1647,7 @@ fn test_modifying_position_updates_portfolio(
     // FIX: TODO: should not be empty
     assert_eq!(
         portfolio.margins_maint(&Venue::test_default()),
-        AHashMap::new()
+        IndexMap::new()
     );
     assert_eq!(
         portfolio
@@ -1840,7 +1841,7 @@ fn test_closing_position_updates_portfolio(
 
     assert_eq!(
         portfolio.margins_maint(&Venue::test_default()),
-        AHashMap::new()
+        IndexMap::new()
     ); // No maintenance margins
 
     let net_exposure = portfolio.net_exposure(&instrument_audusd.id(), None);
@@ -2069,7 +2070,7 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
     // FIX: TODO: should not be empty
     assert_eq!(
         portfolio.margins_maint(&Venue::test_default()),
-        AHashMap::new()
+        IndexMap::new()
     );
 }
 

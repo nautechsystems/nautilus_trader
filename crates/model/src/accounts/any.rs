@@ -19,8 +19,8 @@
 //! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
 //! account structs defined in this module.
 
-use ahash::AHashMap;
 use enum_dispatch::enum_dispatch;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -84,7 +84,7 @@ impl AccountAny {
     }
 
     #[must_use]
-    pub fn balances(&self) -> AHashMap<Currency, AccountBalance> {
+    pub fn balances(&self) -> IndexMap<Currency, AccountBalance> {
         match self {
             Self::Margin(margin) => margin.balances(),
             Self::Cash(cash) => cash.balances(),
@@ -93,7 +93,7 @@ impl AccountAny {
     }
 
     #[must_use]
-    pub fn balances_locked(&self) -> AHashMap<Currency, Money> {
+    pub fn balances_locked(&self) -> IndexMap<Currency, Money> {
         match self {
             Self::Margin(margin) => margin.balances_locked(),
             Self::Cash(cash) => cash.balances_locked(),

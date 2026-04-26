@@ -38,6 +38,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -217,7 +218,7 @@ impl Account for CashAccount {
         self.base_balance_total(currency)
     }
 
-    fn balances_total(&self) -> AHashMap<Currency, Money> {
+    fn balances_total(&self) -> IndexMap<Currency, Money> {
         self.base_balances_total()
     }
 
@@ -225,7 +226,7 @@ impl Account for CashAccount {
         self.base_balance_free(currency)
     }
 
-    fn balances_free(&self) -> AHashMap<Currency, Money> {
+    fn balances_free(&self) -> IndexMap<Currency, Money> {
         self.base_balances_free()
     }
 
@@ -233,7 +234,7 @@ impl Account for CashAccount {
         self.base_balance_locked(currency)
     }
 
-    fn balances_locked(&self) -> AHashMap<Currency, Money> {
+    fn balances_locked(&self) -> IndexMap<Currency, Money> {
         self.base_balances_locked()
     }
 
@@ -257,11 +258,11 @@ impl Account for CashAccount {
         self.balances.keys().copied().collect()
     }
 
-    fn starting_balances(&self) -> AHashMap<Currency, Money> {
+    fn starting_balances(&self) -> IndexMap<Currency, Money> {
         self.balances_starting.clone()
     }
 
-    fn balances(&self) -> AHashMap<Currency, AccountBalance> {
+    fn balances(&self) -> IndexMap<Currency, AccountBalance> {
         self.balances.clone()
     }
 
@@ -370,7 +371,8 @@ impl Display for CashAccount {
 
 #[cfg(test)]
 mod tests {
-    use ahash::{AHashMap, AHashSet};
+    use ahash::AHashSet;
+    use indexmap::IndexMap;
     use rstest::rstest;
 
     use crate::{
@@ -415,13 +417,13 @@ mod tests {
             cash_account.balance_locked(None),
             Some(Money::from("25000 USD"))
         );
-        let mut balances_total_expected = AHashMap::new();
+        let mut balances_total_expected = IndexMap::new();
         balances_total_expected.insert(Currency::from("USD"), Money::from("1525000 USD"));
         assert_eq!(cash_account.balances_total(), balances_total_expected);
-        let mut balances_free_expected = AHashMap::new();
+        let mut balances_free_expected = IndexMap::new();
         balances_free_expected.insert(Currency::from("USD"), Money::from("1500000 USD"));
         assert_eq!(cash_account.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = AHashMap::new();
+        let mut balances_locked_expected = IndexMap::new();
         balances_locked_expected.insert(Currency::from("USD"), Money::from("25000 USD"));
         assert_eq!(cash_account.balances_locked(), balances_locked_expected);
     }
@@ -464,20 +466,40 @@ mod tests {
             cash_account_multi.balance_locked(Some(Currency::ETH())),
             Some(Money::from("0 ETH"))
         );
-        let mut balances_total_expected = AHashMap::new();
+        let mut balances_total_expected = IndexMap::new();
         balances_total_expected.insert(Currency::from("BTC"), Money::from("10 BTC"));
         balances_total_expected.insert(Currency::from("ETH"), Money::from("20 ETH"));
         assert_eq!(cash_account_multi.balances_total(), balances_total_expected);
-        let mut balances_free_expected = AHashMap::new();
+        let mut balances_free_expected = IndexMap::new();
         balances_free_expected.insert(Currency::from("BTC"), Money::from("10 BTC"));
         balances_free_expected.insert(Currency::from("ETH"), Money::from("20 ETH"));
         assert_eq!(cash_account_multi.balances_free(), balances_free_expected);
-        let mut balances_locked_expected = AHashMap::new();
+        let mut balances_locked_expected = IndexMap::new();
         balances_locked_expected.insert(Currency::from("BTC"), Money::from("0 BTC"));
         balances_locked_expected.insert(Currency::from("ETH"), Money::from("0 ETH"));
         assert_eq!(
             cash_account_multi.balances_locked(),
             balances_locked_expected
+        );
+    }
+
+    #[rstest]
+    fn test_cash_account_balances_preserve_insertion_order(cash_account_multi: CashAccount) {
+        // Locks in IndexMap iteration order for BaseAccount.balances:
+        // currencies appear in the same order as the AccountState.balances
+        // Vec they were initialised from. Drives the deterministic ordering
+        // of regenerated AccountState events in portfolio::manager.
+        let keys: Vec<Currency> = cash_account_multi.balances().keys().copied().collect();
+        assert_eq!(keys, vec![Currency::from("BTC"), Currency::from("ETH")]);
+
+        let totals: Vec<(Currency, Money)> =
+            cash_account_multi.balances_total().into_iter().collect();
+        assert_eq!(
+            totals,
+            vec![
+                (Currency::from("BTC"), Money::from("10 BTC")),
+                (Currency::from("ETH"), Money::from("20 ETH")),
+            ]
         );
     }
 

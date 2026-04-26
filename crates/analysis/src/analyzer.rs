@@ -737,11 +737,11 @@ mod tests {
     }
 
     impl Account for MockAccount {
-        fn starting_balances(&self) -> AHashMap<Currency, Money> {
-            self.starting_balances.clone()
+        fn starting_balances(&self) -> IndexMap<Currency, Money> {
+            self.starting_balances.clone().into_iter().collect()
         }
-        fn balances_total(&self) -> AHashMap<Currency, Money> {
-            self.current_balances.clone()
+        fn balances_total(&self) -> IndexMap<Currency, Money> {
+            self.current_balances.clone().into_iter().collect()
         }
         fn id(&self) -> AccountId {
             todo!()
@@ -767,13 +767,13 @@ mod tests {
         fn balance_free(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_free(&self) -> AHashMap<Currency, Money> {
+        fn balances_free(&self) -> IndexMap<Currency, Money> {
             todo!()
         }
         fn balance_locked(&self, _: Option<Currency>) -> Option<Money> {
             todo!()
         }
-        fn balances_locked(&self) -> AHashMap<Currency, Money> {
+        fn balances_locked(&self) -> IndexMap<Currency, Money> {
             todo!()
         }
         fn last_event(&self) -> Option<AccountState> {
@@ -788,7 +788,7 @@ mod tests {
         fn currencies(&self) -> Vec<Currency> {
             self.current_balances.keys().copied().collect()
         }
-        fn balances(&self) -> AHashMap<Currency, AccountBalance> {
+        fn balances(&self) -> IndexMap<Currency, AccountBalance> {
             todo!()
         }
         fn apply(&mut self, _: AccountState) -> anyhow::Result<()> {

@@ -23,6 +23,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -510,7 +511,7 @@ impl SimulatedExchange {
 
                         let margins = match account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
-                            _ => AHashMap::new(),
+                            _ => IndexMap::new(),
                         };
 
                         if let Some(exec_client) = &self.exec_client {

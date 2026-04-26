@@ -203,6 +203,7 @@ The 16 in-scope crates host `AHashMap` and `AHashSet` in ~85 other files, used f
 | `Position::commissions` in `model/src/position.rs`     | closed     |
 | `model/src/orderbook/` AHashSet usage                  | closed     |
 | `model/src/orders/` AHashSet usage                     | closed     |
+| `model/src/accounts/` balances + margins fields        | closed     |
 | `AHashMap` / `AHashSet` elsewhere                      | unresolved |
 
 **Notes.** `AHash` randomizes its hasher per process. Iteration order over
@@ -233,14 +234,23 @@ collect `cache.keys()` into public `Vec<ClientOrderId>`s. The remaining
 only. The `orders/` files use `AHashSet` for duplicate detection and a
 static cancellable-status set for O(1) membership; neither is iterated.
 
+The `model/src/accounts/` audit closed the trait-level scope hole. The
+`Account` trait now returns `IndexMap` from `balances`, `balances_total`,
+`balances_free`, `balances_locked`, and `starting_balances`.
+`BaseAccount.balances` and `BaseAccount.balances_starting` flipped to
+`IndexMap`, `MarginAccount.margins` and `MarginAccount.account_margins`
+flipped to `IndexMap`. The trigger was
+`portfolio/src/manager.rs::generate_account_state` building
+`AccountState.balances` and `AccountState.margins` `Vec`s from
+`.values()` iteration on those fields, so the regenerated event ordering
+is now deterministic. `BaseAccount.commissions`, `MarginAccount.leverages`,
+`CashAccount.balances_locked`, and `BettingAccount.balances_locked` stay
+on `AHashMap`: lookup-only or no observable in-scope iteration.
+
 **Mitigation.** Other call sites need a per-file review to determine whether
 iteration order affects observable state. The audit classified them as
 lookup-only pending review. Any hash-collection site that feeds observable
-state on the DST path is a future scope-hole closure. `model/src/accounts/`
-remains pending: `currencies()` returns `Vec<Currency>` from
-`balances.keys()` and `commissions/balances/balances_starting` are exposed
-via cloned-getter APIs whose downstream observable consumption needs
-verification.
+state on the DST path is a future scope-hole closure.
 
 ## Randomness
 
@@ -440,7 +450,7 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 23    |
+| closed     | 24    |
 | gated      | 10    |
 | scoped‑out | 24    |
 | unresolved | 5     |
