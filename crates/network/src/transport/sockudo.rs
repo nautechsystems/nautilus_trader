@@ -23,21 +23,26 @@
 //! The `Message` enums are structurally identical: both carry payloads as `bytes::Bytes`
 //! across all five variants, so conversions are zero-copy and infallible.
 //!
-//! Sockudo's HTTP/1.1 client handshake does not accept custom headers, so the runtime
-//! selector in [`crate::websocket::config::WebSocketConfig`] rejects non-empty headers
-//! when this backend is selected.
+//! sockudo's public HTTP/1.1 client API does not expose custom headers, so this
+//! module provides a small handshake helper for upgrade requests that need them.
 
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
 
+#[cfg(not(feature = "turmoil"))]
+use bytes::{BufMut, Bytes, BytesMut};
 use futures::{Sink, Stream};
+#[cfg(not(feature = "turmoil"))]
+use sockudo_ws::{HandshakeResult, handshake};
 use sockudo_ws::{
     error::{CloseReason as SockudoCloseReason, Error as SockudoError},
     protocol::Message as SockudoMessage,
     stream::WebSocketStream,
 };
+#[cfg(not(feature = "turmoil"))]
+use tokio::io::ReadBuf;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::{
@@ -45,6 +50,210 @@ use super::{
     message::{CloseFrame, Message},
     stream::WsTransport,
 };
+
+#[cfg(not(feature = "turmoil"))]
+const MAX_HTTP_HEADER_SIZE: usize = 8192;
+#[cfg(not(feature = "turmoil"))]
+const RESERVED_UPGRADE_HEADERS: &[&str] = &[
+    "host",
+    "upgrade",
+    "connection",
+    "sec-websocket-key",
+    "sec-websocket-version",
+    "sec-websocket-protocol",
+    "sec-websocket-extensions",
+];
+
+/// Perform an HTTP/1.1 WebSocket client handshake with custom headers.
+#[cfg(not(feature = "turmoil"))]
+pub(crate) async fn client_handshake_with_headers<S>(
+    stream: &mut S,
+    host: &str,
+    path: &str,
+    protocol: Option<&str>,
+    extra_headers: &[(String, String)],
+) -> Result<HandshakeResult, SockudoError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let key = handshake::generate_key();
+    let request = build_request_with_headers(host, path, &key, protocol, None, extra_headers)?;
+
+    stream.write_all(&request).await?;
+    stream.flush().await?;
+
+    let mut buf = BytesMut::with_capacity(4096);
+
+    loop {
+        if buf.len() > MAX_HTTP_HEADER_SIZE {
+            return Err(SockudoError::InvalidHttp("response too large"));
+        }
+
+        let n = stream.read_buf(&mut buf).await?;
+        if n == 0 {
+            return Err(SockudoError::ConnectionClosed);
+        }
+
+        if let Some((res, consumed)) = handshake::parse_response(&buf)? {
+            let accept = res.accept.ok_or(SockudoError::HandshakeFailed(
+                "missing Sec-WebSocket-Accept",
+            ))?;
+
+            if !handshake::validate_accept_key(&key, accept) {
+                return Err(SockudoError::HandshakeFailed(
+                    "invalid Sec-WebSocket-Accept",
+                ));
+            }
+
+            let res_protocol = res.protocol.map(String::from);
+            let res_extensions = res.extensions.map(String::from);
+            let leftover = if consumed < buf.len() {
+                Some(buf.split_off(consumed).freeze())
+            } else {
+                None
+            };
+
+            return Ok(HandshakeResult {
+                path: path.to_string(),
+                protocol: res_protocol,
+                extensions: res_extensions,
+                leftover,
+            });
+        }
+    }
+}
+
+#[cfg(not(feature = "turmoil"))]
+fn build_request_with_headers(
+    host: &str,
+    path: &str,
+    key: &str,
+    protocol: Option<&str>,
+    extensions: Option<&str>,
+    extra_headers: &[(String, String)],
+) -> Result<Bytes, SockudoError> {
+    let mut buf = BytesMut::with_capacity(512);
+
+    buf.put_slice(b"GET ");
+    buf.put_slice(path.as_bytes());
+    buf.put_slice(b" HTTP/1.1\r\n");
+    buf.put_slice(b"Host: ");
+    buf.put_slice(host.as_bytes());
+    buf.put_slice(b"\r\n");
+    buf.put_slice(b"Upgrade: websocket\r\n");
+    buf.put_slice(b"Connection: Upgrade\r\n");
+    buf.put_slice(b"Sec-WebSocket-Key: ");
+    buf.put_slice(key.as_bytes());
+    buf.put_slice(b"\r\n");
+    buf.put_slice(b"Sec-WebSocket-Version: 13\r\n");
+
+    if let Some(proto) = protocol {
+        buf.put_slice(b"Sec-WebSocket-Protocol: ");
+        buf.put_slice(proto.as_bytes());
+        buf.put_slice(b"\r\n");
+    }
+
+    if let Some(ext) = extensions {
+        buf.put_slice(b"Sec-WebSocket-Extensions: ");
+        buf.put_slice(ext.as_bytes());
+        buf.put_slice(b"\r\n");
+    }
+
+    validate_extra_headers(extra_headers)?;
+    for (name, value) in extra_headers {
+        buf.put_slice(name.as_bytes());
+        buf.put_slice(b": ");
+        buf.put_slice(value.as_bytes());
+        buf.put_slice(b"\r\n");
+    }
+
+    buf.put_slice(b"\r\n");
+    Ok(buf.freeze())
+}
+
+#[cfg(not(feature = "turmoil"))]
+pub(crate) fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), SockudoError> {
+    for (name, value) in headers {
+        validate_extra_header(name, value)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "turmoil"))]
+fn validate_extra_header(name: &str, value: &str) -> Result<(), SockudoError> {
+    let parsed_name = name
+        .parse::<http::HeaderName>()
+        .map_err(|_| SockudoError::InvalidHttp("invalid header name"))?;
+
+    if RESERVED_UPGRADE_HEADERS.contains(&parsed_name.as_str()) {
+        return Err(SockudoError::InvalidHttp(
+            "reserved upgrade header not allowed in extra_headers",
+        ));
+    }
+
+    http::HeaderValue::from_str(value)
+        .map_err(|_| SockudoError::InvalidHttp("invalid header value"))?;
+    Ok(())
+}
+
+/// Replay bytes read during the handshake before forwarding to the inner IO.
+#[cfg(not(feature = "turmoil"))]
+pub(crate) struct PrefixedIo<S> {
+    inner: S,
+    prefix: Bytes,
+}
+
+#[cfg(not(feature = "turmoil"))]
+impl<S> PrefixedIo<S> {
+    pub(crate) const fn new(inner: S, prefix: Bytes) -> Self {
+        Self { inner, prefix }
+    }
+}
+
+#[cfg(not(feature = "turmoil"))]
+impl<S> AsyncRead for PrefixedIo<S>
+where
+    S: AsyncRead + Unpin,
+{
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if !self.prefix.is_empty() {
+            let n = self.prefix.len().min(buf.remaining());
+            let chunk = self.prefix.split_to(n);
+            buf.put_slice(&chunk);
+            return Poll::Ready(Ok(()));
+        }
+
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+#[cfg(not(feature = "turmoil"))]
+impl<S> AsyncWrite for PrefixedIo<S>
+where
+    S: AsyncWrite + Unpin,
+{
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 impl From<SockudoMessage> for Message {
     fn from(value: SockudoMessage) -> Self {
@@ -239,8 +448,187 @@ const _: fn() = || {
 mod tests {
     use bytes::Bytes;
     use rstest::rstest;
+    #[cfg(not(feature = "turmoil"))]
+    use sockudo_ws::handshake::generate_accept_key;
+    #[cfg(not(feature = "turmoil"))]
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, duplex};
 
     use super::*;
+
+    #[cfg(not(feature = "turmoil"))]
+    async fn read_http_request<S>(stream: &mut S) -> Vec<u8>
+    where
+        S: AsyncRead + Unpin,
+    {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 256];
+
+        loop {
+            let n = stream.read(&mut chunk).await.unwrap();
+            assert!(n > 0, "HTTP request closed before headers completed");
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|window| window == b"\r\n\r\n") {
+                return buf;
+            }
+        }
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    fn build_test_response(sec_websocket_key: &str, extra_bytes: &[u8]) -> Vec<u8> {
+        let accept = generate_accept_key(sec_websocket_key);
+        let mut response = format!(
+            concat!(
+                "HTTP/1.1 101 Switching Protocols\r\n",
+                "Upgrade: websocket\r\n",
+                "Connection: Upgrade\r\n",
+                "Sec-WebSocket-Accept: {}\r\n",
+                "\r\n",
+            ),
+            accept
+        )
+        .into_bytes();
+        response.extend_from_slice(extra_bytes);
+        response
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    fn extract_header<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+        request.lines().find_map(|line| {
+            let (header_name, header_value) = line.split_once(':')?;
+            if header_name.eq_ignore_ascii_case(name) {
+                Some(header_value.trim())
+            } else {
+                None
+            }
+        })
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn client_handshake_with_headers_sends_custom_headers() {
+        let (mut client, mut server) = duplex(4096);
+        let headers = vec![
+            ("ok-access-key".to_string(), "key-1".to_string()),
+            ("ok-access-passphrase".to_string(), "pass-1".to_string()),
+        ];
+
+        let server_task = tokio::spawn(async move {
+            let request = read_http_request(&mut server).await;
+            let request = String::from_utf8(request).unwrap();
+
+            assert!(request.starts_with("GET /ws/v5/public-sbe?instId=BTC-USDT HTTP/1.1\r\n"));
+            assert_eq!(extract_header(&request, "Host"), Some("ws.okx.com:8443"));
+            assert_eq!(extract_header(&request, "ok-access-key"), Some("key-1"));
+            assert_eq!(
+                extract_header(&request, "ok-access-passphrase"),
+                Some("pass-1")
+            );
+
+            let sec_websocket_key = extract_header(&request, "Sec-WebSocket-Key").unwrap();
+            let response = build_test_response(sec_websocket_key, &[]);
+            server.write_all(&response).await.unwrap();
+        });
+
+        let handshake = client_handshake_with_headers(
+            &mut client,
+            "ws.okx.com:8443",
+            "/ws/v5/public-sbe?instId=BTC-USDT",
+            None,
+            &headers,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(handshake.path, "/ws/v5/public-sbe?instId=BTC-USDT");
+        assert!(handshake.leftover.is_none());
+        server_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[cfg(not(feature = "turmoil"))]
+    #[case::host("Host")]
+    #[case::upgrade("Upgrade")]
+    #[case::connection("Connection")]
+    #[case::sec_websocket_key("Sec-WebSocket-Key")]
+    #[case::sec_websocket_version("Sec-WebSocket-Version")]
+    #[case::sec_websocket_protocol("Sec-WebSocket-Protocol")]
+    #[case::sec_websocket_extensions("Sec-WebSocket-Extensions")]
+    fn validate_extra_header_rejects_reserved_upgrade_headers(#[case] name: &str) {
+        let err = validate_extra_header(name, "value").unwrap_err();
+
+        assert!(matches!(
+            err,
+            SockudoError::InvalidHttp("reserved upgrade header not allowed in extra_headers")
+        ));
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn client_handshake_with_headers_rejects_missing_accept() {
+        let (mut client, mut server) = duplex(4096);
+
+        let server_task = tokio::spawn(async move {
+            let _request = read_http_request(&mut server).await;
+            server
+                .write_all(
+                    b"HTTP/1.1 101 Switching Protocols\r\n\
+                      Upgrade: websocket\r\n\
+                      Connection: Upgrade\r\n\
+                      \r\n",
+                )
+                .await
+                .unwrap();
+        });
+
+        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept")
+        ));
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn client_handshake_with_headers_returns_leftover_bytes() {
+        let (mut client, mut server) = duplex(4096);
+        let extra = b"\x81\x05hello";
+
+        let server_task = tokio::spawn(async move {
+            let request = read_http_request(&mut server).await;
+            let request = String::from_utf8(request).unwrap();
+            let sec_websocket_key = extract_header(&request, "Sec-WebSocket-Key").unwrap();
+            let response = build_test_response(sec_websocket_key, extra);
+            server.write_all(&response).await.unwrap();
+        });
+
+        let handshake = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+            .await
+            .unwrap();
+
+        assert_eq!(handshake.leftover.as_deref(), Some(extra.as_slice()));
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn prefixed_io_replays_leftover_before_socket() {
+        let (client, mut server) = duplex(4096);
+        let mut prefixed = PrefixedIo::new(client, Bytes::from_static(b"abc"));
+
+        let server_task = tokio::spawn(async move {
+            server.write_all(b"def").await.unwrap();
+        });
+
+        let mut buf = [0u8; 6];
+        prefixed.read_exact(&mut buf).await.unwrap();
+
+        assert_eq!(&buf, b"abcdef");
+        server_task.await.unwrap();
+    }
 
     #[rstest]
     fn round_trip_text() {

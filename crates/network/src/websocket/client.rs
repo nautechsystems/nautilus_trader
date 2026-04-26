@@ -43,7 +43,12 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 ))]
 use rustls::ClientConfig;
 #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
-use sockudo_ws::{Config as SockudoConfig, Http1, client::WebSocketClient as SockudoClient};
+use sockudo_ws::{
+    Config as SockudoConfig, Http1, Role, Stream as SockudoStream,
+    WebSocketStream as SockudoWebSocketStream, handshake as sockudo_handshake,
+};
+#[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+use tokio::io::{AsyncRead, AsyncWrite};
 #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
 use tokio::net::TcpStream;
 #[cfg(any(
@@ -72,7 +77,9 @@ use super::{
 #[cfg(feature = "turmoil")]
 use crate::net::TcpConnector;
 #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
-use crate::transport::sockudo::SockudoTransport;
+use crate::transport::sockudo::{
+    PrefixedIo, SockudoTransport, client_handshake_with_headers, validate_extra_headers,
+};
 use crate::{
     RECONNECTED,
     backoff::ExponentialBackoff,
@@ -328,9 +335,8 @@ impl WebSocketClientInner {
     ///
     /// Dispatches on `backend` to the matching backend helper. The
     /// [`TransportBackend::Tungstenite`] backend is always available; the
-    /// [`TransportBackend::Sockudo`] backend requires the `transport-sockudo`
-    /// Cargo feature and rejects non-empty `headers` because sockudo's HTTP/1.1
-    /// client handshake does not accept custom upgrade headers.
+    /// [`TransportBackend::Sockudo`] requires the `transport-sockudo` Cargo
+    /// feature and uses a custom HTTP/1.1 handshake path for upgrade headers.
     ///
     /// # Errors
     ///
@@ -348,16 +354,9 @@ impl WebSocketClientInner {
         match backend {
             TransportBackend::Tungstenite => Self::connect_tungstenite(url, headers).await,
             TransportBackend::Sockudo => {
-                if !headers.is_empty() {
-                    return Err(TransportError::Other(
-                        "sockudo backend does not support custom upgrade headers; \
-                         use the tungstenite backend for adapters that require them"
-                            .to_string(),
-                    ));
-                }
                 #[cfg(feature = "transport-sockudo")]
                 {
-                    Self::connect_sockudo(url).await
+                    Self::connect_sockudo(url, headers).await
                 }
                 #[cfg(not(feature = "transport-sockudo"))]
                 {
@@ -471,13 +470,16 @@ impl WebSocketClientInner {
 
     /// Connects with the server using the sockudo-ws backend.
     ///
-    /// Sockudo's HTTP/1.1 client handshake does not accept custom upgrade
-    /// headers; the caller [`Self::connect_with_server`] rejects non-empty
-    /// `headers` before reaching this helper.
+    /// Uses sockudo's native handshake when no custom headers are required, and
+    /// a local HTTP/1.1 helper only for upgrade requests with custom headers.
     #[inline]
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
-    async fn connect_sockudo(url: &str) -> Result<(MessageWriter, MessageReader), TransportError> {
+    async fn connect_sockudo(
+        url: &str,
+        headers: Vec<(String, String)>,
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
         let target = SockudoTarget::parse(url)?;
+        validate_extra_headers(&headers).map_err(TransportError::from)?;
 
         let tcp_stream = TcpStream::connect((target.host.as_str(), target.port))
             .await
@@ -486,8 +488,6 @@ impl WebSocketClientInner {
         if let Err(e) = tcp_stream.set_nodelay(true) {
             log::warn!("Failed to enable TCP_NODELAY for sockudo client: {e:?}");
         }
-
-        let client = SockudoClient::<Http1>::new(SockudoConfig::default());
 
         if target.is_tls {
             let mut root_store = rustls::RootCertStore::empty();
@@ -502,20 +502,52 @@ impl WebSocketClientInner {
                 .connect(domain, tcp_stream)
                 .await
                 .map_err(TransportError::Io)?;
-            let (ws, _hs) = client
-                .connect(tls_stream, &target.host_header, &target.path, None)
-                .await
-                .map_err(TransportError::from)?;
-            let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
-            Ok(transport.split())
+            Self::finish_sockudo_handshake(tls_stream, &target, &headers).await
         } else {
-            let (ws, _hs) = client
-                .connect(tcp_stream, &target.host_header, &target.path, None)
-                .await
-                .map_err(TransportError::from)?;
-            let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
-            Ok(transport.split())
+            Self::finish_sockudo_handshake(tcp_stream, &target, &headers).await
         }
+    }
+
+    #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+    async fn finish_sockudo_handshake<S>(
+        mut stream: S,
+        target: &SockudoTarget,
+        headers: &[(String, String)],
+    ) -> Result<(MessageWriter, MessageReader), TransportError>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        // sockudo's high-level client drops handshake leftover bytes today, so
+        // choose the handshake primitive here and always own stream construction.
+        let handshake = if headers.is_empty() {
+            sockudo_handshake::client_handshake(
+                &mut stream,
+                &target.host_header,
+                &target.path,
+                None,
+            )
+            .await
+        } else {
+            client_handshake_with_headers(
+                &mut stream,
+                &target.host_header,
+                &target.path,
+                None,
+                headers,
+            )
+            .await
+        }
+        .map_err(TransportError::from)?;
+
+        // Reading the HTTP 101 may also read the first WebSocket frame prefix;
+        // replay it only when present so the ordinary path stays unwrapped.
+        let stream = match handshake.leftover {
+            Some(prefix) => SockudoStream::<Http1>::new(PrefixedIo::new(stream, prefix)),
+            None => SockudoStream::<Http1>::new(stream),
+        };
+        let ws = SockudoWebSocketStream::from_raw(stream, Role::Client, SockudoConfig::default());
+        let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
+        Ok(transport.split())
     }
 
     /// Sockudo backend is unavailable under the turmoil feature (the simulator
@@ -526,7 +558,10 @@ impl WebSocketClientInner {
         clippy::unused_async,
         reason = "signature mirrors the non-turmoil variant; both are awaited in the dispatcher"
     )]
-    async fn connect_sockudo(_url: &str) -> Result<(MessageWriter, MessageReader), TransportError> {
+    async fn connect_sockudo(
+        _url: &str,
+        _headers: Vec<(String, String)>,
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
         Err(TransportError::Other(
             "sockudo backend is not available under the turmoil simulator".to_string(),
         ))
@@ -2113,11 +2148,19 @@ mod rust_tests {
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
     use tokio::{
+        io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task::{self, JoinHandle},
         time::{Duration, sleep},
     };
-    use tokio_tungstenite::{accept_async, tungstenite::Message as WsMessage};
+    use tokio_tungstenite::{
+        accept_async, accept_hdr_async,
+        tungstenite::{
+            Message as WsMessage,
+            handshake::server::{self, Callback},
+            http::HeaderValue,
+        },
+    };
 
     use super::*;
     use crate::websocket::types::channel_message_handler;
@@ -2126,6 +2169,57 @@ mod rust_tests {
         task: JoinHandle<()>,
         port: u16,
         messages: Arc<tokio::sync::Mutex<Vec<String>>>,
+    }
+
+    #[cfg(feature = "transport-sockudo")]
+    async fn read_http_request<S>(stream: &mut S) -> Vec<u8>
+    where
+        S: AsyncRead + Unpin,
+    {
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 256];
+
+        loop {
+            let n = stream.read(&mut chunk).await.unwrap();
+            assert!(n > 0, "HTTP request closed before headers completed");
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|window| window == b"\r\n\r\n") {
+                return buf;
+            }
+        }
+    }
+
+    #[cfg(feature = "transport-sockudo")]
+    fn extract_header<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+        request.lines().find_map(|line| {
+            let (header_name, header_value) = line.split_once(':')?;
+            if header_name.eq_ignore_ascii_case(name) {
+                Some(header_value.trim())
+            } else {
+                None
+            }
+        })
+    }
+
+    #[derive(Debug, Clone)]
+    struct HeaderAssertCallback {
+        key: String,
+        value: HeaderValue,
+    }
+
+    impl Callback for HeaderAssertCallback {
+        #[expect(
+            clippy::panic_in_result_fn,
+            reason = "assertion failures should fail the test"
+        )]
+        fn on_request(
+            self,
+            request: &server::Request,
+            response: server::Response,
+        ) -> Result<server::Response, server::ErrorResponse> {
+            assert_eq!(request.headers().get(&self.key), Some(&self.value));
+            Ok(response)
+        }
     }
 
     impl RecordingServer {
@@ -3693,12 +3787,12 @@ mod rust_tests {
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
     #[rstest]
     #[tokio::test]
-    async fn test_sockudo_backend_rejects_custom_headers() {
+    async fn test_sockudo_backend_rejects_reserved_headers_before_connect() {
         let (handler, _rx) = channel_message_handler();
 
         let config = WebSocketConfig {
             url: "ws://127.0.0.1:1".to_string(),
-            headers: vec![("X-Test".to_string(), "value".to_string())],
+            headers: vec![("Host".to_string(), "example.com".to_string())],
             heartbeat: None,
             heartbeat_msg: None,
             reconnect_timeout_ms: None,
@@ -3711,15 +3805,171 @@ mod rust_tests {
             backend: TransportBackend::Sockudo,
         };
 
-        let result =
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await;
+        let err = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .expect_err("reserved header should fail before TCP connect");
 
-        let err = result.expect_err("sockudo backend should reject custom headers");
-        let msg = err.to_string();
         assert!(
-            msg.contains("does not support custom upgrade headers"),
-            "expected upgrade-headers rejection, was: {msg}"
+            err.to_string()
+                .contains("reserved upgrade header not allowed in extra_headers"),
+            "expected reserved-header failure, was: {err}"
         );
+    }
+
+    #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+    #[rstest]
+    #[tokio::test]
+    async fn test_sockudo_backend_replays_leftover_without_custom_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let request = read_http_request(&mut stream).await;
+                let request = String::from_utf8(request).unwrap();
+                let sec_websocket_key = extract_header(&request, "Sec-WebSocket-Key").unwrap();
+                let accept = sockudo_handshake::generate_accept_key(sec_websocket_key);
+                let mut response = format!(
+                    concat!(
+                        "HTTP/1.1 101 Switching Protocols\r\n",
+                        "Upgrade: websocket\r\n",
+                        "Connection: Upgrade\r\n",
+                        "Sec-WebSocket-Accept: {}\r\n",
+                        "\r\n",
+                    ),
+                    accept
+                )
+                .into_bytes();
+                response.extend_from_slice(b"\x81\x05hello");
+                stream.write_all(&response).await.unwrap();
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}/ws"),
+            headers: vec![],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Sockudo,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .expect("sockudo connect without custom headers");
+
+        let received = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Ok(msg) = rx.try_recv() {
+                    return msg;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("did not receive leftover frame before timeout");
+
+        match received {
+            WsMessage::Text(t) => assert_eq!(t.as_str(), "hello"),
+            other => panic!("expected text, was {other:?}"),
+        }
+
+        client.disconnect().await;
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .expect("server did not close before timeout")
+            .unwrap();
+    }
+
+    #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]
+    #[rstest]
+    #[tokio::test]
+    async fn test_sockudo_backend_sends_custom_headers() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let server = task::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                let callback = HeaderAssertCallback {
+                    key: "X-Test".to_string(),
+                    value: HeaderValue::from_static("value"),
+                };
+
+                if let Ok(mut ws) = accept_hdr_async(stream, callback).await {
+                    while let Some(Ok(msg)) = ws.next().await {
+                        #[expect(
+                            clippy::collapsible_match,
+                            reason = "send consumes msg, so this cannot be a match guard"
+                        )]
+                        match msg {
+                            WsMessage::Text(_) | WsMessage::Binary(_) => {
+                                if ws.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                            WsMessage::Close(_) => {
+                                let _ = ws.close(None).await;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+
+        let (handler, mut rx) = channel_message_handler();
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![("X-Test".to_string(), "value".to_string())],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(2_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Sockudo,
+        };
+
+        let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
+            .await
+            .expect("sockudo connect with custom headers");
+
+        client.send_text("ping".to_string(), None).await.unwrap();
+
+        let received = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Ok(msg) = rx.try_recv() {
+                    return msg;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("did not receive echo before timeout");
+
+        match received {
+            WsMessage::Text(t) => assert_eq!(t.as_str(), "ping"),
+            other => panic!("expected text, was {other:?}"),
+        }
+
+        client.disconnect().await;
+        tokio::time::timeout(Duration::from_secs(3), server)
+            .await
+            .expect("server did not close before timeout")
+            .unwrap();
     }
 
     #[cfg(all(feature = "transport-sockudo", not(feature = "turmoil")))]

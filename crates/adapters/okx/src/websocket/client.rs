@@ -294,9 +294,6 @@ impl OKXWebSocketClient {
     }
 
     /// Sets the transport backend for the next [`Self::connect`].
-    ///
-    /// When `Sockudo` is selected the OKX `User-Agent` upgrade header is
-    /// dropped because sockudo does not accept custom upgrade headers.
     #[must_use]
     pub fn with_transport_backend(mut self, backend: TransportBackend) -> Self {
         self.transport_backend = backend;
@@ -482,14 +479,7 @@ impl OKXWebSocketClient {
             // Handler responds to pings internally via select! loop
         });
 
-        // Sockudo's HTTP/1.1 client rejects custom upgrade headers, so the OKX
-        // User-Agent is omitted when that backend is selected.
-        let headers = match self.transport_backend {
-            TransportBackend::Sockudo => vec![],
-            TransportBackend::Tungstenite => {
-                vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
-            }
-        };
+        let headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
 
         let config = WebSocketConfig {
             url: self.url.clone(),
