@@ -1692,6 +1692,24 @@ fn test_to_object_path_trailing_slash() {
 
 #[cfg(feature = "cloud")]
 #[rstest]
+fn test_remote_to_object_path_preserves_base_path() {
+    let catalog =
+        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+
+    let relative = catalog.to_object_path("data/quotes/file.parquet");
+    assert_eq!(relative.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let with_base = catalog.to_object_path("base/path/data/quotes/file.parquet");
+    assert_eq!(with_base.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let parsed = catalog
+        .to_object_path_parsed("data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(parsed.as_ref(), "base/path/data/quotes/file.parquet");
+}
+
+#[cfg(feature = "cloud")]
+#[rstest]
 fn test_is_remote_uri() {
     // Test S3 URIs
     let s3_catalog =
@@ -2001,13 +2019,19 @@ fn test_reconstruct_full_uri_moved() {
     let s3_catalog =
         ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
     let reconstructed = s3_catalog.reconstruct_full_uri("data/quotes/file.parquet");
-    assert_eq!(reconstructed, "s3://bucket/data/quotes/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "s3://bucket/base/path/data/quotes/file.parquet"
+    );
 
     // Test GCS URI reconstruction
     let gcs_catalog =
         ParquetDataCatalog::from_uri("gs://bucket/base/path", None, None, None, None).unwrap();
     let reconstructed = gcs_catalog.reconstruct_full_uri("data/trades/file.parquet");
-    assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "gs://bucket/base/path/data/trades/file.parquet"
+    );
 
     // Test Azure URI reconstruction
     let azure_test_options = Some(
@@ -2020,7 +2044,7 @@ fn test_reconstruct_full_uri_moved() {
         ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
             .unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
-    assert_eq!(reconstructed, "az://container/data/bars/file.parquet");
+    assert_eq!(reconstructed, "az://container/path/data/bars/file.parquet");
 
     // Test HTTP URI reconstruction
     let http_catalog =
@@ -2029,7 +2053,7 @@ fn test_reconstruct_full_uri_moved() {
     let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
-        "https://example.com/data/quotes/file.parquet"
+        "https://example.com/base/path/data/quotes/file.parquet"
     );
 
     // Test local path (should return full absolute path)

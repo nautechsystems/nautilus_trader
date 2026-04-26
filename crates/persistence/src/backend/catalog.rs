@@ -1350,13 +1350,18 @@ impl ParquetDataCatalog {
     /// Helper method to reconstruct full URI for remote object store paths
     #[must_use]
     pub fn reconstruct_full_uri(&self, path_str: &str) -> String {
+        if path_str.contains("://") {
+            return path_str.to_string();
+        }
+
         // Check if this is a remote URI scheme that needs reconstruction
         if self.is_remote_uri() {
             // Extract the base URL (scheme + host) from the original URI
             if let Ok(url) = url::Url::parse(&self.original_uri)
                 && let Some(host) = url.host_str()
             {
-                return format!("{}://{}/{}", url.scheme(), host, path_str);
+                let path = self.path_under_base(path_str);
+                return format!("{}://{}/{}", url.scheme(), host, path);
             }
         }
 
@@ -2637,8 +2642,8 @@ impl ParquetDataCatalog {
     pub fn get_directory_intervals(&self, directory: &str) -> anyhow::Result<Vec<(u64, u64)>> {
         // Use object store for all operations
         // Convert directory to object path format (consistent with how files are written)
-        // For local stores with empty base_path, to_object_path returns path as-is
-        // For remote stores, to_object_path strips the base_path prefix
+        // For local stores with empty base_path, to_object_path returns path as-is.
+        // For remote stores, to_object_path preserves or prepends the catalog base path.
         let object_dir = self.to_object_path(directory);
         let list_result = self.execute_async(async {
             // Ensure trailing slash for directory listing
@@ -2764,8 +2769,8 @@ impl ParquetDataCatalog {
     /// Converts a catalog path string to an [`ObjectPath`] for object store operations.
     ///
     /// This method handles the conversion between catalog-relative paths and object store paths,
-    /// taking into account the catalog's base path configuration. It automatically strips the
-    /// base path prefix when present to create the correct object store path.
+    /// taking into account the catalog's base path configuration. It automatically preserves the
+    /// base path prefix for remote catalogs and strips it for local catalog paths.
     ///
     /// # Parameters
     ///
@@ -2778,7 +2783,8 @@ impl ParquetDataCatalog {
     /// # Path Handling
     ///
     /// - If `base_path` is empty, the path is used as-is.
-    /// - If `base_path` is set, it's stripped from the path if present.
+    /// - If `base_path` is set for a remote catalog, it's preserved or prepended.
+    /// - If `base_path` is set for a local catalog, it's stripped from the path if present.
     /// - Trailing slashes and backslashes are automatically handled.
     /// - The resulting path is relative to the object store root.
     /// - All paths are normalized to use forward slashes (object store convention).
@@ -2792,11 +2798,13 @@ impl ParquetDataCatalog {
     ///
     /// // Convert a full catalog path
     /// let object_path = catalog.to_object_path("/base/data/quotes/file.parquet");
-    /// // Returns: ObjectPath("data/quotes/file.parquet") if base_path is "/base"
+    /// // Returns: ObjectPath("data/quotes/file.parquet") for local catalog paths
+    /// // or ObjectPath("base/data/quotes/file.parquet") for remote catalog paths.
     ///
     /// // Convert a relative path
     /// let object_path = catalog.to_object_path("data/trades/file.parquet");
-    /// // Returns: ObjectPath("data/trades/file.parquet")
+    /// // Returns: ObjectPath("data/trades/file.parquet") for local catalog paths
+    /// // or ObjectPath("base/data/trades/file.parquet") for remote catalog paths.
     /// ```
     #[must_use]
     pub fn to_object_path(&self, path: &str) -> ObjectPath {
@@ -2805,6 +2813,10 @@ impl ParquetDataCatalog {
 
         if self.base_path.is_empty() {
             return ObjectPath::from(normalized_path);
+        }
+
+        if self.is_remote_uri() {
+            return ObjectPath::from(self.path_under_base(&normalized_path));
         }
 
         // Normalize base path separators as well
@@ -2829,7 +2841,9 @@ impl ParquetDataCatalog {
         let normalized_path = path.replace('\\', "/");
 
         let to_parse = if self.base_path.is_empty() {
-            normalized_path.as_str()
+            normalized_path
+        } else if self.is_remote_uri() {
+            self.path_under_base(&normalized_path)
         } else {
             let normalized_base = self.base_path.replace('\\', "/");
             let base = normalized_base.trim_end_matches('/');
@@ -2837,9 +2851,34 @@ impl ParquetDataCatalog {
                 .strip_prefix(&format!("{base}/"))
                 .or_else(|| normalized_path.strip_prefix(base))
                 .unwrap_or(normalized_path.as_str())
+                .to_string()
         };
 
-        ObjectPath::parse(to_parse).map_err(anyhow::Error::from)
+        ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)
+    }
+
+    fn path_under_base(&self, path: &str) -> String {
+        let normalized_path = path.replace('\\', "/");
+        let path = normalized_path
+            .trim_start_matches('/')
+            .trim_end_matches('/');
+
+        if self.base_path.is_empty() {
+            return path.to_string();
+        }
+
+        let normalized_base = self.base_path.replace('\\', "/");
+        let base = normalized_base
+            .trim_start_matches('/')
+            .trim_end_matches('/');
+
+        if base.is_empty() || path == base || path.starts_with(&format!("{base}/")) {
+            path.to_string()
+        } else if path.is_empty() {
+            base.to_string()
+        } else {
+            make_object_store_path(base, &[path])
+        }
     }
 
     #[allow(dead_code)]
