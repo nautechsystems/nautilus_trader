@@ -35,6 +35,12 @@ inputs:
       runners using a persistent on-disk CARGO_TARGET_DIR).
     required: false
     default: "true"
+  uv-cache-enabled:
+    description: >-
+      Whether to persist the uv cache with GitHub Actions cache: true, false, or
+      auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
+    required: false
+    default: "auto"
 
 runs:
   using: "composite"
@@ -195,18 +201,12 @@ runs:
       run: |
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-    - name: Get cache scope and uv lock hash
+    - name: Get cache scope
       shell: bash
       env:
         CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
       run: |
         echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
-        python - <<'PY' >> "$GITHUB_ENV"
-        import hashlib
-        from pathlib import Path
-
-        print(f"UV_LOCK_HASH={hashlib.sha256(Path('uv.lock').read_bytes()).hexdigest()}")
-        PY
 
     - name: Get pre-commit config hash
       if: inputs.build-type == 'pre-commit'
@@ -241,24 +241,14 @@ runs:
       uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       with:
         version: ${{ env.UV_VERSION }}
+        enable-cache: ${{ inputs.uv-cache-enabled }}
+        cache-suffix: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}
+        prune-cache: true
 
     - name: Set uv cache-dir
       shell: bash
       run: |
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
-
-    - name: Cached uv
-      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
-      # See: https://github.com/actions/runner/issues/3765
-      if: runner.os != 'macOS'
-      id: cached-uv
-      # https://github.com/actions/cache
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
-      with:
-        path: ${{ env.UV_CACHE_DIR }}
-        key: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}-${{ env.UV_LOCK_HASH }}
-        restore-keys: |
-          ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}-
 
     # > --------------------------------------------------
     # > prek (pre-commit hook environments)
