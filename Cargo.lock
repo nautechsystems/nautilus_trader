@@ -6142,6 +6142,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sockudo-ws",
  "strum 0.28.0",
  "tempfile",
  "thiserror 2.0.18",
@@ -8878,6 +8879,28 @@ checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sockudo-ws"
+version = "1.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4acad755d1e9548ba9f2a32efeb83e18eefd25f61907cf66e7653364a40ec990"
+dependencies = [
+ "base64",
+ "bytes",
+ "dashmap",
+ "fastrand",
+ "futures-core",
+ "futures-sink",
+ "httparse",
+ "parking_lot",
+ "pin-project-lite",
+ "sha1",
+ "simdutf8",
+ "socket2 0.5.10",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

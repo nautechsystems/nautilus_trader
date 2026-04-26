@@ -46,8 +46,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -501,6 +501,7 @@ impl DeribitWebSocketClient {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         // Configure rate limits

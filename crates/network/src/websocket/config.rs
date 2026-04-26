@@ -29,6 +29,46 @@ use std::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
+/// WebSocket transport backend selection.
+///
+/// Selection is runtime so multiple backends can compile side-by-side without
+/// a `compile_error!` collision under `--all-features`.
+///
+/// `Tungstenite` supports custom HTTP upgrade headers on the WebSocket
+/// handshake (see [`WebSocketConfig::headers`]). `Sockudo` is gated on the
+/// `transport-sockudo` Cargo feature; its HTTP/1.1 handshake does not accept
+/// custom upgrade headers, so adapters that authenticate at upgrade time must
+/// select `Tungstenite`. Headers carried inside WebSocket message payloads are
+/// unaffected.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.core.nautilus_pyo3.network",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "PyO3-backed enum still needs serde deserialization for config decoding"
+)]
+pub enum TransportBackend {
+    /// `tokio-tungstenite` backed transport (default).
+    #[default]
+    Tungstenite = 0,
+    /// `sockudo-ws` backed transport (gated on `transport-sockudo` feature).
+    Sockudo = 1,
+}
+
 /// Configuration for WebSocket client connections.
 ///
 /// This struct contains only static configuration settings. Runtime callbacks
@@ -112,6 +152,16 @@ pub struct WebSocketConfig {
     /// **Note**: Only applies to handler mode. Ignored in stream mode.
     #[serde(default)]
     pub idle_timeout_ms: Option<u64>,
+    /// The transport backend to use for the WebSocket connection.
+    ///
+    /// Defaults to [`TransportBackend::Tungstenite`]. Selecting
+    /// [`TransportBackend::Sockudo`] requires the `transport-sockudo` Cargo
+    /// feature; otherwise `connect_with_server` returns an error. Sockudo
+    /// rejects non-empty `headers` because its HTTP/1.1 handshake does not
+    /// accept custom upgrade headers; in-message authentication is unaffected.
+    #[serde(default)]
+    #[builder(default)]
+    pub backend: TransportBackend,
 }
 
 #[cfg(test)]

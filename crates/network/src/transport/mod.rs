@@ -23,17 +23,18 @@
 //! - [`TransportError`]: neutral error type.
 //! - [`WsTransport`]: `Stream` plus `Sink` trait for backend implementations.
 //!
-//! Phase 1 ships with a single backend, `tokio-tungstenite`; conversions between
-//! its native types and the neutral types live in [`tungstenite`]. Phase 2 will
-//! add feature-gated backend selection (`sockudo-ws` and an in-house crate)
-//! once the `WebSocketClient` is migrated onto the [`WsTransport`] trait. At
-//! that point each backend module (including [`tungstenite`]) will be gated on
-//! a `transport-*` feature so consumers compile only the backend they select.
+//! The `tokio-tungstenite` backend is always compiled (its conversions and adapter
+//! live in [`tungstenite`]). The `sockudo-ws` backend is gated behind the
+//! `transport-sockudo` feature and lives in [`sockudo`]; when enabled it can be
+//! selected at runtime via `WebSocketConfig.backend`.
 
 pub mod error;
 pub mod message;
 pub mod stream;
 pub mod tungstenite;
+
+#[cfg(feature = "transport-sockudo")]
+pub mod sockudo;
 
 pub use error::TransportError;
 pub use message::{CloseFrame, Message};

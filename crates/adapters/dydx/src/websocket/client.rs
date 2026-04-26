@@ -65,7 +65,8 @@ use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -453,6 +454,7 @@ impl DydxWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let client = WebSocketClient::connect(

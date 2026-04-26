@@ -35,7 +35,8 @@ use nautilus_model::{
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -171,6 +172,7 @@ impl KrakenSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let ws_client = WebSocketClient::connect(

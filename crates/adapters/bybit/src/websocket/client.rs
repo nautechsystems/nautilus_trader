@@ -41,8 +41,8 @@ use nautilus_network::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
@@ -351,6 +351,7 @@ impl BybitWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues

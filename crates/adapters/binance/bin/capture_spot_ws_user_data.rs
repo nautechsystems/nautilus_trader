@@ -61,7 +61,7 @@ use nautilus_binance::common::{
     enums::{BinanceEnvironment, BinanceProductType},
 };
 use nautilus_network::websocket::{
-    PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler,
+    PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
 };
 use serde::Serialize;
 use tokio_tungstenite::tungstenite::Message;
@@ -186,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         reconnect_jitter_ms: None,
         reconnect_max_attempts: Some(0),
         idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
     };
 
     let client = WebSocketClient::connect(

@@ -25,7 +25,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use nautilus_network::{
     RECONNECTED,
-    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use rstest::{fixture, rstest};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -77,6 +77,7 @@ fn websocket_config() -> WebSocketConfig {
         reconnect_jitter_ms: Some(10),
         reconnect_max_attempts: None,
         idle_timeout_ms: None,
+        backend: TransportBackend::Tungstenite,
     }
 }
 

@@ -38,7 +38,9 @@ use nautilus_core::string::secret::REDACTED;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -221,6 +223,7 @@ impl BinanceSpotWsTradingClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         // Configure rate limits for order operations

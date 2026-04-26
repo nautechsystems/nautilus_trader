@@ -39,7 +39,8 @@ use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        PingHandler, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        PingHandler, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use tokio_util::sync::CancellationToken;
@@ -429,6 +430,7 @@ impl BinanceSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let keyed_quotas = vec![(

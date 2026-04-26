@@ -20,7 +20,7 @@ use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
 use nautilus_network::{
     RECONNECTED,
     http::USER_AGENT,
-    websocket::{WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use tokio_tungstenite::tungstenite::Message;
 
@@ -126,6 +126,7 @@ impl CoreBlockchainRpcClient {
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let client =

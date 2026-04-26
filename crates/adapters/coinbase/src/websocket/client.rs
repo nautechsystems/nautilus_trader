@@ -39,7 +39,10 @@ use nautilus_model::{
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler},
+    websocket::{
+        SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
+    },
 };
 use ustr::Ustr;
 
@@ -212,6 +215,7 @@ impl CoinbaseWebSocketClient {
             reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let keyed_quotas = vec![(

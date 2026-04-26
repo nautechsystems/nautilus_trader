@@ -32,9 +32,15 @@ python = [
   "pyo3",
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
+  "transport-sockudo",
 ]
 simulation = ["dep:madsim", "nautilus-core/simulation"]
 turmoil = ["dep:turmoil"]
+# Backend selection for the WebSocket transport abstraction.
+# `tokio-tungstenite` is always compiled today; `transport-sockudo` adds the
+# alternative `sockudo-ws` backend so it can be selected at runtime via
+# `WebSocketConfig.backend`. Phase 2.6 will gate tungstenite optional too.
+transport-sockudo = ["dep:sockudo-ws"]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -73,6 +79,7 @@ madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+sockudo-ws = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]

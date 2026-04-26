@@ -14,6 +14,8 @@ Released on TBD (UTC).
 - Added `MarginAccount.margin_for_currency` + `margin_init/maint_for_currency` helpers for cross-margin queries
 - Added `MarginAccount.total_margin_init(currency)` / `total_margin_maint(currency)` summing both margin buckets
 - Added `MarginAccount.account_margins`, `account_margins_init/maint`, and `clear_account_margin` accessors
+- Added `transport-sockudo` feature with `TransportBackend` runtime selector for the WebSocket transport (Rust)
+- Added `TransportBackend` PyO3 enum and `WebSocketConfig.backend` kwarg for backend selection from Python
 - Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
 - Added Binance Futures `use_trade_lite` config to opt into low-latency `TRADE_LITE` fills (Rust, default `False`)
 - Added Bybit user-related endpoints (#3894), thanks @sunlei
@@ -26,6 +28,7 @@ Released on TBD (UTC).
 - Added Kraken xStocks tokenized asset support for spot market data, order submission, and futures instruments
 - Added OKX option greeks support for both Black-Scholes and price-adjusted conventions on every tick
 - Added OKX `params["greeks_convention"]` (string or list) to narrow option greeks subscriptions
+- Added OKX `transport_backend` config to switch websockets between `Tungstenite` and `Sockudo` backends
 - Added Polymarket game_id and fee_schedule to instrument info (#3811), thanks @Javdu10
 - Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 - Added Polymarket WebSocket `idle_timeout_ms` for zombie detection (#3908), thanks for reporting @camarigor
@@ -38,6 +41,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Added `Option<&AccountId>` to Rust `Portfolio::unrealized_pnls`, `realized_pnls`, `total_pnls`; pass `None` to keep prior behavior
+- Added `backend: TransportBackend` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
 - Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead
 - Removed `BlockchainDataClientConfig::new`, `BlockchainExecutionClientConfig::new`, and `DexPoolFilters::new` (Rust); use the corresponding `::builder()` instead
@@ -187,6 +191,7 @@ Released on TBD (UTC).
 - Added `wall_clock_now` seam in `nautilus-core` for virtual time under simulation (Rust)
 - Added `biased` to `tokio::select!` blocks in network and live crates for deterministic poll order
 - Added `nautilus_network::transport` module with `Message`/`TransportError`/`WsTransport` for future backend swap (Rust)
+- Added neutral `Message`/`TransportError` re-exports on `nautilus_network` to ease future backend swaps (Rust)
 - Added engine config methods on PyO3 `LiveNodeBuilder` (#3848), thanks @BurnOutTrader
 - Added read-only `params()` accessor to `SubscribeCommand` and `TradingCommand` (#3846), thanks @faysou
 - Added `ShutdownSystem` handling via `commands.system.shutdown` pub/sub topic, wired to kernel, backtest, and live (Rust)
@@ -206,6 +211,7 @@ Released on TBD (UTC).
 - Added `node` feature to `nautilus-live` gating `builder`, `config`, `manager`, and `node` modules (default on)
 - Added continuous futures support for bar requests and subscriptions (#3921), thanks @faysou
 - Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
+- Migrated `WebSocketClient` onto the `WsTransport` trait, decoupling reconnect/auth from tungstenite types (Rust)
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
 - Standardized adapter example manifests and trading deps (#3891), thanks @sunlei

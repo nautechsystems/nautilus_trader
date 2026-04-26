@@ -43,7 +43,8 @@ use nautilus_network::{
     backoff::ExponentialBackoff,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, PingHandler, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -375,6 +376,7 @@ impl AxOrdersWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         // Retry initial connection with exponential backoff

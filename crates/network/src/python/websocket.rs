@@ -33,7 +33,7 @@ use crate::{
     ratelimiter::quota::Quota,
     transport::{Message, TransportError},
     websocket::{
-        WebSocketClient, WebSocketConfig,
+        TransportBackend, WebSocketClient, WebSocketConfig,
         types::{MessageHandler, PingHandler, WriterCommand},
     },
 };
@@ -85,6 +85,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms=100,
         reconnect_max_attempts=None,
         idle_timeout_ms=None,
+        backend=TransportBackend::Tungstenite,
     ))]
     fn py_new(
         url: String,
@@ -98,6 +99,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms: Option<u64>,
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
+        backend: TransportBackend,
     ) -> Self {
         Self {
             url,
@@ -111,6 +113,7 @@ impl WebSocketConfig {
             reconnect_jitter_ms,
             reconnect_max_attempts,
             idle_timeout_ms,
+            backend,
         }
     }
 }
@@ -449,7 +452,7 @@ mod tests {
 
     use crate::{
         transport::Message,
-        websocket::{MessageHandler, WebSocketClient, WebSocketConfig},
+        websocket::{MessageHandler, TransportBackend, WebSocketClient, WebSocketConfig},
     };
 
     struct TestServer {
@@ -610,6 +613,7 @@ counter = Counter()
             None,
             None,
             None,
+            TransportBackend::Tungstenite,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
@@ -699,6 +703,7 @@ counter = Counter()
             None,
             None,
             None,
+            TransportBackend::Tungstenite,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));

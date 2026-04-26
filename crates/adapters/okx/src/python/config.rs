@@ -85,6 +85,7 @@ impl OKXDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             vip_level,
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -160,6 +161,7 @@ impl OKXExecClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             margin_mode,
             use_spot_margin: defaults.use_spot_margin,
+            transport_backend: defaults.transport_backend,
         }
     }
 

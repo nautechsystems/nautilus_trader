@@ -23,6 +23,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_okx::{
     common::enums::{OKXEnvironment, OKXInstrumentType},
     config::{OKXDataClientConfig, OKXExecClientConfig},
@@ -48,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap],
         environment: OKXEnvironment::Live,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -59,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap],
         environment: OKXEnvironment::Live,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

@@ -56,7 +56,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TEXT_PING,
-        WebSocketClient, WebSocketConfig, channel_message_handler,
+        TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
@@ -199,6 +199,8 @@ pub struct OKXWebSocketClient {
     /// the refcount check with the venue send and leave the channel
     /// unsubscribed while the local count says it is live.
     index_pair_transition: Arc<tokio::sync::Mutex<()>>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    transport_backend: TransportBackend,
     cancellation_token: CancellationToken,
 }
 
@@ -286,8 +288,19 @@ impl OKXWebSocketClient {
             option_greeks_subs: Arc::new(AtomicMap::new()),
             index_pair_subscribers: Arc::new(DashMap::new()),
             index_pair_transition: Arc::new(tokio::sync::Mutex::new(())),
+            transport_backend: TransportBackend::default(),
             cancellation_token: CancellationToken::new(),
         })
+    }
+
+    /// Sets the transport backend for the next [`Self::connect`].
+    ///
+    /// When `Sockudo` is selected the OKX `User-Agent` upgrade header is
+    /// dropped because sockudo does not accept custom upgrade headers.
+    #[must_use]
+    pub fn with_transport_backend(mut self, backend: TransportBackend) -> Self {
+        self.transport_backend = backend;
+        self
     }
 
     /// Creates a new [`OKXWebSocketClient`] instance.
@@ -469,9 +482,18 @@ impl OKXWebSocketClient {
             // Handler responds to pings internally via select! loop
         });
 
+        // Sockudo's HTTP/1.1 client rejects custom upgrade headers, so the OKX
+        // User-Agent is omitted when that backend is selected.
+        let headers = match self.transport_backend {
+            TransportBackend::Sockudo => vec![],
+            TransportBackend::Tungstenite => {
+                vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
+            }
+        };
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers,
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(TEXT_PING.to_string()),
             reconnect_timeout_ms: Some(5_000),
@@ -481,6 +503,7 @@ impl OKXWebSocketClient {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: self.transport_backend,
         };
 
         let keyed_quotas = vec![

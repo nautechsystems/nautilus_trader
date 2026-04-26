@@ -111,6 +111,7 @@ pub fn network(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpMethod>()?;
     m.add_class::<crate::http::HttpResponse>()?;
     m.add_class::<crate::ratelimiter::quota::Quota>()?;
+    m.add_class::<crate::websocket::TransportBackend>()?;
     m.add_class::<crate::websocket::WebSocketClient>()?;
     m.add_class::<crate::websocket::WebSocketConfig>()?;
     m.add_class::<crate::socket::SocketClient>()?;

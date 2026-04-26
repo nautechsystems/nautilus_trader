@@ -45,8 +45,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, WebSocketClient,
-        WebSocketConfig, channel_message_handler,
+        AUTHENTICATION_TIMEOUT_SECS, AuthTracker, PingHandler, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use tokio_tungstenite::tungstenite::Message;
@@ -503,6 +503,7 @@ impl BitmexWebSocketClient {
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
         };
 
         let keyed_quotas = vec![];

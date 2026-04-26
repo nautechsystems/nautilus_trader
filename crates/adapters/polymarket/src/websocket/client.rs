@@ -24,7 +24,8 @@ use nautilus_common::live::get_runtime;
 use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, WebSocketClient, WebSocketConfig, channel_message_handler,
+        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
+        channel_message_handler,
     },
 };
 
@@ -184,6 +185,7 @@ impl PolymarketWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
+            backend: TransportBackend::Tungstenite,
         };
 
         let client =

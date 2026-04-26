@@ -5275,6 +5275,12 @@ class Quota:
 
 class WebSocketClientError(Exception): ...
 
+class TransportBackend(Enum):
+    """WebSocket transport backend selection."""
+
+    TUNGSTENITE = 0
+    SOCKUDO = 1
+
 class WebSocketConfig:
     def __init__(
         self,
@@ -5289,6 +5295,7 @@ class WebSocketConfig:
         reconnect_jitter_ms: int | None = 100,
         reconnect_max_attempts: int | None = None,
         idle_timeout_ms: int | None = None,
+        backend: TransportBackend = ...,
     ) -> None: ...
 
 class WebSocketClient:
