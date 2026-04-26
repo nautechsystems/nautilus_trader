@@ -5600,6 +5600,7 @@ dependencies = [
  "futures",
  "iai",
  "indexmap 2.14.0",
+ "itoa",
  "log",
  "madsim",
  "nautilus-core",
