@@ -203,6 +203,7 @@ Released on TBD (UTC).
 - Added property-based tests for Databento trade ID derivation (stability and 16-hex format)
 - Added Rust/Python parity tests pinning matching-engine `TradeId` format across language bindings
 - Added `node` feature to `nautilus-live` gating `builder`, `config`, `manager`, and `node` modules (default on)
+- Added continuous futures support for bar requests and subscriptions (#3921), thanks @faysou
 - Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
@@ -225,6 +226,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.48.0
 - Upgraded `datafusion` crate to v53.1.0
 - Upgraded `msgspec` to v0.21.1
+- Upgraded `pyarrow` to v24.0.0
 - Upgraded `tokio` crate to v1.52.1
 
 ### Documentation Updates

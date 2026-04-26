@@ -482,7 +482,7 @@ version = "2.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-compression]]
-version = "0.4.41"
+version = "0.4.42"
 criteria = "safe-to-deploy"
 
 [[exemptions.async-lock]]
@@ -646,7 +646,7 @@ version = "0.29.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
-version = "1.2.60"
+version = "1.2.61"
 criteria = "safe-to-deploy"
 
 [[exemptions.cesu8]]
@@ -682,11 +682,11 @@ version = "7.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.compression-codecs]]
-version = "0.4.37"
+version = "0.4.38"
 criteria = "safe-to-deploy"
 
 [[exemptions.compression-core]]
-version = "0.4.31"
+version = "0.4.32"
 criteria = "safe-to-deploy"
 
 [[exemptions.concurrent-queue]]
@@ -746,7 +746,7 @@ version = "3.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.crc-catalog]]
-version = "2.4.0"
+version = "2.5.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.crc32fast]]
@@ -838,7 +838,7 @@ version = "6.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.data-encoding]]
-version = "2.10.0"
+version = "2.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.databento]]
@@ -1314,7 +1314,7 @@ version = "0.1.65"
 criteria = "safe-to-deploy"
 
 [[exemptions.ibapi]]
-version = "2.11.0"
+version = "2.11.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.icu_collections]]
@@ -1478,7 +1478,7 @@ version = "0.2.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.libc]]
-version = "0.2.185"
+version = "0.2.186"
 criteria = "safe-to-deploy"
 
 [[exemptions.libm]]
@@ -2110,7 +2110,7 @@ version = "0.26.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.ruint]]
-version = "1.17.2"
+version = "1.18.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ruint-macro]]
@@ -2142,7 +2142,7 @@ version = "1.1.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls]]
-version = "0.23.38"
+version = "0.23.39"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-native-certs]]
@@ -2154,7 +2154,7 @@ version = "2.2.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-pki-types]]
-version = "1.14.0"
+version = "1.14.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-platform-verifier]]
@@ -2594,7 +2594,7 @@ version = "0.28.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.turmoil]]
-version = "0.7.1"
+version = "0.7.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.twox-hash]]
@@ -2651,10 +2651,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.url]]
 version = "2.5.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.urlencoding]]
-version = "2.1.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.ustr]]

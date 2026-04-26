@@ -323,6 +323,7 @@ repos:
         name: ruff-format
 
   - repo: https://github.com/pycqa/isort
+    # Pinned to 8.0.1: do not bump until isort 9.x leaves alpha
     rev: 8.0.1
     hooks:
       - id: isort
@@ -352,7 +353,7 @@ repos:
           ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.20.1
+    rev: v1.20.2
     hooks:
       - id: mypy
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
@@ -383,7 +384,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.22.0
+    rev: v0.22.1
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
