@@ -1556,11 +1556,7 @@ impl ParquetDataCatalog {
         // For local file:// we do not register: we pass full file URLs to register_parquet
         // so DataFusion's default file provider handles them (avoids path doubling on Windows
         // where a registered store would receive a path that gets prefixed again).
-        if self.is_remote_uri() {
-            let base_url = remote_store_root_url(&self.original_uri)?;
-            self.session
-                .register_object_store(&base_url, self.object_store.clone());
-        }
+        self.register_remote_object_store()?;
 
         let files_list = if let Some(files) = files {
             files
@@ -1771,11 +1767,7 @@ impl ParquetDataCatalog {
     {
         self.reset_session();
 
-        if self.is_remote_uri() {
-            let base_url = remote_store_root_url(&self.original_uri)?;
-            self.session
-                .register_object_store(&base_url, self.object_store.clone());
-        }
+        self.register_remote_object_store()?;
 
         let files_list = if let Some(files) = files {
             files
@@ -1881,6 +1873,9 @@ impl ParquetDataCatalog {
         _optimize_file_loading: bool,
     ) -> anyhow::Result<Vec<Data>> {
         self.reset_session();
+
+        self.register_remote_object_store()?;
+
         let path_prefix = format!("custom/{type_name}");
 
         let files = if let Some(f) = files {
@@ -2797,6 +2792,16 @@ impl ParquetDataCatalog {
     #[must_use]
     pub fn to_object_path(&self, path: &str) -> ObjectPath {
         ObjectPath::from(self.object_store_path(path))
+    }
+
+    fn register_remote_object_store(&mut self) -> anyhow::Result<()> {
+        if self.is_remote_uri() {
+            let base_url = remote_store_root_url(&self.original_uri)?;
+            self.session
+                .register_object_store(&base_url, self.object_store.clone());
+        }
+
+        Ok(())
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
