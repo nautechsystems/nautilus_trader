@@ -143,6 +143,7 @@ mod tests {
         array::{Array, BooleanArray, Float64Array, StringArray, TimestampNanosecondArray},
         datatypes::{DataType, TimeUnit},
     };
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         identifiers::{
@@ -170,7 +171,7 @@ mod tests {
             last_px: Price::from("50.25"),
             currency: Currency::USD(),
             liquidity_side: LiquiditySide::Maker,
-            event_id: Default::default(),
+            event_id: UUID4::default(),
             ts_event: ts.into(),
             ts_init: (ts + 1).into(),
             reconciliation: false,

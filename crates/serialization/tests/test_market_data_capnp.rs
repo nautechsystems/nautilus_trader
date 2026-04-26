@@ -16,6 +16,10 @@
 //! Cap'n Proto serialization integration tests for market data types.
 
 #![cfg(feature = "capnp")]
+#![allow(
+    clippy::unreadable_literal,
+    reason = "wire-format fixture timestamps and IDs are easier to compare in raw form"
+)]
 
 use nautilus_model::{
     data::{

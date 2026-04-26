@@ -197,6 +197,7 @@ mod tests {
         array::{Array, BooleanArray, Float64Array, StringArray, TimestampNanosecondArray},
         datatypes::{DataType, TimeUnit},
     };
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{
             ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
@@ -220,7 +221,7 @@ mod tests {
             order_status: OrderStatus::Accepted,
             quantity: Quantity::from(100),
             filled_qty: Quantity::from(50),
-            report_id: Default::default(),
+            report_id: UUID4::default(),
             ts_accepted: ts.into(),
             ts_last: (ts + 1_000).into(),
             ts_init: (ts + 1).into(),

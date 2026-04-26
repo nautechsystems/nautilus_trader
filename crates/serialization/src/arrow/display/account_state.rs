@@ -132,6 +132,7 @@ mod tests {
         array::{Array, BooleanArray, StringArray, TimestampNanosecondArray},
         datatypes::{DataType, TimeUnit},
     };
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::AccountType,
         identifiers::AccountId,
@@ -155,7 +156,7 @@ mod tests {
             balances: vec![balance],
             margins: vec![],
             is_reported: false,
-            event_id: Default::default(),
+            event_id: UUID4::default(),
             ts_event: ts.into(),
             ts_init: (ts + 1).into(),
         }

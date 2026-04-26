@@ -294,7 +294,7 @@ where
     fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
         chunk
             .first()
-            .map(|elem| elem.metadata())
+            .map(Self::metadata)
             .expect("Chunk must have at least one element to encode")
     }
 }
@@ -419,6 +419,7 @@ pub enum StringColumnRef<'a> {
 impl StringColumnRef<'_> {
     /// Returns the string value at row `i`.
     #[inline]
+    #[must_use]
     pub fn value(&self, i: usize) -> &str {
         match self {
             Self::Utf8(arr) => arr.value(i),

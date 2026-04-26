@@ -611,6 +611,7 @@ single_match_else = "allow" # Match can be clearer than if-let-else for some pat
 manual_let_else = "allow" # Match can be clearer than let-else for some patterns
 or_fun_call = "allow" # Used consistently for display with map_or("None".to_string(), ...)
 option_if_let_else = "allow" # if-let can be clearer than map_or/map_or_else
+similar_names = "allow" # Domain terms like trade/trader and side/size are intentionally similar
 
 # TODO: Enable these incrementally (widespread usage in codebase)
 # unwrap_used = "warn"        # Forces explicit error handling instead of panics

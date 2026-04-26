@@ -239,6 +239,7 @@ mod tests {
         },
         datatypes::{DataType, TimeUnit},
     };
+    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
         events::OrderFilled,
@@ -277,7 +278,7 @@ mod tests {
             Price::from(price),
             instrument.quote_currency,
             LiquiditySide::Taker,
-            Default::default(),
+            UUID4::default(),
             ts.into(),
             (ts + 1).into(),
             false,

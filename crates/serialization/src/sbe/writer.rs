@@ -223,7 +223,7 @@ mod tests {
 
     #[rstest]
     fn test_write_i64_le() {
-        let value: i64 = -1234567890123456789;
+        let value: i64 = -1_234_567_890_123_456_789;
         let mut buf = [0u8; 8];
         let mut writer = SbeWriter::new(&mut buf);
         writer.write_i64_le(value);

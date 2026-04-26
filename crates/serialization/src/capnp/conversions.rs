@@ -2136,8 +2136,8 @@ impl<'a> ToCapnp<'a> for OrderBookDeltas {
 
         let mut deltas_builder = builder.reborrow().init_deltas(self.deltas.len() as u32);
         for (i, delta) in self.deltas.iter().enumerate() {
-            let delta_builder = deltas_builder.reborrow().get(i as u32);
-            delta.to_capnp(delta_builder);
+            let entry_builder = deltas_builder.reborrow().get(i as u32);
+            delta.to_capnp(entry_builder);
         }
 
         builder.set_flags(self.flags);

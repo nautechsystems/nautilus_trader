@@ -82,7 +82,7 @@ pub(super) fn decode_header(cursor: &mut SbeCursor<'_>) -> Result<MessageHeader,
 
 #[inline]
 pub(super) fn validate_header(
-    header: &MessageHeader,
+    header: MessageHeader,
     expected_template_id: u16,
     expected_block_length: u16,
 ) -> Result<(), SbeDecodeError> {

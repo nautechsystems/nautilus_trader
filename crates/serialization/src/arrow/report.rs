@@ -198,7 +198,7 @@ impl DecodeTypedFromRecordBatch for ExecutionMassStatus {
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
@@ -253,7 +253,7 @@ mod tests {
             position_side: PositionSideSpecified::Long,
             quantity: Quantity::from("100.25"),
             signed_decimal_qty: Decimal::from_str("100.250000000123456789").unwrap(),
-            report_id: Default::default(),
+            report_id: UUID4::default(),
             ts_last: UnixNanos::from(1_000_000_000),
             ts_init: UnixNanos::from(2_000_000_000),
             venue_position_id: Some(PositionId::from("P-001")),

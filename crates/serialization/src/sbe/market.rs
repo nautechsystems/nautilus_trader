@@ -175,7 +175,7 @@ where
     fn from_sbe(bytes: &[u8]) -> Result<Self, SbeDecodeError> {
         let mut cursor = SbeCursor::new(bytes);
         let header = decode_header(&mut cursor)?;
-        validate_header(&header, T::TEMPLATE_ID, T::BLOCK_LENGTH)?;
+        validate_header(header, T::TEMPLATE_ID, T::BLOCK_LENGTH)?;
         T::decode_body(&mut cursor)
     }
 }

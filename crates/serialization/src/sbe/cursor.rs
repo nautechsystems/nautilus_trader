@@ -541,7 +541,7 @@ mod tests {
 
     #[rstest]
     fn test_read_i64_le() {
-        let value: i64 = -1234567890123456789;
+        let value: i64 = -1_234_567_890_123_456_789;
         let buf = value.to_le_bytes();
         let mut cursor = SbeCursor::new(&buf);
 
@@ -648,7 +648,9 @@ mod tests {
         buf.extend_from_slice(&200u32.to_le_bytes()); // item 1
 
         let mut cursor = SbeCursor::new(&buf);
-        let items: Vec<u32> = cursor.read_group(4, 2, |c| c.read_u32_le()).unwrap();
+        let items: Vec<u32> = cursor
+            .read_group(4, 2, super::SbeCursor::read_u32_le)
+            .unwrap();
 
         assert_eq!(items, vec![100, 200]);
         assert_eq!(cursor.pos(), 8);
@@ -664,7 +666,9 @@ mod tests {
         buf.extend_from_slice(&[0, 0, 0, 0]); // padding
 
         let mut cursor = SbeCursor::new(&buf);
-        let items: Vec<u32> = cursor.read_group(8, 2, |c| c.read_u32_le()).unwrap();
+        let items: Vec<u32> = cursor
+            .read_group(8, 2, super::SbeCursor::read_u32_le)
+            .unwrap();
 
         assert_eq!(items, vec![100, 200]);
         assert_eq!(cursor.pos(), 16); // 2 * 8

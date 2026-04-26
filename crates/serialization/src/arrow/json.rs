@@ -46,6 +46,7 @@ pub struct JsonFieldSpec {
 }
 
 impl JsonFieldSpec {
+    #[must_use]
     pub const fn utf8(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -54,6 +55,7 @@ impl JsonFieldSpec {
         }
     }
 
+    #[must_use]
     pub const fn utf8_json(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -62,6 +64,7 @@ impl JsonFieldSpec {
         }
     }
 
+    #[must_use]
     pub const fn u64(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -70,6 +73,7 @@ impl JsonFieldSpec {
         }
     }
 
+    #[must_use]
     pub const fn f64(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -78,6 +82,7 @@ impl JsonFieldSpec {
         }
     }
 
+    #[must_use]
     pub const fn boolean(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
@@ -98,10 +103,12 @@ impl JsonFieldSpec {
     }
 }
 
+#[must_use]
 pub fn metadata_for_type(type_name: &'static str) -> HashMap<String, String> {
     HashMap::from([("type".to_string(), type_name.to_string())])
 }
 
+#[must_use]
 pub fn schema_for_type(
     type_name: &'static str,
     metadata: Option<HashMap<String, String>>,
@@ -114,7 +121,7 @@ pub fn schema_for_type(
         fields
             .iter()
             .copied()
-            .map(|field| field.field())
+            .map(JsonFieldSpec::field)
             .collect::<Vec<_>>(),
         merged,
     )
@@ -448,11 +455,11 @@ impl ColumnRef<'_> {
     }
 }
 
-fn decode_column_ref<'a>(
-    columns: &'a [ArrayRef],
+fn decode_column_ref(
+    columns: &[ArrayRef],
     field: JsonFieldSpec,
     index: usize,
-) -> Result<ColumnRef<'a>, EncodingError> {
+) -> Result<ColumnRef<'_>, EncodingError> {
     match field.encoding {
         JsonFieldEncoding::Utf8 => Ok(ColumnRef::Utf8 {
             name: field.name,

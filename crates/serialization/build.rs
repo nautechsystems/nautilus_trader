@@ -44,7 +44,7 @@ fn compile_capnp_schemas() {
     // Collect all .capnp files
     let schema_files: Vec<PathBuf> = walkdir::WalkDir::new(&schema_dir)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| {
             e.path()
                 .extension()

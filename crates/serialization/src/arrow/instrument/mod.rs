@@ -432,7 +432,7 @@ pub fn decode_instrument_any_batch(
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
     let type_name = metadata
         .get("class")
-        .map(|s| s.as_str())
+        .map(String::as_str)
         .ok_or_else(|| EncodingError::MissingMetadata("class"))?;
 
     match type_name {

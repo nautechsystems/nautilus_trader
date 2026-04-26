@@ -322,6 +322,10 @@ fn sample_order_book_depth10() -> OrderBookDepth10 {
     depth
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "benchmark helper owns one sample value and reuses it across sub-benchmarks"
+)]
 fn bench_capnp_sbe_type<T>(
     c: &mut Criterion,
     name: &str,

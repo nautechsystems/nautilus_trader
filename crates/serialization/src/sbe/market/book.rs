@@ -131,7 +131,7 @@ impl FromSbeReuse for OrderBookDeltas {
         let mut cursor = SbeCursor::new(bytes);
         let header = decode_header(&mut cursor)?;
         validate_header(
-            &header,
+            header,
             <Self as MarketSbeMessage>::TEMPLATE_ID,
             <Self as MarketSbeMessage>::BLOCK_LENGTH,
         )?;
