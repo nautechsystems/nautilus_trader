@@ -196,15 +196,22 @@ The 16 in-scope crates host `AHashMap` and `AHashSet` in ~85 other files, used f
 - data aggregation (`crates/data/src/aggregation.rs`)
 - msgbus switchboard (`crates/common/src/msgbus/switchboard.rs`)
 
-| Area                                                   | Tag        |
-|--------------------------------------------------------|------------|
-| `AHashMap` / `AHashSet` in `manager.rs`                | closed     |
-| `AHashMap` / `AHashSet` in `matching_engine/engine.rs` | closed     |
-| `Position::commissions` in `model/src/position.rs`     | closed     |
-| `model/src/orderbook/` AHashSet usage                  | closed     |
-| `model/src/orders/` AHashSet usage                     | closed     |
-| `model/src/accounts/` balances + margins fields        | closed     |
-| `AHashMap` / `AHashSet` elsewhere                      | unresolved |
+| Area                                                       | Tag        |
+|------------------------------------------------------------|------------|
+| `AHashMap` / `AHashSet` in `manager.rs`                    | closed     |
+| `AHashMap` / `AHashSet` in `matching_engine/engine.rs`     | closed     |
+| `Position::commissions` in `model/src/position.rs`         | closed     |
+| `model/src/orderbook/` AHashSet usage                      | closed     |
+| `model/src/orders/` AHashSet usage                         | closed     |
+| `model/src/accounts/` balances + margins fields            | closed     |
+| `core/src/collections.rs` AHash sites                      | closed     |
+| `core/src/serialization.rs` AHash sites                    | closed     |
+| `data/engine/` bar aggregator + book snapshot maps         | closed     |
+| `execution/engine/` clients + reconciliation result maps   | closed     |
+| `trading/algorithm/core.rs` strategy event handlers        | closed     |
+| `common/cache/mod.rs` orders/positions Vec returns         | closed     |
+| `portfolio/portfolio.rs` PnL aggregation maps              | closed     |
+| `AHashMap` / `AHashSet` elsewhere                          | unresolved |
 
 **Notes.** `AHash` randomizes its hasher per process. Iteration order over
 these collections varies across runs. `manager.rs` and
@@ -247,10 +254,106 @@ is now deterministic. `BaseAccount.commissions`, `MarginAccount.leverages`,
 `CashAccount.balances_locked`, and `BettingAccount.balances_locked` stay
 on `AHashMap`: lookup-only or no observable in-scope iteration.
 
-**Mitigation.** Other call sites need a per-file review to determine whether
-iteration order affects observable state. The audit classified them as
-lookup-only pending review. Any hash-collection site that feeds observable
-state on the DST path is a future scope-hole closure.
+The `core/src/collections.rs` and `core/src/serialization.rs` audits
+closed the remaining structural sites in the `core` crate without code
+changes. `AtomicMap<K, V>` and `AtomicSet<K>` wrap
+`ArcSwap<AHashMap<K, V>>` / `ArcSwap<AHashSet<K>>` and belong to the
+concurrent shared-ownership family alongside `Arc<DashMap>` and
+`Arc<RwLock<AHashMap>>`; consumers (e.g. the Bybit websocket client's
+`bar_types_cache` and `instruments_cache`) use them for snapshot
+`.get()` lookups, so iteration order is not on the DST path. The
+`MapLike for AHashMap` and `SetLike for AHashSet` impls plus the
+`From<AHashMap>` / `From<AHashSet>` conversions are stability surfaces
+for callers that hold AHash data. The `serialization::sorted_hashset`
+module produces deterministic output by construction:
+`serialize` collects into `Vec<&T>` and calls `sort_unstable()` before
+emitting, so the source iteration order is erased.
+
+The `data/engine/` audit closed three fields. `book_snapshot_counts`
+flipped to `IndexMap` because `subscribed_book_snapshots()` returns
+`book_snapshot_counts.keys()` collected into a public `Vec<InstrumentId>`.
+`bar_aggregators` flipped to `IndexMap` because `start()`, `stop()`, and
+`reset()` iterate `.values()` and `.keys()` to drive timer
+start/stop/restart on the simulation clock. The `BookSnapshotInfos` type
+alias (`Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>`) flipped
+to `IndexMap` because `BookSnapshotter::snapshot()` iterates `.values()`
+on each timer tick to publish snapshots on the message bus. Iterated
+removes were converted to `.shift_remove()`. `bar_aggregator_handlers`,
+`book_intervals`, `book_updaters`, `book_snapshotters`,
+`option_chain_managers`, `book_deltas_subs`, `book_depth10_subs`, and
+`pending_option_chain_requests` stay on `AHash`: lookup or
+membership-only.
+
+The `execution/engine/` audit closed two surfaces. `ExecutionEngine.clients`
+flipped to `IndexMap` because `client_ids()`, `get_clients_mut()`, and
+`get_all_clients()` return `Vec`s built from `.keys()` / `.values()`,
+and `get_clients_for_orders()` iterates these to fan out commands.
+The local `client_ids: AHashSet<ClientId>` and `venues: AHashSet<Venue>`
+in `get_clients_for_orders()` flipped to `IndexSet` so the routing-fan-out
+order is preserved. `ReconciliationResult.orders` and
+`ReconciliationResult.fills` flipped to `IndexMap` because
+`crates/live/src/manager.rs::adjust_fills_using_position_reports`
+iterates `result.orders` and `result.fills` to populate `final_orders`
+/ `final_fills` (both already `IndexMap`); the upstream chain
+`mass_status.order_reports() -> extract_*_for_instrument -> result`
+is now end-to-end deterministic. `submit_order_commands` in
+`order_manager/manager.rs` stays on `AHash`: every consumer
+(`emulator.rs`) uses `.contains_key()` / `.pop_submit_order_command()`,
+no iteration on the DST path. `external_clients`, `external_order_claims`,
+`oms_overrides`, and `routing_map` stay on `AHash` / `HashMap`:
+lookup-only.
+
+The `trading/algorithm/core.rs::strategy_event_handlers` field flipped
+to `IndexMap` because `unsubscribe_all_strategy_events` in
+`algorithm/mod.rs` calls `take_strategy_event_handlers()` and then
+iterates the returned map to fire `msgbus::unsubscribe_*` for each
+strategy. The unsubscribe order is observable on the message bus.
+Sibling fields `exec_spawn_ids`, `subscribed_strategies`, and
+`pending_spawn_reductions` stay on `AHash`: lookup / membership-only.
+
+The `common/cache/mod.rs` audit kept the `CacheIndex` itself on
+`AHashSet` (set semantics, fast lookup) but made the public Vec returns
+deterministic at the cache API boundary. `get_orders_for_ids` and
+`get_positions_for_ids` now sort their output by `client_order_id` and
+`position_id` before returning, which propagates to every caller of
+`cache.orders*()` and `cache.positions*()` (notably the own-book
+replay at `execution/engine/mod.rs::load_cache` and the per-algorithm
+cancel cascade at `trading/strategy/mod.rs`). The `actor_ids()`,
+`strategy_ids()`, and `exec_algorithm_ids()` returns stay typed as
+`AHashSet` to preserve set semantics; the single iterator on the DST
+path (`strategy/mod.rs` cancel cascade) sorts the IDs locally before
+fan-out. This pattern matches the existing `msgbus/core.rs`
+`matching_subscriptions` which `.sort()`s the candidate Vec before
+dispatch.
+
+The `portfolio/portfolio.rs` audit closed seven surfaces. The storage
+fields `unrealized_pnls`, `realized_pnls`, and `net_positions` flipped
+to `IndexMap`, with `.shift_remove()` for the one iterated delete in
+`update_instrument_id`. The aggregation entry points
+`unrealized_pnls()`, `realized_pnls()`, `net_exposures()`,
+`total_pnls()`, `mark_values()`, and `equity()` now build their
+currency accumulators in `IndexMap` (via the `accumulate_mark_values`
+helper updated to take `&mut IndexMap<Currency, f64>`); the
+`instrument_ids` dedup inside `unrealized_pnls()`, `realized_pnls()`,
+and `equity()` flipped to `IndexSet` so the deterministic order from
+the now-sorted `cache.positions(...)` flows through to the returned
+`IndexMap<Currency, Money>`. The `mark_values` and `equity` `unpriced`
+locals stay on `AHashSet` (membership-only). The `xrate_cache` local
+inside `accumulate_mark_values` stays on `AHashMap` (lookup-only).
+`venues_missing_price`, `snapshot_*`, `bar_close_prices`,
+`pending_calcs`, and `last_account_state_log_ts` stay on `AHash`:
+lookup or per-instrument membership only.
+
+**Mitigation.** The remaining `AHashMap` / `AHashSet elsewhere` row is
+a catch-all for sites audited as lookup-only or scoped-out of the DST
+contract: `crates/common/cache/{database,quote,fifo}.rs`,
+`actor/data_actor.rs`, `msgbus/switchboard.rs`, `factories/`,
+`defi/cache.rs`, `greeks.rs`, `component.rs`, plus
+`crates/data/aggregation.rs`, `crates/risk/`, `crates/system/`,
+`crates/network/` (concurrent containers), and the
+`crates/trading/examples/` strategies. `crates/persistence/` catalog
+write order is a separate reproducibility concern outside the
+live-event determinism contract.
 
 ## Randomness
 
@@ -450,14 +553,14 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 24    |
+| closed     | 31    |
 | gated      | 10    |
 | scoped‑out | 24    |
 | unresolved | 5     |
 
 Unresolved entries at the end of this phase:
 
-1. `AHashMap` / `AHashSet` elsewhere outside the two hook-enforced files
+1. `AHashMap` / `AHashSet` elsewhere outside the rows above
 2. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
    `use_random_ids` is active
 3. `chrono::Utc::now` in `core/datetime.rs:404`

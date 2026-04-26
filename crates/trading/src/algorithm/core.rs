@@ -23,6 +23,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use nautilus_common::{
     actor::{DataActorConfig, DataActorCore},
     cache::Cache,
@@ -73,7 +74,7 @@ pub struct ExecutionAlgorithmCore {
     /// Tracks pending spawn reductions for quantity restoration on denial/rejection.
     pending_spawn_reductions: AHashMap<ClientOrderId, Quantity>,
     /// Maps strategies to their event handlers for cleanup on reset.
-    strategy_event_handlers: AHashMap<StrategyId, StrategyEventHandlers>,
+    strategy_event_handlers: IndexMap<StrategyId, StrategyEventHandlers>,
 }
 
 impl Debug for ExecutionAlgorithmCore {
@@ -121,7 +122,7 @@ impl ExecutionAlgorithmCore {
             exec_spawn_ids: AHashMap::new(),
             subscribed_strategies: AHashSet::new(),
             pending_spawn_reductions: AHashMap::new(),
-            strategy_event_handlers: AHashMap::new(),
+            strategy_event_handlers: IndexMap::new(),
         }
     }
 
@@ -186,7 +187,7 @@ impl ExecutionAlgorithmCore {
     }
 
     /// Takes and returns all stored strategy event handlers, clearing the internal map.
-    pub fn take_strategy_event_handlers(&mut self) -> AHashMap<StrategyId, StrategyEventHandlers> {
+    pub fn take_strategy_event_handlers(&mut self) -> IndexMap<StrategyId, StrategyEventHandlers> {
         std::mem::take(&mut self.strategy_event_handlers)
     }
 

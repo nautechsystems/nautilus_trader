@@ -18,7 +18,7 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
@@ -45,13 +45,13 @@ use crate::{config::PortfolioConfig, manager::AccountsManager};
 struct PortfolioState {
     accounts: AccountsManager,
     analyzer: PortfolioAnalyzer,
-    unrealized_pnls: AHashMap<InstrumentId, Money>,
-    realized_pnls: AHashMap<InstrumentId, Money>,
+    unrealized_pnls: IndexMap<InstrumentId, Money>,
+    realized_pnls: IndexMap<InstrumentId, Money>,
     snapshot_sum_per_position: AHashMap<PositionId, Money>,
     snapshot_last_per_position: AHashMap<PositionId, Money>,
     snapshot_processed_counts: AHashMap<PositionId, usize>,
     snapshot_account_ids: AHashMap<PositionId, AccountId>,
-    net_positions: AHashMap<InstrumentId, Decimal>,
+    net_positions: IndexMap<InstrumentId, Decimal>,
     pending_calcs: AHashSet<InstrumentId>,
     bar_close_prices: AHashMap<InstrumentId, Price>,
     initialized: bool,
@@ -73,13 +73,13 @@ impl PortfolioState {
         Self {
             accounts: AccountsManager::new(clock, cache),
             analyzer: PortfolioAnalyzer::default(),
-            unrealized_pnls: AHashMap::new(),
-            realized_pnls: AHashMap::new(),
+            unrealized_pnls: IndexMap::new(),
+            realized_pnls: IndexMap::new(),
             snapshot_sum_per_position: AHashMap::new(),
             snapshot_last_per_position: AHashMap::new(),
             snapshot_processed_counts: AHashMap::new(),
             snapshot_account_ids: AHashMap::new(),
-            net_positions: AHashMap::new(),
+            net_positions: IndexMap::new(),
             pending_calcs: AHashSet::new(),
             bar_close_prices: AHashMap::new(),
             initialized: false,
@@ -357,22 +357,25 @@ impl Portfolio {
         &mut self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> AHashMap<Currency, Money> {
+    ) -> IndexMap<Currency, Money> {
         let instrument_ids = {
             let cache = self.cache.borrow();
             let positions = cache.positions(Some(venue), None, None, account_id, None);
 
             if positions.is_empty() {
-                return AHashMap::new(); // Nothing to calculate
+                return IndexMap::new(); // Nothing to calculate
             }
 
-            let instrument_ids: AHashSet<InstrumentId> =
+            // IndexSet preserves the deterministic order of cache.positions
+            // through the dedup so the returned currency map iterates in a
+            // stable order across runs.
+            let instrument_ids: IndexSet<InstrumentId> =
                 positions.iter().map(|p| p.instrument_id).collect();
 
             instrument_ids
         };
 
-        let mut unrealized_pnls: AHashMap<Currency, f64> = AHashMap::new();
+        let mut unrealized_pnls: IndexMap<Currency, f64> = IndexMap::new();
 
         for instrument_id in instrument_ids {
             // The instrument-keyed cache aggregates across all accounts on the
@@ -403,22 +406,22 @@ impl Portfolio {
         &mut self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> AHashMap<Currency, Money> {
+    ) -> IndexMap<Currency, Money> {
         let instrument_ids = {
             let cache = self.cache.borrow();
             let positions = cache.positions(Some(venue), None, None, account_id, None);
 
             if positions.is_empty() {
-                return AHashMap::new(); // Nothing to calculate
+                return IndexMap::new(); // Nothing to calculate
             }
 
-            let instrument_ids: AHashSet<InstrumentId> =
+            let instrument_ids: IndexSet<InstrumentId> =
                 positions.iter().map(|p| p.instrument_id).collect();
 
             instrument_ids
         };
 
-        let mut realized_pnls: AHashMap<Currency, f64> = AHashMap::new();
+        let mut realized_pnls: IndexMap<Currency, f64> = IndexMap::new();
 
         for instrument_id in instrument_ids {
             // The instrument-keyed cache aggregates across all accounts on the
@@ -446,7 +449,7 @@ impl Portfolio {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> Option<AHashMap<Currency, Money>> {
+    ) -> Option<IndexMap<Currency, Money>> {
         let cache = self.cache.borrow();
         let account = if let Some(id) = account_id {
             if let Some(account) = cache.account(id) {
@@ -464,10 +467,10 @@ impl Portfolio {
 
         let positions_open = cache.positions_open(Some(venue), None, None, account_id, None);
         if positions_open.is_empty() {
-            return Some(AHashMap::new()); // Nothing to calculate
+            return Some(IndexMap::new()); // Nothing to calculate
         }
 
-        let mut net_exposures: AHashMap<Currency, f64> = AHashMap::new();
+        let mut net_exposures: IndexMap<Currency, f64> = IndexMap::new();
 
         for position in positions_open {
             let instrument = if let Some(instrument) = cache.instrument(&position.instrument_id) {
@@ -597,11 +600,11 @@ impl Portfolio {
         &mut self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> AHashMap<Currency, Money> {
+    ) -> IndexMap<Currency, Money> {
         let realized_pnls = self.realized_pnls(venue, account_id);
         let unrealized_pnls = self.unrealized_pnls(venue, account_id);
 
-        let mut total_pnls: AHashMap<Currency, Money> = AHashMap::new();
+        let mut total_pnls: IndexMap<Currency, Money> = IndexMap::new();
 
         // Add realized PnLs
         for (currency, realized) in realized_pnls {
@@ -636,8 +639,8 @@ impl Portfolio {
         &mut self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> AHashMap<Currency, Money> {
-        let mut values: AHashMap<Currency, f64> = AHashMap::new();
+    ) -> IndexMap<Currency, Money> {
+        let mut values: IndexMap<Currency, f64> = IndexMap::new();
         let mut unpriced: AHashSet<InstrumentId> = AHashSet::new();
 
         if self.accumulate_mark_values(venue, account_id, &mut values, &mut unpriced) {
@@ -668,7 +671,7 @@ impl Portfolio {
         &mut self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> AHashMap<Currency, Money> {
+    ) -> IndexMap<Currency, Money> {
         let (mut equity, is_margin) = {
             let cache = self.cache.borrow();
             let account = match account_id {
@@ -678,14 +681,14 @@ impl Portfolio {
 
             match account {
                 Some(account) => {
-                    let equity: AHashMap<Currency, f64> = account
+                    let equity: IndexMap<Currency, f64> = account
                         .balances_total()
                         .into_iter()
                         .map(|(c, m)| (c, m.as_f64()))
                         .collect();
                     (equity, matches!(account, AccountAny::Margin(_)))
                 }
-                None => return AHashMap::new(),
+                None => return IndexMap::new(),
             }
         };
 
@@ -693,7 +696,7 @@ impl Portfolio {
 
         if is_margin {
             // Sum cached unrealized PnLs; fall through to recalculation on cache miss.
-            let instrument_ids: AHashSet<InstrumentId> = {
+            let instrument_ids: IndexSet<InstrumentId> = {
                 let cache = self.cache.borrow();
                 cache
                     .positions_open(Some(venue), None, None, account_id, None)
@@ -755,20 +758,28 @@ impl Portfolio {
     /// once the instrument is priced again so a subsequent drop re-warns.
     #[must_use]
     pub fn missing_price_instruments(&self, venue: &Venue) -> Vec<InstrumentId> {
-        self.inner
+        let mut ids: Vec<InstrumentId> = self
+            .inner
             .borrow()
             .venues_missing_price
             .get(venue)
             .map(|set| set.iter().copied().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Sort so the public Vec is deterministic even though the underlying
+        // tracking set is AHash-backed.
+        ids.sort();
+        ids
     }
 
     fn update_missing_price_state(&self, venue: &Venue, unpriced: &AHashSet<InstrumentId>) {
         let mut inner = self.inner.borrow_mut();
         let tracked = inner.venues_missing_price.entry(*venue).or_default();
 
-        for instrument_id in unpriced {
-            if tracked.insert(*instrument_id) {
+        // Sort first so the warn-log sequence is deterministic across runs.
+        let mut ids: Vec<InstrumentId> = unpriced.iter().copied().collect();
+        ids.sort();
+        for instrument_id in ids {
+            if tracked.insert(instrument_id) {
                 log::warn!(
                     "No price available for open position {instrument_id}; \
                     subscribe to quotes, trades or bars for continuous mark-to-market equity"
@@ -787,7 +798,7 @@ impl Portfolio {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-        values: &mut AHashMap<Currency, f64>,
+        values: &mut IndexMap<Currency, f64>,
         unpriced: &mut AHashSet<InstrumentId>,
     ) -> bool {
         let cache = self.cache.borrow();
@@ -1523,8 +1534,10 @@ impl Portfolio {
         let positions = cache.positions(None, Some(instrument_id), None, account_id, None);
 
         // Filter snapshots by account when requested so closed-position PnL
-        // from other accounts on the same venue does not leak in.
-        let snapshot_position_ids: AHashSet<PositionId> = if let Some(filter_id) = account_id {
+        // from other accounts on the same venue does not leak in. Sort the
+        // collected IDs so the per-snapshot pending-calcs/early-return path
+        // and the value accumulation iterate in a deterministic sequence.
+        let mut snapshot_position_ids: Vec<PositionId> = if let Some(filter_id) = account_id {
             let inner = self.inner.borrow();
             cache
                 .position_snapshot_ids(instrument_id)
@@ -1537,8 +1550,12 @@ impl Portfolio {
                 })
                 .collect()
         } else {
-            cache.position_snapshot_ids(instrument_id)
+            cache
+                .position_snapshot_ids(instrument_id)
+                .into_iter()
+                .collect()
         };
+        snapshot_position_ids.sort();
 
         // Check if we need to use NETTING OMS logic
         let is_netting = positions
@@ -1830,7 +1847,10 @@ fn update_instrument_id(
     config: PortfolioConfig,
     instrument_id: &InstrumentId,
 ) {
-    inner.borrow_mut().unrealized_pnls.remove(instrument_id);
+    inner
+        .borrow_mut()
+        .unrealized_pnls
+        .shift_remove(instrument_id);
 
     if inner.borrow().initialized || !inner.borrow().pending_calcs.contains(instrument_id) {
         return;

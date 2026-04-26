@@ -115,6 +115,38 @@ fn test_register_client_success(
 }
 
 #[rstest]
+fn test_client_ids_preserve_registration_order(mut execution_engine: ExecutionEngine) {
+    // Pin IndexMap iteration order on ExecutionEngine.clients: client_ids() drives
+    // routing dispatch via get_clients_for_orders, so the registration order must
+    // appear in the returned Vec across runs.
+    for (id, venue) in [
+        ("ZULU", Venue::from("ZULU")),
+        ("ALPHA", Venue::from("ALPHA")),
+        ("MIKE", Venue::from("MIKE")),
+    ] {
+        let client = StubExecutionClient::new(
+            ClientId::from(id),
+            AccountId::from("TEST-ACCOUNT"),
+            venue,
+            OmsType::Netting,
+            None,
+        );
+        execution_engine.register_client(Box::new(client)).unwrap();
+    }
+
+    let ids = execution_engine.client_ids();
+
+    assert_eq!(
+        ids,
+        vec![
+            ClientId::from("ZULU"),
+            ClientId::from("ALPHA"),
+            ClientId::from("MIKE"),
+        ],
+    );
+}
+
+#[rstest]
 fn test_register_venue_routing_success(
     mut execution_engine: ExecutionEngine,
     stub_client: StubExecutionClient,

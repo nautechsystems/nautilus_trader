@@ -691,7 +691,11 @@ pub trait Strategy: DataActor {
             order_side,
         );
 
-        let exec_algorithm_ids = cache.exec_algorithm_ids();
+        // Sort the algorithm IDs so the per-algo cancel cascade fires msgbus
+        // events in a deterministic order across runs; the cache returns an
+        // unordered AHashSet.
+        let mut exec_algorithm_ids: Vec<_> = cache.exec_algorithm_ids().into_iter().collect();
+        exec_algorithm_ids.sort();
         let mut algo_orders = Vec::new();
 
         for algo_id in &exec_algorithm_ids {
@@ -1290,7 +1294,11 @@ pub trait Strategy: DataActor {
         }
 
         let market_exit_tag = core.market_exit_tag;
-        let instruments: Vec<_> = instruments.into_iter().collect();
+        // Sort so the per-instrument cancel_all_orders/close_all_positions
+        // cascade fires msgbus commands in a deterministic sequence; the
+        // upstream dedup is AHash-backed.
+        let mut instruments: Vec<_> = instruments.into_iter().collect();
+        instruments.sort();
         drop(cache);
 
         for instrument_id in instruments {

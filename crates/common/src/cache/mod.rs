@@ -2599,6 +2599,9 @@ impl Cache {
             }
         }
 
+        // Sort so callers receive a deterministic Vec across runs; the
+        // underlying client_order_ids set is AHash-backed.
+        orders.sort_by_key(|o| o.client_order_id());
         orders
     }
 
@@ -2626,6 +2629,9 @@ impl Cache {
             }
         }
 
+        // Sort so callers receive a deterministic Vec across runs; the
+        // underlying position_ids set is AHash-backed.
+        positions.sort_by_key(|p| p.id);
         positions
     }
 

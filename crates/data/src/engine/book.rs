@@ -19,7 +19,7 @@ use std::{
     rc::Rc,
 };
 
-use ahash::AHashMap;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     msgbus::{self, Handler, MStr, Topic},
@@ -47,7 +47,7 @@ pub struct BookSnapshotInfo {
 ///
 /// Shared between the engine (which populates it on subscribe) and the
 /// [`BookSnapshotter`] timer callback (which iterates it on each tick).
-pub(crate) type BookSnapshotInfos = Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>;
+pub(crate) type BookSnapshotInfos = Rc<RefCell<IndexMap<InstrumentId, BookSnapshotInfo>>>;
 
 /// Reference count key for a book snapshot subscription.
 pub(crate) type BookSnapshotKey = (InstrumentId, NonZeroUsize);
@@ -125,7 +125,7 @@ impl Handler<OrderBookDepth10> for BookUpdater {
 pub struct BookSnapshotter {
     pub timer_name: Ustr,
     pub interval_ms: NonZeroUsize,
-    pub snapshot_infos: Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>,
+    pub snapshot_infos: Rc<RefCell<IndexMap<InstrumentId, BookSnapshotInfo>>>,
     pub cache: Rc<RefCell<Cache>>,
 }
 
@@ -133,7 +133,7 @@ impl BookSnapshotter {
     /// Creates a new [`BookSnapshotter`] instance.
     pub fn new(
         interval_ms: NonZeroUsize,
-        snapshot_infos: Rc<RefCell<AHashMap<InstrumentId, BookSnapshotInfo>>>,
+        snapshot_infos: Rc<RefCell<IndexMap<InstrumentId, BookSnapshotInfo>>>,
         cache: Rc<RefCell<Cache>>,
     ) -> Self {
         let timer_name = format!("OrderBookSnapshots|{interval_ms}");
