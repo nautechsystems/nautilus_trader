@@ -15,10 +15,10 @@
 
 //! Example demonstrating live execution testing with the Deribit adapter.
 //!
-//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! For production, set USE_TESTNET=false:
-//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit`
+//! `USE_TESTNET=false cargo run --example deribit-exec-tester --package nautilus-deribit --features examples`
 //!
 //! Environment variables:
 //! - DERIBIT_TESTNET_API_KEY / DERIBIT_API_KEY: Your Deribit API key

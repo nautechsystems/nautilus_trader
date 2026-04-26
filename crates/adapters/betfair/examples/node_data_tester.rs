@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Betfair adapter.
 //!
-//! Run with: `cargo run -p nautilus-betfair --example betfair-data-tester`
+//! Run with: `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 //!
 //! Environment variables:
 //! - `BETFAIR_USERNAME`: Your Betfair username

@@ -15,7 +15,7 @@
 
 //! Sandbox example replaying Tardis Machine data through a LiveNode.
 //!
-//! Run with: `cargo run --example tardis-data-tester -p nautilus-tardis`
+//! Run with: `cargo run --example tardis-data-tester -p nautilus-tardis --features examples`
 //!
 //! Prerequisites:
 //! - Set `TARDIS_API_KEY` (used by the HTTP client to fetch instrument metadata)

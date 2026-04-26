@@ -27,7 +27,7 @@
 //!    `on_option_greeks` handler so the downstream branch on `greeks.convention`
 //!    is visible.
 //!
-//! Run with: `cargo run --example okx-greeks-tester --package nautilus-okx`
+//! Run with: `cargo run --example okx-greeks-tester --package nautilus-okx --features examples`
 
 use std::fmt::Debug;
 

@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Databento adapter.
 //!
-//! Run with: `cargo run --example databento-data-tester --package nautilus-databento`
+//! Run with: `cargo run --example databento-data-tester --package nautilus-databento --features live`
 
 use std::{path::PathBuf, time::Duration};
 

@@ -23,7 +23,7 @@
 //! 5. Uses the BTC index price as the ATM source
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
-//! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit --features examples`
 
 use std::fmt::Debug;
 

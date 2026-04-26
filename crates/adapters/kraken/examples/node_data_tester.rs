@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Kraken adapter.
 //!
-//! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester`
+//! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester --features examples`
 //!
 //! Environment variables (optional for public data):
 //! - KRAKEN_API_KEY: Your Kraken API key

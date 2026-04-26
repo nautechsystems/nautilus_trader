@@ -24,6 +24,7 @@ pub mod factories;
 use nautilus_common::factories::{ClientConfig, DataClientFactory};
 #[cfg(feature = "hypersync")]
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+#[cfg(feature = "hypersync")]
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 

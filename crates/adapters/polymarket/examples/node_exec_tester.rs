@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-exec-tester --package nautilus-polymarket
+//! cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples
 //! ```
 
 use std::sync::Arc;

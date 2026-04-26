@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Blockchain adapter.
 //!
-//! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain`
+//! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
 
 use std::{sync::Arc, time::Duration};
 

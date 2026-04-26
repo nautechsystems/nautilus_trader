@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Coinbase adapter.
 //!
-//! Run with: `cargo run --example coinbase-data-tester --package nautilus-coinbase`
+//! Run with: `cargo run --example coinbase-data-tester --package nautilus-coinbase --features examples`
 //!
 //! Environment variables (optional for public market data):
 //! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)

@@ -16,7 +16,7 @@
 //! Example demonstrating live execution testing with the Coinbase adapter on a
 //! spot product (`BTC-USD`).
 //!
-//! Run with: `cargo run --example coinbase-exec-tester --package nautilus-coinbase`
+//! Run with: `cargo run --example coinbase-exec-tester --package nautilus-coinbase --features examples`
 //!
 //! Required environment variables:
 //! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)

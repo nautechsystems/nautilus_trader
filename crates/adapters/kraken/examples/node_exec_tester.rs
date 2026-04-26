@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Kraken adapter.
 //!
-//! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester`
+//! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 //!
 //! Environment variables (for Spot):
 //! - KRAKEN_SPOT_API_KEY: Your Kraken Spot API key

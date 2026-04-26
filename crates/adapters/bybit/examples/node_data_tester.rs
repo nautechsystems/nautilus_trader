@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Bybit adapter.
 //!
-//! Run with: `cargo run --example bybit-data-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-data-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
     common::enums::BybitProductType, config::BybitDataClientConfig,

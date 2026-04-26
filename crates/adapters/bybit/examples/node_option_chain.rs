@@ -24,7 +24,7 @@
 //!    price embedded in every option ticker update, eliminating spot-forward basis error
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
-//! Run with: `cargo run --example bybit-option-chain --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-option-chain --package nautilus-bybit --features examples`
 
 use std::fmt::Debug;
 

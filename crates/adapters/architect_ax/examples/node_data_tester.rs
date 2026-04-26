@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the AX Exchange adapter.
 //!
-//! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax`
+//! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax --features examples`
 //!
 //! Environment variables:
 //! - `AX_API_KEY`: Your API key

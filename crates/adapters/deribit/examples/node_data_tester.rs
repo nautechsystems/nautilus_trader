@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Deribit adapter.
 //!
-//! Run with: `cargo run --example deribit-data-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-data-tester --package nautilus-deribit --features examples`
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{

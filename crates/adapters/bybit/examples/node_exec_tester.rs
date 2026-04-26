@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Bybit adapter.
 //!
-//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`
 
 use nautilus_bybit::{
     common::enums::{BybitEnvironment, BybitProductType},

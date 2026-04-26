@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Binance Futures USD-M adapter.
 //!
-//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance --features examples`
 //!
 //! Uses testnet by default for safety.
 

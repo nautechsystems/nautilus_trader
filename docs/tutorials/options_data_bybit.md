@@ -425,10 +425,10 @@ OPTION_CHAIN | BYBIT-BTC-USDT-1775289600000000000 | atm=67000.0 | calls=6 puts=6
 
 ```bash
 # Per-instrument Greeks
-cargo run --example bybit-greeks-tester --package nautilus-bybit
+cargo run --example bybit-greeks-tester --package nautilus-bybit --features examples
 
 # Option chain snapshots
-cargo run --example bybit-option-chain --package nautilus-bybit
+cargo run --example bybit-option-chain --package nautilus-bybit --features examples
 ```
 
 Stop either example with Ctrl+C. The actor's `on_stop` callback unsubscribes

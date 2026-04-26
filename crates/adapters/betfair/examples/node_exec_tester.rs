@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Betfair adapter.
 //!
-//! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester`
+//! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 //!
 //! Environment variables:
 //! - `BETFAIR_USERNAME`: Your Betfair username

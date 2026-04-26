@@ -20,7 +20,7 @@
 //! - Testnet: `BITMEX_TESTNET_API_KEY` / `BITMEX_TESTNET_API_SECRET`
 //! - Mainnet: `BITMEX_API_KEY` / `BITMEX_API_SECRET`
 //!
-//! Run with: `cargo run --example bitmex-data-tester --package nautilus-bitmex`
+//! Run with: `cargo run --example bitmex-data-tester --package nautilus-bitmex --features examples`
 
 use nautilus_bitmex::{
     common::enums::BitmexEnvironment, config::BitmexDataClientConfig,

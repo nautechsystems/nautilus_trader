@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Binance Spot adapter.
 //!
-//! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-spot-exec-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables based on the configured environment
 //! (Ed25519 keys are auto-detected):

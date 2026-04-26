@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Hyperliquid adapter.
 //!
-//! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid`
+//! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`
 
 use std::num::NonZeroUsize;
 

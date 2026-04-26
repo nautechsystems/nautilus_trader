@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the dYdX adapter.
 //!
-//! Run with: `cargo run --example dydx-data-tester --package nautilus-dydx`
+//! Run with: `cargo run --example dydx-data-tester --package nautilus-dydx --features examples`
 
 use std::num::NonZeroUsize;
 

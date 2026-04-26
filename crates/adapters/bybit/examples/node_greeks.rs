@@ -22,7 +22,7 @@
 //! 4. Subscribes to OptionGreeks for each one
 //! 5. Logs received greeks in the `on_option_greeks` handler
 //!
-//! Run with: `cargo run --example bybit-greeks-tester --package nautilus-bybit`
+//! Run with: `cargo run --example bybit-greeks-tester --package nautilus-bybit --features examples`
 
 use std::fmt::Debug;
 

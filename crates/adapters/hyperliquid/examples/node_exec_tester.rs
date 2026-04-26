@@ -18,7 +18,7 @@
 //! Prerequisites:
 //! - Set `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
 //!
-//! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid`
+//! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid --features examples`
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};

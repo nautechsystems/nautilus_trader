@@ -23,7 +23,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-election-subscriber --package nautilus-polymarket
+//! cargo run --example polymarket-election-subscriber --package nautilus-polymarket --features examples
 //! ```
 
 use std::{collections::HashMap, sync::Arc};

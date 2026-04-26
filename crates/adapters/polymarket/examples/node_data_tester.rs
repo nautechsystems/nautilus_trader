@@ -22,7 +22,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run --example polymarket-data-tester --package nautilus-polymarket
+//! cargo run --example polymarket-data-tester --package nautilus-polymarket --features examples
 //! ```
 
 use log::LevelFilter;

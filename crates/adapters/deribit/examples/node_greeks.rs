@@ -22,7 +22,7 @@
 //! 4. Subscribes to OptionGreeks for each one
 //! 5. Logs received greeks in the `on_option_greeks` handler
 //!
-//! Run with: `cargo run --example deribit-greeks-tester --package nautilus-deribit`
+//! Run with: `cargo run --example deribit-greeks-tester --package nautilus-deribit --features examples`
 
 use std::fmt::Debug;
 

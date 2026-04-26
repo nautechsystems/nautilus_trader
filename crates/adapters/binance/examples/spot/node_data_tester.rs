@@ -15,7 +15,7 @@
 
 //! Example demonstrating live data testing with the Binance Spot SBE adapter.
 //!
-//! Run with: `cargo run --example binance-spot-data-tester --package nautilus-binance`
+//! Run with: `cargo run --example binance-spot-data-tester --package nautilus-binance --features examples`
 //!
 //! Requires environment variables based on the configured environment
 //! (Ed25519 keys are auto-detected):
