@@ -66,6 +66,7 @@ chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
+itoa = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 rust_decimal = { workspace = true }
@@ -109,6 +110,11 @@ harness = false
 [[bench]]
 name = "cache_query_sets"
 path = "benches/cache/query_sets.rs"
+harness = false
+
+[[bench]]
+name = "client_order_id"
+path = "benches/client_order_id.rs"
 harness = false
 
 [[bench]]
