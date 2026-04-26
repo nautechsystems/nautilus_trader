@@ -256,6 +256,27 @@ impl KrakenSpotHttpClient {
         })
     }
 
+    /// Requests an order book snapshot for an instrument.
+    #[pyo3(name = "request_book_snapshot")]
+    #[pyo3(signature = (instrument_id, depth=None))]
+    fn py_request_book_snapshot<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        depth: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let book = client
+                .request_book_snapshot(instrument_id, depth)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            Python::attach(|py| book.into_py_any(py))
+        })
+    }
+
     /// Requests historical bars/OHLC data for an instrument.
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None))]

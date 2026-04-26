@@ -114,7 +114,7 @@ fn make_spot_execution(
         time_in_force: Some(KrakenTimeInForce::GoodTilCancelled),
         post_only: Some(true),
         reduce_only: Some(false),
-        timestamp: "2026-04-11T00:00:00.000Z".to_string(),
+        timestamp: "2026-04-11T00:00:00.000Z".parse().unwrap(),
         exec_id: exec_id.map(str::to_string),
         last_qty: exec_id.map(|_| 0.0001),
         last_price: exec_id.map(|_| 70_000.0),

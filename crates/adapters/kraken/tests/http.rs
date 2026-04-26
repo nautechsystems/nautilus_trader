@@ -2194,6 +2194,9 @@ async fn test_spot_domain_request_book_snapshot() {
     let book = result.unwrap();
     assert!(book.best_bid_price().is_some());
     assert!(book.best_ask_price().is_some());
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
 }
 
 #[rstest]
@@ -2236,6 +2239,9 @@ async fn test_futures_domain_request_book_snapshot() {
     let book = result.unwrap();
     assert_eq!(book.best_bid_price(), Some(Price::from("105900.0")));
     assert_eq!(book.best_ask_price(), Some(Price::from("105950.0")));
+    // HTTP snapshot must not advance the book's high-water sequence; the WS
+    // subscription owns sequencing once it starts streaming deltas.
+    assert_eq!(book.sequence, 0);
 }
 
 #[rstest]

@@ -142,6 +142,7 @@ pub struct KrakenWsTickerData {
     pub high: f64,
     pub change: f64,
     pub change_pct: f64,
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,7 +153,7 @@ pub struct KrakenWsTradeData {
     pub qty: f64,
     pub ord_type: KrakenOrderType,
     pub trade_id: i64,
-    pub timestamp: String,
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,7 +164,7 @@ pub struct KrakenWsBookData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asks: Option<Vec<KrakenWsBookLevel>>,
     pub checksum: Option<u32>,
-    pub timestamp: Option<String>,
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,8 +233,8 @@ pub struct KrakenWsExecutionData {
     /// Reduce only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
-    /// Event timestamp (RFC3339).
-    pub timestamp: String,
+    /// Event timestamp.
+    pub timestamp: DateTime<Utc>,
     // Trade-specific fields (present when exec_type is Trade)
     /// Execution/trade ID.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -329,6 +330,10 @@ mod tests {
         assert!(ticker.bid.is_finite() && ticker.bid > 0.0);
         assert!(ticker.ask.is_finite() && ticker.ask > 0.0);
         assert!(ticker.last.is_finite() && ticker.last > 0.0);
+        assert_eq!(
+            ticker.timestamp.timestamp_nanos_opt().unwrap(),
+            1_671_960_659_123_456_000
+        );
     }
 
     #[rstest]
@@ -364,6 +369,10 @@ mod tests {
         assert!(book.bids.is_some());
         assert!(book.asks.is_some());
         assert!(book.checksum.is_some());
+        assert_eq!(
+            book.timestamp.timestamp_nanos_opt().unwrap(),
+            1_696_613_755_440_295_000
+        );
 
         let bids = book.bids.unwrap();
         assert_eq!(bids.len(), 3);
@@ -382,7 +391,10 @@ mod tests {
 
         let book: KrakenWsBookData =
             serde_json::from_value(message.data[0].clone()).expect("Failed to parse book data");
-        assert!(book.timestamp.is_some());
+        assert_eq!(
+            book.timestamp.timestamp_nanos_opt().unwrap(),
+            1_696_613_755_440_295_000
+        );
         assert!(book.checksum.is_some());
     }
 

@@ -154,6 +154,7 @@ Released on TBD (UTC).
 - Fixed Kraken Futures fast-fill market orders resolving as rejected during order status reconciliation (#3870), thanks for reporting @Stamppot82
 - Fixed Kraken Futures margin-account balance parse violating the `AccountBalance` invariant (`total == locked + free`) when Kraken's `af` field and the derived `amount - af` round independently at the currency precision
 - Fixed Kraken Spot quote-quantity orders never reaching terminal state from base/quote size mismatch
+- Fixed Kraken Spot ticker `QuoteTick.ts_event` using local init time instead of the exchange `timestamp` field (#3926), thanks @ptzafos
 - Fixed Kraken trade dedup clearing the entire set at capacity instead of evicting the oldest entry
 - Fixed Kraken Futures `AccountBalance` invariant panic on margin parse, thanks @Stamppot82
 - Fixed Kraken Futures WebSocket re-authentication deadlock on reconnect (#3871), thanks for reporting @Stamppot82

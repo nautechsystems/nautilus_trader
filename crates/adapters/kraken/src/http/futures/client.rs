@@ -1430,18 +1430,20 @@ impl KrakenFuturesHttpClient {
             (d as usize).min(book_data.asks.len())
         });
 
+        // Pass sequence=0 so the snapshot does not advance the book's high-water sequence,
+        // the WS subscription owns sequencing once it starts streaming deltas.
         for (i, level) in book_data.bids.iter().take(bid_limit).enumerate() {
             let price = Price::new(level.price, price_precision);
             let size = Quantity::new(level.qty, size_precision);
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         for (i, level) in book_data.asks.iter().take(ask_limit).enumerate() {
             let price = Price::new(level.price, price_precision);
             let size = Quantity::new(level.qty, size_precision);
             let order = BookOrder::new(OrderSide::Sell, price, size, (bid_limit + i) as u64);
-            book.add(order, 0, (bid_limit + i) as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         Ok(book)

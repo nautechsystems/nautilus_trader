@@ -9246,6 +9246,11 @@ class KrakenSpotHttpClient:
         self,
         pairs: list[str] | None = None,
     ) -> dict[InstrumentId, MarketStatusAction]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
     async def request_trades(
         self,
         instrument_id: InstrumentId,
@@ -9370,6 +9375,11 @@ class KrakenFuturesHttpClient:
     async def request_instrument_statuses(
         self,
     ) -> dict[InstrumentId, MarketStatusAction]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
     async def request_trades(
         self,
         instrument_id: InstrumentId,

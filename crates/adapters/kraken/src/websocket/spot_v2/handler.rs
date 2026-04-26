@@ -421,7 +421,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -453,7 +454,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -492,7 +494,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 
@@ -521,7 +524,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -545,7 +549,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -577,7 +582,8 @@ mod tests {
                 "symbol": "BTC/USD",
                 "bids": [{"price": 105944.20, "qty": 2.5}],
                 "asks": [{"price": 105944.30, "qty": 3.2}],
-                "checksum": 12345
+                "checksum": 12345,
+                "timestamp": "2023-10-06T17:35:55.440295Z"
             }]
         }"#;
 
@@ -602,7 +608,8 @@ mod tests {
                 "low": 104711.00,
                 "high": 106613.10,
                 "change": 250.00,
-                "change_pct": 0.24
+                "change_pct": 0.24,
+                "timestamp": "2022-12-25T09:30:59.123456Z"
             }]
         }"#;
 

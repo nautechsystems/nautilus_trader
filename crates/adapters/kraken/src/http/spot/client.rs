@@ -1574,13 +1574,15 @@ impl KrakenSpotHttpClient {
 
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
+        // Pass sequence=0 so the snapshot does not advance the book's high-water sequence,
+        // the WS subscription owns sequencing once it starts streaming deltas.
         for (i, level) in book_data.bids.iter().enumerate() {
             let price_str = level.first().and_then(|v| v.as_str()).unwrap_or("0");
             let size_str = level.get(1).and_then(|v| v.as_str()).unwrap_or("0");
             let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
             let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
-            book.add(order, 0, i as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         let bids_len = book_data.bids.len();
@@ -1591,7 +1593,7 @@ impl KrakenSpotHttpClient {
             let price = Price::new(price_str.parse::<f64>().unwrap_or(0.0), price_precision);
             let size = Quantity::new(size_str.parse::<f64>().unwrap_or(0.0), size_precision);
             let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
-            book.add(order, 0, (bids_len + i) as u64, ts_event);
+            book.add(order, 0, 0, ts_event);
         }
 
         Ok(book)
