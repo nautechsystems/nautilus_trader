@@ -633,6 +633,7 @@ mod tests {
     use std::sync::Arc;
 
     use ahash::{AHashMap, AHashSet};
+    use indexmap::IndexMap;
     use nautilus_core::{UUID4, approx_eq};
     use nautilus_model::{
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
@@ -725,7 +726,7 @@ mod tests {
             trade_ids: AHashSet::new(),
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
-            commissions: AHashMap::new(),
+            commissions: IndexMap::new(),
         }
     }
 

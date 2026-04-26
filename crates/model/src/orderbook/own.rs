@@ -24,7 +24,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, time::nanos_since_unix_epoch};
 use rust_decimal::Decimal;
@@ -646,7 +646,7 @@ where
 pub(crate) struct OwnBookLadder {
     pub side: OrderSideSpecified,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
-    pub cache: AHashMap<ClientOrderId, BookPrice>,
+    pub cache: IndexMap<ClientOrderId, BookPrice>,
 }
 
 impl OwnBookLadder {
@@ -656,7 +656,7 @@ impl OwnBookLadder {
         Self {
             side,
             levels: BTreeMap::new(),
-            cache: AHashMap::new(),
+            cache: IndexMap::new(),
         }
     }
 
@@ -724,7 +724,7 @@ impl OwnBookLadder {
         if order.price == level.price.value {
             level.update(order);
             if order.size.is_zero() {
-                self.cache.remove(&order.client_order_id);
+                self.cache.shift_remove(&order.client_order_id);
 
                 if level.is_empty() {
                     self.levels.remove(&price);
@@ -734,7 +734,7 @@ impl OwnBookLadder {
         }
 
         level.delete(&order.client_order_id)?;
-        self.cache.remove(&order.client_order_id);
+        self.cache.shift_remove(&order.client_order_id);
 
         if level.is_empty() {
             self.levels.remove(&price);
@@ -776,7 +776,7 @@ impl OwnBookLadder {
         if level.is_empty() {
             self.levels.remove(&price);
         }
-        self.cache.remove(client_order_id);
+        self.cache.shift_remove(client_order_id);
 
         Ok(())
     }

@@ -5573,6 +5573,186 @@ fn test_own_book_audit_open_orders_with_removals() {
     assert_eq!(own_book.ask_client_order_ids().len(), 1);
 }
 
+#[rstest]
+fn test_own_book_client_order_ids_insertion_order() {
+    // Locks in IndexMap iteration order for OwnBookLadder.cache: keys
+    // appear in the Vec in the order they were added, irrespective of
+    // their alphabetical ordering or price level.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    let bid_ids = ["BID-A", "BID-C", "BID-B"];
+    let bid_prices = ["100.00", "99.00", "98.00"];
+    for (i, (id, px)) in bid_ids.iter().zip(bid_prices.iter()).enumerate() {
+        own_book.add(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from(*id),
+            Some(VenueOrderId::from((i as u64 + 1).to_string().as_str())),
+            OrderSideSpecified::Buy,
+            Price::from(*px),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    let ask_ids = ["ASK-Z", "ASK-X", "ASK-Y"];
+    let ask_prices = ["101.00", "102.00", "103.00"];
+    for (i, (id, px)) in ask_ids.iter().zip(ask_prices.iter()).enumerate() {
+        own_book.add(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from(*id),
+            Some(VenueOrderId::from((i as u64 + 100).to_string().as_str())),
+            OrderSideSpecified::Sell,
+            Price::from(*px),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![
+            ClientOrderId::from("BID-A"),
+            ClientOrderId::from("BID-C"),
+            ClientOrderId::from("BID-B"),
+        ]
+    );
+    assert_eq!(
+        own_book.ask_client_order_ids(),
+        vec![
+            ClientOrderId::from("ASK-Z"),
+            ClientOrderId::from("ASK-X"),
+            ClientOrderId::from("ASK-Y"),
+        ]
+    );
+}
+
+#[rstest]
+fn test_own_book_client_order_ids_preserved_across_remove() {
+    // Verifies OwnBookLadder uses shift_remove (not swap_remove): the
+    // remaining keys keep their relative insertion order after a middle
+    // entry is removed.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    let ids = ["BID-1", "BID-2", "BID-3", "BID-4"];
+    for (i, id) in ids.iter().enumerate() {
+        own_book.add(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from(*id),
+            Some(VenueOrderId::from((i as u64 + 1).to_string().as_str())),
+            OrderSideSpecified::Buy,
+            Price::from(format!("{}.00", 100 - i)),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    own_book
+        .delete(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("99.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![
+            ClientOrderId::from("BID-1"),
+            ClientOrderId::from("BID-3"),
+            ClientOrderId::from("BID-4"),
+        ]
+    );
+}
+
+#[rstest]
+fn test_own_book_client_order_ids_after_update_with_price_change() {
+    // Documents the order semantics of OwnBookLadder::update when the
+    // price changes: shift_remove + add re-appends the order at the end
+    // of the cache. Locks in this behaviour so a future swap to
+    // swap_remove or a different update path would surface in tests.
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut own_book = OwnOrderBook::new(instrument_id);
+
+    let ids = ["BID-1", "BID-2", "BID-3"];
+    let prices = ["100.00", "99.00", "98.00"];
+    for (i, (id, px)) in ids.iter().zip(prices.iter()).enumerate() {
+        own_book.add(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from(*id),
+            Some(VenueOrderId::from((i as u64 + 1).to_string().as_str())),
+            OrderSideSpecified::Buy,
+            Price::from(*px),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    // Update BID-2 to a new price level (97.00). update -> shift_remove +
+    // add, so BID-2 should land at the end of the iteration order
+    own_book
+        .update(OwnBookOrder::new(
+            TraderId::test_default(),
+            ClientOrderId::from("BID-2"),
+            Some(VenueOrderId::from("2")),
+            OrderSideSpecified::Buy,
+            Price::from("97.00"),
+            Quantity::from("10"),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    assert_eq!(
+        own_book.bid_client_order_ids(),
+        vec![
+            ClientOrderId::from("BID-1"),
+            ClientOrderId::from("BID-3"),
+            ClientOrderId::from("BID-2"),
+        ]
+    );
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Property-based testing
 ////////////////////////////////////////////////////////////////////////////////

@@ -510,17 +510,65 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 
 ### Hash collections
 
-Use `AHashMap` and `AHashSet` from the `ahash` crate for performance-critical hot paths.
-For non-performance-critical code, standard `HashMap`/`HashSet` are preferred for simplicity:
+Three concerns drive the choice of hash collection:
+
+- **Iteration-order determinism** (the primary filter)
+- **Performance**
+- **Thread safety**
+
+Answer the determinism question first, then pick from the remaining options on performance grounds.
+
+#### Iteration-order determinism
+
+`AHash` randomizes its hasher per process, so `AHashMap` / `AHashSet`
+iteration order varies between runs. When the iteration order of a
+collection feeds observable state on the deterministic simulation testing
+(DST) path (events emitted on the message bus, ordered `Vec`s returned
+from public methods, the sequence in which a seeded RNG is consumed, the
+order in which downstream effects fire), use `IndexMap` / `IndexSet` from
+the `indexmap` crate instead. They preserve insertion order and are a
+drop-in replacement for the `AHash*` collections.
 
 ```rust
-// For hot paths - using AHashMap/AHashSet
+use indexmap::{IndexMap, IndexSet};
+
+// Insertion-order iteration; deterministic across runs
+let mut commissions: IndexMap<Currency, Money> = IndexMap::new();
+let mut subscribed: IndexSet<InstrumentId> = IndexSet::new();
+```
+
+The pre-commit hook `check-dst-conventions` enforces `IndexMap` / `IndexSet`
+in `crates/live/src/manager.rs` and
+`crates/execution/src/matching_engine/engine.rs` because both files were
+audited as load-bearing for fill ordering and reconciliation. Other call
+sites are reviewed individually; see
+[DST scope inventory](dst_scope_inventory.md) for the per-file audit and
+the running list of closed / pending sites.
+
+When the collection is **lookup-only** (no `.iter()`, `.values()`,
+`.keys()`, `.into_iter()`, `.drain()`, or `for x in map { ... }`),
+iteration order is irrelevant and `AHashMap` / `AHashSet` is the right
+choice on performance grounds. Borderline cases (e.g. a public getter
+that clones the map and lets callers iterate) should be reviewed against
+the inventory's classification rules.
+
+#### Performance
+
+For lookup-heavy hot paths where iteration order does not feed observable
+state, prefer `AHashMap` / `AHashSet` over the standard library:
+
+```rust
 use ahash::{AHashMap, AHashSet};
 
 let mut symbols: AHashSet<Symbol> = AHashSet::new();
 let mut prices: AHashMap<InstrumentId, Price> = AHashMap::new();
+```
 
-// For non-hot paths - standard library HashMap/HashSet
+For non-performance-critical, non-iteration-sensitive cases (factory
+registries, configuration maps, test fixtures), standard
+`HashMap` / `HashSet` is acceptable and often preferred for simplicity:
+
+```rust
 use std::collections::{HashMap, HashSet};
 
 let mut symbols: HashSet<Symbol> = HashSet::new();
@@ -539,6 +587,55 @@ let mut prices: HashMap<InstrumentId, Price> = HashMap::new();
 - **Cryptographic security required**: Use standard `HashMap` when hash flooding attacks are a concern (e.g., handling untrusted user input in network protocols).
 - **Network clients**: Prefer standard `HashMap` for network-facing components where security considerations outweigh performance benefits.
 - **External library boundaries**: Use standard `HashMap` when interfacing with external libraries that expect it (e.g., Arrow serialization metadata).
+
+#### AHashMap vs IndexMap microbenchmarks
+
+The numbers below come from `crates/core/benches/hash_map.rs` (release
+profile). Times are per operation; ratio is `IndexMap` relative to
+`AHashMap` (values below 1.0 favour `IndexMap`).
+
+| Pattern               | Size | AHashMap | IndexMap | Ratio |
+|-----------------------|-----:|---------:|---------:|------:|
+| Insert (build map)    |    4 |  40.8 ns |  49.8 ns | 1.22x |
+| Insert (build map)    |   32 | 192.4 ns | 348.2 ns | 1.81x |
+| Insert (build map)    |  256 |  1.01 us |  2.74 us | 2.72x |
+| Lookup (random get)   |    4 |  2.56 ns |  9.36 ns | 3.66x |
+| Lookup (random get)   |   32 |  2.49 ns |  7.95 ns | 3.19x |
+| Lookup (random get)   |  256 |  3.00 ns |  9.48 ns | 3.16x |
+| `.values().collect()` |    4 |  8.08 ns |  6.61 ns | 0.82x |
+| `.values().collect()` |   32 |  22.8 ns |  14.8 ns | 0.65x |
+| `.values().collect()` |  256 |   145 ns |   109 ns | 0.75x |
+| `.keys().collect()`   |    4 |  7.90 ns |  6.24 ns | 0.79x |
+| `.keys().collect()`   |   32 |  23.0 ns |  12.6 ns | 0.55x |
+| `.keys().collect()`   |  256 |   145 ns |   101 ns | 0.70x |
+| Clone                 |    4 |  8.48 ns |  17.8 ns | 2.10x |
+| Clone                 |   32 |  25.3 ns |  62.5 ns | 2.47x |
+| Clone                 |  256 |  71.0 ns |   247 ns | 3.48x |
+| Entry accumulate      |    4 |   122 ns |   159 ns | 1.30x |
+| Entry accumulate      |   32 |   439 ns |  1.10 us | 2.51x |
+| Entry accumulate      |  256 |  2.21 us |  7.83 us | 3.54x |
+
+For one-key removal, `IndexMap` exposes two methods: `shift_remove`
+preserves insertion order at `O(n)` cost; `swap_remove` is `O(1)` but
+swaps the last entry into the removed slot, breaking iteration order.
+
+| Pattern    | Size | AHashMap.remove | IndexMap.shift_remove | IndexMap.swap_remove |
+|------------|-----:|----------------:|----------------------:|---------------------:|
+| Remove one |    4 |         9.89 ns |               37.8 ns |              37.1 ns |
+| Remove one |   32 |         62.0 ns |                117 ns |              53.4 ns |
+| Remove one |  256 |         70.3 ns |                355 ns |               269 ns |
+
+How to read the table:
+
+- `AHashMap` is roughly 3x faster on pure lookup. Keep `AHashMap` on hot
+  lookup paths where iteration order does not flow into observable state.
+- `IndexMap` is 25 to 45 percent faster on `.values().collect()` and
+  `.keys().collect()`. Where iteration drives observable state, the flip
+  to `IndexMap` is a small performance win as well as a determinism win.
+- `IndexMap` is 1.3 to 3.5x slower on insert, clone, and entry-modify-or-insert.
+  Keep `AHashMap` on construction-heavy or per-fill accumulation paths.
+- Prefer `swap_remove` over `shift_remove` when iteration order does not
+  matter after the removal; it stays competitive with `AHashMap` removal.
 
 ### Thread-safe hash map patterns
 
@@ -607,9 +704,11 @@ cache.insert(other_key, other_value);  // Data race
 
 **Decision tree:**
 
-- Immutable after construction → Use `Arc<AHashMap<K, V>>`
-- Concurrent access needed → Use `Arc<DashMap<K, V>>`
-- Single-threaded access → Use plain `AHashMap<K, V>`
+1. Iteration order observable on the DST path? Use `IndexMap<K, V>` / `IndexSet<T>`
+2. Otherwise, by access pattern:
+   - Immutable after construction: use `Arc<AHashMap<K, V>>`
+   - Concurrent access needed: use `Arc<DashMap<K, V>>`
+   - Single-threaded access: use plain `AHashMap<K, V>`
 
 ### Re-export patterns
 

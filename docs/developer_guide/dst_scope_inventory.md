@@ -200,6 +200,9 @@ The 16 in-scope crates host `AHashMap` and `AHashSet` in ~85 other files, used f
 |--------------------------------------------------------|------------|
 | `AHashMap` / `AHashSet` in `manager.rs`                | closed     |
 | `AHashMap` / `AHashSet` in `matching_engine/engine.rs` | closed     |
+| `Position::commissions` in `model/src/position.rs`     | closed     |
+| `model/src/orderbook/` AHashSet usage                  | closed     |
+| `model/src/orders/` AHashSet usage                     | closed     |
 | `AHashMap` / `AHashSet` elsewhere                      | unresolved |
 
 **Notes.** `AHash` randomizes its hasher per process. Iteration order over
@@ -218,10 +221,26 @@ seeded `FillModel` RNG is now consumed against the same resting-order
 sequence across runs, restoring the determinism promise in the backtesting
 guide.
 
+The `model` crate audit closed three rows. `Position::commissions` flipped
+to `IndexMap` because `events/position/snapshot.rs` builds the
+`PositionSnapshot.commissions` `Vec<Money>` from `position.commissions
+.values()`, and the snapshot is an observable event on the DST path.
+`OwnBookLadder.cache` flipped to `IndexMap<ClientOrderId, BookPrice>`
+(with `.shift_remove()` on iterated removals) because
+`OwnOrderBook::bid_client_order_ids()` and `ask_client_order_ids()`
+collect `cache.keys()` into public `Vec<ClientOrderId>`s. The remaining
+`orderbook/` `AHashSet<OrderStatus>` parameters are membership filters
+only. The `orders/` files use `AHashSet` for duplicate detection and a
+static cancellable-status set for O(1) membership; neither is iterated.
+
 **Mitigation.** Other call sites need a per-file review to determine whether
 iteration order affects observable state. The audit classified them as
 lookup-only pending review. Any hash-collection site that feeds observable
-state on the DST path is a future scope-hole closure.
+state on the DST path is a future scope-hole closure. `model/src/accounts/`
+remains pending: `currencies()` returns `Vec<Currency>` from
+`balances.keys()` and `commissions/balances/balances_starting` are exposed
+via cloned-getter APIs whose downstream observable consumption needs
+verification.
 
 ## Randomness
 
@@ -421,7 +440,7 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 20    |
+| closed     | 23    |
 | gated      | 10    |
 | scoped‑out | 24    |
 | unresolved | 5     |

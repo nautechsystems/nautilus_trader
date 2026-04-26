@@ -5212,6 +5212,7 @@ version = "0.56.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "indexmap 2.14.0",
  "nautilus-core",
  "nautilus-model",
  "pyo3",

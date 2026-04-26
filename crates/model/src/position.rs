@@ -23,7 +23,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
+use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{FAILED, check_equal, check_predicate_true},
@@ -93,7 +94,7 @@ pub struct Position {
     pub trade_ids: AHashSet<TradeId>,
     pub buy_qty: Quantity,
     pub sell_qty: Quantity,
-    pub commissions: AHashMap<Currency, Money>,
+    pub commissions: IndexMap<Currency, Money>,
 }
 
 impl Position {
@@ -124,7 +125,7 @@ impl Position {
             trade_ids: AHashSet::<TradeId>::new(),
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
-            commissions: AHashMap::<Currency, Money>::new(),
+            commissions: IndexMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
             instrument_id: fill.instrument_id,
@@ -4105,5 +4106,86 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
         assert_eq!(position.opening_order_id, order1.client_order_id());
         assert_eq!(position.events.len(), 2);
+    }
+
+    #[rstest]
+    fn test_position_commissions_multi_currency_insertion_order(audusd_sim: CurrencyPair) {
+        // Locks in IndexMap iteration order for Position::commissions:
+        // new currencies append to the end, existing currencies accumulate
+        // in place. PositionSnapshot.commissions builds its Vec from this
+        // iteration; the order must be deterministic across runs.
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order_template = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let fill_usd = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t1")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("1.0 USD")),
+            None,
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, fill_usd.into());
+
+        let fill_usdt = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t2")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("2.0 USDT")),
+            None,
+            None,
+        );
+        position.apply(&fill_usdt.into());
+
+        let fill_usd_again = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t3")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("0.5 USD")),
+            None,
+            None,
+        );
+        position.apply(&fill_usd_again.into());
+
+        let fill_btc = TestOrderEventStubs::filled(
+            &order_template,
+            &audusd_sim,
+            Some(TradeId::new("t4")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            Some(Money::from("0.0001 BTC")),
+            None,
+            None,
+        );
+        position.apply(&fill_btc.into());
+
+        // USD entered first and accumulates in place, USDT appends second,
+        // BTC appends third
+        assert_eq!(
+            position.commissions(),
+            vec![
+                Money::from("1.5 USD"),
+                Money::from("2.0 USDT"),
+                Money::from("0.0001 BTC"),
+            ]
+        );
     }
 }
