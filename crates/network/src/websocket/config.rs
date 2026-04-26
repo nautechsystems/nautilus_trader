@@ -36,10 +36,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// `Tungstenite` supports custom HTTP upgrade headers on the WebSocket
 /// handshake (see [`WebSocketConfig::headers`]). `Sockudo` is gated on the
-/// `transport-sockudo` Cargo feature; its HTTP/1.1 handshake does not accept
-/// custom upgrade headers, so adapters that authenticate at upgrade time must
-/// select `Tungstenite`. Headers carried inside WebSocket message payloads are
-/// unaffected.
+/// `transport-sockudo` Cargo feature and uses a local HTTP/1.1 handshake helper
+/// to pass the same upgrade headers through.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransportBackend {
@@ -137,9 +135,8 @@ pub struct WebSocketConfig {
     ///
     /// Defaults to [`TransportBackend::Tungstenite`]. Selecting
     /// [`TransportBackend::Sockudo`] requires the `transport-sockudo` Cargo
-    /// feature; otherwise `connect_with_server` returns an error. Sockudo
-    /// rejects non-empty `headers` because its HTTP/1.1 handshake does not
-    /// accept custom upgrade headers; in-message authentication is unaffected.
+    /// feature; otherwise `connect_with_server` returns an error. Both backends
+    /// pass `headers` into the HTTP upgrade request.
     #[serde(default)]
     #[builder(default)]
     pub backend: TransportBackend,
