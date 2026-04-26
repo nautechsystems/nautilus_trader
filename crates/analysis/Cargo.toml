@@ -45,11 +45,11 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 rust_decimal = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-indexmap = { workspace = true }
 rstest = { workspace = true }

@@ -211,7 +211,8 @@ The 16 in-scope crates host `AHashMap` and `AHashSet` in ~85 other files, used f
 | `trading/algorithm/core.rs` strategy event handlers        | closed     |
 | `common/cache/mod.rs` orders/positions Vec returns         | closed     |
 | `portfolio/portfolio.rs` PnL aggregation maps              | closed     |
-| `AHashMap` / `AHashSet` elsewhere                          | unresolved |
+| `analysis/analyzer.rs` account balance maps                | closed     |
+| `AHashMap` / `AHashSet` elsewhere                          | closed     |
 
 **Notes.** `AHash` randomizes its hasher per process. Iteration order over
 these collections varies across runs. `manager.rs` and
@@ -344,16 +345,32 @@ inside `accumulate_mark_values` stays on `AHashMap` (lookup-only).
 `pending_calcs`, and `last_account_state_log_ts` stay on `AHash`:
 lookup or per-instrument membership only.
 
-**Mitigation.** The remaining `AHashMap` / `AHashSet elsewhere` row is
-a catch-all for sites audited as lookup-only or scoped-out of the DST
-contract: `crates/common/cache/{database,quote,fifo}.rs`,
-`actor/data_actor.rs`, `msgbus/switchboard.rs`, `factories/`,
-`defi/cache.rs`, `greeks.rs`, `component.rs`, plus
-`crates/data/aggregation.rs`, `crates/risk/`, `crates/system/`,
-`crates/network/` (concurrent containers), and the
-`crates/trading/examples/` strategies. `crates/persistence/` catalog
+The `analysis/analyzer.rs` audit flipped two fields. `PortfolioAnalyzer
+.account_balances` and `account_balances_starting` now hold `IndexMap`
+storage so the chain `BaseAccount.balances` (already `IndexMap`) ->
+`account.balances_total()` -> `analyzer.account_balances` ->
+`analyzer.currencies()` -> `BacktestEngine::run` per-currency stats
+iteration is end-to-end deterministic. `realized_pnls` stays on
+`AHashMap`: keyed lookup only, never iterated.
+
+The `AHashMap` / `AHashSet elsewhere` catch-all row is closed by audit:
+every remaining site in the in-scope crates was verified to be
+lookup-only, behind a concurrent shared-ownership wrapper, fed only into
+a commutative aggregation, or sorted before observable use. Sites
+covered: `crates/common/cache/{database,quote,fifo}.rs`,
+`actor/data_actor.rs`, `actor/registry.rs` (Debug only),
+`msgbus/switchboard.rs`, `msgbus/core.rs` (dispatch sorts before fan-out),
+`factories/`, `defi/cache.rs`, `defi/switchboard.rs`, `greeks.rs`,
+`xrate.rs` (DFS commutative result), `clock.rs`, `component.rs`,
+`logging/{logger.rs,mod.rs}` (sorts before observable use), plus
+`crates/data/aggregation.rs`, `crates/risk/`, `crates/system/trader.rs`
+(commutative time advancement), and the `crates/trading/examples/`
+strategies. `crates/network/` AHash sites sit behind concurrent
+containers (`Arc<DashMap>` / `AtomicMap`). `crates/persistence/` catalog
 write order is a separate reproducibility concern outside the
-live-event determinism contract.
+live-event determinism contract. Any new in-scope `AHashMap` /
+`AHashSet` site that drives observable iteration order is now a
+regression that the per-area audit notes above protect against.
 
 ## Randomness
 
@@ -553,22 +570,21 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 31    |
+| closed     | 33    |
 | gated      | 10    |
 | scoped‑out | 24    |
-| unresolved | 5     |
+| unresolved | 4     |
 
 Unresolved entries at the end of this phase:
 
-1. `AHashMap` / `AHashSet` elsewhere outside the rows above
-2. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
+1. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
    `use_random_ids` is active
-3. `chrono::Utc::now` in `core/datetime.rs:404`
-4. Logger file-logging tests under `cfg(madsim)`
-5. Dynamic same-seed diff harness
+2. `chrono::Utc::now` in `core/datetime.rs:404`
+3. Logger file-logging tests under `cfg(madsim)`
+4. Dynamic same-seed diff harness
 
-Items 1 through 3 are source-level follow-ups in this repository. Item 4
-is a test-only follow-up in this repository. Item 5 lives in
+Items 1 and 2 are source-level follow-ups in this repository. Item 3 is
+a test-only follow-up in this repository. Item 4 lives in
 `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter
