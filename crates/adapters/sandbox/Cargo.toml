@@ -43,6 +43,7 @@ example-databento = [
   "dep:nautilus-databento",
   "dep:nautilus-live",
   "dep:dotenvy",
+  "nautilus-live/node",
 ]
 
 [package.metadata.docs.rs]
@@ -54,7 +55,6 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-system = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }

@@ -21,13 +21,11 @@ pub mod enums;
 pub mod factories;
 pub mod types;
 
+use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::data::ensure_rust_extractor_registered;
 use nautilus_serialization::ensure_custom_data_registered;
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{

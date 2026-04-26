@@ -21,10 +21,12 @@ name = "nautilus_betfair"
 crate-type = ["rlib"]
 
 [features]
-examples = ["nautilus-trading/examples"]
+examples = ["nautilus-live/node", "nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
 python = [
+  "dep:nautilus-system",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-system/python",
   "pyo3",
@@ -46,7 +48,7 @@ nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -83,16 +85,18 @@ dotenvy = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
-# Run with `cargo run -p nautilus-betfair --example betfair-data-tester`
+# Run with `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 [[example]]
 name = "betfair-data-tester"
 path = "examples/node_data_tester.rs"
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run -p nautilus-betfair --example betfair-exec-tester`
+# Run with `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 [[example]]
 name = "betfair-exec-tester"
 path = "examples/node_exec_tester.rs"
+required-features = ["examples"]
 doc = false
 
 # Run with `cargo run -p nautilus-betfair --example betfair-load-file`

@@ -21,7 +21,7 @@ name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
 [features]
-default = ["indicators"]
+default = []
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",

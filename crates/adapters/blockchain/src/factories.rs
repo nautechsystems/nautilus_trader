@@ -21,15 +21,12 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
-};
-use nautilus_system::{
-    ExecutionClientFactory,
-    factories::{ClientConfig, DataClientFactory},
 };
 
 use crate::{
@@ -185,8 +182,8 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_common::factories::DataClientFactory;
     use nautilus_model::defi::chain::{Blockchain, chains};
-    use nautilus_system::factories::DataClientFactory;
     use rstest::rstest;
 
     use crate::{config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory};

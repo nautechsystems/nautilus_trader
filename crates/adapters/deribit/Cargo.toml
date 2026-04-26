@@ -22,17 +22,21 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+examples = ["nautilus-live/node"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
-  "python",
   "pyo3/extension-module",
+  "python",
 ]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
   "nautilus-system/python",
@@ -52,7 +56,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -117,30 +121,30 @@ path = "bin/ws_data.rs"
 doc = false
 test = false
 
-# Run with `cargo run -p nautilus-deribit --example deribit-data-tester`
+# Run with `cargo run -p nautilus-deribit --example deribit-data-tester --features examples`
 [[example]]
 name = "deribit-data-tester"
 path = "examples/node_data_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run -p nautilus-deribit --example deribit-exec-tester`
+# Run with `cargo run -p nautilus-deribit --example deribit-exec-tester --features examples`
 [[example]]
 name = "deribit-exec-tester"
 path = "examples/node_exec_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run -p nautilus-deribit --example deribit-greeks-tester`
+# Run with `cargo run -p nautilus-deribit --example deribit-greeks-tester --features examples`
 [[example]]
 name = "deribit-greeks-tester"
 path = "examples/node_greeks.rs"
-required-features = []
+required-features = ["examples"]
 doc = false
 
-# Run with `cargo run -p nautilus-deribit --example deribit-option-chain-tester`
+# Run with `cargo run -p nautilus-deribit --example deribit-option-chain-tester --features examples`
 [[example]]
 name = "deribit-option-chain"
 path = "examples/node_option_chain.rs"
-required-features = []
+required-features = ["examples"]
 doc = false

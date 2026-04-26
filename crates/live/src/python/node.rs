@@ -1157,6 +1157,7 @@ mod tests {
         clients::DataClient,
         clock::Clock,
         enums::Environment,
+        factories::{ClientConfig, DataClientFactory},
         live::runner::get_data_event_sender,
         messages::{
             DataEvent, DataResponse,
@@ -1170,7 +1171,6 @@ mod tests {
         identifiers::{ClientId, TraderId, Venue},
         types::{Price, Quantity},
     };
-    use nautilus_system::factories::{ClientConfig, DataClientFactory};
     use nautilus_trading::{ImportableStrategyConfig, python::strategy::PyStrategy};
     use pyo3::{
         Python,

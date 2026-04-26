@@ -31,12 +31,10 @@ pub mod factories;
 #[cfg(feature = "live")]
 pub mod live;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 #[cfg(feature = "live")]
-use nautilus_system::{
-    factories::{ClientConfig, DataClientFactory},
-    get_global_pyo3_registry,
-};
+use nautilus_common::factories::{ClientConfig, DataClientFactory};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "live")]

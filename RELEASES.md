@@ -44,6 +44,9 @@ Released on TBD (UTC).
 - Removed `DeribitExecClientConfig::new` and `HyperliquidExecClientConfig::new` convenience constructors (Rust); use the `::builder()` instead
 - Removed `DataEngineConfig::new` 12-arg positional constructor (Rust); use `DataEngineConfig::builder()` instead
 - Removed synthetic `ACCOUNT-*` placeholders from margin adapters; `MarginBalance` emits with currency only
+- Removed `nautilus_system::factories` module; import factory traits from `nautilus_common::factories` (Rust)
+- Removed `indicators` from `nautilus-common` default features; enable with `features = ["indicators"]` (Rust)
+- Renamed Python `DatabaseConfig.timeout` to `connection_timeout` and `response_timeout` to match the Redis/PyO3 wire schema
 - Replaced `is_sandbox: bool` with `environment: AxEnvironment` on `AxDataClientConfig` and `AxExecClientConfig` (Rust and Python), aligning with the Binance/Bybit/Kraken adapter pattern. Default is `Sandbox`.
 - Changed `BacktestEngine::add_venue` and `SimulatedExchange::new` (Rust) to take `SimulatedVenueConfig` (bon builder)
 - Changed Interactive Brokers Rust configs to use bon builders: `InteractiveBrokersDataClientConfig`, `InteractiveBrokersExecClientConfig`, `InteractiveBrokersInstrumentProviderConfig`, and `DockerizedIBGatewayConfig`
@@ -60,7 +63,8 @@ Released on TBD (UTC).
 - Changed Binance Futures COIN-M to emit one `MarginBalance` per base coin (previously hardcoded USDT)
 - Changed matching-engine `TradeId` format to `T-{hash}-{count}` from `{venue}-{raw_id}-{count}`; `ts_init`-keyed
 - Changed `use_random_ids` to no longer govern `TradeId`; flag still affects `VenueOrderId` and `PositionId`
-- Renamed Python `DatabaseConfig.timeout` to `connection_timeout` and `response_timeout` to match the Redis/PyO3 wire schema
+- Changed workspace `nautilus-live` to `default-features = false`; enable `features = ["node"]` for `LiveNode` (Rust)
+- Changed adapter `LiveNode` examples to require `--features examples` to build (Rust)
 
 ### Security
 
@@ -198,6 +202,8 @@ Released on TBD (UTC).
 - Added `derive_cmbp_trade_id` in Databento decode for schemas without a native trade ID
 - Added property-based tests for Databento trade ID derivation (stability and 16-hex format)
 - Added Rust/Python parity tests pinning matching-engine `TradeId` format across language bindings
+- Added `node` feature to `nautilus-live` gating `builder`, `config`, `manager`, and `node` modules (default on)
+- Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
 - Standardized adapter example manifests and trading deps (#3891), thanks @sunlei
@@ -206,6 +212,7 @@ Released on TBD (UTC).
 - Refactored Binance Futures user data stream dispatch and listen key recovery into dedicated modules (Rust)
 - Refactored Binance Futures value conversions into a new `futures::conversions` module (Rust)
 - Replaced `AHashMap`/`AHashSet` with `IndexMap`/`IndexSet` in `ExecutionManager` for deterministic ordering in simulations (Rust)
+- Refined `nautilus-system` to optional in adapter crates (gated by `python`); default builds drop heavy transitive deps
 - Refined DST convention hook to enforce `IndexMap` in `OrderMatchingEngine`
 - Refined make cargo-test to not include binaries for test harness builds (#3828), thanks @faysou
 - Refined Interactive Brokers combo fill average price calculation (#3834), thanks @faysou

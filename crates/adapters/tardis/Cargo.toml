@@ -22,25 +22,29 @@ crate-type = ["rlib"]
 
 [features]
 default = ["replay", "high-precision"]
+examples = ["nautilus-live/node"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
-  "python",
   "pyo3/extension-module",
+  "python",
   "replay",
 ]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-serialization/python",
   "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
-  "replay",
   "pyo3-stub-gen",
+  "replay",
 ]
 replay = []
 high-precision = ["nautilus-model/high-precision"]
@@ -55,7 +59,7 @@ nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["python"] }
 nautilus-network = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -120,9 +124,9 @@ path = "bin/stream_deltas_bench.rs"
 doc = false
 test = false
 
-# Run with `cargo run --example tardis-data-tester -p nautilus-tardis`
+# Run with `cargo run --example tardis-data-tester -p nautilus-tardis --features examples`
 [[example]]
 name = "tardis-data-tester"
 path = "examples/node_data_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false

@@ -17,13 +17,17 @@
 
 use std::{any::Any, cell::RefCell, fmt::Debug, path::PathBuf, rc::Rc};
 
-use nautilus_common::{cache::Cache, clients::DataClient, clock::Clock};
+use nautilus_common::{
+    cache::Cache,
+    clients::DataClient,
+    clock::Clock,
+    factories::{ClientConfig, DataClientFactory},
+};
 use nautilus_core::{
     string::secret::REDACTED,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::identifiers::ClientId;
-use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
 use crate::{
     common::Credential,

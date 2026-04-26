@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
@@ -202,9 +202,12 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        cache::Cache, clock::TestClock, live::runner::set_data_event_sender, messages::DataEvent,
+        cache::Cache,
+        clock::TestClock,
+        factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+        live::runner::set_data_event_sender,
+        messages::DataEvent,
     };
-    use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
     use rstest::rstest;
 
     use super::*;

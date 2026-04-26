@@ -74,7 +74,7 @@ nautilus-data = { path = "crates/data", version = "0.56.0" }
 nautilus-execution = { path = "crates/execution", version = "0.56.0" }
 nautilus-indicators = { path = "crates/indicators", version = "0.56.0" }
 nautilus-infrastructure = { path = "crates/infrastructure", version = "0.56.0" }
-nautilus-live = { path = "crates/live", version = "0.56.0" }
+nautilus-live = { path = "crates/live", version = "0.56.0", default-features = false }
 nautilus-model = { path = "crates/model", version = "0.56.0" }
 nautilus-network = { path = "crates/network", version = "0.56.0" }
 nautilus-persistence = { path = "crates/persistence", version = "0.56.0" }

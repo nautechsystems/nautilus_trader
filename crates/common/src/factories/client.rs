@@ -13,10 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Client factory traits and registries shared by live, sandbox, and backtest runtimes.
+//!
+//! The traits in this module describe how to construct adapter [`DataClient`] and
+//! [`ExecutionClient`] instances from a configuration object, without coupling the
+//! definition site to any particular runtime (tokio, native threads, simulated time).
+//! Adapters implement these traits in their own crates; the live system kernel and
+//! any future backtest registry consume them via the registries below.
+
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
-use nautilus_common::{
+
+use crate::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
@@ -203,7 +212,6 @@ mod tests {
 
     use super::*;
 
-    // Mock configuration for testing
     #[derive(Debug)]
     struct MockConfig {
         #[allow(dead_code)]
@@ -216,7 +224,6 @@ mod tests {
         }
     }
 
-    // Mock data client factory for testing
     #[derive(Debug)]
     struct MockDataClientFactory;
 
@@ -228,7 +235,6 @@ mod tests {
             _cache: Rc<RefCell<Cache>>,
             _clock: Rc<RefCell<dyn Clock>>,
         ) -> anyhow::Result<Box<dyn DataClient>> {
-            // This would create a real client in practice
             Err(anyhow::anyhow!("Mock factory - not implemented"))
         }
 
@@ -245,21 +251,17 @@ mod tests {
     fn test_data_client_factory_registry() {
         let mut registry = DataClientFactoryRegistry::new();
 
-        // Test empty registry
         assert!(registry.names().is_empty());
         assert!(!registry.contains("mock"));
         assert!(registry.get("mock").is_none());
 
-        // Register factory
         let factory = Box::new(MockDataClientFactory);
         registry.register("mock".to_string(), factory).unwrap();
 
-        // Test after registration
         assert_eq!(registry.names().len(), 1);
         assert!(registry.contains("mock"));
         assert!(registry.get("mock").is_some());
 
-        // Test duplicate registration fails
         let factory2 = Box::new(MockDataClientFactory);
         let result = registry.register("mock".to_string(), factory2);
         assert!(result.is_err());
@@ -269,7 +271,6 @@ mod tests {
     fn test_empty_data_client_factory_registry() {
         let registry = DataClientFactoryRegistry::new();
 
-        // Test empty registry
         assert!(registry.names().is_empty());
         assert!(!registry.contains("mock"));
         assert!(registry.get("mock").is_none());
@@ -279,7 +280,6 @@ mod tests {
     fn test_empty_execution_client_factory_registry() {
         let registry = ExecutionClientFactoryRegistry::new();
 
-        // Test empty registry
         assert!(registry.names().is_empty());
         assert!(!registry.contains("mock"));
         assert!(registry.get("mock").is_none());

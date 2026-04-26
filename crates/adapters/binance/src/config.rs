@@ -17,8 +17,8 @@
 
 use std::{any::Any, collections::HashMap};
 
+use nautilus_common::factories::ClientConfig;
 use nautilus_model::identifiers::{AccountId, TraderId};
-use nautilus_system::factories::ClientConfig;
 use rust_decimal::Decimal;
 
 use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};

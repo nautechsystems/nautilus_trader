@@ -22,11 +22,15 @@ crate-type = ["rlib"]
 
 [features]
 default = []
+examples = ["nautilus-live/node"]
 python = [
+  "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
+  "nautilus-system/python",
   "pyo3",
   "pyo3-async-runtimes",
   "pyo3-stub-gen",
@@ -34,10 +38,11 @@ python = [
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
-  "python",
   "pyo3/extension-module",
+  "python",
 ]
 
 [package.metadata.docs.rs]
@@ -50,7 +55,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-system = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -130,16 +135,16 @@ path = "bin/flatten.rs"
 doc = false
 test = false
 
-# cargo run --example ax-data-tester -p nautilus-architect-ax
+# cargo run --example ax-data-tester -p nautilus-architect-ax --features examples
 [[example]]
 name = "ax-data-tester"
 path = "examples/node_data_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false
 
-# cargo run --example ax-exec-tester -p nautilus-architect-ax
+# cargo run --example ax-exec-tester -p nautilus-architect-ax --features examples
 [[example]]
 name = "ax-exec-tester"
 path = "examples/node_exec_tester.rs"
-required-features = []
+required-features = ["examples"]
 doc = false

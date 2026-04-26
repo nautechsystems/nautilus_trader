@@ -21,13 +21,13 @@ use nautilus_common::{
     cache::Cache,
     clients::{DataClient, ExecutionClient},
     clock::Clock,
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::ClientId,
 };
-use nautilus_system::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 
 use crate::{
     common::{
@@ -223,7 +223,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_system::factories::DataClientFactory;
+    use nautilus_common::factories::DataClientFactory;
     use rstest::rstest;
 
     use super::*;

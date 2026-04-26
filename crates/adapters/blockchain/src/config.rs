@@ -15,12 +15,12 @@
 
 use std::any::Any;
 
+use nautilus_common::factories::ClientConfig;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
     identifiers::{AccountId, TraderId},
 };
-use nautilus_system::ClientConfig;
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
 #[derive(Debug, Clone, bon::Builder)]
