@@ -41,6 +41,12 @@ inputs:
       auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
     required: false
     default: "auto"
+  prek-cache-enabled:
+    description: >-
+      Whether to persist the prek cache with GitHub Actions cache: true, false, or
+      auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
+    required: false
+    default: "auto"
 
 runs:
   using: "composite"
@@ -250,12 +256,21 @@ runs:
       run: |
         echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
 
+    # Self-hosted runners skip setup-uv's save-cache (and its built-in prune) under auto.
+    - name: Prune uv cache
+      shell: bash
+      run: uv cache prune --ci
+
     # > --------------------------------------------------
     # > prek (pre-commit hook environments)
     - name: Cached pre-commit environments
-      if: inputs.build-type == 'pre-commit' && runner.os != 'macOS'
-      # Skip on macOS: hashFiles() broken in composite actions after Nov 20 runner update
-      # See: https://github.com/actions/runner/issues/3765
+      # Skip on macOS: hashFiles() broken in composite actions, see actions/runner#3765
+      if: >-
+        inputs.build-type == 'pre-commit'
+        && runner.os != 'macOS'
+        && (inputs.prek-cache-enabled == 'true'
+            || (inputs.prek-cache-enabled == 'auto'
+                && runner.environment != 'self-hosted'))
       id: cached-prek
       # https://github.com/actions/cache
       uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -264,3 +279,26 @@ runs:
         key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}
         restore-keys: |
           ${{ env.CACHE_SCOPE }}-prek-
+
+    # > --------------------------------------------------
+    # > Cache footprint
+    - name: Report cache footprint
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        {
+          echo "## Cache footprint"
+          echo
+          echo '```'
+          df -h "$HOME" 2>/dev/null || df -h /
+          echo
+          for path in \
+            "$HOME/.cache/uv" \
+            "$HOME/.cache/prek" \
+            "$HOME/.cache/cargo-target" \
+            "$HOME/.cargo/registry" \
+            "$HOME/.cargo/git"; do
+            [ -d "$path" ] && du -sh "$path" 2>/dev/null || true
+          done
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
