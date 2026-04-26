@@ -60,11 +60,22 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Quantity volume
 
+    # Adjustment state pre-computed at `set_adjustment` time so the hot update path
+    # performs only raw C math (no Decimal allocation per tick).
+    cdef readonly object _adjustment_mode
+    cdef PriceRaw _adjustment_raw
+    cdef double _adjustment_ratio
+    cdef bint _adjustment_active
+    cdef bint _adjustment_is_ratio
+
     cpdef void update(self, Price price, Quantity size, uint64_t ts_init)
     cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init)
-    cpdef void reset(self)
+    cpdef void set_adjustment(self, object adjustment, object mode = *)
     cpdef Bar build_now(self)
     cpdef Bar build(self, uint64_t ts_event, uint64_t ts_init)
+    cpdef void reset(self)
+
+    cdef Price _apply_adjustment_to_price(self, Price price)
 
 
 cdef class BarAggregator:

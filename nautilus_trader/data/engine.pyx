@@ -30,6 +30,8 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from dataclasses import dataclass
+from decimal import Decimal
+from decimal import InvalidOperation
 from typing import Any
 from typing import Callable
 from typing import Generator
@@ -58,6 +60,7 @@ from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TestClock
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.data_topics cimport TopicCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -150,12 +153,16 @@ from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport bar_aggregation_not_implemented_message
+
+from nautilus_trader.model.enums import ContinuousFutureAdjustmentType
+
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -231,6 +238,7 @@ cdef class DataEngine(Component):
         self._parent_request_id: dict[UUID4, UUID4] = {}
         self._disable_historical_cache: bool = False
         self._bar_types_params: dict[UUID4, dict[str, Any]] = {}
+        self._continuous_future_subscriptions: dict[BarType, ContinuousFutureSubscriptionState] = {}
 
         self._topic_cache = TopicCache()
 
@@ -795,6 +803,7 @@ cdef class DataEngine(Component):
         self._parent_join_request_id.clear()
         self._parent_request_id.clear()
         self._bar_types_params.clear()
+        self._continuous_future_subscriptions.clear()
 
         self._topic_cache.clear_cache()
 
@@ -1219,6 +1228,10 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command):
         Condition.not_none(client, "client")
+
+        if command.params.get("continuous_future_transitions"):
+            self._handle_subscribe_continuous_future_bars(client, command)
+            return
 
         if command.bar_type.is_internally_aggregated():
             self._start_bar_aggregator(client, command)
@@ -1810,6 +1823,10 @@ cdef class DataEngine(Component):
         if self._msgbus.has_subscribers(self._topic_cache.get_bars_topic(command.bar_type.standard())):
             return
 
+        if command.bar_type.standard() in self._continuous_future_subscriptions:
+            self._handle_unsubscribe_continuous_future_bars(client, command)
+            return
+
         if command.bar_type.is_internally_aggregated():
             # Internal aggregation
             key = self._get_bar_aggregator_key(command.bar_type)
@@ -1916,6 +1933,18 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, DataClient), "client was not a DataClient")
 
+        self._requests[request.id] = request
+
+        # Continuous future is dispatched before any other aggregated-bar handling so the
+        # continuous-future loop can create its own parent aggregator chain.
+        if request.params.get("continuous_future_transitions"):
+            self._handle_continuous_future_request(request)
+            return
+
+        # Aggregated-bar setup must run BEFORE the spread branch: a spread quote request
+        # carrying `bar_types` (e.g. `request_aggregated_bars` with `aggregate_spread_quotes=True`)
+        # needs its parent aggregator created here so the leg quote requests fired by the spread
+        # handler can inherit `has_aggregated_bars=True` and skip this branch themselves.
         if request.params.get("bar_types") and not state.has_aggregated_bars:
             if self._should_request_aggregated_bars(request):
                 self._init_historical_aggregators(request)
@@ -1925,13 +1954,11 @@ cdef class DataEngine(Component):
                 self._log.error(f"One of the aggregators in {request.params.get('bar_types')} is already running. "
                                 f"Either wait for a request to complete or unsubscribe from a live subscription. "
                                 f"Aborting request {request.id}.")
-                self._request_workflows.pop(request.id, None)
+                self._abort_request(request.id)
                 return
 
-        self._requests[request.id] = request
-
-        # A request involving a spread aggregator will be converted to a request join first
-        # "aggregate_spread_quotes" allows to aggregate spread quotes from component quotes
+        # A request involving a spread aggregator will be converted to a request join first.
+        # "aggregate_spread_quotes" allows to aggregate spread quotes from component quotes.
         if isinstance(request, RequestQuoteTicks) and request.params.get("aggregate_spread_quotes", False):
             instrument = self._cache.instrument(request.instrument_id)
             if instrument and instrument.is_spread():
@@ -1942,8 +1969,7 @@ cdef class DataEngine(Component):
                     self._log.error(f"An aggregator for {request.instrument_id} is already running. "
                                     f"Either wait for a request to complete or unsubscribe from a live subscription. "
                                     f"Aborting request {request.id}.")
-                    self._requests.pop(request.id, None)
-                    self._request_workflows.pop(request.id, None)
+                    self._abort_request(request.id)
                     return
 
         # Long join requests need to be processed as join requests first before the long request starts
@@ -2371,13 +2397,11 @@ cdef class DataEngine(Component):
         self._update_long_request_data(parent_request_id, data_received=data_received)
 
     cpdef void _finalize_long_request(self, UUID4 parent_request_id):
-        cdef RequestData parent_request = self._requests.get(parent_request_id)
-        if parent_request is None:
+        if self._requests.get(parent_request_id) is None:
             self._log.error(f"Cannot finalize long request: no parent request found for {parent_request_id}")
             return
-        parent_state = self._ensure_request_workflows(parent_request)
 
-        # Close the generator
+        # Close the generator so it releases resources held across sends.
         time_range_generator = self._long_request_generator.pop(parent_request_id, None)
         if time_range_generator is not None:
             try:
@@ -2385,8 +2409,20 @@ cdef class DataEngine(Component):
             except (StopIteration, GeneratorExit):
                 pass
 
-        # Send response for the original request to trigger its callback
-        response = DataResponse(
+        # Emit empty response so the parent's registered callback runs and _handle_response
+        # cleans up the workflow state.
+        self._emit_empty_request_response(parent_request_id)
+
+    cdef void _emit_empty_request_response(self, UUID4 parent_request_id):
+        # Fan in: emit a zero-data response so the parent's registered callback fires and
+        # `_handle_response` runs the standard cleanup (workflow state, bar-types params,
+        # aggregator disposal) in the same path as any other request.
+        cdef RequestData parent_request = self._requests.get(parent_request_id)
+        if parent_request is None:
+            return
+
+        cdef object parent_state = self._ensure_request_workflows(parent_request)
+        cdef DataResponse response = DataResponse(
             client_id=parent_request.client_id,
             venue=parent_request.venue,
             data_type=parent_request.data_type,
@@ -3010,7 +3046,7 @@ cdef class DataEngine(Component):
 
                 final_data = []
             else:
-                for data in response_data:
+                for data in grouped_response.data:
                     self.process_historical(data)
 
                 if grouped_response.correlation_id in self._bar_types_params:
@@ -3489,9 +3525,35 @@ cdef class DataEngine(Component):
         used_request_id = request.id if not update_subscriptions else None
 
         bar_types = request.params.get("bar_types", ())
+        self._init_bar_aggregators_for_request(
+            bar_types,
+            request.params,
+            used_request_id,
+            historical=True,
+        )
+
+    cdef void _init_bar_aggregators_for_request(
+        self,
+        tuple bar_types,
+        dict params,
+        UUID4 request_id = None,
+        bint historical = False,
+        bint disable_time_bars_build_with_no_updates = False,
+    ):
+        cdef BarType bar_type
+        cdef BarAggregator aggregator
+        cdef TimeBarAggregator time_aggregator
+
         for bar_type in bar_types:
-            self._create_bar_aggregator(bar_type, request.params, used_request_id)
-            self._setup_bar_aggregator(bar_type, historical=True, request_id=used_request_id)
+            self._create_bar_aggregator(bar_type, params, request_id)
+            self._setup_bar_aggregator(bar_type, historical=historical, request_id=request_id)
+            if disable_time_bars_build_with_no_updates:
+                aggregator = self._bar_aggregators.get(
+                    self._get_bar_aggregator_key(bar_type, request_id),
+                )
+                if isinstance(aggregator, TimeBarAggregator):
+                    time_aggregator = aggregator
+                    time_aggregator._build_with_no_updates = False
 
     cpdef void _finalize_aggregated_bars_request(self, DataResponse response):
         used_params = self._bar_types_params.pop(response.correlation_id, None)
@@ -3658,6 +3720,7 @@ cdef class DataEngine(Component):
         BarType bar_type,
         bint historical = False,
         UUID4 request_id = None,
+        bint subscribe_source = True,
     ):
         key = self._get_bar_aggregator_key(bar_type, request_id)
         aggregator = self._bar_aggregators.get(key)
@@ -3695,24 +3758,25 @@ cdef class DataEngine(Component):
 
             aggregator.set_historical_mode(historical, self.process)
 
-        # Subscribe aggregator to message bus to receive underlying data
-        if bar_type.is_composite():
-            self._msgbus.subscribe(
-                topic=self._topic_cache.get_bars_topic(bar_type.composite(), historical),
-                handler=aggregator.handle_bar,
-            )
-        elif bar_type.spec.price_type == PriceType.LAST:
-            self._msgbus.subscribe(
-                topic=self._topic_cache.get_trades_topic(bar_type.instrument_id, historical),
-                handler=aggregator.handle_trade_tick,
-                priority=5,
-            )
-        else:
-            self._msgbus.subscribe(
-                topic=self._topic_cache.get_quotes_topic(bar_type.instrument_id, historical),
-                handler=aggregator.handle_quote_tick,
-                priority=5,
-            )
+        if subscribe_source:
+            # Subscribe aggregator to message bus to receive underlying data
+            if bar_type.is_composite():
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_bars_topic(bar_type.composite(), historical),
+                    handler=aggregator.handle_bar,
+                )
+            elif bar_type.spec.price_type == PriceType.LAST:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_trades_topic(bar_type.instrument_id, historical),
+                    handler=aggregator.handle_trade_tick,
+                    priority=5,
+                )
+            else:
+                self._msgbus.subscribe(
+                    topic=self._topic_cache.get_quotes_topic(bar_type.instrument_id, historical),
+                    handler=aggregator.handle_quote_tick,
+                    priority=5,
+                )
 
         # Start timer if aggregator is a TimeBarAggregator and not in historical mode
         if isinstance(aggregator, TimeBarAggregator) and not historical:
@@ -4211,6 +4275,878 @@ cdef class DataEngine(Component):
 
         return params
 
+    cdef void _abort_request(self, UUID4 request_id):
+        # Drop all engine bookkeeping for a request that could not be started.
+        self._requests.pop(request_id, None)
+        self._request_workflows.pop(request_id, None)
+
+    # -- INTERNAL - Continuous Futures ----------------------------------------------------------------
+    #
+    # A continuous-future request/subscription is driven by a list of segments (contracts) and, between
+    # any two consecutive segments, a transition with the pre/post-transition prices used to compute the
+    # cumulative adjustment. The request side mirrors `_handle_long_request` one level up: each segment
+    # emits one inner request via `_msgbus.request`, and `_handle_continuous_future_response` is its
+    # callback. The inner request itself may be long-looped (if `time_range_generator` is set in params),
+    # so both loops compose: outer iterates segments, inner iterates time ranges within a segment.
+    # The subscription side is a small state machine driven by a time alert at each upcoming transition.
+    #
+    # Methods are grouped as: (1) subscribe/unsubscribe, (2) request, (3) shared helpers.
+
+    # -- (1) Subscribe / Unsubscribe -----------------------------------------------------------------
+
+    cpdef void _handle_subscribe_continuous_future_bars(self, MarketDataClient client, SubscribeBars command):
+        # `target_bar_type` keeps the original (possibly composite) shape so source resolution
+        # can see the composite chain; `target_key` is the standardised form used as dict key
+        # and aggregator key.
+        cdef object transitions = command.params.get("continuous_future_transitions") or []
+        cdef BarType target_bar_type = command.bar_type
+        cdef BarType target_key = target_bar_type.standard()
+
+        if not target_bar_type.is_internally_aggregated():
+            self._log.error(
+                f"Continuous future bar subscriptions require an internally aggregated target, was {target_bar_type}",
+            )
+            return
+
+        if not transitions:
+            self._log.error(f"Continuous future bar subscription requires transitions metadata, was {command}")
+            return
+
+        if not self._continuous_future_validate_transitions(target_bar_type, transitions, command.params):
+            return
+
+        self._continuous_future_ensure_target_instrument(target_bar_type, transitions)
+
+        if target_key in self._continuous_future_subscriptions:
+            return
+
+        cdef tuple key = self._get_bar_aggregator_key(target_bar_type)
+        cdef BarAggregator aggregator = self._bar_aggregators.get(key)
+        if aggregator is not None and aggregator.is_running:
+            self._log.warning(f"Aggregator for {target_bar_type} is currently in use, subscription can't be started.")
+            return
+
+        self._create_bar_aggregator(target_bar_type, command.params)
+        self._setup_bar_aggregator(target_bar_type, subscribe_source=False)
+        aggregator = self._bar_aggregators.get(key)
+        if aggregator is None:
+            self._log.error(f"Cannot start continuous future aggregator for {target_bar_type}")
+            return
+
+        cdef uint64_t now_ns = self._clock.timestamp_ns()
+        cdef tuple segment = self._continuous_future_next_segment(transitions, now_ns, now_ns)
+        if segment is None:
+            self._log.error(f"Cannot determine active continuous future segment for {target_bar_type}")
+            if isinstance(aggregator, TimeBarAggregator):
+                (<TimeBarAggregator>aggregator).stop_timer()
+
+            aggregator.set_running(False)
+            self._bar_aggregators.pop(key, None)
+            return
+
+        cdef int segment_index = segment[0]
+        cdef InstrumentId segment_instrument_id = InstrumentId.from_str(segment[1])
+
+        self._continuous_future_subscriptions[target_key] = ContinuousFutureSubscriptionState(
+            target_bar_type=target_bar_type,
+            client_id=command.client_id,
+            venue=command.venue,
+            params=command.params.copy(),
+            active_segment_instrument_id=segment_instrument_id,
+            next_transition_index=segment_index if segment_index < len(transitions) else None,
+        )
+
+        self._continuous_future_activate_segment(
+            target_bar_type, segment_instrument_id, segment_index,
+            transitions, command.params, command.client_id, command.venue,
+            command.id, now_ns,
+        )
+        self._continuous_future_schedule_next_transition(target_key)
+
+    cdef void _continuous_future_activate_segment(
+        self,
+        BarType target_bar_type,
+        InstrumentId segment_instrument_id,
+        int segment_index,
+        object transitions,
+        dict params,
+        ClientId client_id,
+        Venue venue,
+        UUID4 correlation_id,
+        uint64_t ts_init,
+    ):
+        cdef BarAggregator aggregator = self._bar_aggregators.get(self._get_bar_aggregator_key(target_bar_type))
+        if aggregator is None:
+            self._log.warning(
+                f"Cannot activate continuous future segment: no aggregator for {target_bar_type}",
+            )
+            return
+
+        cdef tuple source = self._continuous_future_resolve_source(target_bar_type, segment_instrument_id)
+        self._continuous_future_apply_adjustment(aggregator, transitions, segment_index, params)
+        self._continuous_future_subscribe_source(aggregator, source, segment_instrument_id)
+
+        cdef object child_command = self._continuous_future_build_subscribe_command(
+            source, client_id, venue, params, correlation_id,
+            segment_instrument_id, ts_init, True,
+        )
+        if child_command is not None:
+            self.execute(child_command)
+
+    cdef void _continuous_future_schedule_next_transition(self, BarType target_key):
+        cdef object state = self._continuous_future_subscriptions.get(target_key)
+        if state is None:
+            self._log.warning(
+                f"Cannot schedule continuous future transition: no subscription state for {target_key}",
+            )
+            return
+
+        if state.timer_name is not None:
+            self._clock.cancel_timer(state.timer_name)
+            state.timer_name = None
+
+        cdef object next_transition_index = state.next_transition_index
+        cdef object transitions = state.params.get("continuous_future_transitions") or []
+        if next_transition_index is None or next_transition_index >= len(transitions):
+            return
+
+        cdef uint64_t transition_ns = transitions[next_transition_index]["transition_time_ns"]
+        cdef str timer_name = f"continuous-future-roll:{target_key}:{next_transition_index}"
+        state.timer_name = timer_name
+        self._clock.set_time_alert(
+            name=timer_name,
+            alert_time=unix_nanos_to_dt(transition_ns),
+            callback=self._handle_continuous_future_subscription_transition,
+            override=True,
+        )
+
+    cpdef void _handle_continuous_future_subscription_transition(self, TimeEvent event):
+        # Timer name format: "continuous-future-roll:{target_key}:{transition_index}".
+        # Parse `target_key` back out for an O(1) dict lookup rather than scanning subscriptions.
+        cdef str name = event.name
+        cdef int prefix_end = name.index(":") + 1
+        cdef int suffix_start = name.rindex(":")
+        cdef BarType target_key = BarType.from_str(name[prefix_end:suffix_start])
+        cdef object state = self._continuous_future_subscriptions.get(target_key)
+        if state is None:
+            self._log.warning(
+                f"Ignoring continuous future transition event {name}: no subscription state for {target_key}",
+            )
+            return
+
+        if state.timer_name != name:
+            # Stale timer (subscription was rescheduled or cancelled between fire and dispatch).
+            return
+
+        cdef object transitions = state.params.get("continuous_future_transitions") or []
+        cdef object next_transition_index = state.next_transition_index
+        state.timer_name = None
+
+        if next_transition_index is None or next_transition_index >= len(transitions):
+            return
+
+        cdef dict row = transitions[next_transition_index]
+        cdef uint64_t ts_init = self._clock.timestamp_ns()
+
+        if state.active_segment_instrument_id is not None:
+            self._continuous_future_deactivate_segment(
+                state.target_bar_type, state.active_segment_instrument_id, state.params,
+                state.client_id, state.venue, UUID4(), ts_init,
+            )
+
+        cdef InstrumentId next_segment_instrument_id = InstrumentId.from_str(row["post_instrument_id"])
+        state.active_segment_instrument_id = next_segment_instrument_id
+        state.next_transition_index = (
+            next_transition_index + 1 if next_transition_index + 1 < len(transitions) else None
+        )
+
+        self._continuous_future_activate_segment(
+            state.target_bar_type, next_segment_instrument_id, next_transition_index + 1,
+            transitions, state.params, state.client_id, state.venue,
+            UUID4(), ts_init,
+        )
+        self._continuous_future_schedule_next_transition(target_key)
+
+    cdef void _continuous_future_deactivate_segment(
+        self,
+        BarType target_bar_type,
+        InstrumentId segment_instrument_id,
+        dict params,
+        ClientId client_id,
+        Venue venue,
+        UUID4 correlation_id,
+        uint64_t ts_init,
+    ):
+        cdef BarAggregator aggregator = self._bar_aggregators.get(self._get_bar_aggregator_key(target_bar_type))
+        if aggregator is None:
+            self._log.warning(
+                f"Cannot deactivate continuous future segment: no aggregator for {target_bar_type}",
+            )
+            return
+
+        cdef tuple source = self._continuous_future_resolve_source(target_bar_type, segment_instrument_id)
+        self._continuous_future_unsubscribe_source(aggregator, source, segment_instrument_id)
+
+        cdef object child_command = self._continuous_future_build_subscribe_command(
+            source, client_id, venue, params, correlation_id,
+            segment_instrument_id, ts_init, False,
+        )
+        if child_command is not None:
+            self.execute(child_command)
+
+    cdef object _continuous_future_build_subscribe_command(
+        self,
+        tuple source,
+        ClientId client_id,
+        Venue venue,
+        dict parent_params,
+        UUID4 correlation_id,
+        InstrumentId segment_instrument_id,
+        uint64_t ts_init,
+        bint subscribe,
+    ):
+        cdef str source_type = source[0]
+        cdef dict child_params = self._continuous_future_child_params(parent_params)
+        cdef UUID4 command_id = UUID4()
+
+        if subscribe:
+            child_params["start_ns"] = ts_init
+
+        cdef BarType source_bar_type
+        if source_type == "bars":
+            source_bar_type = source[1]
+            if subscribe:
+                return SubscribeBars(
+                    bar_type=source_bar_type, client_id=client_id, venue=segment_instrument_id.venue,
+                    command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+                )
+
+            return UnsubscribeBars(
+                bar_type=source_bar_type, client_id=client_id, venue=segment_instrument_id.venue,
+                command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+            )
+
+        if source_type == "trades":
+            if subscribe:
+                return SubscribeTradeTicks(
+                    instrument_id=segment_instrument_id, client_id=client_id, venue=segment_instrument_id.venue,
+                    command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+                )
+
+            return UnsubscribeTradeTicks(
+                instrument_id=segment_instrument_id, client_id=client_id, venue=segment_instrument_id.venue,
+                command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+            )
+
+        if subscribe:
+            return SubscribeQuoteTicks(
+                instrument_id=segment_instrument_id, client_id=client_id, venue=segment_instrument_id.venue,
+                command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+            )
+
+        return UnsubscribeQuoteTicks(
+            instrument_id=segment_instrument_id, client_id=client_id, venue=segment_instrument_id.venue,
+            command_id=command_id, ts_init=ts_init, params=child_params, correlation_id=correlation_id,
+        )
+
+    cpdef void _handle_unsubscribe_continuous_future_bars(self, MarketDataClient client, UnsubscribeBars command):
+        cdef BarType target_key = command.bar_type.standard()
+        cdef object state = self._continuous_future_subscriptions.pop(target_key, None)
+
+        if state is None:
+            self._log.warning(
+                f"Cannot unsubscribe continuous future bars: no subscription state for {target_key}",
+            )
+            return
+
+        if state.timer_name is not None:
+            self._clock.cancel_timer(state.timer_name)
+
+        if state.active_segment_instrument_id is not None:
+            self._continuous_future_deactivate_segment(
+                state.target_bar_type, state.active_segment_instrument_id, state.params,
+                state.client_id, state.venue, command.id,
+                self._clock.timestamp_ns(),
+            )
+
+        cdef tuple key = self._get_bar_aggregator_key(state.target_bar_type)
+        cdef BarAggregator aggregator = self._bar_aggregators.get(key)
+        if aggregator is not None:
+            if isinstance(aggregator, TimeBarAggregator):
+                (<TimeBarAggregator>aggregator).stop_timer()
+
+            aggregator.set_running(False)
+            self._bar_aggregators.pop(key, None)
+
+    # -- (2) Request ---------------------------------------------------------------------------------
+
+    cpdef void _handle_continuous_future_request(self, RequestData request):
+        if not isinstance(request, RequestBars):
+            self._log.error(f"Continuous future requests require `RequestBars`, was {type(request)}")
+            self._abort_request(request.id)
+            return
+
+        cdef RequestBars bars_request = request
+        cdef tuple bounded = self._bound_dates(request)
+        cdef datetime start = bounded[0]
+        cdef datetime end = bounded[1]
+        request.start, request.end = start, end
+
+        cdef tuple bar_types = request.params.get("bar_types") or ()
+        cdef BarType primary_bar_type
+        if bar_types:
+            if not self._should_request_aggregated_bars(request):
+                self._log.error(
+                    f"One of the aggregators in {bar_types} is already running. "
+                    f"Either wait for a request to complete or unsubscribe from a live subscription. "
+                    f"Aborting request {request.id}.",
+                )
+                self._abort_request(request.id)
+                return
+
+            primary_bar_type = bar_types[0]
+        else:
+            primary_bar_type = bars_request.bar_type
+            bar_types = (primary_bar_type,)
+
+        cdef object transitions = request.params.get("continuous_future_transitions") or []
+        if not self._continuous_future_validate_transitions(primary_bar_type, transitions, request.params):
+            self._abort_request(request.id)
+            return
+
+        self._continuous_future_ensure_target_instrument(primary_bar_type, transitions)
+
+        self._setup_continuous_future_aggregators(request, bar_types)
+        if self._bar_aggregators.get(self._get_bar_aggregator_key(primary_bar_type, request.id)) is None:
+            self._log.error(f"Cannot start continuous future aggregator for {primary_bar_type}")
+            self._abort_request(request.id)
+            return
+
+        # Register bar_types under parent.id so _handle_response auto-finalizes the chain.
+        # update_subscriptions is stripped: aggregators are always keyed by parent.id for
+        # continuous future requests, so finalize must dispose using that key.
+        cdef dict stored_params = request.params.copy()
+        stored_params["bar_types"] = bar_types
+        stored_params.pop("update_subscriptions", None)
+        self._bar_types_params[request.id] = stored_params
+
+        # Cursor and primary bar type live on the parent's workflow state so they inherit
+        # the normal request lifecycle (created with the request, popped at _handle_response).
+        state = self._ensure_request_workflows(request)
+        state.continuous_future_cursor_ns = dt_to_unix_nanos(start)
+        state.continuous_future_primary_bar_type = primary_bar_type
+        self._update_continuous_future_data(request.id)
+
+    cdef void _setup_continuous_future_aggregators(self, RequestData request, tuple bar_types):
+        # Create and set up each aggregator in the chain keyed by the parent request id
+        # (so concurrent requests do not clash). Time aggregators skip empty buckets so
+        # no synthetic bars are emitted between segments or after the last segment.
+        self._init_bar_aggregators_for_request(
+            bar_types,
+            request.params,
+            request.id,
+            historical=True,
+            disable_time_bars_build_with_no_updates=True,
+        )
+
+    cpdef void _update_continuous_future_data(self, UUID4 parent_id):
+        cdef RequestData parent = self._requests.get(parent_id)
+        if parent is None:
+            self._log.error(f"No active continuous future request for {parent_id}")
+            return
+
+        state = self._ensure_request_workflows(parent)
+        cdef BarType primary_bar_type = state.continuous_future_primary_bar_type
+        if primary_bar_type is None:
+            self._log.error(f"No primary bar type on state for continuous future request {parent_id}")
+            return
+
+        cdef object transitions = parent.params.get("continuous_future_transitions") or []
+        cdef tuple segment = self._continuous_future_next_segment(
+            transitions, state.continuous_future_cursor_ns, state.end.value,
+        )
+        if segment is None:
+            self._emit_empty_request_response(parent_id)
+            return
+
+        cdef int segment_index = segment[0]
+        cdef InstrumentId segment_instrument_id = InstrumentId.from_str(segment[1])
+        cdef uint64_t seg_start_ns = segment[2]
+        cdef uint64_t seg_end_ns = segment[3]
+
+        cdef BarAggregator aggregator = self._bar_aggregators.get(
+            self._get_bar_aggregator_key(primary_bar_type, parent_id),
+        )
+        if aggregator is None:
+            self._log.error(f"No aggregator for continuous future request {parent_id}")
+            self._emit_empty_request_response(parent_id)
+            return
+
+        cdef tuple source = self._continuous_future_resolve_source(primary_bar_type, segment_instrument_id)
+        self._continuous_future_apply_adjustment(aggregator, transitions, segment_index, parent.params)
+
+        cdef RequestData sub = self._continuous_future_build_child_request(
+            parent, source, segment_instrument_id, seg_start_ns, seg_end_ns,
+        )
+        if sub is None:
+            self._emit_empty_request_response(parent_id)
+            return
+
+        # Route segment source data through the msgbus: subscribe the primary aggregator
+        # to the segment's historical topic so `process_historical` in `_handle_response`
+        # feeds the chain without a bespoke dispatch.
+        self._continuous_future_subscribe_source(aggregator, source, segment_instrument_id, historical=True)
+        state.continuous_future_active_source = source
+        state.continuous_future_active_segment_id = segment_instrument_id
+
+        state.continuous_future_cursor_ns = seg_end_ns + 1
+        self._msgbus.request(endpoint="DataEngine.request", request=sub)
+
+    cdef RequestData _continuous_future_build_child_request(
+        self,
+        RequestData parent,
+        tuple source,
+        InstrumentId segment_instrument_id,
+        uint64_t start_ns,
+        uint64_t end_ns,
+    ):
+        cdef RequestBars bars_parent = parent
+        cdef str source_type = source[0]
+        cdef datetime start = unix_nanos_to_dt(start_ns)
+        cdef datetime end = unix_nanos_to_dt(end_ns)
+        cdef datetime now = self._clock.utc_now()
+        cdef dict child_params = self._continuous_future_child_params(parent.params)
+        cdef UUID4 request_id = UUID4()
+
+        child_params["continuous_future_parent_request_id"] = parent.id
+
+        cdef BarType source_bar_type
+        if source_type == "bars":
+            source_bar_type = source[1]
+            return RequestBars(
+                bar_type=source_bar_type,
+                start=start, end=end, limit=bars_parent.limit,
+                client_id=parent.client_id, venue=segment_instrument_id.venue,
+                callback=self._handle_continuous_future_response,
+                request_id=request_id, ts_init=now.value,
+                params=child_params, correlation_id=parent.id,
+            )
+
+        if source_type == "trades":
+            return RequestTradeTicks(
+                instrument_id=segment_instrument_id,
+                start=start, end=end, limit=bars_parent.limit,
+                client_id=parent.client_id, venue=segment_instrument_id.venue,
+                callback=self._handle_continuous_future_response,
+                request_id=request_id, ts_init=now.value,
+                params=child_params, correlation_id=parent.id,
+            )
+
+        return RequestQuoteTicks(
+            instrument_id=segment_instrument_id,
+            start=start, end=end, limit=bars_parent.limit,
+            client_id=parent.client_id, venue=segment_instrument_id.venue,
+            callback=self._handle_continuous_future_response,
+            request_id=request_id, ts_init=now.value,
+            params=child_params, correlation_id=parent.id,
+        )
+
+    cpdef void _handle_continuous_future_response(self, DataResponse response):
+        # The sub-request carries the parent id in its params (set by
+        # `_continuous_future_build_child_request`); `_request_response_params` forwards that
+        # into the final response, so we read it here instead of maintaining a separate dict.
+        cdef UUID4 parent_id = response.params.get("continuous_future_parent_request_id")
+        if parent_id is None:
+            self._log.error(f"No parent id for continuous future sub response {response.correlation_id}")
+            return
+
+        cdef RequestData parent = self._requests.get(parent_id)
+        cdef BarAggregator aggregator
+        if parent is not None:
+            state = self._ensure_request_workflows(parent)
+            state.data_count += response.params.get("data_count", 0)
+            # Detach the primary aggregator from the segment topic we just consumed
+            # so the next segment's subscribe does not stack.
+            if state.continuous_future_active_source is not None and state.continuous_future_primary_bar_type is not None:
+                aggregator = self._bar_aggregators.get(
+                    self._get_bar_aggregator_key(state.continuous_future_primary_bar_type, parent_id),
+                )
+                if aggregator is not None:
+                    self._continuous_future_unsubscribe_source(
+                        aggregator,
+                        state.continuous_future_active_source,
+                        state.continuous_future_active_segment_id,
+                        historical=True,
+                    )
+
+                state.continuous_future_active_source = None
+                state.continuous_future_active_segment_id = None
+
+        self._update_continuous_future_data(parent_id)
+
+    # -- (3) Shared helpers --------------------------------------------------------------------------
+
+    cdef void _continuous_future_ensure_target_instrument(self, BarType target_bar_type, object transitions):
+        # Continuous-future targets (e.g. `ES.XCME`) are synthetic ids with no market
+        # data of their own, but downstream consumers (aggregators, cache lookups,
+        # serialization) still expect an `Instrument` in the cache. Clone the first
+        # segment's instrument, overriding the id / symbol and clearing the expiration
+        # so the continuous id reads as a perpetual FuturesContract.
+        cdef InstrumentId target_id = target_bar_type.instrument_id
+        if self._cache.instrument(target_id) is not None:
+            return
+
+        cdef object first_row = transitions[0]
+        cdef InstrumentId segment_id = InstrumentId.from_str(first_row["pre_instrument_id"])
+        cdef Instrument segment_instrument = self._cache.instrument(segment_id)
+        if segment_instrument is None:
+            self._log.warning(
+                f"Cannot synthesise continuous future instrument {target_id}: "
+                f"first segment {segment_id} not in cache",
+            )
+            return
+
+        if not isinstance(segment_instrument, FuturesContract):
+            self._log.warning(
+                f"Cannot synthesise continuous future instrument {target_id}: "
+                f"segment {segment_id} is {type(segment_instrument).__name__}, expected FuturesContract",
+            )
+            return
+
+        cdef dict values = FuturesContract.to_dict_c(segment_instrument)
+        values["id"] = target_id.value
+        values["raw_symbol"] = target_id.symbol.value
+        values["activation_ns"] = 0
+        values["expiration_ns"] = 0
+        self._cache.add_instrument(FuturesContract.from_dict_c(values))
+
+    cdef bint _continuous_future_validate_transitions(self, BarType target_bar_type, object transitions, dict params):
+        # Validate the full transition schema before callers allocate aggregators or
+        # subscriptions. Segment venue must match the continuous-future target because
+        # child requests/subscriptions route by segment venue.
+        cdef Venue target_venue = target_bar_type.instrument_id.venue
+        cdef object mode
+
+        try:
+            mode = ContinuousFutureAdjustmentType(
+                params.get("continuous_future_adjustment_mode", ContinuousFutureAdjustmentType.BACKWARD_SPREAD),
+            )
+        except (TypeError, ValueError):
+            self._log.error(
+                f"Invalid continuous future adjustment mode for {target_bar_type}: "
+                f"{params.get('continuous_future_adjustment_mode')}",
+            )
+            return False
+
+        if not isinstance(transitions, (list, tuple)):
+            self._log.error(f"Continuous future transitions must be a list/tuple, was {type(transitions)}")
+            return False
+
+        cdef object last_post_id_str = params.get("last_post_instrument_id")
+        cdef object last_post_id = None
+        cdef bint last_post_id_found = False
+        if last_post_id_str is not None:
+            try:
+                last_post_id = InstrumentId.from_str(str(last_post_id_str))
+            except (TypeError, ValueError) as e:
+                self._log.error(
+                    f"Invalid continuous future last_post_instrument_id for {target_bar_type}: "
+                    f"{e}, was {last_post_id_str}",
+                )
+                return False
+
+            if last_post_id.venue != target_venue:
+                self._log.error(
+                    f"Continuous future last_post_instrument_id venue mismatch for {target_bar_type}: "
+                    f"target venue {target_venue}, last_post_instrument_id venue {last_post_id.venue}",
+                )
+                return False
+
+        cdef object first_pre_id_str = params.get("first_pre_instrument_id")
+        cdef object first_pre_id = None
+        cdef bint first_pre_id_found = False
+        if first_pre_id_str is not None:
+            try:
+                first_pre_id = InstrumentId.from_str(str(first_pre_id_str))
+            except (TypeError, ValueError) as e:
+                self._log.error(
+                    f"Invalid continuous future first_pre_instrument_id for {target_bar_type}: "
+                    f"{e}, was {first_pre_id_str}",
+                )
+                return False
+
+            if first_pre_id.venue != target_venue:
+                self._log.error(
+                    f"Continuous future first_pre_instrument_id venue mismatch for {target_bar_type}: "
+                    f"target venue {target_venue}, first_pre_instrument_id venue {first_pre_id.venue}",
+                )
+                return False
+
+        cdef bint is_ratio = mode.is_ratio
+        cdef object row_obj
+        cdef dict row
+        cdef object transition_ns
+        cdef object previous_transition_ns = None
+        cdef object pre_id_str, post_id_str
+        cdef InstrumentId pre_id, post_id
+        cdef object pre_price, post_price
+        cdef object pre, post
+        for row_obj in transitions:
+            if not isinstance(row_obj, dict):
+                self._log.error(f"Continuous future transition must be a dict, was {row_obj}")
+                return False
+
+            row = row_obj
+            transition_ns = row.get("transition_time_ns")
+            if transition_ns is None:
+                self._log.error(f"Continuous future transition missing transition_time_ns, was {row}")
+                return False
+
+            try:
+                transition_ns = int(transition_ns)
+            except (TypeError, ValueError):
+                self._log.error(f"Invalid continuous future transition_time_ns, was {row}")
+                return False
+
+            if transition_ns < 0:
+                self._log.error(f"Continuous future transition_time_ns must be non-negative, was {row}")
+                return False
+
+            if previous_transition_ns is not None and transition_ns <= previous_transition_ns:
+                self._log.error(
+                    f"Continuous future transition times must be strictly increasing, was {transitions}",
+                )
+                return False
+
+            previous_transition_ns = transition_ns
+
+            pre_id_str = row.get("pre_instrument_id")
+            post_id_str = row.get("post_instrument_id")
+            if pre_id_str is None or post_id_str is None:
+                self._log.error(
+                    f"Continuous future transition missing pre/post_instrument_id, was {row}",
+                )
+                return False
+
+            try:
+                pre_id = InstrumentId.from_str(pre_id_str)
+                post_id = InstrumentId.from_str(post_id_str)
+            except (TypeError, ValueError) as e:
+                self._log.error(
+                    f"Invalid continuous future transition instrument id for {target_bar_type}: {e}, was {row}",
+                )
+                return False
+
+            if pre_id.venue != target_venue or post_id.venue != target_venue:
+                self._log.error(
+                    f"Continuous future segment venue mismatch for {target_bar_type}: "
+                    f"target venue {target_venue}, segment venues "
+                    f"pre={pre_id.venue}, post={post_id.venue}",
+                )
+                return False
+
+            if last_post_id_str is not None and post_id == last_post_id:
+                last_post_id_found = True
+
+            if first_pre_id_str is not None and pre_id == first_pre_id:
+                first_pre_id_found = True
+
+            pre_price = row.get("pre_price")
+            post_price = row.get("post_price")
+            if pre_price is None or post_price is None:
+                self._log.error(f"Continuous future transition missing pre/post price, was {row}")
+                return False
+
+            try:
+                pre = Decimal(str(pre_price))
+                post = Decimal(str(post_price))
+            except (InvalidOperation, ValueError):
+                self._log.error(f"Invalid continuous future transition price, was {row}")
+                return False
+
+            if not pre.is_finite() or not post.is_finite():
+                self._log.error(f"Continuous future transition prices must be finite, was {row}")
+                return False
+
+            if is_ratio and (pre <= 0 or post <= 0):
+                self._log.error(f"Continuous future ratio adjustment requires positive prices, was {row}")
+                return False
+
+        if last_post_id_str is not None and not last_post_id_found:
+            self._log.error(
+                f"Continuous future last_post_instrument_id {last_post_id} was not found in transitions",
+            )
+            return False
+
+        if first_pre_id_str is not None and not first_pre_id_found:
+            self._log.error(
+                f"Continuous future first_pre_instrument_id {first_pre_id} was not found in transitions",
+            )
+            return False
+
+        return True
+
+    cdef tuple _continuous_future_next_segment(self, object transitions, uint64_t cursor_ns, uint64_t end_ns):
+        if cursor_ns > end_ns or not transitions:
+            return None
+
+        cdef int i
+        cdef dict row
+        cdef uint64_t transition_ns
+        for i, row in enumerate(transitions):
+            transition_ns = row.get("transition_time_ns", 0)
+            if cursor_ns < transition_ns:
+                return (i, row["pre_instrument_id"], cursor_ns, min(end_ns, transition_ns - 1))
+
+        row = transitions[-1]
+
+        return (len(transitions), row["post_instrument_id"], cursor_ns, end_ns)
+
+    cdef void _continuous_future_apply_adjustment(
+        self,
+        BarAggregator aggregator,
+        object transitions,
+        int segment_index,
+        dict params,
+    ):
+        aggregator._builder.set_adjustment(
+            self._continuous_future_compute_offset(transitions, segment_index, params),
+            params.get("continuous_future_adjustment_mode", ContinuousFutureAdjustmentType.BACKWARD_SPREAD),
+        )
+
+    cdef object _continuous_future_compute_offset(self, object transitions, int segment_index, dict params):
+        cdef object mode = ContinuousFutureAdjustmentType(
+            params.get("continuous_future_adjustment_mode", ContinuousFutureAdjustmentType.BACKWARD_SPREAD),
+        )
+        cdef bint is_ratio = mode.is_ratio
+        cdef bint is_backward = mode.is_backward
+        cdef object cumulative = Decimal("1") if is_ratio else Decimal("0")
+
+        # `first_pre_instrument_id` and `last_post_instrument_id` bound the active chain:
+        # transitions outside [transition_start_index, transition_stop_index) are not part of
+        # the continuous future and never contribute to the cumulative offset. Out-of-chain
+        # `segment_index` values are clamped into the chain so the iteration range degenerates
+        # to either the empty range (no adjustment from the anchor side) or the full in-chain
+        # range (the same adjustment as the nearest in-chain segment).
+        cdef object last_post_id_str = params.get("last_post_instrument_id")
+        cdef object first_pre_id_str = params.get("first_pre_instrument_id")
+        cdef int transition_stop_index = len(transitions)
+        cdef int transition_start_index = 0
+        cdef int i
+        cdef dict row
+        if last_post_id_str is not None:
+            last_post_id_str = str(last_post_id_str)
+            for i, row in enumerate(transitions):
+                if row["post_instrument_id"] == last_post_id_str:
+                    transition_stop_index = i + 1
+                    break
+
+        if first_pre_id_str is not None:
+            first_pre_id_str = str(first_pre_id_str)
+            for i, row in enumerate(transitions):
+                if row["pre_instrument_id"] == first_pre_id_str:
+                    transition_start_index = i
+                    break
+
+        cdef int clamped_segment_index = max(
+            transition_start_index, min(segment_index, transition_stop_index),
+        )
+        cdef object rng = (
+            range(clamped_segment_index, transition_stop_index)
+            if is_backward
+            else range(transition_start_index, clamped_segment_index)
+        )
+
+        cdef object pre, post
+        for i in rng:
+            row = transitions[i]
+            pre = Decimal(str(row["pre_price"]))
+            post = Decimal(str(row["post_price"]))
+            if is_ratio:
+                cumulative *= (post / pre) if is_backward else (pre / post)
+            else:
+                cumulative += (post - pre) if is_backward else (pre - post)
+
+        return cumulative
+
+    cdef tuple _continuous_future_resolve_source(self, BarType target_bar_type, InstrumentId segment_instrument_id):
+        cdef BarType reference_bar_type = target_bar_type.composite() if target_bar_type.is_composite() else target_bar_type
+        cdef BarType source_bar_type
+
+        if reference_bar_type.is_externally_aggregated():
+            source_bar_type = BarType.from_str(
+                f"{segment_instrument_id}-{reference_bar_type.spec}-{reference_bar_type.aggregation_source.name}",
+            )
+            return ("bars", source_bar_type)
+
+        if reference_bar_type.spec.price_type == PriceType.LAST:
+            return ("trades", None)
+
+        return ("quotes", None)
+
+    cdef dict _continuous_future_child_params(self, dict parent_params):
+        cdef dict child_params = parent_params.copy()
+        child_params.pop("continuous_future_transitions", None)
+        child_params.pop("continuous_future_adjustment_mode", None)
+        child_params.pop("last_post_instrument_id", None)
+        child_params.pop("first_pre_instrument_id", None)
+        child_params.pop("bar_types", None)
+        return child_params
+
+    cdef void _continuous_future_subscribe_source(
+        self,
+        BarAggregator aggregator,
+        tuple source,
+        InstrumentId segment_instrument_id,
+        bint historical = False,
+    ):
+        cdef str source_type = source[0]
+        cdef str topic = self._continuous_future_source_topic(source, segment_instrument_id, historical)
+        cdef object handler = self._continuous_future_source_handler(aggregator, source_type)
+        if source_type == "bars":
+            self._msgbus.subscribe(topic=topic, handler=handler)
+        else:
+            # Trade/quote-tick handlers run at elevated priority so the aggregator sees ticks
+            # before anything else subscribed at default priority on the same topic.
+            self._msgbus.subscribe(topic=topic, handler=handler, priority=5)
+
+    cdef void _continuous_future_unsubscribe_source(
+        self,
+        BarAggregator aggregator,
+        tuple source,
+        InstrumentId segment_instrument_id,
+        bint historical = False,
+    ):
+        self._msgbus.unsubscribe(
+            topic=self._continuous_future_source_topic(source, segment_instrument_id, historical),
+            handler=self._continuous_future_source_handler(aggregator, source[0]),
+        )
+
+    cdef str _continuous_future_source_topic(
+        self,
+        tuple source,
+        InstrumentId segment_instrument_id,
+        bint historical = False,
+    ):
+        cdef str source_type = source[0]
+        if source_type == "bars":
+            return self._topic_cache.get_bars_topic(source[1], historical)
+
+        if source_type == "trades":
+            return self._topic_cache.get_trades_topic(segment_instrument_id, historical)
+
+        return self._topic_cache.get_quotes_topic(segment_instrument_id, historical)
+
+    cdef object _continuous_future_source_handler(self, BarAggregator aggregator, str source_type):
+        cdef object py_aggregator = aggregator
+        if source_type == "bars":
+            return py_aggregator.handle_bar
+
+        if source_type == "trades":
+            return py_aggregator.handle_trade_tick
+
+        return py_aggregator.handle_quote_tick
+
 
 @dataclass(slots=True)
 class RequestWorkflowState:
@@ -4223,6 +5159,25 @@ class RequestWorkflowState:
     join_request: bool = False
     join_started: bool = False
     time_range_generator_enabled: bool = False
+    # Continuous-future request cursor (unused by other request kinds):
+    # cursor_ns advances per segment; primary_bar_type is the bottom of the chain.
+    # active_source / active_segment_id track the aggregator subscription attached
+    # to the in-flight segment so it can be detached when the sub response arrives.
+    continuous_future_cursor_ns: int = 0
+    continuous_future_primary_bar_type: BarType | None = None
+    continuous_future_active_source: tuple | None = None
+    continuous_future_active_segment_id: InstrumentId | None = None
+
+
+@dataclass(slots=True)
+class ContinuousFutureSubscriptionState:
+    target_bar_type: BarType
+    client_id: ClientId | None
+    venue: Venue | None
+    params: dict
+    active_segment_instrument_id: InstrumentId | None = None
+    next_transition_index: int | None = None
+    timer_name: str | None = None
 
 
 TimeRangeGenerator = Callable[[int, dict[str, Any]], Generator[int, bool, None]]

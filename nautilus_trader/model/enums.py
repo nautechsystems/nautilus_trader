@@ -112,6 +112,7 @@ __all__ = [
     "BookAction",
     "BookType",
     "ContingencyType",
+    "ContinuousFutureAdjustmentType",
     "CurrencyType",
     "InstrumentClass",
     "InstrumentCloseType",
@@ -189,6 +190,67 @@ __all__ = [
     "trigger_type_from_str",
     "trigger_type_to_str",
 ]
+
+
+@unique
+class ContinuousFutureAdjustmentType(Enum):
+    """
+    Represents the price-adjustment scheme applied when stitching segment contracts into
+    a continuous future series.
+
+    The direction (backward vs. forward) selects the anchor contract:
+
+    - Backward modes anchor on the most recent contract; prices in older
+      segments are shifted into the latest contract's frame.
+    - Forward modes anchor on the first contract; prices in later segments
+      are shifted into the first contract's frame.
+
+    The kind (spread vs. ratio) selects how each transition's offset is
+    combined:
+
+    - Spread modes accumulate additive offsets (`post_price - pre_price`).
+    - Ratio modes accumulate multiplicative factors (`post_price / pre_price`)
+      and require strictly positive prices.
+
+    """
+
+    BACKWARD_SPREAD = "backward_spread"
+    """
+    Additive adjustment, anchored on the most recent contract.
+    """
+    FORWARD_SPREAD = "forward_spread"
+    """
+    Additive adjustment, anchored on the first contract.
+    """
+    BACKWARD_RATIO = "backward_ratio"
+    """
+    Multiplicative adjustment, anchored on the most recent contract.
+    """
+    FORWARD_RATIO = "forward_ratio"
+    """
+    Multiplicative adjustment, anchored on the first contract.
+    """
+
+    @property
+    def is_ratio(self) -> bool:
+        """
+        Return whether this mode accumulates multiplicative factors.
+        """
+        return self in (
+            ContinuousFutureAdjustmentType.BACKWARD_RATIO,
+            ContinuousFutureAdjustmentType.FORWARD_RATIO,
+        )
+
+    @property
+    def is_backward(self) -> bool:
+        """
+        Return whether this mode anchors on the most recent contract.
+        """
+        return self in (
+            ContinuousFutureAdjustmentType.BACKWARD_SPREAD,
+            ContinuousFutureAdjustmentType.BACKWARD_RATIO,
+        )
+
 
 # mypy: disable-error-code=no-redef
 
