@@ -134,6 +134,7 @@ pub struct AxOrdersWebSocketClient {
     request_id_counter: Arc<AtomicI64>,
     account_id: AccountId,
     trader_id: TraderId,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for AxOrdersWebSocketClient {
@@ -163,6 +164,7 @@ impl Clone for AxOrdersWebSocketClient {
             request_id_counter: Arc::clone(&self.request_id_counter),
             account_id: self.account_id,
             trader_id: self.trader_id,
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -170,7 +172,13 @@ impl Clone for AxOrdersWebSocketClient {
 impl AxOrdersWebSocketClient {
     /// Creates a new Ax orders WebSocket client.
     #[must_use]
-    pub fn new(url: String, account_id: AccountId, trader_id: TraderId, heartbeat: u64) -> Self {
+    pub fn new(
+        url: String,
+        account_id: AccountId,
+        trader_id: TraderId,
+        heartbeat: u64,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -191,6 +199,7 @@ impl AxOrdersWebSocketClient {
             request_id_counter: Arc::new(AtomicI64::new(1)),
             account_id,
             trader_id,
+            transport_backend,
         }
     }
 
@@ -376,7 +385,7 @@ impl AxOrdersWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         // Retry initial connection with exponential backoff
@@ -778,6 +787,7 @@ mod tests {
             AccountId::from("AX-001"),
             TraderId::from("TRADER-001"),
             30,
+            TransportBackend::default(),
         );
         let client_order_id = ClientOrderId::from("CID-123");
 
@@ -797,6 +807,7 @@ mod tests {
             AccountId::from("AX-001"),
             TraderId::from("TRADER-001"),
             30,
+            TransportBackend::default(),
         );
 
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

@@ -157,6 +157,7 @@ impl BybitDataClient {
                     config.environment,
                     Some(config.ws_public_url_for(*product_type)),
                     config.heartbeat_interval_secs,
+                    config.transport_backend,
                 )
             })
             .collect();

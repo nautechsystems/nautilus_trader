@@ -40,6 +40,7 @@ use nautilus_model::{
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
@@ -141,7 +142,13 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
     ) -> Self {
-        Self::new_public_with(product_type, environment, url, heartbeat)
+        Self::new_public_with(
+            product_type,
+            environment,
+            url,
+            heartbeat,
+            TransportBackend::default(),
+        )
     }
 
     /// Creates a new Bybit private WebSocket client.
@@ -161,7 +168,14 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
     ) -> Self {
-        Self::new_private(environment, api_key, api_secret, url, heartbeat)
+        Self::new_private(
+            environment,
+            api_key,
+            api_secret,
+            url,
+            heartbeat,
+            TransportBackend::default(),
+        )
     }
 
     /// Creates a new Bybit trade WebSocket client for order operations.
@@ -181,7 +195,14 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
     ) -> Self {
-        Self::new_trade(environment, api_key, api_secret, url, heartbeat)
+        Self::new_trade(
+            environment,
+            api_key,
+            api_secret,
+            url,
+            heartbeat,
+            TransportBackend::default(),
+        )
     }
 
     #[getter]

@@ -133,9 +133,9 @@ impl OKXExecutionClient {
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
+            config.transport_backend,
         )
-        .context("failed to construct OKX private websocket client")?
-        .with_transport_backend(config.transport_backend);
+        .context("failed to construct OKX private websocket client")?;
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),
@@ -145,9 +145,9 @@ impl OKXExecutionClient {
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
+            config.transport_backend,
         )
-        .context("failed to construct OKX business websocket client")?
-        .with_transport_backend(config.transport_backend);
+        .context("failed to construct OKX business websocket client")?;
 
         let trade_mode = Self::derive_default_trade_mode(core.account_type, &config);
         let clock = get_atomic_clock_realtime();

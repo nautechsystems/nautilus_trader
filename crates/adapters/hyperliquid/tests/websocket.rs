@@ -43,6 +43,7 @@ use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
 };
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -318,6 +319,7 @@ async fn connect_client(ws_url: &str, account_id: Option<AccountId>) -> Hyperliq
         Some(ws_url.to_string()),
         HyperliquidEnvironment::Mainnet,
         account_id,
+        TransportBackend::default(),
     );
     cache_test_instruments(&mut client);
     client

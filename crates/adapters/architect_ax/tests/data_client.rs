@@ -48,6 +48,7 @@ use nautilus_model::{
     enums::BookType,
     identifiers::{ClientId, InstrumentId},
 };
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 
 use crate::common::server::{start_test_server, wait_for_connection};
@@ -63,7 +64,12 @@ fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
 async fn test_handler_emits_l1_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -95,7 +101,12 @@ async fn test_handler_emits_l1_md_message() {
 async fn test_handler_emits_trade_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -131,7 +142,12 @@ async fn test_handler_emits_trade_md_message() {
 async fn test_handler_emits_l2_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -163,7 +179,12 @@ async fn test_handler_emits_l2_md_message() {
 async fn test_handler_emits_candle_md_message() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -198,7 +219,12 @@ async fn test_handler_emits_candle_md_message() {
 async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
-    let mut client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -239,7 +265,12 @@ async fn test_data_client_emits_quote_tick_via_channel() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -297,7 +328,12 @@ async fn test_data_client_emits_trade_tick_via_channel() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -354,7 +390,12 @@ async fn test_data_client_connect_disconnect() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -381,7 +422,12 @@ async fn test_data_client_emits_instruments_on_connect() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -417,7 +463,12 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -475,7 +526,12 @@ async fn test_data_client_subscribe_bars_via_channel() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
@@ -531,7 +587,12 @@ async fn test_data_client_reset_clears_state() {
     let ws_url = format!("ws://{addr}/md/ws");
 
     let http_client = AxHttpClient::new(Some(http_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    let ws_client = AxMdWebSocketClient::new(ws_url, "test_token".to_string(), 30);
+    let ws_client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+    );
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");

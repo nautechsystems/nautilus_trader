@@ -394,6 +394,7 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
         recv_window_ms: 5000,
         update_instruments_interval_mins: None,
         instrument_status_poll_secs: None,
+        transport_backend: Default::default(),
     }
 }
 

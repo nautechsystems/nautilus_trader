@@ -228,6 +228,7 @@ impl DydxExecutionClient {
             core.account_id,
             instrument_cache.clone(),
             Some(20),
+            config.transport_backend,
         );
 
         let grpc_client = Arc::new(tokio::sync::RwLock::new(None));

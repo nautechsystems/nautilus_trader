@@ -94,6 +94,7 @@ pub struct HyperliquidWebSocketClient {
     cloid_cache: Arc<DashMap<Ustr, ClientOrderId>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     account_id: Option<AccountId>,
+    transport_backend: TransportBackend,
 }
 
 impl Clone for HyperliquidWebSocketClient {
@@ -112,6 +113,7 @@ impl Clone for HyperliquidWebSocketClient {
             cloid_cache: Arc::clone(&self.cloid_cache),
             task_handle: None,
             account_id: self.account_id,
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -128,6 +130,7 @@ impl HyperliquidWebSocketClient {
         url: Option<String>,
         environment: HyperliquidEnvironment,
         account_id: Option<AccountId>,
+        transport_backend: TransportBackend,
     ) -> Self {
         let url = url.unwrap_or_else(|| ws_url(environment).to_string());
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
@@ -151,6 +154,7 @@ impl HyperliquidWebSocketClient {
             out_rx: None,
             task_handle: None,
             account_id,
+            transport_backend,
         }
     }
 
@@ -173,7 +177,7 @@ impl HyperliquidWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
         let client =
             WebSocketClient::connect(cfg, Some(message_handler), None, None, vec![], None).await?;

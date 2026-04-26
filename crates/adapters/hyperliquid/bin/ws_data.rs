@@ -21,6 +21,7 @@ use nautilus_hyperliquid::{
     websocket::client::HyperliquidWebSocketClient,
 };
 use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_network::websocket::TransportBackend;
 use tokio::{pin, signal};
 
 #[tokio::main]
@@ -56,7 +57,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = ws_url(environment);
     log::info!("WebSocket URL: {ws_url}");
 
-    let mut client = HyperliquidWebSocketClient::new(Some(ws_url.to_string()), environment, None);
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        environment,
+        None,
+        TransportBackend::default(),
+    );
 
     // Cache instruments before connecting
     client.cache_instruments(instruments);

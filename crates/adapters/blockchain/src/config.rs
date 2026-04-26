@@ -21,6 +21,7 @@ use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
     identifiers::{AccountId, TraderId},
 };
+use nautilus_network::websocket::TransportBackend;
 
 /// Defines filtering criteria for the DEX pool universe that the data client will operate on.
 #[derive(Debug, Clone, bon::Builder)]
@@ -92,6 +93,9 @@ pub struct BlockchainDataClientConfig {
     pub pool_filters: DexPoolFilters,
     /// Optional configuration for data client's Postgres cache database
     pub postgres_cache_database_config: Option<PostgresConnectOptions>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 #[derive(Debug, Clone, bon::Builder)]
@@ -110,6 +114,9 @@ pub struct BlockchainExecutionClientConfig {
     pub http_rpc_url: String,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl ClientConfig for BlockchainExecutionClientConfig {

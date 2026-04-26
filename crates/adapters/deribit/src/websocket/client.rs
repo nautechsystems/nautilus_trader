@@ -108,6 +108,7 @@ pub struct DeribitWebSocketClient {
     account_id: Option<AccountId>,
     bars_timestamp_on_close: bool,
     subscribe_errors: Arc<Mutex<Vec<String>>>,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for DeribitWebSocketClient {
@@ -140,6 +141,7 @@ impl DeribitWebSocketClient {
         api_secret: Option<String>,
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         Self::new_inner(
             url,
@@ -148,6 +150,7 @@ impl DeribitWebSocketClient {
             heartbeat_interval,
             environment,
             true,
+            transport_backend,
         )
     }
 
@@ -159,6 +162,7 @@ impl DeribitWebSocketClient {
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
         env_fallback: bool,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or_else(|| match environment {
             DeribitEnvironment::Testnet => DERIBIT_TESTNET_WS_URL.to_string(),
@@ -204,6 +208,7 @@ impl DeribitWebSocketClient {
             account_id: None,
             bars_timestamp_on_close: true,
             subscribe_errors: Arc::new(Mutex::new(Vec::new())),
+            transport_backend,
         })
     }
 
@@ -222,6 +227,7 @@ impl DeribitWebSocketClient {
             DERIBIT_WS_HEARTBEAT_SECS,
             environment,
             false,
+            TransportBackend::default(),
         )
     }
 
@@ -238,7 +244,15 @@ impl DeribitWebSocketClient {
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
     ) -> anyhow::Result<Self> {
-        Self::new_inner(url, None, None, heartbeat_interval, environment, false)
+        Self::new_inner(
+            url,
+            None,
+            None,
+            heartbeat_interval,
+            environment,
+            false,
+            TransportBackend::default(),
+        )
     }
 
     /// Creates an authenticated client with credentials.
@@ -264,6 +278,7 @@ impl DeribitWebSocketClient {
             Some(api_secret),
             DERIBIT_WS_HEARTBEAT_SECS,
             environment,
+            TransportBackend::default(),
         )
     }
 
@@ -491,7 +506,12 @@ impl DeribitWebSocketClient {
         // Configure WebSocket client
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers: match self.transport_backend {
+                TransportBackend::Sockudo => vec![],
+                TransportBackend::Tungstenite => {
+                    vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
+                }
+            },
             heartbeat: self.heartbeat_interval,
             heartbeat_msg: None, // Deribit uses JSON-RPC heartbeat, not text ping
             reconnect_timeout_ms: Some(5_000),
@@ -501,7 +521,7 @@ impl DeribitWebSocketClient {
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         // Configure rate limits

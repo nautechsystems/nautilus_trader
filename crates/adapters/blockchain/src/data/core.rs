@@ -25,6 +25,7 @@ use nautilus_model::defi::{
     pool_analysis::{compare::compare_pool_profiler, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
+use nautilus_network::websocket::TransportBackend;
 
 use crate::{
     cache::BlockchainCache,
@@ -107,7 +108,11 @@ impl BlockchainDataClientCore {
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
             log::info!("WebSocket RPC URL: {wss_rpc_url}");
-            Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
+            Some(Self::initialize_rpc_client(
+                chain.name,
+                wss_rpc_url,
+                config.transport_backend,
+            ))
         } else {
             log::info!("Using HyperSync for live data (no WebSocket RPC)");
             None
@@ -154,8 +159,9 @@ impl BlockchainDataClientCore {
     fn initialize_rpc_client(
         blockchain: Blockchain,
         wss_rpc_url: String,
+        transport_backend: TransportBackend,
     ) -> BlockchainRpcClientAny {
-        match blockchain {
+        let mut client = match blockchain {
             Blockchain::Ethereum => {
                 BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url))
             }
@@ -167,7 +173,9 @@ impl BlockchainDataClientCore {
                 BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url))
             }
             _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
-        }
+        };
+        client.set_transport_backend(transport_backend);
+        client
     }
 
     /// Establishes connections to all configured data sources and initializes the cache.

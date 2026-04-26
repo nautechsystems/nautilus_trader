@@ -22,7 +22,11 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
-examples = ["nautilus-live/node", "nautilus-trading/examples"]
+examples = [
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+  "nautilus-trading/examples",
+]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",

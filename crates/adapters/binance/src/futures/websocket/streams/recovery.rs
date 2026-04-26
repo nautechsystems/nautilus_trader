@@ -28,6 +28,7 @@ use std::{
 use anyhow::Context;
 use nautilus_core::MUTEX_POISONED;
 use nautilus_model::identifiers::InstrumentId;
+use nautilus_network::websocket::TransportBackend;
 use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -58,6 +59,7 @@ pub(crate) struct WsBuildParams {
     pub api_key: String,
     pub api_secret: String,
     pub private_base_url: String,
+    pub transport_backend: TransportBackend,
 }
 
 /// Context captured by the recovery driver task. All fields are cheaply
@@ -89,6 +91,7 @@ pub(crate) async fn build_and_connect_user_stream(
         Some(params.api_secret.clone()),
         Some(private_url),
         Some(20),
+        params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?;
 

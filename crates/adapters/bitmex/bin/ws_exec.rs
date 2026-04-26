@@ -24,6 +24,7 @@ use nautilus_bitmex::{
     common::enums::BitmexEnvironment, http::client::BitmexHttpClient,
     websocket::client::BitmexWebSocketClient,
 };
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,7 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut ws_client = BitmexWebSocketClient::new(
         None, // url: defaults to wss://ws.bitmex.com/realtime
-        None, None, None, 5, // 5 second heartbeat
+        None,
+        None,
+        None,
+        5, // 5 second heartbeat
+        TransportBackend::default(),
     )
     .unwrap();
     ws_client.connect().await?;

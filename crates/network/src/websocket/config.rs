@@ -42,31 +42,12 @@ use serde::{Deserialize, Serialize};
 /// unaffected.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        frozen,
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.network",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
-)]
-#[allow(
-    clippy::unsafe_derive_deserialize,
-    reason = "PyO3-backed enum still needs serde deserialization for config decoding"
-)]
 pub enum TransportBackend {
     /// `tokio-tungstenite` backed transport (default).
     #[default]
-    Tungstenite = 0,
+    Tungstenite,
     /// `sockudo-ws` backed transport (gated on `transport-sockudo` feature).
-    Sockudo = 1,
+    Sockudo,
 }
 
 /// Configuration for WebSocket client connections.

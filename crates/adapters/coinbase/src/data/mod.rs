@@ -134,7 +134,7 @@ impl CoinbaseDataClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_client = CoinbaseWebSocketClient::new(&ws_url);
+        let ws_client = CoinbaseWebSocketClient::new(&ws_url, config.transport_backend);
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
         let deriv_polls = DerivPollManager::new(

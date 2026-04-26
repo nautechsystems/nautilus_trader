@@ -44,7 +44,11 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
-examples = ["nautilus-live/node", "nautilus-trading/examples"]
+examples = [
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+  "nautilus-trading/examples",
+]
 
 [package.metadata.docs.rs]
 all-features = true

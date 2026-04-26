@@ -38,6 +38,7 @@ use nautilus_architect_ax::{
     websocket::{AxOrdersWsMessage, orders::AxOrdersWebSocketClient},
 };
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -92,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         trader_id,
         30,
+        TransportBackend::default(),
     );
 
     client.connect(&auth_response.token).await?;

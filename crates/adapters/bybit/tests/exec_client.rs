@@ -520,6 +520,7 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
+        transport_backend: Default::default(),
     }
 }
 
@@ -668,6 +669,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
+        transport_backend: Default::default(),
     };
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -841,6 +843,7 @@ async fn test_exec_client_submit_order_list_demo() {
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
+        transport_backend: Default::default(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1011,6 +1014,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         futures_leverages: None,
         position_mode: None,
         margin_mode: None,
+        transport_backend: Default::default(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

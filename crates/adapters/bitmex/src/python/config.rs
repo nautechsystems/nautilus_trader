@@ -87,6 +87,7 @@ impl BitmexDataClientConfig {
                 .unwrap_or(defaults.max_requests_per_second),
             max_requests_per_minute: max_requests_per_minute
                 .unwrap_or(defaults.max_requests_per_minute),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -175,6 +176,7 @@ impl BitmexExecClientConfig {
             submitter_proxy_urls,
             canceller_proxy_urls,
             deadmans_switch_timeout_secs,
+            transport_backend: defaults.transport_backend,
         }
     }
 

@@ -38,6 +38,7 @@ use nautilus_architect_ax::{
     websocket::{AxDataWsMessage, data::AxMdWebSocketClient},
 };
 use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 
 #[tokio::main]
@@ -107,8 +108,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Connecting to market data WebSocket: {}",
         environment.ws_md_url()
     );
-    let mut client =
-        AxMdWebSocketClient::new(environment.ws_md_url().to_string(), auth_response.token, 30);
+    let mut client = AxMdWebSocketClient::new(
+        environment.ws_md_url().to_string(),
+        auth_response.token,
+        30,
+        TransportBackend::default(),
+    );
 
     let test_symbol = "EURUSD-PERP";
     let ts_init = get_atomic_clock_realtime().get_time_ns();

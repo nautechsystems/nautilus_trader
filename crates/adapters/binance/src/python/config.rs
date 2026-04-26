@@ -61,6 +61,7 @@ impl BinanceDataClientConfig {
             api_secret: api_secret.or(defaults.api_secret),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -135,6 +136,7 @@ impl BinanceExecClientConfig {
             futures_margin_types,
             treat_expired_as_canceled,
             use_trade_lite,
+            transport_backend: defaults.transport_backend,
         }
     }
 

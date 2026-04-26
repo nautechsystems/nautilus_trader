@@ -42,6 +42,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::InstrumentAny,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_okx::{
     common::{enums::OKXInstrumentType, models::OKXInstrument, parse::parse_instrument_any},
     http::client::OKXResponse,
@@ -462,6 +463,7 @@ async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
         Some(AccountId::from("OKX-TEST")),
         Some(30),
         None,
+        TransportBackend::default(),
     )
     .expect("failed to construct okx websocket client")
 }
@@ -509,6 +511,7 @@ async fn test_wait_until_active_timeout() {
         Some(AccountId::from("OKX-TEST")),
         Some(30),
         None,
+        TransportBackend::default(),
     )
     .expect("construct client");
 
@@ -610,6 +613,7 @@ async fn test_heartbeat_timeout_reconnection() {
         Some(AccountId::from("OKX-TEST")),
         Some(1),
         None,
+        TransportBackend::default(),
     )
     .expect("construct client");
 
@@ -1525,6 +1529,7 @@ async fn test_unauthenticated_private_channel_rejection() {
         Some(AccountId::from("OKX-TEST")),
         Some(30),
         None,
+        TransportBackend::default(),
     )
     .expect("construct client");
 

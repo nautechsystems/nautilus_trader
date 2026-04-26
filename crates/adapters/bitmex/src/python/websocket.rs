@@ -47,6 +47,7 @@ use nautilus_model::{
     },
     types::Price,
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
@@ -119,6 +120,7 @@ impl PyBitmexWebSocketClient {
             account_id,
             heartbeat,
             environment,
+            TransportBackend::default(),
         )
         .map_err(to_pyvalue_err)?;
         Ok(Self {

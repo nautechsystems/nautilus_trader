@@ -19,6 +19,7 @@ use nautilus_hyperliquid::{
     common::{consts::ws_url, enums::HyperliquidEnvironment},
     websocket::client::HyperliquidWebSocketClient,
 };
+use nautilus_network::websocket::TransportBackend;
 use tokio::{pin, signal};
 
 #[tokio::main]
@@ -38,7 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = ws_url(environment);
     log::info!("WebSocket URL: {ws_url}");
 
-    let mut client = HyperliquidWebSocketClient::new(Some(ws_url.to_string()), environment, None);
+    let mut client = HyperliquidWebSocketClient::new(
+        Some(ws_url.to_string()),
+        environment,
+        None,
+        TransportBackend::default(),
+    );
     client.connect().await?;
     log::info!("Connected to Hyperliquid WebSocket");
 

@@ -133,6 +133,7 @@ pub struct DydxWebSocketClient {
     bar_types: Arc<DashMap<String, BarType>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
     ws_dispatch_state: Arc<DydxWsDispatchState>,
+    transport_backend: TransportBackend,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -155,6 +156,7 @@ impl Clone for DydxWebSocketClient {
             bar_types: self.bar_types.clone(),
             bars_timestamp_on_close: self.bars_timestamp_on_close.clone(),
             ws_dispatch_state: self.ws_dispatch_state.clone(),
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -166,7 +168,12 @@ impl DydxWebSocketClient {
     /// the HTTP client, use [`Self::new_public_with_cache`] instead.
     #[must_use]
     pub fn new_public(url: String, heartbeat: Option<u64>) -> Self {
-        Self::new_public_with_cache(url, Arc::new(InstrumentCache::new()), heartbeat)
+        Self::new_public_with_cache(
+            url,
+            Arc::new(InstrumentCache::new()),
+            heartbeat,
+            TransportBackend::default(),
+        )
     }
 
     /// Creates a new public WebSocket client with a shared instrument cache.
@@ -177,6 +184,7 @@ impl DydxWebSocketClient {
         url: String,
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -201,6 +209,7 @@ impl DydxWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
+            transport_backend,
         }
     }
 
@@ -221,6 +230,7 @@ impl DydxWebSocketClient {
             account_id,
             Arc::new(InstrumentCache::new()),
             heartbeat,
+            TransportBackend::default(),
         )
     }
 
@@ -234,6 +244,7 @@ impl DydxWebSocketClient {
         account_id: AccountId,
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -258,6 +269,7 @@ impl DydxWebSocketClient {
             bar_types: Arc::new(DashMap::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
+            transport_backend,
         }
     }
 
@@ -454,7 +466,7 @@ impl DydxWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let client = WebSocketClient::connect(

@@ -651,6 +651,7 @@ impl DataClient for BitmexDataClient {
                 None,
                 self.config.heartbeat_interval_secs.unwrap_or(5),
                 self.config.environment,
+                self.config.transport_backend,
             )
             .context("failed to construct BitMEX websocket client")?;
             self.ws_client = Some(ws);

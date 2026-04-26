@@ -97,6 +97,7 @@ pub struct BinanceSpotWsTradingClient {
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for BinanceSpotWsTradingClient {
@@ -117,6 +118,7 @@ impl BinanceSpotWsTradingClient {
         api_key: String,
         api_secret: String,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> Self {
         let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
@@ -136,6 +138,7 @@ impl BinanceSpotWsTradingClient {
             task_handle: None,
             request_id_counter: Arc::new(AtomicU64::new(1)),
             cancellation_token: CancellationToken::new(),
+            transport_backend,
         }
     }
 
@@ -153,10 +156,17 @@ impl BinanceSpotWsTradingClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let api_key = nautilus_core::env::get_or_env_var(api_key, BINANCE_API_KEY)?;
         let api_secret = nautilus_core::env::get_or_env_var(api_secret, BINANCE_API_SECRET)?;
-        Ok(Self::new(url, api_key, api_secret, heartbeat))
+        Ok(Self::new(
+            url,
+            api_key,
+            api_secret,
+            heartbeat,
+            transport_backend,
+        ))
     }
 
     /// Creates a new client with credentials loaded entirely from environment variables.
@@ -169,7 +179,7 @@ impl BinanceSpotWsTradingClient {
     ///
     /// Returns an error if environment variables are missing.
     pub fn from_env(url: Option<String>, heartbeat: Option<u64>) -> anyhow::Result<Self> {
-        Self::with_env(url, None, None, heartbeat)
+        Self::with_env(url, None, None, heartbeat, TransportBackend::default())
     }
 
     /// Returns whether the client is actively connected.
@@ -223,7 +233,7 @@ impl BinanceSpotWsTradingClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         // Configure rate limits for order operations

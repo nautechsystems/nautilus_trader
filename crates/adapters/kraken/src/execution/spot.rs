@@ -127,6 +127,7 @@ impl KrakenSpotExecutionClient {
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
             max_requests_per_second: config.max_requests_per_second,
+            transport_backend: config.transport_backend,
         };
         let ws = KrakenSpotWebSocketClient::new(data_config, cancellation_token.clone());
 

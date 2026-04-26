@@ -33,6 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 
 #[tokio::main]
@@ -49,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_config = DydxDataClientConfig {
         network,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -56,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         account_id,
         network,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

@@ -8896,11 +8896,14 @@ dependencies = [
  "httparse",
  "parking_lot",
  "pin-project-lite",
+ "rustls",
  "sha1",
  "simdutf8",
  "socket2 0.5.10",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]

@@ -113,6 +113,7 @@ impl DeribitExecutionClient {
             config.api_secret.clone(),
             DERIBIT_WS_HEARTBEAT_SECS,
             config.environment,
+            config.transport_backend,
         )
         .context("failed to create WebSocket client for execution")?;
         // Set account ID for order/fill reports

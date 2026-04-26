@@ -16,6 +16,7 @@
 //! Configuration types for Kraken data and execution clients.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     enums::{KrakenEnvironment, KrakenProductType},
@@ -49,6 +50,8 @@ pub struct KrakenDataClientConfig {
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
     pub max_requests_per_second: Option<u32>,
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for KrakenDataClientConfig {
@@ -117,6 +120,8 @@ pub struct KrakenExecClientConfig {
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
     pub max_requests_per_second: Option<u32>,
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for KrakenExecClientConfig {

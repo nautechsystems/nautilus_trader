@@ -103,6 +103,7 @@ pub struct CoinbaseWebSocketClient {
     credential: Option<CoinbaseCredential>,
     account_id: Option<AccountId>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
+    transport_backend: TransportBackend,
 }
 
 impl Clone for CoinbaseWebSocketClient {
@@ -119,13 +120,14 @@ impl Clone for CoinbaseWebSocketClient {
             credential: self.credential.clone(),
             account_id: self.account_id,
             task_handle: None,
+            transport_backend: self.transport_backend,
         }
     }
 }
 
 impl CoinbaseWebSocketClient {
     /// Creates a new [`CoinbaseWebSocketClient`] for public market data.
-    pub fn new(url: &str) -> Self {
+    pub fn new(url: &str, transport_backend: TransportBackend) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
@@ -142,12 +144,17 @@ impl CoinbaseWebSocketClient {
             credential: None,
             account_id: None,
             task_handle: None,
+            transport_backend,
         }
     }
 
     /// Creates a new [`CoinbaseWebSocketClient`] with credentials for authenticated channels.
-    pub fn with_credential(url: &str, credential: CoinbaseCredential) -> Self {
-        let mut client = Self::new(url);
+    pub fn with_credential(
+        url: &str,
+        credential: CoinbaseCredential,
+        transport_backend: TransportBackend,
+    ) -> Self {
+        let mut client = Self::new(url, transport_backend);
         client.credential = Some(credential);
         client
     }
@@ -215,7 +222,7 @@ impl CoinbaseWebSocketClient {
             reconnect_jitter_ms: Some(RECONNECT_JITTER_MS),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let keyed_quotas = vec![(
@@ -793,7 +800,7 @@ mod tests {
 
     #[rstest]
     fn test_prime_default_subscriptions_marks_heartbeats() {
-        let client = CoinbaseWebSocketClient::new("wss://test");
+        let client = CoinbaseWebSocketClient::new("wss://test", TransportBackend::default());
         assert!(client.subscriptions.all_topics().is_empty());
 
         client.prime_default_subscriptions();

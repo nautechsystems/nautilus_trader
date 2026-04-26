@@ -35,6 +35,7 @@ use axum::{
 };
 use nautilus_binance::spot::websocket::streams::client::BinanceSpotWebSocketClient;
 use nautilus_common::testing::wait_until_async;
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
 
@@ -252,7 +253,8 @@ async fn start_test_server()
 
 fn create_test_client(addr: &SocketAddr) -> BinanceSpotWebSocketClient {
     let ws_url = format!("ws://{addr}/ws");
-    BinanceSpotWebSocketClient::new(Some(ws_url), None, None, None).unwrap()
+    BinanceSpotWebSocketClient::new(Some(ws_url), None, None, None, TransportBackend::default())
+        .unwrap()
 }
 
 #[rstest]
@@ -578,6 +580,7 @@ async fn test_connection_failure_invalid_url() {
         None,
         None,
         None,
+        TransportBackend::default(),
     );
 
     // Client creation should succeed

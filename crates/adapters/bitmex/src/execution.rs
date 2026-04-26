@@ -146,6 +146,7 @@ impl BitmexExecutionClient {
             Some(account_id),
             config.heartbeat_interval_secs,
             config.environment,
+            config.transport_backend,
         )
         .context("failed to construct BitMEX execution websocket client")?;
 

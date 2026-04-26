@@ -198,9 +198,9 @@ impl OKXDataClient {
             None,
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
+            config.transport_backend,
         )
-        .context("failed to construct OKX public websocket client")?
-        .with_transport_backend(config.transport_backend);
+        .context("failed to construct OKX public websocket client")?;
 
         let ws_business = if config.requires_business_ws() {
             Some(
@@ -212,9 +212,9 @@ impl OKXDataClient {
                     None,
                     Some(OKX_WS_HEARTBEAT_SECS),
                     None,
+                    config.transport_backend,
                 )
-                .context("failed to construct OKX business websocket client")?
-                .with_transport_backend(config.transport_backend),
+                .context("failed to construct OKX business websocket client")?,
             )
         } else {
             None

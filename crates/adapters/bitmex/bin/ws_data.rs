@@ -21,6 +21,7 @@ use nautilus_bitmex::{
     websocket::client::BitmexWebSocketClient,
 };
 use nautilus_model::{data::bar::BarType, identifiers::InstrumentId};
+use nautilus_network::websocket::TransportBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,   // No API secret
         None,   // Account ID
         5,      // 5 second heartbeat
+        TransportBackend::default(),
     )
     .unwrap();
     ws_client.connect().await?;

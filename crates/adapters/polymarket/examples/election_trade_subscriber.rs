@@ -41,6 +41,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     common::models::PolymarketLabel, config::PolymarketDataClientConfig,
     factories::PolymarketDataClientFactory, filters::EventSlugFilter,
@@ -162,6 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let polymarket_config = PolymarketDataClientConfig {
         filters: vec![Arc::new(event_filter)],
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

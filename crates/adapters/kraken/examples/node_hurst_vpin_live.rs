@@ -38,6 +38,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_trading::examples::strategies::{HurstVpinDirectional, HurstVpinDirectionalConfig};
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -65,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: Some(api_key.clone()),
         api_secret: Some(api_secret.clone()),
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -74,6 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key,
         api_secret,
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

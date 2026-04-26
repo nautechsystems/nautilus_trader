@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
@@ -49,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_config = HyperliquidDataClientConfig {
         environment: hl_environment,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -57,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         config: HyperliquidExecClientConfig {
             environment: hl_environment,
+            transport_backend: TransportBackend::Sockudo,
             ..Default::default()
         },
     };

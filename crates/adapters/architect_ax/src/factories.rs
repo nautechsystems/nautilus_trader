@@ -121,8 +121,11 @@ impl DataClientFactory for AxDataClientFactory {
         let ws_url = ax_config.ws_public_url();
 
         // Token set during connect
-        let ws_client =
-            AxMdWebSocketClient::without_auth(ws_url, ax_config.heartbeat_interval_secs);
+        let ws_client = AxMdWebSocketClient::without_auth(
+            ws_url,
+            ax_config.heartbeat_interval_secs,
+            ax_config.transport_backend,
+        );
 
         let client = AxDataClient::new(client_id, ax_config, http_client, ws_client)?;
         Ok(Box::new(client))
