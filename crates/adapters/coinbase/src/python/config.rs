@@ -71,6 +71,7 @@ impl CoinbaseDataClientConfig {
                 .unwrap_or(defaults.update_instruments_interval_mins),
             derivatives_poll_interval_secs: derivatives_poll_interval_secs
                 .unwrap_or(defaults.derivatives_poll_interval_secs),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -137,6 +138,7 @@ impl CoinbaseExecClientConfig {
             default_margin_type,
             default_leverage,
             retail_portfolio_id,
+            transport_backend: defaults.transport_backend,
         }
     }
 

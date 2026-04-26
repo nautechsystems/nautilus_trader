@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 
 use nautilus_model::identifiers::AccountId;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
@@ -82,6 +83,9 @@ pub struct BybitDataClientConfig {
     /// Interval in seconds for polling instrument status changes.
     /// When `None`, status polling is disabled.
     pub instrument_status_poll_secs: Option<u64>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BybitDataClientConfig {
@@ -216,6 +220,9 @@ pub struct BybitExecClientConfig {
     pub position_mode: Option<HashMap<String, BybitPositionMode>>,
     /// Unified margin mode setting.
     pub margin_mode: Option<BybitMarginMode>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BybitExecClientConfig {

@@ -88,6 +88,7 @@ pub struct KrakenSpotWebSocketClient {
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    transport_backend: TransportBackend,
 }
 
 impl Clone for KrakenSpotWebSocketClient {
@@ -109,6 +110,7 @@ impl Clone for KrakenSpotWebSocketClient {
             account_id: Arc::clone(&self.account_id),
             truncated_id_map: Arc::clone(&self.truncated_id_map),
             instruments: Arc::clone(&self.instruments),
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -125,6 +127,8 @@ impl KrakenSpotWebSocketClient {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<SpotHandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
+
+        let transport_backend = config.transport_backend;
 
         Self {
             url,
@@ -143,6 +147,7 @@ impl KrakenSpotWebSocketClient {
             account_id: Arc::new(RwLock::new(None)),
             truncated_id_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            transport_backend,
         }
     }
 
@@ -172,7 +177,7 @@ impl KrakenSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let ws_client = WebSocketClient::connect(

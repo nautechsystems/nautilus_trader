@@ -22,7 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-examples = ["nautilus-live/node"]
+examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 python = [
   "dep:nautilus-system",
   "nautilus-common/python",

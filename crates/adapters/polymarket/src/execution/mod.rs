@@ -187,6 +187,7 @@ impl PolymarketExecutionClient {
         let ws_client = PolymarketWebSocketClient::new_user(
             config.base_url_ws.clone(),
             secrets.credential.clone(),
+            config.transport_backend,
         );
 
         let clock = get_atomic_clock_realtime();

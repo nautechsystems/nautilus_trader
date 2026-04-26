@@ -163,6 +163,7 @@ impl BinanceSpotExecutionClient {
                 api_key,
                 api_secret,
                 None, // heartbeat
+                config.transport_backend,
             ))
         } else {
             None

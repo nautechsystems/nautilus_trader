@@ -180,6 +180,7 @@ impl BinanceFuturesDataClient {
             config.api_secret.clone(),
             market_url,
             Some(20), // Heartbeat interval
+            config.transport_backend,
         )?;
 
         let public_url = config.base_url_ws.clone().map_or_else(
@@ -201,6 +202,7 @@ impl BinanceFuturesDataClient {
             None,
             Some(public_url),
             Some(20),
+            config.transport_backend,
         )?;
 
         Ok(Self {

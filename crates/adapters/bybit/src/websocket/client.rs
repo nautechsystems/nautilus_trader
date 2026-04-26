@@ -121,6 +121,7 @@ pub struct BybitWebSocketClient {
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
     pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
+    transport_backend: TransportBackend,
     cancellation_token: CancellationToken,
 }
 
@@ -161,6 +162,7 @@ impl Clone for BybitWebSocketClient {
             option_greeks_subs: Arc::clone(&self.option_greeks_subs),
             bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
             pending_py_requests: Arc::clone(&self.pending_py_requests),
+            transport_backend: self.transport_backend,
             cancellation_token: self.cancellation_token.clone(),
         }
     }
@@ -175,6 +177,7 @@ impl BybitWebSocketClient {
             BybitEnvironment::Mainnet,
             url,
             heartbeat,
+            TransportBackend::default(),
         )
     }
 
@@ -185,6 +188,7 @@ impl BybitWebSocketClient {
         environment: BybitEnvironment,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -213,6 +217,7 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -231,6 +236,7 @@ impl BybitWebSocketClient {
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -261,6 +267,7 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -279,6 +286,7 @@ impl BybitWebSocketClient {
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -309,6 +317,7 @@ impl BybitWebSocketClient {
             pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
+            transport_backend,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -339,9 +348,18 @@ impl BybitWebSocketClient {
             req_id: None,
         })?;
 
+        // Sockudo's HTTP/1.1 client rejects custom upgrade headers, so the
+        // Bybit identification headers are omitted when that backend is
+        // selected. They are non-essential (auth happens via subscription
+        // messages, not headers).
+        let headers = match self.transport_backend {
+            TransportBackend::Sockudo => vec![],
+            TransportBackend::Tungstenite => Self::default_headers(),
+        };
+
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: Self::default_headers(),
+            headers,
             heartbeat: self.heartbeat,
             heartbeat_msg: Some(ping_msg),
             reconnect_timeout_ms: Some(5_000),
@@ -351,7 +369,7 @@ impl BybitWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
@@ -2052,6 +2070,7 @@ mod tests {
             Some("test-secret".to_string()),
             None,
             20,
+            TransportBackend::default(),
         );
 
         let params = client
@@ -2118,6 +2137,7 @@ mod tests {
             Some("test-secret".to_string()),
             None,
             20,
+            TransportBackend::default(),
         );
 
         let params = client

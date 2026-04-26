@@ -118,6 +118,7 @@ pub struct AxMdWebSocketClient {
     subscribe_lock: Arc<tokio::sync::Mutex<()>>,
     symbol_data_types: Arc<AtomicMap<String, SymbolDataTypes>>,
     status_invalidations: Arc<Mutex<AHashSet<Ustr>>>,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for AxMdWebSocketClient {
@@ -146,6 +147,7 @@ impl Clone for AxMdWebSocketClient {
             request_id_counter: Arc::clone(&self.request_id_counter),
             symbol_data_types: Arc::clone(&self.symbol_data_types),
             status_invalidations: Arc::clone(&self.status_invalidations),
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -155,7 +157,12 @@ impl AxMdWebSocketClient {
     ///
     /// The `auth_token` is a Bearer token obtained from the HTTP `/api/authenticate` endpoint.
     #[must_use]
-    pub fn new(url: String, auth_token: String, heartbeat: u64) -> Self {
+    pub fn new(
+        url: String,
+        auth_token: String,
+        heartbeat: u64,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -175,6 +182,7 @@ impl AxMdWebSocketClient {
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
+            transport_backend,
         }
     }
 
@@ -182,7 +190,7 @@ impl AxMdWebSocketClient {
     ///
     /// Use [`set_auth_token`](Self::set_auth_token) to set the token before connecting.
     #[must_use]
-    pub fn without_auth(url: String, heartbeat: u64) -> Self {
+    pub fn without_auth(url: String, heartbeat: u64, transport_backend: TransportBackend) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -202,6 +210,7 @@ impl AxMdWebSocketClient {
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
+            transport_backend,
         }
     }
 
@@ -269,7 +278,6 @@ impl AxMdWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established.
     pub async fn connect(&mut self) -> AxWsResult<()> {
         const MAX_RETRIES: u32 = 5;
         const CONNECTION_TIMEOUT_SECS: u64 = 10;
@@ -299,7 +307,7 @@ impl AxMdWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         // Retry initial connection with exponential backoff

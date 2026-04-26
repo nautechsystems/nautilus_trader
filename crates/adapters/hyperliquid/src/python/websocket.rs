@@ -22,6 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 
 use crate::{
@@ -47,7 +48,7 @@ impl HyperliquidWebSocketClient {
         account_id: Option<String>,
     ) -> Self {
         let account_id = account_id.map(|s| AccountId::from(s.as_str()));
-        Self::new(url, environment, account_id)
+        Self::new(url, environment, account_id, TransportBackend::default())
     }
 
     /// Returns the URL of this WebSocket client.

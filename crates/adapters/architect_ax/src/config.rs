@@ -16,6 +16,7 @@
 //! Configuration structures for the AX Exchange adapter.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 
@@ -74,6 +75,9 @@ pub struct AxDataClientConfig {
     /// Funding rate poll interval in minutes.
     #[builder(default = 15)]
     pub funding_rate_poll_interval_mins: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for AxDataClientConfig {
@@ -181,6 +185,9 @@ pub struct AxExecClientConfig {
     /// Cancel all open orders when the orders WebSocket disconnects.
     #[builder(default)]
     pub cancel_on_disconnect: bool,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for AxExecClientConfig {

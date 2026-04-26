@@ -135,6 +135,7 @@ impl DeribitDataClient {
             config.api_secret.clone(),
             config.heartbeat_interval_secs,
             config.environment,
+            config.transport_backend,
         )?;
 
         Ok(Self {

@@ -49,6 +49,7 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use serde_json::{Value, json};
 
 // ------------------------------------------------------------------------------------------------
@@ -607,7 +608,8 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
         None,                        // api_key
         None,                        // api_secret
         30,                          // heartbeat_interval
-        DeribitEnvironment::Testnet, // environment
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
     )
     .expect("failed to construct deribit websocket client")
 }
@@ -666,7 +668,8 @@ async fn test_wait_until_active_timeout() {
         None,                        // api_key
         None,                        // api_secret
         30,                          // heartbeat_interval
-        DeribitEnvironment::Testnet, // environment
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
     )
     .expect("construct client");
 
@@ -1463,7 +1466,8 @@ fn create_authenticated_client(ws_url: &str) -> DeribitWebSocketClient {
         Some("test_api_key".to_string()),
         Some("test_api_secret".to_string()),
         30,                          // heartbeat_interval
-        DeribitEnvironment::Testnet, // environment
+        DeribitEnvironment::Testnet, // environment,
+        TransportBackend::default(),
     )
     .expect("failed to construct authenticated deribit websocket client")
 }

@@ -68,6 +68,7 @@ impl AxDataClientConfig {
                 .unwrap_or(default.update_instruments_interval_mins),
             funding_rate_poll_interval_mins: funding_rate_poll_interval_mins
                 .unwrap_or(default.funding_rate_poll_interval_mins),
+            transport_backend: default.transport_backend,
         }
     }
 
@@ -127,6 +128,7 @@ impl AxExecClientConfig {
                 .unwrap_or(default.heartbeat_interval_secs),
             recv_window_ms: recv_window_ms.unwrap_or(default.recv_window_ms),
             cancel_on_disconnect: cancel_on_disconnect.unwrap_or(default.cancel_on_disconnect),
+            transport_backend: default.transport_backend,
         }
     }
 

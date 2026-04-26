@@ -70,6 +70,7 @@ impl KrakenDataClientConfig {
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -128,6 +129,7 @@ impl KrakenExecClientConfig {
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
             max_requests_per_second,
+            transport_backend: defaults.transport_backend,
         }
     }
 

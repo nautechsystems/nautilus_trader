@@ -39,7 +39,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::Quantity,
 };
-use nautilus_network::websocket::SubscriptionState;
+use nautilus_network::websocket::{SubscriptionState, TransportBackend};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
@@ -85,7 +85,7 @@ impl KrakenFuturesWebSocketClient {
         });
         let credential = KrakenCredential::resolve_futures(api_key, api_secret, demo);
 
-        Self::with_credentials(url, heartbeat_secs, credential)
+        Self::with_credentials(url, heartbeat_secs, credential, TransportBackend::default())
     }
 
     /// Returns true if the client has API credentials set.

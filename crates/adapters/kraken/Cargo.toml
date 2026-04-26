@@ -26,6 +26,7 @@ examples = [
   "dep:nautilus-backtest",
   "dep:nautilus-tardis",
   "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
   "nautilus-trading/examples",
 ]
 python = [

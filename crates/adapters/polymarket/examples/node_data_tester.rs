@@ -29,6 +29,7 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use nautilus_polymarket::{
     config::PolymarketDataClientConfig, factories::PolymarketDataClientFactory,
 };
@@ -56,7 +57,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
-    let polymarket_config = PolymarketDataClientConfig::default();
+    let polymarket_config = PolymarketDataClientConfig {
+        transport_backend: TransportBackend::Sockudo,
+        ..Default::default()
+    };
     let client_factory = PolymarketDataClientFactory;
     let client_id = ClientId::new("POLYMARKET");
 

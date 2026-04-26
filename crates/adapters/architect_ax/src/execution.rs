@@ -125,6 +125,7 @@ impl AxExecutionClient {
             account_id,
             trader_id,
             config.heartbeat_interval_secs,
+            config.transport_backend,
         );
 
         Ok(Self {

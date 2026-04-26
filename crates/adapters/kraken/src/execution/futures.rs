@@ -121,6 +121,7 @@ impl KrakenFuturesExecutionClient {
             config.ws_url(),
             config.heartbeat_interval_secs,
             Some(credential),
+            config.transport_backend,
         );
 
         Ok(Self {

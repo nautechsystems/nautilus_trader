@@ -132,7 +132,12 @@ impl HyperliquidDataClient {
         }
 
         let ws_url = config.base_url_ws.clone();
-        let ws_client = HyperliquidWebSocketClient::new(ws_url, config.environment, None);
+        let ws_client = HyperliquidWebSocketClient::new(
+            ws_url,
+            config.environment,
+            None,
+            config.transport_backend,
+        );
 
         Ok(Self {
             client_id,

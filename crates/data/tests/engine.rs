@@ -4122,6 +4122,47 @@ fn test_process_book_snapshot_publish_for_multiple_instruments_same_interval(
 }
 
 #[rstest]
+fn test_subscribed_book_snapshots_preserve_subscription_order(
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // Pin IndexMap iteration on DataEngine.book_snapshot_counts: the per-tick
+    // BookSnapshotter publishes in iteration order, and the public
+    // subscribed_book_snapshots() Vec must reflect subscription order across runs.
+    let data_engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache.clone(),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()));
+    let _ = cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(gbpusd_sim.clone()));
+
+    let interval_ms = NonZeroUsize::new(100).unwrap();
+    execute_book_snapshot_subscribe(&data_engine, gbpusd_sim.id, client_id, venue, interval_ms);
+    execute_book_snapshot_subscribe(&data_engine, audusd_sim.id, client_id, venue, interval_ms);
+
+    assert_eq!(
+        data_engine.borrow().subscribed_book_snapshots(),
+        vec![gbpusd_sim.id, audusd_sim.id],
+    );
+}
+
+#[rstest]
 fn test_process_book_snapshot_publish_for_multiple_intervals_same_instrument(
     audusd_sim: CurrencyPair,
     clock: Rc<RefCell<TestClock>>,

@@ -116,6 +116,7 @@ pub struct PolymarketWebSocketClient {
     user_subscribed: Arc<AtomicBool>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     subscribe_new_markets: bool,
+    transport_backend: TransportBackend,
 }
 
 impl PolymarketWebSocketClient {
@@ -123,18 +124,38 @@ impl PolymarketWebSocketClient {
     ///
     /// If `base_url` is `None`, the default production URL is used.
     #[must_use]
-    pub fn new_market(base_url: Option<String>, subscribe_new_markets: bool) -> Self {
+    pub fn new_market(
+        base_url: Option<String>,
+        subscribe_new_markets: bool,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_market_url().to_string());
-        Self::new_inner(WsChannel::Market, url, None, subscribe_new_markets)
+        Self::new_inner(
+            WsChannel::Market,
+            url,
+            None,
+            subscribe_new_markets,
+            transport_backend,
+        )
     }
 
     /// Creates a new user-channel client (authenticated).
     ///
     /// If `base_url` is `None`, the default production URL is used.
     #[must_use]
-    pub fn new_user(base_url: Option<String>, credential: Credential) -> Self {
+    pub fn new_user(
+        base_url: Option<String>,
+        credential: Credential,
+        transport_backend: TransportBackend,
+    ) -> Self {
         let url = base_url.unwrap_or_else(|| clob_ws_user_url().to_string());
-        Self::new_inner(WsChannel::User, url, Some(credential), false)
+        Self::new_inner(
+            WsChannel::User,
+            url,
+            Some(credential),
+            false,
+            transport_backend,
+        )
     }
 
     fn new_inner(
@@ -142,6 +163,7 @@ impl PolymarketWebSocketClient {
         url: String,
         credential: Option<Credential>,
         subscribe_new_markets: bool,
+        transport_backend: TransportBackend,
     ) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
@@ -157,6 +179,7 @@ impl PolymarketWebSocketClient {
             user_subscribed: Arc::new(AtomicBool::new(false)),
             task_handle: None,
             subscribe_new_markets,
+            transport_backend,
         }
     }
 
@@ -164,7 +187,6 @@ impl PolymarketWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let mode = ConnectionMode::from_atomic(&self.connection_mode);
         if mode.is_active() || mode.is_reconnect() {
@@ -185,7 +207,7 @@ impl PolymarketWebSocketClient {
             reconnect_jitter_ms: Some(200),
             reconnect_max_attempts: None,
             idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let client =

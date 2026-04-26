@@ -63,6 +63,7 @@ use nautilus_model::{
     },
     types::{Money, Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyDict};
 use ustr::Ustr;
 
@@ -199,6 +200,7 @@ impl OKXWebSocketClient {
             account_id,
             heartbeat,
             auth_timeout_secs,
+            TransportBackend::default(),
         )
         .map_err(to_pyvalue_err)
     }
@@ -223,6 +225,7 @@ impl OKXWebSocketClient {
             account_id,
             heartbeat,
             auth_timeout_secs,
+            TransportBackend::default(),
         )
         .map_err(to_pyvalue_err)
     }

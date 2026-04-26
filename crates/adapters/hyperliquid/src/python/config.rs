@@ -60,6 +60,7 @@ impl HyperliquidDataClientConfig {
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -125,6 +126,7 @@ impl HyperliquidExecClientConfig {
             normalize_prices: normalize_prices.unwrap_or(defaults.normalize_prices),
             market_order_slippage_bps: market_order_slippage_bps
                 .unwrap_or(defaults.market_order_slippage_bps),
+            transport_backend: defaults.transport_backend,
         }
     }
 

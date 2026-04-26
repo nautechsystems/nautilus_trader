@@ -126,6 +126,7 @@ impl BinanceSpotDataClient {
             creds.as_ref().map(|(k, _)| k.clone()),
             creds.as_ref().map(|(_, s)| s.clone()),
             Some(20), // Heartbeat interval
+            config.transport_backend,
         )?;
         let data_sender = get_data_event_sender();
 

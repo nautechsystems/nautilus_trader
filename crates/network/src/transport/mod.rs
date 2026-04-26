@@ -25,8 +25,8 @@
 //!
 //! The `tokio-tungstenite` backend is always compiled (its conversions and adapter
 //! live in [`tungstenite`]). The `sockudo-ws` backend is gated behind the
-//! `transport-sockudo` feature and lives in [`sockudo`]; when enabled it can be
-//! selected at runtime via `WebSocketConfig.backend`.
+//! `transport-sockudo` feature and lives in the `sockudo` submodule; when enabled
+//! it can be selected at runtime via `WebSocketConfig.backend`.
 
 pub mod error;
 pub mod message;

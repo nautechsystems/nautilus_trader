@@ -18,6 +18,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 
 use crate::{
     common::{enums::SignatureType, urls},
@@ -69,6 +70,9 @@ pub struct PolymarketDataClientConfig {
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
     /// Optional filter applied to newly discovered markets before instrument emission.
     pub new_market_filter: Option<Arc<dyn InstrumentFilter>>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for PolymarketDataClientConfig {
@@ -156,6 +160,9 @@ pub struct PolymarketExecClientConfig {
     /// Timeout waiting for WS order acknowledgment (seconds).
     #[builder(default = 5)]
     pub ack_timeout_secs: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Debug for PolymarketExecClientConfig {

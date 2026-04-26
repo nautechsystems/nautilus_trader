@@ -87,6 +87,7 @@ pub struct BinanceSpotWebSocketClient {
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsMessage>>>>,
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    transport_backend: TransportBackend,
 }
 
 impl Debug for BinanceSpotWebSocketClient {
@@ -101,7 +102,7 @@ impl Debug for BinanceSpotWebSocketClient {
 
 impl Default for BinanceSpotWebSocketClient {
     fn default() -> Self {
-        Self::new(None, None, None, None).unwrap()
+        Self::new(None, None, None, None, TransportBackend::default()).unwrap()
     }
 }
 
@@ -116,6 +117,7 @@ impl BinanceSpotWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat: Option<u64>,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(BINANCE_SPOT_SBE_WS_URL.to_string());
 
@@ -134,6 +136,7 @@ impl BinanceSpotWebSocketClient {
             out_rx: Arc::new(Mutex::new(None)),
             request_id_counter: Arc::new(AtomicU64::new(1)),
             instruments_cache: Arc::new(AtomicMap::new()),
+            transport_backend,
         })
     }
 
@@ -430,7 +433,7 @@ impl BinanceSpotWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let keyed_quotas = vec![(

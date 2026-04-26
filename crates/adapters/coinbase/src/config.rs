@@ -16,6 +16,7 @@
 //! Configuration structures for the Coinbase adapter.
 
 use nautilus_model::enums::AccountType;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     enums::{CoinbaseEnvironment, CoinbaseMarginType},
@@ -63,6 +64,9 @@ pub struct CoinbaseDataClientConfig {
     /// from periodic `/products/{id}` fetches.
     #[builder(default = 15)]
     pub derivatives_poll_interval_secs: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for CoinbaseDataClientConfig {
@@ -160,6 +164,9 @@ pub struct CoinbaseExecClientConfig {
     /// portfolio. Coinbase rejects orders with `"account is not available"`
     /// if the portfolio is non-default and this field is omitted.
     pub retail_portfolio_id: Option<String>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for CoinbaseExecClientConfig {

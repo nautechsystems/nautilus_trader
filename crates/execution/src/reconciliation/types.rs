@@ -15,7 +15,7 @@
 
 //! Shared reconciliation value types.
 
-use ahash::AHashMap;
+use indexmap::IndexMap;
 use nautilus_model::{
     enums::OrderSide,
     identifiers::VenueOrderId,
@@ -111,7 +111,7 @@ impl FillSnapshot {
 #[derive(Debug, Clone)]
 pub struct ReconciliationResult {
     /// Order status reports keyed by venue order ID.
-    pub orders: AHashMap<VenueOrderId, OrderStatusReport>,
+    pub orders: IndexMap<VenueOrderId, OrderStatusReport>,
     /// Fill reports keyed by venue order ID.
-    pub fills: AHashMap<VenueOrderId, Vec<FillReport>>,
+    pub fills: IndexMap<VenueOrderId, Vec<FillReport>>,
 }

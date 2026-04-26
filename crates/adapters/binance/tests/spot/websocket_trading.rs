@@ -44,6 +44,7 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
 
@@ -380,6 +381,7 @@ fn create_test_client(addr: &SocketAddr) -> BinanceSpotWsTradingClient {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         None,
+        TransportBackend::default(),
     )
 }
 
@@ -646,6 +648,7 @@ async fn test_connection_failure_invalid_url() {
         "test_api_key".to_string(),
         "test_api_secret".to_string(),
         None,
+        TransportBackend::default(),
     );
 
     // Connection should fail

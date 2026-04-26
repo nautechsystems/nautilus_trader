@@ -15,7 +15,7 @@
 
 //! Factory functions for creating dYdX clients and components.
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc, sync::Arc};
 
 use log;
 use nautilus_common::{
@@ -35,6 +35,7 @@ use crate::{
     common::{
         consts::DYDX_VENUE,
         credential::{DydxCredential, resolve_wallet_address},
+        instrument_cache::InstrumentCache,
         urls,
     },
     config::{DydxAdapterConfig, DydxDataClientConfig, DydxExecClientConfig},
@@ -126,7 +127,12 @@ impl DataClientFactory for DydxDataClientFactory {
             retry_config,
         )?;
 
-        let ws_client = DydxWebSocketClient::new_public(ws_url, Some(20));
+        let ws_client = DydxWebSocketClient::new_public_with_cache(
+            ws_url,
+            Arc::new(InstrumentCache::new()),
+            Some(20),
+            dydx_config.transport_backend,
+        );
 
         let client = DydxDataClient::new(client_id, dydx_config, http_client, ws_client)?;
         Ok(Box::new(client))
@@ -221,6 +227,7 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             retry_delay_initial_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
             retry_delay_max_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
             grpc_rate_limit_per_second: dydx_config.grpc_rate_limit_per_second,
+            transport_backend: dydx_config.transport_backend,
         };
 
         log::info!(
@@ -345,6 +352,7 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            transport_backend: Default::default(),
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -373,6 +381,7 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            transport_backend: Default::default(),
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));

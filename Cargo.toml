@@ -251,8 +251,10 @@ serde_json = { version = "1.0.149", default-features = false, features = [
 serde_urlencoded = "0.7.1"
 smallvec = "1.15.1"
 sockudo-ws = { version = "1.7.4", default-features = false, features = [
+  "simd",
   "fastrand",
   "tokio-runtime",
+  "rustls-webpki-roots",
 ] }
 sqlx = { version = "0.8.6", default-features = false, features = [
   "postgres",

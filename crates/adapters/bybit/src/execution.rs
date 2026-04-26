@@ -122,6 +122,7 @@ impl BybitExecutionClient {
             Some(api_secret.clone()),
             Some(config.ws_private_url()),
             config.heartbeat_interval_secs,
+            config.transport_backend,
         );
 
         let ws_trade = BybitWebSocketClient::new_trade(
@@ -130,6 +131,7 @@ impl BybitExecutionClient {
             Some(api_secret),
             Some(config.ws_trade_url()),
             config.heartbeat_interval_secs,
+            config.transport_backend,
         );
 
         let clock = get_atomic_clock_realtime();

@@ -20,7 +20,7 @@
 //! reconstructed position matches the venue's reported position within tolerance
 //! (default 0.01%) after reconciliation is applied.
 
-use ahash::AHashMap;
+use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
@@ -690,8 +690,8 @@ fn extract_instrument_reports(
     mass_status: &ExecutionMassStatus,
     instrument_id: InstrumentId,
 ) -> ReconciliationResult {
-    let mut orders = AHashMap::new();
-    let mut fills = AHashMap::new();
+    let mut orders = IndexMap::new();
+    let mut fills = IndexMap::new();
 
     for (id, order) in mass_status.order_reports() {
         if order.instrument_id == instrument_id {
@@ -717,8 +717,8 @@ fn extract_instrument_reports(
 /// Extracted fills and reports for an instrument.
 struct ExtractedFills {
     snapshots: Vec<FillSnapshot>,
-    orders: AHashMap<VenueOrderId, OrderStatusReport>,
-    fills: AHashMap<VenueOrderId, Vec<FillReport>>,
+    orders: IndexMap<VenueOrderId, OrderStatusReport>,
+    fills: IndexMap<VenueOrderId, Vec<FillReport>>,
 }
 
 /// Extract fills for an instrument and convert to snapshots.
@@ -727,8 +727,8 @@ fn extract_fills_for_instrument(
     instrument_id: InstrumentId,
 ) -> ExtractedFills {
     let mut snapshots = Vec::new();
-    let mut order_map = AHashMap::new();
-    let mut fill_map = AHashMap::new();
+    let mut order_map = IndexMap::new();
+    let mut fill_map = IndexMap::new();
 
     // Seed order_map
     for (id, order) in mass_status.order_reports() {

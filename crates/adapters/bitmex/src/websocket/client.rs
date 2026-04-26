@@ -87,6 +87,7 @@ pub struct BitmexWebSocketClient {
     subscriptions: SubscriptionState,
     tracked_subscriptions: Arc<DashMap<String, ()>>,
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
+    transport_backend: TransportBackend,
 }
 
 impl BitmexWebSocketClient {
@@ -101,6 +102,7 @@ impl BitmexWebSocketClient {
         api_secret: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: u64,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
@@ -130,6 +132,7 @@ impl BitmexWebSocketClient {
             subscriptions: SubscriptionState::new(BITMEX_WS_TOPIC_DELIMITER),
             tracked_subscriptions: Arc::new(DashMap::new()),
             instruments: Arc::new(DashMap::new()),
+            transport_backend,
         })
     }
 
@@ -150,13 +153,14 @@ impl BitmexWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: u64,
         environment: BitmexEnvironment,
+        transport_backend: TransportBackend,
     ) -> anyhow::Result<Self> {
         let (api_key_env, api_secret_env) = credential_env_vars(environment);
 
         let key = get_or_env_var_opt(api_key, api_key_env);
         let secret = get_or_env_var_opt(api_secret, api_secret_env);
 
-        Self::new(url, key, secret, account_id, heartbeat)
+        Self::new(url, key, secret, account_id, heartbeat, transport_backend)
     }
 
     /// Creates a new authenticated [`BitmexWebSocketClient`] using environment variables.
@@ -170,7 +174,14 @@ impl BitmexWebSocketClient {
         let api_key = get_env_var(key_var)?;
         let api_secret = get_env_var(secret_var)?;
 
-        Self::new(Some(url), Some(api_key), Some(api_secret), None, 5)
+        Self::new(
+            Some(url),
+            Some(api_key),
+            Some(api_secret),
+            None,
+            5,
+            TransportBackend::default(),
+        )
     }
 
     /// Returns the websocket url being used by the client.
@@ -493,7 +504,12 @@ impl BitmexWebSocketClient {
 
         let config = WebSocketConfig {
             url: self.url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
+            headers: match self.transport_backend {
+                TransportBackend::Sockudo => vec![],
+                TransportBackend::Tungstenite => {
+                    vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
+                }
+            },
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
             reconnect_timeout_ms: Some(5_000),
@@ -503,7 +519,7 @@ impl BitmexWebSocketClient {
             reconnect_jitter_ms: None,        // Use default
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let keyed_quotas = vec![];
@@ -1234,6 +1250,7 @@ mod tests {
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1298,6 +1315,7 @@ mod tests {
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1327,6 +1345,7 @@ mod tests {
             None,
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1341,6 +1360,7 @@ mod tests {
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1409,6 +1429,7 @@ mod tests {
             None,
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1455,6 +1476,7 @@ mod tests {
             None,
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 
@@ -1508,6 +1530,7 @@ mod tests {
             Some("test_secret".to_string()),
             Some(AccountId::new("BITMEX-TEST")),
             5,
+            TransportBackend::default(),
         )
         .unwrap();
 

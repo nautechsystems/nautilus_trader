@@ -292,7 +292,8 @@ impl CoinbaseExecutionClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_user = CoinbaseWebSocketClient::with_credential(&ws_url, credential);
+        let ws_user =
+            CoinbaseWebSocketClient::with_credential(&ws_url, credential, config.transport_backend);
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -446,8 +447,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 self.config.api_secret.as_deref(),
             )
             .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
-            self.ws_user =
-                CoinbaseWebSocketClient::with_credential(&self.config.ws_url(), credential);
+            self.ws_user = CoinbaseWebSocketClient::with_credential(
+                &self.config.ws_url(),
+                credential,
+                self.config.transport_backend,
+            );
         }
 
         if self.core.instruments_initialized() {

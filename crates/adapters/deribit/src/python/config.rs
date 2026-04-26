@@ -75,6 +75,7 @@ impl DeribitDataClientConfig {
                 .unwrap_or(defaults.heartbeat_interval_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -132,6 +133,7 @@ impl DeribitExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            transport_backend: defaults.transport_backend,
         }
     }
 

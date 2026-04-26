@@ -212,6 +212,7 @@ impl BinanceFuturesExecutionClient {
                 api_key,
                 api_secret,
                 None, // heartbeat
+                config.transport_backend,
             ))
         } else {
             None
@@ -1024,6 +1025,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             api_key: api_key.clone(),
             api_secret: api_secret.clone(),
             private_base_url: private_base_url.clone(),
+            transport_backend: self.config.transport_backend,
         };
 
         let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;

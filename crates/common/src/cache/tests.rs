@@ -731,6 +731,92 @@ fn test_correct_order_indexing(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_cache_orders_returned_sorted_by_client_order_id(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    // The cache index is AHash-backed for fast lookup, so it iterates in
+    // hasher-randomised order. The public Vec returns sort by client_order_id
+    // so callers (e.g. own-book replay, cancel-all cascades) see the same
+    // sequence across runs.
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    for raw in ["O-303", "O-101", "O-202"] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .client_order_id(ClientOrderId::from(raw))
+            .build();
+        cache.add_order(order, None, None, false).unwrap();
+    }
+
+    let returned: Vec<ClientOrderId> = cache
+        .orders(None, None, None, None, None)
+        .iter()
+        .map(|o| o.client_order_id())
+        .collect();
+
+    assert_eq!(
+        returned,
+        vec![
+            ClientOrderId::from("O-101"),
+            ClientOrderId::from("O-202"),
+            ClientOrderId::from("O-303"),
+        ],
+    );
+}
+
+#[rstest]
+fn test_cache_positions_returned_sorted_by_position_id(mut cache: Cache, audusd_sim: CurrencyPair) {
+    // Mirror of test_cache_orders_returned_sorted_by_client_order_id for the
+    // positions path; get_positions_for_ids now sorts by PositionId so the
+    // own-book replay and reconciliation flows see a stable sequence.
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+
+    for raw in ["POS-303", "POS-101", "POS-202"] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let fill_event = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            Some(PositionId::new(raw)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let fill = match fill_event {
+            OrderEventAny::Filled(f) => f,
+            _ => unreachable!(),
+        };
+        let position = Position::new(&instrument, fill);
+        cache.add_position(&position, OmsType::Hedging).unwrap();
+    }
+
+    let returned: Vec<PositionId> = cache
+        .positions(None, None, None, None, None)
+        .iter()
+        .map(|p| p.id)
+        .collect();
+
+    assert_eq!(
+        returned,
+        vec![
+            PositionId::new("POS-101"),
+            PositionId::new("POS-202"),
+            PositionId::new("POS-303"),
+        ],
+    );
+}
+
+#[rstest]
 fn test_add_order_with_account_id_populates_account_index() {
     // Verify add_order populates account_orders index when account_id already set
     let mut cache = Cache::default();

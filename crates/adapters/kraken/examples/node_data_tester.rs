@@ -32,6 +32,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
     stubs::TestDefault,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -84,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key: None,    // Will use 'KRAKEN_API_KEY' env var if available
         api_secret: None, // Will use 'KRAKEN_API_SECRET' env var if available
         product_type,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

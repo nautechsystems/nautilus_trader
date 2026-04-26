@@ -38,6 +38,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
+use nautilus_network::websocket::TransportBackend;
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use ustr::Ustr;
@@ -63,6 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = CoinbaseDataClientConfig {
         api_key: None,    // Will use 'COINBASE_API_KEY' env var
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 
@@ -76,6 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // otherwise Coinbase rejects orders with "account is not available".
         // Look up via GET /api/v3/brokerage/portfolios.
         retail_portfolio_id: None,
+        transport_backend: TransportBackend::Sockudo,
         ..Default::default()
     };
 

@@ -58,6 +58,7 @@ impl PolymarketDataClientConfig {
             auto_load_debounce_ms: auto_load_debounce_ms.unwrap_or(default.auto_load_debounce_ms),
             filters: Vec::new(),
             new_market_filter: None,
+            transport_backend: default.transport_backend,
         }
     }
 
@@ -114,6 +115,7 @@ impl PolymarketExecClientConfig {
                 .unwrap_or(default.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
             ack_timeout_secs: ack_timeout_secs.unwrap_or(default.ack_timeout_secs),
+            transport_backend: default.transport_backend,
         }
     }
 

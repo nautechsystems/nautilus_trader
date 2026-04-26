@@ -87,6 +87,7 @@ pub struct KrakenFuturesWebSocketClient {
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    transport_backend: TransportBackend,
 }
 
 impl Clone for KrakenFuturesWebSocketClient {
@@ -110,6 +111,7 @@ impl Clone for KrakenFuturesWebSocketClient {
             truncated_id_map: Arc::clone(&self.truncated_id_map),
             order_instrument_map: Arc::clone(&self.order_instrument_map),
             instruments: Arc::clone(&self.instruments),
+            transport_backend: self.transport_backend,
         }
     }
 }
@@ -118,7 +120,7 @@ impl KrakenFuturesWebSocketClient {
     /// Creates a new client with the given URL.
     #[must_use]
     pub fn new(url: String, heartbeat_secs: u64) -> Self {
-        Self::with_credentials(url, heartbeat_secs, None)
+        Self::with_credentials(url, heartbeat_secs, None, TransportBackend::default())
     }
 
     /// Creates a new client with API credentials for authenticated feeds.
@@ -127,6 +129,7 @@ impl KrakenFuturesWebSocketClient {
         url: String,
         heartbeat_secs: u64,
         credential: Option<KrakenCredential>,
+        transport_backend: TransportBackend,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -151,6 +154,7 @@ impl KrakenFuturesWebSocketClient {
             truncated_id_map: Arc::new(AtomicMap::new()),
             order_instrument_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            transport_backend,
         }
     }
 
@@ -268,7 +272,7 @@ impl KrakenFuturesWebSocketClient {
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let ws_client =
@@ -1272,6 +1276,7 @@ mod tests {
             "wss://futures.kraken.com/ws/v1".to_string(),
             60,
             Some(test_credential()),
+            TransportBackend::default(),
         );
 
         assert!(!client.is_authenticated());
@@ -1309,6 +1314,7 @@ mod tests {
             "wss://futures.kraken.com/ws/v1".to_string(),
             60,
             Some(test_credential()),
+            TransportBackend::default(),
         );
 
         client
@@ -1326,6 +1332,7 @@ mod tests {
             "wss://futures.kraken.com/ws/v1".to_string(),
             60,
             Some(test_credential()),
+            TransportBackend::default(),
         );
 
         let client_for_responder = client.clone();
@@ -1351,6 +1358,7 @@ mod tests {
             "wss://futures.kraken.com/ws/v1".to_string(),
             60,
             Some(test_credential()),
+            TransportBackend::default(),
         );
 
         let err = client

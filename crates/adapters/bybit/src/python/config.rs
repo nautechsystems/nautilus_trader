@@ -88,6 +88,7 @@ impl BybitDataClientConfig {
                 .or(defaults.update_instruments_interval_mins),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .or(defaults.instrument_status_poll_secs),
+            transport_backend: defaults.transport_backend,
         }
     }
 
@@ -165,6 +166,7 @@ impl BybitExecClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode,
+            transport_backend: defaults.transport_backend,
         }
     }
 

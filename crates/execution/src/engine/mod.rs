@@ -31,9 +31,10 @@ use std::{
     time::SystemTime,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use config::ExecutionEngineConfig;
 use futures::future::join_all;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -102,7 +103,7 @@ const TIMER_PURGE_ACCOUNT_EVENTS: &str = "ExecEngine_PURGE_ACCOUNT_EVENTS";
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    clients: AHashMap<ClientId, ExecutionClientAdapter>,
+    clients: IndexMap<ClientId, ExecutionClientAdapter>,
     default_client: Option<ExecutionClientAdapter>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
@@ -131,7 +132,7 @@ impl ExecutionEngine {
         Self {
             clock: clock.clone(),
             cache,
-            clients: AHashMap::new(),
+            clients: IndexMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
@@ -456,8 +457,8 @@ impl ExecutionEngine {
     /// This method first attempts to resolve each order's originating client from the cache,
     /// then falls back to venue routing for any orders without a cached client.
     pub fn get_clients_for_orders(&self, orders: &[OrderAny]) -> Vec<&dyn ExecutionClient> {
-        let mut client_ids: AHashSet<ClientId> = AHashSet::new();
-        let mut venues: AHashSet<Venue> = AHashSet::new();
+        let mut client_ids: IndexSet<ClientId> = IndexSet::new();
+        let mut venues: IndexSet<Venue> = IndexSet::new();
 
         // Collect client IDs from cache and venues for fallback
         for order in orders {
@@ -570,7 +571,7 @@ impl ExecutionEngine {
     ///
     /// Returns an error if no client is registered with the given ID.
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
-        if self.clients.remove(&client_id).is_some() {
+        if self.clients.shift_remove(&client_id).is_some() {
             // Remove from routing map if present
             self.routing_map
                 .retain(|_, mapped_id| mapped_id != &client_id);

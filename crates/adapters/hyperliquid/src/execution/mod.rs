@@ -227,8 +227,12 @@ impl HyperliquidExecutionClient {
         }
 
         let ws_url = config.base_url_ws.clone();
-        let ws_client =
-            HyperliquidWebSocketClient::new(ws_url, config.environment, Some(core.account_id));
+        let ws_client = HyperliquidWebSocketClient::new(
+            ws_url,
+            config.environment,
+            Some(core.account_id),
+            config.transport_backend,
+        );
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -1934,6 +1938,7 @@ mod tests {
         reports::{FillReport, OrderStatusReport},
         types::{Currency, Money, Price, Quantity},
     };
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -1981,6 +1986,7 @@ mod tests {
             Some("wss://test.invalid".to_string()),
             HyperliquidEnvironment::Testnet,
             None,
+            TransportBackend::default(),
         )
     }
 

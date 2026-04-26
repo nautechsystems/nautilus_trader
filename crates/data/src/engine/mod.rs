@@ -132,12 +132,12 @@ pub struct DataEngine {
     catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
-    book_snapshot_counts: AHashMap<BookSnapshotKey, usize>,
+    book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
     book_deltas_subs: AHashSet<InstrumentId>,
     book_depth10_subs: AHashSet<InstrumentId>,
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
-    bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
+    bar_aggregators: IndexMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarType, Vec<BarAggregatorSubscription>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
@@ -189,12 +189,12 @@ impl DataEngine {
             catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
-            book_snapshot_counts: AHashMap::new(),
+            book_snapshot_counts: IndexMap::new(),
             book_deltas_subs: AHashSet::new(),
             book_depth10_subs: AHashSet::new(),
             book_updaters: AHashMap::new(),
             book_snapshotters: AHashMap::new(),
-            bar_aggregators: AHashMap::new(),
+            bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
             option_chain_instrument_index: AHashMap::new(),
@@ -1788,7 +1788,7 @@ impl DataEngine {
         {
             snapshot_infos.clone()
         } else {
-            let snapshot_infos = Rc::new(RefCell::new(AHashMap::new()));
+            let snapshot_infos = Rc::new(RefCell::new(IndexMap::new()));
             self.book_intervals
                 .insert(cmd.interval_ms, snapshot_infos.clone());
             self.schedule_book_snapshotter(cmd.interval_ms, snapshot_infos.clone());
@@ -1828,11 +1828,11 @@ impl DataEngine {
             return BookSnapshotUnsubscribeResult::Decremented;
         }
 
-        self.book_snapshot_counts.remove(&key);
+        self.book_snapshot_counts.shift_remove(&key);
 
         let remove_interval = if let Some(snapshot_infos) = self.book_intervals.get(&interval_ms) {
             let mut snapshot_infos = snapshot_infos.borrow_mut();
-            snapshot_infos.remove(&instrument_id);
+            snapshot_infos.shift_remove(&instrument_id);
             snapshot_infos.is_empty()
         } else {
             false
@@ -2284,7 +2284,7 @@ impl DataEngine {
     fn stop_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
         let aggregator = self
             .bar_aggregators
-            .remove(&bar_type.standard())
+            .shift_remove(&bar_type.standard())
             .ok_or_else(|| {
                 anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
             })?;

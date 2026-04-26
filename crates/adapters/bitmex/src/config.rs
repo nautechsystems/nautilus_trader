@@ -16,6 +16,7 @@
 //! Configuration types for the BitMEX adapter clients.
 
 use nautilus_model::identifiers::AccountId;
+use nautilus_network::websocket::TransportBackend;
 
 use crate::common::{
     consts::{BITMEX_HTTP_TESTNET_URL, BITMEX_HTTP_URL, BITMEX_WS_TESTNET_URL, BITMEX_WS_URL},
@@ -94,6 +95,9 @@ pub struct BitmexDataClientConfig {
     /// Maximum number of requests per minute (rolling window).
     #[builder(default = 120)]
     pub max_requests_per_minute: u32,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BitmexDataClientConfig {
@@ -229,6 +233,9 @@ pub struct BitmexExecClientConfig {
     /// and BitMEX cancels all open orders. Calling with `timeout=0` disarms the switch.
     /// The refresh interval is derived as `timeout / 4` (minimum 1 second).
     pub deadmans_switch_timeout_secs: Option<u64>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for BitmexExecClientConfig {

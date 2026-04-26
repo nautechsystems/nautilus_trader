@@ -58,6 +58,8 @@ pub struct CoreBlockchainRpcClient {
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
     /// Tracks confirmed subscriptions that need to be re-established on reconnection.
     subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    transport_backend: TransportBackend,
 }
 
 impl Debug for CoreBlockchainRpcClient {
@@ -96,7 +98,23 @@ impl CoreBlockchainRpcClient {
             subscription_event_types: HashMap::new(),
             wss_consumer_rx: None,
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            transport_backend: TransportBackend::default(),
         }
+    }
+
+    /// Sets the transport backend for the next [`Self::connect`].
+    ///
+    /// When `Sockudo` is selected the default `User-Agent` upgrade header is
+    /// dropped because sockudo does not accept custom upgrade headers.
+    #[must_use]
+    pub fn with_transport_backend(mut self, backend: TransportBackend) -> Self {
+        self.transport_backend = backend;
+        self
+    }
+
+    /// Updates the transport backend in place.
+    pub fn set_transport_backend(&mut self, backend: TransportBackend) {
+        self.transport_backend = backend;
     }
 
     /// Establishes a WebSocket connection to the blockchain node and sets up the message channel.
@@ -109,14 +127,20 @@ impl CoreBlockchainRpcClient {
     /// Returns an error if the WebSocket connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let (handler, rx) = channel_message_handler();
-        let user_agent = (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
         // Most blockchain RPC nodes require a heartbeat to keep the connection alive
         let heartbeat_interval = 30;
 
+        let headers = match self.transport_backend {
+            TransportBackend::Sockudo => vec![],
+            TransportBackend::Tungstenite => {
+                vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())]
+            }
+        };
+
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
-            headers: vec![user_agent],
+            headers,
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
             reconnect_timeout_ms: Some(10_000),
@@ -126,7 +150,7 @@ impl CoreBlockchainRpcClient {
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
-            backend: TransportBackend::Tungstenite,
+            backend: self.transport_backend,
         };
 
         let client =

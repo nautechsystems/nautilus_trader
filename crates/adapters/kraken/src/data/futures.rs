@@ -114,9 +114,11 @@ impl KrakenFuturesDataClient {
                 .unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
-        let ws = KrakenFuturesWebSocketClient::new(
+        let ws = KrakenFuturesWebSocketClient::with_credentials(
             config.ws_public_url(),
             config.heartbeat_interval_secs,
+            None,
+            config.transport_backend,
         );
 
         Ok(Self {

@@ -46,6 +46,7 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
 
@@ -272,6 +273,7 @@ fn create_test_client(addr: &SocketAddr) -> BinanceFuturesWsTradingClient {
         "test-api-key".to_string(),
         "test-api-secret".to_string(),
         None,
+        TransportBackend::default(),
     )
 }
 
@@ -334,6 +336,7 @@ async fn test_connection_failure_invalid_url() {
         "test-api-key".to_string(),
         "test-api-secret".to_string(),
         None,
+        TransportBackend::default(),
     );
 
     let result = client.connect().await;
@@ -830,6 +833,7 @@ async fn test_default_client_creation() {
         "test-key".to_string(),
         "test-secret".to_string(),
         None,
+        TransportBackend::default(),
     );
 
     assert!(!client.is_active());

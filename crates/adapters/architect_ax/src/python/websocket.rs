@@ -42,6 +42,7 @@ use nautilus_model::{
     python::{data::data_to_pycapsule, instruments::pyobject_to_instrument_any},
     types::{Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
@@ -96,7 +97,12 @@ impl PyAxMdWebSocketClient {
     #[pyo3(signature = (url, auth_token, heartbeat=30))]
     fn py_new(url: String, auth_token: String, heartbeat: u64) -> Self {
         Self {
-            inner: AxMdWebSocketClient::new(url, auth_token, heartbeat),
+            inner: AxMdWebSocketClient::new(
+                url,
+                auth_token,
+                heartbeat,
+                TransportBackend::default(),
+            ),
             instruments_cache: Arc::new(AtomicMap::new()),
         }
     }
@@ -106,7 +112,7 @@ impl PyAxMdWebSocketClient {
     #[pyo3(signature = (url, heartbeat=30))]
     fn py_without_auth(url: String, heartbeat: u64) -> Self {
         Self {
-            inner: AxMdWebSocketClient::without_auth(url, heartbeat),
+            inner: AxMdWebSocketClient::without_auth(url, heartbeat, TransportBackend::default()),
             instruments_cache: Arc::new(AtomicMap::new()),
         }
     }
@@ -467,7 +473,13 @@ impl PyAxOrdersWebSocketClient {
     #[pyo3(signature = (url, account_id, trader_id, heartbeat=30))]
     fn py_new(url: String, account_id: AccountId, trader_id: TraderId, heartbeat: u64) -> Self {
         Self {
-            inner: AxOrdersWebSocketClient::new(url, account_id, trader_id, heartbeat),
+            inner: AxOrdersWebSocketClient::new(
+                url,
+                account_id,
+                trader_id,
+                heartbeat,
+                TransportBackend::default(),
+            ),
         }
     }
 

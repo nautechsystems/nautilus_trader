@@ -48,6 +48,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
@@ -91,7 +92,15 @@ impl DeribitWebSocketClient {
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
     ) -> PyResult<Self> {
-        Self::new(url, api_key, api_secret, heartbeat_interval, environment).map_err(to_pyvalue_err)
+        Self::new(
+            url,
+            api_key,
+            api_secret,
+            heartbeat_interval,
+            environment,
+            TransportBackend::default(),
+        )
+        .map_err(to_pyvalue_err)
     }
 
     /// Creates a new public (unauthenticated) client.

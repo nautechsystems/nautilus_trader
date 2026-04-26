@@ -15,6 +15,8 @@
 
 //! Configuration structures for the Hyperliquid adapter.
 
+use nautilus_network::websocket::TransportBackend;
+
 use crate::common::{
     consts::{info_url, ws_url},
     enums::HyperliquidEnvironment,
@@ -59,6 +61,9 @@ pub struct HyperliquidDataClientConfig {
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for HyperliquidDataClientConfig {
@@ -162,6 +167,9 @@ pub struct HyperliquidExecClientConfig {
     /// `SubmitOrder.params["market_order_slippage_bps"]`.
     #[builder(default = 50)]
     pub market_order_slippage_bps: u32,
+    /// WebSocket transport backend (defaults to `Tungstenite`).
+    #[builder(default)]
+    pub transport_backend: TransportBackend,
 }
 
 impl Default for HyperliquidExecClientConfig {

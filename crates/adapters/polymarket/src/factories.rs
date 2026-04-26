@@ -107,6 +107,7 @@ impl DataClientFactory for PolymarketDataClientFactory {
         let ws_client = PolymarketWebSocketClient::new_market(
             polymarket_config.base_url_ws.clone(),
             polymarket_config.subscribe_new_markets,
+            polymarket_config.transport_backend,
         );
 
         let mut client = PolymarketDataClient::new(
