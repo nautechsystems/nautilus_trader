@@ -370,6 +370,14 @@ impl BybitWsFeedHandler {
                     }
                 };
 
+                if value
+                    .get("op")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|op| op == BybitWsOperation::Pong.as_ref())
+                {
+                    return None;
+                }
+
                 Some(parse_bybit_ws_frame(value))
             }
             Message::Binary(msg) => {
@@ -597,6 +605,19 @@ mod tests {
         let msg = Message::Text("pong".into());
         let result = BybitWsFeedHandler::parse_raw_frame(msg);
         assert!(result.is_none(), "Expected None for pong, was {result:?}");
+    }
+
+    #[rstest]
+    fn test_parse_raw_json_pong_message() {
+        let msg = Message::Text(
+            r#"{"args":["1777226678908"],"conn_id":"yzr7jz02gws1vh60mk5m-hxqdp","op":"pong"}"#
+                .into(),
+        );
+        let result = BybitWsFeedHandler::parse_raw_frame(msg);
+        assert!(
+            result.is_none(),
+            "Expected None for JSON pong, was {result:?}"
+        );
     }
 
     #[rstest]
