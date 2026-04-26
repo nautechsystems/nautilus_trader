@@ -2147,16 +2147,18 @@ mod rust_tests {
     use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;
+    #[cfg(feature = "transport-sockudo")]
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
     use tokio::{
-        io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task::{self, JoinHandle},
         time::{Duration, sleep},
     };
+    use tokio_tungstenite::{accept_async, tungstenite::Message as WsMessage};
+    #[cfg(feature = "transport-sockudo")]
     use tokio_tungstenite::{
-        accept_async, accept_hdr_async,
+        accept_hdr_async,
         tungstenite::{
-            Message as WsMessage,
             handshake::server::{self, Callback},
             http::HeaderValue,
         },
@@ -2201,12 +2203,14 @@ mod rust_tests {
         })
     }
 
+    #[cfg(feature = "transport-sockudo")]
     #[derive(Debug, Clone)]
     struct HeaderAssertCallback {
         key: String,
         value: HeaderValue,
     }
 
+    #[cfg(feature = "transport-sockudo")]
     impl Callback for HeaderAssertCallback {
         #[expect(
             clippy::panic_in_result_fn,
@@ -3905,21 +3909,17 @@ mod rust_tests {
 
                 if let Ok(mut ws) = accept_hdr_async(stream, callback).await {
                     while let Some(Ok(msg)) = ws.next().await {
-                        #[expect(
-                            clippy::collapsible_match,
-                            reason = "send consumes msg, so this cannot be a match guard"
-                        )]
-                        match msg {
-                            WsMessage::Text(_) | WsMessage::Binary(_) => {
-                                if ws.send(msg).await.is_err() {
-                                    break;
-                                }
-                            }
-                            WsMessage::Close(_) => {
-                                let _ = ws.close(None).await;
+                        if msg.is_text() || msg.is_binary() {
+                            if ws.send(msg).await.is_err() {
                                 break;
                             }
-                            _ => {}
+
+                            continue;
+                        }
+
+                        if msg.is_close() {
+                            let _ = ws.close(None).await;
+                            break;
                         }
                     }
                 }
