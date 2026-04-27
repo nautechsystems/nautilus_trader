@@ -131,6 +131,7 @@ Released on TBD (UTC).
 - Fixed Bybit `InstrumentStatus` messages silently dropped instead of forwarded to the data engine
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
 - Fixed Bybit margin missing for accounts with orders but no positions (#3725), thanks for reporting @marco-rigoni
+- Fixed Bybit JSON pong websocket frames not being skipped before classification (#3936), thanks @sunlei
 - Fixed Databento CMBP1 and TCBBO trade IDs using random UUID4 instead of deterministic hash of trade fields
 - Fixed Databento dropping `start_ns` after session start; now logs error (#3877), thanks for reporting @jxstanford
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin
@@ -214,6 +215,8 @@ Released on TBD (UTC).
 - Added support for user-provided Tokio runtime in live module (#3918), thanks @filipmacek
 - Added continuous futures support for bar requests and subscriptions (#3921), thanks @faysou
 - Improved `nautilus-live/defi` to no longer pull `LiveNode` orchestration deps
+- Improved CI uv cache via `setup-uv` auto mode to skip GHA uploads on self-hosted runners (#3933), thanks @sunlei
+- Improved CI cache hygiene on self-hosted runners with uv prune, prek auto-gate, and footprint summary
 - Migrated `WebSocketClient` onto the `WsTransport` trait, decoupling reconnect/auth from tungstenite types (Rust)
 - Changed Polymarket `PolymarketQuote.best_bid`/`best_ask` to optional, matching the Rust `Option<String>` schema
 - Ported Interactive Brokers Rust historical bar replay with Python parity fixes (#3892), thanks @faysou
@@ -230,6 +233,8 @@ Released on TBD (UTC).
 - Refined Kraken WebSocket execution dispatch to emit typed events for tracked orders via per-product modules
 - Refined Kraken Spot WS auth via `AuthTracker` with `is_authenticated`/`wait_until_authenticated` Python APIs
 - Optimized Hyperliquid L1 signing by caching `PrivateKeySigner` and EIP-712 domain (#3851)
+- Optimized `ClientOrderId` generation with cached prefix buffer (#3935), thanks @sunlei
+- Optimized `OrderListId` and `PositionId` generation with cached prefix buffers (Rust)
 - Upgraded Rust (MSRV) to 1.95.0
 - Upgraded Cap'n Proto to v1.4.0
 - Upgraded `capnp` crate to v0.25.4 (regenerated schemas with 4-space indents and version headers)

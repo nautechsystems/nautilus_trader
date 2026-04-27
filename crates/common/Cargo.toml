@@ -118,6 +118,16 @@ path = "benches/client_order_id.rs"
 harness = false
 
 [[bench]]
+name = "order_list_id"
+path = "benches/order_list_id.rs"
+harness = false
+
+[[bench]]
+name = "position_id"
+path = "benches/position_id.rs"
+harness = false
+
+[[bench]]
 name = "matching"
 path = "benches/matching.rs"
 harness = false
