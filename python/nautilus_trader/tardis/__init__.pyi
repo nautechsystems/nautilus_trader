@@ -68,6 +68,7 @@ class TardisDataClientConfig:
         self,
         api_key: str | None = None,
         tardis_ws_url: str | None = None,
+        proxy_url: str | None = None,
         normalize_symbols: bool | None = None,
         options: typing.Sequence[ReplayNormalizedRequestOptions] | None = None,
         stream_options: typing.Sequence[StreamNormalizedRequestOptions] | None = None,
@@ -101,6 +102,7 @@ class TardisHttpClient:
         base_url: str | None = None,
         timeout_secs: int | None = None,
         normalize_symbols: bool = True,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def api_key(self) -> str | None: ...

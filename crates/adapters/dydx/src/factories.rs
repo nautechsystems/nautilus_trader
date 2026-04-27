@@ -122,7 +122,7 @@ impl DataClientFactory for DydxDataClientFactory {
         let http_client = DydxHttpClient::new(
             Some(http_url),
             dydx_config.http_timeout_secs,
-            dydx_config.http_proxy_url.clone(),
+            dydx_config.proxy_url.clone(),
             dydx_config.network,
             retry_config,
         )?;
@@ -132,6 +132,7 @@ impl DataClientFactory for DydxDataClientFactory {
             Arc::new(InstrumentCache::new()),
             Some(20),
             dydx_config.transport_backend,
+            dydx_config.proxy_url.clone(),
         );
 
         let client = DydxDataClient::new(client_id, dydx_config, http_client, ws_client)?;
@@ -227,6 +228,7 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             retry_delay_initial_ms: dydx_config.retry_delay_initial_ms.unwrap_or(1000),
             retry_delay_max_ms: dydx_config.retry_delay_max_ms.unwrap_or(10000),
             grpc_rate_limit_per_second: dydx_config.grpc_rate_limit_per_second,
+            proxy_url: dydx_config.proxy_url.clone(),
             transport_backend: dydx_config.transport_backend,
         };
 
@@ -352,6 +354,7 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            proxy_url: None,
             transport_backend: Default::default(),
         };
 
@@ -381,6 +384,7 @@ mod tests {
             retry_delay_initial_ms: None,
             retry_delay_max_ms: None,
             grpc_rate_limit_per_second: Some(4),
+            proxy_url: None,
             transport_backend: Default::default(),
         };
 

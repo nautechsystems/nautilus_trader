@@ -282,7 +282,7 @@ impl CoinbaseExecutionClient {
             credential.clone(),
             config.environment,
             config.http_timeout_secs,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
             Some(retry_config),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
@@ -292,8 +292,12 @@ impl CoinbaseExecutionClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_user =
-            CoinbaseWebSocketClient::with_credential(&ws_url, credential, config.transport_backend);
+        let ws_user = CoinbaseWebSocketClient::with_credential(
+            &ws_url,
+            credential,
+            config.transport_backend,
+            config.proxy_url.clone(),
+        );
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -451,6 +455,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 &self.config.ws_url(),
                 credential,
                 self.config.transport_backend,
+                self.config.proxy_url.clone(),
             );
         }
 

@@ -520,6 +520,7 @@ impl DataClient for TardisDataClient {
             None,
             None,
             self.config.normalize_symbols,
+            self.config.proxy_url.clone(),
         )?;
 
         let exchanges: AHashSet<_> = if is_stream_mode {

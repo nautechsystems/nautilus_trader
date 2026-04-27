@@ -610,6 +610,7 @@ fn create_test_client(ws_url: &str) -> DeribitWebSocketClient {
         30,                          // heartbeat_interval
         DeribitEnvironment::Testnet, // environment,
         TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("failed to construct deribit websocket client")
 }
@@ -670,6 +671,7 @@ async fn test_wait_until_active_timeout() {
         30,                          // heartbeat_interval
         DeribitEnvironment::Testnet, // environment,
         TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("construct client");
 
@@ -1468,6 +1470,7 @@ fn create_authenticated_client(ws_url: &str) -> DeribitWebSocketClient {
         30,                          // heartbeat_interval
         DeribitEnvironment::Testnet, // environment,
         TransportBackend::default(),
+        None, // proxy_url
     )
     .expect("failed to construct authenticated deribit websocket client")
 }

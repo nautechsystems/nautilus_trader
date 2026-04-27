@@ -188,6 +188,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             handler_reconnect=self._reconnect,
             base_url=base_url_ws,
             loop=self._loop,
+            proxy_url=config.proxy_url,
         )
 
         # WebSocket API (public/book streams)
@@ -197,6 +198,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             handler_reconnect=self._reconnect,
             base_url=base_url_ws_public or base_url_ws,
             loop=self._loop,
+            proxy_url=config.proxy_url,
         )
 
         # Hot caches

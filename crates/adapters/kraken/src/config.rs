@@ -43,8 +43,8 @@ pub struct KrakenDataClientConfig {
     pub base_url: Option<String>,
     pub ws_public_url: Option<String>,
     pub ws_private_url: Option<String>,
-    pub http_proxy: Option<String>,
-    pub ws_proxy: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -113,8 +113,8 @@ pub struct KrakenExecClientConfig {
     pub environment: KrakenEnvironment,
     pub base_url: Option<String>,
     pub ws_url: Option<String>,
-    pub http_proxy: Option<String>,
-    pub ws_proxy: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]

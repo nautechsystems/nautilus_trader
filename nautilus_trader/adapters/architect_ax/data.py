@@ -145,6 +145,7 @@ class AxDataClient(LiveMarketDataClient):
         self._ws_client = nautilus_pyo3.AxMdWebSocketClient.without_auth(
             url=self._ws_url,
             heartbeat=20,
+            proxy_url=self._config.proxy_url,
         )
 
         try:

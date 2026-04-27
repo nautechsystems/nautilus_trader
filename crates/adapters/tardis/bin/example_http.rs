@@ -24,7 +24,7 @@ use nautilus_tardis::{
 async fn main() {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let client = TardisHttpClient::new(None, None, None, true).unwrap();
+    let client = TardisHttpClient::new(None, None, None, true, None).unwrap();
 
     // Tardis instrument definitions
     let resp = client

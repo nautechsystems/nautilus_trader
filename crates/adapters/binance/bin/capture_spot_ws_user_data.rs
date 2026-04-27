@@ -187,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
         reconnect_max_attempts: Some(0),
         idle_timeout_ms: None,
         backend: TransportBackend::Tungstenite,
+        proxy_url: None,
     };
 
     let client = WebSocketClient::connect(

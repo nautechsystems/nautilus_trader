@@ -92,6 +92,8 @@ class BinanceUserDataWebSocketClient:
         Async callback invoked after a successful resubscribe or reconnect.
         Used to trigger execution reconciliation to close any event-loss gap
         during listenKey rotation.
+    proxy_url : str, optional
+        The proxy URL for the WebSocket connection.
 
     """
 
@@ -112,6 +114,7 @@ class BinanceUserDataWebSocketClient:
         http_client: BinanceHttpClient | None = None,
         account_type: BinanceAccountType | None = None,
         on_resubscribe: Callable[[], Awaitable[None]] | None = None,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -121,6 +124,7 @@ class BinanceUserDataWebSocketClient:
         self._loop = loop
         self._is_futures: bool = is_futures
         self._stream_base_url: str | None = stream_base_url
+        self._proxy_url: str | None = proxy_url
 
         self._api_key: str = api_key
 
@@ -260,6 +264,7 @@ class BinanceUserDataWebSocketClient:
             url=self._base_url,
             headers=[("X-MBX-APIKEY", self._api_key)],
             heartbeat=60,
+            proxy_url=self._proxy_url,
         )
 
         self._client = await WebSocketClient.connect(
@@ -630,6 +635,7 @@ class BinanceUserDataWebSocketClient:
             url=stream_url,
             headers=[],
             heartbeat=60,
+            proxy_url=self._proxy_url,
         )
 
         # The stream connection can drop independently of the WS API client

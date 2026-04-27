@@ -300,8 +300,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.ignore_uncached_instrument_executions=}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # Set account ID
         account_id = AccountId(f"{name or BYBIT_VENUE.value}-UNIFIED")
@@ -327,6 +326,7 @@ class BybitExecutionClient(LiveExecutionClient):
             api_secret=config.api_secret,
             url=config.base_url_ws_private,
             heartbeat=20,
+            proxy_url=config.proxy_url,
         )
 
         self._ws_trade_client: nautilus_pyo3.BybitWebSocketClient = (
@@ -336,6 +336,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 api_secret=config.api_secret,
                 url=config.base_url_ws_trade,
                 heartbeat=20,
+                proxy_url=config.proxy_url,
             )
         )
         self._ws_client_futures: set[asyncio.Future] = set()

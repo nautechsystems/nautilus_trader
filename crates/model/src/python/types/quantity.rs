@@ -446,14 +446,22 @@ impl Quantity {
         self.saturating_sub(other)
     }
 
-    /// Performs a checked addition, returning `None` on overflow or when the result
-    /// exceeds `QUANTITY_RAW_MAX`.
+    /// Performs a checked addition, returning `None` on raw integer overflow, when the
+    /// result exceeds `QUANTITY_RAW_MAX`, when either operand is `QUANTITY_UNDEF`, or
+    /// when the operands have mixed raw scales (one at `FIXED_PRECISION` scale, the
+    /// other at a defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Add` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "checked_add")]
     fn py_checked_add(&self, other: Self) -> Option<Self> {
         self.checked_add(other)
     }
 
-    /// Performs a checked subtraction, returning `None` if `rhs` is greater than `self`.
+    /// Performs a checked subtraction, returning `None` if `rhs` is greater than `self`,
+    /// when either operand is `QUANTITY_UNDEF`, or when the operands have mixed raw
+    /// scales (one at `FIXED_PRECISION` scale, the other at a defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "checked_sub")]
     fn py_checked_sub(&self, other: Self) -> Option<Self> {
         self.checked_sub(other)

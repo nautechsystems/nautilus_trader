@@ -58,13 +58,8 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_public: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,
@@ -184,13 +179,8 @@ pub struct OKXExecClientConfig {
     pub base_url_ws_private: Option<String>,
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,

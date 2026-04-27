@@ -563,6 +563,7 @@ Class: `PolymarketDataClientConfig` in `nautilus_trader.adapters.polymarket.conf
 | `passphrase`                          | `None`       | API passphrase; sourced from `POLYMARKET_PASSPHRASE` when omitted. |
 | `base_url_http`                       | `None`       | Override for the REST base URL. |
 | `base_url_ws`                         | `None`       | Override for the WebSocket base URL. |
+| `proxy_url`                           | `None`       | Optional proxy URL for HTTP and WebSocket transports. |
 | `ws_connection_initial_delay_secs`    | `5`          | Delay (seconds) before the first WebSocket connection to buffer subscriptions. |
 | `ws_connection_delay_secs`            | `0.1`        | Delay (seconds) between subsequent WebSocket connection attempts. |
 | `ws_max_subscriptions_per_connection` | `200`        | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
@@ -587,6 +588,7 @@ Class: `PolymarketExecClientConfig` in `nautilus_trader.adapters.polymarket.conf
 | `base_url_http`                       | `None`       | Override for the REST base URL. |
 | `base_url_ws`                         | `None`       | Override for the WebSocket base URL. |
 | `base_url_data_api`                   | `None`       | Override for the Data API base URL (default `https://data-api.polymarket.com`). |
+| `proxy_url`                           | `None`       | Optional proxy URL for HTTP and WebSocket transports. |
 | `ws_max_subscriptions_per_connection` | `200`        | Maximum instrument subscriptions per WebSocket connection (Polymarket limit is 500). |
 | `max_retries`                         | `None`       | Maximum retry attempts for submit/cancel requests. |
 | `retry_delay_initial_ms`              | `None`       | Initial delay (milliseconds) between retries. |

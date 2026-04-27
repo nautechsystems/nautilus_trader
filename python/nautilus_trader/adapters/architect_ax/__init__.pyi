@@ -36,8 +36,7 @@ class AxDataClientConfig:
         base_url_http: str | None = None,
         base_url_ws_public: str | None = None,
         base_url_ws_private: str | None = None,
-        http_proxy_url: str | None = None,
-        ws_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -60,8 +59,7 @@ class AxExecClientConfig:
         base_url_http: str | None = None,
         base_url_orders: str | None = None,
         base_url_ws_private: str | None = None,
-        http_proxy_url: str | None = None,
-        ws_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -146,9 +144,19 @@ class AxHttpClient:
 
 @typing.final
 class AxMdWebSocketClient:
-    def __init__(self, url: str, auth_token: str, heartbeat: int | None = None) -> None: ...
+    def __init__(
+        self,
+        url: str,
+        auth_token: str,
+        heartbeat: int | None = None,
+        proxy_url: str | None = None,
+    ) -> None: ...
     @staticmethod
-    def without_auth(url: str, heartbeat: int | None = None) -> AxMdWebSocketClient: ...
+    def without_auth(
+        url: str,
+        heartbeat: int | None = None,
+        proxy_url: str | None = None,
+    ) -> AxMdWebSocketClient: ...
     @property
     def url(self) -> str: ...
     def is_active(self) -> bool: ...
@@ -178,6 +186,7 @@ class AxOrdersWebSocketClient:
         account_id: model.AccountId,
         trader_id: model.TraderId,
         heartbeat: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...

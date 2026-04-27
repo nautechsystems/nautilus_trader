@@ -31,7 +31,7 @@ __all__ = [
 
 @typing.final
 class DydxDataClientConfig:
-    def __init__(self) -> None: ...
+    def __init__(self, proxy_url: str | None = None) -> None: ...
 
 @typing.final
 class DydxDataClientFactory:
@@ -40,7 +40,12 @@ class DydxDataClientFactory:
 
 @typing.final
 class DydxExecClientConfig:
-    def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
+    def __init__(
+        self,
+        trader_id: model.TraderId,
+        account_id: model.AccountId,
+        proxy_url: str | None = None,
+    ) -> None: ...
 
 @typing.final
 class DydxExecutionClientFactory:
@@ -49,7 +54,12 @@ class DydxExecutionClientFactory:
 
 @typing.final
 class DydxHttpClient:
-    def __init__(self, base_url: str | None = None, network: DydxNetwork = ...) -> None: ...
+    def __init__(
+        self,
+        base_url: str | None = None,
+        network: DydxNetwork = ...,
+        proxy_url: str | None = None,
+    ) -> None: ...
     def is_testnet(self) -> bool: ...
     def base_url(self) -> str: ...
     def request_instruments(
@@ -138,14 +148,19 @@ class DydxOraclePrice:
 @typing.final
 class DydxWebSocketClient:
     @staticmethod
-    def new_public(url: str, heartbeat: int | None = ...) -> DydxWebSocketClient: ...
+    def new_public(
+        url: str,
+        heartbeat: int | None = None,
+        proxy_url: str | None = None,
+    ) -> DydxWebSocketClient: ...
     @staticmethod
     def new_private(
         url: str,
         private_key: str,
         authenticator_ids: typing.Sequence[int],
         account_id: model.AccountId,
-        heartbeat: int | None = ...,
+        heartbeat: int | None = None,
+        proxy_url: str | None = None,
     ) -> DydxWebSocketClient: ...
     def is_connected(self) -> bool: ...
     def set_account_id(self, account_id: model.AccountId) -> None: ...

@@ -65,6 +65,8 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValue};
 use ustr::Ustr;
 
+#[cfg(not(feature = "turmoil"))]
+use super::proxy::{ProxiedStream, ProxyKind, WsTarget, tunnel_via_proxy};
 use super::{
     auth::{AuthState, AuthTracker},
     config::{TransportBackend, WebSocketConfig},
@@ -255,8 +257,13 @@ impl WebSocketClientInner {
         let is_stream_mode = message_handler.is_none();
         let reconnect_max_attempts = config.reconnect_max_attempts;
 
-        let (writer, reader) =
-            Self::connect_with_server(&config.url, config.headers.clone(), config.backend).await?;
+        let (writer, reader) = Box::pin(Self::connect_with_server(
+            &config.url,
+            config.headers.clone(),
+            config.backend,
+            config.proxy_url.as_deref(),
+        ))
+        .await?;
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
@@ -338,22 +345,38 @@ impl WebSocketClientInner {
     /// [`TransportBackend::Sockudo`] requires the `transport-sockudo` Cargo
     /// feature and uses a custom HTTP/1.1 handshake path for upgrade headers.
     ///
+    /// When `proxy_url` is `Some`, the Tungstenite backend establishes an HTTP
+    /// `CONNECT` tunnel through the proxy before performing the WebSocket
+    /// handshake. The Sockudo backend does not yet support proxying and will
+    /// return an error if a proxy URL is supplied.
+    ///
     /// # Errors
     ///
     /// Returns a [`TransportError`] if the URL is invalid, headers fail to
-    /// parse, the TCP / TLS layer cannot be established, or the WebSocket
-    /// handshake is rejected by the peer. When the Sockudo backend is selected
-    /// without the `transport-sockudo` feature, returns
-    /// [`TransportError::Other`].
+    /// parse, the TCP / TLS layer cannot be established, the proxy refuses
+    /// the tunnel, or the WebSocket handshake is rejected by the peer. When
+    /// the Sockudo backend is selected without the `transport-sockudo`
+    /// feature, returns [`TransportError::Other`].
     #[inline]
     pub async fn connect_with_server(
         url: &str,
         headers: Vec<(String, String)>,
         backend: TransportBackend,
+        proxy_url: Option<&str>,
     ) -> Result<(MessageWriter, MessageReader), TransportError> {
         match backend {
-            TransportBackend::Tungstenite => Self::connect_tungstenite(url, headers).await,
+            TransportBackend::Tungstenite => match proxy_url {
+                Some(proxy) => {
+                    Box::pin(Self::connect_tungstenite_via_proxy(url, headers, proxy)).await
+                }
+                None => Self::connect_tungstenite(url, headers).await,
+            },
             TransportBackend::Sockudo => {
+                if proxy_url.is_some() {
+                    return Err(TransportError::Other(
+                        "proxy_url is not supported with the Sockudo backend".to_string(),
+                    ));
+                }
                 #[cfg(feature = "transport-sockudo")]
                 {
                     Self::connect_sockudo(url, headers).await
@@ -395,6 +418,86 @@ impl WebSocketClientInner {
             .map_err(TransportError::from)?;
         let transport: BoxedWsTransport = Box::pin(TungsteniteTransport::new(stream));
         Ok(transport.split())
+    }
+
+    /// Connects via an HTTP `CONNECT` proxy and performs the WebSocket
+    /// handshake over the resulting tunnel.
+    ///
+    /// Recognised but unsupported proxy schemes (currently SOCKS) log a
+    /// warning and fall back to a direct connection so existing REST proxy
+    /// configs remain usable. Only available in production builds; the
+    /// turmoil simulator does not model arbitrary outbound TCP via a proxy.
+    #[inline]
+    #[cfg(not(feature = "turmoil"))]
+    async fn connect_tungstenite_via_proxy(
+        url: &str,
+        headers: Vec<(String, String)>,
+        proxy_url: &str,
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
+        let proxy = match ProxyKind::parse(proxy_url)? {
+            ProxyKind::Http(target) => target,
+            ProxyKind::Unsupported { scheme } => {
+                log::warn!(
+                    "WebSocket proxy_url scheme '{scheme}' is not yet supported; \
+                     connecting without a WebSocket proxy"
+                );
+                return Self::connect_tungstenite(url, headers).await;
+            }
+        };
+
+        let mut request = url.into_client_request().map_err(TransportError::from)?;
+        let req_headers = request.headers_mut();
+
+        for (key, val) in headers {
+            let header_value = HeaderValue::from_str(&val)
+                .map_err(|e| TransportError::Handshake(format!("invalid header value: {e}")))?;
+            let header_name: HeaderName = key
+                .parse()
+                .map_err(|e| TransportError::Handshake(format!("invalid header name: {e}")))?;
+            req_headers.insert(header_name, header_value);
+        }
+
+        let target = WsTarget::parse(url)?;
+        let stream = tunnel_via_proxy(&target, &proxy).await?;
+
+        // Each ProxiedStream variant carries a distinct concrete stream type,
+        // so we monomorphize the handshake through `proxied_ws_handshake`
+        // rather than duplicating the body four times. The arms are
+        // syntactically identical post-deref, but each call instantiates a
+        // different generic; the `match_same_arms` lint is a false positive
+        // here. The futures are boxed because `client_async` produces a
+        // large state machine.
+        #[allow(clippy::match_same_arms)]
+        let transport: BoxedWsTransport = match stream {
+            ProxiedStream::Plain(tcp) => Box::pin(proxied_ws_handshake(request, tcp)).await?,
+            ProxiedStream::PlainOverTlsProxy(s) => {
+                Box::pin(proxied_ws_handshake(request, *s)).await?
+            }
+            ProxiedStream::Tls(s) => Box::pin(proxied_ws_handshake(request, *s)).await?,
+            ProxiedStream::TlsOverTlsProxy(s) => {
+                Box::pin(proxied_ws_handshake(request, *s)).await?
+            }
+        };
+
+        Ok(transport.split())
+    }
+
+    /// Turmoil simulator variant: HTTP `CONNECT` tunneling is not supported
+    /// under the simulator so any proxy URL is rejected up front.
+    #[inline]
+    #[cfg(feature = "turmoil")]
+    #[expect(
+        clippy::unused_async,
+        reason = "signature mirrors the production variant; both are awaited in the dispatcher"
+    )]
+    async fn connect_tungstenite_via_proxy(
+        _url: &str,
+        _headers: Vec<(String, String)>,
+        _proxy_url: &str,
+    ) -> Result<(MessageWriter, MessageReader), TransportError> {
+        Err(TransportError::Other(
+            "proxy_url is not supported under the turmoil simulator".to_string(),
+        ))
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
@@ -559,6 +662,24 @@ impl WebSocketClientInner {
     }
 }
 
+/// Complete the WebSocket handshake over a stream that has already been
+/// tunneled through an HTTP `CONNECT` proxy. Generic over the concrete
+/// stream type so the four [`super::proxy::ProxiedStream`] variants share
+/// a single body.
+#[cfg(not(feature = "turmoil"))]
+async fn proxied_ws_handshake<S>(
+    request: tokio_tungstenite::tungstenite::handshake::client::Request,
+    stream: S,
+) -> Result<BoxedWsTransport, TransportError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let (ws, _resp) = tokio_tungstenite::client_async(request, stream)
+        .await
+        .map_err(TransportError::from)?;
+    Ok(Box::pin(TungsteniteTransport::new(ws)))
+}
+
 /// Parsed components of a `ws://` / `wss://` URL needed by the sockudo backend.
 ///
 /// Sockudo's HTTP/1.1 client passes the `host` argument verbatim as the
@@ -677,6 +798,7 @@ impl WebSocketClientInner {
                 &self.config.url,
                 self.config.headers.clone(),
                 self.config.backend,
+                self.config.proxy_url.as_deref(),
             )
             .await?;
 
@@ -1249,6 +1371,7 @@ impl WebSocketClient {
             &config.url,
             config.headers.clone(),
             config.backend,
+            config.proxy_url.as_deref(),
         )
         .await?;
 
@@ -1986,6 +2109,7 @@ mod tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
         WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
             .await
@@ -2031,6 +2155,7 @@ mod tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
         let res =
             WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
@@ -2078,6 +2203,7 @@ mod tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(
@@ -2300,6 +2426,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Connect the client
@@ -2346,6 +2473,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2397,6 +2525,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let (_reader, _client) = WebSocketClient::connect_stream(config, vec![], None, None)
@@ -2445,6 +2574,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2519,6 +2649,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2580,6 +2711,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let (mut reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
@@ -2664,6 +2796,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2749,6 +2882,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2835,6 +2969,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Very restrictive rate limit: 1 request per second, burst of 1
@@ -2927,6 +3062,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -2993,6 +3129,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Very restrictive rate limit: 1 request per 10 seconds
@@ -3071,6 +3208,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Pass None for message_handler - should be rejected
@@ -3120,6 +3258,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Create client directly via connect_url with no handler (stream mode)
@@ -3168,6 +3307,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             idle_timeout_ms: Some(500),
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3227,6 +3367,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             idle_timeout_ms: Some(1_000),
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3286,6 +3427,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             idle_timeout_ms: Some(500),
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3354,6 +3496,7 @@ mod rust_tests {
             reconnect_max_attempts: Some(1),
             idle_timeout_ms: Some(1_500),
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3413,6 +3556,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3483,6 +3627,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         // Very restrictive: 1 req per 60 seconds
@@ -3578,6 +3723,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let (_reader, client) = WebSocketClient::connect_stream(config, vec![], None, None)
@@ -3625,10 +3771,14 @@ mod rust_tests {
 
         let server = RecordingServer::setup().await;
         let url = format!("ws://127.0.0.1:{}", server.port);
-        let (writer, _reader) =
-            WebSocketClientInner::connect_with_server(&url, vec![], TransportBackend::Tungstenite)
-                .await
-                .unwrap();
+        let (writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
 
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
@@ -3651,10 +3801,14 @@ mod rust_tests {
             .send(WriterCommand::Send(Message::Text("stale".into())))
             .unwrap();
 
-        let (new_writer, _reader) =
-            WebSocketClientInner::connect_with_server(&url, vec![], TransportBackend::Tungstenite)
-                .await
-                .unwrap();
+        let (new_writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         writer_tx
             .send(WriterCommand::Update(new_writer, tx))
@@ -3692,10 +3846,14 @@ mod rust_tests {
     async fn test_write_task_discards_buffer_after_auth_failure() {
         let server = RecordingServer::setup().await;
         let url = format!("ws://127.0.0.1:{}", server.port);
-        let (writer, _reader) =
-            WebSocketClientInner::connect_with_server(&url, vec![], TransportBackend::Tungstenite)
-                .await
-                .unwrap();
+        let (writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
 
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
@@ -3718,10 +3876,14 @@ mod rust_tests {
             .send(WriterCommand::Send(Message::Text("stale".into())))
             .unwrap();
 
-        let (new_writer, _reader) =
-            WebSocketClientInner::connect_with_server(&url, vec![], TransportBackend::Tungstenite)
-                .await
-                .unwrap();
+        let (new_writer, _reader) = WebSocketClientInner::connect_with_server(
+            &url,
+            vec![],
+            TransportBackend::Tungstenite,
+            None,
+        )
+        .await
+        .unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel();
         writer_tx
             .send(WriterCommand::Update(new_writer, tx))
@@ -3768,6 +3930,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: Some(0),
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         };
 
         let result =
@@ -3800,6 +3963,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Sockudo,
+            proxy_url: None,
         };
 
         let err = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3857,6 +4021,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Sockudo,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -3934,6 +4099,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Sockudo,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -4010,6 +4176,7 @@ mod rust_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Sockudo,
+            proxy_url: None,
         };
 
         let client = WebSocketClient::connect(config, Some(handler), None, None, vec![], None)
@@ -4307,6 +4474,7 @@ mod turmoil_tests {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: TransportBackend::Tungstenite,
+            proxy_url: None,
         }
     }
 

@@ -43,12 +43,8 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to BitMEX's WebSocket API.
         If ``None`` then will use the default production URL.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     testnet : bool, default False
         If the client is connecting to the BitMEX testnet.
         Deprecated: use ``environment=BitmexEnvironment.TESTNET`` instead.
@@ -81,8 +77,7 @@ class BitmexDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: BitmexEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
@@ -118,12 +113,8 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to BitMEX's WebSocket API.
         If ``None`` then will use the default production URL.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     testnet : bool, default False
         If the client is connecting to the BitMEX testnet.
         Deprecated: use ``environment=BitmexEnvironment.TESTNET`` instead.
@@ -176,8 +167,7 @@ class BitmexExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: BitmexEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3

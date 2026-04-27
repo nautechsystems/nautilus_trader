@@ -27,7 +27,7 @@ impl AxDataClientConfig {
     /// Configuration for the AX Exchange live data client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_ws_public=None, base_url_ws_private=None, http_proxy_url=None, ws_proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, update_instruments_interval_mins=None, funding_rate_poll_interval_mins=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_ws_public=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, update_instruments_interval_mins=None, funding_rate_poll_interval_mins=None))]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -35,8 +35,7 @@ impl AxDataClientConfig {
         base_url_http: Option<String>,
         base_url_ws_public: Option<String>,
         base_url_ws_private: Option<String>,
-        http_proxy_url: Option<String>,
-        ws_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -54,8 +53,7 @@ impl AxDataClientConfig {
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            http_proxy_url,
-            ws_proxy_url,
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -87,7 +85,7 @@ impl AxExecClientConfig {
     /// Configuration for the AX Exchange live execution client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, http_proxy_url=None, ws_proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None))]
+    #[pyo3(signature = (trader_id=None, account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None))]
     fn py_new(
         trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
@@ -97,8 +95,7 @@ impl AxExecClientConfig {
         base_url_http: Option<String>,
         base_url_orders: Option<String>,
         base_url_ws_private: Option<String>,
-        http_proxy_url: Option<String>,
-        ws_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
@@ -117,8 +114,7 @@ impl AxExecClientConfig {
             base_url_http,
             base_url_orders,
             base_url_ws_private,
-            http_proxy_url,
-            ws_proxy_url,
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms

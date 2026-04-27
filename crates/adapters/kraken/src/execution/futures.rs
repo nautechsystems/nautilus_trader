@@ -110,7 +110,7 @@ impl KrakenFuturesExecutionClient {
             None,
             None,
             None,
-            config.http_proxy.clone(),
+            config.proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND),
@@ -122,6 +122,7 @@ impl KrakenFuturesExecutionClient {
             config.heartbeat_interval_secs,
             Some(credential),
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         Ok(Self {

@@ -47,6 +47,8 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
         If ``None`` then will use default based on `is_testnet`.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     is_testnet : bool, default False
         If the client is connecting to the Deribit testnet API.
         Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
@@ -69,6 +71,7 @@ class DeribitDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: DeribitEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
@@ -104,6 +107,8 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for Deribit's WebSocket API.
         If ``None`` then will use default based on `is_testnet`.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     is_testnet : bool, default False
         If the client is connecting to the Deribit testnet API.
         Deprecated: use ``environment=DeribitEnvironment.TESTNET`` instead.
@@ -124,6 +129,7 @@ class DeribitExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: DeribitEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     is_testnet: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3

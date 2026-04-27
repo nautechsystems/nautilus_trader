@@ -54,7 +54,7 @@ class OKXDataClientConfig:
         base_url_http: str | None = None,
         base_url_ws_public: str | None = None,
         base_url_ws_business: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -82,7 +82,7 @@ class OKXExecClientConfig:
         base_url_http: str | None = None,
         base_url_ws_private: str | None = None,
         base_url_ws_business: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -270,6 +270,7 @@ class OKXWebSocketClient:
         account_id: model.AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def with_credentials(
@@ -280,6 +281,7 @@ class OKXWebSocketClient:
         account_id: model.AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> OKXWebSocketClient: ...
     @staticmethod
     def from_env() -> OKXWebSocketClient: ...

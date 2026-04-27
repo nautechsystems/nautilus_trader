@@ -201,6 +201,8 @@ pub struct OKXWebSocketClient {
     index_pair_transition: Arc<tokio::sync::Mutex<()>>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     transport_backend: TransportBackend,
+    /// Optional proxy URL for the WebSocket transport.
+    proxy_url: Option<String>,
     cancellation_token: CancellationToken,
 }
 
@@ -215,6 +217,7 @@ impl Default for OKXWebSocketClient {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap()
     }
@@ -246,6 +249,7 @@ impl OKXWebSocketClient {
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
         let account_id = account_id.unwrap_or(AccountId::from("OKX-master"));
@@ -301,6 +305,7 @@ impl OKXWebSocketClient {
             index_pair_subscribers: Arc::new(DashMap::new()),
             index_pair_transition: Arc::new(tokio::sync::Mutex::new(())),
             transport_backend,
+            proxy_url,
             cancellation_token: CancellationToken::new(),
         })
     }
@@ -321,6 +326,7 @@ impl OKXWebSocketClient {
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
         let api_key = get_or_env_var(api_key, "OKX_API_KEY")?;
@@ -336,6 +342,7 @@ impl OKXWebSocketClient {
             heartbeat,
             auth_timeout_secs,
             transport_backend,
+            proxy_url,
         )
     }
 
@@ -360,6 +367,7 @@ impl OKXWebSocketClient {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
     }
 
@@ -503,6 +511,7 @@ impl OKXWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let keyed_quotas = vec![
@@ -3097,6 +3106,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
         assert!(client.credential.is_some());
@@ -3114,6 +3124,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         );
         assert!(result.is_err());
     }
@@ -3151,6 +3162,7 @@ mod tests {
             Some(30),
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -3228,6 +3240,7 @@ mod tests {
             Some(30), // 30 second heartbeat
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -3244,6 +3257,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -3345,6 +3359,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -3469,6 +3484,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3500,6 +3516,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3526,6 +3543,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3552,6 +3570,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3681,6 +3700,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3740,6 +3760,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3807,6 +3828,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3860,6 +3882,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 
@@ -3902,6 +3925,7 @@ mod tests {
             None,
             None,
             TransportBackend::default(),
+            None,
         )
         .expect("Failed to create client");
 

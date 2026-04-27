@@ -260,6 +260,7 @@ class DydxExecutionClient(LiveExecutionClient):
             authenticator_ids=self._config.authenticator_ids or [],
             account_id=nautilus_pyo3.AccountId(account_id.value),
             heartbeat=20,
+            proxy_url=self._config.proxy_url,
         )
 
         self._encoder = self._ws_client.encoder()

@@ -140,6 +140,12 @@ pub struct WebSocketConfig {
     #[serde(default)]
     #[builder(default)]
     pub backend: TransportBackend,
+    /// Optional forward proxy URL for the WebSocket connection.
+    ///
+    /// Routes the connection through an HTTP `CONNECT` tunnel. Accepts
+    /// `http://` and `https://` schemes; SOCKS schemes are not yet supported.
+    #[serde(default)]
+    pub proxy_url: Option<String>,
 }
 
 #[cfg(test)]

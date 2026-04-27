@@ -75,7 +75,7 @@ class BybitDataClientConfig:
         base_url_http: str | None = None,
         base_url_ws_public: str | None = None,
         base_url_ws_private: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -102,7 +102,7 @@ class BybitExecClientConfig:
         base_url_http: str | None = None,
         base_url_ws_private: str | None = None,
         base_url_ws_trade: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -405,6 +405,7 @@ class BybitWebSocketClient:
         environment: BybitEnvironment,
         url: str | None = None,
         heartbeat: int | None = None,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_private(
@@ -413,6 +414,7 @@ class BybitWebSocketClient:
         api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int | None = None,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_trade(
@@ -421,6 +423,7 @@ class BybitWebSocketClient:
         api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int | None = None,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @property
     def api_key_masked(self) -> str | None: ...

@@ -51,6 +51,7 @@ nautilus-cryptography = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 dashmap = { workspace = true }

@@ -38,6 +38,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 def get_cached_dydx_http_client(
     base_url: str | None = None,
     network: DydxNetwork = DydxNetwork.MAINNET,
+    proxy_url: str | None = None,
 ) -> nautilus_pyo3.DydxHttpClient:  # type: ignore[name-defined]
     """
     Cache and return a dYdX HTTP client.
@@ -50,6 +51,8 @@ def get_cached_dydx_http_client(
         The base URL for the API endpoints.
     network : DydxNetwork, default DydxNetwork.MAINNET
         The dYdX network environment (MAINNET or TESTNET).
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -59,6 +62,7 @@ def get_cached_dydx_http_client(
     return nautilus_pyo3.DydxHttpClient(  # type: ignore[attr-defined]
         base_url=base_url,
         network=network,
+        proxy_url=proxy_url,
     )
 
 
@@ -135,6 +139,7 @@ class DydxLiveDataClientFactory(LiveDataClientFactory):
         client: nautilus_pyo3.DydxHttpClient = get_cached_dydx_http_client(  # type: ignore[name-defined]
             base_url=config.base_url_http,
             network=network,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_dydx_instrument_provider(
             client=client,
@@ -197,6 +202,7 @@ class DydxLiveExecClientFactory(LiveExecClientFactory):
         client: nautilus_pyo3.DydxHttpClient = get_cached_dydx_http_client(  # type: ignore[name-defined]
             base_url=config.base_url_http,
             network=network,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_dydx_instrument_provider(
             client=client,

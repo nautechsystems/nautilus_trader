@@ -69,6 +69,7 @@ async fn test_handler_emits_l1_md_message() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.expect("Failed to connect");
@@ -106,6 +107,7 @@ async fn test_handler_emits_trade_md_message() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.expect("Failed to connect");
@@ -147,6 +149,7 @@ async fn test_handler_emits_l2_md_message() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.expect("Failed to connect");
@@ -184,6 +187,7 @@ async fn test_handler_emits_candle_md_message() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.expect("Failed to connect");
@@ -224,6 +228,7 @@ async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.expect("Failed to connect");
@@ -270,6 +275,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -333,6 +339,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -395,6 +402,7 @@ async fn test_data_client_connect_disconnect() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -427,6 +435,7 @@ async fn test_data_client_emits_instruments_on_connect() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -468,6 +477,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -531,6 +541,7 @@ async fn test_data_client_subscribe_bars_via_channel() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();
@@ -592,6 +603,7 @@ async fn test_data_client_reset_clears_state() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let config = AxDataClientConfig::default();

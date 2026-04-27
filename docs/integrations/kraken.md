@@ -449,8 +449,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `update_instruments_interval_mins` | `60`   | Interval (minutes) to reload instruments; `None` to disable.            |
 | `max_retries`                   | `None`    | Maximum retry attempts for REST requests.                               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
@@ -471,8 +470,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                              |
 | `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                 |
 | `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                              |
-| `http_proxy_url`                | `None`    | Optional HTTP proxy URL.                                                |
-| `ws_proxy_url`                  | `None`    | WebSocket proxy URL (*not yet implemented*).                            |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                   |
 | `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.               |
 | `retry_delay_initial_ms`        | `None`    | Initial delay (milliseconds) between retries.                           |
 | `retry_delay_max_ms`            | `None`    | Maximum delay (milliseconds) between retries.                           |

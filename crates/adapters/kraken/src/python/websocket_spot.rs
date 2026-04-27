@@ -87,7 +87,7 @@ use crate::{
 impl KrakenSpotWebSocketClient {
     /// WebSocket client for the Kraken Spot v2 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None))]
+    #[pyo3(signature = (environment=None, private=false, base_url=None, heartbeat_secs=None, api_key=None, api_secret=None, proxy_url=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         private: bool,
@@ -95,6 +95,7 @@ impl KrakenSpotWebSocketClient {
         heartbeat_secs: Option<u64>,
         api_key: Option<String>,
         api_secret: Option<String>,
+        proxy_url: Option<String>,
     ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Mainnet);
 
@@ -121,12 +122,13 @@ impl KrakenSpotWebSocketClient {
                 .unwrap_or(KrakenDataClientConfig::default().heartbeat_interval_secs),
             api_key: resolved_api_key,
             api_secret: resolved_api_secret,
+            proxy_url: proxy_url.clone(),
             ..Default::default()
         };
 
         let token = CancellationToken::new();
 
-        Self::new(config, token)
+        Self::new(config, token, proxy_url)
     }
 
     /// Returns the WebSocket URL.

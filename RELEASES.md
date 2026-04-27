@@ -17,8 +17,10 @@ Released on TBD (UTC).
 - Added `transport-sockudo` feature with `TransportBackend` runtime selector for the WebSocket transport (Rust)
 - Added `TransportBackend` PyO3 enum and `WebSocketConfig.backend` kwarg for backend selection from Python
 - Added custom upgrade-header support on the sockudo backend so adapters carry the same `User-Agent` and per-venue headers on both backends (#3932), thanks @sunlei
+- Added `WebSocketConfig.proxy_url` for HTTP `CONNECT` proxy tunneling with basic-auth support
 - Added Betfair tiered tick scheme to `BettingInstrument` for ladder-snapped pricing
 - Added Binance Futures `use_trade_lite` config to opt into low-latency `TRADE_LITE` fills (Rust, default `False`)
+- Added Binance `proxy_url` plumbing for market and user-data WS streams (#3937), thanks for reporting @huangqingchi
 - Added Bybit user-related endpoints (#3894), thanks @sunlei
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 - Added Hyperliquid historical funding rates via `fundingHistory` info endpoint
@@ -33,6 +35,7 @@ Released on TBD (UTC).
 - Added Polymarket game_id and fee_schedule to instrument info (#3811), thanks @Javdu10
 - Added Polymarket batch `SubmitOrderList` via `POST /orders` for limit-order batches (Rust)
 - Added Polymarket WebSocket `idle_timeout_ms` for zombie detection (#3908), thanks for reporting @camarigor
+- Added Polymarket WebSocket `proxy_url` plumbing
 - Added `ExecutionReport::OrderWithFills` and `send_order_with_fills` emitter for bundled status + fill reconciliation
 - Added ADL / liquidation detection and logging across Binance, Bybit, OKX, BitMEX, Hyperliquid, Deribit, and dYdX
 - Added Binance Futures COIN-M `delivery_autoclose-` prefix recognition for expiring contract auto-close events
@@ -43,6 +46,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Added `Option<&AccountId>` to Rust `Portfolio::unrealized_pnls`, `realized_pnls`, `total_pnls`; pass `None` to keep prior behavior
 - Added `backend: TransportBackend` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
+- Added `proxy_url: Option<String>` to `WebSocketConfig`; struct-literal callers must add the field (Rust)
+- Consolidated adapter HTTP and WebSocket proxy plumbing onto a single `proxy_url` field, replacing the prior `http_proxy_url` / `ws_proxy_url` split across adapter Rust and Python configs
 - Removed `DockerizedIBGatewayConfig::from_env_or_defaults` (Rust); use the bon builder or `Default::default`, which still falls back to `TWS_USERNAME`/`TWS_PASSWORD`
 - Removed `OrderMatchingEngineConfig::new` and `with_price_protection_points` (Rust); use `OrderMatchingEngineConfig::builder()` instead
 - Removed `BlockchainDataClientConfig::new`, `BlockchainExecutionClientConfig::new`, and `DexPoolFilters::new` (Rust); use the corresponding `::builder()` instead

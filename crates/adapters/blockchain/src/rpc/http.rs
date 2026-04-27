@@ -48,7 +48,11 @@ impl BlockchainHttpRpcClient {
     ///
     /// Panics if the internal HTTP client cannot be created.
     #[must_use]
-    pub fn new(http_rpc_url: String, rpc_request_per_second: Option<u32>) -> Self {
+    pub fn new(
+        http_rpc_url: String,
+        rpc_request_per_second: Option<u32>,
+        proxy_url: Option<String>,
+    ) -> Self {
         let default_quota =
             rpc_request_per_second.and_then(|rps| Quota::per_second(NonZeroU32::new(rps)?));
         let http_client = HttpClient::new(
@@ -57,7 +61,7 @@ impl BlockchainHttpRpcClient {
             Vec::new(),
             default_quota,
             None, // timeout_secs
-            None, // proxy_url
+            proxy_url,
         )
         .expect("Failed to create HTTP client");
         Self {

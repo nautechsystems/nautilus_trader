@@ -135,6 +135,7 @@ pub struct AxOrdersWebSocketClient {
     account_id: AccountId,
     trader_id: TraderId,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Debug for AxOrdersWebSocketClient {
@@ -165,6 +166,7 @@ impl Clone for AxOrdersWebSocketClient {
             account_id: self.account_id,
             trader_id: self.trader_id,
             transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -178,6 +180,7 @@ impl AxOrdersWebSocketClient {
         trader_id: TraderId,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -200,6 +203,7 @@ impl AxOrdersWebSocketClient {
             account_id,
             trader_id,
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -386,6 +390,7 @@ impl AxOrdersWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Retry initial connection with exponential backoff
@@ -788,6 +793,7 @@ mod tests {
             TraderId::from("TRADER-001"),
             30,
             TransportBackend::default(),
+            None,
         );
         let client_order_id = ClientOrderId::from("CID-123");
 
@@ -808,6 +814,7 @@ mod tests {
             TraderId::from("TRADER-001"),
             30,
             TransportBackend::default(),
+            None,
         );
 
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

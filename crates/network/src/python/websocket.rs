@@ -85,6 +85,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms=100,
         reconnect_max_attempts=None,
         idle_timeout_ms=None,
+        proxy_url=None,
     ))]
     fn py_new(
         url: String,
@@ -98,6 +99,7 @@ impl WebSocketConfig {
         reconnect_jitter_ms: Option<u64>,
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Self {
         Self {
             url,
@@ -112,6 +114,7 @@ impl WebSocketConfig {
             reconnect_max_attempts,
             idle_timeout_ms,
             backend: TransportBackend::default(),
+            proxy_url,
         }
     }
 }
@@ -191,14 +194,14 @@ impl WebSocketClient {
         });
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            Self::connect(
+            Box::pin(Self::connect(
                 config,
                 Some(message_handler),
                 ping_handler_fn,
                 post_reconnection_fn,
                 keyed_quotas,
                 default_quota,
-            )
+            ))
             .await
             .map_err(to_websocket_pyerr)
         })
@@ -611,6 +614,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         );
 
         let handler_clone = Python::attach(|py| handler.clone_ref(py));
@@ -693,6 +697,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,

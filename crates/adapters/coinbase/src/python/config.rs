@@ -34,8 +34,7 @@ impl CoinbaseDataClientConfig {
         api_secret = None,
         base_url_rest = None,
         base_url_ws = None,
-        http_proxy_url = None,
-        ws_proxy_url = None,
+        proxy_url = None,
         environment = None,
         http_timeout_secs = None,
         ws_timeout_secs = None,
@@ -48,8 +47,7 @@ impl CoinbaseDataClientConfig {
         api_secret: Option<String>,
         base_url_rest: Option<String>,
         base_url_ws: Option<String>,
-        http_proxy_url: Option<String>,
-        ws_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         environment: Option<CoinbaseEnvironment>,
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
@@ -62,8 +60,7 @@ impl CoinbaseDataClientConfig {
             api_secret,
             base_url_rest,
             base_url_ws,
-            http_proxy_url,
-            ws_proxy_url,
+            proxy_url,
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
@@ -73,6 +70,12 @@ impl CoinbaseDataClientConfig {
                 .unwrap_or(defaults.derivatives_poll_interval_secs),
             transport_backend: defaults.transport_backend,
         }
+    }
+
+    /// Returns the optional proxy URL for HTTP and WebSocket transports.
+    #[getter]
+    fn proxy_url(&self) -> Option<String> {
+        self.proxy_url.clone()
     }
 
     fn __repr__(&self) -> String {
@@ -90,8 +93,7 @@ impl CoinbaseExecClientConfig {
         api_secret = None,
         base_url_rest = None,
         base_url_ws = None,
-        http_proxy_url = None,
-        ws_proxy_url = None,
+        proxy_url = None,
         environment = None,
         http_timeout_secs = None,
         max_retries = None,
@@ -108,8 +110,7 @@ impl CoinbaseExecClientConfig {
         api_secret: Option<String>,
         base_url_rest: Option<String>,
         base_url_ws: Option<String>,
-        http_proxy_url: Option<String>,
-        ws_proxy_url: Option<String>,
+        proxy_url: Option<String>,
         environment: Option<CoinbaseEnvironment>,
         http_timeout_secs: Option<u64>,
         max_retries: Option<u32>,
@@ -126,8 +127,7 @@ impl CoinbaseExecClientConfig {
             api_secret,
             base_url_rest,
             base_url_ws,
-            http_proxy_url,
-            ws_proxy_url,
+            proxy_url,
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -140,6 +140,12 @@ impl CoinbaseExecClientConfig {
             retail_portfolio_id,
             transport_backend: defaults.transport_backend,
         }
+    }
+
+    /// Returns the optional proxy URL for HTTP and WebSocket transports.
+    #[getter]
+    fn proxy_url(&self) -> Option<String> {
+        self.proxy_url.clone()
     }
 
     fn __repr__(&self) -> String {

@@ -123,6 +123,7 @@ pub struct BybitWebSocketClient {
     pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
     transport_backend: TransportBackend,
     cancellation_token: CancellationToken,
+    proxy_url: Option<String>,
 }
 
 impl Debug for BybitWebSocketClient {
@@ -164,6 +165,7 @@ impl Clone for BybitWebSocketClient {
             pending_py_requests: Arc::clone(&self.pending_py_requests),
             transport_backend: self.transport_backend,
             cancellation_token: self.cancellation_token.clone(),
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -178,6 +180,7 @@ impl BybitWebSocketClient {
             url,
             heartbeat,
             TransportBackend::default(),
+            None,
         )
     }
 
@@ -189,6 +192,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -219,6 +223,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -237,6 +242,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -269,6 +275,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -287,6 +294,7 @@ impl BybitWebSocketClient {
         url: Option<String>,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let credential = Credential::resolve(api_key, api_secret, environment);
 
@@ -319,6 +327,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: CancellationToken::new(),
+            proxy_url,
         }
     }
 
@@ -361,6 +370,7 @@ impl BybitWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
@@ -2062,6 +2072,7 @@ mod tests {
             None,
             20,
             TransportBackend::default(),
+            None,
         );
 
         let params = client
@@ -2129,6 +2140,7 @@ mod tests {
             None,
             20,
             TransportBackend::default(),
+            None,
         );
 
         let params = client

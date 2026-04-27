@@ -193,7 +193,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,
@@ -261,7 +261,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
             recv_window_ms=config.recv_window_ms,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_bybit_instrument_provider(
             client=client,

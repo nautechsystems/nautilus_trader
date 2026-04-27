@@ -122,7 +122,7 @@ impl BitmexDataClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
 
@@ -607,11 +607,10 @@ impl DataClient for BitmexDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Starting BitMEX data client: client_id={}, environment={}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Starting BitMEX data client: client_id={}, environment={}, proxy_url={:?}",
             self.client_id,
             self.config.environment,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
         );
         Ok(())
     }
@@ -652,6 +651,7 @@ impl DataClient for BitmexDataClient {
                 self.config.heartbeat_interval_secs.unwrap_or(5),
                 self.config.environment,
                 self.config.transport_backend,
+                self.config.proxy_url.clone(),
             )
             .context("failed to construct BitMEX websocket client")?;
             self.ws_client = Some(ws);

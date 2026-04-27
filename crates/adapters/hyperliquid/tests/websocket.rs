@@ -320,6 +320,7 @@ async fn connect_client(ws_url: &str, account_id: Option<AccountId>) -> Hyperliq
         HyperliquidEnvironment::Mainnet,
         account_id,
         TransportBackend::default(),
+        None,
     );
     cache_test_instruments(&mut client);
     client

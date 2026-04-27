@@ -161,6 +161,7 @@ class AxExecutionClient(LiveExecutionClient):
                 account_id=self.pyo3_account_id,
                 trader_id=self.pyo3_trader_id,
                 heartbeat=30,
+                proxy_url=self._config.proxy_url,
             )
 
             # Cache instruments for proper precision handling

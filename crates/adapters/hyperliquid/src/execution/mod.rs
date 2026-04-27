@@ -208,7 +208,7 @@ impl HyperliquidExecutionClient {
         let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
             config.http_timeout_secs,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
         )
         .context("failed to create Hyperliquid HTTP client")?;
 
@@ -232,6 +232,7 @@ impl HyperliquidExecutionClient {
             config.environment,
             Some(core.account_id),
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         let clock = get_atomic_clock_realtime();
@@ -455,13 +456,12 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.core.set_started();
 
         log::info!(
-            "Started: client_id={}, account_id={}, environment={:?}, vault_address={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Started: client_id={}, account_id={}, environment={:?}, vault_address={:?}, proxy_url={:?}",
             self.core.client_id,
             self.core.account_id,
             self.config.environment,
             self.config.vault_address,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
         );
 
         Ok(())
@@ -1987,6 +1987,7 @@ mod tests {
             HyperliquidEnvironment::Testnet,
             None,
             TransportBackend::default(),
+            None,
         )
     }
 

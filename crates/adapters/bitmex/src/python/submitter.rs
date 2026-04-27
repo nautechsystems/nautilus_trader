@@ -53,7 +53,8 @@ impl SubmitBroadcaster {
         max_requests_per_minute=120,
         health_check_interval_secs=30,
         health_check_timeout_secs=5,
-        expected_reject_patterns=None
+        expected_reject_patterns=None,
+        proxy_urls=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -72,6 +73,7 @@ impl SubmitBroadcaster {
         health_check_interval_secs: u64,
         health_check_timeout_secs: u64,
         expected_reject_patterns: Option<Vec<String>>,
+        proxy_urls: Option<Vec<Option<String>>>,
     ) -> PyResult<Self> {
         let config = SubmitBroadcasterConfig {
             pool_size,
@@ -90,7 +92,7 @@ impl SubmitBroadcaster {
             health_check_timeout_secs,
             expected_reject_patterns: expected_reject_patterns
                 .unwrap_or_else(|| SubmitBroadcasterConfig::default().expected_reject_patterns),
-            proxy_urls: vec![], // TODO: Add proxy_urls parameter to Python API when needed
+            proxy_urls: proxy_urls.unwrap_or_default(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)

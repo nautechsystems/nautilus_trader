@@ -5297,6 +5297,7 @@ class WebSocketConfig:
         reconnect_jitter_ms: int | None = 100,
         reconnect_max_attempts: int | None = None,
         idle_timeout_ms: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
 
 class WebSocketClient:
@@ -6566,9 +6567,14 @@ class AxMdWebSocketClient:
         url: str,
         auth_token: str,
         heartbeat: int = 30,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
-    def without_auth(url: str, heartbeat: int = 30) -> AxMdWebSocketClient: ...
+    def without_auth(
+        url: str,
+        heartbeat: int = 30,
+        proxy_url: str | None = None,
+    ) -> AxMdWebSocketClient: ...
     @property
     def url(self) -> str: ...
     def is_active(self) -> bool: ...
@@ -6601,6 +6607,7 @@ class AxOrdersWebSocketClient:
         account_id: AccountId,
         trader_id: TraderId,
         heartbeat: int = 30,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -7233,6 +7240,7 @@ class BybitWebSocketClient:
         environment: BybitEnvironment,
         url: str | None = None,
         heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_private(
@@ -7241,6 +7249,7 @@ class BybitWebSocketClient:
         api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @staticmethod
     def new_trade(
@@ -7249,6 +7258,7 @@ class BybitWebSocketClient:
         api_secret: str | None = None,
         url: str | None = None,
         heartbeat: int = 20,
+        proxy_url: str | None = None,
     ) -> BybitWebSocketClient: ...
     @property
     def api_key_masked(self) -> str | None: ...
@@ -7877,13 +7887,18 @@ class DeribitWebSocketClient:
         api_secret: str | None = None,
         heartbeat_interval: int = 30,
         environment: DeribitEnvironment = ...,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
-    def new_public(environment: DeribitEnvironment) -> DeribitWebSocketClient: ...
+    def new_public(
+        environment: DeribitEnvironment,
+        proxy_url: str | None = None,
+    ) -> DeribitWebSocketClient: ...
     @staticmethod
     def with_credentials(
         environment: DeribitEnvironment,
         account_id: AccountId | None = None,
+        proxy_url: str | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...
@@ -8223,6 +8238,7 @@ class TardisHttpClient:
         base_url: str | None = None,
         timeout_secs: int = 60,
         normalize_symbols: bool = True,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def api_key(self) -> str | None: ...
@@ -8481,6 +8497,7 @@ class OKXWebSocketClient:
         account_id: AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
     def with_credentials(
@@ -8491,6 +8508,7 @@ class OKXWebSocketClient:
         account_id: AccountId | None = None,
         heartbeat: int | None = None,
         auth_timeout_secs: int | None = None,
+        proxy_url: str | None = None,
     ) -> OKXWebSocketClient: ...
     @staticmethod
     def from_env() -> OKXWebSocketClient: ...
@@ -8837,6 +8855,7 @@ class BitmexWebSocketClient:
         account_id: AccountId | None = None,
         heartbeat: int = 5,
         environment: BitmexEnvironment = ...,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -8918,6 +8937,7 @@ class SubmitBroadcaster:
         health_check_interval_secs: int = 30,
         health_check_timeout_secs: int = 5,
         expected_reject_patterns: list[str] | None = None,
+        proxy_urls: list[str | None] | None = None,
     ) -> None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def get_metrics(self) -> dict[str, int]: ...
@@ -8966,6 +8986,7 @@ class CancelBroadcaster:
         health_check_timeout_secs: int = 5,
         expected_reject_patterns: list[str] | None = None,
         idempotent_success_patterns: list[str] | None = None,
+        proxy_urls: list[str | None] | None = None,
     ) -> None: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def get_metrics(self) -> dict[str, int]: ...
@@ -9160,6 +9181,7 @@ class HyperliquidWebSocketClient:
         environment: HyperliquidEnvironment = ...,
         product_type: HyperliquidProductType = ...,
         account_id: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -9506,6 +9528,7 @@ class KrakenSpotWebSocketClient:
         heartbeat_secs: int | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...
@@ -9558,6 +9581,7 @@ class KrakenFuturesWebSocketClient:
         heartbeat_secs: int = 60,
         api_key: str | None = None,
         api_secret: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def has_credentials(self) -> bool: ...

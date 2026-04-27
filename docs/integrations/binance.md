@@ -668,7 +668,7 @@ definitive list of Rust config options.
 | `account_type`                     | `SPOT`    | Account type for data endpoints (spot, margin, USDT futures, coin futures). |
 | `base_url_http`                    | `None`    | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP requests. |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
 | `us`                               | `False`   | Route requests to Binance US endpoints when `True`. |
 | `environment`                      | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
 | `testnet`                          | `False`   | **Deprecated**: use `environment=BinanceEnvironment.TESTNET` instead. |
@@ -688,7 +688,7 @@ definitive list of Rust config options.
 | `base_url_http`                      | `None`    | Override for the HTTP REST base URL. |
 | `base_url_ws`                        | `None`    | Override for the WebSocket API base URL. |
 | `base_url_ws_stream`                 | `None`    | Override for the WebSocket stream URL (futures user data event delivery). |
-| `proxy_url`                          | `None`    | Optional proxy URL for HTTP requests. |
+| `proxy_url`                          | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
 | `us`                                 | `False`   | Route requests to Binance US endpoints when `True`. |
 | `environment`                        | `None`    | Binance environment: `LIVE`, `TESTNET`, or `DEMO`. Defaults to `LIVE` when `None`. |
 | `testnet`                            | `False`   | **Deprecated**: use `environment=BinanceEnvironment.TESTNET` instead. |

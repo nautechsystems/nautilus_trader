@@ -136,7 +136,7 @@ impl BitmexExecutionClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
         let ws_client = BitmexWebSocketClient::new_with_env(
@@ -147,13 +147,14 @@ impl BitmexExecutionClient {
             config.heartbeat_interval_secs,
             config.environment,
             config.transport_backend,
+            config.proxy_url.clone(),
         )
         .context("failed to construct BitMEX execution websocket client")?;
 
         let pool_size = config.submitter_pool_size.unwrap_or(1);
         let submitter_proxy_urls = match &config.submitter_proxy_urls {
             Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
-            None => vec![config.http_proxy_url.clone(); pool_size],
+            None => vec![config.proxy_url.clone(); pool_size],
         };
 
         let submitter_config = SubmitBroadcasterConfig {
@@ -179,7 +180,7 @@ impl BitmexExecutionClient {
         let canceller_pool_size = config.canceller_pool_size.unwrap_or(1);
         let canceller_proxy_urls = match &config.canceller_proxy_urls {
             Some(urls) => urls.iter().map(|url| Some(url.clone())).collect(),
-            None => vec![config.http_proxy_url.clone(); canceller_pool_size],
+            None => vec![config.proxy_url.clone(); canceller_pool_size],
         };
 
         let canceller_config = CancelBroadcasterConfig {
@@ -647,14 +648,13 @@ impl ExecutionClient for BitmexExecutionClient {
         self.emitter.set_sender(get_exec_event_sender());
         self.core.set_started();
         log::info!(
-            "BitMEX execution client started: client_id={}, account_id={}, environment={}, submitter_pool_size={:?}, canceller_pool_size={:?}, http_proxy_url={:?}, ws_proxy_url={:?}, submitter_proxy_urls={:?}, canceller_proxy_urls={:?}",
+            "BitMEX execution client started: client_id={}, account_id={}, environment={}, submitter_pool_size={:?}, canceller_pool_size={:?}, proxy_url={:?}, submitter_proxy_urls={:?}, canceller_proxy_urls={:?}",
             self.core.client_id,
             self.core.account_id,
             self.config.environment,
             self.config.submitter_pool_size,
             self.config.canceller_pool_size,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
             self.config.submitter_proxy_urls,
             self.config.canceller_proxy_urls,
         );

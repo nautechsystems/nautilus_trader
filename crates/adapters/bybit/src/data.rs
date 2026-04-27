@@ -128,7 +128,7 @@ impl BybitDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
             )?
         } else {
             BybitHttpClient::new(
@@ -138,7 +138,7 @@ impl BybitDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
             )?
         };
 
@@ -158,6 +158,7 @@ impl BybitDataClient {
                     Some(config.ws_public_url_for(*product_type)),
                     config.heartbeat_interval_secs,
                     config.transport_backend,
+                    config.proxy_url.clone(),
                 )
             })
             .collect();
@@ -578,12 +579,11 @@ impl DataClient for BybitDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Started: client_id={}, product_types={:?}, environment={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Started: client_id={}, product_types={:?}, environment={:?}, proxy_url={:?}",
             self.client_id,
             self.config.product_types,
             self.config.environment,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
         );
         Ok(())
     }

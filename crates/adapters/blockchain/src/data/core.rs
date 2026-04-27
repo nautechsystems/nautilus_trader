@@ -112,6 +112,7 @@ impl BlockchainDataClientCore {
                 chain.name,
                 wss_rpc_url,
                 config.transport_backend,
+                config.proxy_url.clone(),
             ))
         } else {
             log::info!("Using HyperSync for live data (no WebSocket RPC)");
@@ -120,6 +121,7 @@ impl BlockchainDataClientCore {
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
+            config.proxy_url.clone(),
         ));
         let erc20_contract = Erc20Contract::new(
             http_rpc_client.clone(),
@@ -160,17 +162,20 @@ impl BlockchainDataClientCore {
         blockchain: Blockchain,
         wss_rpc_url: String,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> BlockchainRpcClientAny {
         let mut client = match blockchain {
             Blockchain::Ethereum => {
-                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url, proxy_url))
             }
             Blockchain::Polygon => {
-                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url, proxy_url))
             }
-            Blockchain::Base => BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url)),
+            Blockchain::Base => {
+                BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url, proxy_url))
+            }
             Blockchain::Arbitrum => {
-                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url, proxy_url))
             }
             _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
         };

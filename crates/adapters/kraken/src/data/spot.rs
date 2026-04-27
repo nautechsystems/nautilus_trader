@@ -102,13 +102,17 @@ impl KrakenSpotDataClient {
             None,
             None,
             None,
-            config.http_proxy.clone(),
+            config.proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
-        let ws = KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone());
+        let ws = KrakenSpotWebSocketClient::new(
+            config.clone(),
+            cancellation_token.clone(),
+            config.proxy_url.clone(),
+        );
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),

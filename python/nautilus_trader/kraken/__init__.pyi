@@ -51,7 +51,7 @@ class KrakenDataClientConfig:
         base_url: str | None = None,
         ws_public_url: str | None = None,
         ws_private_url: str | None = None,
-        http_proxy: str | None = None,
+        proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
         max_requests_per_second: int | None = None,
@@ -74,7 +74,7 @@ class KrakenExecClientConfig:
         environment: KrakenEnvironment | None = None,
         base_url: str | None = None,
         ws_url: str | None = None,
-        http_proxy: str | None = None,
+        proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
         max_requests_per_second: int | None = None,
@@ -119,6 +119,9 @@ class KrakenFuturesHttpClient:
     ) -> typing.Any: ...
     def request_mark_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
     def request_index_price(self, instrument_id: model.InstrumentId) -> typing.Any: ...
+    def request_book_snapshot(
+        self, instrument_id: model.InstrumentId, depth: int | None = ...
+    ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
@@ -190,6 +193,7 @@ class KrakenFuturesWebSocketClient:
         heartbeat_secs: int = 60,
         api_key: str | None = None,
         api_secret: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def has_credentials(self) -> bool: ...
@@ -277,6 +281,9 @@ class KrakenSpotHttpClient:
         end: datetime.datetime | None = ...,
         limit: int | None = ...,
     ) -> typing.Any: ...
+    def request_book_snapshot(
+        self, instrument_id: model.InstrumentId, depth: int | None = ...
+    ) -> typing.Any: ...
     def request_bars(
         self,
         bar_type: model.BarType,
@@ -354,6 +361,7 @@ class KrakenSpotWebSocketClient:
         heartbeat_secs: int | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...

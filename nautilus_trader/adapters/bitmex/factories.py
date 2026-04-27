@@ -196,7 +196,7 @@ class BitmexLiveDataClientFactory(LiveDataClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(
@@ -272,7 +272,7 @@ class BitmexLiveExecClientFactory(LiveExecClientFactory):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_bitmex_instrument_provider(

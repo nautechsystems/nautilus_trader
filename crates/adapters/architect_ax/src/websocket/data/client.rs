@@ -119,6 +119,7 @@ pub struct AxMdWebSocketClient {
     symbol_data_types: Arc<AtomicMap<String, SymbolDataTypes>>,
     status_invalidations: Arc<Mutex<AHashSet<Ustr>>>,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Debug for AxMdWebSocketClient {
@@ -148,6 +149,7 @@ impl Clone for AxMdWebSocketClient {
             symbol_data_types: Arc::clone(&self.symbol_data_types),
             status_invalidations: Arc::clone(&self.status_invalidations),
             transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -162,6 +164,7 @@ impl AxMdWebSocketClient {
         auth_token: String,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
@@ -183,6 +186,7 @@ impl AxMdWebSocketClient {
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -190,7 +194,12 @@ impl AxMdWebSocketClient {
     ///
     /// Use [`set_auth_token`](Self::set_auth_token) to set the token before connecting.
     #[must_use]
-    pub fn without_auth(url: String, heartbeat: u64, transport_backend: TransportBackend) -> Self {
+    pub fn without_auth(
+        url: String,
+        heartbeat: u64,
+        transport_backend: TransportBackend,
+        proxy_url: Option<String>,
+    ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
 
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -211,6 +220,7 @@ impl AxMdWebSocketClient {
             symbol_data_types: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -308,6 +318,7 @@ impl AxMdWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         // Retry initial connection with exponential backoff

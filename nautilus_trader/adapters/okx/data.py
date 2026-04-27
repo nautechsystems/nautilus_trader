@@ -160,8 +160,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.vip_level=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -176,6 +175,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_secret=None,
             api_passphrase=None,
             heartbeat=20,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._option_summary_family_subs: dict[str, int] = {}
@@ -189,6 +189,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
             heartbeat=20,
+            proxy_url=config.proxy_url,
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 

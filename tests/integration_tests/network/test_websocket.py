@@ -32,6 +32,23 @@ def _server_url(server: TestServer) -> str:
     return f"ws://{server.host}:{server.port}/ws"
 
 
+def test_websocket_config_accepts_proxy_url():
+    # Pin the pyo3 binding signature: a regression that drops the kwarg from
+    # the Rust constructor would surface here as a TypeError.
+    config = WebSocketConfig(
+        url="ws://example.invalid/ws",
+        headers=[],
+        proxy_url="http://127.0.0.1:9999",
+    )
+    assert config is not None
+
+
+def test_websocket_config_proxy_url_omitted():
+    # Default path: no proxy specified, the kwarg falls back to None.
+    config = WebSocketConfig(url="ws://example.invalid/ws", headers=[])
+    assert config is not None
+
+
 @pytest.mark.asyncio
 async def test_connect_and_disconnect(websocket_server):
     # Arrange

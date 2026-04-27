@@ -690,6 +690,7 @@ clients support environment variable fallbacks for credentials and network-speci
 | `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.        |
 | `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.                   |
 | `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.                  |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                              |
 | `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                              |
 | `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
 | `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
@@ -707,6 +708,7 @@ clients support environment variable fallbacks for credentials and network-speci
 | `base_url_http`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
 | `base_url_ws`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
 | `base_url_grpc`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
+| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                              |
 | `max_retries`                  | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                  |
 | `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
 | `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |

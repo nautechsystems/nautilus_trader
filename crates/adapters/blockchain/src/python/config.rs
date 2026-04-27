@@ -42,7 +42,7 @@ impl BlockchainDataClientConfig {
     /// Configuration for blockchain data clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None))]
+    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None, proxy_url=None))]
     fn py_new(
         #[gen_stub(
             override_type(
@@ -72,6 +72,7 @@ impl BlockchainDataClientConfig {
             ),
         )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::builder()
             .chain(Arc::new(chain.clone()))
@@ -84,6 +85,7 @@ impl BlockchainDataClientConfig {
             .maybe_from_block(from_block)
             .maybe_pool_filters(pool_filters)
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
+            .maybe_proxy_url(proxy_url)
             .build()
     }
 
@@ -128,6 +130,12 @@ impl BlockchainDataClientConfig {
     #[expect(clippy::wrong_self_convention)]
     const fn from_block(&self) -> Option<u64> {
         self.from_block
+    }
+
+    /// Returns the optional proxy URL for HTTP and WebSocket transports.
+    #[getter]
+    fn proxy_url(&self) -> Option<String> {
+        self.proxy_url.clone()
     }
 
     /// Returns a string representation of the configuration.

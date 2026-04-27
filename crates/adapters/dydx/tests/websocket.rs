@@ -558,7 +558,7 @@ async fn test_websocket_connection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -579,7 +579,7 @@ async fn test_websocket_wait_until_active() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -594,7 +594,7 @@ async fn test_websocket_close() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -613,7 +613,7 @@ async fn test_subscribe_trades() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -646,7 +646,7 @@ async fn test_subscribe_orderbook() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -679,7 +679,7 @@ async fn test_subscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -715,7 +715,7 @@ async fn test_unsubscribe_trades() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -767,7 +767,7 @@ async fn test_subscription_failure() {
         .set_subscription_failures(vec!["v4_trades".to_string()])
         .await;
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -802,7 +802,7 @@ async fn test_multiple_subscriptions() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -832,7 +832,7 @@ async fn test_ping_pong() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -859,7 +859,7 @@ async fn test_reconnection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -892,7 +892,7 @@ async fn test_is_active_states() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
 
     assert!(!client.is_connected());
 
@@ -915,7 +915,7 @@ async fn test_rapid_reconnections() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -942,7 +942,7 @@ async fn test_subscription_restoration_after_reconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1014,7 +1014,7 @@ async fn test_multiple_subscription_failures() {
         .set_subscription_failures(vec!["v4_trades".to_string(), "v4_orderbook".to_string()])
         .await;
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1056,7 +1056,7 @@ async fn test_subscribe_after_stream() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1089,7 +1089,7 @@ async fn test_unsubscribe_multiple_channels() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1145,8 +1145,8 @@ async fn test_connection_count_increments() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client1 = DydxWebSocketClient::new_public(ws_url.clone(), Some(30));
-    let mut client2 = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client1 = DydxWebSocketClient::new_public(ws_url.clone(), Some(30), None);
+    let mut client2 = DydxWebSocketClient::new_public(ws_url, Some(30), None);
 
     client1.connect().await.unwrap();
     client2.connect().await.unwrap();
@@ -1168,7 +1168,7 @@ async fn test_connection_count_increments() {
 #[tokio::test]
 async fn test_wait_until_active_timeout() {
     let ws_url = "ws://localhost:1/v4/ws".to_string();
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1), None);
 
     let _ = client.connect().await;
 
@@ -1191,7 +1191,7 @@ async fn test_sends_pong_for_control_ping() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1218,7 +1218,7 @@ async fn test_subscription_tracking() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1251,7 +1251,7 @@ async fn test_heartbeat_timeout_triggers_reconnection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1291,7 +1291,7 @@ async fn test_reconnection_race_condition() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1330,7 +1330,7 @@ async fn test_subscription_retry_after_failed_reconnection() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1369,7 +1369,7 @@ async fn test_is_connected_false_during_reconnection() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1410,7 +1410,7 @@ async fn test_subscription_restoration_tracking() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1455,7 +1455,7 @@ async fn test_unsubscribe_tracking_removes_from_state() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1494,7 +1494,7 @@ async fn test_failed_subscription_stays_pending_for_retry() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1534,7 +1534,7 @@ async fn test_subscribe_to_same_channel_idempotent() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1562,7 +1562,7 @@ async fn test_message_routing_trades_vs_orderbook() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1594,7 +1594,7 @@ async fn test_message_routing_candles_channel() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1631,7 +1631,7 @@ async fn test_is_active_false_after_close() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1657,7 +1657,7 @@ async fn test_multiple_instruments_subscription() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1688,7 +1688,7 @@ async fn test_subscription_after_stream_call() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1719,7 +1719,7 @@ async fn test_connection_lifecycle_multiple_times() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
 
     for i in 0..3 {
         client.connect().await.unwrap();
@@ -1749,7 +1749,7 @@ async fn test_orderbook_subscription_flow() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1786,7 +1786,7 @@ async fn test_candles_subscription_with_resolution() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1823,7 +1823,7 @@ async fn test_unsubscribe_orderbook() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1877,7 +1877,7 @@ async fn test_unsubscribe_candles() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1931,7 +1931,7 @@ async fn test_mixed_subscription_types() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -1982,7 +1982,7 @@ async fn test_reconnection_preserves_connection_count() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2012,7 +2012,7 @@ async fn test_subscription_validation_empty_symbol() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2031,7 +2031,7 @@ async fn test_concurrent_subscriptions() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2066,7 +2066,7 @@ async fn test_heartbeat_keeps_connection_alive() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(1), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2097,7 +2097,7 @@ async fn test_disconnect_clears_subscriptions() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2131,7 +2131,7 @@ async fn test_stream_receiver_persists_across_reconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2165,7 +2165,7 @@ async fn test_subscribe_markets_immediately_after_connect() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2201,7 +2201,7 @@ async fn test_subscribe_markets_multiple_times_idempotent() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2240,7 +2240,7 @@ async fn test_clone_shares_command_channel() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2279,7 +2279,7 @@ async fn test_subscribe_trades_and_markets_in_sequence() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2320,7 +2320,7 @@ async fn test_subscribe_block_height() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2355,7 +2355,7 @@ async fn test_unsubscribe_markets() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2405,7 +2405,7 @@ async fn test_unsubscribe_block_height() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2455,7 +2455,7 @@ async fn test_subscribe_all_channels_sequence() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2500,7 +2500,7 @@ async fn test_reconnect_then_subscribe_markets() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2549,7 +2549,7 @@ async fn test_subscribe_without_wait_until_active() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     // Don't call wait_until_active - just give a small delay for connection
@@ -2592,7 +2592,7 @@ async fn test_multiple_clones_subscribe() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2642,7 +2642,7 @@ async fn test_double_connect_is_noop() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2689,7 +2689,7 @@ async fn test_double_connect_is_noop() {
 #[tokio::test]
 async fn test_url_getter() {
     let ws_url = "ws://localhost:12345/v4/ws".to_string();
-    let client = DydxWebSocketClient::new_public(ws_url.clone(), Some(30));
+    let client = DydxWebSocketClient::new_public(ws_url.clone(), Some(30), None);
 
     assert_eq!(client.url(), ws_url, "URL getter should return the URL");
 }
@@ -2698,7 +2698,7 @@ async fn test_url_getter() {
 #[tokio::test]
 async fn test_is_connected_false_before_connect() {
     let ws_url = "ws://localhost:12345/v4/ws".to_string();
-    let client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
 
     assert!(
         !client.is_connected(),
@@ -2717,7 +2717,7 @@ async fn test_markets_subscription_failure() {
         .set_subscription_failures(vec!["v4_markets".to_string()])
         .await;
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2760,7 +2760,7 @@ async fn test_subscribe_subaccount_requires_auth() {
     let ws_url = format!("ws://{addr}/v4/ws");
 
     // Public client should fail to subscribe to subaccounts
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2787,7 +2787,8 @@ async fn test_subscribe_subaccount_with_private_client() {
     let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
-    let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
+    let mut client =
+        DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2832,7 +2833,8 @@ async fn test_unsubscribe_subaccount() {
     let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
-    let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
+    let mut client =
+        DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -2895,7 +2897,8 @@ async fn test_subaccount_subscription_failure() {
     let credential = DydxCredential::from_private_key(TEST_PRIVATE_KEY, vec![]).unwrap();
     let account_id = AccountId::new("DYDX-001");
 
-    let mut client = DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30));
+    let mut client =
+        DydxWebSocketClient::new_private(ws_url, credential, account_id, Some(30), None);
     client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3053,7 +3056,7 @@ async fn test_markets_produces_oracle_price_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3082,7 +3085,7 @@ async fn test_markets_produces_trading_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3111,7 +3114,7 @@ async fn test_markets_produces_instrument_status_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3150,7 +3153,7 @@ async fn test_markets_emits_venue_data_regardless_of_cache() {
     let ws_url = format!("ws://{addr}/v4/ws");
 
     // Do NOT cache any instruments - handler still emits venue types
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
 
@@ -3170,7 +3173,7 @@ async fn test_markets_contains_multiple_tickers() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3204,7 +3207,7 @@ async fn test_trades_produces_trade_data() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
@@ -3232,7 +3235,7 @@ async fn test_orderbook_produces_update() {
     let (addr, _state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v4/ws");
 
-    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30));
+    let mut client = DydxWebSocketClient::new_public(ws_url, Some(30), None);
     client.cache_instrument(create_btc_instrument());
     client.connect().await.unwrap();
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;

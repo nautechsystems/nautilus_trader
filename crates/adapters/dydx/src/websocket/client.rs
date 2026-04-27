@@ -134,6 +134,7 @@ pub struct DydxWebSocketClient {
     bars_timestamp_on_close: Arc<AtomicBool>,
     ws_dispatch_state: Arc<DydxWsDispatchState>,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -157,6 +158,7 @@ impl Clone for DydxWebSocketClient {
             bars_timestamp_on_close: self.bars_timestamp_on_close.clone(),
             ws_dispatch_state: self.ws_dispatch_state.clone(),
             transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -167,12 +169,13 @@ impl DydxWebSocketClient {
     /// This creates a new independent instrument cache. To share a cache with
     /// the HTTP client, use [`Self::new_public_with_cache`] instead.
     #[must_use]
-    pub fn new_public(url: String, heartbeat: Option<u64>) -> Self {
+    pub fn new_public(url: String, heartbeat: Option<u64>, proxy_url: Option<String>) -> Self {
         Self::new_public_with_cache(
             url,
             Arc::new(InstrumentCache::new()),
             heartbeat,
             TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -185,6 +188,7 @@ impl DydxWebSocketClient {
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -210,6 +214,7 @@ impl DydxWebSocketClient {
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -223,6 +228,7 @@ impl DydxWebSocketClient {
         credential: DydxCredential,
         account_id: AccountId,
         heartbeat: Option<u64>,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::new_private_with_cache(
             url,
@@ -231,6 +237,7 @@ impl DydxWebSocketClient {
             Arc::new(InstrumentCache::new()),
             heartbeat,
             TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -245,6 +252,7 @@ impl DydxWebSocketClient {
         instrument_cache: Arc<InstrumentCache>,
         heartbeat: Option<u64>,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         // Create dummy command channel (will be replaced on connect)
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -270,6 +278,7 @@ impl DydxWebSocketClient {
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
             ws_dispatch_state: Arc::new(DydxWsDispatchState::default()),
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -467,6 +476,7 @@ impl DydxWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let client = WebSocketClient::connect(

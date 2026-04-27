@@ -192,8 +192,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_fills_channel=}", LogColor.BLUE)
         self._log.info(f"{config.use_mm_mass_cancel=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_cash_position_reports=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         if config.use_spot_cash_position_reports:
             self._log.warning(
@@ -230,6 +229,7 @@ class OKXExecutionClient(LiveExecutionClient):
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
@@ -238,6 +238,7 @@ class OKXExecutionClient(LiveExecutionClient):
             account_id=self.pyo3_account_id,
             heartbeat=20,
             auth_timeout_secs=config.ws_auth_timeout_secs,
+            proxy_url=config.proxy_url,
         )
         self._ws_business_client_futures: set[asyncio.Future] = set()
 

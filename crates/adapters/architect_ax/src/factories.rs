@@ -102,7 +102,7 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.http_proxy_url.clone(),
+                ax_config.proxy_url.clone(),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         } else {
@@ -113,7 +113,7 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.http_proxy_url.clone(),
+                ax_config.proxy_url.clone(),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         };
@@ -125,6 +125,7 @@ impl DataClientFactory for AxDataClientFactory {
             ws_url,
             ax_config.heartbeat_interval_secs,
             ax_config.transport_backend,
+            ax_config.proxy_url.clone(),
         );
 
         let client = AxDataClient::new(client_id, ax_config, http_client, ws_client)?;

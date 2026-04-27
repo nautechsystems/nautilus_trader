@@ -42,13 +42,8 @@ pub struct HyperliquidDataClientConfig {
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
     pub base_url_http: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
@@ -136,13 +131,8 @@ pub struct HyperliquidExecClientConfig {
     pub base_url_http: Option<String>,
     /// Override for the exchange API URL.
     pub base_url_exchange: Option<String>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality. Use `http_proxy_url` for REST API proxy support.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,

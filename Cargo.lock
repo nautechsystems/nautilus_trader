@@ -6120,6 +6120,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "axum",
+ "base64",
  "bon",
  "bytes",
  "criterion",

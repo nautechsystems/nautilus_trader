@@ -205,7 +205,7 @@ impl DydxExecutionClient {
         let http_client = DydxHttpClient::new(
             Some(config.base_url.clone()),
             config.timeout_secs,
-            None, // proxy_url - not in DydxAdapterConfig currently
+            config.proxy_url.clone(),
             config.network,
             Some(retry_config),
         )?;
@@ -229,6 +229,7 @@ impl DydxExecutionClient {
             instrument_cache.clone(),
             Some(20),
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         let grpc_client = Arc::new(tokio::sync::RwLock::new(None));

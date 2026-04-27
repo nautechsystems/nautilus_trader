@@ -115,7 +115,7 @@ impl DeribitDataClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                None, // proxy_url
+                config.proxy_url.clone(),
             )?
         } else {
             DeribitHttpClient::new(
@@ -125,7 +125,7 @@ impl DeribitDataClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                None, // proxy_url
+                config.proxy_url.clone(),
             )?
         };
 
@@ -136,6 +136,7 @@ impl DeribitDataClient {
             config.heartbeat_interval_secs,
             config.environment,
             config.transport_backend,
+            config.proxy_url.clone(),
         )?;
 
         Ok(Self {

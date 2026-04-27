@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,   // Account ID
         5,      // 5 second heartbeat
         TransportBackend::default(),
+        None,
     )
     .unwrap();
     ws_client.connect().await?;

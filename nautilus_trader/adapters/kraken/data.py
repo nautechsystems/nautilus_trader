@@ -161,6 +161,7 @@ class KrakenDataClient(LiveMarketDataClient):
                 environment=environment,
                 base_url=config.base_url_ws_spot,
                 heartbeat_secs=config.ws_heartbeat_secs,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Spot WebSocket URL {self._ws_client_spot.url}", LogColor.BLUE)
 
@@ -172,6 +173,7 @@ class KrakenDataClient(LiveMarketDataClient):
                 environment=environment,
                 base_url=config.base_url_ws_futures,
                 heartbeat_secs=config.ws_heartbeat_secs,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Futures WebSocket URL {self._ws_client_futures.url}", LogColor.BLUE)
 

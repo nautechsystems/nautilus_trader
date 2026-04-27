@@ -404,8 +404,10 @@ impl Money {
         self.to_formatted_string()
     }
 
-    /// Performs a checked addition, returning `None` on overflow or when the result
-    /// falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`. Currencies must match.
+    /// Performs a checked addition, returning `None` on raw integer overflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
     #[pyo3(name = "checked_add")]
     fn py_checked_add(&self, other: Self) -> PyResult<Option<Self>> {
         if self.currency != other.currency {
@@ -417,8 +419,10 @@ impl Money {
         Ok(self.checked_add(other))
     }
 
-    /// Performs a checked subtraction, returning `None` on underflow or when the result
-    /// falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`. Currencies must match.
+    /// Performs a checked subtraction, returning `None` on raw integer underflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
     #[pyo3(name = "checked_sub")]
     fn py_checked_sub(&self, other: Self) -> PyResult<Option<Self>> {
         if self.currency != other.currency {

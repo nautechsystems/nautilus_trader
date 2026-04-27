@@ -299,8 +299,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `base_url_http`                    | `None`    | Override for the REST base URL.                                     |
 | `base_url_ws_public`               | `None`    | Override for the market data WebSocket URL.                         |
 | `base_url_ws_private`              | `None`    | Override for the orders WebSocket URL.                              |
-| `http_proxy_url`                   | `None`    | Optional HTTP proxy URL.                                            |
-| `ws_proxy_url`                     | `None`    | Optional WebSocket proxy URL.                                       |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
 | `http_timeout_secs`                | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`                      | `3`       | Maximum retry attempts for REST requests.                           |
 | `retry_delay_initial_ms`           | `1000`    | Initial delay (milliseconds) between retries.                       |
@@ -320,8 +319,7 @@ from market data endpoints. This is handled automatically by the adapter configu
 | `base_url_http`           | `None`    | Override for the REST base URL.                                     |
 | `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
 | `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
-| `http_proxy_url`          | `None`    | Optional HTTP proxy URL.                                            |
-| `ws_proxy_url`            | `None`    | Optional WebSocket proxy URL.                                       |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
 | `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
 | `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
 | `retry_delay_initial_ms`  | `1000`    | Initial delay (milliseconds) between retries.                       |

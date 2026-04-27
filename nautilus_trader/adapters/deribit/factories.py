@@ -42,6 +42,7 @@ def get_cached_deribit_http_client(
     max_retries: int | None = None,
     retry_delay_ms: int | None = None,
     retry_delay_max_ms: int | None = None,
+    proxy_url: str | None = None,
 ) -> nautilus_pyo3.DeribitHttpClient:
     """
     Cache and return a Deribit HTTP client with the given key and secret.
@@ -66,6 +67,8 @@ def get_cached_deribit_http_client(
         The initial delay (milliseconds) between retries.
     retry_delay_max_ms : int, optional
         The maximum delay (milliseconds) between retries.
+    proxy_url : str, optional
+        The proxy URL for HTTP requests.
 
     Returns
     -------
@@ -77,6 +80,7 @@ def get_cached_deribit_http_client(
         "api_secret": api_secret,
         "base_url": base_url,
         "environment": environment,
+        "proxy_url": proxy_url,
     }
 
     if timeout_secs is not None:
@@ -174,6 +178,7 @@ class DeribitLiveDataClientFactory(LiveDataClientFactory):
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_deribit_instrument_provider(
             client=client,
@@ -243,6 +248,7 @@ class DeribitLiveExecClientFactory(LiveExecClientFactory):
             max_retries=config.max_retries,
             retry_delay_ms=config.retry_delay_initial_ms,
             retry_delay_max_ms=config.retry_delay_max_ms,
+            proxy_url=config.proxy_url,
         )
 
         provider = get_cached_deribit_instrument_provider(

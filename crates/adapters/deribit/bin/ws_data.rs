@@ -88,10 +88,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create WebSocket client based on whether raw streams are requested
     let mut ws_client = if use_raw {
         log::info!("Creating authenticated client for raw streams");
-        DeribitWebSocketClient::with_credentials(environment)?
+        DeribitWebSocketClient::with_credentials(environment, None)?
     } else {
         log::info!("Creating public client for 100ms streams");
-        DeribitWebSocketClient::new_public(environment)?
+        DeribitWebSocketClient::new_public(environment, None)?
     };
 
     ws_client.cache_instruments(&instruments);

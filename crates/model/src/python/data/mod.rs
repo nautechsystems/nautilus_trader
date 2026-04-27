@@ -545,7 +545,7 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// ```python
 /// from nautilus_trader.model.custom import customdataclass_pyo3
-/// from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
+/// from nautilus_trader.model import register_custom_data_class
 ///
 /// @customdataclass_pyo3()
 /// class MarketTickPython:

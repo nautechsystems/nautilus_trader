@@ -37,12 +37,8 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
         Takes precedence over ``testnet`` if set.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     testnet : bool, default False
         If the client is connecting to the Hyperliquid testnet API.
         Deprecated: use ``environment=HyperliquidEnvironment.TESTNET`` instead.
@@ -54,8 +50,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types: tuple[HyperliquidProductType, ...] | None = None
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     testnet: bool = False
     http_timeout_secs: PositiveInt = 10
 
@@ -89,12 +84,8 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         Takes precedence over ``testnet`` if set.
     base_url_ws : str, optional
         The WebSocket client custom endpoint override.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     testnet : bool, default False
         If the client is connecting to the Hyperliquid testnet API.
         Deprecated: use ``environment=HyperliquidEnvironment.TESTNET`` instead.
@@ -125,8 +116,7 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     product_types: tuple[HyperliquidProductType, ...] | None = None
     environment: HyperliquidEnvironment | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     testnet: bool = False
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None

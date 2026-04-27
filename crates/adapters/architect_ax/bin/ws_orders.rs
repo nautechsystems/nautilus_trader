@@ -94,6 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect(&auth_response.token).await?;

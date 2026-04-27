@@ -166,7 +166,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 [tool.ruff.lint.per-file-ignores]
 "nautilus_trader/**/*.pyi" = [
   "PYI011",
-] # Generated stubs use explicit default values from #[pyo3(signature)]
+  "D",
+  "RUF002",
+] # Generated stubs use explicit default values from #[pyo3(signature)] and inherit Rust docstrings
 "nautilus_trader/adapters/hyperliquid/__init__.py" = [
   "PLE0604",
 ] # Dynamic __all__ extension from star import

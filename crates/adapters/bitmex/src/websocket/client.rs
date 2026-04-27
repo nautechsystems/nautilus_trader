@@ -88,6 +88,7 @@ pub struct BitmexWebSocketClient {
     tracked_subscriptions: Arc<DashMap<String, ()>>,
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl BitmexWebSocketClient {
@@ -103,6 +104,7 @@ impl BitmexWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: u64,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Credential::new(key, secret)),
@@ -133,6 +135,7 @@ impl BitmexWebSocketClient {
             tracked_subscriptions: Arc::new(DashMap::new()),
             instruments: Arc::new(DashMap::new()),
             transport_backend,
+            proxy_url,
         })
     }
 
@@ -146,6 +149,7 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if only one of `api_key` or `api_secret` is provided.
+    #[expect(clippy::too_many_arguments)]
     pub fn new_with_env(
         url: Option<String>,
         api_key: Option<String>,
@@ -154,13 +158,22 @@ impl BitmexWebSocketClient {
         heartbeat: u64,
         environment: BitmexEnvironment,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let (api_key_env, api_secret_env) = credential_env_vars(environment);
 
         let key = get_or_env_var_opt(api_key, api_key_env);
         let secret = get_or_env_var_opt(api_secret, api_secret_env);
 
-        Self::new(url, key, secret, account_id, heartbeat, transport_backend)
+        Self::new(
+            url,
+            key,
+            secret,
+            account_id,
+            heartbeat,
+            transport_backend,
+            proxy_url,
+        )
     }
 
     /// Creates a new authenticated [`BitmexWebSocketClient`] using environment variables.
@@ -181,6 +194,7 @@ impl BitmexWebSocketClient {
             None,
             5,
             TransportBackend::default(),
+            None,
         )
     }
 
@@ -515,6 +529,7 @@ impl BitmexWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let keyed_quotas = vec![];
@@ -1246,6 +1261,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1311,6 +1327,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1341,6 +1358,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1356,6 +1374,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1425,6 +1444,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1472,6 +1492,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 
@@ -1526,6 +1547,7 @@ mod tests {
             Some(AccountId::new("BITMEX-TEST")),
             5,
             TransportBackend::default(),
+            None,
         )
         .unwrap();
 

@@ -182,7 +182,8 @@ impl OKXWebSocketError {
 impl OKXWebSocketClient {
     /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
@@ -191,6 +192,7 @@ impl OKXWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new(
             url,
@@ -201,13 +203,15 @@ impl OKXWebSocketClient {
             heartbeat,
             auth_timeout_secs,
             TransportBackend::default(),
+            proxy_url,
         )
         .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "with_credentials")]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, api_passphrase=None, account_id=None, heartbeat=None, auth_timeout_secs=None, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_with_credentials(
         url: Option<String>,
         api_key: Option<String>,
@@ -216,6 +220,7 @@ impl OKXWebSocketClient {
         account_id: Option<AccountId>,
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::with_credentials(
             url,
@@ -226,6 +231,7 @@ impl OKXWebSocketClient {
             heartbeat,
             auth_timeout_secs,
             TransportBackend::default(),
+            proxy_url,
         )
         .map_err(to_pyvalue_err)
     }

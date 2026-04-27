@@ -78,6 +78,7 @@ fn websocket_config() -> WebSocketConfig {
         reconnect_max_attempts: None,
         idle_timeout_ms: None,
         backend: TransportBackend::Tungstenite,
+        proxy_url: None,
     }
 }
 
@@ -365,6 +366,33 @@ fn test_turmoil_real_websocket_disconnect_during_backoff(mut websocket_config: W
             "Disconnect should interrupt backoff, took {elapsed:?}"
         );
 
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+/// HTTP `CONNECT` proxy tunneling cannot be modelled in the turmoil
+/// simulator (no `tokio-tungstenite` adapter for the proxy hop). The
+/// simulator-specific stub must reject `proxy_url` clearly so callers see
+/// the gap immediately rather than silently bypassing the proxy.
+#[rstest]
+fn test_turmoil_websocket_rejects_proxy_url(mut websocket_config: WebSocketConfig) {
+    websocket_config.proxy_url = Some("http://proxy:9999".to_string());
+
+    let mut sim = Builder::new().build();
+    sim.host("server", ws_echo_server);
+    sim.client("client", async move {
+        let (handler, _rx) = channel_message_handler();
+        let err =
+            WebSocketClient::connect(websocket_config, Some(handler), None, None, vec![], None)
+                .await
+                .expect_err("turmoil should reject proxy_url");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("turmoil"),
+            "expected turmoil-specific error, was {msg:?}"
+        );
         Ok(())
     });
 

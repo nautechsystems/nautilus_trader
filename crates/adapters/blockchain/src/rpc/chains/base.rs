@@ -27,8 +27,9 @@ pub struct BaseRpcClient {
 }
 
 impl BaseRpcClient {
-    pub fn new(wss_rpc_url: String) -> Self {
-        let base_client = CoreBlockchainRpcClient::new(chains::BASE.clone(), wss_rpc_url);
+    pub fn new(wss_rpc_url: String, proxy_url: Option<String>) -> Self {
+        let base_client =
+            CoreBlockchainRpcClient::new(chains::BASE.clone(), wss_rpc_url, proxy_url);
 
         Self { base_client }
     }

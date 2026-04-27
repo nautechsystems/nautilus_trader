@@ -464,6 +464,7 @@ async fn connect_client(ws_url: &str) -> OKXWebSocketClient {
         Some(30),
         None,
         TransportBackend::default(),
+        None,
     )
     .expect("failed to construct okx websocket client")
 }
@@ -512,6 +513,7 @@ async fn test_wait_until_active_timeout() {
         Some(30),
         None,
         TransportBackend::default(),
+        None,
     )
     .expect("construct client");
 
@@ -614,6 +616,7 @@ async fn test_heartbeat_timeout_reconnection() {
         Some(1),
         None,
         TransportBackend::default(),
+        None,
     )
     .expect("construct client");
 
@@ -1530,6 +1533,7 @@ async fn test_unauthenticated_private_channel_rejection() {
         Some(30),
         None,
         TransportBackend::default(),
+        None,
     )
     .expect("construct client");
 

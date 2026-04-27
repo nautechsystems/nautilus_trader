@@ -220,7 +220,7 @@ When multiple trading nodes share a single Betfair account across different mark
 | `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.             |
 | `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.             |
 | `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.              |
-| `proxy_url`                         | `None`   | Optional HTTP proxy.                          |
+| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.                          |
 | `request_rate_per_second`           | `5`      | General HTTP rate limit.                      |
 | `default_min_notional`              | `None`   | Optional minimum notional override.           |
 | `event_type_ids`                    | `None`   | Optional navigation filter.                   |
@@ -255,7 +255,7 @@ keep-alive interval.
 | `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                      |
 | `password`                          | `None`        | Falls back to `BETFAIR_PASSWORD`.                      |
 | `app_key`                           | `None`        | Falls back to `BETFAIR_APP_KEY`.                       |
-| `proxy_url`                         | `None`        | Optional HTTP proxy.                                   |
+| `proxy_url`                         | `None`        | Optional proxy URL for HTTP requests.                                   |
 | `request_rate_per_second`           | `5`           | General HTTP rate limit.                               |
 | `order_request_rate_per_second`     | `20`          | Order endpoint rate limit.                             |
 | `stream_host`                       | `None`        | Optional stream host override.                         |

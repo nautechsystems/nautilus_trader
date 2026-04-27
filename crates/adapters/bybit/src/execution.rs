@@ -113,7 +113,7 @@ impl BybitExecutionClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.recv_window_ms,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
         )?;
 
         let ws_private = BybitWebSocketClient::new_private(
@@ -123,6 +123,7 @@ impl BybitExecutionClient {
             Some(config.ws_private_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         let ws_trade = BybitWebSocketClient::new_trade(
@@ -132,6 +133,7 @@ impl BybitExecutionClient {
             Some(config.ws_trade_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         let clock = get_atomic_clock_realtime();
@@ -622,14 +624,13 @@ impl ExecutionClient for BybitExecutionClient {
         });
 
         log::info!(
-            "Started: client_id={}, account_id={}, account_type={:?}, product_types={:?}, environment={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Started: client_id={}, account_id={}, account_type={:?}, product_types={:?}, environment={:?}, proxy_url={:?}",
             self.core.client_id,
             self.core.account_id,
             self.core.account_type,
             self.config.product_types,
             self.config.environment,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
         );
         Ok(())
     }

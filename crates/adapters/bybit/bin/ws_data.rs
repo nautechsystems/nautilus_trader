@@ -36,6 +36,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None,
         20,
         TransportBackend::default(),
+        None,
     );
     client.connect().await?;
 

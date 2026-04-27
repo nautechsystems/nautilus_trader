@@ -90,6 +90,7 @@ class PolymarketWebSocketClient:
         loop: asyncio.AbstractEventLoop,
         auth: PolymarketWebSocketAuth | None = None,
         max_subscriptions_per_connection: int = 200,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -102,6 +103,7 @@ class PolymarketWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._proxy_url: str | None = proxy_url
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         # Multi-client tracking
@@ -369,6 +371,7 @@ class PolymarketWebSocketClient:
                 headers=[],
                 heartbeat=10,
                 idle_timeout_ms=_idle_timeout_ms_for(self._channel),
+                proxy_url=self._proxy_url,
             )
 
             self._clients[client_id] = await WebSocketClient.connect(

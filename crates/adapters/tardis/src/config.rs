@@ -41,11 +41,9 @@ pub struct TardisReplayConfig {
     /// The Tardis Machine replay options.
     #[builder(default)]
     pub options: Vec<ReplayNormalizedRequestOptions>,
-    /// Optional WebSocket proxy URL.
-    ///
-    /// Note: WebSocket proxy support is not yet implemented. This field is reserved
-    /// for future functionality.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for the Tardis HTTP API client.
+    /// The Tardis Machine WebSocket transport does not yet support proxying.
+    pub proxy_url: Option<String>,
     /// The output format for `book_snapshot_*` messages.
     ///
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
@@ -70,6 +68,9 @@ pub struct TardisDataClientConfig {
     /// Tardis Machine Server WebSocket URL.
     /// Falls back to `TARDIS_MACHINE_WS_URL` env var if not set.
     pub tardis_ws_url: Option<String>,
+    /// Optional proxy URL for the Tardis HTTP API client.
+    /// The Tardis Machine WebSocket transport does not yet support proxying.
+    pub proxy_url: Option<String>,
     /// Whether to normalize symbols to Nautilus conventions.
     #[builder(default = true)]
     pub normalize_symbols: bool,
@@ -104,6 +105,7 @@ mod tests {
         let config = TardisDataClientConfig::default();
         assert!(config.api_key.is_none());
         assert!(config.tardis_ws_url.is_none());
+        assert!(config.proxy_url.is_none());
         assert!(config.normalize_symbols);
         assert!(matches!(
             config.book_snapshot_output,

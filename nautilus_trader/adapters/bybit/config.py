@@ -63,12 +63,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http : str, optional
         The base URL for Bybit HTTP API.
         If ``None`` then will use the default URL based on environment.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     demo : bool, default False
         If the client is connecting to the Bybit demo API.
         Deprecated: use ``environment=BybitEnvironment.DEMO`` instead.
@@ -99,8 +95,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types: tuple[BybitProductType, ...] | None = None
     environment: BybitEnvironment | None = None
     base_url_http: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     demo: bool = False
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
@@ -142,12 +137,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The base URL for the `private` WebSocket client.
     base_url_ws_trade : str, optional
         The base URL for the `trade` WebSocket client.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     demo : bool, default False
         If the client is connecting to the Bybit demo API.
         Deprecated: use ``environment=BybitEnvironment.DEMO`` instead.
@@ -209,8 +200,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws_private: str | None = None
     base_url_ws_trade: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     demo: bool = False
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit

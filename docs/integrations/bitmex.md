@@ -800,8 +800,7 @@ The BitMEX data client provides the following configuration options:
 | `update_instruments_interval_mins`| `60`     | Interval (minutes) between instrument catalogue refreshes. |
 | `max_requests_per_second`         | `10`     | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`         | `120`    | Rolling minute rate limit enforced by the adapter for REST calls. |
-| `http_proxy_url`                  | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`                    | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`                       | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 
 ### Execution client configuration options
 
@@ -824,8 +823,7 @@ The BitMEX execution client provides the following configuration options:
 | `deadmans_switch_timeout_secs` | `None`   | Timeout in seconds for the dead man's switch. `None` disables. See [Dead man's switch](#dead-mans-switch). |
 | `canceller_pool_size`    | `None`   | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
 | `submitter_pool_size`    | `None`   | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
-| `http_proxy_url`         | `None`   | Optional HTTP proxy URL. |
-| `ws_proxy_url`           | `None`   | Optional WebSocket proxy URL. *Not yet implemented; reserved for future use.* |
+| `proxy_url`              | `None`   | Optional proxy URL for HTTP and WebSocket transports. |
 | `submitter_proxy_urls`   | `None`   | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
 | `canceller_proxy_urls`   | `None`   | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
 

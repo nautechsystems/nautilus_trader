@@ -113,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth_response.token,
         30,
         TransportBackend::default(),
+        None,
     );
 
     let test_symbol = "EURUSD-PERP";

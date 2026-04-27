@@ -84,6 +84,7 @@ impl DeribitWebSocketClient {
         api_secret=None,
         heartbeat_interval=30,
         environment=DeribitEnvironment::Mainnet,
+        proxy_url=None,
     ))]
     fn py_new(
         url: Option<String>,
@@ -91,6 +92,7 @@ impl DeribitWebSocketClient {
         api_secret: Option<String>,
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
         Self::new(
             url,
@@ -99,6 +101,7 @@ impl DeribitWebSocketClient {
             heartbeat_interval,
             environment,
             TransportBackend::default(),
+            proxy_url,
         )
         .map_err(to_pyvalue_err)
     }
@@ -111,9 +114,9 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if initialization fails.
     #[staticmethod]
-    #[pyo3(name = "new_public")]
-    fn py_new_public(environment: DeribitEnvironment) -> PyResult<Self> {
-        Self::new_public(environment).map_err(to_pyvalue_err)
+    #[pyo3(name = "new_public", signature = (environment, proxy_url = None))]
+    fn py_new_public(environment: DeribitEnvironment, proxy_url: Option<String>) -> PyResult<Self> {
+        Self::new_public(environment, proxy_url).map_err(to_pyvalue_err)
     }
 
     /// Creates an authenticated client with credentials.
@@ -122,12 +125,13 @@ impl DeribitWebSocketClient {
     /// - Testnet: `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`
     /// - Mainnet: `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`
     #[staticmethod]
-    #[pyo3(name = "with_credentials", signature = (environment, account_id = None))]
+    #[pyo3(name = "with_credentials", signature = (environment, account_id = None, proxy_url = None))]
     fn py_with_credentials(
         environment: DeribitEnvironment,
         account_id: Option<AccountId>,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        let mut client = Self::with_credentials(environment).map_err(to_pyvalue_err)?;
+        let mut client = Self::with_credentials(environment, proxy_url).map_err(to_pyvalue_err)?;
 
         if let Some(id) = account_id {
             client.set_account_id(id);

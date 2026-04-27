@@ -116,13 +116,13 @@ impl HyperliquidDataClient {
             HyperliquidHttpClient::with_secrets(
                 &secrets,
                 config.http_timeout_secs,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
             )?
         } else {
             HyperliquidHttpClient::new(
                 config.environment,
                 config.http_timeout_secs,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
             )?
         };
 
@@ -137,6 +137,7 @@ impl HyperliquidDataClient {
             config.environment,
             None,
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         Ok(Self {
@@ -480,11 +481,10 @@ impl DataClient for HyperliquidDataClient {
 
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Starting Hyperliquid data client: client_id={}, environment={:?}, http_proxy_url={:?}, ws_proxy_url={:?}",
+            "Starting Hyperliquid data client: client_id={}, environment={:?}, proxy_url={:?}",
             self.client_id,
             self.config.environment,
-            self.config.http_proxy_url,
-            self.config.ws_proxy_url,
+            self.config.proxy_url,
         );
         Ok(())
     }

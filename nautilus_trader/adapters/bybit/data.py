@@ -140,8 +140,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
         self._log.info(f"{config.instrument_status_poll_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -162,6 +161,7 @@ class BybitDataClient(LiveMarketDataClient):
                 product_type=product_type,
                 environment=environment,
                 url=config.base_url_http,
+                proxy_url=config.proxy_url,
             )
             ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
             self._ws_clients[product_type] = ws_client

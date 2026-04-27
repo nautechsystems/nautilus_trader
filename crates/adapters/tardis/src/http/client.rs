@@ -85,6 +85,7 @@ impl TardisHttpClient {
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
         normalize_symbols: bool,
+        proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let credential = Credential::resolve(api_key.map(ToString::to_string));
 
@@ -114,7 +115,7 @@ impl TardisHttpClient {
             keyed_quotas,
             Some(*TARDIS_REST_QUOTA),
             timeout_secs.or(Some(60)),
-            None,
+            proxy_url,
         )?;
 
         Ok(Self {

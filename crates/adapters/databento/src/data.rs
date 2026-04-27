@@ -74,10 +74,6 @@ pub struct DatabentoDataClientConfig {
     pub bars_timestamp_on_close: bool,
     /// Reconnection timeout in minutes (None for infinite retries).
     pub reconnect_timeout_mins: Option<u64>,
-    /// Optional HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// Optional WebSocket proxy URL.
-    pub ws_proxy_url: Option<String>,
 }
 
 impl Debug for DatabentoDataClientConfig {
@@ -88,8 +84,6 @@ impl Debug for DatabentoDataClientConfig {
             .field("use_exchange_as_venue", &self.use_exchange_as_venue)
             .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
             .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .field("http_proxy_url", &self.http_proxy_url)
-            .field("ws_proxy_url", &self.ws_proxy_url)
             .finish()
     }
 }
@@ -109,8 +103,6 @@ impl DatabentoDataClientConfig {
             use_exchange_as_venue,
             bars_timestamp_on_close,
             reconnect_timeout_mins: Some(10), // Default: 10 minutes
-            http_proxy_url: None,
-            ws_proxy_url: None,
         }
     }
 

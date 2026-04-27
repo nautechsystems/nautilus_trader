@@ -163,6 +163,7 @@ class DeribitDataClient(LiveMarketDataClient):
             api_secret=config.api_secret,
             heartbeat_interval=DERIBIT_WS_HEARTBEAT_SECS,
             environment=environment,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 

@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment,
         None,
         TransportBackend::default(),
+        None,
     );
 
     // Cache instruments before connecting

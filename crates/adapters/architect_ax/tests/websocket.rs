@@ -47,6 +47,7 @@ async fn test_md_client_connection() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -67,6 +68,7 @@ async fn test_md_client_url_accessor() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert_eq!(client.url(), ws_url);
@@ -80,6 +82,7 @@ async fn test_md_client_not_active_before_connect() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert!(!client.is_active());
@@ -94,6 +97,7 @@ async fn test_md_connection_failure_to_invalid_url() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let result = client.connect().await;
@@ -111,6 +115,7 @@ async fn test_md_close_sets_closed_flag() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -134,6 +139,7 @@ async fn test_md_disconnect_without_close() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -160,6 +166,7 @@ async fn test_md_subscribe_l1() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -196,6 +203,7 @@ async fn test_md_subscribe_l2() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -232,6 +240,7 @@ async fn test_md_subscribe_l3() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -268,6 +277,7 @@ async fn test_md_subscribe_multiple_symbols() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -311,6 +321,7 @@ async fn test_md_unsubscribe() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -351,6 +362,7 @@ async fn test_md_subscribe_candles() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -387,6 +399,7 @@ async fn test_md_unsubscribe_candles() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -427,6 +440,7 @@ async fn test_md_subscription_count_starts_at_zero() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert_eq!(client.subscription_count(), 0);
@@ -443,6 +457,7 @@ async fn test_md_ping_pong() {
         "test_token".to_string(),
         1, // 1 second heartbeat,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -470,6 +485,7 @@ async fn test_md_server_disconnect_handling() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -508,6 +524,7 @@ async fn test_md_reconnection_after_disconnect() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -531,6 +548,7 @@ async fn test_md_reconnection_after_disconnect() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client2.connect().await.unwrap();
@@ -553,6 +571,7 @@ async fn test_md_rapid_subscribe_unsubscribe() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -594,6 +613,7 @@ async fn test_md_subscribe_quotes_then_book_l2_resubscribes() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -680,6 +700,7 @@ async fn test_md_subscribe_same_level_is_idempotent() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -725,6 +746,7 @@ async fn test_md_unsubscribe_last_data_type_removes_server_subscription() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
     client.connect().await.unwrap();
     wait_for_connection(&state).await;
@@ -768,6 +790,7 @@ async fn test_md_subscribe_same_symbol_different_levels() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -815,6 +838,7 @@ async fn test_orders_client_connection() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect("test_bearer_token").await.unwrap();
@@ -838,6 +862,7 @@ async fn test_orders_client_url_accessor() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert_eq!(client.url(), ws_url);
@@ -855,6 +880,7 @@ async fn test_orders_client_account_id_accessor() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert_eq!(client.account_id(), account_id);
@@ -871,6 +897,7 @@ async fn test_orders_client_not_active_before_connect() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     assert!(!client.is_active());
@@ -888,6 +915,7 @@ async fn test_orders_connection_failure_to_invalid_url() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     let result = client.connect("test_token").await;
@@ -908,6 +936,7 @@ async fn test_orders_close_sets_closed_flag() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect("test_token").await.unwrap();
@@ -934,6 +963,7 @@ async fn test_orders_submit_order() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     // Cache instrument before submitting order
@@ -996,6 +1026,7 @@ async fn test_orders_cancel_order_rejects_without_venue_order_id() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect("test_token").await.unwrap();
@@ -1025,6 +1056,7 @@ async fn test_orders_cancel_order_with_venue_order_id() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect("test_token").await.unwrap();
@@ -1070,6 +1102,7 @@ async fn test_orders_get_open_orders() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect("test_token").await.unwrap();
@@ -1109,6 +1142,7 @@ async fn test_orders_cache_instrument() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     let instrument = create_test_instrument("EURUSD-PERP");
@@ -1129,6 +1163,7 @@ async fn test_orders_get_cached_instrument_returns_none_for_unknown() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     let cached = client.get_cached_instrument(&Ustr::from("UNKNOWN-SYMBOL"));
@@ -1146,6 +1181,7 @@ async fn test_md_subscription_events_tracking() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -1187,6 +1223,7 @@ async fn test_md_subscription_failure_tracking() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();
@@ -1224,12 +1261,14 @@ async fn test_multiple_md_clients() {
         "token1".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
     let mut client2 = AxMdWebSocketClient::new(
         ws_url,
         "token2".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client1.connect().await.unwrap();
@@ -1262,6 +1301,7 @@ async fn test_md_client_debug() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     let debug_str = format!("{client:?}");
@@ -1280,6 +1320,7 @@ async fn test_orders_client_debug() {
         trader_id,
         30,
         TransportBackend::default(),
+        None,
     );
 
     let debug_str = format!("{client:?}");
@@ -1299,6 +1340,7 @@ async fn test_md_rapid_connect_disconnect() {
             "test_token".to_string(),
             30,
             TransportBackend::default(),
+            None,
         );
 
         client.connect().await.unwrap();
@@ -1327,6 +1369,7 @@ async fn test_md_many_subscriptions() {
         "test_token".to_string(),
         30,
         TransportBackend::default(),
+        None,
     );
 
     client.connect().await.unwrap();

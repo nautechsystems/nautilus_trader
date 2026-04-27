@@ -32,6 +32,7 @@ class DeribitDataClientConfig:
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -57,6 +58,7 @@ class DeribitExecClientConfig:
         api_secret: str | None = None,
         base_url_http: str | None = None,
         base_url_ws: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -140,12 +142,17 @@ class DeribitWebSocketClient:
         api_secret: str | None = None,
         heartbeat_interval: int = 30,
         environment: DeribitEnvironment = ...,
+        proxy_url: str | None = None,
     ) -> None: ...
     @staticmethod
-    def new_public(environment: DeribitEnvironment) -> DeribitWebSocketClient: ...
+    def new_public(
+        environment: DeribitEnvironment, proxy_url: str | None = None
+    ) -> DeribitWebSocketClient: ...
     @staticmethod
     def with_credentials(
-        environment: DeribitEnvironment, account_id: model.AccountId | None = None
+        environment: DeribitEnvironment,
+        account_id: model.AccountId | None = None,
+        proxy_url: str | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...

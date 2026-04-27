@@ -88,6 +88,7 @@ pub struct KrakenFuturesWebSocketClient {
     order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for KrakenFuturesWebSocketClient {
@@ -112,6 +113,7 @@ impl Clone for KrakenFuturesWebSocketClient {
             order_instrument_map: Arc::clone(&self.order_instrument_map),
             instruments: Arc::clone(&self.instruments),
             transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
@@ -119,8 +121,14 @@ impl Clone for KrakenFuturesWebSocketClient {
 impl KrakenFuturesWebSocketClient {
     /// Creates a new client with the given URL.
     #[must_use]
-    pub fn new(url: String, heartbeat_secs: u64) -> Self {
-        Self::with_credentials(url, heartbeat_secs, None, TransportBackend::default())
+    pub fn new(url: String, heartbeat_secs: u64, proxy_url: Option<String>) -> Self {
+        Self::with_credentials(
+            url,
+            heartbeat_secs,
+            None,
+            TransportBackend::default(),
+            proxy_url,
+        )
     }
 
     /// Creates a new client with API credentials for authenticated feeds.
@@ -130,6 +138,7 @@ impl KrakenFuturesWebSocketClient {
         heartbeat_secs: u64,
         credential: Option<KrakenCredential>,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
@@ -155,6 +164,7 @@ impl KrakenFuturesWebSocketClient {
             order_instrument_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -273,6 +283,7 @@ impl KrakenFuturesWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let ws_client =
@@ -1259,8 +1270,11 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_authenticate_without_credentials_errors() {
-        let client =
-            KrakenFuturesWebSocketClient::new("wss://futures.kraken.com/ws/v1".to_string(), 60);
+        let client = KrakenFuturesWebSocketClient::new(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            None,
+        );
 
         let err = client.authenticate().await.expect_err("should fail");
         assert!(
@@ -1277,6 +1291,7 @@ mod tests {
             60,
             Some(test_credential()),
             TransportBackend::default(),
+            None,
         );
 
         assert!(!client.is_authenticated());
@@ -1296,8 +1311,11 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_set_auth_credentials_without_credentials_errors() {
-        let client =
-            KrakenFuturesWebSocketClient::new("wss://futures.kraken.com/ws/v1".to_string(), 60);
+        let client = KrakenFuturesWebSocketClient::new(
+            "wss://futures.kraken.com/ws/v1".to_string(),
+            60,
+            None,
+        );
 
         let err = client
             .set_auth_credentials("orig".to_string(), "signed".to_string())
@@ -1315,6 +1333,7 @@ mod tests {
             60,
             Some(test_credential()),
             TransportBackend::default(),
+            None,
         );
 
         client
@@ -1333,6 +1352,7 @@ mod tests {
             60,
             Some(test_credential()),
             TransportBackend::default(),
+            None,
         );
 
         let client_for_responder = client.clone();
@@ -1359,6 +1379,7 @@ mod tests {
             60,
             Some(test_credential()),
             TransportBackend::default(),
+            None,
         );
 
         let err = client

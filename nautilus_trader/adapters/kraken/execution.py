@@ -155,8 +155,7 @@ class KrakenExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._account_type.name}", LogColor.BLUE)
         self._log.info(f"Product types: {[str(p) for p in self._product_types]}", LogColor.BLUE)
         self._log.info(f"{config.environment=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.spot_positions_quote_currency=}", LogColor.BLUE)
 
@@ -199,6 +198,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 heartbeat_secs=config.ws_heartbeat_secs,
                 api_key=config.api_key,
                 api_secret=config.api_secret,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Spot WebSocket URL {self._ws_client_spot.url}", LogColor.BLUE)
 
@@ -212,6 +212,7 @@ class KrakenExecutionClient(LiveExecutionClient):
                 heartbeat_secs=config.ws_heartbeat_secs,
                 api_key=config.api_key,
                 api_secret=config.api_secret,
+                proxy_url=config.proxy_url,
             )
             self._log.info(f"Futures WebSocket URL {self._ws_client_futures.url}", LogColor.BLUE)
 

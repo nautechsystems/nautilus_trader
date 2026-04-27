@@ -19,6 +19,7 @@ pub mod auth;
 pub mod client;
 pub mod config;
 pub mod consts;
+pub mod proxy;
 pub mod subscription;
 pub mod types;
 

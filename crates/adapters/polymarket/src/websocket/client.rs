@@ -208,6 +208,7 @@ impl PolymarketWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: Some(idle_timeout_ms_for(self.channel)),
             backend: self.transport_backend,
+            proxy_url: None,
         };
 
         let client =

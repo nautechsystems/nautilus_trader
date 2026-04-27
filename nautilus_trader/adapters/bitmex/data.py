@@ -127,8 +127,7 @@ class BitmexDataClient(LiveMarketDataClient):
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_second=}", LogColor.BLUE)
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -145,6 +144,7 @@ class BitmexDataClient(LiveMarketDataClient):
             account_id=None,  # Not required for data
             heartbeat=30,
             environment=self._env,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._log.info(f"WebSocket URL {ws_url}", LogColor.BLUE)

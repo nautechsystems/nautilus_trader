@@ -190,7 +190,7 @@ class HyperliquidLiveDataClientFactory(LiveDataClientFactory):
         client = get_cached_hyperliquid_http_client(
             timeout_secs=config.http_timeout_secs,
             environment=environment,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
         )
         provider = get_cached_hyperliquid_instrument_provider(
             client=client,
@@ -253,7 +253,7 @@ class HyperliquidLiveExecClientFactory(LiveExecClientFactory):
             account_address=config.account_address,
             timeout_secs=config.http_timeout_secs,
             environment=environment,
-            proxy_url=config.http_proxy_url,
+            proxy_url=config.proxy_url,
             normalize_prices=config.normalize_prices,
         )
         provider = get_cached_hyperliquid_instrument_provider(

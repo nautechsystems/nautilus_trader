@@ -719,8 +719,7 @@ The product types for each client must be specified in the configurations.
 | `product_types`                  | `None`  | Sequence of `BybitProductType` values to enable; loads all products when `None`. |
 | `environment`                    | `None`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
-| `http_proxy_url`                 | `None`  | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None`  | Optional WebSocket proxy URL (not yet implemented). |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
 | `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
 | `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `update_instruments_interval_mins` | `60`  | Interval (minutes) between instrument catalogue refreshes. |
@@ -741,8 +740,7 @@ The product types for each client must be specified in the configurations.
 | `base_url_http`                  | `None`  | Override for the REST base URL. |
 | `base_url_ws_private`            | `None`  | Override for the private WebSocket base URL. |
 | `base_url_ws_trade`              | `None`  | Override for the trade WebSocket base URL. |
-| `http_proxy_url`                 | `None`  | Optional HTTP proxy URL. |
-| `ws_proxy_url`                   | `None`  | Optional WebSocket proxy URL (not yet implemented). |
+| `proxy_url`                      | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
 | `demo`                           | `False` | Deprecated: use `environment=BybitEnvironment.DEMO`. |
 | `testnet`                        | `False` | Deprecated: use `environment=BybitEnvironment.TESTNET`. |
 | `use_gtd`                        | `False` | Remap GTD orders to GTC when `True` (Bybit lacks native GTD support). |

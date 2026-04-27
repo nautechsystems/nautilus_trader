@@ -140,6 +140,7 @@ class PolymarketDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             loop=self._loop,
             max_subscriptions_per_connection=self._config.ws_max_subscriptions_per_connection,
+            proxy_url=self._config.proxy_url,
         )
         self._decoder_market_msg = msgspec.json.Decoder(MARKET_WS_MESSAGE)
 

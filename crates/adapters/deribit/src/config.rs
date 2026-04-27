@@ -49,6 +49,8 @@ pub struct DeribitDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The Deribit environment (mainnet or testnet).
     #[builder(default)]
     pub environment: DeribitEnvironment,
@@ -142,6 +144,8 @@ pub struct DeribitExecClientConfig {
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// The Deribit environment (mainnet or testnet).
     #[builder(default)]
     pub environment: DeribitEnvironment,

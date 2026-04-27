@@ -135,12 +135,13 @@ impl BybitWebSocketClient {
     /// Creates a new Bybit public WebSocket client.
     #[staticmethod]
     #[pyo3(name = "new_public")]
-    #[pyo3(signature = (product_type, environment, url=None, heartbeat=20))]
+    #[pyo3(signature = (product_type, environment, url=None, heartbeat=20, proxy_url=None))]
     fn py_new_public(
         product_type: BybitProductType,
         environment: BybitEnvironment,
         url: Option<String>,
         heartbeat: u64,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::new_public_with(
             product_type,
@@ -148,6 +149,7 @@ impl BybitWebSocketClient {
             url,
             heartbeat,
             TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -160,13 +162,14 @@ impl BybitWebSocketClient {
     /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_private")]
-    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20, proxy_url=None))]
     fn py_new_private(
         environment: BybitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::new_private(
             environment,
@@ -175,6 +178,7 @@ impl BybitWebSocketClient {
             url,
             heartbeat,
             TransportBackend::default(),
+            proxy_url,
         )
     }
 
@@ -187,13 +191,14 @@ impl BybitWebSocketClient {
     /// - Mainnet: `BYBIT_API_KEY`, `BYBIT_API_SECRET`
     #[staticmethod]
     #[pyo3(name = "new_trade")]
-    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20))]
+    #[pyo3(signature = (environment, api_key=None, api_secret=None, url=None, heartbeat=20, proxy_url=None))]
     fn py_new_trade(
         environment: BybitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
         url: Option<String>,
         heartbeat: u64,
+        proxy_url: Option<String>,
     ) -> Self {
         Self::new_trade(
             environment,
@@ -202,6 +207,7 @@ impl BybitWebSocketClient {
             url,
             heartbeat,
             TransportBackend::default(),
+            proxy_url,
         )
     }
 

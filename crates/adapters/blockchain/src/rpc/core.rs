@@ -60,6 +60,8 @@ pub struct CoreBlockchainRpcClient {
     subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, String>>>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     transport_backend: TransportBackend,
+    /// Optional proxy URL for the WebSocket connection.
+    proxy_url: Option<String>,
 }
 
 impl Debug for CoreBlockchainRpcClient {
@@ -88,7 +90,7 @@ impl Debug for CoreBlockchainRpcClient {
 
 impl CoreBlockchainRpcClient {
     #[must_use]
-    pub fn new(chain: Chain, wss_rpc_url: String) -> Self {
+    pub fn new(chain: Chain, wss_rpc_url: String, proxy_url: Option<String>) -> Self {
         Self {
             chain,
             wss_rpc_url,
@@ -99,6 +101,7 @@ impl CoreBlockchainRpcClient {
             wss_consumer_rx: None,
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             transport_backend: TransportBackend::default(),
+            proxy_url,
         }
     }
 
@@ -141,6 +144,7 @@ impl CoreBlockchainRpcClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let client =

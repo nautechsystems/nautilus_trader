@@ -108,7 +108,7 @@ impl KrakenSpotExecutionClient {
             None,
             None,
             None,
-            config.http_proxy.clone(),
+            config.proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
@@ -122,14 +122,17 @@ impl KrakenSpotExecutionClient {
             base_url: config.base_url.clone(),
             ws_public_url: None,
             ws_private_url: Some(config.ws_url()),
-            http_proxy: config.http_proxy.clone(),
-            ws_proxy: config.ws_proxy.clone(),
+            proxy_url: config.proxy_url.clone(),
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
             max_requests_per_second: config.max_requests_per_second,
             transport_backend: config.transport_backend,
         };
-        let ws = KrakenSpotWebSocketClient::new(data_config, cancellation_token.clone());
+        let ws = KrakenSpotWebSocketClient::new(
+            data_config,
+            cancellation_token.clone(),
+            config.proxy_url.clone(),
+        );
 
         Ok(Self {
             core,

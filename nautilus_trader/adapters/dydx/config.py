@@ -48,6 +48,8 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base URL for WebSocket connections.
         If ``None`` then will use the default URL for the selected network.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     bars_timestamp_on_close : bool, default True
         If bar `ts_event` timestamps should be the bar close time.
         If False, the venue-native open time will be used.
@@ -66,6 +68,7 @@ class DydxDataClientConfig(LiveDataClientConfig, frozen=True):
     bars_timestamp_on_close: bool = True
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    proxy_url: str | None = None
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000
@@ -109,6 +112,8 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_grpc : str, optional
         The gRPC client custom endpoint override.
         If ``None`` then will use the default URL for the selected network.
+    proxy_url : str, optional
+        The proxy URL for HTTP and WebSocket transports.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
@@ -131,6 +136,7 @@ class DydxExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     base_url_grpc: str | None = None
+    proxy_url: str | None = None
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
     retry_delay_max_ms: PositiveInt | None = 10_000

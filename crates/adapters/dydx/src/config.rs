@@ -121,6 +121,9 @@ pub struct DydxAdapterConfig {
     /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    #[serde(default)]
+    pub proxy_url: Option<String>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -270,10 +273,8 @@ pub struct DydxDataClientConfig {
     #[serde(default)]
     #[builder(default)]
     pub network: DydxNetwork,
-    /// HTTP proxy URL.
-    pub http_proxy_url: Option<String>,
-    /// WebSocket proxy URL.
-    pub ws_proxy_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -358,6 +359,8 @@ pub struct DydxExecClientConfig {
     /// When `None`, rate limiting is disabled.
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<String>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]

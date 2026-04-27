@@ -109,7 +109,13 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         .unwrap_or(BookSnapshotOutput::Deltas);
     log::info!("book_snapshot_output={book_snapshot_output:?}");
 
-    let http_client = TardisHttpClient::new(None, None, None, normalize_symbols)?;
+    let http_client = TardisHttpClient::new(
+        None,
+        None,
+        None,
+        normalize_symbols,
+        config.proxy_url.clone(),
+    )?;
     let mut machine_client = TardisMachineClient::new(
         config.tardis_ws_url.as_deref(),
         normalize_symbols,

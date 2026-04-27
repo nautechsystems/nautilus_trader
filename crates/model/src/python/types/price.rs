@@ -424,15 +424,25 @@ impl Price {
         self.to_formatted_string()
     }
 
-    /// Performs a checked addition, returning `None` on overflow or when the result
-    /// falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`.
+    /// Performs a checked addition, returning `None` on raw integer overflow, when the
+    /// result falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`, when either operand is a
+    /// sentinel (`PRICE_UNDEF`, `PRICE_ERROR`, or `ERROR_PRICE`), or when the operands
+    /// have mixed raw scales (one at `FIXED_PRECISION` scale, the other at a defi
+    /// `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Add` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "checked_add")]
     fn py_checked_add(&self, other: Self) -> Option<Self> {
         self.checked_add(other)
     }
 
-    /// Performs a checked subtraction, returning `None` on underflow or when the result
-    /// falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`.
+    /// Performs a checked subtraction, returning `None` on raw integer underflow, when
+    /// the result falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`, when either operand
+    /// is a sentinel (`PRICE_UNDEF`, `PRICE_ERROR`, or `ERROR_PRICE`), or when the
+    /// operands have mixed raw scales (one at `FIXED_PRECISION` scale, the other at a
+    /// defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "checked_sub")]
     fn py_checked_sub(&self, other: Self) -> Option<Self> {
         self.checked_sub(other)

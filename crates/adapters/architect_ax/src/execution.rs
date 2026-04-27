@@ -107,7 +107,7 @@ impl AxExecutionClient {
             config.max_retries,
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
-            config.http_proxy_url.clone(),
+            config.proxy_url.clone(),
         )?;
 
         let clock = get_atomic_clock_realtime();
@@ -126,6 +126,7 @@ impl AxExecutionClient {
             trader_id,
             config.heartbeat_interval_secs,
             config.transport_backend,
+            config.proxy_url.clone(),
         );
 
         Ok(Self {

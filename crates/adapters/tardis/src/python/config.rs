@@ -100,6 +100,7 @@ impl TardisDataClientConfig {
     #[pyo3(signature = (
         api_key = None,
         tardis_ws_url = None,
+        proxy_url = None,
         normalize_symbols = None,
         options = None,
         stream_options = None,
@@ -107,6 +108,7 @@ impl TardisDataClientConfig {
     fn py_new(
         api_key: Option<String>,
         tardis_ws_url: Option<String>,
+        proxy_url: Option<String>,
         normalize_symbols: Option<bool>,
         options: Option<Vec<ReplayNormalizedRequestOptions>>,
         stream_options: Option<Vec<StreamNormalizedRequestOptions>>,
@@ -115,6 +117,7 @@ impl TardisDataClientConfig {
         Self {
             api_key,
             tardis_ws_url,
+            proxy_url,
             normalize_symbols: normalize_symbols.unwrap_or(defaults.normalize_symbols),
             book_snapshot_output: defaults.book_snapshot_output,
             options: options.unwrap_or_default(),

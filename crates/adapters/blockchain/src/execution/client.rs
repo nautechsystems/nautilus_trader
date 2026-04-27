@@ -79,6 +79,7 @@ impl BlockchainExecutionClient {
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
             config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
+            None,
         ));
         let wallet_address = validate_address(config.wallet_address.as_str())?;
         let erc20_contract = Erc20Contract::new(http_rpc_client.clone(), true);

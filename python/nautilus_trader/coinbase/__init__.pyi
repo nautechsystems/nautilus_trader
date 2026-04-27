@@ -28,14 +28,15 @@ class CoinbaseDataClientConfig:
         api_secret: str | None = None,
         base_url_rest: str | None = None,
         base_url_ws: str | None = None,
-        http_proxy_url: str | None = None,
-        ws_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         environment: CoinbaseEnvironment | None = None,
         http_timeout_secs: int | None = None,
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         derivatives_poll_interval_secs: int | None = None,
     ) -> None: ...
+    @property
+    def proxy_url(self) -> str | None: ...
 
 @typing.final
 class CoinbaseDataClientFactory: ...
@@ -48,8 +49,7 @@ class CoinbaseExecClientConfig:
         api_secret: str | None = None,
         base_url_rest: str | None = None,
         base_url_ws: str | None = None,
-        http_proxy_url: str | None = None,
-        ws_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         environment: CoinbaseEnvironment | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
@@ -60,6 +60,8 @@ class CoinbaseExecClientConfig:
         default_leverage: decimal.Decimal | None = None,
         retail_portfolio_id: str | None = None,
     ) -> None: ...
+    @property
+    def proxy_url(self) -> str | None: ...
 
 @typing.final
 class CoinbaseExecutionClientFactory: ...

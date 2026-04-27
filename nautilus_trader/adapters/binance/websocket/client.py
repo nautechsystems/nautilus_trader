@@ -50,6 +50,8 @@ class BinanceWebSocketClient:
         The callback handler to be called on reconnect.
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
+    proxy_url : str, optional
+        The proxy URL for the WebSocket connection.
 
     References
     ----------
@@ -67,6 +69,7 @@ class BinanceWebSocketClient:
         handler: Callable[[bytes], None],
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
+        proxy_url: str | None = None,
     ) -> None:
         self._clock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -75,6 +78,7 @@ class BinanceWebSocketClient:
         self._handler: Callable[[bytes], None] = handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
+        self._proxy_url: str | None = proxy_url
         self._tasks: WeakSet[asyncio.Task] = WeakSet()
 
         self._streams: list[str] = []
@@ -227,6 +231,7 @@ class BinanceWebSocketClient:
             url=ws_url,
             headers=[],
             heartbeat=60,
+            proxy_url=self._proxy_url,
         )
 
         self._clients[client_id] = await WebSocketClient.connect(

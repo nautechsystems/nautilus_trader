@@ -54,12 +54,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to OKX's websocket API.
         If ``None`` then will source the url from `get_ws_base_url()`.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     environment : OKXEnvironment, optional
         The OKX environment for the client (LIVE or DEMO).
         If ``None`` then defaults to LIVE.
@@ -85,8 +81,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: OKXEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     is_demo: bool = False
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
@@ -127,12 +122,8 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws : str, optional
         The base url to OKX's websocket API.
         If ``None`` then will source the url from `get_ws_base_url()`.
-    http_proxy_url : str, optional
-        Optional HTTP proxy URL.
-    ws_proxy_url : str, optional
-        Optional WebSocket proxy URL.
-        Note: WebSocket proxy support is not yet implemented. This field is reserved
-        for future functionality. Use `http_proxy_url` for REST API proxy support.
+    proxy_url : str, optional
+        Optional proxy URL for HTTP and WebSocket transports.
     environment : OKXEnvironment, optional
         The OKX environment for the client (LIVE or DEMO).
         If ``None`` then defaults to LIVE.
@@ -183,8 +174,7 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     environment: OKXEnvironment | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
-    http_proxy_url: str | None = None
-    ws_proxy_url: str | None = None
+    proxy_url: str | None = None
     is_demo: bool = False
     margin_mode: OKXMarginMode | None = None
     use_spot_margin: bool = False

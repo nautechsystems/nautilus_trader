@@ -117,8 +117,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         )
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         # HTTP client (uses EVM private key for authentication, not API key)
         self._http_client = client
@@ -128,6 +127,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._ws_client = nautilus_pyo3.HyperliquidWebSocketClient(
             url=config.base_url_ws,
             environment=environment,
+            proxy_url=config.proxy_url,
         )
 
     @property

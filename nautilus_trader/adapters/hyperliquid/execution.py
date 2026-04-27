@@ -138,8 +138,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._log.info(f"config.environment={environment}", LogColor.BLUE)
         self._log.info(f"config.http_timeout_secs={config.http_timeout_secs}", LogColor.BLUE)
         self._log.info(f"config.normalize_prices={config.normalize_prices}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
 
         account_id = AccountId(f"{name or HYPERLIQUID_VENUE.value}-master")
         self._set_account_id(account_id)
@@ -149,6 +148,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             url=config.base_url_ws,
             environment=environment,
             account_id=str(account_id),
+            proxy_url=config.proxy_url,
         )
 
         # Caches to handle race conditions and duplicate messages

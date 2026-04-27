@@ -37,7 +37,7 @@ class HyperliquidDataClientConfig:
         private_key: str | None = None,
         base_url_ws: str | None = None,
         base_url_http: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
@@ -59,7 +59,7 @@ class HyperliquidExecClientConfig:
         base_url_ws: str | None = None,
         base_url_http: str | None = None,
         base_url_exchange: str | None = None,
-        http_proxy_url: str | None = None,
+        proxy_url: str | None = None,
         http_timeout_secs: int | None = None,
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
@@ -192,6 +192,7 @@ class HyperliquidWebSocketClient:
         url: str | None = None,
         environment: HyperliquidEnvironment = ...,
         account_id: str | None = None,
+        proxy_url: str | None = None,
     ) -> None: ...
     @property
     def url(self) -> str: ...

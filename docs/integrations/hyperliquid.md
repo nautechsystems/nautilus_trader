@@ -667,8 +667,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `testnet`           | `False` | Connect to the Hyperliquid testnet when `True`. |
 | `product_types`     | `None`  | Optional product types to load, for example `PERP_HIP3` for HIP-3 perps. |
 | `http_timeout_secs` | `10`    | Timeout (seconds) applied to REST calls.        |
-| `http_proxy_url`    | `None`  | Optional HTTP proxy URL.                        |
-| `ws_proxy_url`      | `None`  | Reserved; WebSocket proxy not yet implemented.  |
+| `proxy_url`         | `None`  | Optional proxy URL for HTTP and WebSocket transports. |
 
 ### Execution client configuration options
 
@@ -686,8 +685,7 @@ backoff (full jitter) on rate limit (429) and server error (5xx) responses.
 | `http_timeout_secs`         | `10`    | Timeout (seconds) applied to REST calls.                                                  |
 | `normalize_prices`          | `True`  | Normalize order prices to 5 significant figures before submission.                        |
 | `market_order_slippage_bps` | `50`    | Slippage buffer (bps) applied to MARKET and stop trigger derivations.                     |
-| `http_proxy_url`            | `None`  | Optional HTTP proxy URL.                                                                  |
-| `ws_proxy_url`              | `None`  | Reserved; WebSocket proxy not yet implemented.                                            |
+| `proxy_url`                 | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                     |
 
 ### Configuration example
 

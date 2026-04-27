@@ -405,6 +405,7 @@ fn create_test_config(addr: SocketAddr) -> DeribitDataClientConfig {
         retry_delay_max_ms: 1000,
         heartbeat_interval_secs: 30,
         update_instruments_interval_mins: 60,
+        proxy_url: None,
         transport_backend: Default::default(),
     }
 }

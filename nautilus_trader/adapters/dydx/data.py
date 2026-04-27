@@ -150,6 +150,7 @@ class DydxDataClient(LiveMarketDataClient):
         self._ws_client = nautilus_pyo3.DydxWebSocketClient.new_public(  # type: ignore[attr-defined]
             url=ws_url,
             heartbeat=20,
+            proxy_url=config.proxy_url,
         )
         self._ws_client.set_bars_timestamp_on_close(self._bars_timestamp_on_close)
         self._ws_client_futures: set[asyncio.Future] = set()

@@ -116,14 +116,14 @@ impl CoinbaseDataClient {
                 credential,
                 config.environment,
                 config.http_timeout_secs,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             None => CoinbaseHttpClient::new(
                 config.environment,
                 config.http_timeout_secs,
-                config.http_proxy_url.clone(),
+                config.proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
@@ -134,7 +134,11 @@ impl CoinbaseDataClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_client = CoinbaseWebSocketClient::new(&ws_url, config.transport_backend);
+        let ws_client = CoinbaseWebSocketClient::new(
+            &ws_url,
+            config.transport_backend,
+            config.proxy_url.clone(),
+        );
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
         let deriv_polls = DerivPollManager::new(

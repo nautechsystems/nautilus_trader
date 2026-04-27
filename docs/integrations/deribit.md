@@ -534,6 +534,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
+| `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
 | `is_testnet`                       | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`                | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors. |
@@ -550,6 +551,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `product_types`          | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
 | `base_url_http`          | `None`     | Override for the HTTP REST base URL. |
 | `base_url_ws`            | `None`     | Override for the WebSocket base URL. |
+| `proxy_url`              | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
 | `is_testnet`             | `False`    | Use Deribit testnet endpoints when `True`. |
 | `http_timeout_secs`      | `60`       | Request timeout (seconds) for REST calls. |
 | `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |

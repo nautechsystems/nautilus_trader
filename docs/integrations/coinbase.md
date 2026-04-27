@@ -612,8 +612,7 @@ fill deltas remain correct.
 | `api_secret`                       | `None`  | Falls back to `COINBASE_API_SECRET` env var.                                      |
 | `base_url_rest`                    | `None`  | Override for the REST base URL.                                                   |
 | `base_url_ws`                      | `None`  | Override for the WebSocket market data URL.                                       |
-| `http_proxy_url`                   | `None`  | Optional HTTP proxy URL.                                                          |
-| `ws_proxy_url`                     | `None`  | Optional WebSocket proxy URL.                                                     |
+| `proxy_url`                        | `None`  | Optional proxy URL for HTTP and WebSocket transports.                             |
 | `environment`                      | `Live`  | `Live` or `Sandbox`.                                                              |
 | `http_timeout_secs`                | `10`    | HTTP request timeout (seconds).                                                   |
 | `ws_timeout_secs`                  | `30`    | WebSocket timeout (seconds).                                                      |
@@ -628,8 +627,7 @@ fill deltas remain correct.
 | `api_secret`             | `None`  | Falls back to `COINBASE_API_SECRET` env var.                                                             |
 | `base_url_rest`          | `None`  | Override for the REST base URL.                                                                          |
 | `base_url_ws`            | `None`  | Override for the user data WebSocket URL.                                                                |
-| `http_proxy_url`         | `None`  | Optional HTTP proxy URL.                                                                                 |
-| `ws_proxy_url`           | `None`  | Optional WebSocket proxy URL.                                                                            |
+| `proxy_url`              | `None`  | Optional proxy URL for HTTP and WebSocket transports.                                                    |
 | `environment`            | `Live`  | `Live` or `Sandbox`.                                                                                     |
 | `http_timeout_secs`      | `10`    | HTTP request timeout (seconds).                                                                          |
 | `max_retries`            | `3`     | Maximum retry attempts for HTTP requests.                                                                |

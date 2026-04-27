@@ -104,6 +104,7 @@ pub struct CoinbaseWebSocketClient {
     account_id: Option<AccountId>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     transport_backend: TransportBackend,
+    proxy_url: Option<String>,
 }
 
 impl Clone for CoinbaseWebSocketClient {
@@ -121,13 +122,14 @@ impl Clone for CoinbaseWebSocketClient {
             account_id: self.account_id,
             task_handle: None,
             transport_backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         }
     }
 }
 
 impl CoinbaseWebSocketClient {
     /// Creates a new [`CoinbaseWebSocketClient`] for public market data.
-    pub fn new(url: &str, transport_backend: TransportBackend) -> Self {
+    pub fn new(url: &str, transport_backend: TransportBackend, proxy_url: Option<String>) -> Self {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
@@ -145,6 +147,7 @@ impl CoinbaseWebSocketClient {
             account_id: None,
             task_handle: None,
             transport_backend,
+            proxy_url,
         }
     }
 
@@ -153,8 +156,9 @@ impl CoinbaseWebSocketClient {
         url: &str,
         credential: CoinbaseCredential,
         transport_backend: TransportBackend,
+        proxy_url: Option<String>,
     ) -> Self {
-        let mut client = Self::new(url, transport_backend);
+        let mut client = Self::new(url, transport_backend, proxy_url);
         client.credential = Some(credential);
         client
     }
@@ -223,6 +227,7 @@ impl CoinbaseWebSocketClient {
             reconnect_max_attempts: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
+            proxy_url: self.proxy_url.clone(),
         };
 
         let keyed_quotas = vec![(
@@ -800,7 +805,7 @@ mod tests {
 
     #[rstest]
     fn test_prime_default_subscriptions_marks_heartbeats() {
-        let client = CoinbaseWebSocketClient::new("wss://test", TransportBackend::default());
+        let client = CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
         assert!(client.subscriptions.all_topics().is_empty());
 
         client.prime_default_subscriptions();

@@ -150,8 +150,7 @@ class BitmexExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_requests_per_minute=}", LogColor.BLUE)
         self._log.info(f"{config.submitter_pool_size=}", LogColor.BLUE)
         self._log.info(f"{config.canceller_pool_size=}", LogColor.BLUE)
-        self._log.info(f"{config.http_proxy_url=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_proxy_url=}", LogColor.BLUE)
+        self._log.info(f"{config.proxy_url=}", LogColor.BLUE)
         self._log.info(f"{config.submitter_proxy_urls=}", LogColor.BLUE)
         self._log.info(f"{config.canceller_proxy_urls=}", LogColor.BLUE)
 
@@ -171,8 +170,21 @@ class BitmexExecutionClient(LiveExecutionClient):
         # Determine HTTP base URL for broadcasters
         http_url = config.base_url_http or nautilus_pyo3.get_bitmex_http_base_url(self._env)
 
+        submitter_pool_size = config.submitter_pool_size or 1
+        canceller_pool_size = config.canceller_pool_size or 1
+        submitter_proxy_urls: list[str | None] = (
+            list(config.submitter_proxy_urls)
+            if config.submitter_proxy_urls
+            else [config.proxy_url] * submitter_pool_size
+        )
+        canceller_proxy_urls: list[str | None] = (
+            list(config.canceller_proxy_urls)
+            if config.canceller_proxy_urls
+            else [config.proxy_url] * canceller_pool_size
+        )
+
         self._submitter = nautilus_pyo3.SubmitBroadcaster(
-            pool_size=config.submitter_pool_size or 1,
+            pool_size=submitter_pool_size,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=http_url,
@@ -184,10 +196,11 @@ class BitmexExecutionClient(LiveExecutionClient):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
+            proxy_urls=submitter_proxy_urls,
         )
 
         self._canceller = nautilus_pyo3.CancelBroadcaster(
-            pool_size=config.canceller_pool_size or 1,
+            pool_size=canceller_pool_size,
             api_key=config.api_key,
             api_secret=config.api_secret,
             base_url=http_url,
@@ -199,6 +212,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             recv_window_ms=config.recv_window_ms,
             max_requests_per_second=config.max_requests_per_second,
             max_requests_per_minute=config.max_requests_per_minute,
+            proxy_urls=canceller_proxy_urls,
         )
 
         # WebSocket API
@@ -211,6 +225,7 @@ class BitmexExecutionClient(LiveExecutionClient):
             account_id=self.pyo3_account_id,
             heartbeat=30,
             environment=self._env,
+            proxy_url=config.proxy_url,
         )
         self._ws_client_futures: set[asyncio.Future] = set()
         self._dms_task: asyncio.Task | None = None

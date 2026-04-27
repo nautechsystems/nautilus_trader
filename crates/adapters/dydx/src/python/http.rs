@@ -52,12 +52,15 @@ impl DydxHttpClient {
     /// - Provides standard cache methods: `cache_instruments()`, `cache_instrument()`, `get_instrument()`.
     /// - Tracks cache initialization state for optimizations.
     #[new]
-    #[pyo3(signature = (base_url=None, network=DydxNetwork::Mainnet))]
-    fn py_new(base_url: Option<String>, network: DydxNetwork) -> PyResult<Self> {
+    #[pyo3(signature = (base_url=None, network=DydxNetwork::Mainnet, proxy_url=None))]
+    fn py_new(
+        base_url: Option<String>,
+        network: DydxNetwork,
+        proxy_url: Option<String>,
+    ) -> PyResult<Self> {
         Self::new(
-            base_url, 60,   // timeout_secs
-            None, // proxy_url
-            network, None, // retry_config
+            base_url, 60, // timeout_secs
+            proxy_url, network, None, // retry_config
         )
         .map_err(to_pyvalue_err)
     }

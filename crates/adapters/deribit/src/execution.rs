@@ -93,7 +93,7 @@ impl DeribitExecutionClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                None, // proxy_url
+                config.proxy_url.clone(),
             )?
         } else {
             DeribitHttpClient::new(
@@ -103,7 +103,7 @@ impl DeribitExecutionClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                None, // proxy_url
+                config.proxy_url.clone(),
             )?
         };
 
@@ -114,6 +114,7 @@ impl DeribitExecutionClient {
             DERIBIT_WS_HEARTBEAT_SECS,
             config.environment,
             config.transport_backend,
+            config.proxy_url.clone(),
         )
         .context("failed to create WebSocket client for execution")?;
         // Set account ID for order/fill reports

@@ -31,14 +31,22 @@ impl TardisHttpClient {
     /// A Tardis HTTP API client.
     /// See <https://docs.tardis.dev/api/http>.
     #[new]
-    #[pyo3(signature = (api_key=None, base_url=None, timeout_secs=None, normalize_symbols=true))]
+    #[pyo3(signature = (api_key=None, base_url=None, timeout_secs=None, normalize_symbols=true, proxy_url=None))]
     fn py_new(
         api_key: Option<&str>,
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
         normalize_symbols: bool,
+        proxy_url: Option<String>,
     ) -> PyResult<Self> {
-        Self::new(api_key, base_url, timeout_secs, normalize_symbols).map_err(to_pyruntime_err)
+        Self::new(
+            api_key,
+            base_url,
+            timeout_secs,
+            normalize_symbols,
+            proxy_url,
+        )
+        .map_err(to_pyruntime_err)
     }
 
     #[getter]

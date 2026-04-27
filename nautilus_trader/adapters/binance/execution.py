@@ -265,6 +265,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             http_client=http_client_for_ws,
             account_type=account_type_for_ws,
             on_resubscribe=self._reconcile_after_resubscribe,
+            proxy_url=config.proxy_url,
         )
 
         self._submit_order_method: dict[
