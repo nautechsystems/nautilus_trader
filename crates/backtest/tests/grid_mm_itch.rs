@@ -93,7 +93,7 @@ fn test_grid_mm_itch_direct_load() {
 
     let mut engine = create_engine(&instrument);
     engine.add_strategy(create_strategy(instrument_id)).unwrap();
-    engine.add_data(data, None, true, true);
+    engine.add_data(data, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -139,7 +139,7 @@ fn test_grid_mm_itch_catalog_load() {
     let num_quotes = data.len();
     let mut engine = create_engine(&instrument);
     engine.add_strategy(create_strategy(instrument_id)).unwrap();
-    engine.add_data(data, None, true, true);
+    engine.add_data(data, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -170,11 +170,11 @@ fn test_grid_mm_itch_streaming() {
     let mut engine = create_engine(&instrument);
     engine.add_strategy(create_strategy(instrument_id)).unwrap();
 
-    engine.add_data(batch1, None, true, true);
+    engine.add_data(batch1, None, true, true).unwrap();
     engine.run(None, None, None, true).unwrap();
 
     engine.clear_data();
-    engine.add_data(batch2, None, true, true);
+    engine.add_data(batch2, None, true, true).unwrap();
     engine.run(None, None, None, false).unwrap();
 
     let streaming_result = engine.get_result();

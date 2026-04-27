@@ -84,7 +84,7 @@ let instrument_id = instrument.id();
 engine.add_instrument(&instrument)?;
 
 let quotes = generate_quotes(instrument_id); // Your data loading function
-engine.add_data(quotes, None, true, true);
+engine.add_data(quotes, None, true, true)?;
 ```
 
 ### 4. Register a strategy and run

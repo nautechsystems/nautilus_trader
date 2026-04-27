@@ -195,12 +195,13 @@ for instrument in instruments.values() {
 let actor = BookImbalanceActor::new(instrument_ids, 5000, None);
 engine.add_actor(actor)?;
 
-engine.add_data(data, None, true, true);
+engine.add_data(data, None, true, true)?;
 ```
 
 The `add_data` parameters are `(data, client_id, validate, sort)`. With
-`validate: true` the engine checks that instruments are registered for each
-data point. With `sort: true` it sorts by timestamp.
+`validate: true` the engine checks the first element's instrument is
+registered (the batch is assumed homogeneous). With `sort: true` it sorts by
+timestamp.
 
 ### Run
 

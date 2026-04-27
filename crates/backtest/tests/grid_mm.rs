@@ -105,7 +105,7 @@ fn test_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) {
     }
 
     let total_quotes = quotes.len();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -146,7 +146,7 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
             )
         })
         .collect();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -176,7 +176,7 @@ fn test_enforces_max_position_across_levels(crypto_perpetual_ethusdt: CryptoPerp
 
     // Single quote to trigger one requote cycle
     let quotes = vec![quote(instrument_id, "999.95", "1000.05", 1_000_000_000)];
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 

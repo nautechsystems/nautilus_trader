@@ -80,7 +80,7 @@ fn test_from_config_registers_and_runs(crypto_perpetual_ethusdt: CryptoPerpetual
             )
         })
         .collect();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
     assert_eq!(engine.get_result().iterations, 10);

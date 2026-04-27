@@ -117,7 +117,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut data: Vec<Data> = trades.into_iter().map(Data::Trade).collect();
     data.extend(quotes.into_iter().map(Data::Quote));
-    engine.add_data(data, None, true, true);
+    engine.add_data(data, None, true, true)?;
 
     engine.run(None, None, None, false)?;
     Ok(())

@@ -378,7 +378,7 @@ fn run_oneshot(engine: &mut BacktestEngine, config: &BacktestRunConfig) -> anyho
             log::warn!("No data found for config: {:?}", data_config.data_type());
             continue;
         }
-        engine.add_data(data, data_config.client_id(), false, false);
+        engine.add_data(data, data_config.client_id(), false, false)?;
     }
 
     engine.sort_data();
@@ -442,7 +442,7 @@ fn stream_chunks<I: Iterator<Item = Data>>(
             chunk.last().map(HasTsInit::ts_init)
         };
 
-        engine.add_data(chunk, None, false, true);
+        engine.add_data(chunk, None, false, true)?;
         engine.run(next_start, end, Some(config.id().to_string()), true)?;
         engine.clear_data();
 

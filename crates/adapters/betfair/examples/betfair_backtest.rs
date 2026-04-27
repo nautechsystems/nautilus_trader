@@ -152,7 +152,7 @@ fn main() -> anyhow::Result<()> {
 
     let actor = BookImbalanceActor::new(instrument_ids, 5000, None);
     engine.add_actor(actor)?;
-    engine.add_data(data, None, true, true);
+    engine.add_data(data, None, true, true)?;
 
     println!("\nRunning backtest...");
     engine.run(None, None, None, false)?;

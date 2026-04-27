@@ -265,6 +265,17 @@ impl SimulatedExchange {
         self.settlement_prices.insert(instrument_id, price);
     }
 
+    /// Returns the configured book type for this venue.
+    #[must_use]
+    pub const fn book_type(&self) -> BookType {
+        self.book_type
+    }
+
+    /// Returns an iterator over the instrument IDs registered with this exchange.
+    pub fn instrument_ids(&self) -> impl Iterator<Item = &InstrumentId> {
+        self.instruments.keys()
+    }
+
     pub fn initialize_account(&mut self) {
         self.generate_fresh_account_state();
     }

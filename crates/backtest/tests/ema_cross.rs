@@ -102,7 +102,7 @@ fn test_from_config_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) 
     }
 
     let total_quotes = quotes.len();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
 
@@ -143,7 +143,7 @@ fn test_from_config_with_custom_strategy_id(crypto_perpetual_ethusdt: CryptoPerp
             )
         })
         .collect();
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
     assert_eq!(engine.get_result().iterations, 20);

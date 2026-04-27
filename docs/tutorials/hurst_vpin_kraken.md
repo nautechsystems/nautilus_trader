@@ -371,7 +371,7 @@ Feed the loaded trades and quotes as `Data` enum variants:
 ```rust
 let mut data: Vec<Data> = trades.into_iter().map(Data::Trade).collect();
 data.extend(quotes.into_iter().map(Data::Quote));
-engine.add_data(data, None, true, true);
+engine.add_data(data, None, true, true)?;
 ```
 
 ### Add the strategy

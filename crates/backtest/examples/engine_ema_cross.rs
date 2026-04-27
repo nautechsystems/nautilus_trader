@@ -109,7 +109,7 @@ fn main() -> anyhow::Result<()> {
     ))?;
 
     let quotes = generate_quotes(instrument_id);
-    engine.add_data(quotes, None, true, true);
+    engine.add_data(quotes, None, true, true).unwrap();
     engine.run(None, None, None, false)?;
 
     Ok(())
