@@ -15,7 +15,6 @@
 
 use std::fmt::{Debug, Display};
 
-use derive_builder::Builder;
 use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -38,9 +37,8 @@ use crate::{
 ///
 /// This event often corresponds to a `NEW` `OrdStatus` <39> field in FIX execution reports.
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[cfg_attr(any(test, feature = "stubs"), builder(default))]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)

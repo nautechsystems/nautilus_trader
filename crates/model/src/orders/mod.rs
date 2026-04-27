@@ -1001,12 +1001,10 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::{
-            accepted::OrderAcceptedBuilder,
             canceled::OrderCanceledBuilder,
             denied::OrderDeniedBuilder,
             pending_update::OrderPendingUpdateBuilder,
-            spec::{OrderFilledSpec, OrderInitializedSpec},
-            submitted::OrderSubmittedBuilder,
+            spec::{OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec},
             triggered::OrderTriggeredBuilder,
             updated::OrderUpdatedBuilder,
         },
@@ -1104,8 +1102,8 @@ mod tests {
     #[rstest]
     fn test_order_life_cycle_to_filled() {
         let init = OrderInitializedSpec::builder().build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let filled = OrderFilledSpec::builder().build();
 
         let mut order: MarketOrder = init.clone().into();
@@ -1132,8 +1130,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let fill1 = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
             .last_px(Price::from("-5.00000"))
@@ -1161,7 +1159,7 @@ mod tests {
     #[rstest]
     fn test_order_state_transition_to_canceled() {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
         let canceled = OrderCanceledBuilder::default().build().unwrap();
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1175,8 +1173,8 @@ mod tests {
     #[rstest]
     fn test_order_life_cycle_to_partially_filled() {
         let init = OrderInitializedSpec::builder().build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let filled = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
             .build();
@@ -1268,14 +1266,12 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .price(Price::from("100.00"))
             .build();
-        let submitted = OrderSubmittedBuilder::default()
+        let submitted = OrderSubmittedSpec::builder()
             .ts_event(UnixNanos::from(1_000_000))
-            .build()
-            .unwrap();
-        let accepted = OrderAcceptedBuilder::default()
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
             .ts_event(UnixNanos::from(2_000_000))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: LimitOrder = init.into();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1293,10 +1289,9 @@ mod tests {
     fn test_order_accepted_without_submitted_sets_account_id() {
         // Test external order flow: Initialized -> Accepted (no Submitted)
         let init = OrderInitializedSpec::builder().build();
-        let accepted = OrderAcceptedBuilder::default()
+        let accepted = OrderAcceptedSpec::builder()
             .account_id(AccountId::from("EXTERNAL-001"))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
 
@@ -1315,14 +1310,12 @@ mod tests {
     fn test_order_accepted_after_submitted_preserves_account_id() {
         // Test normal order flow: Initialized -> Submitted -> Accepted
         let init = OrderInitializedSpec::builder().build();
-        let submitted = OrderSubmittedBuilder::default()
+        let submitted = OrderSubmittedSpec::builder()
             .account_id(AccountId::from("SUBMITTED-001"))
-            .build()
-            .unwrap();
-        let accepted = OrderAcceptedBuilder::default()
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
             .account_id(AccountId::from("ACCEPTED-001"))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1344,8 +1337,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let overfill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(110_000)) // Overfill: 110k > 100k
             .build();
@@ -1368,8 +1361,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let fill1 = OrderFilledSpec::builder()
             .last_qty(Quantity::from(80_000))
             .trade_id(TradeId::from("TRADE-1"))
@@ -1404,8 +1397,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let filled = OrderFilledSpec::builder()
             .last_qty(Quantity::from(100_000)) // Exact fill
             .build();
@@ -1429,8 +1422,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from("2450.5"))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let fill1 = OrderFilledSpec::builder()
             .last_qty(Quantity::from("1202.5"))
             .trade_id(TradeId::from("TRADE-1"))
@@ -1493,8 +1486,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let partial_fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(60_000))
             .build();
@@ -1532,8 +1525,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from("1.000"))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let partial_fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from("0.072"))
             .build();
@@ -1553,8 +1546,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let fill1 = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
             .trade_id(TradeId::from("TRADE-001"))
@@ -1624,8 +1617,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let fill1 = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
             .trade_id(TradeId::from("TRADE-001"))
@@ -1652,8 +1645,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let pending_update = OrderPendingUpdateBuilder::default().build().unwrap();
         let updated = OrderUpdatedBuilder::default()
             .quantity(Quantity::from(50_000))
@@ -1684,8 +1677,8 @@ mod tests {
         let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let partial_fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(40_000))
             .build();
@@ -1714,8 +1707,8 @@ mod tests {
         // Test that a triggered order can receive an Updated event
         // and remain in Triggered status
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let triggered = OrderTriggeredBuilder::default().build().unwrap();
         let updated = OrderUpdatedBuilder::default()
             .quantity(Quantity::from(80_000))
@@ -1747,8 +1740,8 @@ mod tests {
             .quantity(Quantity::new(10.0, 6))
             .quote_quantity(true)
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let updated = OrderUpdatedBuilder::default()
             .quantity(Quantity::new(47.393_365, 6))
             .is_quote_quantity(false)
@@ -1773,8 +1766,8 @@ mod tests {
             .quantity(Quantity::new(10.0, 6))
             .quote_quantity(true)
             .build();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         // Builder defaults is_quote_quantity to false
         let updated = OrderUpdatedBuilder::default()
             .quantity(Quantity::new(8.0, 6))
@@ -1795,8 +1788,8 @@ mod tests {
     #[rstest]
     fn test_canceled_then_partial_fill_then_canceled() {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let canceled1 = OrderCanceledBuilder::default().build().unwrap();
         let fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
@@ -1825,8 +1818,8 @@ mod tests {
     #[rstest]
     fn test_apply_triggered_to_stop_market_order_returns_error() {
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let triggered = OrderTriggeredBuilder::default().build().unwrap();
 
         let mut order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1846,8 +1839,8 @@ mod tests {
     #[rstest]
     fn test_apply_triggered_to_stop_limit_order_succeeds() {
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
-        let submitted = OrderSubmittedBuilder::default().build().unwrap();
-        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
         let triggered = OrderTriggeredBuilder::default().build().unwrap();
 
         let mut order = OrderTestBuilder::new(OrderType::StopLimit)
