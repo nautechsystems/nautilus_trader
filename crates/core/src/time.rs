@@ -96,8 +96,11 @@ pub fn duration_since_unix_epoch() -> Duration {
 /// Returns the current wall-clock time as [`SystemTime`].
 ///
 /// Under simulation (`simulation` + `cfg(madsim)`), returns virtual wall-clock
-/// time from the madsim deterministic scheduler. Under normal builds, returns
-/// [`SystemTime::now()`].
+/// time from the madsim deterministic scheduler when called from inside a
+/// madsim runtime. When called outside a runtime (e.g. plain `#[rstest]` test
+/// bodies), falls back to [`SystemTime::now()`], which under `cfg(madsim)` is
+/// libc-intercepted by madsim and resolves to the same real syscall it would
+/// in a normal build. Under normal builds, returns [`SystemTime::now()`].
 ///
 /// This is the wall-clock seam. It preserves Unix-epoch semantics (unlike
 /// `tokio::time::Instant` which is monotonic and carries no epoch).
@@ -110,7 +113,15 @@ fn wall_clock_now() -> SystemTime {
     }
     #[cfg(all(feature = "simulation", madsim))]
     {
-        madsim::time::TimeHandle::current().now_time()
+        // `try_current` returns `None` when no madsim runtime is active.
+        // Falling back to `SystemTime::now()` matches what madsim's own libc
+        // shim does for `clock_gettime` outside a runtime; production paths
+        // running under simulation are always inside a runtime, so they
+        // continue to receive virtual time.
+        match madsim::time::TimeHandle::try_current() {
+            Some(handle) => handle.now_time(),
+            None => SystemTime::now(),
+        }
     }
 }
 

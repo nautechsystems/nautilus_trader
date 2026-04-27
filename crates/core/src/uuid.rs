@@ -24,8 +24,7 @@ use std::{
 };
 
 #[cfg(all(feature = "simulation", madsim))]
-use madsim::rand::RngCore;
-#[cfg(not(all(feature = "simulation", madsim)))]
+use madsim::rand::RngCore as MadsimRngCore;
 use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
@@ -58,7 +57,17 @@ impl UUID4 {
     pub fn new() -> Self {
         let mut bytes = [0u8; 16];
         #[cfg(all(feature = "simulation", madsim))]
-        madsim::rand::thread_rng().fill_bytes(&mut bytes);
+        {
+            // Deterministic RNG when running inside a madsim runtime; otherwise
+            // (e.g. plain `#[rstest]` tests under `cfg(madsim)`) fall back to
+            // the host RNG. Production paths under simulation always run inside
+            // a runtime, so they continue to consume seeded bytes.
+            if madsim::runtime::Handle::try_current().is_ok() {
+                MadsimRngCore::fill_bytes(&mut madsim::rand::thread_rng(), &mut bytes);
+            } else {
+                rand::rng().fill_bytes(&mut bytes); // dst-ok: tests outside a madsim runtime
+            }
+        }
         #[cfg(not(all(feature = "simulation", madsim)))]
         rand::rng().fill_bytes(&mut bytes);
 

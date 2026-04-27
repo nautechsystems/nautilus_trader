@@ -191,6 +191,8 @@ mod surface {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "simulation", madsim))]
+    use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, time::nanos_since_unix_epoch};
     use rstest::rstest;
 
     use super::*;
@@ -276,5 +278,28 @@ mod tests {
             .unwrap();
         let result = rt.block_on(async { 99 });
         assert_eq!(result, 99);
+    }
+
+    // Pins the wall-clock seam end-to-end on the common leg: the `simulation`
+    // feature on `nautilus-common` propagates `nautilus-core/simulation`, so
+    // `nautilus_core::time::nanos_since_unix_epoch` routes through
+    // `madsim::time::TimeHandle::current().now_time()`. Sleeping for 60
+    // virtual seconds via the common DST `time::sleep` re-export must advance
+    // the wall-clock value by 60s. If either the cfg gate or the propagation
+    // regressed, the elapsed value would only reflect real wall-clock time
+    // (~0ms) and this assertion would fail.
+    #[cfg(all(feature = "simulation", madsim))]
+    #[madsim::test]
+    async fn test_dst_wall_clock_advances_with_virtual_time() {
+        let before = nanos_since_unix_epoch();
+        time::sleep(time::Duration::from_secs(60)).await;
+        let after = nanos_since_unix_epoch();
+
+        let elapsed_ns = after.saturating_sub(before);
+        let sixty_seconds_ns = 60 * NANOSECONDS_IN_SECOND;
+        assert!(
+            elapsed_ns >= sixty_seconds_ns,
+            "wall clock did not advance by full virtual sleep: elapsed={elapsed_ns}ns"
+        );
     }
 }

@@ -86,8 +86,11 @@ unaffected.
 Nondeterminism outside the async runtime is redirected through explicit seams:
 
 - **Wall-clock reads** go through `nautilus_core::time::duration_since_unix_epoch`. Under
-  simulation this routes to `madsim::time::TimeHandle`, preserving Unix-epoch semantics for
-  order and fill timestamps.
+  simulation this routes to `madsim::time::TimeHandle::try_current()`, preserving Unix-epoch
+  semantics for order and fill timestamps. When called outside a madsim runtime (plain
+  `#[rstest]` test bodies), it falls back to `SystemTime::now()`, which under `cfg(madsim)` is
+  libc-intercepted to the same real syscall a normal build would use. Production paths under
+  simulation always run inside a runtime, so they continue to receive virtual time.
 - **Monotonic reads** go through `nautilus_common::live::dst::time::Instant`. The type resolves
   to `tokio::time::Instant` on normal builds (for compatibility with `tokio::test(start_paused)`
   test helpers) and `madsim::time::Instant` under simulation.
@@ -237,8 +240,11 @@ the logging bridge and writer (scoped out under "Logging runs on real OS threads
 Production RNG sites on the DST path:
 
 - `crates/core/src/uuid.rs::UUID4::new()` routes through `madsim::rand::thread_rng()`
-  under simulation, `rand::rng()` otherwise. Reachable from order and event factories
-  in `nautilus-common` and `nautilus-risk`.
+  when called inside a madsim runtime under simulation, falling back to `rand::rng()`
+  outside one (and on normal builds). Production paths under simulation always run
+  inside a runtime, so they consume seeded bytes; plain `#[rstest]` tests under
+  `cfg(madsim)` use the host RNG. Reachable from order and event factories in
+  `nautilus-common` and `nautilus-risk`.
 - `crates/execution/src/models/fill.rs::default_std_rng()` routes the same way. Called
   from `ProbabilisticFillState::new()` when no seed is provided. With a seed,
   `StdRng::seed_from_u64` is deterministic by construction.
@@ -394,13 +400,14 @@ As of the current state of this repository:
   (`.github/workflows/dst.yml`, invokes `make cargo-test-sim`). It compiles the in-scope
   crates with `--features simulation` and runs the test subset known to work under
   simulation today:
-  - All of `nautilus-common`. This leg verifies `cfg(madsim)` compatibility: code paths
-    compile and tests pass with the simulation feature active. It does not validate
-    virtual wall-clock behavior, because most common tests are plain `#[rstest]` and
-    run outside a madsim runtime (where madsim's libc intercepts fall back to the real
-    syscall), and because `nautilus-common`'s `simulation` feature does not propagate
-    `nautilus-core/simulation`, so the explicit `wall_clock_now` cfg branch is not
-    selected here.
+  - All of `nautilus-common`. This leg compiles with `nautilus-core/simulation`
+    propagated, so the explicit `wall_clock_now` cfg branch is selected for every
+    test in the suite. Plain `#[rstest]` tests run outside a madsim runtime and route
+    through the seam's `SystemTime::now()` fallback (the same path madsim's libc shim
+    takes outside a runtime). The `live::dst::tests::test_dst_wall_clock_advances_with_virtual_time`
+    test in this leg uses `#[madsim::test]` and asserts that `nanos_since_unix_epoch`
+    advances with `madsim::time::sleep`, so virtual wall-clock behavior is validated
+    end-to-end on the common leg.
   - The cross-crate seam pinning tests in `nautilus-network` (sleep / timeout virtual
     time, ratelimiter sleep) and `nautilus-core` (`wall_clock_now` virtual time). Each
     runs with its own crate's `--features simulation` and uses `#[madsim::test]`, so
