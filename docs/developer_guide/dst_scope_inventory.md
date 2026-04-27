@@ -517,24 +517,36 @@ Under `RUSTFLAGS="--cfg madsim" cargo test --features simulation` on
 `nautilus-common`, the tests that exercise the logging writer thread fail
 because the thread is cfg-gated out and log events are dropped.
 
-| Area                                     | Tag        |
-|------------------------------------------|------------|
-| Logger writer thread under `cfg(madsim)` | gated      |
-| File‑logging tests under `cfg(madsim)`   | unresolved |
+| Area                                     | Tag    |
+|------------------------------------------|--------|
+| Logger writer thread under `cfg(madsim)` | gated  |
+| File‑logging tests under `cfg(madsim)`   | closed |
 
 **Effect on the contract.** Log output is explicitly outside the determinism
 contract (the writer writes, never reads or mutates simulation state), so
 losing it under simulation does not weaken the contract. The test failures
-are a reflection of the gate, not a correctness issue in the gate itself.
+were a reflection of the gate, not a correctness issue in the gate itself.
 
-**Mitigation.** Two options for the follow-up:
+**Mitigation.** The affected tests are cfg-gated out under
+`cfg(all(feature = "simulation", madsim))`. The gate is applied at the
+submodule boundary in both call sites:
 
-1. Cfg-gate the affected tests out under `cfg(madsim)`.
-2. Provide an inline log-event sink under `cfg(madsim)` so log tests can
-   observe the channel without a writer thread.
+- `crates/common/src/logging/logger.rs::tests::serial_tests` (the eight
+  file-logging tests that init the logger and read the rotated log file).
+- `crates/common/src/logging/macros.rs::tests` (the two macro tests that
+  init the logger and assert on log file contents).
 
-Either is acceptable. Choice deferred until the determinism regression gate
-(Phase 1 Item 1 of the sign-off plan) exercises the logging subsystem.
+Both submodules are wholly file-logging-specific, so the module-level gate
+matches the surface that needs to skip. Under simulation, `cargo nextest run`
+on `nautilus-common --features simulation` reports the file-logging tests
+as filtered out; the writer-gate test (`sim_tests::test_init_under_madsim_
+skips_writer_thread_and_forces_bypass`) still runs and pins the gated
+behaviour.
+
+Option B (an inline log-event sink under `cfg(madsim)` so log tests can
+observe the channel without a writer thread) is deferred to `nautilus_dst`,
+where the determinism regression gate (Phase 1 Item 1 of the sign-off plan)
+exercises the logging subsystem.
 
 ### Runtime verification of the contract
 
@@ -562,18 +574,16 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 35    |
+| closed     | 36    |
 | gated      | 10    |
 | scoped‑out | 24    |
-| unresolved | 2     |
+| unresolved | 1     |
 
 Unresolved entries at the end of this phase:
 
-1. Logger file-logging tests under `cfg(madsim)`
-2. Dynamic same-seed diff harness
+1. Dynamic same-seed diff harness
 
-Item 1 is a test-only follow-up in this repository. Item 2 lives in
-`nautilus_dst`.
+The remaining unresolved item lives in `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter
 audit must land before any individual adapter can enter the DST path, but

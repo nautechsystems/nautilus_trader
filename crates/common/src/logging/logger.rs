@@ -710,8 +710,6 @@ impl Drop for LogGuard {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use ahash::AHashMap;
     use log::LevelFilter;
     use nautilus_core::UUID4;
@@ -722,11 +720,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{
-        enums::LogColor,
-        logging::{logging_clock_set_static_mode, logging_clock_set_static_time},
-        testing::wait_until,
-    };
+    use crate::enums::LogColor;
 
     #[rstest]
     fn log_message_serialization() {
@@ -1123,11 +1117,23 @@ mod tests {
 
     // These tests use global logging state (one logger per process).
     // They run correctly with cargo-nextest which isolates each test in its own process.
+    //
+    // Gated out under `cfg(madsim)`: every test here drives the file-logging writer
+    // thread, which is itself gated out under simulation (see `Logger::init_with_config`),
+    // so log events are dropped and these tests would either hang on `wait_until` or
+    // assert against an empty log file. Logging is outside the determinism contract.
+    #[cfg(not(all(feature = "simulation", madsim)))]
     mod serial_tests {
-        use std::sync::atomic::Ordering;
+        use std::{sync::atomic::Ordering, time::Duration};
 
         use super::*;
-        use crate::logging::{LOGGING_BYPASSED, logging_is_initialized, logging_set_bypass};
+        use crate::{
+            logging::{
+                LOGGING_BYPASSED, logging_clock_set_static_mode, logging_clock_set_static_time,
+                logging_is_initialized, logging_set_bypass,
+            },
+            testing::wait_until,
+        };
 
         #[rstest]
         fn test_logging_to_file() {
