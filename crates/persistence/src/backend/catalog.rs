@@ -114,7 +114,10 @@ use super::{
     },
     session::{self, DataBackendSession, QueryResult, build_query},
 };
-use crate::parquet::{read_parquet_from_object_store, write_batches_to_object_store};
+use crate::parquet::{
+    is_remote_uri_scheme, read_parquet_from_object_store, remote_full_uri, remote_store_root_url,
+    write_batches_to_object_store,
+};
 
 /// A high-performance data catalog for storing and retrieving financial market data using Apache Parquet format.
 ///
@@ -306,13 +309,13 @@ impl ParquetDataCatalog {
         let compression = compression.unwrap_or(parquet::basic::Compression::SNAPPY);
         let max_row_group_size = max_row_group_size.unwrap_or(5000);
 
-        let (object_store, base_path, original_uri) =
-            crate::parquet::create_object_store_from_path(uri, storage_options)?;
+        let location =
+            crate::parquet::create_object_store_location_from_path(uri, storage_options)?;
 
         Ok(Self {
-            base_path,
-            original_uri,
-            object_store,
+            base_path: location.base_path,
+            original_uri: location.original_uri,
+            object_store: location.object_store,
             session: session::DataBackendSession::new(batch_size),
             batch_size,
             compression,
@@ -1356,12 +1359,9 @@ impl ParquetDataCatalog {
 
         // Check if this is a remote URI scheme that needs reconstruction
         if self.is_remote_uri() {
-            // Extract the base URL (scheme + host) from the original URI
-            if let Ok(url) = url::Url::parse(&self.original_uri)
-                && let Some(host) = url.host_str()
-            {
-                let path = self.path_under_base(path_str);
-                return format!("{}://{}/{}", url.scheme(), host, path);
+            let path = self.path_under_base(path_str);
+            if let Ok(uri) = remote_full_uri(&self.original_uri, &path) {
+                return uri;
             }
         }
 
@@ -1455,13 +1455,9 @@ impl ParquetDataCatalog {
     /// Helper method to check if the original URI uses a remote object store scheme
     #[must_use]
     pub fn is_remote_uri(&self) -> bool {
-        self.original_uri.starts_with("s3://")
-            || self.original_uri.starts_with("gs://")
-            || self.original_uri.starts_with("gcs://")
-            || self.original_uri.starts_with("az://")
-            || self.original_uri.starts_with("abfs://")
-            || self.original_uri.starts_with("http://")
-            || self.original_uri.starts_with("https://")
+        self.original_uri
+            .split_once("://")
+            .is_some_and(|(scheme, _)| is_remote_uri_scheme(scheme))
     }
 
     /// Executes a query against the catalog to retrieve market data of a specific type.
@@ -1561,11 +1557,7 @@ impl ParquetDataCatalog {
         // so DataFusion's default file provider handles them (avoids path doubling on Windows
         // where a registered store would receive a path that gets prefixed again).
         if self.is_remote_uri() {
-            let url = url::Url::parse(&self.original_uri)?;
-            let host = url
-                .host_str()
-                .ok_or_else(|| anyhow::anyhow!("Remote URI missing host/bucket name"))?;
-            let base_url = url::Url::parse(&format!("{}://{}", url.scheme(), host))?;
+            let base_url = remote_store_root_url(&self.original_uri)?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
         }
@@ -1780,11 +1772,7 @@ impl ParquetDataCatalog {
         self.reset_session();
 
         if self.is_remote_uri() {
-            let url = url::Url::parse(&self.original_uri)?;
-            let host = url
-                .host_str()
-                .ok_or_else(|| anyhow::anyhow!("Remote URI missing host/bucket name"))?;
-            let base_url = url::Url::parse(&format!("{}://{}", url.scheme(), host))?;
+            let base_url = remote_store_root_url(&self.original_uri)?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
         }
@@ -2808,28 +2796,7 @@ impl ParquetDataCatalog {
     /// ```
     #[must_use]
     pub fn to_object_path(&self, path: &str) -> ObjectPath {
-        // Normalize path separators to forward slashes for object store
-        let normalized_path = path.replace('\\', "/");
-
-        if self.base_path.is_empty() {
-            return ObjectPath::from(normalized_path);
-        }
-
-        if self.is_remote_uri() {
-            return ObjectPath::from(self.path_under_base(&normalized_path));
-        }
-
-        // Normalize base path separators as well
-        let normalized_base = self.base_path.replace('\\', "/");
-        let base = normalized_base.trim_end_matches('/');
-
-        // Remove the catalog base prefix if present
-        let without_base = normalized_path
-            .strip_prefix(&format!("{base}/"))
-            .or_else(|| normalized_path.strip_prefix(base))
-            .unwrap_or(&normalized_path);
-
-        ObjectPath::from(without_base)
+        ObjectPath::from(self.object_store_path(path))
     }
 
     /// Converts a path string to [`ObjectPath`] using parse (no percent-encoding).
@@ -2838,23 +2805,60 @@ impl ParquetDataCatalog {
     /// which may already be percent-encoded. Using [`Self::to_object_path`] (which uses
     /// `Path::from`) on such paths would double-encode (e.g. `%5E` -> `%255E`).
     pub fn to_object_path_parsed(&self, path: &str) -> anyhow::Result<ObjectPath> {
+        let to_parse = self.object_store_path(path);
+        ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)
+    }
+
+    fn object_store_path(&self, path: &str) -> String {
         let normalized_path = path.replace('\\', "/");
 
-        let to_parse = if self.base_path.is_empty() {
-            normalized_path
-        } else if self.is_remote_uri() {
-            self.path_under_base(&normalized_path)
-        } else {
-            let normalized_base = self.base_path.replace('\\', "/");
-            let base = normalized_base.trim_end_matches('/');
-            normalized_path
-                .strip_prefix(&format!("{base}/"))
-                .or_else(|| normalized_path.strip_prefix(base))
-                .unwrap_or(normalized_path.as_str())
-                .to_string()
-        };
+        if self.is_remote_uri() {
+            if normalized_path.contains("://") {
+                return self
+                    .remote_uri_object_path(&normalized_path)
+                    .map(|path| self.path_under_base(&path))
+                    .unwrap_or(normalized_path);
+            }
 
-        ObjectPath::parse(&to_parse).map_err(anyhow::Error::from)
+            return self.path_under_base(&normalized_path);
+        }
+
+        self.path_without_local_base(&normalized_path)
+    }
+
+    fn remote_uri_object_path(&self, path: &str) -> Option<String> {
+        let path_url = url::Url::parse(path).ok()?;
+        if !is_remote_uri_scheme(path_url.scheme()) {
+            return None;
+        }
+
+        let catalog_root = remote_store_root_url(&self.original_uri).ok()?;
+        let path_root = remote_store_root_url(path).ok()?;
+        if catalog_root.as_str().trim_end_matches('/') != path_root.as_str().trim_end_matches('/') {
+            return None;
+        }
+
+        Some(path_url.path().trim_start_matches('/').to_string())
+    }
+
+    fn path_without_local_base(&self, path: &str) -> String {
+        let base_path = if self.base_path.is_empty() {
+            self.native_base_path_string()
+        } else {
+            self.base_path.clone()
+        };
+        let normalized_base = base_path.replace('\\', "/");
+        let base = normalized_base.trim_end_matches('/');
+
+        if base.is_empty() {
+            path.to_string()
+        } else if path == base {
+            String::new()
+        } else if let Some(without_base) = path.strip_prefix(&format!("{base}/")) {
+            without_base.to_string()
+        } else {
+            path.to_string()
+        }
     }
 
     fn path_under_base(&self, path: &str) -> String {

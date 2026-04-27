@@ -106,26 +106,11 @@ impl DataBackendSession {
         uri: &str,
         storage_options: Option<AHashMap<String, String>>,
     ) -> anyhow::Result<()> {
-        // Create object store from URI using the Rust implementation
-        let (object_store, _, _) =
-            crate::parquet::create_object_store_from_path(uri, storage_options)?;
+        let location =
+            crate::parquet::create_object_store_location_from_path(uri, storage_options)?;
 
-        // Parse the URI to get the base URL for registration
-        let parsed_uri = Url::parse(uri)?;
-
-        // Register the object store with the session
-        if matches!(
-            parsed_uri.scheme(),
-            "s3" | "gs" | "gcs" | "az" | "abfs" | "http" | "https"
-        ) {
-            // For cloud storage, register with the base URL (scheme + netloc)
-            let base_url = format!(
-                "{}://{}",
-                parsed_uri.scheme(),
-                parsed_uri.host_str().unwrap_or("")
-            );
-            let base_parsed_url = Url::parse(&base_url)?;
-            self.register_object_store(&base_parsed_url, object_store);
+        if let Some(root_url) = location.store_root_url().cloned() {
+            self.register_object_store(&root_url, location.object_store);
         }
 
         Ok(())

@@ -1688,6 +1688,21 @@ fn test_to_object_path_trailing_slash() {
             .as_ref()
             .starts_with(base_dir.to_string_lossy().as_ref())
     );
+    assert_eq!(
+        object_path.as_ref(),
+        "data/quotes/XYZ/2021-01-01T00-00-00-000000000Z_2021-01-01T00-00-01-000000000Z.parquet"
+    );
+
+    let sibling_path = format!(
+        "{}/data/quotes/file.parquet",
+        base_dir.with_file_name("catalog2").display()
+    );
+    let sibling_object_path = catalog.to_object_path(&sibling_path);
+    assert_eq!(
+        sibling_object_path.as_ref(),
+        sibling_path.replace('\\', "/").trim_start_matches('/')
+    );
+    assert!(sibling_object_path.as_ref().contains("catalog2/data"));
 }
 
 #[cfg(feature = "cloud")]
@@ -1702,10 +1717,34 @@ fn test_remote_to_object_path_preserves_base_path() {
     let with_base = catalog.to_object_path("base/path/data/quotes/file.parquet");
     assert_eq!(with_base.as_ref(), "base/path/data/quotes/file.parquet");
 
+    let full_uri = catalog.to_object_path("s3://bucket/base/path/data/quotes/file.parquet");
+    assert_eq!(full_uri.as_ref(), "base/path/data/quotes/file.parquet");
+
     let parsed = catalog
         .to_object_path_parsed("data/quotes/file.parquet")
         .unwrap();
     assert_eq!(parsed.as_ref(), "base/path/data/quotes/file.parquet");
+
+    let parsed_with_base = catalog
+        .to_object_path_parsed("base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(
+        parsed_with_base.as_ref(),
+        "base/path/data/quotes/file.parquet"
+    );
+
+    let parsed_full_uri = catalog
+        .to_object_path_parsed("s3://bucket/base/path/data/quotes/file.parquet")
+        .unwrap();
+    assert_eq!(
+        parsed_full_uri.as_ref(),
+        "base/path/data/quotes/file.parquet"
+    );
+
+    let parsed_encoded = catalog
+        .to_object_path_parsed("base/path/data/%5E/file.parquet")
+        .unwrap();
+    assert_eq!(parsed_encoded.as_ref(), "base/path/data/%5E/file.parquet");
 }
 
 #[cfg(feature = "cloud")]
@@ -2048,12 +2087,36 @@ fn test_reconstruct_full_uri_moved() {
 
     // Test HTTP URI reconstruction
     let http_catalog =
-        ParquetDataCatalog::from_uri("https://example.com/base/path", None, None, None, None)
+        ParquetDataCatalog::from_uri("https://example.com:9000/base/path", None, None, None, None)
             .unwrap();
     let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
-        "https://example.com/base/path/data/quotes/file.parquet"
+        "https://example.com:9000/base/path/data/quotes/file.parquet"
+    );
+
+    // Test ABFS URI reconstruction preserves the container in the authority
+    let abfs_catalog = ParquetDataCatalog::from_uri(
+        "abfs://container@account.dfs.core.windows.net/base/path",
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let reconstructed = abfs_catalog.reconstruct_full_uri("data/quotes/file.parquet");
+    assert_eq!(
+        reconstructed,
+        "abfs://container@account.dfs.core.windows.net/base/path/data/quotes/file.parquet"
+    );
+
+    let reconstructed = s3_catalog.reconstruct_full_uri("data/%5E/file.parquet");
+    assert_eq!(reconstructed, "s3://bucket/base/path/data/%5E/file.parquet");
+
+    let full_uri = "s3://bucket/base/path/data/quotes/file.parquet";
+    assert_eq!(
+        s3_catalog.reconstruct_full_uri(full_uri),
+        "s3://bucket/base/path/data/quotes/file.parquet"
     );
 
     // Test local path (should return full absolute path)
