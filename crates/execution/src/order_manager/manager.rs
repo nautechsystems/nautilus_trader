@@ -127,20 +127,20 @@ impl OrderManager {
 
     /// Cancels an order if it's not already pending cancellation or closed.
     pub fn cancel_order(&mut self, order: &OrderAny) {
-        if self
-            .cache
-            .borrow()
-            .is_order_pending_cancel_local(&order.client_order_id())
-        {
+        let client_order_id = order.client_order_id();
+        let cache = self.cache.borrow();
+
+        if cache.is_order_pending_cancel_local(&client_order_id) {
             return;
         }
 
-        if order.is_closed() {
+        if order.is_closed() || cache.is_order_closed(&client_order_id) {
             log::warn!("Cannot cancel order: already closed");
             return;
         }
 
-        self.submit_order_commands.remove(&order.client_order_id());
+        drop(cache);
+        self.submit_order_commands.remove(&client_order_id);
 
         if let Some(handler) = &self.cancel_order_handler {
             handler.handle_cancel_order(order);
@@ -627,7 +627,7 @@ mod tests {
         events::{OrderAccepted, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
         instruments::{Instrument, stubs::audusd_sim},
-        orders::OrderTestBuilder,
+        orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -712,6 +712,24 @@ mod tests {
             .build()
     }
 
+    // Creates a `SubmitOrder` command suitable for seeding `submit_order_commands`
+    // so that whether `cancel_order` removed the entry can be observed.
+    fn make_submit_command(order: &OrderAny) -> SubmitOrder {
+        SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )
+    }
+
     #[rstest]
     fn test_order_manager_with_handlers() {
         let (clock, cache, emulator) = create_test_components();
@@ -748,8 +766,18 @@ mod tests {
             .borrow_mut()
             .add_order(order.clone(), None, None, false)
             .unwrap();
+        manager
+            .submit_order_commands
+            .insert(order.client_order_id(), make_submit_command(&order));
 
         manager.cancel_order(&order);
+
+        assert!(
+            !manager
+                .submit_order_commands
+                .contains_key(&order.client_order_id()),
+            "expected dispatch path to remove the submit command",
+        );
     }
 
     #[rstest]
@@ -773,8 +801,131 @@ mod tests {
             .borrow_mut()
             .add_order(order.clone(), None, None, false)
             .unwrap();
+        manager
+            .submit_order_commands
+            .insert(order.client_order_id(), make_submit_command(&order));
 
         manager.cancel_order(&order);
         manager.modify_order_quantity(&order, Quantity::from(50_000));
+
+        assert!(
+            !manager
+                .submit_order_commands
+                .contains_key(&order.client_order_id()),
+            "no-handler dispatch path should still remove the submit command",
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_order_skips_when_pending_cancel_local() {
+        let (clock, cache, _emulator) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true, None, None, None);
+        let order = create_test_stop_order();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache.borrow_mut().update_order_pending_cancel_local(&order);
+        manager
+            .submit_order_commands
+            .insert(order.client_order_id(), make_submit_command(&order));
+
+        manager.cancel_order(&order);
+
+        assert!(
+            manager
+                .submit_order_commands
+                .contains_key(&order.client_order_id()),
+            "pending-cancel-local gate should short-circuit before removing the submit command",
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_order_skips_when_passed_order_is_closed() {
+        // The caller has applied a closing event to its local clone but has
+        // not yet called `cache.update_order`, so the cache index still
+        // reports open. The gate must short-circuit on the local state.
+        let (clock, cache, _emulator) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true, None, None, None);
+
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim().id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("1.00050"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        let canceled_event =
+            TestOrderEventStubs::canceled(&order, AccountId::from("ACCOUNT-001"), None);
+        order.apply(canceled_event).unwrap();
+
+        assert!(order.is_closed());
+        assert!(!cache.borrow().is_order_closed(&order.client_order_id()));
+
+        manager
+            .submit_order_commands
+            .insert(order.client_order_id(), make_submit_command(&order));
+
+        manager.cancel_order(&order);
+
+        assert!(
+            manager
+                .submit_order_commands
+                .contains_key(&order.client_order_id()),
+            "closed-order gate should short-circuit on the local state when the cache index is stale",
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_order_skips_when_cache_index_marks_closed() {
+        // The passed `OrderAny` is intentionally a stale (Submitted) clone so
+        // this test would fail if `cancel_order` checked `order.is_closed()`
+        // on the argument instead of `cache.is_order_closed(&id)`.
+        let (clock, cache, _emulator) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true, None, None, None);
+
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(audusd_sim().id())
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("1.00050"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .submit(true)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+
+        let stale_order = order.clone();
+
+        let canceled_event =
+            TestOrderEventStubs::canceled(&order, AccountId::from("ACCOUNT-001"), None);
+        order.apply(canceled_event).unwrap();
+        cache.borrow_mut().update_order(&order).unwrap();
+
+        assert!(cache.borrow().is_order_closed(&order.client_order_id()));
+
+        manager.submit_order_commands.insert(
+            stale_order.client_order_id(),
+            make_submit_command(&stale_order),
+        );
+
+        manager.cancel_order(&stale_order);
+
+        assert!(
+            manager
+                .submit_order_commands
+                .contains_key(&stale_order.client_order_id()),
+            "closed-order gate should short-circuit even when the passed reference is stale",
+        );
     }
 }

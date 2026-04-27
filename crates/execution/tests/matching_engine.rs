@@ -1733,6 +1733,200 @@ fn test_process_batch_cancel_command(
 }
 
 #[rstest]
+fn test_process_cancel_skips_already_canceled_order(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    // The matching core still tracks the order (no cancel has gone through the
+    // engine yet) but the cached order is already terminal because an external
+    // cancel event was applied. process_cancel must drop the stale command
+    // instead of emitting a duplicate OrderCanceled.
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        None,
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .submit(true)
+        .build();
+
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let cached_order = cache.borrow().order(&client_order_id).unwrap().clone();
+    let canceled_event =
+        TestOrderEventStubs::canceled(&cached_order, account_id, Some(VenueOrderId::from("V1")));
+    cache
+        .borrow_mut()
+        .mut_order(&client_order_id)
+        .unwrap()
+        .apply(canceled_event)
+        .unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let cancel_command = CancelOrder::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        client_order_id,
+        Some(VenueOrderId::from("V1")),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    assert!(
+        engine_l2.order_exists(client_order_id),
+        "matching core should still hold the order before process_cancel runs",
+    );
+
+    engine_l2.process_cancel(&cancel_command, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages.is_empty(),
+        "expected no events for cancel of already-terminal order, found {saved_messages:?}",
+    );
+    assert!(
+        !engine_l2.order_exists(client_order_id),
+        "stale matching-core entry should be purged when the gate fires",
+    );
+}
+
+#[rstest]
+fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    engine_config: OrderMatchingEngineConfig,
+) {
+    // Two OUO-linked limit orders. Cancelling the first leg cascades through
+    // cancel_contingent_orders, closing the second leg before the loop reaches
+    // it. The per-iteration re-fetch must observe that and skip cancelling it
+    // a second time.
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        Some(cache.clone()),
+        None,
+        Some(engine_config),
+        None,
+    );
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    let client_order_id_1 = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let client_order_id_2 = ClientOrderId::from("O-19700101-000000-001-001-2");
+
+    let mut limit_order_1 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_1)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![client_order_id_2])
+        .submit(true)
+        .build();
+
+    let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1496.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id_2)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![client_order_id_1])
+        .submit(true)
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(limit_order_1.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(limit_order_2.clone(), None, None, false)
+        .unwrap();
+
+    engine_l2.process_order(&mut limit_order_1, account_id);
+    engine_l2.process_order(&mut limit_order_2, account_id);
+
+    // Sync the orders_open index from the cached (Accepted) state so that
+    // process_cancel_all's snapshot finds both legs.
+    let cached_1 = cache.borrow().order(&client_order_id_1).unwrap().clone();
+    let cached_2 = cache.borrow().order(&client_order_id_2).unwrap().clone();
+    cache.borrow_mut().update_order(&cached_1).unwrap();
+    cache.borrow_mut().update_order(&cached_2).unwrap();
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let cancel_all_command = CancelAllOrders::new(
+        TraderId::test_default(),
+        Some(ClientId::from("CLIENT-001")),
+        StrategyId::test_default(),
+        instrument_eth_usdt.id(),
+        OrderSide::Buy,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    engine_l2.process_cancel_all(&cancel_all_command, account_id);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let canceled_ids: Vec<_> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Canceled(c) => Some(c.client_order_id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        canceled_ids.len(),
+        2,
+        "expected 2 canceled events (one per leg), found {saved_messages:?}",
+    );
+    assert!(canceled_ids.contains(&client_order_id_1));
+    assert!(canceled_ids.contains(&client_order_id_2));
+}
+
+#[rstest]
 fn test_expire_order(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,

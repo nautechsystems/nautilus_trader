@@ -2168,33 +2168,53 @@ impl OrderMatchingEngine {
             }
         };
 
-        if order.is_inflight() || order.is_open() {
-            self.cancel_order(&order, None);
+        if !order.is_inflight() && !order.is_open() {
+            self.purge_stale_core_entry(command.client_order_id);
+            return;
         }
+
+        self.cancel_order(&order, None);
     }
 
     /// Processes a cancel all orders command for an instrument.
     pub fn process_cancel_all(&mut self, command: &CancelAllOrders, _account_id: AccountId) {
         let instrument_id = command.instrument_id;
-        let open_orders = self
+        let order_side = if command.order_side == OrderSide::NoOrderSide {
+            None
+        } else {
+            Some(command.order_side)
+        };
+
+        let client_order_ids: Vec<ClientOrderId> = self
             .cache
             .borrow()
-            .orders_open(None, Some(&instrument_id), None, None, None)
-            .into_iter()
-            .cloned()
-            .collect::<Vec<OrderAny>>();
+            .orders_open(None, Some(&instrument_id), None, None, order_side)
+            .iter()
+            .map(|o| o.client_order_id())
+            .collect();
 
-        for order in open_orders {
-            if command.order_side != OrderSide::NoOrderSide
-                && command.order_side != order.order_side()
-            {
+        for client_order_id in client_order_ids {
+            let order = match self.cache.borrow().order(&client_order_id).cloned() {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if !order.is_inflight() && !order.is_open() {
+                self.purge_stale_core_entry(client_order_id);
                 continue;
             }
 
-            if order.is_inflight() || order.is_open() {
-                self.cancel_order(&order, None);
-            }
+            self.cancel_order(&order, None);
         }
+    }
+
+    // Removes a closed order's stale entry from the matching core so the next
+    // `iterate_bids/asks` does not produce a spurious fill action.
+    fn purge_stale_core_entry(&mut self, client_order_id: ClientOrderId) {
+        if self.core.order_exists(client_order_id) {
+            let _ = self.core.delete_order(client_order_id);
+        }
+        self.cached_filled_qty.swap_remove(&client_order_id);
     }
 
     /// Processes a batch cancel orders command.
