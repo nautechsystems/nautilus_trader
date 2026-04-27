@@ -16,13 +16,12 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::cache::Cache;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::OmsType,
     identifiers::{PositionId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
 };
-use uuid::Uuid;
 
 // FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -164,7 +163,7 @@ impl IdsGenerator {
         self.position_count += 1;
 
         if self.use_random_ids {
-            Some(PositionId::new(Uuid::new_v4().to_string()))
+            Some(PositionId::new(UUID4::new().to_string()))
         } else {
             Some(PositionId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
@@ -176,7 +175,7 @@ impl IdsGenerator {
         self.order_count += 1;
 
         if self.use_random_ids {
-            VenueOrderId::new(Uuid::new_v4().to_string())
+            VenueOrderId::new(UUID4::new().to_string())
         } else {
             VenueOrderId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.order_count).as_str(),
@@ -369,6 +368,32 @@ mod tests {
         let position_id_2 = ids_generator_with_position_ids.generate_venue_position_id();
         assert_eq!(position_id_1, Some(PositionId::new("BINANCE-1-1")));
         assert_eq!(position_id_2, Some(PositionId::new("BINANCE-1-2")));
+    }
+
+    #[rstest]
+    fn test_generate_venue_position_id_random_uses_uuid4_seam() {
+        // Pin that the use_random_ids branch routes through the UUID4 seam
+        // (RFC 4122 v4) rather than a raw uuid::Uuid::new_v4 call. The seam
+        // already swaps to madsim::rand::thread_rng() under cfg(madsim).
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut generator = IdsGenerator::new(
+            Venue::from("BINANCE"),
+            OmsType::Netting,
+            1,
+            true,
+            true,
+            cache,
+        );
+
+        let id = generator.generate_venue_position_id().expect("position id");
+        let s = id.as_str();
+
+        assert_eq!(s.len(), 36, "expected canonical UUID4 length");
+        assert_eq!(s.as_bytes()[14], b'4', "expected UUID v4 version digit");
+        assert!(
+            matches!(s.as_bytes()[19], b'8' | b'9' | b'a' | b'b'),
+            "expected RFC 4122 variant byte",
+        );
     }
 
     #[rstest]

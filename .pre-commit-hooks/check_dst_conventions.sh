@@ -2,9 +2,10 @@
 # Enforces deterministic simulation testing (DST) path bans in the in-scope crates.
 #
 # Rules (all applied to production code in the 16 in-scope crates):
-#   1. No direct std::time::Instant::now() or std::time::SystemTime::now() reads
+#   1. No direct std::time::Instant::now(), std::time::SystemTime::now(), or
+#      chrono::Utc::now() reads
 #   2. No raw RNG entries (rand::thread_rng, rand::rng(), fastrand::,
-#      getrandom::, OsRng) without cfg gating
+#      getrandom::, OsRng, uuid::Uuid::new_v4) without cfg gating
 #   3. No unbiased tokio::select! (must have `biased;` as first token in block)
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
@@ -38,8 +39,12 @@ IN_SCOPE_CRATES=(
 
 # Rule-1 L-dispositioned sites from the codebase audit: log timing, progress
 # reporting, and audit-only uses that do not affect DST-path state.
+# Logging files appear here because timestamp generation for log records is
+# explicitly scoped out of the determinism contract.
 RULE1_ALLOWLIST=(
   "crates/common/src/cache/mod.rs"
+  "crates/common/src/logging/bridge.rs"
+  "crates/common/src/logging/writer.rs"
   "crates/model/src/defi/reporting.rs"
 )
 
@@ -121,6 +126,17 @@ file_imports_std_instant() {
 
 file_imports_std_system_time() {
   rg -qU 'use\s+std::[^;]*\btime::(SystemTime\b|\{[^}]*\bSystemTime\b)' \
+    "$1" 2> /dev/null
+}
+
+# Detect whether a file imports `Utc` from the chrono crate so bare
+# `Utc::now()` calls can be flagged. Covers single, brace-list, and aliased
+# forms:
+#   - `use chrono::Utc;`
+#   - `use chrono::{..., Utc, ...};`
+#   - `use chrono::Utc as _;`
+file_imports_chrono_utc() {
+  rg -qU 'use\s+chrono::(Utc\b|\{[^}]*\bUtc\b)' \
     "$1" 2> /dev/null
 }
 
@@ -208,6 +224,22 @@ done < <(rg -n --no-heading \
   '\bSystemTime::now\(\)' \
   "${GLOBS[@]}" --type rust 2> /dev/null || true)
 
+# Fully-qualified `chrono::Utc::now()` is always caught.
+while IFS=: read -r file line_num content; do
+  check_rule1_hit "$file" "$line_num" "$content"
+done < <(rg -n --no-heading \
+  'chrono::Utc::now\(\)' \
+  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+
+# Bare `Utc::now()` counts only when the file imports chrono::Utc.
+while IFS=: read -r file line_num content; do
+  [[ -z "$file" ]] && continue
+  file_imports_chrono_utc "$file" || continue
+  check_rule1_hit "$file" "$line_num" "$content"
+done < <(rg -n --no-heading \
+  '\bUtc::now\(\)' \
+  "${GLOBS[@]}" --type rust 2> /dev/null || true)
+
 ################################################################################
 # Rule 2: raw RNG imports
 ################################################################################
@@ -226,7 +258,7 @@ while IFS=: read -r file line_num content; do
   report "rule2" "$file" "$line_num" "$content" \
     "Route RNG through a seeded source; madsim::rand under cfg(madsim)"
 done < <(rg -n --no-heading \
-  '(?:^|[^:])rand::thread_rng|(?:^|[^:])rand::rng\(\)|fastrand::|getrandom::|\bOsRng\b' \
+  '(?:^|[^:])rand::thread_rng|(?:^|[^:])rand::rng\(\)|fastrand::|getrandom::|\bOsRng\b|\bUuid::new_v4\(\)' \
   "${GLOBS[@]}" --type rust 2> /dev/null || true)
 
 ################################################################################

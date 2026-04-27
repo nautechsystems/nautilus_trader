@@ -18,7 +18,7 @@ use std::convert::TryFrom;
 
 use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Utc, Weekday};
 
-use crate::UnixNanos;
+use crate::{UnixNanos, time::nanos_since_unix_epoch};
 
 /// Number of milliseconds in one second.
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
@@ -393,23 +393,18 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
 ///
 /// Returns an error if the timestamp is invalid.
 pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> {
+    // Use the time seam so the comparison is deterministic under
+    // `simulation` + `cfg(madsim)` and we avoid a wall-clock call that
+    // would otherwise bypass the DST contract.
     let timestamp_ns = timestamp_ns.as_u64();
-    let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
-    let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
-    // Convert seconds to i64 safely
-    let secs_i64 = i64::try_from(seconds)
-        .map_err(|_| anyhow::anyhow!("Timestamp seconds overflow: {seconds}"))?;
-    let timestamp = DateTime::from_timestamp(secs_i64, nanoseconds)
-        .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
-    let now = Utc::now();
+    let now_ns = nanos_since_unix_epoch();
 
     // Future timestamps are not within the last 24 hours
-    if timestamp > now {
+    if timestamp_ns > now_ns {
         return Ok(false);
     }
 
-    // Check if the timestamp is within the last 24 hours (non-negative duration <= 1 day)
-    Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
+    Ok(now_ns - timestamp_ns <= NANOSECONDS_IN_DAY)
 }
 
 /// Subtract `n` months from a chrono `DateTime<Utc>`.

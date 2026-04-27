@@ -384,7 +384,7 @@ regression that the per-area audit notes above protect against.
 | `OsRng`                | 0                                                    | closed     |
 | `rand::rng()`          | `network/backoff.rs:105`                             | scoped‑out |
 | `Uuid::new_v4` (tests) | `core/uuid.rs:380`                                   | closed     |
-| `Uuid::new_v4` (prod)  | `execution/matching_engine/ids_generator.rs:167,179` | unresolved |
+| `Uuid::new_v4` (prod)  | `execution/matching_engine/ids_generator.rs:167,179` | closed     |
 
 **Notes.** `rand::rng()` is the `rand` 0.9 replacement for `rand::thread_rng`
 and draws from the same per-thread CSPRNG. Rule 2 of the hook now matches
@@ -412,23 +412,18 @@ Allowed-with-marker call sites:
   `// dst-ok`: transport-layer, out of DST scope per
   `nautilus_dst/docs/compatibility_matrix.md`.
 
-`Uuid::new_v4` is the separate `uuid` crate path in the matching engine ID
+`Uuid::new_v4` was the separate `uuid` crate path in the matching engine ID
 generator, gated behind `use_random_ids` on `IdsGenerator`. The default ID
-scheme is deterministic (`{venue}-{raw_id}-{count}`). Under the hood,
-`Uuid::new_v4` also reaches `getrandom`, which condition 5 of the contract
-in `docs/concepts/dst.md` lists as not intercepted by the current `madsim`
-wiring.
-
-**Mitigation.** `Uuid::new_v4` close-out is the remaining follow-up:
-
-1. Route the production branches through `madsim::rand` under `cfg(madsim)`.
-2. Extend Rule 2 of the hook to ban `Uuid::new_v4` in the in-scope crates.
-   Call sites that remain intentionally non-deterministic mark with
-   `// dst-ok` and a reason.
-
-Deferred until a DST scenario exercises these call sites. Adapter-crate
-RNG sources (`Uuid::new_v4`, `chrono::Utc::now`-seeded paths, venue-side
-randomness) remain `scoped-out` per "Adapter I/O surfaces" above.
+scheme is deterministic (`{venue}-{raw_id}-{count}`). The two `use_random_ids`
+branches now route through `nautilus_core::UUID4::new()`, which already
+draws from `madsim::rand::thread_rng()` under `cfg(all(feature =
+"simulation", madsim))` and from `rand::rng()` under the negation, so the
+non-default ID scheme is also deterministic on the DST path. Rule 2 of the
+hook now bans bare `Uuid::new_v4()` in the in-scope crates; call sites that
+remain intentionally non-deterministic must mark with `// dst-ok` and a
+reason. Adapter-crate RNG sources (`Uuid::new_v4`,
+`chrono::Utc::now`-seeded paths, venue-side randomness) remain
+`scoped-out` per "Adapter I/O surfaces" above.
 
 ### `tokio::task::LocalSet` and `spawn_blocking`
 
@@ -480,23 +475,20 @@ the hook unless it carries `// dst-ok` with a reason.
 |------------------------------------------------------------|-------------|
 | `common/logging/bridge.rs:58` log timestamp                | scoped‑out  |
 | `common/logging/writer.rs:148,161,265,281,324,355,359` log file rotation | scoped‑out  |
-| `core/datetime.rs:404` helper for current nanos            | unresolved  |
+| `core/datetime.rs:404` `is_within_last_24_hours`           | closed      |
 
-**Notes.** Rule 1 of the hook matches `Instant::now` and `SystemTime::now`
-only; it does not match `chrono::Utc::now`. The logging bridge and writer
-sites are scoped out under "Logging runs on real OS threads" in
-`docs/concepts/dst.md`: logging is outside the determinism contract, the
-writer thread is cfg-gated out under `cfg(madsim)`, and log events are
-dropped. The helper in `crates/core/src/datetime.rs:404` is reachable from
-non-logging call paths and is a real scope hole that the hook does not
-catch.
-
-**Mitigation.** Close with two changes:
-
-1. Route `core/datetime.rs:404` through
-   `nautilus_core::time::duration_since_unix_epoch`.
-2. Extend Rule 1 of the hook to match `chrono::Utc::now` in the in-scope
-   crates, allowlisting the logging sites at file level.
+**Notes.** Rule 1 of the hook now matches `chrono::Utc::now` in addition
+to `Instant::now` and `SystemTime::now`. The logging bridge and writer
+sites stay scoped out under "Logging runs on real OS threads" in
+`docs/concepts/dst.md` and are entered in the file-level
+`RULE1_ALLOWLIST` (logging is outside the determinism contract, the writer
+thread is cfg-gated out under `cfg(madsim)`, and log events are dropped).
+The helper in `crates/core/src/datetime.rs:404` was reachable from
+non-logging call paths and was a real scope hole; it now goes through
+`nautilus_core::time::nanos_since_unix_epoch()` and compares directly in
+`u64` nanos, dropping the chrono round-trip. Any new `chrono::Utc::now`
+call on the DST path now fails pre-commit unless it carries
+`// dst-ok` with a reason.
 
 ## Deferred items
 
@@ -570,21 +562,17 @@ remains a design intent, not a verified property.
 
 | Tag        | Count |
 |------------|-------|
-| closed     | 33    |
+| closed     | 35    |
 | gated      | 10    |
 | scoped‑out | 24    |
-| unresolved | 4     |
+| unresolved | 2     |
 
 Unresolved entries at the end of this phase:
 
-1. `Uuid::new_v4` in `execution/matching_engine/ids_generator.rs` when
-   `use_random_ids` is active
-2. `chrono::Utc::now` in `core/datetime.rs:404`
-3. Logger file-logging tests under `cfg(madsim)`
-4. Dynamic same-seed diff harness
+1. Logger file-logging tests under `cfg(madsim)`
+2. Dynamic same-seed diff harness
 
-Items 1 and 2 are source-level follow-ups in this repository. Item 3 is
-a test-only follow-up in this repository. Item 4 lives in
+Item 1 is a test-only follow-up in this repository. Item 2 lives in
 `nautilus_dst`.
 
 Adapter crates and Python / FFI bindings remain `scoped-out`. A per-adapter
