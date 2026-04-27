@@ -1001,10 +1001,13 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::{
-            accepted::OrderAcceptedBuilder, canceled::OrderCanceledBuilder,
-            denied::OrderDeniedBuilder, initialized::OrderInitializedBuilder,
-            pending_update::OrderPendingUpdateBuilder, spec::OrderFilledSpec,
-            submitted::OrderSubmittedBuilder, triggered::OrderTriggeredBuilder,
+            accepted::OrderAcceptedBuilder,
+            canceled::OrderCanceledBuilder,
+            denied::OrderDeniedBuilder,
+            pending_update::OrderPendingUpdateBuilder,
+            spec::{OrderFilledSpec, OrderInitializedSpec},
+            submitted::OrderSubmittedBuilder,
+            triggered::OrderTriggeredBuilder,
             updated::OrderUpdatedBuilder,
         },
         identifiers::InstrumentId,
@@ -1044,11 +1047,10 @@ mod tests {
     #[case(OrderSide::Buy, dec!(10_000))]
     #[case(OrderSide::Sell, dec!(-10_000))]
     fn test_signed_decimal_qty(#[case] order_side: OrderSide, #[case] expected: Decimal) {
-        let order: MarketOrder = OrderInitializedBuilder::default()
+        let order: MarketOrder = OrderInitializedSpec::builder()
             .order_side(order_side)
             .quantity(Quantity::from(10_000))
             .build()
-            .unwrap()
             .into();
 
         let result = order.signed_decimal_qty();
@@ -1072,11 +1074,10 @@ mod tests {
         #[case] position_qty: Quantity,
         #[case] expected: bool,
     ) {
-        let order: MarketOrder = OrderInitializedBuilder::default()
+        let order: MarketOrder = OrderInitializedSpec::builder()
             .order_side(order_side)
             .quantity(order_qty)
             .build()
-            .unwrap()
             .into();
 
         assert_eq!(
@@ -1087,7 +1088,7 @@ mod tests {
 
     #[rstest]
     fn test_order_state_transition_denied() {
-        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         let denied = OrderDeniedBuilder::default().build().unwrap();
         let event = OrderEventAny::Denied(denied);
 
@@ -1102,7 +1103,7 @@ mod tests {
 
     #[rstest]
     fn test_order_life_cycle_to_filled() {
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let init = OrderInitializedSpec::builder().build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let filled = OrderFilledSpec::builder().build();
@@ -1128,10 +1129,9 @@ mod tests {
         // Options and spreads can legitimately trade at negative prices. The
         // weighted average-price update must not panic when `last_px` or the
         // prior `avg_px` is below zero.
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let fill1 = OrderFilledSpec::builder()
@@ -1160,7 +1160,7 @@ mod tests {
 
     #[rstest]
     fn test_order_state_transition_to_canceled() {
-        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let canceled = OrderCanceledBuilder::default().build().unwrap();
 
@@ -1174,7 +1174,7 @@ mod tests {
 
     #[rstest]
     fn test_order_life_cycle_to_partially_filled() {
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let init = OrderInitializedSpec::builder().build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let filled = OrderFilledSpec::builder()
@@ -1196,7 +1196,7 @@ mod tests {
 
     #[rstest]
     fn test_order_commission_calculation() {
-        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         order
             .commissions
             .insert(Currency::USD(), Money::new(10.0, Currency::USD()));
@@ -1213,12 +1213,11 @@ mod tests {
 
     #[rstest]
     fn test_order_is_primary() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
-            .exec_algorithm_id(Some(ExecAlgorithmId::from("ALGO-001")))
-            .exec_spawn_id(Some(ClientOrderId::from("O-001")))
+        let order: MarketOrder = OrderInitializedSpec::builder()
+            .exec_algorithm_id(ExecAlgorithmId::from("ALGO-001"))
+            .exec_spawn_id(ClientOrderId::from("O-001"))
             .client_order_id(ClientOrderId::from("O-001"))
             .build()
-            .unwrap()
             .into();
 
         assert!(order.is_primary());
@@ -1227,12 +1226,11 @@ mod tests {
 
     #[rstest]
     fn test_order_is_spawned() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
-            .exec_algorithm_id(Some(ExecAlgorithmId::from("ALGO-001")))
-            .exec_spawn_id(Some(ClientOrderId::from("O-002")))
+        let order: MarketOrder = OrderInitializedSpec::builder()
+            .exec_algorithm_id(ExecAlgorithmId::from("ALGO-001"))
+            .exec_spawn_id(ClientOrderId::from("O-002"))
             .client_order_id(ClientOrderId::from("O-001"))
             .build()
-            .unwrap()
             .into();
 
         assert!(!order.is_primary());
@@ -1241,10 +1239,9 @@ mod tests {
 
     #[rstest]
     fn test_order_is_contingency() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
-            .contingency_type(Some(ContingencyType::Oto))
+        let order: MarketOrder = OrderInitializedSpec::builder()
+            .contingency_type(ContingencyType::Oto)
             .build()
-            .unwrap()
             .into();
 
         assert!(order.is_contingency());
@@ -1254,10 +1251,9 @@ mod tests {
 
     #[rstest]
     fn test_order_is_child_order() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
-            .parent_order_id(Some(ClientOrderId::from("PARENT-001")))
+        let order: MarketOrder = OrderInitializedSpec::builder()
+            .parent_order_id(ClientOrderId::from("PARENT-001"))
             .build()
-            .unwrap()
             .into();
 
         assert!(order.is_child_order());
@@ -1269,10 +1265,9 @@ mod tests {
         use crate::orders::limit::LimitOrder;
 
         // Create order with distinct timestamps to verify parameter ordering
-        let init = OrderInitializedBuilder::default()
-            .price(Some(Price::from("100.00")))
-            .build()
-            .unwrap();
+        let init = OrderInitializedSpec::builder()
+            .price(Price::from("100.00"))
+            .build();
         let submitted = OrderSubmittedBuilder::default()
             .ts_event(UnixNanos::from(1_000_000))
             .build()
@@ -1297,7 +1292,7 @@ mod tests {
     #[rstest]
     fn test_order_accepted_without_submitted_sets_account_id() {
         // Test external order flow: Initialized -> Accepted (no Submitted)
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let init = OrderInitializedSpec::builder().build();
         let accepted = OrderAcceptedBuilder::default()
             .account_id(AccountId::from("EXTERNAL-001"))
             .build()
@@ -1319,7 +1314,7 @@ mod tests {
     #[rstest]
     fn test_order_accepted_after_submitted_preserves_account_id() {
         // Test normal order flow: Initialized -> Submitted -> Accepted
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let init = OrderInitializedSpec::builder().build();
         let submitted = OrderSubmittedBuilder::default()
             .account_id(AccountId::from("SUBMITTED-001"))
             .build()
@@ -1346,10 +1341,9 @@ mod tests {
     #[rstest]
     fn test_overfill_tracks_overfill_qty() {
         // Test that overfill is tracked on the order
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let overfill = OrderFilledSpec::builder()
@@ -1371,10 +1365,9 @@ mod tests {
     #[rstest]
     fn test_partial_fill_then_overfill() {
         // Test multiple fills resulting in overfill
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let fill1 = OrderFilledSpec::builder()
@@ -1408,10 +1401,9 @@ mod tests {
     #[rstest]
     fn test_exact_fill_no_overfill() {
         // Test that exact fill doesn't trigger overfill tracking
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let filled = OrderFilledSpec::builder()
@@ -1434,10 +1426,9 @@ mod tests {
         // Simulates real exchange scenario with fractional fills:
         // Order for 2450.5 units, partially filled 1202.5, then fill of 1285.5 arrives
         // Total filled: 2488.0, overfill: 37.5
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from("2450.5"))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let fill1 = OrderFilledSpec::builder()
@@ -1471,10 +1462,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_overfill_returns_zero_when_no_overfill() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
+        let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build()
-            .unwrap()
             .into();
 
         // Fill qty less than order qty - no overfill
@@ -1488,10 +1478,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_overfill_returns_overfill_amount() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
+        let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
             .build()
-            .unwrap()
             .into();
 
         // Fill qty exceeds order qty
@@ -1501,10 +1490,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_overfill_accounts_for_existing_fills() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let partial_fill = OrderFilledSpec::builder()
@@ -1528,10 +1516,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_overfill_with_fractional_quantities() {
-        let order: MarketOrder = OrderInitializedBuilder::default()
+        let order: MarketOrder = OrderInitializedSpec::builder()
             .quantity(Quantity::from("2450.5"))
             .build()
-            .unwrap()
             .into();
 
         // Simulates the exact scenario from user's log
@@ -1542,10 +1529,9 @@ mod tests {
 
     #[rstest]
     fn test_calculate_overfill_zero_after_fractional_partial_fill() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from("1.000"))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let partial_fill = OrderFilledSpec::builder()
@@ -1564,10 +1550,9 @@ mod tests {
 
     #[rstest]
     fn test_duplicate_fill_rejected() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let fill1 = OrderFilledSpec::builder()
@@ -1636,10 +1621,9 @@ mod tests {
 
     #[rstest]
     fn test_different_trade_ids_allowed() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let fill1 = OrderFilledSpec::builder()
@@ -1665,10 +1649,9 @@ mod tests {
 
     #[rstest]
     fn test_pending_update_order_restores_status_on_updated() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let pending_update = OrderPendingUpdateBuilder::default().build().unwrap();
@@ -1698,10 +1681,9 @@ mod tests {
     fn test_partially_filled_order_can_be_updated() {
         // Test that a partially filled order can receive an Updated event
         // and remain in PartiallyFilled status
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::from(100_000))
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let partial_fill = OrderFilledSpec::builder()
@@ -1761,11 +1743,10 @@ mod tests {
 
     #[rstest]
     fn test_order_updated_with_is_quote_quantity_clears_flag() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::new(10.0, 6))
             .quote_quantity(true)
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let updated = OrderUpdatedBuilder::default()
@@ -1788,11 +1769,10 @@ mod tests {
 
     #[rstest]
     fn test_order_updated_default_is_quote_quantity_clears_flag() {
-        let init = OrderInitializedBuilder::default()
+        let init = OrderInitializedSpec::builder()
             .quantity(Quantity::new(10.0, 6))
             .quote_quantity(true)
-            .build()
-            .unwrap();
+            .build();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         // Builder defaults is_quote_quantity to false
@@ -1814,7 +1794,7 @@ mod tests {
 
     #[rstest]
     fn test_canceled_then_partial_fill_then_canceled() {
-        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();
         let accepted = OrderAcceptedBuilder::default().build().unwrap();
         let canceled1 = OrderCanceledBuilder::default().build().unwrap();

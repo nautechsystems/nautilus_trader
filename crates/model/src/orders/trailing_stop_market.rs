@@ -626,7 +626,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{TimeInForce, TrailingOffsetType, TriggerType},
-        events::order::{initialized::OrderInitializedBuilder, spec::OrderFilledSpec},
+        events::order::spec::{OrderFilledSpec, OrderInitializedSpec},
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -789,14 +789,13 @@ mod tests {
     #[rstest]
     fn test_trailing_stop_market_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a TrailingStopMarketOrder
-        let order_initialized = OrderInitializedBuilder::default()
-            .trigger_price(Some(Price::new(100.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
-            .trailing_offset(Some(Decimal::new(5, 1))) // 0.5
-            .trailing_offset_type(Some(TrailingOffsetType::NoTrailingOffset))
+        let order_initialized = OrderInitializedSpec::builder()
+            .trigger_price(Price::new(100.0, 2))
+            .trigger_type(TriggerType::Default)
+            .trailing_offset(Decimal::new(5, 1)) // 0.5
+            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
             .order_type(OrderType::TrailingStopMarket)
-            .build()
-            .unwrap();
+            .build();
 
         // Convert the OrderInitialized event into a TrailingStopMarketOrder
         let order: TrailingStopMarketOrder = order_initialized.clone().into();

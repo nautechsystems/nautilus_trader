@@ -611,7 +611,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, TimeInForce, TriggerType},
-        events::order::initialized::OrderInitializedBuilder,
+        events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
@@ -835,18 +835,17 @@ mod tests {
     #[rstest]
     fn test_stop_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a StopLimitOrder
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::StopLimit)
             .quantity(Quantity::from(10))
-            .price(Some(Price::new(100.0, 2)))
-            .trigger_price(Some(Price::new(95.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
             .post_only(true)
             .reduce_only(true)
-            .expire_time(Some(UnixNanos::from(1_234_567_890)))
-            .display_qty(Some(Quantity::from(5)))
-            .build()
-            .unwrap();
+            .expire_time(UnixNanos::from(1_234_567_890))
+            .display_qty(Quantity::from(5))
+            .build();
 
         // Convert the OrderInitialized event into a StopLimitOrder
         let order: StopLimitOrder = order_initialized.clone().into();

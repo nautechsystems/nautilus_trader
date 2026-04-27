@@ -577,7 +577,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        events::order::{initialized::OrderInitializedBuilder, spec::OrderFilledSpec},
+        events::order::spec::{OrderFilledSpec, OrderInitializedSpec},
         identifiers::{InstrumentId, TradeId, VenueOrderId},
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -697,10 +697,9 @@ mod tests {
     #[rstest]
     fn test_market_to_limit_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a MarketToLimitOrder
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::MarketToLimit)
-            .build()
-            .unwrap();
+            .build();
 
         // Convert the OrderInitialized event into a MarketToLimitOrder
         let order: MarketToLimitOrder = order_initialized.clone().into();

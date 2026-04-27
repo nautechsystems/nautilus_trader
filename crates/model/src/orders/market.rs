@@ -556,7 +556,7 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        events::{OrderEventAny, OrderUpdated, order::initialized::OrderInitializedBuilder},
+        events::{OrderEventAny, OrderUpdated, order::spec::OrderInitializedSpec},
         instruments::{CurrencyPair, stubs::*},
         orders::{MarketOrder, Order, builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
@@ -630,13 +630,12 @@ mod tests {
     #[rstest]
     fn test_market_order_from_order_initialized(audusd_sim: CurrencyPair) {
         // Create an OrderInitialized event with all required fields for a MarketOrder
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::Market)
             .instrument_id(audusd_sim.id)
             .quantity(Quantity::from(10))
             .order_side(OrderSide::Buy)
-            .build()
-            .unwrap();
+            .build();
 
         // Convert the OrderInitialized event into a MarketOrder
         let order: MarketOrder = order_initialized.clone().into();

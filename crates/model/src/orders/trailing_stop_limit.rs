@@ -645,7 +645,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{TimeInForce, TrailingOffsetType, TriggerType},
-        events::order::initialized::OrderInitializedBuilder,
+        events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
@@ -798,16 +798,15 @@ mod tests {
 
     #[rstest]
     fn test_trailing_stop_limit_order_from_order_initialized() {
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::TrailingStopLimit)
-            .price(Some(Price::new(100.0, 2)))
-            .trigger_price(Some(Price::new(95.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
-            .limit_offset(Some(dec!(2.0)))
-            .trailing_offset(Some(dec!(1.0)))
-            .trailing_offset_type(Some(TrailingOffsetType::Price))
-            .build()
-            .unwrap();
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
+            .limit_offset(dec!(2.0))
+            .trailing_offset(dec!(1.0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
 
         let order: TrailingStopLimitOrder = order_initialized.clone().into();
 

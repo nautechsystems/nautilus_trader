@@ -22,5 +22,7 @@
 //! Specs are gated behind the `stubs` feature and must not be referenced from production code.
 
 pub mod filled;
+pub mod initialized;
 
 pub use filled::OrderFilledSpec;
+pub use initialized::OrderInitializedSpec;

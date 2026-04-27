@@ -624,7 +624,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{TimeInForce, TriggerType},
-        events::order::{initialized::OrderInitializedBuilder, spec::OrderFilledSpec},
+        events::order::spec::{OrderFilledSpec, OrderInitializedSpec},
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -766,13 +766,12 @@ mod tests {
     #[rstest]
     fn test_limit_if_touched_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a LimitIfTouchedOrder
-        let order_initialized = OrderInitializedBuilder::default()
-            .price(Some(Price::new(100.0, 2)))
-            .trigger_price(Some(Price::new(95.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
+        let order_initialized = OrderInitializedSpec::builder()
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
             .order_type(OrderType::LimitIfTouched)
-            .build()
-            .unwrap();
+            .build();
 
         // Convert the OrderInitialized event into a LimitIfTouchedOrder
         let order: LimitIfTouchedOrder = order_initialized.clone().into();

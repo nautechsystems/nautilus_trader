@@ -348,7 +348,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderType, TrailingOffsetType},
-        events::{OrderEventAny, OrderUpdated, order::initialized::OrderInitializedBuilder},
+        events::{OrderEventAny, OrderUpdated, order::spec::OrderInitializedSpec},
         identifiers::{ClientOrderId, InstrumentId, StrategyId},
         orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
@@ -379,12 +379,11 @@ mod tests {
     #[rstest]
     fn test_order_any_conversion_from_events() {
         // Create an OrderInitialized event
-        let init_event = OrderInitializedBuilder::default()
+        let init_event = OrderInitializedSpec::builder()
             .order_type(OrderType::Market)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
-            .build()
-            .unwrap();
+            .build();
 
         // Create a vector of events
         let events = vec![OrderEventAny::Initialized(init_event.clone())];

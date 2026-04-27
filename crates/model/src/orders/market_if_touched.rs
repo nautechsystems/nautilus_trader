@@ -585,7 +585,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce, TriggerType},
-        events::order::{initialized::OrderInitializedBuilder, spec::OrderFilledSpec},
+        events::order::spec::{OrderFilledSpec, OrderInitializedSpec},
         identifiers::{InstrumentId, TradeId, VenueOrderId},
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -699,12 +699,11 @@ mod tests {
     #[rstest]
     fn test_market_if_touched_order_from_order_initialized() {
         // Create an OrderInitialized event with all required fields for a MarketIfTouchedOrder
-        let order_initialized = OrderInitializedBuilder::default()
-            .trigger_price(Some(Price::new(100.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
+        let order_initialized = OrderInitializedSpec::builder()
+            .trigger_price(Price::new(100.0, 2))
+            .trigger_type(TriggerType::Default)
             .order_type(OrderType::MarketIfTouched)
-            .build()
-            .unwrap();
+            .build();
 
         // Convert the OrderInitialized event into a MarketIfTouchedOrder
         let order: MarketIfTouchedOrder = order_initialized.clone().into();

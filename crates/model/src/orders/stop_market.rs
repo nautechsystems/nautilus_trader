@@ -612,7 +612,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{TimeInForce, TriggerType},
-        events::order::initialized::OrderInitializedBuilder,
+        events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -762,13 +762,12 @@ mod tests {
     #[rstest]
     fn test_stop_market_order_from_order_initialized() {
         // Create an OrderInitialized event with required fields
-        let order_initialized = OrderInitializedBuilder::default()
+        let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::StopMarket)
             .quantity(Quantity::from(10))
-            .trigger_price(Some(Price::new(100.0, 2)))
-            .trigger_type(Some(TriggerType::Default))
-            .build()
-            .unwrap();
+            .trigger_price(Price::new(100.0, 2))
+            .trigger_type(TriggerType::Default)
+            .build();
 
         // Convert the OrderInitialized event into a StopMarketOrder
         let order: StopMarketOrder = order_initialized.clone().into();
