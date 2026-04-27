@@ -61,7 +61,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, MAX_FLOAT_PRECISION, check_fixed_precision,
-    mantissa_exponent_to_fixed_i128,
+    mantissa_exponent_to_fixed_i128, raw_scales_match,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -274,6 +274,52 @@ impl Quantity {
         check_fixed_precision(precision)?;
 
         Ok(Self { raw, precision })
+    }
+
+    /// Performs a checked addition, returning `None` on raw integer overflow, when the
+    /// result exceeds `QUANTITY_RAW_MAX`, when either operand is `QUANTITY_UNDEF`, or
+    /// when the operands have mixed raw scales (one at `FIXED_PRECISION` scale, the
+    /// other at a defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Add` implementation: uses the maximum precision of both operands.
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        if self.raw == QUANTITY_UNDEF || rhs.raw == QUANTITY_UNDEF {
+            return None;
+        }
+
+        if !raw_scales_match(self.precision, rhs.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_add(rhs.raw)?;
+        if raw > QUANTITY_RAW_MAX {
+            return None;
+        }
+        Some(Self {
+            raw,
+            precision: self.precision.max(rhs.precision),
+        })
+    }
+
+    /// Performs a checked subtraction, returning `None` if `rhs` is greater than `self`,
+    /// when either operand is `QUANTITY_UNDEF`, or when the operands have mixed raw
+    /// scales (one at `FIXED_PRECISION` scale, the other at a defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        if self.raw == QUANTITY_UNDEF || rhs.raw == QUANTITY_UNDEF {
+            return None;
+        }
+
+        if !raw_scales_match(self.precision, rhs.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_sub(rhs.raw)?;
+        Some(Self {
+            raw,
+            precision: self.precision.max(rhs.precision),
+        })
     }
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
@@ -1309,6 +1355,73 @@ mod tests {
     }
 
     #[rstest]
+    fn test_quantity_checked_add_within_bounds() {
+        let a = Quantity::new(10.0, 2);
+        let b = Quantity::new(5.0, 2);
+        assert_eq!(a.checked_add(b), Some(Quantity::new(15.0, 2)));
+    }
+
+    #[rstest]
+    fn test_quantity_checked_add_above_max_returns_none() {
+        let near_max = Quantity::from_raw(QUANTITY_RAW_MAX, 0);
+        let one = Quantity::new(1.0, 0);
+        assert_eq!(near_max.checked_add(one), None);
+    }
+
+    #[rstest]
+    fn test_quantity_checked_sub_within_bounds() {
+        let a = Quantity::new(10.0, 2);
+        let b = Quantity::new(3.0, 2);
+        assert_eq!(a.checked_sub(b), Some(Quantity::new(7.0, 2)));
+    }
+
+    #[rstest]
+    fn test_quantity_checked_sub_underflow_returns_none() {
+        let a = Quantity::new(3.0, 2);
+        let b = Quantity::new(10.0, 2);
+        assert_eq!(a.checked_sub(b), None);
+    }
+
+    #[rstest]
+    fn test_quantity_checked_sub_to_zero() {
+        let a = Quantity::new(5.0, 2);
+        assert_eq!(a.checked_sub(a), Some(Quantity::zero(2)));
+    }
+
+    #[rstest]
+    fn test_quantity_checked_arith_rejects_undef() {
+        let undef = Quantity::from_raw(QUANTITY_UNDEF, 0);
+        let one = Quantity::new(1.0, 0);
+        assert_eq!(undef.checked_add(one), None);
+        assert_eq!(one.checked_add(undef), None);
+        assert_eq!(undef.checked_sub(one), None);
+        assert_eq!(one.checked_sub(undef), None);
+    }
+
+    #[rstest]
+    fn test_quantity_checked_add_at_exact_max_returns_some() {
+        let near_max = Quantity::from_raw(QUANTITY_RAW_MAX - 1, 0);
+        let one_unit = Quantity::from_raw(1, 0);
+        assert_eq!(
+            near_max.checked_add(one_unit),
+            Some(Quantity::from_raw(QUANTITY_RAW_MAX, 0)),
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_checked_arith_uses_max_precision() {
+        let a = Quantity::new(10.5, 1);
+        let b = Quantity::new(2.25, 2);
+        let sum = a.checked_add(b).unwrap();
+        assert_eq!(sum.precision, 2);
+        assert_eq!(sum.as_f64(), 12.75);
+
+        let diff = a.checked_sub(b).unwrap();
+        assert_eq!(diff.precision, 2);
+        assert_eq!(diff.as_f64(), 8.25);
+    }
+
+    #[rstest]
     fn test_mul() {
         let value = 2.0;
         let quantity1 = Quantity::new(value, 1);
@@ -1746,6 +1859,41 @@ mod property_tests {
                     // (base + delta) - delta should equal base exactly using raw arithmetic
                     prop_assert_eq!(result_raw, q_base.raw, "Inverse operation failed in raw arithmetic");
                 }
+        }
+
+        /// Property: checked_add agrees with raw checked_add when result is in bounds and
+        /// no operand is QUANTITY_UNDEF; returns None otherwise.
+        #[rstest]
+        fn prop_quantity_checked_add_matches_spec(
+            a in quantity_value_strategy(),
+            b in quantity_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+            let expected = q_a.raw
+                .checked_add(q_b.raw)
+                .filter(|r| *r <= QUANTITY_RAW_MAX)
+                .filter(|_| q_a.raw != QUANTITY_UNDEF && q_b.raw != QUANTITY_UNDEF)
+                .map(|raw| Quantity { raw, precision: q_a.precision.max(q_b.precision) });
+            prop_assert_eq!(q_a.checked_add(q_b), expected);
+        }
+
+        /// Property: checked_sub agrees with raw checked_sub when no operand is
+        /// QUANTITY_UNDEF; returns None otherwise.
+        #[rstest]
+        fn prop_quantity_checked_sub_matches_spec(
+            a in quantity_value_strategy(),
+            b in quantity_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+            let expected = q_a.raw
+                .checked_sub(q_b.raw)
+                .filter(|_| q_a.raw != QUANTITY_UNDEF && q_b.raw != QUANTITY_UNDEF)
+                .map(|raw| Quantity { raw, precision: q_a.precision.max(q_b.precision) });
+            prop_assert_eq!(q_a.checked_sub(q_b), expected);
         }
 
         /// Property: Quantity ordering should be transitive

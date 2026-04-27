@@ -20,6 +20,8 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.model import FIXED_PRECISION
+from nautilus_trader.model import HIGH_PRECISION
+from nautilus_trader.model import PRECISION_BYTES
 from nautilus_trader.model import Quantity
 
 
@@ -324,6 +326,41 @@ def test_saturating_sub_clamps_to_zero():
 def test_saturating_sub_positive():
     result = Quantity(5.0, 1).saturating_sub(Quantity(2.0, 1))
     assert result == Quantity(3.0, 1)
+
+
+def test_checked_add_within_bounds():
+    assert Quantity(10.0, 2).checked_add(Quantity(5.0, 2)) == Quantity(15.0, 2)
+
+
+def test_checked_sub_within_bounds():
+    assert Quantity(10.0, 2).checked_sub(Quantity(3.0, 2)) == Quantity(7.0, 2)
+
+
+def test_checked_sub_to_zero():
+    qty = Quantity(5.0, 2)
+    assert qty.checked_sub(qty) == Quantity.zero(2)
+
+
+def test_checked_sub_underflow_returns_none():
+    assert Quantity(3.0, 2).checked_sub(Quantity(10.0, 2)) is None
+
+
+def test_checked_add_above_max_returns_none():
+    qty_max = 34_028_236_692_093.0 if HIGH_PRECISION else 18_446_744_073.0
+    near_max = Quantity(qty_max, 0)
+    one_billion = Quantity(1_000_000_000.0, 0)
+    assert near_max.checked_add(one_billion) is None
+
+
+def test_checked_arith_rejects_undef_sentinel():
+    # QUANTITY_UNDEF == QuantityRaw::MAX (u128 or u64 max depending on feature flag)
+    raw_undef = (1 << (PRECISION_BYTES * 8)) - 1
+    undef = Quantity.from_raw(raw_undef, 0)
+    one = Quantity(1.0, 0)
+    assert undef.checked_add(one) is None
+    assert one.checked_add(undef) is None
+    assert undef.checked_sub(one) is None
+    assert one.checked_sub(undef) is None
 
 
 @pytest.mark.parametrize(

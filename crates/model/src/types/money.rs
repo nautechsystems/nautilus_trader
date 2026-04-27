@@ -72,6 +72,7 @@ use crate::types::{
     Currency,
     fixed::{
         FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
+        raw_scales_match,
     },
 };
 
@@ -211,26 +212,41 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// Panics if `raw` is outside the representable range [`MONEY_RAW_MIN`, `MONEY_RAW_MAX`].
-    /// Panics if `currency.precision` exceeds [`FIXED_PRECISION`].
+    /// Panics if a correctness check fails. See [`Money::from_raw_checked`] for more details.
     #[must_use]
     pub fn from_raw(raw: MoneyRaw, currency: Currency) -> Self {
-        assert!(
-            raw >= MONEY_RAW_MIN && raw <= MONEY_RAW_MAX,
-            "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
-        );
-        check_fixed_precision(currency.precision).expect_display(FAILED);
+        Self::from_raw_checked(raw, currency).expect_display(FAILED)
+    }
+
+    /// Creates a new [`Money`] instance from the given `raw` fixed-point value and the specified
+    /// `currency` with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `raw` is outside the representable range [`MONEY_RAW_MIN`, `MONEY_RAW_MAX`].
+    /// - `currency.precision` exceeds the maximum fixed precision.
+    pub fn from_raw_checked(raw: MoneyRaw, currency: Currency) -> CorrectnessResult<Self> {
+        if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+                ),
+            });
+        }
+
+        check_fixed_precision(currency.precision)?;
 
         // TODO: Enforce spurious bits validation in v2
         // Validate raw value has no spurious bits beyond the precision scale
         // if raw != 0 {
         //     #[cfg(feature = "high-precision")]
-        //     super::fixed::check_fixed_raw_i128(raw, currency.precision).expect(FAILED);
+        //     super::fixed::check_fixed_raw_i128(raw, currency.precision)?;
         //     #[cfg(not(feature = "high-precision"))]
-        //     super::fixed::check_fixed_raw_i64(raw, currency.precision).expect(FAILED);
+        //     super::fixed::check_fixed_raw_i64(raw, currency.precision)?;
         // }
 
-        Self { raw, currency }
+        Ok(Self { raw, currency })
     }
 
     /// Creates a new [`Money`] from a mantissa/exponent pair using pure integer arithmetic.
@@ -298,6 +314,72 @@ impl Money {
     #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
+    }
+
+    /// Returns `true` if the value of this instance is positive (> 0).
+    #[must_use]
+    pub fn is_positive(&self) -> bool {
+        self.raw > 0
+    }
+
+    /// Performs a checked addition, returning `None` on raw integer overflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.currency` and `rhs.currency` differ by code (currency mismatch
+    /// is a type-system invariant violation, not a recoverable arithmetic condition).
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        assert_eq!(
+            self.currency, rhs.currency,
+            "Currency mismatch: cannot add {} to {}",
+            rhs.currency.code, self.currency.code
+        );
+
+        if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_add(rhs.raw)?;
+        if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
+            return None;
+        }
+        Some(Self {
+            raw,
+            currency: self.currency,
+        })
+    }
+
+    /// Performs a checked subtraction, returning `None` on raw integer underflow, when
+    /// the result falls outside `[MONEY_RAW_MIN, MONEY_RAW_MAX]`, or when the operands
+    /// have mixed raw scales (e.g. a wei-scaled `Money` and a `FIXED_SCALAR`-scaled
+    /// `Money`, even if their currency codes match).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.currency` and `rhs.currency` differ by code (currency mismatch
+    /// is a type-system invariant violation, not a recoverable arithmetic condition).
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        assert_eq!(
+            self.currency, rhs.currency,
+            "Currency mismatch: cannot subtract {} from {}",
+            rhs.currency.code, self.currency.code
+        );
+
+        if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_sub(rhs.raw)?;
+        if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
+            return None;
+        }
+        Some(Self {
+            raw,
+            currency: self.currency,
+        })
     }
 
     #[cfg(feature = "high-precision")]
@@ -794,6 +876,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_money_is_positive() {
+        let usd = Currency::USD();
+        assert!(Money::new(100.0, usd).is_positive());
+        assert!(!Money::new(0.0, usd).is_positive());
+        assert!(!Money::new(-100.0, usd).is_positive());
+    }
+
+    #[rstest]
     fn test_money_comparisons() {
         let usd = Currency::USD();
         let m1 = Money::new(100.0, usd);
@@ -827,6 +917,76 @@ mod tests {
         let result = money1 - money2;
         assert!(approx_eq!(f64, result.as_f64(), 750.0, epsilon = 1e-9));
         assert_eq!(result.currency, usd);
+    }
+
+    #[rstest]
+    fn test_money_checked_add_within_bounds() {
+        let usd = Currency::USD();
+        let a = Money::new(100.0, usd);
+        let b = Money::new(50.0, usd);
+        assert_eq!(a.checked_add(b), Some(Money::new(150.0, usd)));
+    }
+
+    #[rstest]
+    fn test_money_checked_add_above_max_returns_none() {
+        let usd = Currency::USD();
+        let near_max = Money::from_raw(MONEY_RAW_MAX, usd);
+        let one = Money::new(1.0, usd);
+        assert_eq!(near_max.checked_add(one), None);
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_within_bounds() {
+        let usd = Currency::USD();
+        let a = Money::new(100.0, usd);
+        let b = Money::new(40.0, usd);
+        assert_eq!(a.checked_sub(b), Some(Money::new(60.0, usd)));
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_below_min_returns_none() {
+        let usd = Currency::USD();
+        let near_min = Money::from_raw(MONEY_RAW_MIN, usd);
+        let one = Money::new(1.0, usd);
+        assert_eq!(near_min.checked_sub(one), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Currency mismatch")]
+    fn test_money_checked_add_currency_mismatch_panics() {
+        let usd = Money::new(100.0, Currency::USD());
+        let aud = Money::new(50.0, Currency::AUD());
+        let _ = usd.checked_add(aud);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Currency mismatch")]
+    fn test_money_checked_sub_currency_mismatch_panics() {
+        let usd = Money::new(100.0, Currency::USD());
+        let aud = Money::new(50.0, Currency::AUD());
+        let _ = usd.checked_sub(aud);
+    }
+
+    #[rstest]
+    fn test_money_checked_add_at_exact_max_returns_some() {
+        let usd = Currency::USD();
+        let near_max = Money::from_raw(MONEY_RAW_MAX - 1, usd);
+        let one_unit = Money::from_raw(1, usd);
+        assert_eq!(
+            near_max.checked_add(one_unit),
+            Some(Money::from_raw(MONEY_RAW_MAX, usd)),
+        );
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_at_exact_min_returns_some() {
+        let usd = Currency::USD();
+        let near_min = Money::from_raw(MONEY_RAW_MIN + 1, usd);
+        let one_unit = Money::from_raw(1, usd);
+        assert_eq!(
+            near_min.checked_sub(one_unit),
+            Some(Money::from_raw(MONEY_RAW_MIN, usd)),
+        );
     }
 
     #[rstest]
@@ -1047,6 +1207,29 @@ mod tests {
         let usd = Currency::USD();
         let raw = MONEY_RAW_MAX.saturating_add(1);
         let _ = Money::from_raw(raw, usd);
+    }
+
+    #[rstest]
+    fn test_money_from_raw_checked_valid() {
+        let usd = Currency::USD();
+        let money = Money::from_raw_checked(123_450_000_000, usd).unwrap();
+        assert_eq!(money.currency, usd);
+    }
+
+    #[rstest]
+    fn test_money_from_raw_checked_above_max_returns_error() {
+        let usd = Currency::USD();
+        let raw = MONEY_RAW_MAX.saturating_add(1);
+        let error = Money::from_raw_checked(raw, usd).unwrap_err();
+        assert!(matches!(error, CorrectnessError::PredicateViolation { .. }));
+    }
+
+    #[rstest]
+    fn test_money_from_raw_checked_below_min_returns_error() {
+        let usd = Currency::USD();
+        let raw = MONEY_RAW_MIN.saturating_sub(1);
+        let error = Money::from_raw_checked(raw, usd).unwrap_err();
+        assert!(matches!(error, CorrectnessError::PredicateViolation { .. }));
     }
 
     #[rstest]
@@ -1289,6 +1472,40 @@ mod property_tests {
                 let diff = sum - money2;
                 prop_assert_eq!(diff, money1, "Subtraction should be inverse of addition");
             }
+        }
+
+        /// Property: checked_add agrees with raw checked_add when result is in bounds and
+        /// currencies match; returns None when out of bounds.
+        #[rstest]
+        fn prop_money_checked_add_matches_spec(
+            raw1 in MONEY_RAW_MIN..=MONEY_RAW_MAX,
+            raw2 in MONEY_RAW_MIN..=MONEY_RAW_MAX,
+            currency in currency_strategy(),
+        ) {
+            let m1 = Money::from_raw(raw1, currency);
+            let m2 = Money::from_raw(raw2, currency);
+            let expected = m1.raw
+                .checked_add(m2.raw)
+                .filter(|r| (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(r))
+                .map(|raw| Money { raw, currency });
+            prop_assert_eq!(m1.checked_add(m2), expected);
+        }
+
+        /// Property: checked_sub agrees with raw checked_sub when result is in bounds and
+        /// currencies match; returns None when out of bounds.
+        #[rstest]
+        fn prop_money_checked_sub_matches_spec(
+            raw1 in MONEY_RAW_MIN..=MONEY_RAW_MAX,
+            raw2 in MONEY_RAW_MIN..=MONEY_RAW_MAX,
+            currency in currency_strategy(),
+        ) {
+            let m1 = Money::from_raw(raw1, currency);
+            let m2 = Money::from_raw(raw2, currency);
+            let expected = m1.raw
+                .checked_sub(m2.raw)
+                .filter(|r| (MONEY_RAW_MIN..=MONEY_RAW_MAX).contains(r))
+                .map(|raw| Money { raw, currency });
+            prop_assert_eq!(m1.checked_sub(m2), expected);
         }
 
         #[rstest]

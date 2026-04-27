@@ -211,6 +211,22 @@ pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
     Ok(())
 }
 
+/// Returns `true` when two precisions encode their `raw` values at the same scale.
+///
+/// The effective scale for a given precision is `max(precision, FIXED_PRECISION)`:
+/// - Standard precisions (`<= FIXED_PRECISION`) all store raw at `FIXED_SCALAR` scale.
+/// - Defi precisions (`> FIXED_PRECISION`, e.g. 17 or 18) each store raw at their own
+///   native `10^precision` scale via constructors like `Price::from_wei` /
+///   `Quantity::from_u256`.
+///
+/// Two precisions match iff their effective scales are identical. Mixing different
+/// scales in raw arithmetic produces wrong results.
+#[inline]
+#[must_use]
+pub fn raw_scales_match(a: u8, b: u8) -> bool {
+    a.max(FIXED_PRECISION) == b.max(FIXED_PRECISION)
+}
+
 // -----------------------------------------------------------------------------
 // Raw value validation
 // -----------------------------------------------------------------------------

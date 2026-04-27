@@ -59,6 +59,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
+    raw_scales_match,
 };
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
@@ -323,6 +324,66 @@ impl Price {
             raw: PRICE_RAW_MIN,
             precision,
         }
+    }
+
+    /// Performs a checked addition, returning `None` on raw integer overflow, when the
+    /// result falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`, when either operand is a
+    /// sentinel (`PRICE_UNDEF`, `PRICE_ERROR`, or `ERROR_PRICE`), or when the operands
+    /// have mixed raw scales (one at `FIXED_PRECISION` scale, the other at a defi
+    /// `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Add` implementation: uses the maximum precision of both operands.
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        if self.is_sentinel() || rhs.is_sentinel() {
+            return None;
+        }
+
+        if !raw_scales_match(self.precision, rhs.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_add(rhs.raw)?;
+        if raw < PRICE_RAW_MIN || raw > PRICE_RAW_MAX {
+            return None;
+        }
+        Some(Self {
+            raw,
+            precision: self.precision.max(rhs.precision),
+        })
+    }
+
+    /// Performs a checked subtraction, returning `None` on raw integer underflow, when
+    /// the result falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`, when either operand
+    /// is a sentinel (`PRICE_UNDEF`, `PRICE_ERROR`, or `ERROR_PRICE`), or when the
+    /// operands have mixed raw scales (one at `FIXED_PRECISION` scale, the other at a
+    /// defi `WEI_PRECISION` scale).
+    ///
+    /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
+    #[must_use]
+    pub fn checked_sub(self, rhs: Self) -> Option<Self> {
+        if self.is_sentinel() || rhs.is_sentinel() {
+            return None;
+        }
+
+        if !raw_scales_match(self.precision, rhs.precision) {
+            return None;
+        }
+        let raw = self.raw.checked_sub(rhs.raw)?;
+        if raw < PRICE_RAW_MIN || raw > PRICE_RAW_MAX {
+            return None;
+        }
+        Some(Self {
+            raw,
+            precision: self.precision.max(rhs.precision),
+        })
+    }
+
+    #[inline]
+    fn is_sentinel(self) -> bool {
+        // ERROR_PRICE uses precision == u8::MAX as its sentinel marker, distinct from
+        // valid high-precision values (e.g. defi `from_wei` uses precision 18 which is
+        // > FIXED_PRECISION but is not a sentinel).
+        self.raw == PRICE_UNDEF || self.raw == PRICE_ERROR || self.precision == u8::MAX
     }
 
     /// Returns `true` if the value of this instance is undefined.
@@ -1226,6 +1287,99 @@ mod tests {
     }
 
     #[rstest]
+    fn test_price_checked_add_within_bounds() {
+        let a = Price::new(10.0, 2);
+        let b = Price::new(5.0, 2);
+        assert_eq!(a.checked_add(b), Some(Price::new(15.0, 2)));
+
+        let neg = Price::new(-3.0, 2);
+        assert_eq!(a.checked_add(neg), Some(Price::new(7.0, 2)));
+    }
+
+    #[rstest]
+    fn test_price_checked_add_above_max_returns_none() {
+        let near_max = Price::from_raw(PRICE_RAW_MAX, 0);
+        let one = Price::new(1.0, 0);
+        assert_eq!(near_max.checked_add(one), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_sub_within_bounds() {
+        let a = Price::new(10.0, 2);
+        let b = Price::new(3.0, 2);
+        assert_eq!(a.checked_sub(b), Some(Price::new(7.0, 2)));
+        assert_eq!(b.checked_sub(a), Some(Price::new(-7.0, 2)));
+    }
+
+    #[rstest]
+    fn test_price_checked_sub_below_min_returns_none() {
+        let near_min = Price::from_raw(PRICE_RAW_MIN, 0);
+        let one = Price::new(1.0, 0);
+        assert_eq!(near_min.checked_sub(one), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_arith_uses_max_precision() {
+        let a = Price::new(10.5, 1);
+        let b = Price::new(5.25, 2);
+        let sum = a.checked_add(b).unwrap();
+        assert_eq!(sum.precision, 2);
+        assert_eq!(sum.as_f64(), 15.75);
+    }
+
+    #[rstest]
+    fn test_price_checked_add_rejects_sentinel_undef() {
+        let undef = Price::from_raw(PRICE_UNDEF, 0);
+        let one = Price::new(1.0, 0);
+        assert_eq!(undef.checked_add(one), None);
+        assert_eq!(one.checked_add(undef), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_sub_rejects_sentinel_undef() {
+        let undef = Price::from_raw(PRICE_UNDEF, 0);
+        let neg_one = Price::new(-1.0, 0);
+        assert_eq!(undef.checked_sub(neg_one), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_arith_rejects_error_price() {
+        let one = Price::new(1.0, 0);
+        assert_eq!(ERROR_PRICE.checked_add(one), None);
+        assert_eq!(one.checked_sub(ERROR_PRICE), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_arith_rejects_raw_error() {
+        let error = Price::from_raw(PRICE_ERROR, 0);
+        let one = Price::new(1.0, 0);
+        assert_eq!(error.checked_add(one), None);
+        assert_eq!(one.checked_add(error), None);
+        assert_eq!(error.checked_sub(one), None);
+        assert_eq!(one.checked_sub(error), None);
+    }
+
+    #[rstest]
+    fn test_price_checked_add_at_exact_max_returns_some() {
+        let near_max = Price::from_raw(PRICE_RAW_MAX - 1, 0);
+        let one_unit = Price::from_raw(1, 0);
+        assert_eq!(
+            near_max.checked_add(one_unit),
+            Some(Price::from_raw(PRICE_RAW_MAX, 0)),
+        );
+    }
+
+    #[rstest]
+    fn test_price_checked_sub_at_exact_min_returns_some() {
+        let near_min = Price::from_raw(PRICE_RAW_MIN + 1, 0);
+        let one_unit = Price::from_raw(1, 0);
+        assert_eq!(
+            near_min.checked_sub(one_unit),
+            Some(Price::from_raw(PRICE_RAW_MIN, 0)),
+        );
+    }
+
+    #[rstest]
     fn test_mixed_precision_add() {
         let p1 = Price::new(10.5, 1);
         let p2 = Price::new(5.25, 2);
@@ -1639,6 +1793,42 @@ mod property_tests {
                 prop_assert!(diff.as_f64().is_finite());
                 prop_assert!(!diff.is_undefined());
             }
+        }
+
+        /// Property: checked_add agrees with Add when bounds and sentinel guards hold,
+        /// and returns None otherwise.
+        #[rstest]
+        fn prop_price_checked_add_matches_spec(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            precision in float_precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let expected = p_a.raw
+                .checked_add(p_b.raw)
+                .filter(|r| (PRICE_RAW_MIN..=PRICE_RAW_MAX).contains(r))
+                .filter(|_| !p_a.is_sentinel() && !p_b.is_sentinel())
+                .map(|raw| Price { raw, precision: p_a.precision.max(p_b.precision) });
+            prop_assert_eq!(p_a.checked_add(p_b), expected);
+        }
+
+        /// Property: checked_sub agrees with Sub when bounds and sentinel guards hold,
+        /// and returns None otherwise.
+        #[rstest]
+        fn prop_price_checked_sub_matches_spec(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            precision in float_precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let expected = p_a.raw
+                .checked_sub(p_b.raw)
+                .filter(|r| (PRICE_RAW_MIN..=PRICE_RAW_MAX).contains(r))
+                .filter(|_| !p_a.is_sentinel() && !p_b.is_sentinel())
+                .map(|raw| Price { raw, precision: p_a.precision.max(p_b.precision) });
+            prop_assert_eq!(p_a.checked_sub(p_b), expected);
         }
     }
 

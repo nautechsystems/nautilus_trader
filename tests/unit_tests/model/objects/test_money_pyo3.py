@@ -191,6 +191,83 @@ class TestMoney:
             Money.from_str(value)
 
     @pytest.mark.parametrize(
+        ("amount", "expected"),
+        [
+            [1.0, True],
+            [0.0, False],
+            [-1.0, False],
+        ],
+    )
+    def test_is_positive(self, amount: float, expected: bool) -> None:
+        # Arrange
+        money = Money(amount, USD)
+
+        # Act, Assert
+        assert money.is_positive() is expected
+
+    def test_checked_add_within_bounds(self) -> None:
+        # Arrange
+        a = Money(100.0, USD)
+        b = Money(50.0, USD)
+
+        # Act
+        result = a.checked_add(b)
+
+        # Assert
+        assert result == Money(150.0, USD)
+
+    def test_checked_add_above_max_returns_none(self) -> None:
+        # Arrange
+        near_max = Money(MONEY_MAX, USD)
+        one = Money(1.0, USD)
+
+        # Act
+        result = near_max.checked_add(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_sub_within_bounds(self) -> None:
+        # Arrange
+        a = Money(100.0, USD)
+        b = Money(40.0, USD)
+
+        # Act
+        result = a.checked_sub(b)
+
+        # Assert
+        assert result == Money(60.0, USD)
+
+    def test_checked_sub_below_min_returns_none(self) -> None:
+        # Arrange
+        near_min = Money(MONEY_MIN, USD)
+        one = Money(1.0, USD)
+
+        # Act
+        result = near_min.checked_sub(one)
+
+        # Assert
+        assert result is None
+
+    def test_checked_add_currency_mismatch_raises_value_error(self) -> None:
+        # Arrange
+        usd = Money(100.0, USD)
+        aud = Money(50.0, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            usd.checked_add(aud)
+
+    def test_checked_sub_currency_mismatch_raises_value_error(self) -> None:
+        # Arrange
+        usd = Money(100.0, USD)
+        aud = Money(50.0, AUD)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            usd.checked_sub(aud)
+
+    @pytest.mark.parametrize(
         ("value", "expected"),
         [
             ["1.00 USDT", Money(1.00, USDT)],

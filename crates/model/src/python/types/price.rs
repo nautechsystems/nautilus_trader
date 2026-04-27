@@ -423,6 +423,20 @@ impl Price {
     fn py_to_formatted_str(&self) -> String {
         self.to_formatted_string()
     }
+
+    /// Performs a checked addition, returning `None` on overflow or when the result
+    /// falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`.
+    #[pyo3(name = "checked_add")]
+    fn py_checked_add(&self, other: Self) -> Option<Self> {
+        self.checked_add(other)
+    }
+
+    /// Performs a checked subtraction, returning `None` on underflow or when the result
+    /// falls outside `[PRICE_RAW_MIN, PRICE_RAW_MAX]`.
+    #[pyo3(name = "checked_sub")]
+    fn py_checked_sub(&self, other: Self) -> Option<Self> {
+        self.checked_sub(other)
+    }
 }
 
 #[pymethods]

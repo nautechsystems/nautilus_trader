@@ -445,4 +445,17 @@ impl Quantity {
     fn py_saturating_sub(&self, other: Self) -> Self {
         self.saturating_sub(other)
     }
+
+    /// Performs a checked addition, returning `None` on overflow or when the result
+    /// exceeds `QUANTITY_RAW_MAX`.
+    #[pyo3(name = "checked_add")]
+    fn py_checked_add(&self, other: Self) -> Option<Self> {
+        self.checked_add(other)
+    }
+
+    /// Performs a checked subtraction, returning `None` if `rhs` is greater than `self`.
+    #[pyo3(name = "checked_sub")]
+    fn py_checked_sub(&self, other: Self) -> Option<Self> {
+        self.checked_sub(other)
+    }
 }

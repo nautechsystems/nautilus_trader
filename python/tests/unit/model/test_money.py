@@ -19,6 +19,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
 
@@ -188,6 +189,44 @@ def test_addition(v1, v2, expected_type, expected):
 def test_addition_different_currencies_raises():
     with pytest.raises(ValueError, match="Currency mismatch"):
         Money(1.00, USD) + Money(1.00, AUD)
+
+
+def test_is_positive():
+    assert Money(1.0, USD).is_positive()
+    assert not Money(0.0, USD).is_positive()
+    assert not Money(-1.0, USD).is_positive()
+
+
+def test_checked_add_within_bounds():
+    assert Money(100.0, USD).checked_add(Money(50.0, USD)) == Money(150.0, USD)
+
+
+def test_checked_add_above_max_returns_none():
+    money_max = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
+    near_max = Money(money_max, USD)
+    one_billion = Money(1_000_000_000.0, USD)
+    assert near_max.checked_add(one_billion) is None
+
+
+def test_checked_sub_within_bounds():
+    assert Money(100.0, USD).checked_sub(Money(40.0, USD)) == Money(60.0, USD)
+
+
+def test_checked_sub_below_min_returns_none():
+    money_min = -17_014_118_346_046.0 if HIGH_PRECISION else -9_223_372_036.0
+    near_min = Money(money_min, USD)
+    one_billion = Money(1_000_000_000.0, USD)
+    assert near_min.checked_sub(one_billion) is None
+
+
+def test_checked_add_currency_mismatch_raises():
+    with pytest.raises(ValueError, match="Currency mismatch"):
+        Money(100.0, USD).checked_add(Money(50.0, AUD))
+
+
+def test_checked_sub_currency_mismatch_raises():
+    with pytest.raises(ValueError, match="Currency mismatch"):
+        Money(100.0, USD).checked_sub(Money(50.0, AUD))
 
 
 @pytest.mark.parametrize(

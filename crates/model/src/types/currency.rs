@@ -24,7 +24,8 @@ use std::{
 };
 
 use nautilus_core::correctness::{
-    CorrectnessResult, CorrectnessResultExt, FAILED, check_nonempty_string, check_valid_string_utf8,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_nonempty_string,
+    check_valid_string_utf8,
 };
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
@@ -122,10 +123,12 @@ impl Currency {
     /// # Errors
     ///
     /// Returns an error if there is a failure acquiring the lock on the currency map.
-    pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
+    pub fn register(currency: Self, overwrite: bool) -> CorrectnessResult<()> {
         let mut map = CURRENCY_MAP
             .lock()
-            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+            .map_err(|e| CorrectnessError::PredicateViolation {
+                message: format!("Failed to acquire lock on `CURRENCY_MAP`: {e}"),
+            })?;
 
         if !overwrite && map.contains_key(currency.code.as_str()) {
             // If overwrite is false and the currency already exists, simply return
