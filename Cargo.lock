@@ -6087,6 +6087,7 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "arrow 58.1.0",
+ "bon",
  "cbindgen",
  "chrono",
  "criterion",

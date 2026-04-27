@@ -983,7 +983,7 @@ mod tests {
 
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionAdjustmentType, PositionSide},
-        events::{OrderFilled, PositionAdjusted},
+        events::{OrderFilled, PositionAdjusted, order::spec::OrderFilledSpec},
         identifiers::{
             AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
         },
@@ -2420,10 +2420,9 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_none(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let fill = OrderFilled {
-            position_id: Some(PositionId::from("1")),
-            ..Default::default()
-        };
+        let fill = OrderFilledSpec::builder()
+            .position_id(PositionId::from("1"))
+            .build();
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
@@ -2432,11 +2431,10 @@ mod tests {
     #[rstest]
     fn test_position_with_commission_zero(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let fill = OrderFilled {
-            position_id: Some(PositionId::from("1")),
-            commission: Some(Money::from("0 USD")),
-            ..Default::default()
-        };
+        let fill = OrderFilledSpec::builder()
+            .position_id(PositionId::from("1"))
+            .commission(Money::from("0 USD"))
+            .build();
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));

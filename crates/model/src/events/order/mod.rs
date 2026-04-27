@@ -52,6 +52,8 @@ pub mod triggered;
 pub mod updated;
 
 #[cfg(any(test, feature = "stubs"))]
+pub mod spec;
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 /// Represents a type of [`OrderEvent`].

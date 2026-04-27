@@ -1209,7 +1209,9 @@ mod tests {
     };
     use nautilus_model::{
         enums::OrderSide,
-        events::{OrderAccepted, OrderCanceled, OrderDenied, OrderRejected},
+        events::{
+            OrderAccepted, OrderCanceled, OrderDenied, OrderRejected, order::spec::OrderFilledSpec,
+        },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
             VenueOrderId,
@@ -1423,7 +1425,7 @@ mod tests {
         algo.on_order_modify_rejected(OrderModifyRejected::default());
         algo.on_order_cancel_rejected(OrderCancelRejected::default());
         algo.on_order_updated(OrderUpdated::default());
-        algo.on_algo_order_filled(OrderFilled::default());
+        algo.on_algo_order_filled(OrderFilledSpec::builder().build());
     }
 
     #[rstest]

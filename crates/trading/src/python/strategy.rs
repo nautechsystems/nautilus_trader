@@ -2656,9 +2656,10 @@ mod tests {
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-            OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+            OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
             OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
             OrderUpdated, PositionChanged, PositionClosed, PositionOpened,
+            order::spec::OrderFilledSpec,
         },
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
@@ -3326,7 +3327,7 @@ class TrackingStrategy:
                     DataActor::on_order_canceled(rust_strategy.inner_mut(), &event)
                 }
                 "on_order_filled" => {
-                    let event = OrderFilled::default();
+                    let event = OrderFilledSpec::builder().build();
                     DataActor::on_order_filled(rust_strategy.inner_mut(), &event)
                 }
                 _ => unreachable!("unhandled order callback case: {method_name}"),
