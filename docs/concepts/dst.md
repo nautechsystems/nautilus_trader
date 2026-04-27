@@ -344,6 +344,17 @@ Under simulation, WebSocket and HTTP I/O run on real networking. This is intenti
 initial target is order lifecycle determinism, not transport fault injection. Transport-layer
 determinism would require per-crate `madsim` shims that do not exist at this time.
 
+Test modules that drive real localhost sockets (`crates/network/src/socket/client.rs::tests`,
+`::rust_tests`; `crates/network/src/websocket/client.rs::tests`, `::rust_tests`;
+`crates/network/tests/websocket_proxy.rs`) are cfg-gated out under
+`all(feature = "simulation", madsim)` because their production code paths reach
+`dst::time::*` (madsim time primitives), which panic when called from a
+`#[tokio::test]` runtime. The retry test modules (`crates/network/src/retry.rs::tests`,
+`::proptest_tests`) are gated for the same reason but represent a deferred audit:
+the underlying retry logic is a legitimate DST candidate; re-enabling the suite
+under simulation requires rewriting the tests as `#[madsim::test]` with virtual
+sleep, replacing `tokio::time::advance` and `tokio::test(start_paused = true)`.
+
 ### Signal handling
 
 `nautilus_common::live::dst::signal` exposes a routed `ctrl_c` re-export. The

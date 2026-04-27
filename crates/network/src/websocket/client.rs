@@ -1981,6 +1981,7 @@ impl Drop for WebSocketClient {
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
+#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::{num::NonZeroU32, sync::Arc};
@@ -2255,6 +2256,7 @@ mod tests {
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
+#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 mod rust_tests {
     use std::sync::{
         Arc, OnceLock,

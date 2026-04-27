@@ -1204,6 +1204,7 @@ impl Drop for SocketClient {
 
 #[cfg(test)]
 #[cfg(feature = "python")]
+#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use nautilus_common::testing::wait_until_async;
@@ -1521,6 +1522,7 @@ mod tests {
 
 #[cfg(test)]
 #[cfg(not(feature = "turmoil"))]
+#[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 mod rust_tests {
     use nautilus_common::testing::wait_until_async;
     use rstest::rstest;

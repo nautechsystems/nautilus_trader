@@ -400,6 +400,7 @@ where
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))] // only consumed by gated test mods
 mod test_utils {
     #[derive(Debug, thiserror::Error)]
     pub enum TestError {
@@ -420,7 +421,14 @@ mod test_utils {
     }
 }
 
+// Retry tests use `#[tokio::test(start_paused = true)]` and
+// `tokio::time::advance`, tokio test helpers that have no madsim equivalent.
+// Production code routes through `dst::time::*` which panics outside a madsim
+// runtime under simulation, so these tests can't run as written. Re-validating
+// retry semantics under simulation requires rewriting them as `#[madsim::test]`
+// with virtual sleep, deferred to a follow-up audit (see dst.md).
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
     use std::sync::{
         Arc,
@@ -1274,6 +1282,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))] // see retry::tests cfg comment
 mod proptest_tests {
     use std::sync::{
         Arc,
