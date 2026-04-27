@@ -22,9 +22,7 @@ use crate::{
     data::{
         QuoteTick,
         greeks::OptionGreekValues,
-        option_chain::{
-            OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange as RustStrikeRange,
-        },
+        option_chain::{OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange},
     },
     enums::GreeksConvention,
     identifiers::{InstrumentId, OptionSeriesId},
@@ -40,7 +38,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 #[derive(Clone, Debug)]
 pub struct PyStrikeRange {
-    pub inner: RustStrikeRange,
+    pub inner: StrikeRange,
 }
 
 #[pymethods]
@@ -51,7 +49,7 @@ impl PyStrikeRange {
     #[pyo3(name = "fixed")]
     fn py_fixed(strikes: Vec<Price>) -> Self {
         Self {
-            inner: RustStrikeRange::Fixed(strikes),
+            inner: StrikeRange::Fixed(strikes),
         }
     }
 
@@ -60,7 +58,7 @@ impl PyStrikeRange {
     #[pyo3(name = "atm_relative")]
     fn py_atm_relative(strikes_above: usize, strikes_below: usize) -> Self {
         Self {
-            inner: RustStrikeRange::AtmRelative {
+            inner: StrikeRange::AtmRelative {
                 strikes_above,
                 strikes_below,
             },
@@ -72,7 +70,18 @@ impl PyStrikeRange {
     #[pyo3(name = "atm_percent")]
     fn py_atm_percent(pct: f64) -> Self {
         Self {
-            inner: RustStrikeRange::AtmPercent { pct },
+            inner: StrikeRange::AtmPercent { pct },
+        }
+    }
+
+    /// Returns the variant name (`Fixed`, `AtmRelative`, or `AtmPercent`).
+    #[getter]
+    #[pyo3(name = "kind")]
+    fn py_kind(&self) -> &'static str {
+        match self.inner {
+            StrikeRange::Fixed(_) => "Fixed",
+            StrikeRange::AtmRelative { .. } => "AtmRelative",
+            StrikeRange::AtmPercent { .. } => "AtmPercent",
         }
     }
 

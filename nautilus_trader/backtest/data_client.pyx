@@ -28,6 +28,7 @@ from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport RequestBars
 from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport RequestForwardPrices
 from nautilus_trader.data.messages cimport RequestInstrument
 from nautilus_trader.data.messages cimport RequestInstruments
 from nautilus_trader.data.messages cimport RequestOrderBookSnapshot
@@ -617,3 +618,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void request_bars(self, RequestBars request):
         # Do nothing else for backtest
         pass
+
+    cpdef void request_forward_prices(self, RequestForwardPrices request):
+        # No live ATM source in backtest; emit empty response so the engine creates the manager without initial ATM
+        self._handle_forward_prices([], request.id, request.params or {})

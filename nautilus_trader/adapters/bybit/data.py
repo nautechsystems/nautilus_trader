@@ -869,7 +869,6 @@ class BybitDataClient(LiveMarketDataClient):
             )
         except Exception as e:
             self._log.error(f"Failed to request forward prices for {request.underlying}: {e}")
-            # Send empty response so engine can fall back
             self._handle_forward_prices([], request.id, request.params or {})
             return
 

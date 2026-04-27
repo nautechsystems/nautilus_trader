@@ -317,6 +317,18 @@ impl DataEngine {
         self.response_count
     }
 
+    /// Returns whether an `OptionChainManager` exists for the given series.
+    #[must_use]
+    pub fn has_option_chain_manager(&self, series_id: &OptionSeriesId) -> bool {
+        self.option_chain_managers.contains_key(series_id)
+    }
+
+    /// Returns the count of pending option-chain bootstrap requests.
+    #[must_use]
+    pub fn pending_option_chain_request_count(&self) -> usize {
+        self.pending_option_chain_requests.len()
+    }
+
     /// Returns a read-only reference to the engines clock.
     #[must_use]
     pub fn get_clock(&self) -> Ref<'_, dyn Clock> {

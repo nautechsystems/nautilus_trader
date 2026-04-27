@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 import pytz
 
+from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core import nautilus_pyo3
@@ -267,7 +268,7 @@ class TestOptionChainEngine:
         all_ids = [str(iid) for iid in manager.all_instrument_ids()]
         assert len(all_ids) == 3  # 150C, 150P, 155C
 
-    def test_subscribe_option_chain_with_strike_range_creates_pending_request(self):
+    def test_subscribe_option_chain_fixed_strike_range_skips_bootstrap(self):
         # Arrange
         strike_range = nautilus_pyo3.StrikeRange.fixed(
             [
@@ -288,8 +289,30 @@ class TestOptionChainEngine:
         # Act
         self.data_engine.execute(command)
 
-        # Assert
+        # Assert: Fixed does not need ATM bootstrap, so no pending forward-price
+        # request should be created and the manager exists immediately.
+        assert len(self.data_engine._pending_option_chain_requests) == 0
+        assert str(self.series_id) in self.data_engine._option_chain_managers
+
+    def test_subscribe_option_chain_atm_relative_creates_pending_request(self):
+        # Arrange
+        strike_range = nautilus_pyo3.StrikeRange.atm_relative(2, 2)
+        command = SubscribeOptionChain(
+            series_id=self.series_id,
+            strike_range=strike_range,
+            snapshot_interval_ms=None,
+            client_id=self.client.id,
+            venue=OPRA,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(command)
+
+        # Assert: AtmRelative needs ATM bootstrap, so a forward-price request is pending.
         assert len(self.data_engine._pending_option_chain_requests) == 1
+        assert str(self.series_id) not in self.data_engine._option_chain_managers
 
     def test_option_chain_resolves_only_matching_underlying(self):
         # Act
@@ -581,3 +604,86 @@ class TestOptionChainEngine:
 
         # Assert: snapshot was published to the bus
         assert len(received) == 1
+
+
+class TestStrikeRangeKind:
+    def test_fixed_kind(self):
+        strike_range = nautilus_pyo3.StrikeRange.fixed(
+            [nautilus_pyo3.Price.from_str("100.00")],
+        )
+        assert strike_range.kind == "Fixed"
+
+    def test_atm_relative_kind(self):
+        strike_range = nautilus_pyo3.StrikeRange.atm_relative(2, 2)
+        assert strike_range.kind == "AtmRelative"
+
+    def test_atm_percent_kind(self):
+        strike_range = nautilus_pyo3.StrikeRange.atm_percent(0.05)
+        assert strike_range.kind == "AtmPercent"
+
+
+class TestOptionChainBacktestIntegration:
+    """
+    Regression coverage for issue #3938: BacktestMarketDataClient must unblock the
+    engine's pending option-chain bootstrap so the manager is created end-to-end without
+    manual response feeding.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.clock = TestClock()
+        self.trader_id = TestIdStubs.trader_id()
+        self.msgbus = MessageBus(trader_id=self.trader_id, clock=self.clock)
+        self.cache = TestComponentStubs.cache()
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.client = BacktestMarketDataClient(
+            client_id=ClientId("OPRA"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(self.client)
+        self.client.start()
+
+        for inst in [
+            _make_option("AAPL240315C150", "AAPL", "150.00", OptionKind.CALL),
+            _make_option("AAPL240315P150", "AAPL", "150.00", OptionKind.PUT),
+            _make_option("AAPL240315C155", "AAPL", "155.00", OptionKind.CALL),
+        ]:
+            self.data_engine.process(inst)
+
+        self.series_id = nautilus_pyo3.OptionSeriesId(
+            "OPRA",
+            "AAPL",
+            "USD",
+            EXPIRY_NS,
+        )
+
+    def test_atm_relative_subscription_unblocks_via_backtest_client(self):
+        # Arrange
+        sub_cmd = SubscribeOptionChain(
+            series_id=self.series_id,
+            strike_range=nautilus_pyo3.StrikeRange.atm_relative(2, 2),
+            snapshot_interval_ms=None,
+            client_id=self.client.id,
+            venue=OPRA,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act: response routes through msgbus synchronously, so the engine
+        # processes it before execute() returns
+        self.data_engine.execute(sub_cmd)
+
+        # Assert
+        assert len(self.data_engine._pending_option_chain_requests) == 0
+        assert str(self.series_id) in self.data_engine._option_chain_managers

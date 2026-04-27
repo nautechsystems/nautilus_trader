@@ -21,14 +21,15 @@ use nautilus_common::{
     cache::Cache,
     clients::DataClient,
     messages::data::{
-        RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        RequestBars, RequestBookSnapshot, RequestCustomData, RequestForwardPrices,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+        SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+        UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 use nautilus_model::identifiers::{ClientId, Venue};
@@ -230,5 +231,43 @@ impl DataClient for BacktestDataClient {
     fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
         // No-op in backtest: bars are replayed by the engine
         Ok(())
+    }
+
+    fn request_forward_prices(&self, _request: RequestForwardPrices) -> anyhow::Result<()> {
+        // No live ATM source in backtest; return Err so the engine fallback
+        // creates the option-chain manager without an initial ATM price.
+        anyhow::bail!("backtest data client cannot fetch forward prices")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    #[rstest]
+    fn test_request_forward_prices_returns_err_for_engine_fallback() {
+        let client_id = ClientId::new("BACKTEST");
+        let venue = Venue::new("BACKTEST");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client = BacktestDataClient::new(client_id, venue, cache);
+
+        let request = RequestForwardPrices::new(
+            venue,
+            Ustr::from("BTC"),
+            None,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let result = client.request_forward_prices(request);
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("backtest data client"));
     }
 }

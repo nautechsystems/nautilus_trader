@@ -1302,8 +1302,7 @@ cdef class DataEngine(Component):
             del self._pending_option_chain_requests[rid]
 
         # For non-Fixed strike ranges, request forward prices for instant bootstrap
-        strike_range_type = type(command.strike_range).__name__ if command.strike_range else ""
-        if strike_range_type != "Fixed":
+        if command.strike_range is None or command.strike_range.kind != "Fixed":
             # Pick a sample instrument for single-instrument fast path
             sample_id = self._find_sample_instrument(command.series_id)
 
