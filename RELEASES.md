@@ -243,6 +243,7 @@ Released on TBD (UTC).
 - Optimized `OrderListId` and `PositionId` generation with cached prefix buffers (Rust)
 - Upgraded Rust (MSRV) to 1.95.0
 - Upgraded Cap'n Proto to v1.4.0
+- Upgraded `alloy` crate to v2.0.1
 - Upgraded `capnp` crate to v0.25.4 (regenerated schemas with 4-space indents and version headers)
 - Upgraded `databento` crate to v0.48.0
 - Upgraded `datafusion` crate to v53.1.0

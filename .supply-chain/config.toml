@@ -154,7 +154,7 @@ version = "0.2.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-chains]]
@@ -162,15 +162,15 @@ version = "0.2.34"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-consensus]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-consensus-any]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-contract]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-core]]
@@ -198,7 +198,7 @@ version = "0.3.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-eips]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-abi]]
@@ -206,15 +206,15 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-json-rpc]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-network]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-network-primitives]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-primitives]]
@@ -222,7 +222,7 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-provider]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rlp]]
@@ -234,27 +234,27 @@ version = "0.3.15"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-client]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-types-any]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-rpc-types-eth]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-serde]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-signer]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-signer-local]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-sol-macro]]
@@ -278,11 +278,11 @@ version = "1.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-transport]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-transport-http]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-trie]]
@@ -290,7 +290,7 @@ version = "0.9.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.alloy-tx-macros]]
-version = "1.8.3"
+version = "2.0.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.anyhow]]
@@ -647,10 +647,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
 version = "1.2.61"
-criteria = "safe-to-deploy"
-
-[[exemptions.cesu8]]
-version = "1.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.chrono]]
@@ -1349,6 +1345,10 @@ criteria = "safe-to-deploy"
 version = "2.3.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.idna_adapter]]
+version = "1.2.2"
+criteria = "safe-to-deploy"
+
 [[exemptions.impl-codec]]
 version = "0.6.0"
 criteria = "safe-to-deploy"
@@ -1405,8 +1405,12 @@ criteria = "safe-to-deploy"
 version = "1.0.17"
 criteria = "safe-to-deploy"
 
-[[exemptions.jni-sys]]
-version = "0.3.1"
+[[exemptions.jni]]
+version = "0.22.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.jni-macros]]
+version = "0.22.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.jni-sys]]
@@ -2058,7 +2062,7 @@ version = "0.12.28"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest]]
-version = "0.13.2"
+version = "0.13.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest-eventsource]]
@@ -2158,7 +2162,7 @@ version = "1.14.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-platform-verifier]]
-version = "0.6.2"
+version = "0.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rustls-platform-verifier-android]]
@@ -2335,6 +2339,10 @@ criteria = "safe-to-deploy"
 
 [[exemptions.simd-adler32]]
 version = "0.3.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.simd_cesu8]]
+version = "1.1.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.simdutf8]]
@@ -2798,10 +2806,6 @@ version = "0.5.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows-sys]]
-version = "0.45.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows-sys]]
 version = "0.48.0"
 criteria = "safe-to-deploy"
 
@@ -2815,10 +2819,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.windows-sys]]
 version = "0.61.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows-targets]]
-version = "0.42.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows-targets]]
@@ -2838,10 +2838,6 @@ version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_aarch64_gnullvm]]
-version = "0.42.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_aarch64_gnullvm]]
 version = "0.48.5"
 criteria = "safe-to-deploy"
 
@@ -2854,10 +2850,6 @@ version = "0.53.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_aarch64_msvc]]
-version = "0.42.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_aarch64_msvc]]
 version = "0.48.5"
 criteria = "safe-to-deploy"
 
@@ -2867,10 +2859,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.windows_aarch64_msvc]]
 version = "0.53.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_i686_gnu]]
-version = "0.42.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_i686_gnu]]
@@ -2894,10 +2882,6 @@ version = "0.53.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_i686_msvc]]
-version = "0.42.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_i686_msvc]]
 version = "0.48.5"
 criteria = "safe-to-deploy"
 
@@ -2907,10 +2891,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.windows_i686_msvc]]
 version = "0.53.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_x86_64_gnu]]
-version = "0.42.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_x86_64_gnu]]
@@ -2926,10 +2906,6 @@ version = "0.53.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_x86_64_gnullvm]]
-version = "0.42.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_x86_64_gnullvm]]
 version = "0.48.5"
 criteria = "safe-to-deploy"
 
@@ -2939,10 +2915,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.windows_x86_64_gnullvm]]
 version = "0.53.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.windows_x86_64_msvc]]
-version = "0.42.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.windows_x86_64_msvc]]

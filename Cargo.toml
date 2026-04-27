@@ -223,7 +223,7 @@ regex = { version = "1.12.3", default-features = false, features = [
   "perf",
   "unicode-perl",
 ] }
-reqwest = { version = "0.13.2", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
   "http2",
   "json",
   "query",
@@ -307,7 +307,7 @@ webpki-roots = "1.0.7"
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "1.8.3", default-features = false, features = [
+alloy = { version = "2.0.1", default-features = false, features = [
   "sol-types",
   "contract",
   "signers",
@@ -387,7 +387,7 @@ cargo-llvm-cov = "0.8.5"
 cargo-machete = "0.9.2"
 cargo-nextest = "0.9.133"
 cargo-vet = "0.10.2"
-lychee = "0.23.0"
+lychee = "0.24.1"
 
 # cargo-vet supply chain security configuration
 [workspace.metadata.vet]
