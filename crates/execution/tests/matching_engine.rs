@@ -43,8 +43,7 @@ use nautilus_model::{
         LiquiditySide, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
-        OrderEventAny, OrderEventType, OrderFilled, OrderRejected,
-        order::rejected::OrderRejectedBuilder,
+        OrderEventAny, OrderEventType, OrderFilled, OrderRejected, order::spec::OrderRejectedSpec,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
@@ -623,11 +622,10 @@ fn test_process_order_when_closed_linked_order(
         .submit(true)
         .build();
     // Set stop loss order status to Rejected with proper event
-    let rejected_event: OrderRejected = OrderRejectedBuilder::default()
+    let rejected_event: OrderRejected = OrderRejectedSpec::builder()
         .client_order_id(stop_loss_client_order_id)
         .reason(Ustr::from("Rejected"))
-        .build()
-        .unwrap();
+        .build();
     stop_loss_order
         .apply(OrderEventAny::Rejected(rejected_event))
         .unwrap();

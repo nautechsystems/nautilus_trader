@@ -1000,13 +1000,10 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide, TriggerType},
-        events::order::{
-            canceled::OrderCanceledBuilder,
-            denied::OrderDeniedBuilder,
-            pending_update::OrderPendingUpdateBuilder,
-            spec::{OrderAcceptedSpec, OrderFilledSpec, OrderInitializedSpec, OrderSubmittedSpec},
-            triggered::OrderTriggeredBuilder,
-            updated::OrderUpdatedBuilder,
+        events::order::spec::{
+            OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
+            OrderInitializedSpec, OrderPendingUpdateSpec, OrderSubmittedSpec, OrderTriggeredSpec,
+            OrderUpdatedSpec,
         },
         identifiers::InstrumentId,
         orders::{MarketOrder, builder::OrderTestBuilder},
@@ -1087,7 +1084,7 @@ mod tests {
     #[rstest]
     fn test_order_state_transition_denied() {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
-        let denied = OrderDeniedBuilder::default().build().unwrap();
+        let denied = OrderDeniedSpec::builder().build();
         let event = OrderEventAny::Denied(denied);
 
         order.apply(event.clone()).unwrap();
@@ -1160,7 +1157,7 @@ mod tests {
     fn test_order_state_transition_to_canceled() {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         let submitted = OrderSubmittedSpec::builder().build();
-        let canceled = OrderCanceledBuilder::default().build().unwrap();
+        let canceled = OrderCanceledSpec::builder().build();
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Canceled(canceled)).unwrap();
@@ -1647,11 +1644,10 @@ mod tests {
             .build();
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let pending_update = OrderPendingUpdateBuilder::default().build().unwrap();
-        let updated = OrderUpdatedBuilder::default()
+        let pending_update = OrderPendingUpdateSpec::builder().build();
+        let updated = OrderUpdatedSpec::builder()
             .quantity(Quantity::from(50_000))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1682,10 +1678,9 @@ mod tests {
         let partial_fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(40_000))
             .build();
-        let updated = OrderUpdatedBuilder::default()
+        let updated = OrderUpdatedSpec::builder()
             .quantity(Quantity::from(80_000)) // Reduce to 80k (still > 40k filled)
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
@@ -1709,11 +1704,10 @@ mod tests {
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let triggered = OrderTriggeredBuilder::default().build().unwrap();
-        let updated = OrderUpdatedBuilder::default()
+        let triggered = OrderTriggeredSpec::builder().build();
+        let updated = OrderUpdatedSpec::builder()
             .quantity(Quantity::from(80_000))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(instrument_id)
@@ -1742,11 +1736,10 @@ mod tests {
             .build();
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let updated = OrderUpdatedBuilder::default()
+        let updated = OrderUpdatedSpec::builder()
             .quantity(Quantity::new(47.393_365, 6))
             .is_quote_quantity(false)
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
         assert!(order.is_quote_quantity());
@@ -1769,10 +1762,9 @@ mod tests {
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
         // Builder defaults is_quote_quantity to false
-        let updated = OrderUpdatedBuilder::default()
+        let updated = OrderUpdatedSpec::builder()
             .quantity(Quantity::new(8.0, 6))
-            .build()
-            .unwrap();
+            .build();
 
         let mut order: MarketOrder = init.into();
         assert!(order.is_quote_quantity());
@@ -1790,12 +1782,12 @@ mod tests {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().into();
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let canceled1 = OrderCanceledBuilder::default().build().unwrap();
+        let canceled1 = OrderCanceledSpec::builder().build();
         let fill = OrderFilledSpec::builder()
             .last_qty(Quantity::from(50_000))
             .trade_id(TradeId::from("FILL-1"))
             .build();
-        let canceled2 = OrderCanceledBuilder::default().build().unwrap();
+        let canceled2 = OrderCanceledSpec::builder().build();
 
         order.apply(OrderEventAny::Submitted(submitted)).unwrap();
         order.apply(OrderEventAny::Accepted(accepted)).unwrap();
@@ -1820,7 +1812,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let triggered = OrderTriggeredBuilder::default().build().unwrap();
+        let triggered = OrderTriggeredSpec::builder().build();
 
         let mut order = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_id)
@@ -1841,7 +1833,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
-        let triggered = OrderTriggeredBuilder::default().build().unwrap();
+        let triggered = OrderTriggeredSpec::builder().build();
 
         let mut order = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(instrument_id)
