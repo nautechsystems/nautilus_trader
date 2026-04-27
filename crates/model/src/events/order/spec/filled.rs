@@ -175,16 +175,4 @@ mod tests {
 
         assert_eq!(first_run, second_run);
     }
-
-    #[rstest]
-    fn default_matches_spec_builder() {
-        // `Default for OrderFilled` is a transitional shim that delegates to the spec.
-        // Reset between captures so both go through `test_uuid()` from the same starting state,
-        // and the resulting events are bitwise-equal.
-        reset_test_uuid_rng();
-        let from_spec = OrderFilledSpec::builder().build();
-        reset_test_uuid_rng();
-        let from_default = OrderFilled::default();
-        assert_eq!(from_spec, from_default);
-    }
 }

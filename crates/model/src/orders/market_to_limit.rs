@@ -577,7 +577,7 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        events::order::{filled::OrderFilledBuilder, initialized::OrderInitializedBuilder},
+        events::order::{initialized::OrderInitializedBuilder, spec::OrderFilledSpec},
         identifiers::{InstrumentId, TradeId, VenueOrderId},
         instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
@@ -748,7 +748,7 @@ mod tests {
         let fill_quantity = accepted_order.quantity();
         let fill_price = Price::new(98.50, 2);
 
-        let order_filled_event = OrderFilledBuilder::default()
+        let order_filled_event = OrderFilledSpec::builder()
             .client_order_id(accepted_order.client_order_id())
             .strategy_id(accepted_order.strategy_id())
             .instrument_id(accepted_order.instrument_id())
@@ -757,8 +757,7 @@ mod tests {
             .last_px(fill_price)
             .venue_order_id(VenueOrderId::from("TEST-001"))
             .trade_id(TradeId::from("TRADE-001"))
-            .build()
-            .unwrap();
+            .build();
 
         // Apply the fill event
         accepted_order

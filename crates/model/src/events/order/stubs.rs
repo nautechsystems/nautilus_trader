@@ -583,15 +583,6 @@ impl Default for OrderExpired {
     }
 }
 
-// Required by `derive_builder::Builder` with `builder(default)` on `OrderFilled`,
-// removed once `OrderFilledBuilder::default()` callers migrate to
-// `OrderFilledSpec::builder().build()`.
-impl Default for OrderFilled {
-    fn default() -> Self {
-        OrderFilledSpec::builder().build()
-    }
-}
-
 impl TestDefault for OrderInitialized {
     fn test_default() -> Self {
         Self {

@@ -959,6 +959,56 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 }
 ```
 
+#### Test specs (bon builders)
+
+For events with many constructor arguments, the canonical test builder is a
+fluent spec defined alongside the event under `events/<event>/spec/<name>.rs`
+(see `crates/model/src/events/order/spec/filled.rs` for the reference
+implementation). Gate the spec module with
+`#[cfg(any(test, feature = "stubs"))]` so it is available to in-crate tests
+and to downstream crates that opt in with the `stubs` feature, but compiled
+out of production builds. Specs must not be referenced from production code.
+
+Why a custom spec instead of `derive_builder::Builder` with `builder(default)`:
+the latter bypasses the production constructor, so invariants added later are
+not exercised by tests. A spec funnels through the production constructor on
+every `build()`.
+
+Anatomy:
+
+- Derive `bon::Builder` with `finish_fn = into_spec` so the generated finish
+  method does not collide with the custom `build()`.
+- Mark every required field `#[builder(default = ...)]` with a literal or a
+  `TestDefault::test_default()` call. Leave optional fields as `Option<T>`
+  without a default so callers either set them or accept `None`.
+- Default event ID fields to `test_uuid()` from `crate::stubs`. This yields
+  distinct, reproducible UUIDs without callers managing state.
+- Implement `build()` on the generated builder so it calls `into_spec()` and
+  forwards through the production constructor (e.g. `OrderFilled::new`). The
+  return type is the event itself, not a `Result`, because spec defaults are
+  valid by construction.
+
+Caller usage:
+
+```rust
+let fill = OrderFilledSpec::builder()
+    .last_qty(Quantity::from(50_000))
+    .trade_id(TradeId::from("TRADE-1"))
+    .build();
+```
+
+Override only the fields the test cares about; the rest take spec defaults.
+Do not write `.unwrap()` after `build()`.
+
+Determinism: under `cargo nextest` each test runs in a fresh process, so the
+per-thread UUID sequence resets automatically. Under plain `cargo test`, call
+`reset_test_uuid_rng()` from `crate::stubs` at the start of any test that
+compares UUID sequences across draws.
+
+Pin spec defaults with a single test in the spec module so accidental drift
+in any field surfaces there rather than as silent behavior change in
+downstream tests.
+
 #### Property-based testing
 
 Use the `proptest` crate for property-based tests. Place these in a separate
