@@ -840,4 +840,25 @@ mod tests {
         // Ensure the reader actually observed updates (not vacuously satisfied)
         assert!(max_observed > 0, "Reader must observe writer updates");
     }
+
+    // The wall-clock seam (`wall_clock_now`) routes through madsim's virtual
+    // clock under simulation. Sleeping for 60 virtual seconds must advance
+    // the value returned by `nanos_since_unix_epoch` by 60s in wall-clock
+    // terms. If the cfg gate fell through to `SystemTime::now()`, the elapsed
+    // value would only reflect real wall-clock time (~0ms) and the assertion
+    // would fail.
+    #[cfg(all(feature = "simulation", madsim))]
+    #[madsim::test]
+    async fn test_wall_clock_advances_with_virtual_time() {
+        let before = nanos_since_unix_epoch();
+        madsim::time::sleep(std::time::Duration::from_secs(60)).await;
+        let after = nanos_since_unix_epoch();
+
+        let elapsed_ns = after.saturating_sub(before);
+        let sixty_seconds_ns = 60 * NANOSECONDS_IN_SECOND;
+        assert!(
+            elapsed_ns >= sixty_seconds_ns,
+            "wall clock did not advance by full virtual sleep: elapsed={elapsed_ns}ns"
+        );
+    }
 }

@@ -228,4 +228,22 @@ mod test {
         let one_ns = Nanos::from(1);
         assert!(d + one_ns > d);
     }
+
+    // Under madsim, `MonotonicClock::sleep` runs on the virtual clock with
+    // sub-ms scheduling epsilon. If the cfg gate fell through to real tokio,
+    // `sleep` would block on the OS scheduler with ~5-15ms of jitter and the
+    // tight upper bound would fail.
+    #[cfg(all(feature = "simulation", madsim))]
+    #[madsim::test]
+    async fn test_monotonic_clock_sleep_uses_virtual_time() {
+        let clock = MonotonicClock;
+        let start = Instant::now();
+        clock.sleep(Duration::from_millis(100)).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(100));
+        assert!(
+            elapsed < Duration::from_millis(101),
+            "virtual sleep showed real-tokio jitter: {elapsed:?}"
+        );
+    }
 }

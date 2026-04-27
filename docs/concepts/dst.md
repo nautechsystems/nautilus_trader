@@ -1,6 +1,6 @@
 # DST
 
-Deterministic simulation testing (DST) runs NautilusTrader under a seed-controlled runtime so that
+**Deterministic simulation testing (DST)** runs NautilusTrader under a seed-controlled runtime so that
 timing-sensitive execution behavior is bitwise reproducible from a single integer. This guide
 explains what DST is, how NautilusTrader supports it, what guarantees the support provides, and
 where those guarantees stop.
@@ -172,6 +172,128 @@ The hook applies to the 16 workspace crates in the transitive closure of `nautil
 Adapter crates and infrastructure crates (Redis, Postgres) are out of scope. Their DST
 suitability requires a separate audit before they enter the DST path.
 
+## Implementation notes
+
+Concrete changes the DST audit produced in this repository. Use this as the starting point
+when investigating whether a code path is on the DST path and how it routes today.
+
+### Iteration-order seams
+
+Production sites where `AHashMap` / `AHashSet` flipped to `IndexMap` / `IndexSet` because
+the iteration order is observable on the DST path:
+
+- **Matching engine** (`crates/execution/src/matching_engine/engine.rs`): nine fields
+  (`execution_bar_types`, `execution_bar_deltas`, `account_ids`, `cached_filled_qty`,
+  `bid_consumption`, `ask_consumption`, `queue_ahead`, `queue_excess`, `queue_pending`).
+  Iterated removes use `.shift_remove()`. Closes
+  [#3914](https://github.com/nautechsystems/nautilus_trader/issues/3914).
+- **Reconciliation manager** (`crates/live/src/manager.rs`): hook-enforced, plus
+  `ReconciliationResult.orders` and `ReconciliationResult.fills`.
+- **Account trait** (`crates/model/src/accounts/`): `balances`, `balances_total`,
+  `balances_free`, `balances_locked`, `starting_balances` returns. Storage fields on
+  `BaseAccount` and `MarginAccount` are `IndexMap`.
+- **Position events** (`crates/model/src/position.rs`): `Position::commissions` flipped
+  to `IndexMap` (consumed via `.values()` in `events/position/snapshot.rs`).
+- **Portfolio aggregation** (`crates/portfolio/src/portfolio.rs`): `unrealized_pnls`,
+  `realized_pnls`, `net_positions` storage; `accumulate_mark_values` builds
+  `IndexMap<Currency, f64>`.
+- **Data engine** (`crates/data/src/engine/`): `book_snapshot_counts`, `bar_aggregators`,
+  `BookSnapshotInfos`. Iterated removes use `.shift_remove()`.
+- **Execution engine** (`crates/execution/src/engine/`): `ExecutionEngine.clients`, plus
+  the `client_ids` / `venues` accumulators in `get_clients_for_orders()`.
+- **Trading algorithm** (`crates/trading/src/algorithm/core.rs`):
+  `strategy_event_handlers` (drives ordered `msgbus::unsubscribe_*` fan-out).
+- **Analyzer** (`crates/analysis/src/analyzer.rs`): `account_balances`,
+  `account_balances_starting`.
+- **Cache API** (`crates/common/src/cache/mod.rs`): `get_orders_for_ids` and
+  `get_positions_for_ids` sort their `Vec` returns by `client_order_id` / `position_id`
+  before returning. Storage stays on `AHashSet` (set semantics).
+
+Remaining `AHashMap` / `AHashSet` sites in the in-scope crates are lookup-only, behind
+concurrent shared-ownership wrappers (`Arc<DashMap>`, `AtomicMap`), or feed into
+commutative aggregation. Any new in-scope site that drives observable iteration order
+is a regression that the per-area audit guards against.
+
+### Time seams
+
+`Instant::now` / `SystemTime::now` call sites that remain on the DST path are either
+inside `#[cfg(test)]`, file-allowlisted in the hook, or carry an inline `// dst-ok`
+marker with a reason:
+
+- `crates/common/src/testing.rs:81,108` `wait_until` / `wait_until_async`
+- `crates/execution/src/engine/mod.rs:822,847` init log timing
+- `crates/common/src/cache/mod.rs:569,904,3895` log and audit timing (file-allowlisted)
+- `crates/model/src/defi/reporting.rs:59,123` progress logging (file-allowlisted)
+- `crates/core/src/time.rs` seam definition site (file-allowlisted)
+
+`chrono::Utc::now` is hook-banned in the in-scope crates. The remaining call sites are
+the logging bridge and writer (scoped out under "Logging runs on real OS threads"). The
+`crates/core/src/datetime.rs::is_within_last_24_hours` helper used to reach
+`chrono::Utc::now` from non-logging paths; it now routes through
+`nautilus_core::time::nanos_since_unix_epoch()` and compares in `u64` nanos directly.
+
+### Randomness seams
+
+Production RNG sites on the DST path:
+
+- `crates/core/src/uuid.rs::UUID4::new()` routes through `madsim::rand::thread_rng()`
+  under simulation, `rand::rng()` otherwise. Reachable from order and event factories
+  in `nautilus-common` and `nautilus-risk`.
+- `crates/execution/src/models/fill.rs::default_std_rng()` routes the same way. Called
+  from `ProbabilisticFillState::new()` when no seed is provided. With a seed,
+  `StdRng::seed_from_u64` is deterministic by construction.
+- `crates/execution/src/matching_engine/ids_generator.rs:167,179` uses
+  `nautilus_core::UUID4::new()` for the `use_random_ids` path. The default ID scheme
+  (`{venue}-{raw_id}-{count}`) is deterministic without it.
+
+Allowed-with-marker: `crates/network/src/backoff.rs:105` for reconnect jitter,
+`// dst-ok` (transport layer).
+
+### Tokio submodule split
+
+`madsim` aliases `time`, `task`, `runtime`, and `signal`. Other tokio submodules
+(`sync`, `io`, `select!`, `fs`, `net`) stay on real tokio under simulation. Extending
+the swap further would require rebuilding `tokio-tungstenite`, `tokio-rustls`, and
+`reqwest` against shimmed `tokio::net::TcpStream`, which the audit ruled out as too
+invasive.
+
+In-scope sites that touch real `tokio::net` / `tokio::io` directly:
+
+- `crates/network/src/net.rs:37` re-exports `tokio::net::{TcpListener, TcpStream}`
+- `crates/network/src/socket/client.rs:46,356` `tokio::io::{AsyncReadExt, AsyncWriteExt}`
+- `crates/network/src/tls.rs:22` `tokio::io::{AsyncRead, AsyncWrite}`
+- `crates/network/src/websocket/types.rs:26,29` aliases `MaybeTlsStream<tokio::net::TcpStream>`
+
+These run on real sockets even under simulation. Channel delivery order on
+`tokio::sync` stays deterministic because the sender and receiver tasks are scheduled
+by the madsim executor even though the channel implementation is real.
+
+### Raw thread escape rules
+
+Rule 4 of the hook bans raw thread spawning outside three escape cases:
+
+- `#[cfg(test)]` test modules.
+- `#[cfg(not(madsim))]` or `#[cfg(not(all(feature = "simulation", madsim)))]` production
+  sites (e.g. the logging writer thread).
+- An inline `// dst-ok` marker.
+
+`tokio::task::LocalSet` and `tokio::task::spawn_blocking` are not supported under
+`madsim`. The codebase audit found no production sites for either inside the in-scope
+crates; new sites must carry a cfg gate or `// dst-ok` marker.
+
+### Logging tests under simulation
+
+The logging writer thread is cfg-gated out under simulation; under `cfg(madsim)` log
+events are dropped. Tests that init the file-logging writer would either hang or assert
+against an empty log file, so the affected submodules are gated out at the module
+boundary:
+
+- `crates/common/src/logging/logger.rs::tests::serial_tests` (eight tests).
+- `crates/common/src/logging/macros.rs::tests` (two tests).
+
+`logger.rs::tests::sim_tests::test_init_under_madsim_skips_writer_thread_and_forces_bypass`
+runs under simulation and pins the gated behaviour.
+
 ## Scope boundaries
 
 The contract is deliberately narrow. The following weakenings are explicit, not oversights.
@@ -260,20 +382,39 @@ As of the current state of this repository:
 
 - Layer 1 (runtime swap) is implemented. `nautilus_common::live::dst` exposes routed re-exports
   for `time`, `task`, `runtime`, and `signal`. Production call sites for `time`, `task`, and
-  `runtime` route through the seam; signal call-site adoption is partial.
+  `runtime` route through the seam; signal call-site adoption is partial (see "Signal handling"
+  under "Scope boundaries").
 - Layer 2 (nondeterminism substitution) is implemented across the 16 in-scope crates. Seams
-  exist for wall-clock time, monotonic time, and iteration order. Known remaining RNG and
-  wall-clock call sites on the DST path are enumerated in the scope-hole inventory.
+  exist for wall-clock time, monotonic time, randomness, and iteration order. The audit
+  closures and remaining allowed call sites are enumerated under "Implementation notes".
 - Static enforcement via `check-dst-conventions` is active in pre-commit and CI. The hook
-  covers the load-bearing conditions; some scope holes (`chrono::Utc::now`, `Uuid::new_v4`)
-  are outside the current hook surface and tracked in the scope-hole inventory.
-- Runtime verification of the contract under `cfg(madsim)` (same-seed diff harness) is planned
-  follow-up work and is not yet part of this repository.
+  covers the load-bearing conditions; the `// dst-ok` marker convention permits per-line
+  exceptions when justified.
+- Build-and-test smoke gate under `cfg(madsim)` runs via the `dst` workflow
+  (`.github/workflows/dst.yml`, invokes `make cargo-test-sim`). It compiles the in-scope
+  crates with `--features simulation` and runs the test subset known to work under
+  simulation today:
+  - All of `nautilus-common`. This leg verifies `cfg(madsim)` compatibility: code paths
+    compile and tests pass with the simulation feature active. It does not validate
+    virtual wall-clock behavior, because most common tests are plain `#[rstest]` and
+    run outside a madsim runtime (where madsim's libc intercepts fall back to the real
+    syscall), and because `nautilus-common`'s `simulation` feature does not propagate
+    `nautilus-core/simulation`, so the explicit `wall_clock_now` cfg branch is not
+    selected here.
+  - The cross-crate seam pinning tests in `nautilus-network` (sleep / timeout virtual
+    time, ratelimiter sleep) and `nautilus-core` (`wall_clock_now` virtual time). Each
+    runs with its own crate's `--features simulation` and uses `#[madsim::test]`, so
+    the explicit cfg branches and virtual time are both validated.
+
+  Together this catches drift in the cfg-gated DST seams; it does not yet exercise
+  determinism end-to-end.
+- End-to-end runtime verification (same-seed diff over an in-scope code path) is out of
+  scope for this repository. The structural conditions (Rule 1 to Rule 5) are enforced;
+  the claim that a seed reproduces identical observable behavior across runs is plausible
+  from the seam design but is not yet verified by a regression gate.
 
 ## Further reading
 
-- The [DST scope-hole inventory](../developer_guide/dst_scope_inventory.md) enumerates every area
-  where the contract does not apply, tagged closed / gated / scoped-out / unresolved.
 - `.pre-commit-hooks/check_dst_conventions.sh` defines the five enforcement rules in full and
   documents the `// dst-ok` marker convention.
 - External references: the [FoundationDB testing

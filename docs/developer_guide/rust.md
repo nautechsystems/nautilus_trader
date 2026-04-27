@@ -541,9 +541,9 @@ The pre-commit hook `check-dst-conventions` enforces `IndexMap` / `IndexSet`
 in `crates/live/src/manager.rs` and
 `crates/execution/src/matching_engine/engine.rs` because both files were
 audited as load-bearing for fill ordering and reconciliation. Other call
-sites are reviewed individually; see
-[DST scope inventory](dst_scope_inventory.md) for the per-file audit and
-the running list of closed / pending sites.
+sites are reviewed individually; the closed sites and remaining allowed
+patterns are listed under "Implementation notes" in
+[../concepts/dst.md](../concepts/dst.md).
 
 When the collection is **lookup-only** (no `.iter()`, `.values()`,
 `.keys()`, `.into_iter()`, `.drain()`, or `for x in map { ... }`),

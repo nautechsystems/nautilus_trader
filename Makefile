@@ -605,6 +605,25 @@ else
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
 endif
 
+# DST simulation smoke test. Compiles the in-scope crates under cfg(madsim)
+# and runs the test subset known to work under simulation today: all of
+# nautilus-common (where every test has been audited for sim compatibility)
+# and the cross-crate seam pinning tests in nautilus-network and nautilus-core.
+# See docs/concepts/dst.md for the full DST scope.
+.PHONY: cargo-test-sim
+cargo-test-sim: export RUST_BACKTRACE=1
+cargo-test-sim: export RUSTFLAGS=--cfg madsim
+cargo-test-sim: check-nextest-installed
+cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation feature)
+	$(info $(M) Building in-scope crates under simulation (compile gate)...)
+	cargo build -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution --tests --lib --features simulation
+	$(info $(M) Running nautilus-common tests under simulation...)
+	cargo nextest run -p nautilus-common --features simulation $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-network DST seam pinning tests under simulation...)
+	cargo nextest run -p nautilus-network --features simulation -E 'test(~dst) + test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
+	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile nextest --status-level fail --final-status-level flaky
+
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1
 cargo-test-core-debug: check-nextest-installed
