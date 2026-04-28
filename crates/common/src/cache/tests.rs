@@ -31,8 +31,8 @@ use nautilus_model::{
         Bar, BarType, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
     },
     enums::{
-        AggressorSide, BookType, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSide, PriceType, TriggerType,
+        AggressorSide, BookType, ContingencyType, MarketStatusAction, OmsType, OrderSide,
+        OrderStatus, OrderType, PositionSide, PriceType, TriggerType,
     },
     events::{
         OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled, OrderRejected,
@@ -142,6 +142,244 @@ fn test_cache_general_when_no_database(mut cache: Cache) {
 #[rstest]
 fn test_cache_orders_when_no_database(mut cache: Cache) {
     assert!(futures::executor::block_on(cache.cache_orders()).is_ok());
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_propagates_parent_to_children(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let position_id = PositionId::new("P-1");
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let child_a_id = ClientOrderId::from("CHILD-A");
+    let child_b_id = ClientOrderId::from("CHILD-B");
+
+    let mut parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_a_id, child_b_id])
+        .build();
+    parent.set_position_id(Some(position_id));
+    let parent_strategy_id = parent.strategy_id();
+    cache.add_order(parent, None, None, false).unwrap();
+
+    let child_a = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.10000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_a_id)
+        .build();
+    cache.add_order(child_a, None, None, false).unwrap();
+
+    let child_b = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("0.90000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_b_id)
+        .build();
+    cache.add_order(child_b, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(
+        cache.order(&child_a_id).unwrap().position_id(),
+        Some(position_id),
+    );
+    assert_eq!(
+        cache.order(&child_b_id).unwrap().position_id(),
+        Some(position_id),
+    );
+    assert_eq!(cache.position_id(&child_a_id), Some(&position_id));
+    assert_eq!(cache.position_id(&child_b_id), Some(&position_id));
+    assert_eq!(
+        cache.strategy_id_for_position(&position_id),
+        Some(&parent_strategy_id),
+    );
+
+    let position_order_ids: AHashSet<ClientOrderId> = cache
+        .orders_for_position(&position_id)
+        .iter()
+        .map(|o| o.client_order_id())
+        .collect();
+    assert!(position_order_ids.contains(&child_a_id));
+    assert!(position_order_ids.contains(&child_b_id));
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_skips_non_oto_parent(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let position_id = PositionId::new("P-1");
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let child_id = ClientOrderId::from("CHILD-1");
+
+    let mut parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![child_id])
+        .build();
+    parent.set_position_id(Some(position_id));
+    cache.add_order(parent, None, None, false).unwrap();
+
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.10000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_id)
+        .build();
+    cache.add_order(child, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(cache.order(&child_id).unwrap().position_id(), None);
+    assert_eq!(cache.position_id(&child_id), None);
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_skips_when_parent_has_no_position_id(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let child_id = ClientOrderId::from("CHILD-1");
+
+    let parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    cache.add_order(parent, None, None, false).unwrap();
+
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.10000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_id)
+        .build();
+    cache.add_order(child, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(cache.order(&child_id).unwrap().position_id(), None);
+    assert_eq!(cache.position_id(&child_id), None);
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_does_not_overwrite_existing_child_position_id(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let parent_position_id = PositionId::new("P-PARENT");
+    let child_position_id = PositionId::new("P-CHILD");
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let child_id = ClientOrderId::from("CHILD-1");
+
+    let mut parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    parent.set_position_id(Some(parent_position_id));
+    cache.add_order(parent, None, None, false).unwrap();
+
+    let mut child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.10000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_id)
+        .build();
+    child.set_position_id(Some(child_position_id));
+    cache.add_order(child, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(
+        cache.order(&child_id).unwrap().position_id(),
+        Some(child_position_id),
+    );
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_handles_missing_child(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let position_id = PositionId::new("P-1");
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let absent_child_id = ClientOrderId::from("CHILD-ABSENT");
+
+    let mut parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![absent_child_id])
+        .build();
+    parent.set_position_id(Some(position_id));
+    cache.add_order(parent, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(cache.position_id(&absent_child_id), None);
+}
+
+#[rstest]
+fn test_assign_position_ids_to_contingencies_is_idempotent(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let position_id = PositionId::new("P-1");
+    let parent_id = ClientOrderId::from("PARENT-1");
+    let child_id = ClientOrderId::from("CHILD-1");
+
+    let mut parent = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    parent.set_position_id(Some(position_id));
+    cache.add_order(parent, None, None, false).unwrap();
+
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.10000"))
+        .quantity(Quantity::from(100_000))
+        .client_order_id(child_id)
+        .build();
+    cache.add_order(child, None, None, false).unwrap();
+
+    cache.assign_position_ids_to_contingencies();
+    cache.assign_position_ids_to_contingencies();
+
+    assert_eq!(
+        cache.order(&child_id).unwrap().position_id(),
+        Some(position_id),
+    );
+    assert_eq!(cache.position_id(&child_id), Some(&position_id));
+    assert_eq!(cache.orders_for_position(&position_id).len(), 1);
 }
 
 #[rstest]

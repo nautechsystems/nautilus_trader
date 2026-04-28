@@ -52,7 +52,10 @@ use nautilus_model::{
         Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
     },
-    enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
+    enums::{
+        AggregationSource, ContingencyType, OmsType, OrderSide, PositionSide, PriceType,
+        TriggerType,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
@@ -236,6 +239,8 @@ impl Cache {
         self.accounts = cache_map.accounts;
         self.orders = cache_map.orders;
         self.positions = cache_map.positions;
+
+        self.assign_position_ids_to_contingencies();
         Ok(())
     }
 
@@ -317,6 +322,8 @@ impl Cache {
         };
 
         log::info!("Cached {} orders from database", self.general.len());
+
+        self.assign_position_ids_to_contingencies();
         Ok(())
     }
 
@@ -2036,6 +2043,82 @@ impl Cache {
             .insert(*position_id);
 
         Ok(())
+    }
+
+    // Propagates parent OTO `position_id` to contingent children that are missing one.
+    //
+    // Recovers from a partial-write window during fill handling: the fill-time path in the
+    // execution engine assigns `position_id` to each contingent child in a non-atomic loop
+    // (`set_position_id` then `add_position_id`), so a crash mid-loop can leave the database
+    // with the parent updated and some children un-updated. This pass re-applies any missing
+    // assignments after load. Mirrors the Cython behaviour at
+    // `nautilus_trader/cache/cache.pyx::_assign_position_id_to_contingencies`.
+    fn assign_position_ids_to_contingencies(&mut self) {
+        let mut assignments: Vec<(PositionId, ClientOrderId)> = Vec::new();
+
+        for parent in self.orders.values() {
+            if parent.contingency_type() != Some(ContingencyType::Oto) {
+                continue;
+            }
+            let Some(parent_position_id) = parent.position_id() else {
+                continue;
+            };
+            let Some(linked_order_ids) = parent.linked_order_ids() else {
+                continue;
+            };
+
+            for client_order_id in linked_order_ids {
+                match self.orders.get(client_order_id) {
+                    None => {
+                        log::error!("Contingency order {client_order_id} not found");
+                    }
+                    Some(contingent) => {
+                        if contingent.position_id().is_none() {
+                            assignments.push((parent_position_id, *client_order_id));
+                        }
+                    }
+                }
+            }
+        }
+
+        for (position_id, client_order_id) in assignments {
+            let Some((venue, strategy_id)) =
+                self.orders.get_mut(&client_order_id).map(|contingent| {
+                    contingent.set_position_id(Some(position_id));
+                    (contingent.instrument_id().venue, contingent.strategy_id())
+                })
+            else {
+                continue;
+            };
+
+            // In-memory index updates only. The persistent index entry (if any) was written by
+            // the original fill-time `add_position_id` call; replaying the database write here
+            // would invoke `CacheDatabaseAdapter::index_order_position`, which is currently
+            // `todo!()` on both the Redis and SQL adapters. Until those land, the load-time
+            // recovery is in-memory-only: sufficient for the current process to operate, but
+            // not durable across another restart.
+            self.index
+                .order_position
+                .insert(client_order_id, position_id);
+            self.index
+                .position_strategy
+                .insert(position_id, strategy_id);
+            self.index
+                .position_orders
+                .entry(position_id)
+                .or_default()
+                .insert(client_order_id);
+            self.index
+                .strategy_positions
+                .entry(strategy_id)
+                .or_default()
+                .insert(position_id);
+            self.index
+                .venue_positions
+                .entry(venue)
+                .or_default()
+                .insert(position_id);
+        }
     }
 
     /// Adds the `position` to the cache.
