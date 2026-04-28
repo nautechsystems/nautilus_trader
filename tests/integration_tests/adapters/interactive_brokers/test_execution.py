@@ -1151,6 +1151,78 @@ async def test_spread_combo_fill_uses_incremental_avg_px_for_multiple_fills(
 
 
 @pytest.mark.asyncio
+async def test_spread_execution_handles_exec_details_before_open_order(mocker, exec_client, cache):
+    # Regression test: when IB delivers execDetails before openOrder has assigned
+    # venue_order_id (typical for fast market-order combo fills), the spread fill
+    # paths must derive venue_order_id from the Execution and not crash with
+    # NoneType errors. The cache must also learn the venue_order_id mapping so
+    # subsequent FillReports during reconciliation can be attributed correctly.
+    call = make_option_contract("SPY C400", OptionKind.CALL)
+    put = make_option_contract("SPY P390", OptionKind.PUT)
+    spread = make_option_spread(call, put)
+
+    for instrument in [call, put, spread]:
+        exec_client.instrument_provider.add(instrument)
+        cache.add_instrument(instrument)
+
+    call_contract = IBTestContractStubs.create_contract(
+        conId=9101,
+        symbol="SPY",
+        secType="OPT",
+        exchange="SMART",
+        currency="USD",
+        localSymbol="SPY C400",
+    )
+    exec_client.instrument_provider.contract_id_to_instrument_id[call_contract.conId] = call.id
+
+    client_order_id = ClientOrderId("O-SPREAD-RACE-001")
+    # Order is in SUBMITTED state without venue_order_id — i.e. openOrder has not
+    # fired yet. This is the precondition for the race.
+    order = TestExecStubs.limit_order(
+        instrument=spread,
+        client_order_id=client_order_id,
+        quantity=Quantity.from_int(1),
+        price=Price.from_str("1.00"),
+    )
+    order = TestExecStubs.make_submitted_order(order)
+    cache.add_order(order, None)
+    assert order.venue_order_id is None
+
+    venue_order_id = VenueOrderId("7101")
+    generate_order_accepted = mocker.spy(exec_client, "generate_order_accepted")
+    generate_order_filled = mocker.patch.object(exec_client, "generate_order_filled")
+
+    execution = IBTestExecStubs.execution(order_id=int(venue_order_id.value))
+    execution.orderRef = str(client_order_id)
+    execution.execId = "race-fill-1"
+    execution.shares = Decimal(1)
+    execution.price = 3.30
+    commission_report = IBTestExecStubs.commission()
+    commission_report.execId = execution.execId
+
+    # Should not raise (regression: previously crashed with TypeError /
+    # AttributeError on nautilus_order.venue_order_id == None).
+    exec_client._on_exec_details(
+        order_ref=str(client_order_id),
+        execution=execution,
+        commission_report=commission_report,
+        contract=call_contract,
+    )
+
+    # An OrderAccepted event must be synthesized so the cache learns the
+    # venue_order_id mapping.
+    assert generate_order_accepted.call_count == 1
+    assert generate_order_accepted.call_args.kwargs["venue_order_id"] == venue_order_id
+
+    # The leg fill must be generated with venue_order_id derived from the
+    # execution rather than crashing.
+    assert generate_order_filled.call_count >= 1
+    leg_fill_call = generate_order_filled.call_args_list[0].kwargs
+    assert leg_fill_call["instrument_id"] == call.id
+    assert leg_fill_call["venue_order_id"] == VenueOrderId(f"{venue_order_id.value}-LEG-0")
+
+
+@pytest.mark.asyncio
 async def test_on_account_update(mocker, exec_client):
     # TODO:
     pass
