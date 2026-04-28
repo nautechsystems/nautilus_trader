@@ -86,6 +86,21 @@ def test_period_statistic_custom_period(cls, expected_prefix):
     assert "30" in stat.name
 
 
+@pytest.mark.parametrize(
+    ("cls", "_expected_prefix"),
+    NO_ARG_STATISTICS + PERIOD_STATISTICS,
+)
+def test_pyo3_statistic_exposes_full_calculate_surface(cls, _expected_prefix):
+    stat = cls()
+
+    # Every pyo3 statistic must expose all three calculate_from_* methods so the
+    # Python PortfolioAnalyzer can iterate registered stats without AttributeError.
+    # Methods return None for inputs that do not apply to the underlying calculation.
+    assert callable(stat.calculate_from_returns)
+    assert callable(stat.calculate_from_realized_pnls)
+    assert callable(stat.calculate_from_positions)
+
+
 def test_long_ratio_custom_precision():
     stat = LongRatio(precision=4)
 

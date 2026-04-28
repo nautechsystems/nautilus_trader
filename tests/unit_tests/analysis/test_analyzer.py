@@ -21,6 +21,9 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.accounting.accounts.cash import CashAccount
+from nautilus_trader.analysis import CAGR
+from nautilus_trader.analysis import CalmarRatio
+from nautilus_trader.analysis import MaxDrawdown
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
@@ -154,6 +157,20 @@ class TestPortfolioAnalyzer:
         assert stat.last_returns_input is not None
         assert isinstance(stat.last_returns_input, dict)
         assert list(stat.last_returns_input.values()) == [0.05]
+
+    @pytest.mark.parametrize("cls", [MaxDrawdown, CAGR, CalmarRatio])
+    def test_returns_based_pyo3_statistics_skip_pnl_and_position_calls(self, cls):
+        # Returns-based pyo3 statistics must implement the full PortfolioStatistic
+        # surface (returning None for non-applicable inputs) so registering them
+        # does not raise AttributeError during backtest end.
+        self.analyzer.register_statistic(cls())
+        self.analyzer.add_trade(PositionId("P-1"), Money(10, USD))
+
+        pnl_stats = self.analyzer.get_performance_stats_pnls(currency=USD)
+        general_stats = self.analyzer.get_performance_stats_general()
+
+        assert cls().name not in pnl_stats
+        assert cls().name not in general_stats
 
     def test_analyzer_tracks_position_returns(self):
         # Arrange
