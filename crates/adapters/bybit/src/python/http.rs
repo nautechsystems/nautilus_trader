@@ -39,7 +39,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitPositionMode, BybitProductType,
+            BybitMarginMode, BybitOpenOnly, BybitOrderFilter, BybitPositionIdx, BybitPositionMode,
+            BybitProductType,
         },
         parse::extract_raw_symbol,
     },
@@ -571,7 +572,8 @@ impl BybitHttpClient {
         post_only = None,
         reduce_only = false,
         is_quote_quantity = false,
-        is_leverage = false
+        is_leverage = false,
+        position_idx = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -591,6 +593,7 @@ impl BybitHttpClient {
         reduce_only: bool,
         is_quote_quantity: bool,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -611,6 +614,7 @@ impl BybitHttpClient {
                     reduce_only,
                     is_quote_quantity,
                     is_leverage,
+                    position_idx,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

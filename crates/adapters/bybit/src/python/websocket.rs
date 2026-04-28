@@ -47,7 +47,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::BYBIT_VENUE,
-        enums::{BybitEnvironment, BybitProductType},
+        enums::{BybitEnvironment, BybitPositionIdx, BybitProductType},
         parse::make_bybit_symbol,
     },
     python::params::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
@@ -851,6 +851,7 @@ impl BybitWebSocketClient {
         post_only=None,
         reduce_only=None,
         is_leverage=false,
+        position_idx=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
@@ -872,6 +873,7 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let pending_py_requests = Arc::clone(self.pending_py_requests());
@@ -893,6 +895,7 @@ impl BybitWebSocketClient {
                     post_only,
                     reduce_only,
                     is_leverage,
+                    position_idx,
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
@@ -1029,6 +1032,7 @@ impl BybitWebSocketClient {
         is_leverage=false,
         take_profit=None,
         stop_loss=None,
+        position_idx=None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_build_place_order_params(
@@ -1049,6 +1053,7 @@ impl BybitWebSocketClient {
         is_leverage: bool,
         take_profit: Option<Price>,
         stop_loss: Option<Price>,
+        position_idx: Option<BybitPositionIdx>,
     ) -> PyResult<BybitWsPlaceOrderParams> {
         let params = self
             .build_place_order_params(
@@ -1068,6 +1073,7 @@ impl BybitWebSocketClient {
                 is_leverage,
                 take_profit,
                 stop_loss,
+                position_idx,
             )
             .map_err(to_pyruntime_err)?;
         Ok(params.into())

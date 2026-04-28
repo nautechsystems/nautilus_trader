@@ -6839,8 +6839,16 @@ class BybitMarginStatusResult:
     def ts_init(self) -> int: ...
 
 class BybitPositionMode(Enum):
-    MergedSingle = 0
-    BothSides = 3
+    MERGED_SINGLE = 0
+    BOTH_SIDES = 3
+
+class BybitPositionIdx(Enum):
+    ONE_WAY = 0
+    BUY_HEDGE = 1
+    SELL_HEDGE = 2
+
+    @classmethod
+    def from_str(cls, data: Any) -> BybitPositionIdx: ...
 
 class BybitServerTime:
     @property
@@ -7207,6 +7215,7 @@ class BybitHttpClient:
         reduce_only: bool = False,
         is_quote_quantity: bool = False,
         is_leverage: bool = False,
+        position_idx: BybitPositionIdx | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -7308,6 +7317,7 @@ class BybitWebSocketClient:
         post_only: bool | None = None,
         reduce_only: bool | None = None,
         is_leverage: bool = False,
+        position_idx: BybitPositionIdx | None = None,
     ) -> None: ...
     async def modify_order(
         self,
@@ -7365,6 +7375,7 @@ class BybitWebSocketClient:
         is_leverage: bool = False,
         take_profit: Price | None = None,
         stop_loss: Price | None = None,
+        position_idx: BybitPositionIdx | None = None,
     ) -> BybitWsPlaceOrderParams: ...
     def build_amend_order_params(
         self,
@@ -7412,6 +7423,7 @@ class BybitWsPlaceOrderParams:
     tp_limit_price: str | None
     order_iv: str | None
     mmp: bool | None
+    position_idx: BybitPositionIdx | None
 
 class BybitWsAmendOrderParams:
     category: BybitProductType
@@ -7439,6 +7451,12 @@ def get_bybit_ws_url_public(
 ) -> str: ...
 def get_bybit_ws_url_private(environment: BybitEnvironment) -> str: ...
 def get_bybit_ws_url_trade(environment: BybitEnvironment) -> str: ...
+def bybit_resolve_position_idx(
+    position_mode: BybitPositionMode | None,
+    order_side: OrderSide,
+    is_reduce_only: bool,
+    manual_override: BybitPositionIdx | None = None,
+) -> BybitPositionIdx | None: ...
 def bybit_extract_raw_symbol(symbol: str) -> str: ...
 def bybit_bar_spec_to_interval(aggregation: int, step: int) -> str: ...
 def bybit_product_type_from_symbol(symbol: str) -> BybitProductType: ...

@@ -91,7 +91,8 @@ use crate::common::{
     credential::{Credential, credential_env_vars},
     enums::{
         BybitAccountType, BybitContractType, BybitEnvironment, BybitMarginMode, BybitOpenOnly,
-        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionMode, BybitProductType,
+        BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitPositionMode,
+        BybitProductType,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2420,6 +2421,7 @@ impl BybitHttpClient {
         reduce_only: bool,
         is_quote_quantity: bool,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -2467,6 +2469,10 @@ impl BybitHttpClient {
         }
 
         order_entry.is_leverage(spot_leverage(product_type, is_leverage));
+
+        if let Some(idx) = position_idx {
+            order_entry.position_idx(Some(idx));
+        }
 
         let order_entry = order_entry.build().build_anyhow()?;
 

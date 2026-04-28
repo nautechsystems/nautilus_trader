@@ -153,8 +153,9 @@ use crate::{
     common::{
         enums::{
             BybitContractType, BybitKlineInterval, BybitMarketUnit, BybitOptionType,
-            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection, BybitTriggerType,
+            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitProductType, BybitStopOrderType, BybitTimeInForce, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -1490,6 +1491,7 @@ pub struct BybitTpSlParams {
     pub is_leverage: bool,
     pub order_iv: Option<String>,
     pub mmp: Option<bool>,
+    pub position_idx: Option<BybitPositionIdx>,
 }
 
 impl BybitTpSlParams {
@@ -1632,6 +1634,18 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
             Some(b) => result.mmp = Some(b),
             None => anyhow::bail!("invalid type for 'mmp': {value}, expected bool"),
         }
+    }
+
+    if let Some(value) = params.get("position_idx") {
+        let idx = value.as_i64().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'position_idx': {value}, expected integer")
+        })?;
+        result.position_idx = Some(match idx {
+            0 => BybitPositionIdx::OneWay,
+            1 => BybitPositionIdx::BuyHedge,
+            2 => BybitPositionIdx::SellHedge,
+            _ => anyhow::bail!("invalid 'position_idx': {idx}, expected 0, 1, or 2"),
+        });
     }
 
     Ok(result)
@@ -2234,6 +2248,30 @@ mod tests {
         let p = params_from(&[("mmp", json!(true))]);
         let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
         assert_eq!(result.mmp, Some(true));
+    }
+
+    #[rstest]
+    #[case(0, BybitPositionIdx::OneWay)]
+    #[case(1, BybitPositionIdx::BuyHedge)]
+    #[case(2, BybitPositionIdx::SellHedge)]
+    fn test_parse_tp_sl_params_position_idx_valid(
+        #[case] idx: i64,
+        #[case] expected: BybitPositionIdx,
+    ) {
+        let p = params_from(&[("position_idx", json!(idx))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+        assert_eq!(result.position_idx, Some(expected));
+    }
+
+    #[rstest]
+    #[case(json!(3))]
+    #[case(json!(-1))]
+    #[case(json!("1"))]
+    #[case(json!(true))]
+    fn test_parse_tp_sl_params_position_idx_invalid(#[case] value: serde_json::Value) {
+        let p = params_from(&[("position_idx", value)]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+        assert!(err.to_string().contains("position_idx"));
     }
 
     #[rstest]

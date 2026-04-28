@@ -115,8 +115,36 @@ pub enum BybitPositionMode {
 }
 
 /// Position index values used for hedge mode payloads.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    strum::Display,
+    Eq,
+    PartialEq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
 #[repr(i32)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        rename_all = "SCREAMING_SNAKE_CASE",
+        module = "nautilus_trader.core.nautilus_pyo3.bybit",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.bybit")
+)]
 pub enum BybitPositionIdx {
     /// One-way mode position identifier.
     OneWay = 0,

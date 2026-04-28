@@ -1967,6 +1967,7 @@ mod conditional_order_tests {
                 false, // is_leverage
                 None,  // take_profit
                 None,  // stop_loss
+                None,  // position_idx
             )
             .unwrap()
     }
@@ -2025,6 +2026,7 @@ mod conditional_order_tests {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx: None,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -2056,6 +2058,7 @@ mod conditional_order_tests {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx: None,
             }
         }
     }
@@ -2339,6 +2342,7 @@ async fn test_batch_place_orders_with_cache_keys() {
         tp_limit_price: None,
         order_iv: None,
         mmp: None,
+        position_idx: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
@@ -2740,6 +2744,7 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
         tp_limit_price: None,
         order_iv: Some("0.80".to_string()),
         mmp: Some(true),
+        position_idx: None,
     }];
 
     let result = client.batch_place_orders(orders).await;
@@ -2815,6 +2820,7 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
         tp_limit_price: None,
         order_iv: None,
         mmp: None,
+        position_idx: None,
     }];
 
     let result = client.batch_place_orders(orders).await;

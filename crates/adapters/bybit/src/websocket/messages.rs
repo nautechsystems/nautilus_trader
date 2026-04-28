@@ -23,9 +23,10 @@ use crate::{
     common::{
         enums::{
             BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit, BybitOrderSide,
-            BybitOrderStatus, BybitOrderType, BybitPositionSide, BybitPositionStatus,
-            BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce, BybitTpSlMode,
-            BybitTriggerDirection, BybitTriggerType, BybitWsOrderRequestOp,
+            BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
+            BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
+            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+            BybitWsOrderRequestOp,
         },
         parse::{
             deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
@@ -298,6 +299,8 @@ pub struct BybitWsPlaceOrderParams {
     pub order_iv: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position_idx: Option<BybitPositionIdx>,
 }
 
 /// Parameters for amending an order via WebSocket.
@@ -412,6 +415,8 @@ pub struct BybitWsBatchPlaceItem {
     pub order_iv: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position_idx: Option<BybitPositionIdx>,
 }
 
 /// Arguments for batch place order operation via WebSocket.
@@ -1002,6 +1007,7 @@ mod tests {
             tp_limit_price: None,
             order_iv: Some("0.80".to_string()),
             mmp: Some(true),
+            position_idx: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
@@ -1040,11 +1046,99 @@ mod tests {
             tp_limit_price: None,
             order_iv: None,
             mmp: None,
+            position_idx: None,
         };
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("orderIv"));
         assert!(!json.contains("mmp"));
+        assert!(!json.contains("positionIdx"));
+    }
+
+    #[rstest]
+    #[case(BybitPositionIdx::BuyHedge, 1)]
+    #[case(BybitPositionIdx::SellHedge, 2)]
+    fn serialize_place_params_includes_position_idx_when_set(
+        #[case] idx: BybitPositionIdx,
+        #[case] expected: i32,
+    ) {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("50000".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            mmp: None,
+            position_idx: Some(idx),
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains(&format!("\"positionIdx\":{expected}")));
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(BybitPositionIdx::OneWay))]
+    #[case(Some(BybitPositionIdx::BuyHedge))]
+    #[case(Some(BybitPositionIdx::SellHedge))]
+    fn place_params_position_idx_roundtrip(#[case] idx: Option<BybitPositionIdx>) {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("50000".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            mmp: None,
+            position_idx: idx,
+        };
+
+        let json = serde_json::to_string(&params).unwrap();
+        let decoded: BybitWsPlaceOrderParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.position_idx, idx);
     }
 
     #[rstest]

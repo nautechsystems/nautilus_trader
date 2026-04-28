@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Added Binance Futures `use_trade_lite` config to opt into low-latency `TRADE_LITE` fills (Rust, default `False`)
 - Added Binance `proxy_url` plumbing for market and user-data WS streams (#3937), thanks for reporting @huangqingchi
 - Added Bybit user-related endpoints (#3894), thanks @sunlei
+- Added Bybit `BybitPositionIdx` enum and `bybit_resolve_position_idx` PyO3 helper
 - Added `DydxNetwork` re-export on the `nautilus_trader.adapters.dydx` package
 - Added Hyperliquid historical funding rates via `fundingHistory` info endpoint
 - Added Hyperliquid configurable MARKET slippage (`market_order_slippage_bps`) with per-order override
@@ -146,6 +147,8 @@ Released on TBD (UTC).
 - Fixed Bybit and Deribit option chain example `subscribe_option_chain` call (#3887), thanks @sunlei
 - Fixed Bybit margin missing for accounts with orders but no positions (#3725), thanks for reporting @marco-rigoni
 - Fixed Bybit JSON pong websocket frames not being skipped before classification (#3936), thanks @sunlei
+- Fixed Bybit hedge mode `positionIdx` rejection when `position_mode` set (#3944), thanks for reporting @pusteckiy
+- Fixed Bybit execution client not applying configured leverage, position mode, or margin mode on connect (Rust)
 - Fixed Databento CMBP1 and TCBBO trade IDs using random UUID4 instead of deterministic hash of trade fields
 - Fixed Databento dropping `start_ns` after session start; now logs error (#3877), thanks for reporting @jxstanford
 - Fixed Deribit mark/index price subscriptions silently dropping data in Python (#3821), thanks for reporting @linimin

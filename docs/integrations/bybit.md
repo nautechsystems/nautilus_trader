@@ -247,6 +247,31 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Leverage control    | -    | ✓      | ✓       | -      | Not applicable for Options.              |
 | Margin mode         | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin.    |
 
+#### Hedge mode (BothSides)
+
+Bybit only accepts `BOTH_SIDES` on USDT linear perpetuals. For other product
+types configure `MERGED_SINGLE` or omit them from `position_mode`. Configure
+per symbol:
+
+```python
+from nautilus_trader.adapters.bybit import BybitPositionMode
+
+config = BybitExecClientConfig(
+    ...,
+    position_mode={"ETHUSDT-LINEAR": BybitPositionMode.BOTH_SIDES},
+)
+```
+
+On connect the adapter calls `/v5/position/switch-mode` for each entry, then
+derives `positionIdx` for every order: opening BUY -> `1` (long), opening
+SELL -> `2` (short), reduce-only SELL -> `1`, reduce-only BUY -> `2`.
+
+To override, pass `position_idx` via `params`:
+
+```python
+params={"position_idx": 1}  # 0 one-way, 1 long, 2 short
+```
+
 ### Risk events
 
 | Feature                   | Spot | Linear | Inverse | Option | Notes                                     |
@@ -319,6 +344,7 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `tp_trigger_price` | `str` or `float`       | Custom TP trigger price (overrides `take_profit`).                      |
 | `sl_trigger_price` | `str` or `float`       | Custom SL trigger price (overrides `stop_loss`).                        |
 | `close_on_trigger` | `bool`                 | Close the position when TP/SL triggers. Default: `False`.               |
+| `position_idx`     | `int`                  | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides).     |
 
 :::note
 Native TP/SL params are not supported in demo mode. The `is_leverage` param applies to
@@ -757,7 +783,7 @@ The product types for each client must be specified in the configurations.
 | `ws_trade_timeout_secs`          | `5.0`   | Timeout (seconds) waiting for trade WebSocket acknowledgements. |
 | `ws_auth_timeout_secs`           | `5.0`   | Timeout (seconds) waiting for auth WebSocket acknowledgements. |
 | `futures_leverages`              | `None`  | Mapping of `BybitSymbol` to leverage settings. |
-| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode (one‑way vs hedge). |
+| `position_mode`                  | `None`  | Mapping of `BybitSymbol` to position mode. See [Hedge mode](#hedge-mode-bothsides). |
 | `margin_mode`                    | `None`  | Margin mode setting for the account. |
 
 The most common use case is to configure a live `TradingNode` to include Bybit

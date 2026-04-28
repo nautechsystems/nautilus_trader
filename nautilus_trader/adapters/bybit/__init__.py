@@ -41,6 +41,8 @@ from nautilus_trader.core.nautilus_pyo3 import BybitMarginAction
 from nautilus_trader.core.nautilus_pyo3 import BybitMarginBorrowResult
 from nautilus_trader.core.nautilus_pyo3 import BybitMarginRepayResult
 from nautilus_trader.core.nautilus_pyo3 import BybitMarginStatusResult
+from nautilus_trader.core.nautilus_pyo3 import BybitPositionIdx
+from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
 from nautilus_trader.core.nautilus_pyo3 import BybitTickerData
 
@@ -60,6 +62,8 @@ __all__ = [
     "BybitMarginRepayResult",
     "BybitMarginStatusResult",
     "BybitOrderBookDeltaDataLoader",
+    "BybitPositionIdx",
+    "BybitPositionMode",
     "BybitProductType",
     "BybitTickerData",
     "get_cached_bybit_http_client",

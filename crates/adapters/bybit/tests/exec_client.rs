@@ -42,7 +42,7 @@ use axum::{
     routing::{get, post},
 };
 use nautilus_bybit::{
-    common::enums::{BybitEnvironment, BybitProductType},
+    common::enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
     config::BybitExecClientConfig,
     execution::BybitExecutionClient,
 };
@@ -79,6 +79,9 @@ struct TestServerState {
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
+    switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    set_margin_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -91,6 +94,9 @@ impl Default for TestServerState {
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
+            switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            set_margin_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -263,6 +269,87 @@ async fn handle_cancel_order(headers: HeaderMap, _body: Bytes) -> impl IntoRespo
         },
         "retExtInfo": {},
         "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+async fn handle_switch_mode(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"retCode": 10003, "retMsg": "Invalid API key", "result": {}})),
+        )
+            .into_response();
+    }
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        state.switch_mode_requests.lock().await.push(value);
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {},
+        "retExtInfo": {},
+        "time": 1704470400123i64,
+    }))
+    .into_response()
+}
+
+async fn handle_set_leverage(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"retCode": 10003, "retMsg": "Invalid API key", "result": {}})),
+        )
+            .into_response();
+    }
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        state.set_leverage_requests.lock().await.push(value);
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {},
+        "retExtInfo": {},
+        "time": 1704470400123i64,
+    }))
+    .into_response()
+}
+
+async fn handle_set_margin_mode(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"retCode": 10003, "retMsg": "Invalid API key", "result": {}})),
+        )
+            .into_response();
+    }
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        state.set_margin_mode_requests.lock().await.push(value);
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {},
+        "retExtInfo": {},
+        "time": 1704470400123i64,
     }))
     .into_response()
 }
@@ -465,6 +552,9 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
+        .route("/v5/position/switch-mode", post(handle_switch_mode))
+        .route("/v5/position/set-leverage", post(handle_set_leverage))
+        .route("/v5/account/set-margin-mode", post(handle_set_margin_mode))
         .route("/v3/public/time", get(handle_server_time))
         .route("/v5/private", get(handle_private_websocket))
         .route("/v5/trade", get(handle_trade_websocket))
@@ -623,6 +713,146 @@ async fn test_exec_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_connect_applies_position_mode_for_derivative_symbols() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = ClientId::from("BYBIT");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("BYBIT"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache,
+    );
+
+    let mut position_mode = std::collections::HashMap::new();
+    position_mode.insert("ETHUSDT-LINEAR".to_string(), BybitPositionMode::BothSides);
+    position_mode.insert(
+        "BTCUSD-INVERSE".to_string(),
+        BybitPositionMode::MergedSingle,
+    );
+    // Spot symbol must be filtered out (Bybit rejects switch-mode on Spot).
+    position_mode.insert("BTCUSDT-SPOT".to_string(), BybitPositionMode::MergedSingle);
+
+    let mut config = create_test_exec_config(addr);
+    config.position_mode = Some(position_mode);
+
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.switch_mode_requests.lock().await.len() >= 2 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let requests = state.switch_mode_requests.lock().await;
+    assert_eq!(
+        requests.len(),
+        2,
+        "switch-mode should be called for Linear+Inverse only, not Spot",
+    );
+
+    let symbols: Vec<&str> = requests
+        .iter()
+        .filter_map(|r| r.get("symbol").and_then(|v| v.as_str()))
+        .collect();
+    assert!(symbols.contains(&"ETHUSDT"));
+    assert!(symbols.contains(&"BTCUSD"));
+
+    let categories: Vec<&str> = requests
+        .iter()
+        .filter_map(|r| r.get("category").and_then(|v| v.as_str()))
+        .collect();
+    assert!(categories.contains(&"linear"));
+    assert!(categories.contains(&"inverse"));
+
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_connect_applies_leverage_and_margin_mode() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("BYBIT-001");
+    let client_id = ClientId::from("BYBIT");
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        Venue::from("BYBIT"),
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache,
+    );
+
+    let mut leverages = std::collections::HashMap::new();
+    leverages.insert("ETHUSDT-LINEAR".to_string(), 5);
+
+    let mut config = create_test_exec_config(addr);
+    config.futures_leverages = Some(leverages);
+    config.margin_mode = Some(BybitMarginMode::RegularMargin);
+
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let mut client = BybitExecutionClient::new(core, config).unwrap();
+
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async {
+            !state.set_leverage_requests.lock().await.is_empty()
+                && !state.set_margin_mode_requests.lock().await.is_empty()
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    let leverage_reqs = state.set_leverage_requests.lock().await;
+    assert_eq!(leverage_reqs.len(), 1);
+    assert_eq!(
+        leverage_reqs[0].get("symbol").and_then(|v| v.as_str()),
+        Some("ETHUSDT"),
+    );
+    assert_eq!(
+        leverage_reqs[0].get("buyLeverage").and_then(|v| v.as_str()),
+        Some("5"),
+    );
+    drop(leverage_reqs);
+
+    let margin_reqs = state.set_margin_mode_requests.lock().await;
+    assert_eq!(margin_reqs.len(), 1);
+    assert_eq!(
+        margin_reqs[0].get("setMarginMode").and_then(|v| v.as_str()),
+        Some("REGULAR_MARGIN"),
+    );
+    drop(margin_reqs);
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

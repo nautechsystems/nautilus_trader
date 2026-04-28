@@ -54,8 +54,8 @@ use crate::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType, BybitTimeInForce,
-            BybitTpSlMode, BybitWsOrderRequestOp, resolve_trigger_type,
+            BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx, BybitProductType,
+            BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp, resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -1398,6 +1398,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: order.tp_limit_price,
                 order_iv: order.order_iv,
                 mmp: order.mmp,
+                position_idx: order.position_idx,
             })
             .collect();
 
@@ -1550,6 +1551,7 @@ impl BybitWebSocketClient {
         post_only: Option<bool>,
         reduce_only: Option<bool>,
         is_leverage: bool,
+        position_idx: Option<BybitPositionIdx>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1568,6 +1570,7 @@ impl BybitWebSocketClient {
             is_leverage,
             None,
             None,
+            position_idx,
         )?;
 
         self.place_order(params).await
@@ -1641,6 +1644,7 @@ impl BybitWebSocketClient {
         is_leverage: bool,
         take_profit: Option<Price>,
         stop_loss: Option<Price>,
+        position_idx: Option<BybitPositionIdx>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1711,6 +1715,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx,
             }
         } else {
             BybitWsPlaceOrderParams {
@@ -1746,6 +1751,7 @@ impl BybitWebSocketClient {
                 tp_limit_price: None,
                 order_iv: None,
                 mmp: None,
+                position_idx,
             }
         };
 
@@ -2093,6 +2099,7 @@ mod tests {
                 is_leverage,
                 None,
                 None,
+                None,
             )
             .expect("Failed to build params");
 
@@ -2163,6 +2170,7 @@ mod tests {
                 None,
                 None,
                 false,
+                None,
                 None,
                 None,
             )

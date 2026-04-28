@@ -410,7 +410,7 @@ pub struct BybitBatchPlaceOrderEntry {
     pub time_in_force: Option<BybitTimeInForce>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub position_idx: Option<i32>,
+    pub position_idx: Option<BybitPositionIdx>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
